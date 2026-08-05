@@ -54,8 +54,8 @@ export function timeUntil(value: DateInput, now: Date = new Date()): string {
 
 /** The standard compact date + time — locale-aware like the rest of the module
  *  (24-hour, numeric); "—" for an unparseable date. Reach for this on dense
- *  timestamp lines (session/run rows); use `formatDate`/`formatDateTime`/
- *  `formatTime` when you need a different field set. */
+ *  timestamp lines (session/run rows); use `formatDate` or `formatDateTime`
+ *  when you need a different field set. */
 export function formatTimestamp(value: DateInput): string {
   return formatDateTime(value, {
     year: "numeric",
@@ -82,12 +82,4 @@ export function formatDateTime(
   options?: Intl.DateTimeFormatOptions,
 ): string {
   return toDate(value)?.toLocaleString(undefined, options) ?? "—";
-}
-
-/** `toLocaleTimeString`, same guarantees as `formatDate`. */
-export function formatTime(
-  value: DateInput,
-  options?: Intl.DateTimeFormatOptions,
-): string {
-  return toDate(value)?.toLocaleTimeString(undefined, options) ?? "—";
 }

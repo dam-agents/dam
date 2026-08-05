@@ -11,7 +11,9 @@ export type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;
 
-/** Token counts + cost rolled up per model, over the window. */
+/** Token counts + cost rolled up per model, over the window. `durationMs` sums
+ *  per-call request latency, so concurrent calls overlap within it — it measures
+ *  how long models spent working, not elapsed wall-clock. */
 export interface TokenSpendByModel {
   model: string;
   calls: number;
@@ -20,6 +22,7 @@ export interface TokenSpendByModel {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd: number;
+  durationMs: number;
 }
 
 /** Spend rolled up per agent over the window. Grouped on the trusted,
@@ -95,10 +98,10 @@ export interface SpendBreakdown {
 export interface MetricsService {
   overview(query: MetricsQuery): Promise<MetricsOverview>;
   /** The whole Usage tab in one read: per-model, per-agent, and per-day spend
-   *  over [from, to), across all of the caller's agents — deleted ones included,
-   *  so history doesn't shrink retroactively. Per-agent rows are sorted highest
-   *  cost first; per-day rows are sparse (only days with spend) and bucketed
-   *  into the client's local calendar days. Ownership resolves once for all
-   *  three rollups. */
+   *  over [from, to) — across the caller's agents, deleted ones included so
+   *  history doesn't shrink retroactively, or one of them when `agentId` narrows
+   *  it. Per-agent rows are sorted highest cost first; per-day rows are sparse
+   *  (only days with spend) and bucketed into the client's local calendar days.
+   *  Ownership resolves once for all three rollups. */
   spendBreakdown(query: MetricsSpendBreakdownQuery): Promise<SpendBreakdown>;
 }

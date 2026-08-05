@@ -477,11 +477,11 @@ export function ChatView() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 aria-label={surfaceCopy.actionsAria}
                 className={HOVER_ACTION}
               >
-                <OverflowMenuVertical size={14} />
+                <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">

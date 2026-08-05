@@ -1,3 +1,4 @@
+import type { TokenSpendByModel } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -5,6 +6,7 @@ import {
   formatTokens,
   formatUsd,
 } from "../../modules/metrics/lib/format.js";
+import { totalCostUsd } from "../../modules/metrics/lib/totals.js";
 
 describe("formatTokens", () => {
   test("compacts large counts", () => {
@@ -26,5 +28,17 @@ describe("formatDurationMs", () => {
     expect(formatDurationMs(420)).toBe("420ms");
     expect(formatDurationMs(4200)).toBe("4.2s");
     expect(formatDurationMs(90_000)).toBe("1m 30s");
+  });
+});
+
+describe("totalCostUsd", () => {
+  test("sums per-model cost, zero for no rows", () => {
+    expect(totalCostUsd([])).toBe(0);
+    expect(
+      totalCostUsd([
+        { costUsd: 1.5 } as TokenSpendByModel,
+        { costUsd: 0.25 } as TokenSpendByModel,
+      ]),
+    ).toBe(1.75);
   });
 });
