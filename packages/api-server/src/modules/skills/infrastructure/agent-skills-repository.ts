@@ -7,7 +7,6 @@ import {
   and,
   inArray,
   isNull,
-  lt,
   or,
   sql,
 } from "db";
@@ -26,30 +25,33 @@ export interface AgentSkillsRepository {
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
 
-  /** Records whose pull request is worth re-reading, across every agent — the
-   *  resolver is background work, not owner-scoped. See
-   *  {@link PrStateCandidate} for what "worth" means. */
-  listPrStateCandidates(
-    staleBefore: Date,
-    limit: number,
-  ): Promise<PrStateCandidate[]>;
+  /** Records whose pull request is due for a re-read as of `now`, across
+   *  every agent — the resolver is background work, not owner-scoped. Due
+   *  means the per-record backoff has elapsed: hourly for a record whose last
+   *  attempt learned something, doubling per consecutive failed attempt up to
+   *  daily, so a record that can never resolve stops holding an hourly slot
+   *  of the shared anonymous budget. See {@link PrStateCandidate}. */
+  listPrStateCandidates(now: Date, limit: number): Promise<PrStateCandidate[]>;
 
   /** Persist a resolved state. Terminal states (`merged`, `closed`) are
    *  written once and the record is never selected for a re-read again, so
-   *  this is the only writer of `prState`. */
+   *  this is the only writer of `prState`. Also resets the failure counter —
+   *  the record is back in the hourly lane. */
   setPrState(
     prUrl: string,
     next: { prState: PrState; checkedAt: Date; etag: string | null },
   ): Promise<void>;
   /** Stamp an attempt that yielded no new state, so the record's backoff clock
    *  moves even when nothing was learned. Never touches `prState` — a
-   *  rate-limit blip must not erase a resolved `merged`. `dropEtag` discards a
-   *  validator we no longer trust, which also moves the record out of the
-   *  free every-tick lane. */
+   *  rate-limit blip must not erase a resolved `merged`. The outcome decides
+   *  the rest: `confirmed` (a 304 — the resource is readable and the cached
+   *  state stands) keeps the validator and resets the failure counter, while
+   *  `failed` (unreadable, unparsable, no warm pod) discards a validator we no
+   *  longer trust and grows the backoff. */
   touchPrState(
     prUrl: string,
     checkedAt: Date,
-    opts?: { dropEtag?: boolean },
+    outcome: "confirmed" | "failed",
   ): Promise<void>;
 
   deleteByAgent(agentId: string): Promise<void>;
@@ -191,7 +193,7 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
       });
     },
 
-    async listPrStateCandidates(staleBefore, limit) {
+    async listPrStateCandidates(now, limit) {
       const rows = await db
         .select({
           agentId: agentSkillPublishes.agentId,
@@ -208,17 +210,21 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
               isNull(agentSkillPublishes.prState),
               inArray(agentSkillPublishes.prState, ["draft", "open"]),
             ),
-            // Throttle every record equally. A conditional request is NOT
-            // exempt from the anonymous rate limit — measured against
-            // api.github.com, each 304 decrements x-ratelimit-remaining by one
-            // exactly like a 200 — so an ETag saves bandwidth but buys no
-            // budget, and re-checking on every tick would let ~10 open pull
-            // requests exhaust the instance's whole hourly allowance. A record
-            // never attempted is exempt, so a fresh publish still resolves on
-            // the next tick.
+            // Throttle every record. A conditional request is NOT exempt from
+            // the anonymous rate limit — measured against api.github.com, each
+            // 304 decrements x-ratelimit-remaining by one exactly like a 200 —
+            // so an ETag saves bandwidth but buys no budget, and re-checking on
+            // every tick would let ~10 open pull requests exhaust the
+            // instance's whole hourly allowance. The wait is per-record: an
+            // hour after an attempt that learned something, doubling per
+            // consecutive failure up to a day, so a record that can never
+            // resolve (private source, hibernated agent) decays to one request
+            // a day instead of holding its hourly slot forever. A record never
+            // attempted is exempt, so a fresh publish still resolves on the
+            // next tick.
             or(
               isNull(agentSkillPublishes.prStateCheckedAt),
-              lt(agentSkillPublishes.prStateCheckedAt, staleBefore),
+              sql`${agentSkillPublishes.prStateCheckedAt} + least(power(2, ${agentSkillPublishes.prStateCheckFailures}), 24) * interval '1 hour' <= ${now}`,
             ),
           ),
         )
@@ -241,16 +247,22 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
           prState: next.prState,
           prStateCheckedAt: next.checkedAt,
           prEtag: next.etag,
+          prStateCheckFailures: 0,
         })
         .where(eq(agentSkillPublishes.prUrl, prUrl));
     },
 
-    async touchPrState(prUrl, checkedAt, opts) {
+    async touchPrState(prUrl, checkedAt, outcome) {
       await db
         .update(agentSkillPublishes)
         .set({
           prStateCheckedAt: checkedAt,
-          ...(opts?.dropEtag ? { prEtag: null } : {}),
+          ...(outcome === "failed"
+            ? {
+                prEtag: null,
+                prStateCheckFailures: sql`${agentSkillPublishes.prStateCheckFailures} + 1`,
+              }
+            : { prStateCheckFailures: 0 }),
         })
         .where(eq(agentSkillPublishes.prUrl, prUrl));
     },

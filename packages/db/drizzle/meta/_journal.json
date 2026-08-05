@@ -141,6 +141,13 @@
       "when": 1785774056701,
       "tag": "0019_early_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785923409904,
+      "tag": "0020_great_scarlet_witch",
+      "breakpoints": true
     }
   ]
 }

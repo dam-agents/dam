@@ -314,6 +314,14 @@ export const agentSkillPublishes = pgTable(
      *  clock that keeps unresolvable records off the anonymous rate limit. */
     prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
     prEtag: text("pr_etag"),
+    /** Consecutive attempts that yielded no state — the multiplier on the
+     *  backoff clock above. A record that can never resolve (a private source
+     *  whose agent stays hibernated, a deleted repo) would otherwise hold an
+     *  hourly slot of the shared anonymous GitHub budget forever; this decays
+     *  it toward one read a day. Reset whenever an attempt learns anything. */
+    prStateCheckFailures: integer("pr_state_check_failures")
+      .notNull()
+      .default(0),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );

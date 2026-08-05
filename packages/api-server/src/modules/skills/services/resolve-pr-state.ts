@@ -13,9 +13,13 @@
  *
  *  - terminal states excluded by the candidate query, so the working set
  *    shrinks with use rather than growing;
- *  - a per-record hourly backoff, so cost is one request per unresolved pull
- *    request per hour and ~50 of them fit inside the ceiling. Checking every
- *    record on every tick instead would let ten exhaust it.
+ *  - a per-record backoff, so cost is at most one request per unresolved pull
+ *    request per hour and ~50 of them fit inside the ceiling — checking every
+ *    record on every tick instead would let ten exhaust it. The backoff
+ *    doubles per consecutive attempt that learns nothing (capped at a day),
+ *    so a record that can never resolve — a private source whose agent stays
+ *    hibernated, a deleted repo — decays to one request a day instead of
+ *    spending its hourly slot forever;
  *
  * Note what is deliberately *not* on that list. Conditional requests do not
  * reduce the anonymous budget: measured against api.github.com, a 304
@@ -34,22 +38,21 @@ import type {
   PrStateCandidate,
 } from "../infrastructure/agent-skills-repository.js";
 import type { PrStateReader } from "../infrastructure/pr-state-reader.js";
-import { derivePrState, type PodPrStateReader } from "../domain/pr-state.js";
+import {
+  derivePrState,
+  type PodPrStateReader,
+  type PrDisposition,
+} from "../domain/pr-state.js";
 import { parsePrUrl } from "../domain/pr-url.js";
 
-/** Every record is re-read at most once an hour — the same span as the
- *  anonymous rate-limit window, so cost is one request per record per window
- *  and there is nothing to tune. A record never attempted skips the wait, so a
- *  fresh publish still resolves on the next tick rather than in an hour. */
-const RECHECK_INTERVAL_MS = 60 * 60_000;
-
-/** Backstop against a pathological backlog; the hourly re-check above is what
- *  bounds spend in normal operation. Ten per tick at this interval *exactly*
- *  saturates the anonymous hourly ceiling rather than leaving headroom under it,
- *  so a saturated backlog spends the whole budget and depends on the
- *  `rate-limited` early return below to stay correct at the boundary — and any
- *  other anonymous GitHub call sharing this egress IP can tip such a tick into
- *  429s. Terminal-state exclusion is what drains the backlog over time. */
+/** Backstop against a pathological backlog; the per-record backoff (owned by
+ *  the candidate query) is what bounds spend in normal operation. Ten per tick
+ *  at this interval *exactly* saturates the anonymous hourly ceiling rather
+ *  than leaving headroom under it, so a saturated backlog spends the whole
+ *  budget and depends on the `rate-limited` early return below to stay correct
+ *  at the boundary — and any other anonymous GitHub call sharing this egress
+ *  IP can tip such a tick into 429s. Terminal-state exclusion and the failure
+ *  backoff are what drain the backlog over time. */
 const MAX_READS_PER_TICK = 10;
 
 export interface PrStateResolver {
@@ -74,7 +77,7 @@ export function createPrStateResolver(deps: {
       // One extra so a full page is evidence of a backlog rather than a
       // coincidence, and the log can say so honestly.
       const candidates = await deps.agentSkills.listPrStateCandidates(
-        new Date(now.getTime() - RECHECK_INTERVAL_MS),
+        now,
         MAX_READS_PER_TICK + 1,
       );
       const skipped = Math.max(0, candidates.length - MAX_READS_PER_TICK);
@@ -85,7 +88,7 @@ export function createPrStateResolver(deps: {
       }
 
       let resolved = 0;
-      for (const candidate of dedupeByPrUrl(
+      for (const candidate of groupByPrUrl(
         candidates.slice(0, MAX_READS_PER_TICK),
       )) {
         const coords = parsePrUrl(candidate.prUrl);
@@ -93,9 +96,7 @@ export function createPrStateResolver(deps: {
           // Not a GitHub pull request URL, so no amount of retrying helps.
           // Stamp it anyway so it takes its turn in the backoff rather than
           // heading the candidate list forever.
-          await deps.agentSkills.touchPrState(candidate.prUrl, now, {
-            dropEtag: true,
-          });
+          await deps.agentSkills.touchPrState(candidate.prUrl, now, "failed");
           continue;
         }
 
@@ -110,7 +111,11 @@ export function createPrStateResolver(deps: {
           continue;
         }
         if (result.kind === "notModified") {
-          await deps.agentSkills.touchPrState(candidate.prUrl, now);
+          await deps.agentSkills.touchPrState(
+            candidate.prUrl,
+            now,
+            "confirmed",
+          );
           continue;
         }
         if (result.reason === "rate-limited") {
@@ -122,14 +127,18 @@ export function createPrStateResolver(deps: {
           return resolved;
         }
         // A 404 means "not resolvable anonymously" — private as much as gone.
-        // Escalate to the owning agent's pod, whose gateway holds the token.
+        // Escalate to a publishing agent's pod, whose gateway holds the token.
+        // Every publisher is a candidate — records for the same pull request
+        // can span agents, and only a warm pod answers — so try each until one
+        // does; the reader declines a stopped agent without touching it.
         // Only `not-found`: an error or a rate limit says nothing about the
         // source being private.
         if (result.reason === "not-found") {
-          const disposition = await deps.podReader.read(
-            candidate.agentId,
-            coords,
-          );
+          let disposition: PrDisposition | null = null;
+          for (const agentId of candidate.agentIds) {
+            disposition = await deps.podReader.read(agentId, coords);
+            if (disposition) break;
+          }
           if (disposition) {
             await deps.agentSkills.setPrState(candidate.prUrl, {
               prState: derivePrState(disposition),
@@ -146,9 +155,7 @@ export function createPrStateResolver(deps: {
         // erase a resolved `merged` — but discard the validator, which belongs
         // to a resource we could not read. Keeping it risks a later 304 that
         // would assert a cached state we may not have.
-        await deps.agentSkills.touchPrState(candidate.prUrl, now, {
-          dropEtag: true,
-        });
+        await deps.agentSkills.touchPrState(candidate.prUrl, now, "failed");
       }
       return resolved;
     },
@@ -156,9 +163,26 @@ export function createPrStateResolver(deps: {
 }
 
 /** Several agents can carry a record for the same pull request; read it once
- *  and let the keyed-on-prUrl writes settle all of them. */
-function dedupeByPrUrl(candidates: PrStateCandidate[]): PrStateCandidate[] {
-  const byUrl = new Map<string, PrStateCandidate>();
-  for (const c of candidates) if (!byUrl.has(c.prUrl)) byUrl.set(c.prUrl, c);
+ *  — keeping every publisher's agentId for the pod escalation — and let the
+ *  keyed-on-prUrl writes settle all of them. */
+export function groupByPrUrl(
+  candidates: PrStateCandidate[],
+): { prUrl: string; prEtag: string | null; agentIds: string[] }[] {
+  const byUrl = new Map<
+    string,
+    { prUrl: string; prEtag: string | null; agentIds: string[] }
+  >();
+  for (const c of candidates) {
+    const group = byUrl.get(c.prUrl);
+    if (!group) {
+      byUrl.set(c.prUrl, {
+        prUrl: c.prUrl,
+        prEtag: c.prEtag,
+        agentIds: [c.agentId],
+      });
+    } else if (!group.agentIds.includes(c.agentId)) {
+      group.agentIds.push(c.agentId);
+    }
+  }
   return [...byUrl.values()];
 }
