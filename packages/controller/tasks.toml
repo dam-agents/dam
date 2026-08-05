@@ -59,7 +59,7 @@ status=0
 # CRDs deliberately retired from the platform. A removal here must ship with
 # an explicit in-cluster cleanup (the retired definition carries
 # helm.sh/resource-policy: keep, so Helm never deletes it itself).
-removed_ok="agent-platform.ai_forks.yaml" # #2987: person-scoped forks removed
+removed_ok="agent-platform.ai_forks.yaml agent-platform.ai_runs.yaml" # #2987: person-scoped forks removed; runs: dam-run executor removed (local exec shim)
 for f in $(git ls-tree -r --name-only "$baseline" -- "$crds" "$legacy"); do
   if [ ! -f "$crds/$(basename "$f")" ]; then
     case " $removed_ok " in

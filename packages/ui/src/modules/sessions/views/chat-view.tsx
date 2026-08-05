@@ -28,7 +28,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
@@ -467,7 +469,7 @@ export function ChatView() {
         <Button
           variant="ghost"
           size="inline"
-          aria-label="Back to sandboxes"
+          aria-label="Back"
           onClick={handleBack}
           className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
         >
@@ -487,7 +489,7 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-xs"
                 aria-label={surfaceCopy.actionsAria}
-                className="hover-capable:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                className={HOVER_ACTION}
               >
                 <OverflowMenuVertical size={14} />
               </Button>
@@ -816,15 +818,16 @@ export function ChatView() {
                 {!hasPendingPermission && harnessCurrent?.model && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        title={surfaceCopy.modelTitle}
-                        className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {harnessCurrent.model}
-                        <Settings size={12} />
-                      </button>
+                      <Tooltip content={surfaceCopy.modelTitle}>
+                        <button
+                          type="button"
+                          onClick={handleConfigureSandbox}
+                          className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {harnessCurrent.model}
+                          <Settings size={12} />
+                        </button>
+                      </Tooltip>
                     </ChatColumn>
                   </div>
                 )}

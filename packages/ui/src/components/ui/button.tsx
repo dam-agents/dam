@@ -1,7 +1,9 @@
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import type { ReactNode } from "react";
 import * as React from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -66,6 +68,9 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ComponentProps<"button">, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /** Reads as a description, so an icon-only button still needs an
+   *  `aria-label`. */
+  tooltip?: ReactNode;
 }
 
 function Button({
@@ -74,15 +79,23 @@ function Button({
   size,
   tone,
   asChild = false,
+  tooltip,
   ...props
 }: ButtonProps) {
   const Comp = asChild ? Slot : "button";
-  return (
+  const button = (
     <Comp
       className={cn(buttonVariants({ variant, size, tone, className }))}
+      /* A disabled button fires neither pointer nor focus events, so the
+         tooltip can never open — `title` still reaches assistive tech, which
+         matters most for a hint that explains why the button is disabled. */
+      title={
+        props.disabled && typeof tooltip === "string" ? tooltip : undefined
+      }
       {...props}
     />
   );
+  return tooltip ? <Tooltip content={tooltip}>{button}</Tooltip> : button;
 }
 
 export { Button, buttonVariants };

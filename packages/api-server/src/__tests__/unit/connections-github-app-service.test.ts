@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import crypto from "node:crypto";
 import { describe, it, expect } from "vitest";
 import type { Connection, ConnectionAuthConfig } from "api-server-api";
@@ -111,7 +112,10 @@ function makeService(
     secretStore: store,
     fanOut: { apply: async () => {} },
     oauthFlow,
-    oauthEngine: createOAuthEngine({ now: () => NOW_MS }),
+    oauthEngine: createOAuthEngine({
+      pendingStore: createMemoryTtlStore(600_000),
+      now: () => NOW_MS,
+    }),
     githubAppEngine,
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",

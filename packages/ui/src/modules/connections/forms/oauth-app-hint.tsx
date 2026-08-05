@@ -3,6 +3,7 @@ import { Checkmark, Copy, Launch } from "@carbon/icons-react";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { useCopy } from "@/hooks/use-copy";
+import { externalLinkProps } from "@/lib/external-link";
 
 /** Bring-your-own-OAuth-app instructions: provider setup link plus the exact
  *  redirect URI to register. */
@@ -30,8 +31,7 @@ export function OAuthAppHint({
             {" "}
             <a
               href={setupUrl}
-              target="_blank"
-              rel="noreferrer"
+              {...externalLinkProps}
               className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
             >
               Create an app <Launch size={11} />
@@ -54,7 +54,8 @@ export function OAuthAppHint({
               size="icon-xs"
               className="shrink-0"
               onClick={copy}
-              title="Copy redirect URI"
+              aria-label="Copy redirect URI"
+              tooltip="Copy redirect URI"
             >
               {copied ? (
                 <Checkmark size={12} className="text-success" />

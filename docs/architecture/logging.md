@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-07-29
+Last verified: 2026-08-04
 
 ## Overview
 
@@ -47,7 +47,7 @@ Two disjoint mechanisms feed the one logger:
 ## Invariants
 
 - **Single process, single stdout.** The public API, harness, and ext-authz gRPC apps run in one process, so one logger configuration and one stream cover the whole api-server.
-- **Once per replica.** The domain bus is in-process; each replica's saga logs only its own events. Moving domain events onto the cross-replica Redis bus would require dedup, or every replica would duplicate every line. The api-server runs single-replica today.
+- **Once per replica.** The domain bus is in-process; each replica's saga logs only its own events. Moving domain events onto the cross-replica Redis bus would require dedup, or every replica would duplicate every line. Domain events are emitted and consumed on the same replica, so multi-replica deployments log each event exactly once (on the replica where it happened).
 - **Non-blocking.** The egress gate logs on the proxy's request-blocking hop; the writer must never block or throw into a request path.
 
 ## Controller logging

@@ -71,7 +71,7 @@ interface DialogHeaderProps {
    *  accessible name. */
   titleAccessory?: ReactNode;
   subtitle?: ReactNode;
-  /** Omit for dialogs that exit through the footer. */
+  /** Draws the ✕. Omit only where the dialog exists to force a choice. */
   onClose?: () => void;
   /** Gate the ✕ while an in-flight action would lose something if the dialog
    *  went away — a one-time secret, or a multi-step write mid-way. */

@@ -581,6 +581,9 @@ apiServer:
     pullPolicy: IfNotPresent
   port: 4000
   harnessServerPort: 4001
+  # -- api-server replica count. Cross-replica coordination (periodic jobs,
+  # session presence, OAuth handoff state) runs through Redis/Postgres.
+  replicas: 1
   # -- Minimum severity emitted by the structured logger
   # (`error`|`warn`|`info`|`debug`). The security audit trail is logged at
   # common levels (denials → warn, allowed/successful actions → info), so the
@@ -1405,6 +1408,42 @@ agentTemplates:
       repository: quay.io/dam-agents/gepa
       tag: ""
     storageSize: "5Gi"
+
+  # AdaEvolve and EvoX are SkyDiscover's two own search strategies, exposed as
+  # two presets over the single skydiscover image (same one-image/N-templates
+  # pattern as k-search/k-search-local): each bakes its default `--search` via
+  # the SKYDISCOVER_SEARCH env.
+  adaevolve:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "AdaEvolve"
+    description: "AdaEvolve — multi-island adaptive code & algorithm optimization (SkyDiscover)"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
+    image:
+      repository: quay.io/dam-agents/skydiscover
+      tag: ""
+    storageSize: "5Gi"
+    env:
+      - name: SKYDISCOVER_SEARCH
+        value: "adaevolve"
+
+  evox:
+    enabled: true
+    category: preconfigured
+    experimental: true
+    displayName: "EvoX"
+    description: "EvoX — self-evolving code & algorithm optimization (SkyDiscover)"
+    tags: ["OpenAI-compatible"]
+    docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
+    image:
+      repository: quay.io/dam-agents/skydiscover
+      tag: ""
+    storageSize: "5Gi"
+    env:
+      - name: SKYDISCOVER_SEARCH
+        value: "evox"
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

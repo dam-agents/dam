@@ -8,7 +8,9 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
@@ -184,7 +186,8 @@ export function ChatInput({
               className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
               disabled={loadingSession}
-              title="Attach file"
+              aria-label="Attach file"
+              tooltip="Attach file"
             >
               <Add size={16} />
             </Button>
@@ -206,7 +209,8 @@ export function ChatInput({
                 size="icon-sm"
                 className="shrink-0 mb-[9px] h-10 w-10"
                 onClick={onStop}
-                title="Stop"
+                aria-label="Stop"
+                tooltip="Stop"
               >
                 <Stop size={16} />
               </Button>
@@ -218,7 +222,8 @@ export function ChatInput({
                 className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession}
-                title={isComputing ? "Queue" : "Send"}
+                aria-label={isComputing ? "Queue" : "Send"}
+                tooltip={isComputing ? "Queue" : "Send"}
               >
                 <SendAltFilled size={16} />
               </Button>
@@ -257,7 +262,11 @@ function AttachmentChip({
         variant="destructive"
         size="icon"
         onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+        aria-label="Remove attachment"
+        className={cn(
+          "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
+          HOVER_ACTION,
+        )}
       >
         <Close size={10} />
       </Button>

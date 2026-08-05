@@ -1,0 +1,16 @@
+[Unit]
+Description=Platform net config (docker MTU + client proxy) — must precede docker
+# cloud-init's init stage writes /etc/platform/env; the default route must
+# exist for MTU discovery. Before=docker.service so daemon.json is in place
+# when dockerd starts (the rootfs is ephemeral, so this re-renders each boot).
+After=cloud-init.service cloud-init-network.service network-online.target
+Wants=network-online.target
+Before=docker.service agent-runtime.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/platform-net-config.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

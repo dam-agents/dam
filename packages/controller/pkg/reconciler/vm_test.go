@@ -25,6 +25,7 @@ func vmAgentCR() *apiv1.Agent {
 		{Path: "/home/agent", Persist: true, Size: "10Gi"},
 		{Path: "/scratchpad", Persist: false},
 	}
+	a.Spec.Init = "touch $HOME/.initialized"
 	return a
 }
 
@@ -94,6 +95,22 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.NotContains(t, names, "scratchpad")
 	boot := names["boot"]["containerDisk"].(map[string]any)
 	assert.Equal(t, agent.Spec.Image, boot["image"])
+	assert.Equal(t, "IfNotPresent", boot["imagePullPolicy"])
+
+	// containerDisk validates imagePullPolicy as a strict enum — an unset
+	// policy must be omitted, not rendered as "" (KubeVirt admission rejects
+	// the VM outright).
+	bare := vmAgentCR()
+	bare.Spec.ImagePullPolicy = ""
+	r.config.AgentTemplateDefaults.ImagePullPolicy = ""
+	bareVM, err := BuildAgentVirtualMachine("my-agent", &bare.Spec, r.config, agentOwnerRef(bare), "10.96.42.42")
+	require.NoError(t, err)
+	bareVolumes, _, _ := unstructured.NestedSlice(bareVM.Object, "spec", "template", "spec", "volumes")
+	for _, v := range bareVolumes {
+		if m := v.(map[string]any); m["name"] == "boot" {
+			assert.NotContains(t, m["containerDisk"].(map[string]any), "imagePullPolicy")
+		}
+	}
 
 	// virtiofs filesystem for the persisted mount; PVC created with the
 	// StatefulSet-convention name and agent labels.
@@ -129,6 +146,11 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.True(t, strings.HasPrefix(userdata, "#cloud-config\n"))
 	assert.Contains(t, userdata, "HTTPS_PROXY='http://10.96.42.42:10000'")
 	assert.Contains(t, userdata, "PLATFORM_AGENT_ID='my-agent'")
+	// The JVM ignores http_proxy env and $HOME — proxy + user.home must ride
+	// JAVA_TOOL_OPTIONS or Maven/Gradle bypass the gateway and read the
+	// wrong ~/.m2 (user.home resolves via getpwuid, /root on the VM).
+	assert.Contains(t, userdata, "JAVA_TOOL_OPTIONS='-Duser.home=/home/agent")
+	assert.Contains(t, userdata, "-Dhttp.proxyHost=10.96.42.42 -Dhttp.proxyPort=")
 	assert.Contains(t, userdata, "PLATFORM_KUBE_API_DENY='10.43.0.1:443'")
 	assert.Contains(t, userdata, "PEMDATA")
 	// The share must be mounted from bootcmd, never cloud-init's `mounts:`
@@ -151,6 +173,15 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 		"mount -t virtiofs 'scratchpad'",
 		"ephemeral mounts have no virtiofs device to mount",
 	)
+	// The init script must ride the userdata — it is what seeds $HOME
+	// (Claude Code onboarding state, settings, the work dir); the container
+	// backend runs it as an init container, the VM has only cloud-init.
+	assert.Contains(t, userdata, "HOME=/home/agent")
+	assert.Contains(t, userdata, ".initialized")
+	// The ~/.cache swap must be pre-created by root: on unprivileged virtiofs
+	// a non-root guest cannot create symlinks (virtiofsd lacks CAP_CHOWN), so
+	// the entrypoint's own `ln` would fail with EPERM.
+	assert.Contains(t, userdata, "ln -sfn /tmp/agent-cache")
 }
 
 func TestVMSpecSurvivesUnstructuredDeepCopy(t *testing.T) {

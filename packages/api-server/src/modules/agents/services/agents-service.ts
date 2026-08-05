@@ -81,13 +81,13 @@ export interface PresetSeeder {
  * store, the conversations repository, and the ChannelManager.
  */
 export interface TelegramBindingPort {
-  peekFlow(flowId: string): {
+  peekFlow(flowId: string): Promise<{
     conversationId: string;
     telegramUserId: string;
     keycloakSub: string;
     chatTitle?: string;
-  } | null;
-  consumeFlow(flowId: string): void;
+  } | null>;
+  consumeFlow(flowId: string): Promise<void>;
   findAgentByConversation(
     conversationId: string,
   ): Promise<{ agentId: string; authorizedBy: string } | null>;
@@ -120,7 +120,7 @@ export function executeTelegramBind(deps: {
     agentId: string,
     flowId: string,
   ): Promise<BindTelegramChatResult> => {
-    const flow = deps.binding.peekFlow(flowId);
+    const flow = await deps.binding.peekFlow(flowId);
     if (!flow) return err({ type: "FlowInvalid" as const });
 
     if (!deps.owner || flow.keycloakSub !== deps.owner) {
@@ -166,7 +166,7 @@ export function executeTelegramBind(deps: {
       }
     }
 
-    deps.binding.consumeFlow(flowId);
+    await deps.binding.consumeFlow(flowId);
 
     // The binding IS the consent grant: the owner lends this agent — its
     // credentials included — to everyone in the conversation.
@@ -264,13 +264,13 @@ export function executeTelegramUnbind(deps: {
  * and the write reuse the service's own `connectSlack` path.
  */
 export interface SlackBindingPort {
-  peekFlow(flowId: string): {
+  peekFlow(flowId: string): Promise<{
     slackChannelId: string;
     slackUserId: string;
     keycloakSub: string;
     channelTitle?: string;
-  } | null;
-  consumeFlow(flowId: string): void;
+  } | null>;
+  consumeFlow(flowId: string): Promise<void>;
   /** Best-effort confirmation into the channel, via the channel manager. */
   postMessage(
     agentId: string,
@@ -301,7 +301,7 @@ export function executeSlackBind(deps: {
     agentId: string,
     flowId: string,
   ): Promise<BindSlackChannelResult> => {
-    const flow = deps.binding.peekFlow(flowId);
+    const flow = await deps.binding.peekFlow(flowId);
     if (!flow) return err({ type: "FlowInvalid" as const });
 
     if (!deps.owner || flow.keycloakSub !== deps.owner) {
@@ -337,7 +337,7 @@ export function executeSlackBind(deps: {
       return err({ type: "ChannelAlreadyBound" as const });
     }
 
-    deps.binding.consumeFlow(flowId);
+    await deps.binding.consumeFlow(flowId);
 
     // The binding IS the consent grant: the binder lends this agent — its
     // credentials included — to everyone in the channel.
@@ -475,23 +475,6 @@ export interface ResizeGatePort {
   ): Promise<void>;
 }
 
-// Serializes resize check+patch per owner. In-process only — correctness
-// leans on the api-server running a single replica, the same standing as the
-// controller's single-worker invariant (see budgets.md).
-const ownerResizeLocks = new Map<string, Promise<unknown>>();
-async function withOwnerResizeLock<T>(
-  owner: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  const prev = ownerResizeLocks.get(owner) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  ownerResizeLocks.set(
-    owner,
-    run.catch(() => {}),
-  );
-  return run;
-}
-
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   /** Postgres store for user-typed env. */
@@ -518,6 +501,10 @@ export function createAgentsService(deps: {
   /** Budget gate for live resizes; omitted by system compositions (which
    *  never resize) — a live resize without it is rejected. */
   resizeGate?: ResizeGatePort;
+  /** Cross-replica critical section serializing resize check+patch per
+   *  owner (Postgres advisory lock) — the courtesy ceiling check is
+   *  read+check+patch and must not race across replicas. */
+  resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   /** Single-shot create: seeds spec grant fields before first render, then
    *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
@@ -975,7 +962,7 @@ export function createAgentsService(deps: {
         // classify against the same state the ceiling check runs on, or
         // two rapid resizes could classify an increase as a shrink.
         gateLiveResize = (apply) =>
-          withOwnerResizeLock(deps.owner ?? "", async () => {
+          deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
             const current = await deps.repo.get(input.id, deps.owner);
             if (!current) return null;
             if (!current.hibernated && !current.overBudget) {

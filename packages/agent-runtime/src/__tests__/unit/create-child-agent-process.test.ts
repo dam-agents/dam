@@ -1,3 +1,6 @@
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname } from "node:path";
 import { describe, it, expect } from "vitest";
 import { createChildAgentProcess } from "../../modules/acp/infrastructure/create-child-agent-process.js";
 
@@ -57,6 +60,20 @@ describe("createChildAgentProcess", () => {
 
     proc.kill();
     await proc.exited;
+  });
+
+  it("creates a missing workingDir instead of failing the spawn", async () => {
+    // A fresh workspace volume has no WORK_DIR yet; without the mkdir the
+    // spawn dies with a misleading ENOENT on the binary.
+    const dir = `${tmpdir()}/capd-${process.pid}-${Date.now()}/nested`;
+    const proc = createChildAgentProcess({
+      command: [process.execPath, "-e", `console.log("ok")`],
+      workingDir: dir,
+    });
+    const line = await new Promise<string>((resolve) => proc.onLine(resolve));
+    expect(line).toBe("ok");
+    await proc.exited;
+    rmSync(dirname(dir), { recursive: true, force: true });
   });
 
   it("drops sends after the harness exited", async () => {

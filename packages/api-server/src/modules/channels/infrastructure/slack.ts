@@ -1,3 +1,4 @@
+import type { TtlStore } from "../../../core/ttl-store.js";
 import { match, P } from "ts-pattern";
 import {
   ambientThreadKey,
@@ -661,7 +662,7 @@ export function createSlackWorker(
   agents: () => AgentsService,
   identityLinks: IdentityLinkService,
   oauthConfig: KeycloakOAuthConfig,
-  pendingOAuthFlows: Map<string, SlackOAuthPending>,
+  pendingOAuthFlows: TtlStore<SlackOAuthPending>,
   getInstanceOwner: (agentId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
   /** Delete the shared binding for a Slack channel, owner-agnostic. The in-chat
@@ -1241,7 +1242,7 @@ export function createSlackWorker(
         }
 
         const { state, codeVerifier, codeChallenge } = generatePkce();
-        pendingOAuthFlows.set(state, {
+        await pendingOAuthFlows.set(state, {
           slackUserId: command.userId,
           channelId: command.channelId,
           codeVerifier,
@@ -1279,7 +1280,7 @@ export function createSlackWorker(
         }
 
         const { state, codeVerifier, codeChallenge } = generatePkce();
-        pendingOAuthFlows.set(state, {
+        await pendingOAuthFlows.set(state, {
           slackUserId: command.userId,
           channelId: command.channelId,
           codeVerifier,

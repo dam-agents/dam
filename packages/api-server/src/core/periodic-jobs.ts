@@ -18,13 +18,13 @@ export const PERIODIC_QUEUE_PREFIX = "periodic.";
 export interface PeriodicJobs {
   /** Register a named periodic job. Upserting is idempotent across replicas
    *  and interval changes replace the previous schedule (no stale repeat
-   *  keys). Call before `start()`. */
+   *  keys). A job registered after `start()` begins processing immediately. */
   register(
     name: string,
     everyMs: number,
     tick: () => Promise<unknown>,
   ): Promise<void>;
-  /** Start processing after every job is registered. */
+  /** Start processing registered jobs. */
   start(): void;
   close(): Promise<void>;
 }
@@ -35,6 +35,7 @@ export function createPeriodicJobs(opts: {
 }): PeriodicJobs {
   const queues: Queue[] = [];
   const workers: Worker[] = [];
+  let started = false;
 
   return {
     async register(name, everyMs, tick) {
@@ -61,9 +62,11 @@ export function createPeriodicJobs(opts: {
         opts.log(`periodic job ${name} failed: ${err.message}`);
       });
       workers.push(worker);
+      if (started) void worker.run();
     },
 
     start() {
+      started = true;
       for (const worker of workers) void worker.run();
     },
 

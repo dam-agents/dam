@@ -490,7 +490,7 @@ function RuleRow({
         {rule.pathPattern}
       </span>
       {sourceLabel && (
-        <SourceTag label={sourceLabel} title={`source: ${rule.source}`} />
+        <SourceTag label={sourceLabel} hint={`source: ${rule.source}`} />
       )}
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
@@ -503,7 +503,8 @@ function RuleRow({
           className="h-6 w-6 text-muted-foreground hover:text-destructive"
           onClick={onAction}
           disabled={disabled}
-          title={pendingDelete ? "Undo delete" : "Revoke rule"}
+          aria-label={pendingDelete ? "Undo delete" : "Revoke rule"}
+          tooltip={pendingDelete ? "Undo delete" : "Revoke rule"}
         >
           {pendingDelete ? (
             <RotateCounterclockwise size={11} />
@@ -543,7 +544,8 @@ function PendingAddRow({
         size="icon"
         className="h-6 w-6 text-muted-foreground hover:text-destructive"
         onClick={onCancel}
-        title="Discard pending rule"
+        aria-label="Discard pending rule"
+        tooltip="Discard pending rule"
       >
         <TrashCan size={11} />
       </Button>
@@ -602,7 +604,7 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
       </span>
       <SourceTag
         label={row.sourceBadge}
-        title={`Preview — ${row.sourceBadge} (saved on commit)`}
+        hint={`Preview — ${row.sourceBadge} (saved on commit)`}
       />
       <Badge
         size="sm"
@@ -632,9 +634,9 @@ function VerdictBadge({ verdict }: { verdict: EgressRuleView["verdict"] }) {
   );
 }
 
-function SourceTag({ label, title }: { label: string; title: string }) {
+function SourceTag({ label, hint }: { label: string; hint: string }) {
   return (
-    <Badge size="sm" variant="muted" title={title}>
+    <Badge size="sm" variant="muted" title={hint}>
       {label}
     </Badge>
   );

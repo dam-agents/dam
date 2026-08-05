@@ -1,6 +1,6 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import { CARD_SURFACE } from "@/components/ui/card";
+import { PanelCard } from "@/components/ui/panel-card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import { connectionKindSubtitle } from "../lib/catalog-providers.js";
@@ -40,26 +40,25 @@ export function ConnectionGroupCard({
 }: Props) {
   const { provider, connections } = group;
   return (
-    <section
-      data-testid={`connection-group-${provider.id}`}
-      className={CARD_SURFACE}
-    >
-      <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
+    <PanelCard
+      testId={`connection-group-${provider.id}`}
+      title={provider.title}
+      icon={
         <ConnectionIcon
           iconSlug={provider.iconSlug}
           alt=""
           size={16}
           className="shrink-0 text-foreground/80"
         />
-        <h3 className="truncate text-[15px] font-semibold text-foreground">
-          {provider.title}
-        </h3>
-        {showCount && (
-          <span className="text-sm text-muted-foreground">
+      }
+      titleAccessory={
+        showCount && (
+          <span className="shrink-0 text-sm text-muted-foreground">
             {connections.length} connection{connections.length === 1 ? "" : "s"}
           </span>
-        )}
-      </header>
+        )
+      }
+    >
       <GithubAppInstallHint connections={connections} />
       <div className="divide-y divide-border">
         {connections.map((c) => (
@@ -75,6 +74,6 @@ export function ConnectionGroupCard({
           />
         ))}
       </div>
-    </section>
+    </PanelCard>
   );
 }

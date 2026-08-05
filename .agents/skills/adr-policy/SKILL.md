@@ -18,8 +18,8 @@ time. The ADR model is an immutable event log with two projections (architecture
 generated index).
 
 Enforcement is split by what needs judgment. This skill owns **log integrity and
-decision judgment**. It does **not** rewrite ADRs — it surfaces findings, the user
-decides.
+decision judgment**. It does **not** rewrite ADRs — its output is a set of findings;
+acting on them is separate work outside this skill.
 
 ## Scope: the ADR log only
 
@@ -91,9 +91,9 @@ If nothing is wrong, the section is just the immutability `✅` line.
 
 ## Guidelines
 
-- **Read-only.** Never edit ADRs; propose, the user decides. Fixing a re-litigation or
-  summary problem means authoring or amending an ADR through the [`/adr`](../adr/SKILL.md)
-  flow, not editing here.
+- **Read-only.** This skill never edits ADRs — it only surfaces findings. Fixing a
+  re-litigation or summary problem is separate work outside this skill's run: authoring
+  or amending an ADR through the [`/adr`](../adr/SKILL.md) flow, not editing here.
 - **Never own immutability.** The script is authoritative. This skill only relays it.
 - **One pass with doc-drift.** On a PR touching `docs/adrs/` or `docs/architecture/`, the
   code-review agent runs this skill and [`doc-drift`](../doc-drift/SKILL.md) together and

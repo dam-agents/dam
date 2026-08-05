@@ -11,13 +11,13 @@ import { cn } from "@/lib/utils";
  */
 export function IconButton({
   onClick,
-  title,
+  label,
   hoverTone,
   className,
   children,
 }: {
   onClick: () => void | Promise<void>;
-  title: string;
+  label: string;
   hoverTone: "accent" | "danger" | "neutral";
   className?: string;
   children: ReactNode;
@@ -34,7 +34,7 @@ export function IconButton({
       variant="ghost"
       size="icon"
       onClick={onClick}
-      title={title}
+      aria-label={label}
       className={cn("h-7 w-7", tone, className)}
     >
       {children}

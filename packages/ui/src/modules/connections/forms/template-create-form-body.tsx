@@ -187,7 +187,7 @@ export function TemplateCreateFormBody({
       <Button
         onClick={awaitingPopup ? refocusPopup : onSubmit}
         disabled={pending && !awaitingPopup}
-        title={
+        tooltip={
           awaitingPopup
             ? "Bring the authorization window back to the front"
             : undefined

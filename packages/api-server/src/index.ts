@@ -118,6 +118,7 @@ import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infra
 import { sweepLegacyCredentialSecrets } from "./modules/connections/sweep/legacy-secret-sweep.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
+import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -174,6 +175,22 @@ const bullConnection = createBullConnection(
 const redisBus = createRedisBus(config.redisUrl, {
   password: config.redisPassword ?? undefined,
 });
+// Dedicated general-purpose Redis client for cross-replica shared state
+// (session presence keys, OAuth/bind handoff TTL stores).
+const sharedRedis = createBullConnection(
+  config.redisUrl,
+  config.redisPassword ?? undefined,
+) as import("ioredis").Redis;
+
+// Periodic background work runs as BullMQ job schedulers, one queue per job
+// ("periodic.<name>") — one execution per period across replicas, and a
+// hung tick can only stall its own lane. Ticks stay idempotent; the queue
+// is scheduling and visibility, never correctness. Jobs register below;
+// periodicJobs.start() runs after the last registration.
+const periodicJobs = createPeriodicJobs({
+  connection: bullConnection,
+  log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
+});
 
 const k8sClient = createK8sClient(api, config.namespace);
 const agentsRepo = createAgentsRepository(k8sClient);
@@ -222,7 +239,9 @@ const runtimeDelivery = composeRuntimeDelivery({
   },
   harnessServerUrl: config.harnessServerUrl,
 });
-runtimeDelivery.sweep.start();
+await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
+  runtimeDelivery.sweep.tick(),
+);
 const contributionsSettledPort = {
   status: runtimeDelivery.contributionsStatus,
   statusMany: runtimeDelivery.contributionsStatusMany,
@@ -232,9 +251,18 @@ const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 const secretStores = createSecretStoreRegistry();
 secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
+// Redis-backed handoff stores: the browser callback leg may land on any replica.
+const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
 const connectionsBoot = composeConnectionsAtBoot({
   db,
   secretStore: secretStores.default(),
+  // Same Redis namespace as the app-side engine — flows are one namespace
+  // regardless of which composition minted them.
+  pendingFlowStore: createRedisTtlStore(
+    sharedRedis,
+    "oauth:connections",
+    OAUTH_FLOW_TTL_MS,
+  ),
 });
 const connectionsServiceFor = (ownerId: string) =>
   composeConnectionsForOwner({
@@ -355,14 +383,30 @@ const identityLinkService = createIdentityLinkService({
   delete: deleteIdentityLink(db),
 });
 
-const pendingSlackOAuthFlows = new Map<string, SlackOAuthPending>();
-const pendingTelegramOAuthFlows = new Map<string, TelegramOAuthPending>();
+const pendingSlackOAuthFlows = createRedisTtlStore<SlackOAuthPending>(
+  sharedRedis,
+  "oauth:slack",
+  OAUTH_FLOW_TTL_MS,
+);
+const pendingTelegramOAuthFlows = createRedisTtlStore<TelegramOAuthPending>(
+  sharedRedis,
+  "oauth:telegram",
+  OAUTH_FLOW_TTL_MS,
+);
 const telegramBindFlows = config.telegramBotToken
-  ? createTelegramBindFlowStore()
+  ? createTelegramBindFlowStore({
+      store: createRedisTtlStore(
+        sharedRedis,
+        "bind:telegram",
+        OAUTH_FLOW_TTL_MS,
+      ),
+    })
   : undefined;
-// Unconditional: a trivial in-memory store, needed whenever the Slack OAuth
-// callback is mounted (real tokens or e2e). The bind command mints entries.
-const slackBindFlows = createSlackBindFlowStore();
+// Unconditional: needed whenever the Slack OAuth callback is mounted (real
+// tokens or e2e). The bind command mints entries.
+const slackBindFlows = createSlackBindFlowStore({
+  store: createRedisTtlStore(sharedRedis, "bind:slack", OAUTH_FLOW_TTL_MS),
+});
 const slackOauthCallbackUrl =
   config.slackOauthCallbackUrl ??
   `${config.uiBaseUrl}/api/slack/oauth/callback`;
@@ -530,7 +574,9 @@ const {
     ? [new URL(config.objectStorageAgentEndpoint).hostname]
     : [],
 });
-deliverySweeper.start();
+await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
+  deliverySweeper.tick(),
+);
 
 // Per-agent cleanup hooks fired after a successful K8s delete. Each
 // module's adapter clears its own table; failures log + continue. The
@@ -618,7 +664,6 @@ const experimentInactivityMs = config.experimentInactivitySeconds * 1000;
 const experimentInactivitySweep = composeExperimentInactivitySweep({
   db,
   inactivityMs: experimentInactivityMs,
-  intervalMs: Math.min(experimentInactivityMs, 5 * 60_000),
   batchSize: 200,
   pin: experimentPin,
   artifactLibraryFor: (owner) =>
@@ -629,7 +674,11 @@ const experimentInactivitySweep = composeExperimentInactivitySweep({
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary,
 });
-experimentInactivitySweep.start();
+await periodicJobs.register(
+  "experiment-inactivity-sweep",
+  Math.min(experimentInactivityMs, 5 * 60_000),
+  () => experimentInactivitySweep.tick(),
+);
 
 // Converge experiment pins to database truth — experiments survive restarts
 // (unlike sessions), so this reconciles rather than blanket-clears.
@@ -650,17 +699,6 @@ void reconcileExperimentPins({
     process.stderr.write(`[experiments] pin reconciliation failed: ${err}\n`);
   },
 );
-
-// Periodic background work runs as BullMQ job schedulers, one queue per job
-// ("periodic.<name>") — one execution per period across replicas, and a
-// hung tick can only stall its own lane. Ticks stay idempotent; the queue
-// is scheduling and visibility, never correctness. The remaining interval
-// sweepers (approvals delivery, cron sweep, OAuth refresh) migrate here
-// incrementally.
-const periodicJobs = createPeriodicJobs({
-  connection: bullConnection,
-  log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
-});
 
 // Cross-store orphan reap every 30 minutes — cheap diff scans, orphans are
 // rare and non-urgent.
@@ -695,17 +733,9 @@ schedulesBoot.runner.restoreAll().catch((err) => {
   );
 });
 
-try {
-  const cleared = await agentsRepo.clearActiveSessions();
-  if (cleared)
-    process.stderr.write(
-      `[boot] cleared ${cleared} stale active-session pin(s)\n`,
-    );
-} catch (err) {
-  process.stderr.write(
-    `[boot] clearActiveSessions failed: ${(err as Error).message}\n`,
-  );
-}
+// Stale active-session pins (a replica that died holding sessions) are
+// cleared by the session-presence reconcile periodic job — a boot-time
+// blanket clear would wrongly drop pins held by other live replicas.
 
 // Owner-scoped agents factory for the harness surface (the spawn primitive):
 // a driver agent spawns an Invocation target = create an ephemeral Agent +
@@ -759,10 +789,11 @@ const invocationLivenessSweep = composeInvocationLivenessSweep({
   db,
   agentsFor: harnessAgentsServiceFor,
   k8s: k8sClient,
-  intervalMs: 60_000,
   batchSize: 200,
 });
-invocationLivenessSweep.start();
+await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
+  invocationLivenessSweep.tick(),
+);
 
 // Agent Sweep (#2816): generic GC that deletes any Sweepable agent once it
 // hibernates (after its Lifetime grace, if any). Keyed off Agent state, never
@@ -772,11 +803,12 @@ invocationLivenessSweep.start();
 const agentSweep = createAgentSweep({
   listAgents: () => agentsRepo.list(),
   agentsFor: harnessAgentsServiceFor,
-  intervalMs: 60_000,
 });
-agentSweep.start();
+await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
 const { server: apiServer } = startApiServerApp({
+  periodicJobs,
+  sharedRedis,
   config,
   api,
   db,
@@ -855,17 +887,13 @@ async function shutdown() {
   skillsCleanupSub.unsubscribe();
   usage.stop();
   audit.stop();
-  await deliverySweeper.stop();
-  await experimentInactivitySweep.stop();
-  await invocationLivenessSweep.stop();
-  await agentSweep.stop();
   await periodicJobs.close();
   await channelManager.stopAll();
-  await runtimeDelivery.sweep.stop();
   await runtimeDelivery.worker.close();
   await runtimeDelivery.queue.close();
   await schedulesBoot.close();
   await redisBus.close();
+  await sharedRedis.quit().catch(() => {});
   await sql.end();
   extAuthzGrpcServer.tryShutdown(() => {});
   harnessApiServer.close();

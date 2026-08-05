@@ -11,17 +11,14 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// GVRs / GVKs for the reconciled custom resources: the durable Agent plus the
-// ephemeral Run, each watched by its own informer and worker.
+// GVRs / GVKs for the reconciled custom resources.
 var (
 	AgentsGVR = apiv1.GroupVersion.WithResource("agents")
-	RunsGVR   = apiv1.GroupVersion.WithResource("runs")
 	// UserBudgetsGVR is read live at each budget check (no informer):
 	// 0→1 transitions are rare and a live read keeps enforcement unlagged.
 	UserBudgetsGVR = apiv1.GroupVersion.WithResource("userbudgets")
 
 	agentGVK = apiv1.GroupVersion.WithKind("Agent")
-	runGVK   = apiv1.GroupVersion.WithKind("Run")
 )
 
 // FromCacheObject converts an informer/lister/dynamic-client object into a typed
@@ -79,11 +76,4 @@ func (g agentLister) Get(name string) (*apiv1.Agent, error) {
 		return nil, err
 	}
 	return FromCacheObject[apiv1.Agent](obj)
-}
-
-// runOwnerRef builds the controller owner reference to a Run CR. Children the
-// reconciler renders in the agent namespace carry this so K8s GC
-// cascade-deletes them with the Run.
-func runOwnerRef(run *apiv1.Run) metav1.OwnerReference {
-	return *metav1.NewControllerRef(run, runGVK)
 }

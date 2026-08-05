@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 
 import { MarkdownCodeBlock } from "@/components/markdown-code-block";
 import { DisclosureToggle } from "@/components/ui/disclosure";
+import { externalLinkProps } from "@/lib/external-link";
 
 import {
   ARTIFACT_LINK_PREFIX,
@@ -114,7 +115,7 @@ export function Markdown({
           );
         }
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer">
+          <a href={href} {...externalLinkProps}>
             {children}
           </a>
         );

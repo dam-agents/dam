@@ -208,7 +208,7 @@ func buildOuterListener(p bootstrapParams) ev {
 		"stat_prefix": "agent_egress",
 		"upgrade_configs": []any{
 			ev{"upgrade_type": "CONNECT"},
-			// dam-run opens a WebSocket to the harness /run endpoint.
+			// Agent processes may open WebSockets to upstream services.
 			ev{"upgrade_type": "websocket"},
 		},
 		"http_filters": []any{

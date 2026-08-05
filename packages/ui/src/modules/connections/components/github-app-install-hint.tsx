@@ -2,6 +2,7 @@ import { Launch } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
 import { Callout } from "@/components/ui/callout";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { getBrand } from "../../../brand.js";
 import { githubAppInstallUrl } from "../lib/github-app-install-url.js";
@@ -50,8 +51,7 @@ export function GithubAppInstallLink({
   return (
     <a
       href={url}
-      target="_blank"
-      rel="noreferrer noopener"
+      {...externalLinkProps}
       className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-accent hover:underline"
     >
       Install on GitHub <Launch size={13} aria-hidden />

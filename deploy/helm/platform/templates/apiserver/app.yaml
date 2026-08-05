@@ -43,6 +43,10 @@ metadata:
     istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
 spec:
   type: ClusterIP
+  # MCP streamable-HTTP sessions are held in-process per replica; pin each
+  # caller (a per-agent gateway pod, stable IP) to one replica so a session's
+  # follow-up requests land where the session lives.
+  sessionAffinity: ClientIP
   ports:
     - port: {{ .Values.apiServer.harnessServerPort }}
       targetPort: harness
@@ -62,7 +66,7 @@ metadata:
     app.kubernetes.io/component: apiserver
   {{- include "platform.annotations" (dict "root" $ "component" .Values.apiServer) | nindent 2 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.apiServer.replicas | default 1 }}
   strategy:
     type: RollingUpdate
     rollingUpdate:

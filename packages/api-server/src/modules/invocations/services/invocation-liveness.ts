@@ -33,9 +33,8 @@ import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 
 export interface InvocationLivenessSweep {
-  start(): void;
-  stop(): Promise<void>;
-  /** Run one scan synchronously. Exposed for tests; `start()` schedules it. */
+  /** One idempotent scan — scheduled via the shared periodic-jobs queue
+   *  (one execution per period across replicas). */
   tick(): Promise<void>;
 }
 
@@ -49,7 +48,6 @@ export interface CreateInvocationLivenessSweepDeps {
   agentsFor: (owner: string) => AgentsService;
   /** Reads pod restart status to catch a target crashed mid-turn. */
   k8s: Pick<K8sClient, "readAgentPodRestart">;
-  intervalMs: number;
   /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
   now?: () => Date;
@@ -59,7 +57,6 @@ export function createInvocationLivenessSweep(
   deps: CreateInvocationLivenessSweepDeps,
 ): InvocationLivenessSweep {
   const now = deps.now ?? (() => new Date());
-  let timer: NodeJS.Timeout | null = null;
   let running = false;
 
   /** Fail a `running` Invocation and eagerly reap its target Agent. */
@@ -136,27 +133,5 @@ export function createInvocationLivenessSweep(
     }
   }
 
-  return {
-    tick,
-    start() {
-      if (timer) return;
-      const jitter = Math.floor(Math.random() * deps.intervalMs);
-      timer = setTimeout(() => {
-        tick().catch(() => {});
-        timer = setInterval(() => {
-          tick().catch(() => {});
-        }, deps.intervalMs);
-        timer.unref?.();
-      }, jitter);
-      timer.unref?.();
-    },
-    async stop() {
-      if (timer) {
-        clearTimeout(timer);
-        clearInterval(timer);
-        timer = null;
-      }
-      while (running) await new Promise((r) => setTimeout(r, 50));
-    },
-  };
+  return { tick };
 }

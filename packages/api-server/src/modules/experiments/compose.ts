@@ -134,7 +134,6 @@ export function composeExperimentsForOwner(opts: {
 export function composeExperimentInactivitySweep(opts: {
   db: Db;
   inactivityMs: number;
-  intervalMs: number;
   batchSize: number;
   pin?: ExperimentPinPort;
   /** Owner-scoped library factory for the terminal dashboard snapshot. */
@@ -151,7 +150,6 @@ export function composeExperimentInactivitySweep(opts: {
   return createExperimentInactivitySweep({
     repo,
     inactivityMs: opts.inactivityMs,
-    intervalMs: opts.intervalMs,
     batchSize: opts.batchSize,
     onReaped: async ({
       id,

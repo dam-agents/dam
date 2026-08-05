@@ -1,3 +1,4 @@
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { LineageRow, SandboxGroup } from "../lib/sandbox-groups.js";
@@ -25,10 +26,7 @@ export function SandboxGroupCard({
   return (
     <section>
       <div
-        role={deleted ? undefined : "button"}
-        tabIndex={deleted ? undefined : 0}
-        onClick={deleted ? undefined : open}
-        onKeyDown={(e) => !deleted && e.key === "Enter" && open()}
+        {...clickableProps(deleted ? undefined : open)}
         // The hairline under the header is what scopes the group now that the
         // container box is gone.
         className={cn(

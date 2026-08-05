@@ -63,14 +63,12 @@ export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   k8s: Pick<K8sClient, "readAgentPodRestart">;
-  intervalMs: number;
   batchSize: number;
 }): InvocationLivenessSweep {
   return createInvocationLivenessSweep({
     repo: createInvocationsRepository(opts.db),
     agentsFor: opts.agentsFor,
     k8s: opts.k8s,
-    intervalMs: opts.intervalMs,
     batchSize: opts.batchSize,
   });
 }

@@ -4,7 +4,12 @@ import type { Skill } from "api-server-api";
 import { badgeVariants } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip } from "@/components/ui/tooltip";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
+
+const DRIFT_HINT =
+  "Upstream changed since install — update to the latest version";
 
 /**
  * One skill inside a source card: name (+ drift "Update" affordance) and
@@ -59,29 +64,34 @@ export function SkillRow({
             </p>
           )}
           {hasDrift && (
-            <button
-              type="button"
-              onClick={onUpdate}
-              disabled={disabled}
-              title="Upstream changed since install — update to the latest version"
-              className={cn(
-                badgeVariants({ variant: "info", size: "sm" }),
-                "shrink-0 gap-1 px-2 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50",
-              )}
-            >
-              <Renew size={11} /> Update
-            </button>
+            <Tooltip content={DRIFT_HINT}>
+              <button
+                type="button"
+                onClick={onUpdate}
+                disabled={disabled}
+                /* A disabled button opens no tooltip, so the hint falls back to
+                   `title` exactly where "why can't I click this?" is asked. */
+                title={disabled ? DRIFT_HINT : undefined}
+                className={cn(
+                  badgeVariants({ variant: "info", size: "sm" }),
+                  "shrink-0 gap-1 px-2 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50",
+                )}
+              >
+                <Renew size={11} /> Update
+              </button>
+            </Tooltip>
           )}
           {hasDrift && compareUrl && (
-            <a
-              href={compareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="View changes on GitHub"
-              className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Compare size={13} />
-            </a>
+            <Tooltip content="View changes on GitHub">
+              <a
+                href={compareUrl}
+                {...externalLinkProps}
+                aria-label="View changes on GitHub"
+                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Compare size={13} />
+              </a>
+            </Tooltip>
           )}
         </div>
         {skill.description && (

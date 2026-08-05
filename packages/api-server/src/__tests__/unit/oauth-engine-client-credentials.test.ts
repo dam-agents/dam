@@ -1,3 +1,4 @@
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import {
   createOAuthEngine,
@@ -15,6 +16,7 @@ interface RecordedCall {
 function makeEngine(respond: (call: RecordedCall) => Response) {
   const calls: RecordedCall[] = [];
   const engine = createOAuthEngine({
+    pendingStore: createMemoryTtlStore(600_000),
     now: () => NOW_MS,
     fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
       const call: RecordedCall = {
@@ -131,14 +133,14 @@ describe("oauth engine client_credentials grant", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("start() rejects a provider without an authorizationUrl", () => {
+  it("start() rejects a provider without an authorizationUrl", async () => {
     const { engine } = makeEngine(() => jsonResponse({ access_token: "tok" }));
-    expect(() =>
+    await expect(
       engine.start({
         provider: provider(),
         redirectUri: "https://app.example/cb",
         ctx: {},
       }),
-    ).toThrow(/authorizationUrl/);
+    ).rejects.toThrow(/authorizationUrl/);
   });
 });
