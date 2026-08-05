@@ -57,7 +57,8 @@ run. This file is the *how-to-operate-in-this-pod* layer.
 ## Starting a conversation
 
 At the **start of every new conversation**, before anything else, enumerate
-existing runs and offer to act on them. Scan `$GEPA_OUTPUT_ROOT` (`~/gepa-runs`)
+existing runs and offer to act on them. Scan `$GEPA_OUTPUT_ROOT`
+(`~/work/gepa-runs`)
 for run directories (each has a `driver.py` and a `run_dir/`) and classify each
 as:
 
@@ -106,7 +107,8 @@ estimate, but an informed user may pre-authorize it (see below).
 4. **You've presented a budget/cost estimate.** State the `max_metric_calls`
    you'll set, the resulting rough LLM-call count (metric calls for the task
    model, plus roughly one reflection call per iteration for the strong
-   model), that it runs autonomously, and the keep-awake tradeoff (below).
+   model), that it runs autonomously, and that the running work holds the
+   pod awake (no scale-to-zero) until it finishes.
    Then **wait for an explicit go-ahead — unless the user already
    pre-authorized this run** ("just launch it," "don't ask"):
    pre-authorization waives the *wait*, never the estimate — show the numbers,
@@ -115,14 +117,32 @@ estimate, but an informed user may pre-authorize it (see below).
 
 ## Run discipline
 
-- **Launch backgrounded** so you stay conversational and can poll while it
-  runs. Keep the PID and log in the run directory:
+- **First run in this pod:** create the runs root lazily —
+  `mkdir -p "$GEPA_OUTPUT_ROOT"`. It is deliberately never baked into the
+  image: a pre-seeded folder would make the work dir non-empty and block the
+  platform's repo seed (which clones into the work-dir root and refuses a
+  non-empty dir). If `~/work` is a seeded git repo, also append
+  `gepa-runs/` to `.git/info/exclude` (a local ignore — never touch tracked
+  files) so the checkout stays clean; any target repo the run needs is
+  cloned inside the run directory, so outputs never touch it either way.
+- **Launch as a harness background task** (your backgrounded-Bash facility),
+  never a bare detached `nohup … &`. The platform's background-work contract
+  reports harness-registered tasks to the runtime: the pod is held awake for
+  as long as the run lives, and the finishing task wakes you for a follow-up
+  turn — **report the result to the user then** (the best candidate and the
+  `run_dir/` path), don't wait to be asked. A detached `nohup` process is
+  invisible to that contract, so the pod can hibernate mid-run. Still keep
+  the PID and log in the run directory for monitoring and crash recovery:
 
   ```sh
+  # run this script AS a backgrounded harness task (your Bash tool's
+  # run_in_background) — NEVER as a foreground command: the tool's timeout
+  # would SIGTERM the whole process group, run included, mid-flight
   dir="$GEPA_OUTPUT_ROOT/<run-id>"
   cd "$dir"
-  nohup python driver.py > run.log 2>&1 &
-  echo $! > run.pid
+  python driver.py > run.log 2>&1 &
+  pid=$!; echo "$pid" > run.pid
+  wait "$pid"
   ```
 
 - **Always pass `run_dir`** in the driver, pointing inside the run's directory
@@ -155,13 +175,17 @@ but the uv cache is on persistent `$HOME`, so reinstall extras after a restart
 
 ## Surviving hibernation (resume-on-wake)
 
-The pod **scales to zero when the session goes idle** — no active turn, no
-queued prompt, no open terminal/SSH session. That kills any background driver.
-The run directory lives on persistent `$HOME`, so the run is recoverable but
-**does not progress while you're not engaged**.
+With the launch discipline above, a running optimization **holds the pod
+awake** (reported background work) and hibernation mid-run is the exception,
+not the rule. It can still happen — a pod restart or eviction, a crash, or a
+run launched the legacy detached way — and then the pod scales to zero once
+the session goes idle. The run directory lives on persistent `$HOME`, so the
+run is recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its
-`run.pid` is dead and it hasn't exhausted its budget, reinstall any extra deps
+`run.pid` no longer names the live run (the same cmdline-validated check as the
+start-of-conversation scan — a recycled PID after a pod restart must not
+skip the resume) and it hasn't exhausted its budget, reinstall any extra deps
 (the venv reset) and relaunch the **identical** driver — same `run_dir`, same
 `max_metric_calls`. GEPA detects the existing state in `run_dir`, restores it,
 and continues only up to the original budget — the budget is a **total**, not
@@ -170,12 +194,11 @@ a per-invocation count, so never inflate it on resume (and remove a leftover
 reached its budget is done; raising the budget is a new, re-gated decision,
 not a resume.
 
-**Keep-awake escape hatch:** for a long optimization that must progress
-continuously (e.g. overnight), tell the user to keep a **terminal or SSH
-session open** to this agent — that pins the pod awake, so a backgrounded run
-completes without hibernation gaps. Genuinely unattended overnight progress is
-a future capability; today a run advances only while you're engaged or a
-session is open.
+**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
+the background-work contract (launched detached, or the report was refused),
+an open **terminal or SSH session** pins the pod awake until it finishes —
+but the primary mechanism is launching as a reported harness task in the
+first place.
 
 ## Hard guardrails
 
@@ -222,9 +245,12 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
 
 ## Where things live
 
-- **Per-run directory** = `$GEPA_OUTPUT_ROOT/<run-id>/` (`~/gepa-runs`, on
-  persistent `$HOME`). Holds `driver.py`, the dataset, any `repo/` clone,
-  `run.pid`, `run.log` (driver stdout), and `run_dir/` (GEPA's own state).
+- **Per-run directory** = `$GEPA_OUTPUT_ROOT/<run-id>/` (`~/work/gepa-runs`,
+  in the work dir — where the UI file browser and the terminal land — on
+  persistent `$HOME`; created lazily, see Run discipline). Holds `driver.py`,
+  the dataset, any `repo/` clone, `run.pid`, `run.log` (driver stdout), and
+  `run_dir/` (GEPA's own state). Always give the user the full path when
+  reporting.
 - **GEPA state** under `run_dir/`: `gepa_state.bin` (the checkpoint that makes
   reruns resume), `run_log.txt` (iteration log), `candidates.json` (every
   candidate proposed so far), and `generated_best_outputs_valset/` (best
