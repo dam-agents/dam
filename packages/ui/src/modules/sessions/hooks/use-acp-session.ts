@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { SessionMode } from "api-server-api";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
@@ -38,13 +39,17 @@ export function useAcpSession(
   // Derive busy from the projection instead of explicit setBusy calls in
   // sendPrompt / resume / disconnect paths. The projection owns streaming
   // state on every message, so "any streaming assistant" is authoritative.
-  const busy = hasStreamingAssistant(messages);
+  const busy =
+    sessionMode !== SessionMode.Terminal && hasStreamingAssistant(messages);
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
   // Mirror busy into the list cache's `running` so the row keeps its blue dot
   // when it stops being the open session (the poll-fed `running` lags a switch).
+  const prevBusyRef = useRef(busy);
   useEffect(() => {
+    if (prevBusyRef.current === busy) return;
+    prevBusyRef.current = busy;
     if (selectedAgent && sessionId) {
       setSessionRunning(selectedAgent, sessionId, busy);
     }
