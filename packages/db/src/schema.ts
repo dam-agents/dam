@@ -314,20 +314,12 @@ export const agentSkillPublishes = pgTable(
      *  clock that keeps unresolvable records off the anonymous rate limit. */
     prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
     prEtag: text("pr_etag"),
-    /** Consecutive failed attempts — the backoff multiplier and, past a
-     *  bound, the retirement gate. Only attempts that could have answered
-     *  count (an anonymous read, a warm pod — a sleeping agent's record is
-     *  skipped, not failed); reset whenever an attempt learns anything, so
-     *  retirement means "kept failing for ~a month", never "was asleep". */
+    /** Dormant: the resolver neither reads nor writes it — resolution is a
+     *  flat hourly pass with no failure accounting. Kept only because
+     *  migration 0020 already shipped. */
     prStateCheckFailures: integer("pr_state_check_failures")
       .notNull()
       .default(0),
-    /** Set once the anonymous read has 404'd; the record then resolves only
-     *  through a publishing agent's pod. Deliberately never unset: the pod
-     *  path is strictly more capable than the anonymous one, so a stale flag
-     *  (a repo later made public) costs anonymous-budget optimality, never
-     *  correctness — and the row's lifetime is bounded by its agent. */
-    prNeedsPod: boolean("pr_needs_pod").notNull().default(false),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );

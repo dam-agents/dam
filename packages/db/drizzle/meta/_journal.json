@@ -148,13 +148,6 @@
       "when": 1785923409904,
       "tag": "0020_great_scarlet_witch",
       "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1785933070549,
-      "tag": "0021_groovy_lizard",
-      "breakpoints": true
     }
   ]
 }

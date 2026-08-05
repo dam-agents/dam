@@ -5,7 +5,6 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "../agents/infrastructure/agents-repository.js";
-import { computeAgentState } from "../agents/infrastructure/agent-mappers.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
@@ -92,12 +91,6 @@ export function composePrStateResolver(deps: {
       runtimeClient: createAgentRuntimeSkillsClient(deps.namespace),
       log: deps.log,
     }),
-    listRunningAgentIds: async () => {
-      const agents = await deps.agents.list();
-      return agents
-        .filter((agent) => computeAgentState(agent) === "running")
-        .map((agent) => agent.id);
-    },
     log: deps.log,
   });
 }

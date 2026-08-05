@@ -7,6 +7,7 @@ import {
   and,
   inArray,
   isNull,
+  lte,
   or,
   sql,
 } from "db";
@@ -25,110 +26,37 @@ export interface AgentSkillsRepository {
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
 
-  /** Anonymous-lane records whose pull request is due for a re-read as of
-   *  `now`, across every agent — the resolver is background work, not
-   *  owner-scoped. Due means the per-record backoff has elapsed: hourly for a
-   *  record whose last attempt learned something, doubling per consecutive
-   *  failed attempt up to daily; a record that keeps failing outright is
-   *  eventually retired. Records marked `pr_needs_pod` never appear here —
-   *  they are the pod lane's. */
+  /** Records whose pull request is due for a re-read as of `now`, across
+   *  every agent — the resolver is background work, not owner-scoped. Due
+   *  means never attempted, or last attempted over an hour ago. */
   listPrStateCandidates(now: Date, limit: number): Promise<PrStateCandidate[]>;
-  /** Pod-lane records due for a re-read: marked `pr_needs_pod`, same backoff
-   *  and retirement as the anonymous lane. The caller filters to warm
-   *  publishers before attempting anything, so rows returned here cost
-   *  nothing until a pod is actually read. */
-  listPodPrStateCandidates(
-    now: Date,
-    limit: number,
-  ): Promise<PodPrStateCandidate[]>;
 
   /** Persist a resolved state. Terminal states (`merged`, `closed`) are
    *  written once and the record is never selected for a re-read again, so
-   *  this is the only writer of `prState`. Also resets the failure counter —
-   *  the record is back in the hourly lane. */
+   *  this is the only writer of `prState`. */
   setPrState(
     prUrl: string,
     next: { prState: PrState; checkedAt: Date; etag: string | null },
   ): Promise<void>;
-  /** Stamp an attempt that yielded no new state, so the record's backoff clock
-   *  moves even when nothing was learned. Never touches `prState` — a
-   *  rate-limit blip must not erase a resolved `merged`. `confirmed` (a 304)
-   *  keeps the validator and resets the failure counter; `failed` discards
-   *  the validator and grows the backoff. There is no outcome for "nothing
-   *  was attempted": a record whose publishers were all cold is skipped
-   *  without a stamp, keeping its place in the queue. */
-  touchPrState(
-    prUrl: string,
-    checkedAt: Date,
-    outcome: "confirmed" | "failed",
-  ): Promise<void>;
-  /** Flag every record of this pull request as unresolvable anonymously,
-   *  discarding the validator. */
-  markPrNeedsPod(prUrl: string): Promise<void>;
+  /** Stamp an attempt that yielded no new state, so the record waits its
+   *  hour before the next one. Never touches `prState` — a blip must not
+   *  erase a resolved `merged`. */
+  touchPrState(prUrl: string, checkedAt: Date): Promise<void>;
 
   deleteByAgent(agentId: string): Promise<void>;
 }
 
 type PrState = NonNullable<SkillPublishRecord["prState"]>;
 
-/** One anonymous-lane row: a pull request the resolver may read anonymously,
- *  with its publisher (several agents can carry the same pull request — the
- *  service dedupes by URL) and the stored validator. */
+/** One candidate row: a pull request the resolver may read, with its
+ *  publisher (several agents can carry the same pull request — the service
+ *  dedupes by URL, keeping every agentId for the pod escalation) and the
+ *  stored validator. */
 export interface PrStateCandidate {
   agentId: string;
   prUrl: string;
   prEtag: string | null;
 }
-
-/** One pod-lane row: a pull request that resolves only through a publishing
- *  agent's pod. No validator — the pod path reads no ETag back. */
-export interface PodPrStateCandidate {
-  agentId: string;
-  prUrl: string;
-}
-
-/** Consecutive outright failures after which a record is retired from the
- *  candidate set (~a month at the daily backoff cap), so dead records drain
- *  instead of holding a daily slot forever. */
-const MAX_CHECK_FAILURES = 30;
-
-/* Both lane queries share the same eligibility, differing only in which lane
- * a record belongs to (`pr_needs_pod`). */
-
-// Terminal states are excluded here, not filtered later: `merged` and
-// `closed` are immutable, so the working set shrinks with use instead of
-// growing.
-const nonTerminal = or(
-  isNull(agentSkillPublishes.prState),
-  inArray(agentSkillPublishes.prState, ["draft", "open"]),
-);
-
-const notRetired = sql`${agentSkillPublishes.prStateCheckFailures} < ${MAX_CHECK_FAILURES}`;
-
-// Throttle every record. A conditional request is NOT exempt from the
-// anonymous rate limit — measured against api.github.com, each 304 decrements
-// x-ratelimit-remaining by one exactly like a 200 — so an ETag saves
-// bandwidth but buys no budget, and re-checking on every tick would let ~10
-// open pull requests exhaust the instance's whole hourly allowance. A record
-// never attempted is exempt, so a fresh publish still resolves on the next
-// tick. Two traps: the inner least() caps the *exponent* (power() is double
-// precision and overflows at 2^1024, failing the whole query — WHERE
-// conditions have no guaranteed evaluation order, so the retirement bound
-// cannot shield it), and `now` crosses as an ISO string — raw sql`` params
-// skip drizzle's column mappers, and drizzle's postgres-js driver replaces
-// the driver's own date serializers with pass-throughs at construction, so a
-// Date instance would reach the wire encoder unserialized and throw at Bind.
-const backoffElapsed = (now: Date) =>
-  or(
-    isNull(agentSkillPublishes.prStateCheckedAt),
-    sql`${agentSkillPublishes.prStateCheckedAt} + least(power(2, least(${agentSkillPublishes.prStateCheckFailures}, 5)), 24) * interval '1 hour' <= ${now.toISOString()}`,
-  );
-
-// NULLS FIRST, explicitly: Postgres sorts NULL last by default, which would
-// put never-attempted records — a fresh publish, the case a user is actually
-// watching — behind every already-attempted one and starve them whenever the
-// backlog exceeds the per-tick page.
-const oldestAttemptFirst = sql`${agentSkillPublishes.prStateCheckedAt} asc nulls first`;
 
 function generatePublishId(): string {
   return `pub-${crypto.randomBytes(8).toString("hex")}`;
@@ -257,6 +185,18 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
     },
 
     async listPrStateCandidates(now, limit) {
+      // Re-check any one record at most hourly. A conditional request is NOT
+      // exempt from the anonymous rate limit — measured against
+      // api.github.com, each 304 decrements x-ratelimit-remaining by one
+      // exactly like a 200 — so an ETag saves bandwidth but buys no budget,
+      // and re-checking on every tick would let ~10 open pull requests
+      // exhaust the instance's whole hourly allowance. A record never
+      // attempted is exempt, so a fresh publish still resolves on the next
+      // tick. The interval math deliberately stays in JS: a Date through the
+      // column mapper is safe, whereas a raw sql`` param skips the mappers
+      // (and drizzle's postgres-js driver disables the driver's own date
+      // serializers), which is what silently killed this query once before.
+      const staleBefore = new Date(now.getTime() - 60 * 60 * 1000);
       const rows = await db
         .select({
           agentId: agentSkillPublishes.agentId,
@@ -266,33 +206,24 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         .from(agentSkillPublishes)
         .where(
           and(
-            eq(agentSkillPublishes.prNeedsPod, false),
-            nonTerminal,
-            notRetired,
-            backoffElapsed(now),
+            // Terminal states are excluded here, not filtered later: `merged`
+            // and `closed` are immutable, so the working set shrinks with use
+            // instead of growing.
+            or(
+              isNull(agentSkillPublishes.prState),
+              inArray(agentSkillPublishes.prState, ["draft", "open"]),
+            ),
+            or(
+              isNull(agentSkillPublishes.prStateCheckedAt),
+              lte(agentSkillPublishes.prStateCheckedAt, staleBefore),
+            ),
           ),
         )
-        .orderBy(oldestAttemptFirst)
-        .limit(limit);
-      return rows;
-    },
-
-    async listPodPrStateCandidates(now, limit) {
-      const rows = await db
-        .select({
-          agentId: agentSkillPublishes.agentId,
-          prUrl: agentSkillPublishes.prUrl,
-        })
-        .from(agentSkillPublishes)
-        .where(
-          and(
-            eq(agentSkillPublishes.prNeedsPod, true),
-            nonTerminal,
-            notRetired,
-            backoffElapsed(now),
-          ),
-        )
-        .orderBy(oldestAttemptFirst)
+        // NULLS FIRST, explicitly: Postgres sorts NULL last by default, which
+        // would put never-attempted records — a fresh publish, the case a
+        // user is actually watching — behind every already-attempted one and
+        // starve them whenever the backlog exceeds the per-tick page.
+        .orderBy(sql`${agentSkillPublishes.prStateCheckedAt} asc nulls first`)
         .limit(limit);
       return rows;
     },
@@ -307,30 +238,17 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
           prState: next.prState,
           prStateCheckedAt: next.checkedAt,
           prEtag: next.etag,
-          prStateCheckFailures: 0,
         })
         .where(eq(agentSkillPublishes.prUrl, prUrl));
     },
 
-    async touchPrState(prUrl, checkedAt, outcome) {
+    async touchPrState(prUrl, checkedAt) {
+      // The validator survives a failed attempt on purpose: an ETag is only
+      // ever written together with the state it validates, so a later 304
+      // always confirms a state we do have.
       await db
         .update(agentSkillPublishes)
-        .set({
-          prStateCheckedAt: checkedAt,
-          ...(outcome === "failed"
-            ? {
-                prEtag: null,
-                prStateCheckFailures: sql`${agentSkillPublishes.prStateCheckFailures} + 1`,
-              }
-            : { prStateCheckFailures: 0 }),
-        })
-        .where(eq(agentSkillPublishes.prUrl, prUrl));
-    },
-
-    async markPrNeedsPod(prUrl) {
-      await db
-        .update(agentSkillPublishes)
-        .set({ prNeedsPod: true, prEtag: null })
+        .set({ prStateCheckedAt: checkedAt })
         .where(eq(agentSkillPublishes.prUrl, prUrl));
     },
 

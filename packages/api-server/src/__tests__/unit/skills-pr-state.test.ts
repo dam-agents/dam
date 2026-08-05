@@ -64,7 +64,7 @@ describe("groupByPrUrl", () => {
       groupByPrUrl([
         { agentId: "a1", prUrl: "u1", prEtag: "e1" },
         { agentId: "a2", prUrl: "u1", prEtag: "e1" },
-        { agentId: "a1", prUrl: "u2" },
+        { agentId: "a1", prUrl: "u2", prEtag: null },
       ]),
     ).toEqual([
       { prUrl: "u1", prEtag: "e1", agentIds: ["a1", "a2"] },
@@ -76,36 +76,26 @@ describe("groupByPrUrl", () => {
 const PR_URL = "https://github.com/acme/skills/pull/7";
 
 function makeResolver(opts: {
-  candidates?: { agentId: string; prUrl: string; prEtag: string | null }[];
-  podCandidates?: { agentId: string; prUrl: string }[];
-  runningAgentIds?: string[];
+  candidates: { agentId: string; prUrl: string; prEtag: string | null }[];
   reads?: PrStateReadResult[];
   podReads?: PodPrReadResult[];
 }) {
   const agentSkills = {
-    listPrStateCandidates: vi.fn().mockResolvedValue(opts.candidates ?? []),
-    listPodPrStateCandidates: vi
-      .fn()
-      .mockResolvedValue(opts.podCandidates ?? []),
+    listPrStateCandidates: vi.fn().mockResolvedValue(opts.candidates),
     setPrState: vi.fn().mockResolvedValue(undefined),
     touchPrState: vi.fn().mockResolvedValue(undefined),
-    markPrNeedsPod: vi.fn().mockResolvedValue(undefined),
   } as unknown as AgentSkillsRepository;
   const read = vi.fn<PrStateReader["read"]>();
   for (const r of opts.reads ?? []) read.mockResolvedValueOnce(r);
   const podRead = vi.fn<PodPrStateReader["read"]>();
   for (const r of opts.podReads ?? []) podRead.mockResolvedValueOnce(r);
-  const listRunningAgentIds = vi
-    .fn()
-    .mockResolvedValue(opts.runningAgentIds ?? []);
   const resolver = createPrStateResolver({
     agentSkills,
     reader: { read },
     podReader: { read: podRead },
-    listRunningAgentIds,
     log: vi.fn(),
   });
-  return { resolver, agentSkills, read, podRead, listRunningAgentIds };
+  return { resolver, agentSkills, read, podRead };
 }
 
 const candidate = (
@@ -114,9 +104,7 @@ const candidate = (
   prEtag: string | null = null,
 ) => ({ agentId, prUrl, prEtag });
 
-const podCandidate = (agentId = "a1", prUrl = PR_URL) => ({ agentId, prUrl });
-
-describe("pr-state resolver tick — anonymous pass", () => {
+describe("pr-state resolver tick", () => {
   it("writes a resolved state with its validator and reports it", async () => {
     const { resolver, agentSkills, read } = makeResolver({
       candidates: [candidate("a1", PR_URL, "etag-0")],
@@ -145,7 +133,7 @@ describe("pr-state resolver tick — anonymous pass", () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it("confirms on 304 — backoff resets, validator kept", async () => {
+  it("stamps a 304 so the record waits its hour", async () => {
     const { resolver, agentSkills } = makeResolver({
       candidates: [candidate("a1", PR_URL, "etag-0")],
       reads: [{ kind: "notModified" }],
@@ -155,27 +143,76 @@ describe("pr-state resolver tick — anonymous pass", () => {
     expect(agentSkills.touchPrState).toHaveBeenCalledWith(
       PR_URL,
       expect.any(Date),
-      "confirmed",
     );
   });
 
-  it("marks a 404 for the pod lane without stamping or reading pods inline", async () => {
-    const { resolver, agentSkills, podRead } = makeResolver({
-      candidates: [candidate("a1")],
-      reads: [{ kind: "unavailable", reason: "not-found" }],
+  it("stops the whole pass on rate limit without stamping the failed record", async () => {
+    const other = "https://github.com/acme/skills/pull/8";
+    const { resolver, agentSkills, read } = makeResolver({
+      candidates: [candidate("a1", PR_URL), candidate("a1", other)],
+      reads: [{ kind: "unavailable", reason: "rate-limited" }],
     });
 
     await expect(resolver.tick()).resolves.toBe(0);
-    // Only `not-found` marks; the record leaves the anonymous lane for good.
-    expect(agentSkills.markPrNeedsPod).toHaveBeenCalledWith(PR_URL);
-    // No verdict was reached, so neither the clock nor the counter moves.
+    // Every further read this window is certain to fail — one read, no touches.
+    expect(read).toHaveBeenCalledTimes(1);
     expect(agentSkills.touchPrState).not.toHaveBeenCalled();
-    // Pod reads belong to the pod pass, which sees this record once the DB
-    // returns it as a pod-lane candidate.
-    expect(podRead).not.toHaveBeenCalled();
+    expect(agentSkills.setPrState).not.toHaveBeenCalled();
   });
 
-  it("stamps an unparsable URL as failed without spending a read", async () => {
+  it("escalates a 404 through each publisher's pod until a warm one answers", async () => {
+    const { resolver, agentSkills, podRead } = makeResolver({
+      candidates: [candidate("a1"), candidate("a2")],
+      reads: [{ kind: "unavailable", reason: "not-found" }],
+      podReads: [
+        { kind: "not-running" },
+        {
+          kind: "state",
+          disposition: {
+            state: "closed",
+            draft: false,
+            mergedAt: "2026-08-01T00:00:00Z",
+          },
+        },
+      ],
+    });
+
+    await expect(resolver.tick()).resolves.toBe(1);
+    expect(podRead).toHaveBeenNthCalledWith(1, "a1", {
+      owner: "acme",
+      repo: "skills",
+      number: 7,
+    });
+    expect(podRead).toHaveBeenNthCalledWith(2, "a2", {
+      owner: "acme",
+      repo: "skills",
+      number: 7,
+    });
+    // The pod path reads no ETag back; the anonymous validator belongs to a
+    // resource the anonymous read failed to see.
+    expect(agentSkills.setPrState).toHaveBeenCalledWith(PR_URL, {
+      prState: "merged",
+      checkedAt: expect.any(Date),
+      etag: null,
+    });
+  });
+
+  it("stamps a 404 whose publishers are all cold — never waking one", async () => {
+    const { resolver, agentSkills } = makeResolver({
+      candidates: [candidate("a1")],
+      reads: [{ kind: "unavailable", reason: "not-found" }],
+      podReads: [{ kind: "not-running" }],
+    });
+
+    await expect(resolver.tick()).resolves.toBe(0);
+    expect(agentSkills.setPrState).not.toHaveBeenCalled();
+    expect(agentSkills.touchPrState).toHaveBeenCalledWith(
+      PR_URL,
+      expect.any(Date),
+    );
+  });
+
+  it("stamps an unparsable URL as attempted without spending a read", async () => {
     const { resolver, agentSkills, read } = makeResolver({
       candidates: [candidate("a1", "https://example.com/not-github")],
     });
@@ -185,11 +222,10 @@ describe("pr-state resolver tick — anonymous pass", () => {
     expect(agentSkills.touchPrState).toHaveBeenCalledWith(
       "https://example.com/not-github",
       expect.any(Date),
-      "failed",
     );
   });
 
-  it("never reads more than the anonymous per-tick cap", async () => {
+  it("never reads more than the per-tick cap", async () => {
     const candidates = Array.from({ length: 11 }, (_, i) =>
       candidate("a1", `https://github.com/acme/skills/pull/${i + 1}`),
     );
@@ -203,147 +239,5 @@ describe("pr-state resolver tick — anonymous pass", () => {
 
     await resolver.tick();
     expect(read).toHaveBeenCalledTimes(10);
-  });
-
-  it("stops the anonymous pass on rate limit but still runs the pod pass", async () => {
-    const other = "https://github.com/acme/skills/pull/8";
-    const { resolver, agentSkills, read, podRead } = makeResolver({
-      candidates: [candidate("a1", PR_URL), candidate("a1", other)],
-      reads: [{ kind: "unavailable", reason: "rate-limited" }],
-      podCandidates: [podCandidate("a2", "https://github.com/acme/p/pull/9")],
-      runningAgentIds: ["a2"],
-      podReads: [
-        {
-          kind: "state",
-          disposition: { state: "open", draft: false, mergedAt: null },
-        },
-      ],
-    });
-
-    // Every further anonymous read this window is certain to fail — one
-    // read, no stamp for the rate-limited record. The pod pass spends
-    // nothing anonymous, so it proceeds regardless.
-    await expect(resolver.tick()).resolves.toBe(1);
-    expect(read).toHaveBeenCalledTimes(1);
-    expect(agentSkills.touchPrState).not.toHaveBeenCalled();
-    expect(podRead).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("pr-state resolver tick — pod pass", () => {
-  it("resolves a pod-lane record through a warm publisher, spending nothing anonymous", async () => {
-    const { resolver, agentSkills, read, podRead } = makeResolver({
-      podCandidates: [podCandidate("a1")],
-      runningAgentIds: ["a1"],
-      podReads: [
-        {
-          kind: "state",
-          disposition: {
-            state: "closed",
-            draft: false,
-            mergedAt: "2026-08-01T00:00:00Z",
-          },
-        },
-      ],
-    });
-
-    await expect(resolver.tick()).resolves.toBe(1);
-    expect(read).not.toHaveBeenCalled();
-    expect(podRead).toHaveBeenCalledWith("a1", {
-      owner: "acme",
-      repo: "skills",
-      number: 7,
-    });
-    // The pod path reads no ETag back; any anonymous validator belongs to a
-    // resource the anonymous read failed to see.
-    expect(agentSkills.setPrState).toHaveBeenCalledWith(PR_URL, {
-      prState: "merged",
-      checkedAt: expect.any(Date),
-      etag: null,
-    });
-  });
-
-  it("tries each warm publisher until one answers", async () => {
-    const { resolver, agentSkills, podRead } = makeResolver({
-      podCandidates: [podCandidate("a1"), podCandidate("a2")],
-      runningAgentIds: ["a1", "a2"],
-      podReads: [
-        { kind: "failed" },
-        {
-          kind: "state",
-          disposition: { state: "open", draft: false, mergedAt: null },
-        },
-      ],
-    });
-
-    await expect(resolver.tick()).resolves.toBe(1);
-    expect(podRead).toHaveBeenCalledTimes(2);
-    // A success settles the record; the earlier warm failure is not stamped.
-    expect(agentSkills.touchPrState).not.toHaveBeenCalled();
-  });
-
-  it("skips a record whose publishers are all cold, without any stamp", async () => {
-    const { resolver, agentSkills, podRead } = makeResolver({
-      podCandidates: [podCandidate("a1")],
-      runningAgentIds: [],
-    });
-
-    await expect(resolver.tick()).resolves.toBe(0);
-    // Nothing attempted, nothing learned: no read, no clock, no counter —
-    // the record keeps its place until a warm sample or agent deletion.
-    expect(podRead).not.toHaveBeenCalled();
-    expect(agentSkills.touchPrState).not.toHaveBeenCalled();
-    expect(agentSkills.setPrState).not.toHaveBeenCalled();
-  });
-
-  it("treats a pod that hibernated after the warmth check as cold, not failed", async () => {
-    const { resolver, agentSkills } = makeResolver({
-      podCandidates: [podCandidate("a1")],
-      runningAgentIds: ["a1"],
-      podReads: [{ kind: "not-running" }],
-    });
-
-    await expect(resolver.tick()).resolves.toBe(0);
-    expect(agentSkills.touchPrState).not.toHaveBeenCalled();
-  });
-
-  it("stamps a real failure when a warm pod could not answer", async () => {
-    const { resolver, agentSkills } = makeResolver({
-      podCandidates: [podCandidate("a1")],
-      runningAgentIds: ["a1"],
-      podReads: [{ kind: "failed" }],
-    });
-
-    await expect(resolver.tick()).resolves.toBe(0);
-    expect(agentSkills.touchPrState).toHaveBeenCalledWith(
-      PR_URL,
-      expect.any(Date),
-      "failed",
-    );
-  });
-
-  it("never checks the cluster when there are no pod-lane candidates", async () => {
-    const { resolver, listRunningAgentIds } = makeResolver({
-      candidates: [candidate()],
-      reads: [{ kind: "state", prState: "open", etag: null }],
-    });
-
-    await resolver.tick();
-    // An idle pod lane costs one DB query and nothing else.
-    expect(listRunningAgentIds).not.toHaveBeenCalled();
-  });
-
-  it("caps pod reads per tick, leaving the rest for the next one", async () => {
-    const podCandidates = Array.from({ length: 30 }, (_, i) =>
-      podCandidate("a1", `https://github.com/acme/skills/pull/${i + 1}`),
-    );
-    const { resolver, podRead } = makeResolver({
-      podCandidates,
-      runningAgentIds: ["a1"],
-      podReads: podCandidates.map(() => ({ kind: "failed" as const })),
-    });
-
-    await resolver.tick();
-    expect(podRead).toHaveBeenCalledTimes(25);
   });
 });
