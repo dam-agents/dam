@@ -6,7 +6,9 @@ import { join } from "node:path";
 export const AGENT_NS = process.env.E2E_AGENT_NS ?? "platform-agents";
 /** Namespace the platform components run in. */
 const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
-/** Helm release name; the chart renders workloads as `<release>-<component>`. */
+/** Helm release name. The chart stamps it verbatim onto every workload as the
+ *  `app.kubernetes.io/instance` label — how specs target them, without
+ *  reconstructing the chart's computed (`platform.fullname`) resource names. */
 const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
 
 /** Resolved the same way the e2e mise tasks do. */
@@ -98,12 +100,18 @@ export function deleteAgentCr(name: string): void {
 /** Parking is cluster-wide — always restore in a finally. Scaling to 0 waits
  *  for the pod to go, so no reconcile races what the caller does next. */
 export function scaleController(replicas: 0 | 1): void {
+  // Target the workload by the labels the chart stamps on it rather than
+  // reconstructing `platform.fullname`: `instance` is the raw Helm release
+  // name, `component` pins the controller. Release-scoped, so a namespace
+  // shared with other releases stays unaffected.
+  const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
   kubectl(
     "-n",
     RELEASE_NS,
     "scale",
     "deploy",
-    `${RELEASE}-controller`,
+    "-l",
+    selector,
     `--replicas=${replicas}`,
   );
   if (replicas === 0) {
@@ -114,7 +122,7 @@ export function scaleController(replicas: 0 | 1): void {
       "--for=delete",
       "pod",
       "-l",
-      "app.kubernetes.io/component=controller",
+      selector,
       "--timeout=60s",
     );
   }
