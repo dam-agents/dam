@@ -146,6 +146,10 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.True(t, strings.HasPrefix(userdata, "#cloud-config\n"))
 	assert.Contains(t, userdata, "HTTPS_PROXY='http://10.96.42.42:10000'")
 	assert.Contains(t, userdata, "PLATFORM_AGENT_ID='my-agent'")
+	// Loopback-only NO_PROXY: local dev servers must not be routed to the
+	// egress proxy, but the harness API and external hosts still must be.
+	assert.Contains(t, userdata, "NO_PROXY='localhost,127.0.0.1,::1'")
+	assert.NotContains(t, userdata, "NO_PROXY='localhost,127.0.0.1,::1,")
 	// The JVM ignores http_proxy env and $HOME — proxy + user.home must ride
 	// JAVA_TOOL_OPTIONS or Maven/Gradle bypass the gateway and read the
 	// wrong ~/.m2 (user.home resolves via getpwuid, /root on the VM).
