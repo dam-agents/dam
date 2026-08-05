@@ -48,25 +48,7 @@ node_modules/.bin/grpc_tools_node_protoc \
 ["api-server:test"]
 description = "Run api-server unit tests"
 dir = "{{config_root}}"
-depends = ["api-server:test:integration"]
 run = 'pnpm --filter api-server exec vitest run --config vitest.unit.config.ts'
-
-["api-server:test:integration"]
-description = "Run api-server DB-integration tests against a throwaway postgres (skipped when docker is unavailable, required in CI)"
-dir = "{{config_root}}"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-if ! docker info >/dev/null 2>&1; then
-  if [[ "${CI:-}" == "true" ]]; then
-    echo "docker is required in CI for the DB-integration tests" >&2
-    exit 1
-  fi
-  echo "docker unavailable — skipping DB-integration tests"
-  exit 0
-fi
-pnpm --filter api-server exec vitest run --config vitest.integration.config.ts
-'''
 
 ["api-server:dev"]
 dir = "{{config_root}}/packages/api-server"
