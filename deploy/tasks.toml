@@ -495,21 +495,30 @@ else
   # names are parsed as arguments to the first task and never built.
   AGENT_TASKS=()
   AGENT_IMAGES=()
+  SEEN_COMPONENTS=()
   while IFS=$'\t' read -r name image; do
     { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
     name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
-    if [ -d "packages/agents/$name" ]; then
+    # Templates can share one image (presets, e.g. adaevolve/evox over the
+    # skydiscover image, or k-search-local over k-search), so resolve the
+    # build component from the image repository basename
+    # ("platform-<component>" locally), not the template key — and dedup so
+    # a shared image builds and loads once.
+    comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+    case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+    SEEN_COMPONENTS+=("$comp")
+    if [ -d "packages/agents/$comp" ]; then
       [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-      AGENT_TASKS+=("agents:$name:image")
+      AGENT_TASKS+=("agents:$comp:image")
       AGENT_IMAGES+=("$image")
-    elif [ -d "packages/e2e/agents/$name" ]; then
+    elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
       # have no agents:*:image task — build straight from their Dockerfile, root
       # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
       # the per-agent tasks; in CI the image is already in the daemon.
       if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
         {{ mise_bin }} run platform-base:image
-        docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+        docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
       fi
       AGENT_IMAGES+=("$image")
     else
@@ -762,19 +771,28 @@ DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
 # names are parsed as arguments to the first task and never built.
 AGENT_TASKS=()
 AGENT_IMAGES=()
+SEEN_COMPONENTS=()
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
   name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
-  if [ -d "packages/agents/$name" ]; then
+  # Templates can share one image (presets, e.g. adaevolve/evox over the
+  # skydiscover image, or k-search-local over k-search), so resolve the
+  # build component from the image repository basename
+  # ("platform-<component>" locally), not the template key — and dedup so
+  # a shared image builds and loads once. Mirrors cluster:install.
+  comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+  case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+  SEEN_COMPONENTS+=("$comp")
+  if [ -d "packages/agents/$comp" ]; then
     [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-    AGENT_TASKS+=("agents:$name:image")
+    AGENT_TASKS+=("agents:$comp:image")
     AGENT_IMAGES+=("$image")
-  elif [ -d "packages/e2e/agents/$name" ]; then
+  elif [ -d "packages/e2e/agents/$comp" ]; then
     # e2e fixture agents (the scripted mock) live outside packages/agents/* and
     # have no agents:*:image task — build straight from their Dockerfile, root
-    # context so the platform-base FROM resolves. Mirrors cluster:install.
+    # context so the platform-base FROM resolves.
     {{ mise_bin }} run platform-base:image
-    docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+    docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
     AGENT_IMAGES+=("$image")
   else
     echo "WARN: no build task for '$name' ($image) — skipping local build" >&2
