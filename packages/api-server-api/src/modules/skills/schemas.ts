@@ -41,6 +41,12 @@ export const skillSchema = z.object({
   description: z.string(),
   version: z.string(),
   contentHash: z.string(),
+  /** Repo-relative directory the skill was found in, whichever Source Root it
+   *  came from — what a raw-file URL needs. Distinct from `skillSourceSchema.path`,
+   *  which is the source's optional subdir; `dir` is this one skill's actual
+   *  location under it. Optional: the agent-runtime clone scan (private /
+   *  non-GitHub sources) doesn't report it. */
+  dir: z.string().optional(),
 });
 
 /** An installed skill on an instance, keyed by source + name. Version
