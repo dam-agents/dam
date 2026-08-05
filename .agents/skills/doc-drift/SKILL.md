@@ -30,7 +30,7 @@ This skill is narrowly scoped to [`docs/architecture/`](../../../docs/architectu
 landing page at [`docs/architecture.md`](../../../docs/architecture.md). Everything else is
 **out of scope** — do not flag it, even if it looks drifted:
 
-- Vocabulary in [`tseng/vocabulary.md`](../../../tseng/vocabulary.md).
+- Vocabulary in [`docs/ubiquitous-language.md`](../../../docs/ubiquitous-language.md).
 - ADRs (`docs/adrs/`) — out of this skill's scope with **one** narrow exception (check 7
   below): never flag "this code should have an ADR", ADR prose quality, or anything else
   about ADR coverage. ADR log integrity and decision judgment are
