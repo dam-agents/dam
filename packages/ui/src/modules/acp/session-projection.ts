@@ -54,7 +54,7 @@ import type { AcpUpdate } from "./types.js";
  * `<task-notification>…</task>` and left the orphan `</task-notification>`
  * as the whole visible user bubble (issue: stray closing tag in transcript).
  */
-const SYSTEM_TAG_RE = /<([a-z][a-z0-9-]*)>[\s\S]*?<\/\1>/g;
+const SYSTEM_TAG_RE = /<([a-z-]+)>[\s\S]*?<\/\1>/g;
 function stripUserTags(raw: string): string {
   let result = raw;
   let prev;
