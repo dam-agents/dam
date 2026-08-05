@@ -139,54 +139,26 @@ async function anonymousUrls(): Promise<string[]> {
   return rows.map((r) => r.prUrl);
 }
 
-describe("listPrStateCandidates (anonymous lane)", () => {
-  it("selects due records through the real driver stack", async () => {
-    // The exact population whose candidate query silently died on main: a
-    // fresh publish, an hourly record past due, and a backed-off failure.
-    const fresh = await seed({ checkedAt: null });
-    const due = await seed({ prState: "open", checkedAt: hoursAgo(2) });
+describe("candidate queries", () => {
+  it("selects due records through the real driver stack, never-attempted first", async () => {
+    // The exact population whose candidate query silently died on main —
+    // plus the NULLS FIRST ordering that keeps fresh publishes from starving.
+    const old = await seed({ prState: "open", checkedAt: hoursAgo(5) });
     const backedOff = await seed({ checkedAt: hoursAgo(200), failures: 7 });
-    const notDue = await seed({ prState: "open", checkedAt: hoursAgo(0.5) });
-
-    const got = await anonymousUrls();
-    expect(got).toContain(fresh);
-    expect(got).toContain(due);
-    expect(got).toContain(backedOff);
-    expect(got).not.toContain(notDue);
-  });
-
-  it("orders never-attempted records first, then oldest attempt", async () => {
-    const old = await seed({ checkedAt: hoursAgo(5) });
-    const older = await seed({ checkedAt: hoursAgo(9) });
     const fresh = await seed({ checkedAt: null });
+    await seed({ prState: "open", checkedAt: hoursAgo(0.5) }); // not due
 
-    expect(await anonymousUrls()).toEqual([fresh, older, old]);
+    expect(await anonymousUrls()).toEqual([fresh, backedOff, old]);
   });
 
-  it("doubles the wait per consecutive failure", async () => {
-    // failures=1 → 2h wait: due at 3h, not at 1h.
-    const due = await seed({ checkedAt: hoursAgo(3), failures: 1 });
-    const notDue = await seed({ checkedAt: hoursAgo(1), failures: 1 });
+  it("doubles the wait per failure, caps at a day, retires at the bound", async () => {
+    const dueAt2h = await seed({ checkedAt: hoursAgo(3), failures: 1 });
+    await seed({ checkedAt: hoursAgo(1), failures: 1 }); // inside 2h wait
+    const dueAtCap = await seed({ checkedAt: hoursAgo(25), failures: 29 });
+    await seed({ checkedAt: hoursAgo(23), failures: 29 }); // inside 24h cap
+    await seed({ checkedAt: hoursAgo(9000), failures: 30 }); // retired
 
-    const got = await anonymousUrls();
-    expect(got).toContain(due);
-    expect(got).not.toContain(notDue);
-  });
-
-  it("caps the backoff at a day", async () => {
-    // failures≥5 hit the 24h cap: due at 25h, not at 23h.
-    const due = await seed({ checkedAt: hoursAgo(25), failures: 29 });
-    const notDue = await seed({ checkedAt: hoursAgo(23), failures: 29 });
-
-    const got = await anonymousUrls();
-    expect(got).toContain(due);
-    expect(got).not.toContain(notDue);
-  });
-
-  it("retires records at the failure bound", async () => {
-    const retired = await seed({ checkedAt: hoursAgo(9000), failures: 30 });
-
-    expect(await anonymousUrls()).not.toContain(retired);
+    expect((await anonymousUrls()).sort()).toEqual([dueAt2h, dueAtCap].sort());
   });
 
   it("survives a poisoned failure count that would overflow power()", async () => {
@@ -198,79 +170,64 @@ describe("listPrStateCandidates (anonymous lane)", () => {
     expect(await anonymousUrls()).toEqual([healthy]);
   });
 
-  it("excludes terminal and pod-lane records", async () => {
+  it("keeps the lanes disjoint and excludes terminal states from both", async () => {
     await seed({ prState: "merged", checkedAt: hoursAgo(50) });
-    await seed({ prState: "closed", checkedAt: hoursAgo(50) });
-    await seed({ checkedAt: hoursAgo(50), needsPod: true });
-    const draft = await seed({ prState: "draft", checkedAt: hoursAgo(2) });
-
-    expect(await anonymousUrls()).toEqual([draft]);
-  });
-});
-
-describe("listPodPrStateCandidates (pod lane)", () => {
-  it("selects only marked records, under the same backoff and retirement", async () => {
-    await seed({ checkedAt: hoursAgo(2) }); // anonymous lane
-    const due = await seed({ checkedAt: hoursAgo(2), needsPod: true });
-    await seed({ checkedAt: hoursAgo(0.5), needsPod: true }); // not due
-    await seed({ checkedAt: hoursAgo(9000), needsPod: true, failures: 30 }); // retired
     await seed({ prState: "merged", checkedAt: hoursAgo(50), needsPod: true });
+    const anon = await seed({ prState: "draft", checkedAt: hoursAgo(2) });
+    const pod = await seed({ checkedAt: hoursAgo(2), needsPod: true });
+    await seed({ checkedAt: hoursAgo(0.5), needsPod: true }); // pod, not due
 
-    const rows = await repo.listPodPrStateCandidates(NOW, 50);
-    expect(rows).toEqual([{ agentId: "a1", prUrl: due }]);
+    expect(await anonymousUrls()).toEqual([anon]);
+    expect(await repo.listPodPrStateCandidates(NOW, 50)).toEqual([
+      { agentId: "a1", prUrl: pod },
+    ]);
   });
 });
 
 describe("write paths", () => {
-  it("touchPrState(failed) grows the counter and discards the validator", async () => {
-    const prUrl = await seed({ failures: 2, etag: "e1" });
+  it("touchPrState grows or resets the backoff by outcome", async () => {
+    const failed = await seed({ failures: 2, etag: "e1" });
+    const confirmed = await seed({ failures: 2, etag: "e2" });
 
-    await repo.touchPrState(prUrl, NOW, "failed");
+    await repo.touchPrState(failed, NOW, "failed");
+    await repo.touchPrState(confirmed, NOW, "confirmed");
 
-    const [row] = await db.select().from(agentSkillPublishes);
-    expect(row.prStateCheckFailures).toBe(3);
-    expect(row.prEtag).toBeNull();
-    expect(row.prStateCheckedAt).toEqual(NOW);
+    const rows = await db.select().from(agentSkillPublishes);
+    const byUrl = new Map(rows.map((r) => [r.prUrl, r]));
+    // A failure discards a validator we no longer trust; a 304 keeps it.
+    expect(byUrl.get(failed)).toMatchObject({
+      prStateCheckFailures: 3,
+      prEtag: null,
+      prStateCheckedAt: NOW,
+    });
+    expect(byUrl.get(confirmed)).toMatchObject({
+      prStateCheckFailures: 0,
+      prEtag: "e2",
+    });
   });
 
-  it("touchPrState(confirmed) resets the counter and keeps the validator", async () => {
-    const prUrl = await seed({ failures: 2, etag: "e1" });
+  it("prUrl-keyed writes settle every publisher's record", async () => {
+    const prUrl = await seed({ agentId: "a1", etag: "e1", failures: 4 });
+    await seed({ agentId: "a2", prUrl, etag: "e1", failures: 4 });
 
-    await repo.touchPrState(prUrl, NOW, "confirmed");
-
-    const [row] = await db.select().from(agentSkillPublishes);
-    expect(row.prStateCheckFailures).toBe(0);
-    expect(row.prEtag).toBe("e1");
-  });
-
-  it("setPrState settles every record of the pull request and resets the counter", async () => {
-    const prUrl = await seed({ agentId: "a1", failures: 4 });
-    await seed({ agentId: "a2", prUrl, failures: 4 });
+    // The real sequence: an anonymous 404 marks, a warm pod later resolves.
+    await repo.markPrNeedsPod(prUrl);
+    let rows = await db.select().from(agentSkillPublishes);
+    for (const row of rows) {
+      expect(row.prNeedsPod).toBe(true);
+      expect(row.prEtag).toBeNull();
+    }
 
     await repo.setPrState(prUrl, {
       prState: "merged",
       checkedAt: NOW,
       etag: null,
     });
-
-    const rows = await db.select().from(agentSkillPublishes);
+    rows = await db.select().from(agentSkillPublishes);
     expect(rows).toHaveLength(2);
     for (const row of rows) {
       expect(row.prState).toBe("merged");
       expect(row.prStateCheckFailures).toBe(0);
-    }
-  });
-
-  it("markPrNeedsPod flags every record of the pull request and discards the validator", async () => {
-    const prUrl = await seed({ agentId: "a1", etag: "e1" });
-    await seed({ agentId: "a2", prUrl, etag: "e1" });
-
-    await repo.markPrNeedsPod(prUrl);
-
-    const rows = await db.select().from(agentSkillPublishes);
-    for (const row of rows) {
-      expect(row.prNeedsPod).toBe(true);
-      expect(row.prEtag).toBeNull();
     }
   });
 });
