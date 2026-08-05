@@ -133,7 +133,7 @@ export function SessionsSidebar({
       s.mode === SessionMode.Terminal
         ? !!s.running
         : isOpen
-          ? busy
+          ? busy || !!s.running
           : !!s.running;
     // Polled approvals cover all sessions; the live store surfaces the open one instantly.
     const needsApproval =
