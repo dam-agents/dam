@@ -298,8 +298,10 @@ def evaluate(program_path):
     for node in ast.walk(ast.parse(src)):
         if isinstance(node, (ast.Import, ast.ImportFrom, ast.Attribute, ast.Call)):
             return {"combined_score": 0.0, "error": "not a pure polynomial"}
-    ns = {}
-    exec(compile(src, program_path, "exec"), {"__builtins__": {}}, ns)
+    # single namespace: separate globals/locals would hide module-level
+    # constants from function bodies (hoisted coefficients → silent NameError)
+    ns = {"__builtins__": {}}
+    exec(compile(src, program_path, "exec"), ns)
     xs = [i * math.pi / 50 for i in range(51)]
     mse = sum((ns["approx"](x) - math.sin(x)) ** 2 for x in xs) / len(xs)
     # log-scaled: still discriminating at mse ~1e-22, where 1/(1+mse) is 1.0
