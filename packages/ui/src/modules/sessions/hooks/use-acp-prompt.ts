@@ -123,7 +123,8 @@ export function useAcpPrompt(
       watchdogRef.current = setTimeout(() => {
         const msgs = useStore.getState().messages;
         const bubble = msgs.find((m) => m.id === aId);
-        if (bubble?.streaming && bubble.parts.length === 0) {
+        // Not a part count: a verdict can land on a bubble the agent never wrote.
+        if (bubble?.streaming && !hasAgentContent(bubble)) {
           if (hidden) {
             dropBubble();
           } else {
