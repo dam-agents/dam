@@ -699,7 +699,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   // A released background hold is a boundary too — re-check the deferred recycle.
-  deps.backgroundWork?.onRelease?.(() => maybeRecycleForEnv());
+  deps.backgroundWork?.onRelease(() => maybeRecycleForEnv());
 
   // ── Channel lifecycle ──
 
@@ -784,10 +784,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     // recycle (and the idle flag) until the pod rolls.
     activePromptBySession.delete(sessionId);
     promptQueueBySession.delete(sessionId);
-    maybeRecycleForEnv();
     // The subprocess is going away, so anything it was still running goes with
     // it — the hold has nothing left to protect.
     deps.backgroundWork?.forget(sessionId);
+    // After forget(), so the closing session's own hold can't block the drain.
+    maybeRecycleForEnv();
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
       clearTimeout(reap);
@@ -1186,8 +1187,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (!pending) return;
       pendingFromAgent.delete(frame.id);
       if (pending.sessionId) updateOrphanTimerForSession(pending.sessionId);
+      // No recycle re-check here: forwarding the answer is the start of more
+      // agent work, not a boundary.
       a.send(frame);
-      maybeRecycleForEnv();
       return;
     }
 

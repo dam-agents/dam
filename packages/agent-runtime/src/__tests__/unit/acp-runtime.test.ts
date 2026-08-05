@@ -118,6 +118,7 @@ function makeFakeRegistry() {
     held: () => (live ? [{ sessionId: SID, items: [{ id: "t1" }] }] : []),
     forget: (sessionId) => calls.push(`forget:${sessionId}`),
     clear: () => calls.push("clear"),
+    onRelease: () => {},
   };
   return {
     registry,

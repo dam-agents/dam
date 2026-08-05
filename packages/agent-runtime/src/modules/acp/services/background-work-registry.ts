@@ -17,8 +17,8 @@ export interface BackgroundWorkRegistry {
   /** Harness recycled or exited: same, for every session it served. */
   clear(): void;
   /** Invoked whenever a hold is released, so waiters (e.g. a deferred env
-   * recycle) can re-check. Optional — fakes without it behave as before. */
-  onRelease?(cb: () => void): void;
+   * recycle) can re-check. */
+  onRelease(cb: () => void): void;
 }
 
 export interface BackgroundWorkRegistryDeps {
