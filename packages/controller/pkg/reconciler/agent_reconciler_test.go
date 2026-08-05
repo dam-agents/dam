@@ -562,6 +562,20 @@ func TestForceRollStuckPod_DeletesStuckPodWhenCorrectionReusedPriorRevision(t *t
 		"pod off the update revision must be evicted even when current==update; got err=%v", err)
 }
 
+// An unobserved template means updateRevision is not yet a settled target, so
+// eviction waits rather than judging a pod against a stale one.
+func TestForceRollStuckPod_WaitsForObservedGeneration(t *testing.T) {
+	ss, stuckPod := gatewayRevFixture("rev-1", "rev-1", "rev-2", false)
+	ss.Generation = 2
+	ss.Status.ObservedGeneration = 1
+	r, client := setupReconciler(t, nil, ss, stuckPod)
+
+	require.NoError(t, r.forceRollStuckPod(context.Background(), "test-agents", "my-agent-gateway"))
+
+	_, err := client.CoreV1().Pods("test-agents").Get(context.Background(), "my-agent-gateway-0", metav1.GetOptions{})
+	assert.NoError(t, err, "must not evict against an unobserved target revision")
+}
+
 // #2817: name the wedge without mislabelling a pod that is merely starting.
 func TestGatewayNotReadyCause(t *testing.T) {
 	oomPod := podAtRev("my-agent-gateway-0", "rev-2", false)
@@ -597,6 +611,27 @@ func TestGatewayNotReadyCause(t *testing.T) {
 				podAtRev("my-agent-gateway-0", "rev-2", false),
 			},
 			wantReason: apiv1.ReasonStuckOnSupersededRevision,
+		},
+		{
+			// The pod is off-revision but healthy, so it is mid-roll, not
+			// wedged — and the evictor leaves it to normal rolling update.
+			// Stamping it would fail a wake hard during an ordinary roll.
+			name: "ready pod on an old revision is an ordinary roll",
+			objects: []runtime.Object{
+				rolloutSS("my-agent-gateway", 1, 1, "rev-3"),
+				podAtRev("my-agent-gateway-0", "rev-2", true),
+			},
+			wantReason: "PodNotReady",
+		},
+		{
+			// updateRevision is not a settled target until the StatefulSet has
+			// observed the newest template, so nothing can be judged against it.
+			name: "statefulset has not observed the newest template",
+			objects: []runtime.Object{
+				rolloutSS("my-agent-gateway", 2, 1, "rev-2"),
+				podAtRev("my-agent-gateway-0", "rev-1", false),
+			},
+			wantReason: "PodNotReady",
 		},
 		{
 			// More actionable than the revision mismatch, so it wins.

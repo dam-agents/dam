@@ -28,8 +28,10 @@ export type WakeFailureCause =
    *  retriable class (slow image pull, volume attach, probes). */
   | { kind: "agent-pod-not-ready" }
   | { kind: "gateway-not-ready" }
-  /** The controller named a gateway cause waiting cannot fix — superseded
-   *  revision, OOM, unpullable image. Hard, not "still starting" (#2817). */
+  /** The controller named a gateway cause a wake cannot outwait — superseded
+   *  revision, OOM, unpullable image. Hard, not "still starting" (#2817):
+   *  reached only at the deadline, so a self-repairing cause has already had
+   *  the whole wake budget to clear and hasn't. */
   | { kind: "gateway-pod-failed"; gatewayReason: string }
   | { kind: "reconcile-error"; message: string; backoffExceeded: boolean }
   | { kind: "unknown" };
@@ -67,8 +69,8 @@ const POD_FAILURE_REASONS = new Set([
   "ContainerTerminated",
 ]);
 
-/** GatewayPodReady reasons waiting cannot fix. Anything else (PodNotReady) is
- *  a pod still on its way up. */
+/** GatewayPodReady reasons a wake cannot outwait. Anything else (PodNotReady)
+ *  is a pod still on its way up. */
 const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",
@@ -174,7 +176,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "gateway-pod-failed":
       switch (c.gatewayReason) {
         case "StuckOnSupersededRevision":
-          return "the agent's gateway is stuck on an outdated configuration and is being replaced";
+          return "the agent's gateway is stuck on an outdated configuration and has not been replaced yet";
         case "OutOfMemory":
           return "the agent's gateway ran out of memory";
         case "ImagePullFailure":

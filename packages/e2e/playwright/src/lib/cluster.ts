@@ -3,9 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** Namespace the controller renders agent + gateway workloads into. */
-export const AGENT_NS = "platform-agents";
+export const AGENT_NS = process.env.E2E_AGENT_NS ?? "platform-agents";
 /** Namespace the platform components run in. */
-const RELEASE_NS = "default";
+const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
+/** Helm release name; the chart renders workloads as `<release>-<component>`. */
+const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
 
 /** Resolved the same way the e2e mise tasks do. */
 function kubeconfig(): string {
@@ -106,7 +108,7 @@ export function scaleController(replicas: 0 | 1): void {
     RELEASE_NS,
     "scale",
     "deploy",
-    "platform-controller",
+    `${RELEASE}-controller`,
     `--replicas=${replicas}`,
   );
   if (replicas === 0) {

@@ -53,12 +53,14 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
       );
     case "gateway-pod-failed":
       switch (c.gatewayReason) {
-        // Self-heals (#2817), so retry advice is right here — unlike below.
+        // The platform replaces such a gateway by itself, but this copy is only
+        // reached at the wake deadline — by then the replacement has had the
+        // whole wake budget and not come back, so don't promise it is imminent.
         case "StuckOnSupersededRevision":
           return (
-            "The agent's network gateway was stuck on an outdated " +
-            "configuration and is being replaced — give it a minute and " +
-            "try again."
+            "This agent can't reach the network: its gateway is stuck on an " +
+            "outdated configuration. The platform is replacing it — try again " +
+            "shortly, and tell an admin if this keeps happening."
           );
         case "ImagePullFailure":
         case "InvalidImageName":

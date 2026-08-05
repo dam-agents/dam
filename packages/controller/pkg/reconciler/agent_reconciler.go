@@ -426,8 +426,28 @@ func (r *AgentReconciler) publishReconciled(ctx context.Context, agent *apiv1.Ag
 	})
 }
 
+// podStuckOnSupersededRevision reports whether a pod can never become ready on
+// the spec it booted with, because the StatefulSet has moved past that
+// revision. One definition, shared by the evictor and the status reporter, so
+// the two can never disagree on what "stuck" means.
+//
+// False until the StatefulSet has observed the newest template — there is no
+// settled target to judge against yet — and false for a Ready off-revision
+// pod, which is just an ordinary rolling update in progress.
+func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
+	if ss.Status.UpdateRevision == "" || ss.Status.ObservedGeneration != ss.Generation {
+		return false
+	}
+	if p.Labels["controller-revision-hash"] == ss.Status.UpdateRevision {
+		return false
+	}
+	return !isPodReady(*p)
+}
+
 // gatewayNotReadyCause names why the gateway pod isn't ready, so callers can
-// tell "still starting" from "will never start" (#2817). Falls back to
+// tell "still starting" from "will never start" (#2817). The superseded-revision
+// verdict comes from the same predicate that drives eviction, so the condition
+// never claims a pod is being replaced when it isn't. Falls back to
 // PodNotReady, read errors included — a diagnosis must never fail the publish.
 func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
 	pod := r.getPod(ctx, ssName)
@@ -438,15 +458,12 @@ func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName strin
 		return reason, msg
 	}
 	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, ssName, metav1.GetOptions{})
-	if err != nil || ss.Status.UpdateRevision == "" {
+	if err != nil || !podStuckOnSupersededRevision(ss, pod) {
 		return "PodNotReady", ""
 	}
-	if podRev := pod.Labels["controller-revision-hash"]; podRev != ss.Status.UpdateRevision {
-		return apiv1.ReasonStuckOnSupersededRevision, fmt.Sprintf(
-			"gateway pod is on superseded revision %s (target %s) and cannot become ready; replacing it",
-			podRev, ss.Status.UpdateRevision)
-	}
-	return "PodNotReady", ""
+	return apiv1.ReasonStuckOnSupersededRevision, fmt.Sprintf(
+		"gateway pod is on superseded revision %s (target %s) and cannot become ready; replacing it",
+		pod.Labels["controller-revision-hash"], ss.Status.UpdateRevision)
 }
 
 // podCurrentAndReady reports whether the StatefulSet's single pod is Ready AND
@@ -903,8 +920,9 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	if err != nil {
 		return fmt.Errorf("getting statefulset: %w", err)
 	}
-	// No target revision observed yet — nothing to judge against.
-	if ss.Status.UpdateRevision == "" {
+	// Mirrors the predicate's first clause, to skip the pod LIST when there is
+	// no settled target revision to judge against.
+	if ss.Status.UpdateRevision == "" || ss.Status.ObservedGeneration != ss.Generation {
 		return nil
 	}
 	sel, err := metav1.LabelSelectorAsSelector(ss.Spec.Selector)
@@ -916,10 +934,7 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 		return fmt.Errorf("listing pods: %w", err)
 	}
 	for _, p := range pods.Items {
-		if p.Labels["controller-revision-hash"] == ss.Status.UpdateRevision {
-			continue
-		}
-		if isPodReady(p) {
+		if !podStuckOnSupersededRevision(ss, &p) {
 			continue
 		}
 		if p.DeletionTimestamp != nil {
