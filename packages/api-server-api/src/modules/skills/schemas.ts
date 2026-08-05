@@ -69,13 +69,18 @@ export const localSkillSchema = z.object({
    *  but diverged, or created at runtime. Absent on pre-provenance pods —
    *  treat as `user`. */
   origin: z.enum(["system", "system-modified", "user"]).optional(),
+  /** Deterministic SHA-256 of the skill directory, comparable with a scanned
+   *  skill's `contentHash`. Present only for skills the server asked the pod to
+   *  hash, and absent on pods predating this field (#3019). */
+  contentHash: z.string().optional(),
 });
 
 /** Explicit record of a publish event. Written on a successful
- *  `publish` call into the Postgres `instance_skill_publishes` table.
- *  Drives the `Published` badge + "View PR" link in the UI — the
- *  name-match heuristic it replaces had confusing false positives
- *  when a local skill happened to share a name with a catalog entry.
+ *  `publish` call into the Postgres `agent_skill_publishes` table.
+ *  The record's existence drives the badge's *presence* + "View PR"
+ *  link in the UI — it replaced a name-match heuristic that had
+ *  confusing false positives when a local skill happened to share a
+ *  name with a catalog entry. `prState` drives the badge's *label*.
  *
  *  Source fields are denormalized so the record stays usable after
  *  the source is renamed or deleted. */
@@ -87,18 +92,30 @@ export const skillPublishRecordSchema = z.object({
   prUrl: z.string(),
   /** ISO 8601 timestamp. */
   publishedAt: z.string(),
+  /** Resolved outcome of `prUrl`, or null when it has never been
+   *  resolved — the source is private, the read was rate-limited, the
+   *  pull request is gone. `merged` and `closed` are terminal and are
+   *  never re-read (#3019). */
+  prState: z.enum(["draft", "open", "merged", "closed"]).nullable(),
+  /** ISO 8601 timestamp of the last resolution *attempt*, which is not
+   *  the same as the last success: an attempt that resolved nothing
+   *  still stamps it, because it doubles as the backoff clock. Null
+   *  until the first attempt. */
+  prStateCheckedAt: z.string().nullable(),
 });
 
 /** Reconciled view of an instance's skills: both the installed
- *  (tracked in Postgres `instance_skills` AND present on disk) and
+ *  (tracked in Postgres `agent_skills` AND present on disk) and
  *  the standalone (on disk but not tracked). Computing this in one
  *  pass lets the server drop ghost SkillRefs — entries whose
  *  directories were deleted out-of-band — and persist the cleanup so
  *  the declarative state stops drifting from the filesystem.
  *
  *  `instancePublishes` carries the publish history for this instance
- *  so the UI can light up the "Published" badge on exactly the
- *  skills the user actually pushed. */
+ *  so the UI can badge exactly the skills the user actually pushed —
+ *  each record's resolved `prState` decides what the badge says
+ *  (draft / in review / published / closed, or merely "submitted"
+ *  while unresolved). */
 export const skillStateOutputSchema = z.object({
   installed: z.array(skillRefSchema),
   standalone: z.array(localSkillSchema),

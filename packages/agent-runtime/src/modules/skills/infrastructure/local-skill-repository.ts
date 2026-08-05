@@ -29,6 +29,11 @@ export interface LocalSkillRepository {
   listLocal: (
     skillPaths: SkillPath[],
     pristinePaths?: SkillPath[],
+    /** Names to also stamp with `contentHash`. Hashing reads the whole skill
+     *  directory on an NFS-backed PVC and this listing runs on every state
+     *  poll, so the caller asks only for the few it needs, and repeats are
+     *  served from a stat-validated cache (#3019). */
+    hashNames?: ReadonlySet<string>,
   ) => Promise<LocalSkill[]>;
   /** Read every file in a skill's directory, enforcing the per-file and
    *  per-skill caps. Returns the resolved directory basename alongside the
@@ -114,9 +119,19 @@ export interface LocalSkillRepository {
 export function createLocalSkillRepository(): LocalSkillRepository {
   // Image is immutable in-process: pristine hashes memoize once per dir.
   const pristineHashes = new Map<string, Promise<string | null>>();
+  // PVC dirs are mutable, so their hashes are cached behind a stat
+  // fingerprint instead of memoized forever. Bounded: one entry per
+  // published skill directory.
+  const contentHashCache = new Map<string, CachedContentHash>();
   return {
-    listLocal: (skillPaths, pristinePaths) =>
-      list(skillPaths, pristinePaths, pristineHashes),
+    listLocal: (skillPaths, pristinePaths, hashNames) =>
+      list(
+        skillPaths,
+        pristinePaths,
+        pristineHashes,
+        hashNames,
+        contentHashCache,
+      ),
     readLocal: read,
     resolveLocalSkillDir,
     writeFromDir: write,
@@ -194,11 +209,18 @@ async function list(
   skillPaths: SkillPath[],
   pristinePaths: SkillPath[] | undefined,
   pristineHashes: Map<string, Promise<string | null>>,
+  hashNames: ReadonlySet<string> | undefined,
+  contentHashCache: Map<string, CachedContentHash>,
 ): Promise<LocalSkill[]> {
   const out: LocalSkill[] = [];
   for (const { dir, name, description, skillPath } of await listEntries(
     skillPaths,
   )) {
+    // Keyed on the wire name, which is what the caller asked by; the hash is
+    // taken over the resolved directory, which may differ from it.
+    const contentHash = hashNames?.has(name)
+      ? await hashSkillDirCached(path.join(skillPath, dir), contentHashCache)
+      : null;
     out.push({
       name,
       description,
@@ -213,6 +235,7 @@ async function list(
             ),
           }
         : {}),
+      ...(contentHash !== null ? { contentHash } : {}),
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -277,6 +300,53 @@ async function firstPristineHash(
     if (hash !== null) return hash;
   }
   return null;
+}
+
+interface CachedContentHash {
+  fingerprint: string;
+  hash: string;
+}
+
+/** Cheap change detector for a skill directory: every file's relative path,
+ *  size, and mtime, in sorted order. A stat walk reads no file contents, where
+ *  re-hashing does — the difference that matters on the NFS-backed PVC, polled
+ *  every few seconds. The walk covers every file because the directory's own
+ *  mtime would miss edits inside subdirectories. Null when the walk fails,
+ *  which the caller treats as "don't cache". */
+async function statFingerprint(absDir: string): Promise<string | null> {
+  try {
+    const files = (await walkFiles(absDir)).sort();
+    const parts: string[] = [];
+    for (const abs of files) {
+      const st = await fs.stat(abs);
+      parts.push(`${path.relative(absDir, abs)}\0${st.size}\0${st.mtimeMs}`);
+    }
+    return parts.join("\n");
+  } catch {
+    return null;
+  }
+}
+
+/** {@link hashSkillDirIfPresent} behind a fingerprint check: the content is
+ *  re-read only when some file's path/size/mtime changed. mtime granularity is
+ *  the filesystem's, so a same-size edit landing within one timestamp tick of
+ *  the hashed read can serve one stale value — the next content change heals
+ *  it, and the stake is a briefly wrong de-dupe row, not data. */
+async function hashSkillDirCached(
+  absDir: string,
+  cache: Map<string, CachedContentHash>,
+): Promise<string | null> {
+  const fingerprint = await statFingerprint(absDir);
+  if (fingerprint === null) {
+    cache.delete(absDir);
+    return hashSkillDirIfPresent(absDir);
+  }
+  const cached = cache.get(absDir);
+  if (cached && cached.fingerprint === fingerprint) return cached.hash;
+  const hash = await hashSkillDirIfPresent(absDir);
+  if (hash === null) cache.delete(absDir);
+  else cache.set(absDir, { fingerprint, hash });
+  return hash;
 }
 
 /** null when the directory is absent, unreadable, or not a skill (no
@@ -517,8 +587,14 @@ async function readSkillManifest(
  * Deterministic SHA-256 of a skill directory's contents — hashes every file
  * under the dir in sorted-path order, mixing the relative path and body
  * bytes. Used as the drift signal: changes iff the skill's files change,
- * completely independent of git commit history. Matches api-server's
- * computeContentHash.
+ * completely independent of git commit history.
+ *
+ * Algorithmically identical to api-server's `computeContentHash`
+ * (public-archive-scanner.ts), and values from the two are compared directly.
+ * They are duplicate implementations on purpose — do not "improve" one alone,
+ * and do not tidy either: stored `agent_skills.contentHash` values were
+ * produced by them, so any change mass-triggers phantom drift on every
+ * installed skill everywhere.
  */
 async function hashSkillDir(absDir: string): Promise<string> {
   const files = (await walkFiles(absDir)).sort();

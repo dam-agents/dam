@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   detectHost,
   redactToken,
-} from "../../modules/skills/infrastructure/git-host.js";
+} from "../../modules/skills/domain/git-host.js";
 
 describe("detectHost", () => {
   it("parses GitHub HTTPS URLs", () => {
