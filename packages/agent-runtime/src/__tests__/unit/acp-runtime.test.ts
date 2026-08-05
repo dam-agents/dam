@@ -6,7 +6,10 @@ import type {
   SessionMetaEntry,
   SessionMetadataStore,
 } from "../../modules/acp/infrastructure/session-metadata-store.js";
-import type { BackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
+import {
+  createBackgroundWorkRegistry,
+  type BackgroundWorkRegistry,
+} from "../../modules/acp/services/background-work-registry.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -115,6 +118,7 @@ function makeFakeRegistry() {
     held: () => (live ? [{ sessionId: SID, items: [{ id: "t1" }] }] : []),
     forget: (sessionId) => calls.push(`forget:${sessionId}`),
     clear: () => calls.push("clear"),
+    onRelease: () => {},
   };
   return {
     registry,
@@ -2510,5 +2514,116 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
       mode: "terminal",
       scheduleId: "sch-1",
     });
+  });
+});
+
+describe("createAcpRuntime — env recycle", () => {
+  /** Spawn a runtime with one session and an in-flight turn. */
+  function startTurn() {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      envForceRecycleMs: 100,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
+    c.pushMessage(promptRequest(2));
+    const turnOutbound = outboundId(fa.sent.at(-1));
+    return {
+      fa,
+      runtime,
+      channel: c,
+      endTurn: () => fa.pushLine(agentPromptResponse(turnOutbound)),
+    };
+  }
+
+  it("a deferred refresh (force: false) outlives the force bound and recycles at the turn boundary", () => {
+    vi.useFakeTimers();
+    try {
+      const t = startTurn();
+      t.runtime.refreshEnv({ force: false });
+      vi.advanceTimersByTime(1_000);
+      expect(t.fa.killed()).toBe(false);
+      t.endTurn();
+      expect(t.fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a forced refresh still recycles mid-turn after the bound", () => {
+    vi.useFakeTimers();
+    try {
+      const t = startTurn();
+      t.runtime.refreshEnv({ force: true });
+      vi.advanceTimersByTime(99);
+      expect(t.fa.killed()).toBe(false);
+      vi.advanceTimersByTime(2);
+      expect(t.fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the force timer survives a later deferred refresh, in either order", () => {
+    vi.useFakeTimers();
+    try {
+      const forcedFirst = startTurn();
+      forcedFirst.runtime.refreshEnv({ force: true });
+      forcedFirst.runtime.refreshEnv({ force: false });
+      vi.advanceTimersByTime(101);
+      expect(forcedFirst.fa.killed()).toBe(true);
+
+      const deferredFirst = startTurn();
+      deferredFirst.runtime.refreshEnv({ force: false });
+      deferredFirst.runtime.refreshEnv({ force: true });
+      vi.advanceTimersByTime(101);
+      expect(deferredFirst.fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reported background work holds a deferred refresh; its release drains it", () => {
+    const registry = createBackgroundWorkRegistry();
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      backgroundWork: registry,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
+
+    registry.report(SID, [{ id: "job-1" }]);
+    runtime.refreshEnv({ force: false });
+    expect(fa.killed()).toBe(false);
+
+    registry.report(SID, []);
+    expect(fa.killed()).toBe(true);
+  });
+
+  it("a queued prompt defers the boundary recycle until the queue drains", () => {
+    vi.useFakeTimers();
+    try {
+      const t = startTurn();
+      t.channel.pushMessage(promptRequest(3));
+      t.runtime.refreshEnv({ force: false });
+
+      // First turn ends; the queued prompt is promoted before the recycle check.
+      t.endTurn();
+      expect(t.fa.killed()).toBe(false);
+
+      const queuedOutbound = outboundId(t.fa.sent.at(-1));
+      t.fa.pushLine(agentPromptResponse(queuedOutbound));
+      expect(t.fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

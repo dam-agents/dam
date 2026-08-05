@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-08-03
+Last verified: 2026-08-04
 
 ## Overview
 
@@ -210,7 +210,7 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 
 | Kind | Rail | Delivery semantics | Note |
 |---|---|---|---|
-| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file on the PV; the harness spawn path merges it into the process env. Two sources feed this kind — user-typed env (the UI Environment editor, stored in Postgres `agent_env`, #1079) and connection-derived env — and the state-builder orders user env first so it wins on name collision (the driver is first-occurrence-wins). A change recycles the harness at an idle turn boundary — no pod roll. |
+| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file the harness spawn path merges into the process env. Two sources feed it — user-typed env (the Environment editor) and connection-derived env — user env ordered first so it wins on name collision (first-occurrence-wins). A change recycles the harness at an idle turn boundary; only a variable-set change may force one mid-turn — value-only changes spare in-flight runs. No pod roll. |
 | `egress-allow` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
 | `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [security and credentials](security-and-credentials.md)). Agent never sees these. |
 | `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
