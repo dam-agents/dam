@@ -77,4 +77,21 @@ if [ -f "$user_mise_cfg" ]; then
 	done
 fi
 
+# Maven Resolver reads proxies only from settings.xml — neither http_proxy
+# env nor the JVM's -Dhttp.proxyHost reach dependency resolution — so
+# without this every `mvn` dependency fetch bypasses the egress gateway and
+# dies. Absent-only: a user-managed settings.xml wins.
+if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
+	_hp=${HTTPS_PROXY#http://}
+	_m2_proxy() {
+		printf '<proxy><id>platform-%s</id><active>true</active><protocol>%s</protocol><host>%s</host><port>%s</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy>' \
+			"$1" "$1" "${_hp%:*}" "${_hp##*:}"
+	}
+	if ! { mkdir -p "$home/.m2" &&
+		printf '<settings><proxies>%s%s</proxies></settings>\n' "$(_m2_proxy http)" "$(_m2_proxy https)" \
+			> "$home/.m2/settings.xml"; } 2>/dev/null; then
+		echo "agent-entrypoint: WARNING: could not write ~/.m2/settings.xml; Maven fetches may bypass the gateway" >&2
+	fi
+fi
+
 exec "$@"

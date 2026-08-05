@@ -128,6 +128,12 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
+		// Loopback only — deliberately NOT .svc/cluster ranges: the harness
+		// API and every external host must cross the paired gateway. Without
+		// this, curl to a local dev server inside the sandbox is silently
+		// routed to the egress proxy and 503s.
+		{Name: "NO_PROXY", Value: "localhost,127.0.0.1,::1"},
+		{Name: "no_proxy", Value: "localhost,127.0.0.1,::1"},
 		{Name: "PLATFORM_AGENT_ID", Value: name},
 		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
 		{Name: "HOME", Value: agentHome},

@@ -224,6 +224,27 @@ else
   fi
 fi
 
+# 1c. Traefik :4444 entrypoint — on lima this rides the provision script's
+# k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
+# so the app port silently doesn't exist. HelmChartConfig via kubectl apply
+# is idempotent and works on both.
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |
+    ports:
+      platform:
+        port: 4444
+        expose:
+          default: true
+        exposedPort: 4444
+        protocol: TCP
+YAML
+
 # 2. Install cert-manager
 if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
   echo "Installing cert-manager..."
