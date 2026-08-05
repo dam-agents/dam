@@ -36,6 +36,9 @@ Environment=PYTHONPATH=/usr/local/lib/platform-python
 # --dangerously-skip-permissions under root unless IS_SANDBOX=1 attests the
 # environment is a sandbox — which this VM is.
 Environment=IS_SANDBOX=1
+# Point agent-browser at dnf's chromium instead of downloading its own
+# Chrome-for-Testing at runtime.
+Environment=AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # agent-entrypoint: CA trust is root-owned here (platform-ca.service) so its
 # own attempt just warns; the ~/.cache→/tmp symlink and mise-pin heal still
 # apply, then it execs the runtime.
