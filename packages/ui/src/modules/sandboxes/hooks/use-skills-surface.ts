@@ -136,7 +136,7 @@ export function useSkillsSurface(
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
-        const { skills, scannedAt } = await api.skills.list.query({
+        const { skills, scannedAt } = await api.skills.listWithScan.query({
           sourceId,
           agentId,
         });
