@@ -232,6 +232,7 @@ async function list(
               path.join(skillPath, dir),
               pristinePaths,
               pristineHashes,
+              contentHashCache,
             ),
           }
         : {}),
@@ -271,6 +272,7 @@ async function classifyOrigin(
   localDir: string,
   pristinePaths: SkillPath[],
   pristineHashes: Map<string, Promise<string | null>>,
+  contentHashCache: Map<string, CachedContentHash>,
 ): Promise<SkillOrigin> {
   const pristineHash = await firstPristineHash(
     dirName,
@@ -280,7 +282,9 @@ async function classifyOrigin(
   // Guarded on both sides: an unhashable local copy (unreadable file, a
   // deletion racing the listing) must degrade, never throw the listing away.
   const localHash =
-    pristineHash === null ? null : await hashSkillDirIfPresent(localDir);
+    pristineHash === null
+      ? null
+      : await hashSkillDirCached(localDir, contentHashCache);
   return judgeOrigin(localHash, pristineHash);
 }
 
