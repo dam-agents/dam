@@ -105,15 +105,17 @@ export const skillPublishRecordSchema = z.object({
 });
 
 /** Reconciled view of an instance's skills: both the installed
- *  (tracked in Postgres `instance_skills` AND present on disk) and
+ *  (tracked in Postgres `agent_skills` AND present on disk) and
  *  the standalone (on disk but not tracked). Computing this in one
  *  pass lets the server drop ghost SkillRefs — entries whose
  *  directories were deleted out-of-band — and persist the cleanup so
  *  the declarative state stops drifting from the filesystem.
  *
  *  `instancePublishes` carries the publish history for this instance
- *  so the UI can light up the "Published" badge on exactly the
- *  skills the user actually pushed. */
+ *  so the UI can badge exactly the skills the user actually pushed —
+ *  each record's resolved `prState` decides what the badge says
+ *  (draft / in review / published / closed, or merely "submitted"
+ *  while unresolved). */
 export const skillStateOutputSchema = z.object({
   installed: z.array(skillRefSchema),
   standalone: z.array(localSkillSchema),
