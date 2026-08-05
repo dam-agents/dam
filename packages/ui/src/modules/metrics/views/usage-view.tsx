@@ -1,11 +1,8 @@
-import { useState } from "react";
-
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-import { useSpendBreakdown } from "../api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendBars } from "../components/model-spend-bars.js";
 import { MonthSwitcher } from "../components/month-switcher.js";
@@ -13,32 +10,25 @@ import {
   CHART_HEIGHT_CLASS,
   SpendByDayChart,
 } from "../components/spend-by-day-chart.js";
-import { useSettledMonth } from "../hooks/use-settled-month.js";
+import { readFailureMessage, UsageNotice } from "../components/usage-notice.js";
+import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
 import { formatUsdCents, totalCostUsd } from "../lib/format.js";
-import {
-  fillMonthDays,
-  monthLabel,
-  monthRange,
-  monthStart,
-} from "../lib/month-range.js";
-import { isMetricsUnavailable } from "../lib/unavailable.js";
+import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
 
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
 export function UsageView() {
-  const [month, setMonth] = useState(() => monthStart(new Date(), 0));
-  const { from, to, isCurrentMonth } = monthRange(month);
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  // One query backs the whole tab, so per-model / per-agent / per-day spend
-  // land together under a single loading/error state — the chart never renders
-  // an all-zero month while its data is still in flight.
-  const { data, isPending, isError, isPlaceholderData, error } =
-    useSpendBreakdown(from, to, timeZone);
-  const unavailable = isMetricsUnavailable(error);
-  const shownMonth = useSettledMonth(
+  const {
     month,
-    !isPlaceholderData && data !== undefined,
-  );
+    setMonth,
+    isCurrentMonth,
+    shownMonth,
+    data,
+    isPending,
+    isError,
+    isStale,
+    unavailable,
+  } = useMonthlySpend();
   const total = totalCostUsd(data?.byModel ?? []);
   const dailyDays = fillMonthDays(
     shownMonth,
@@ -70,22 +60,14 @@ export function UsageView() {
       {/* Only when there is nothing to show: a failed refetch keeps the loaded
           month, and a transient failure isn't a verdict on the deployment. */}
       {isError && !data && (
-        <Card
-          className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
-        >
-          <p className="text-sm text-muted-foreground">
-            {unavailable
-              ? "Usage metrics are unavailable on this deployment."
-              : "Couldn't load usage right now."}
-          </p>
-        </Card>
+        <UsageNotice>{readFailureMessage(unavailable)}</UsageNotice>
       )}
       {isPending && !isError && <UsageSkeleton />}
       {data && (
         <div
           className={cn(
             "space-y-10 transition-opacity",
-            (isPlaceholderData || isError) && "opacity-40",
+            isStale && "opacity-40",
           )}
         >
           <section>
@@ -97,13 +79,7 @@ export function UsageView() {
           {data.byModel.length === 0 ? (
             <section>
               <SectionLabel spaced>Spend by day</SectionLabel>
-              <Card
-                className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
-              >
-                <p className="text-sm text-muted-foreground">
-                  No LLM calls in {monthLabel(shownMonth)}.
-                </p>
-              </Card>
+              <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>
             </section>
           ) : (
             <>

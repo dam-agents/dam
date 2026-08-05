@@ -34,7 +34,8 @@ export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
       ))}
       <p className="flex items-center gap-1 text-xs text-muted-foreground">
         Bar length is share of the top model · tokens as in
-        <ArrowRight size={12} className="shrink-0" />
+        <ArrowRight size={12} className="shrink-0" aria-hidden="true" />
+        <span className="sr-only">to</span>
         out
       </p>
     </div>

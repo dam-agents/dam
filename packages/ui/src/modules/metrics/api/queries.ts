@@ -1,8 +1,9 @@
-import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 import { totalCostUsd } from "../lib/format.js";
 import { monthRange, monthStart } from "../lib/month-range.js";
+import { keyAgentId } from "../lib/spend-key.js";
 
 /** The whole Usage tab in one read: per-model, per-agent, and per-day spend over
  *  [from, to) — across all of the user's agents, or one of them when `agentId`
@@ -13,7 +14,9 @@ import { monthRange, monthStart } from "../lib/month-range.js";
  *  The range is part of the key, so paging months would otherwise be a cache
  *  miss and blank the whole tab; the previous month's rows stay put until the
  *  next arrive. Callers must dim on `isPlaceholderData`, or the figures read as
- *  belonging to the month just picked. */
+ *  belonging to the month just picked. `agentId` is part of the key too, and a
+ *  stand-in from another agent would be a wrong number rather than a stale one —
+ *  so only a same-agent predecessor may fill in. */
 export function useSpendBreakdown(
   from: string,
   to: string,
@@ -32,7 +35,8 @@ export function useSpendBreakdown(
     }),
     staleTime: 60_000,
     retry: false,
-    placeholderData: keepPreviousData,
+    placeholderData: (previous, previousQuery) =>
+      keyAgentId(previousQuery?.queryKey) === agentId ? previous : undefined,
   });
 }
 
@@ -65,20 +69,5 @@ export function useSessionCosts(agentId: string | null, enabled: boolean) {
     retry: false,
     select: (data) =>
       new Map(data.runtimeBySession.map((r) => [r.sessionId, r])),
-  });
-}
-
-/** Metrics overview for one agent. Disabled while no agent is selected. */
-export function useMetricsOverview(
-  agentId: string | null,
-  opts?: { sinceHours?: number; sessionId?: string; limit?: number },
-) {
-  return useQuery({
-    ...trpc.metrics.overview.queryOptions(
-      agentId ? { agentId, ...opts } : skipToken,
-    ),
-    refetchInterval: 15000,
-    staleTime: 15000,
-    retry: false,
   });
 }
