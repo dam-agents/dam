@@ -4,7 +4,9 @@ import type {
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,
   skillPublishInputSchema,
+  skillListLocalInputSchema,
   skillReadLocalInputSchema,
+  skillReadPullRequestInputSchema,
   skillScanInputSchema,
   skillUninstallInputSchema,
   skillWriteLocalInputSchema,
@@ -14,7 +16,11 @@ export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 export type SkillScanInput = z.infer<typeof skillScanInputSchema>;
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
+export type SkillListLocalInput = z.infer<typeof skillListLocalInputSchema>;
 export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
+export type SkillReadPullRequestInput = z.infer<
+  typeof skillReadPullRequestInputSchema
+>;
 export type SkillDeleteLocalInput = z.infer<typeof skillDeleteLocalInputSchema>;
 export type SkillWriteLocalInput = z.infer<typeof skillWriteLocalInputSchema>;
 
@@ -36,12 +42,23 @@ export interface LocalSkill {
   skillPath: string;
   /** Absent on pre-provenance agent-runtimes — readers treat as `user`. */
   origin?: SkillOrigin;
+  /** Deterministic SHA-256 of the skill directory. Present only for names the
+   *  caller asked for via `hashNames` — hashing is real I/O on an NFS-backed
+   *  PVC and this listing runs on every state poll (#3019). */
+  contentHash?: string;
 }
 
 export interface LocalSkillFile {
   relPath: string;
   content: string;
   base64?: true;
+}
+
+/** The three fields GitHub reports about a pull request's disposition. */
+export interface PullRequestDisposition {
+  state: "open" | "closed";
+  draft: boolean;
+  mergedAt: string | null;
 }
 
 export interface SkillReadLocalResult {
@@ -100,10 +117,18 @@ export interface SkillsService {
   uninstall: (
     input: SkillUninstallInput,
   ) => Promise<Result<void, SkillsDomainError>>;
-  listLocal: () => Promise<Result<LocalSkill[], SkillsDomainError>>;
+  listLocal: (
+    input?: SkillListLocalInput,
+  ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
   readLocal: (
     input: SkillReadLocalInput,
   ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;
+  /** Raw pull-request disposition. Authenticated through the paired gateway, so
+   *  it resolves private repos the api-server's anonymous read cannot. Returns
+   *  the raw fields — the api-server derives the verdict. */
+  readPullRequest: (
+    input: SkillReadPullRequestInput,
+  ) => Promise<Result<PullRequestDisposition, SkillsDomainError>>;
   deleteLocal: (
     input: SkillDeleteLocalInput,
   ) => Promise<Result<void, SkillsDomainError>>;

@@ -1,18 +1,27 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { Skill, SkillsService } from "api-server-api";
-import { createAgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import {
+  createAgentsRepository,
+  type AgentsRepository,
+} from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import {
-  readPublicGithubSkill,
+  readPublicGithubSkillFile,
   scanPublicGithubArchive,
 } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
+import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
+import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
+import {
+  createPrStateResolver,
+  type PrStateResolver,
+} from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -62,6 +71,30 @@ function invalidateScanCache(gitUrl: string, path: string | undefined): void {
   }
 }
 
+/**
+ * The pull-request state resolver, composed for background use. Separate from
+ * {@link composeSkillsModule} because it is owner-agnostic: the skills service
+ * is re-composed per request around one user, while the resolver sweeps every
+ * agent's publish records.
+ */
+export function composePrStateResolver(deps: {
+  db: Db;
+  agents: AgentsRepository;
+  namespace: string;
+  log: (msg: string) => void;
+}): PrStateResolver {
+  return createPrStateResolver({
+    agentSkills: createAgentSkillsRepository(deps.db),
+    reader: createGitHubPrStateReader(),
+    podReader: createPodPrStateReader({
+      agents: deps.agents,
+      runtimeClient: createAgentRuntimeSkillsClient(deps.namespace),
+      log: deps.log,
+    }),
+    log: deps.log,
+  });
+}
+
 export function composeSkillsModule(
   api: k8s.CoreV1Api,
   namespace: string,
@@ -85,7 +118,7 @@ export function composeSkillsModule(
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,
     scanPublic: scanPublicGithubArchive,
-    readPublicSkill: readPublicGithubSkill,
+    readPublicSkillFile: readPublicGithubSkillFile,
     brandName,
   });
 }

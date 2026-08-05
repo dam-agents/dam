@@ -1,7 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendBars } from "../components/model-spend-bars.js";
@@ -10,10 +9,21 @@ import {
   CHART_HEIGHT_CLASS,
   SpendByDayChart,
 } from "../components/spend-by-day-chart.js";
-import { readFailureMessage, UsageNotice } from "../components/usage-notice.js";
+import {
+  readFailureMessage,
+  UsageNotice,
+  UsageStaleLabel,
+} from "../components/usage-notice.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
 import { formatUsdCents, totalCostUsd } from "../lib/format.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
+
+const PAGE_DESCRIPTION = (
+  <span className="block max-w-[460px]">
+    LLM API spend across all supported agents (currently only Claude Code and
+    derivatives).
+  </span>
+);
 
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
@@ -22,11 +32,12 @@ export function UsageView() {
     month,
     setMonth,
     isCurrentMonth,
+    label,
     shownMonth,
     data,
     isPending,
     isError,
-    isStale,
+    isPlaceholderData,
     unavailable,
   } = useMonthlySpend();
   const total = totalCostUsd(data?.byModel ?? []);
@@ -36,40 +47,46 @@ export function UsageView() {
     data?.byDay,
   );
 
+  // A deployment without a telemetry store has no usage to show for any month,
+  // so the verdict is rendered once in place of the period control rather than
+  // re-derived per month behind a skeleton.
+  if (unavailable) {
+    return (
+      <div>
+        <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
+        <UsageNotice>{readFailureMessage(true, label)}</UsageNotice>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader
         title="Usage"
-        description={
-          <span className="block max-w-[460px]">
-            LLM API spend across all supported agents (currently only Claude
-            Code and derivatives).
-          </span>
-        }
+        description={PAGE_DESCRIPTION}
         actions={
-          unavailable ? undefined : (
+          <div className="flex items-center gap-3">
+            <UsageStaleLabel
+              isPlaceholderData={isPlaceholderData}
+              isError={isError && data !== undefined}
+            />
             <MonthSwitcher
               month={month}
               isCurrentMonth={isCurrentMonth}
               onChange={setMonth}
             />
-          )
+          </div>
         }
       />
 
       {/* Only when there is nothing to show: a failed refetch keeps the loaded
-          month, and a transient failure isn't a verdict on the deployment. */}
+          month, and the label by the period control names it as not fresh. */}
       {isError && !data && (
-        <UsageNotice>{readFailureMessage(unavailable)}</UsageNotice>
+        <UsageNotice>{readFailureMessage(false, label)}</UsageNotice>
       )}
       {isPending && !isError && <UsageSkeleton />}
       {data && (
-        <div
-          className={cn(
-            "space-y-10 transition-opacity",
-            isStale && "opacity-40",
-          )}
-        >
+        <div aria-busy={isPlaceholderData} className="space-y-10">
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
             <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
@@ -79,7 +96,9 @@ export function UsageView() {
           {data.byModel.length === 0 ? (
             <section>
               <SectionLabel spaced>Spend by day</SectionLabel>
-              <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>
+              <UsageNotice>
+                No LLM calls in {monthLabel(shownMonth)}.
+              </UsageNotice>
             </section>
           ) : (
             <>

@@ -2,7 +2,9 @@ import type {
   SkillDeleteLocalInput,
   SkillInstallInput,
   SkillPublishInput,
+  SkillListLocalInput,
   SkillReadLocalInput,
+  SkillReadPullRequestInput,
   Result,
   SkillScanInput,
   SkillsDomainError,
@@ -56,8 +58,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
     install: (input: SkillInstallInput) => doInstall(deps, input),
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
-    listLocal: () => doListLocal(deps),
+    listLocal: (input?: SkillListLocalInput) => doListLocal(deps, input),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    readPullRequest: (input: SkillReadPullRequestInput) =>
+      deps.github.getPullRequest(
+        { owner: input.owner, repo: input.repo },
+        input.number,
+      ),
     deleteLocal: (input: SkillDeleteLocalInput) => doDeleteLocal(deps, input),
     writeLocal: (input: SkillWriteLocalInput) =>
       runWriteLocal(deps, deps.skillPaths, input),
@@ -87,10 +94,14 @@ async function doUninstall(
   return ok(undefined);
 }
 
-async function doListLocal(deps: SkillsServiceDeps) {
+async function doListLocal(
+  deps: SkillsServiceDeps,
+  input?: SkillListLocalInput,
+) {
   const skills = await deps.repo.listLocal(
     deps.skillPaths,
     deps.pristineSkillPaths,
+    input?.hashNames ? new Set(input.hashNames) : undefined,
   );
   return ok(skills);
 }

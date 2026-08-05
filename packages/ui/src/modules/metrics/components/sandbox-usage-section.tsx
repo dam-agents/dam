@@ -2,7 +2,6 @@ import type { TokenSpendByModel } from "api-server-api";
 
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
 import { totalCostUsd } from "../lib/format.js";
@@ -11,7 +10,11 @@ import { ModelSpendBars } from "./model-spend-bars.js";
 import { MonthSwitcher } from "./month-switcher.js";
 import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";
 import { SpendStatCards } from "./spend-stat-cards.js";
-import { readFailureMessage, UsageNotice } from "./usage-notice.js";
+import {
+  readFailureMessage,
+  UsageNotice,
+  UsageStaleLabel,
+} from "./usage-notice.js";
 
 // Cache reads dominate agent traffic, so folding them into "in" is what makes
 // the figure reflect what actually entered the context — the same sum the
@@ -43,11 +46,12 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
     month,
     setMonth,
     isCurrentMonth,
+    label,
     shownMonth,
     data,
     isPending,
     isError,
-    isStale,
+    isPlaceholderData,
     unavailable,
   } = useMonthlySpend(agentId);
   const sums = totals(data?.byModel ?? []);
@@ -57,11 +61,17 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
       <div className="mb-3 flex items-center justify-between gap-4">
         <SectionLabel>Usage</SectionLabel>
         {!unavailable && (
-          <MonthSwitcher
-            month={month}
-            isCurrentMonth={isCurrentMonth}
-            onChange={setMonth}
-          />
+          <div className="flex items-center gap-3">
+            <UsageStaleLabel
+              isPlaceholderData={isPlaceholderData}
+              isError={isError && data !== undefined}
+            />
+            <MonthSwitcher
+              month={month}
+              isCurrentMonth={isCurrentMonth}
+              onChange={setMonth}
+            />
+          </div>
         )}
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
@@ -69,18 +79,13 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
       </p>
 
       {/* Only when there is nothing to show: a failed refetch keeps the loaded
-          month, and a transient failure isn't a verdict on the deployment. */}
+          month, and the label by the period control names it as not fresh. */}
       {isError && !data && (
-        <UsageNotice>{readFailureMessage(unavailable)}</UsageNotice>
+        <UsageNotice>{readFailureMessage(unavailable, label)}</UsageNotice>
       )}
       {isPending && !isError && <UsageSkeleton />}
       {data && (
-        <div
-          className={cn(
-            "space-y-6 transition-opacity",
-            isStale && "opacity-40",
-          )}
-        >
+        <div aria-busy={isPlaceholderData} className="space-y-6">
           <SpendStatCards {...sums} />
           {data.byModel.length === 0 ? (
             <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>

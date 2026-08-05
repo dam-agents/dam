@@ -47,8 +47,14 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   },
 };
 
-/** Shared chrome for every overlay variant: full-view takeover, back button,
- *  centered content column. */
+/** Shared chrome for every overlay variant: full-view takeover, centered
+ *  content column. Desktop needs no back affordance — the icon rail stays
+ *  visible beside the takeover, so Home is always one click away. Mobile has
+ *  neither rail nor bottom bar in chat, and the header's own back button sits
+ *  beneath this overlay, so it keeps an icon-only escape hatch. That icon is
+ *  the only way out at the one width where the target is exclusively touch,
+ *  hence `icon` sizing rather than the label-era `inline`, which would collapse
+ *  the box onto the 14 px glyph. */
 function OverlayFrame({
   onBack,
   children,
@@ -60,12 +66,12 @@ function OverlayFrame({
     <div className="absolute inset-0 z-overlay flex flex-col bg-background/95 backdrop-blur-sm">
       <Button
         variant="ghost"
-        size="inline"
+        size="icon"
+        aria-label="Back"
         onClick={onBack}
-        className="absolute left-4 top-3 gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+        className="absolute left-1 top-0 text-muted-foreground hover:bg-transparent md:hidden"
       >
         <ArrowLeft size={14} />
-        Sandboxes
       </Button>
       <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
         {children}

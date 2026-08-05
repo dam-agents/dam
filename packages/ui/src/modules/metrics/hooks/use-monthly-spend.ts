@@ -1,8 +1,7 @@
 import { useState } from "react";
 
 import { useSpendBreakdown } from "../api/queries.js";
-import { monthRange, monthStart } from "../lib/month-range.js";
-import { isMetricsUnavailable } from "../lib/unavailable.js";
+import { monthLabel, monthRange, monthStart } from "../lib/month-range.js";
 import { useSettledMonth } from "./use-settled-month.js";
 
 /** One month of spend plus the month control's state — the whole stateful half
@@ -17,7 +16,7 @@ export function useMonthlySpend(agentId?: string) {
   // One query backs the whole surface, so per-model / per-agent / per-day spend
   // land together under a single loading/error state — the chart never renders
   // an all-zero month while its data is still in flight.
-  const { data, isPending, isError, isPlaceholderData, error } =
+  const { data, isPending, isError, isPlaceholderData, isUnavailable } =
     useSpendBreakdown(from, to, timeZone, agentId);
   const shownMonth = useSettledMonth(
     month,
@@ -28,14 +27,15 @@ export function useMonthlySpend(agentId?: string) {
     month,
     setMonth,
     isCurrentMonth,
+    /** The picked month, for the period control and error copy. */
+    label: monthLabel(month),
     /** The month the rows on screen belong to — plot date-keyed output against
      *  this, not the month just picked. */
     shownMonth,
     data,
     isPending,
     isError,
-    /** The figures on screen are not the picked month's own rows: dim them. */
-    isStale: isPlaceholderData || isError,
-    unavailable: isMetricsUnavailable(error),
+    isPlaceholderData,
+    unavailable: isUnavailable,
   };
 }

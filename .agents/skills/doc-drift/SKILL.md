@@ -21,8 +21,8 @@ Reviews code changes against the project's **architecture documentation** under
 > When your work changes the behavior or responsibility of a subsystem, update its page in the same PR.
 
 This skill operationalizes that rule, **and only that rule**. It reads the diff, reads the
-architecture pages, and reports mismatches. It does **not** rewrite docs — fixes are proposed,
-the user decides.
+architecture pages, and reports mismatches. It does **not** rewrite docs — its output is a set
+of findings with proposed edits; applying any of them is separate work outside this skill.
 
 ## Scope: architecture docs only
 
@@ -90,7 +90,8 @@ Each check is grounded in code changes observed in the diff and lands inside
 
 ## Report
 
-Take the subagent's output and present a focused report to the user:
+The skill's result is a focused drift report — a structured finding, not an act of delivery.
+Assemble the checks' output into this format:
 
 - **Verdict** — one line: `aligned`, `minor drift`, or `significant drift`.
 - **Drift** — every ❌, with file/line evidence and the proposed edit. Group by check number.
@@ -101,9 +102,17 @@ check-7 state-change signal) must not appear anywhere in the report — not in e
 not as a parenthetical, not as a footnote. If there is nothing to flag, the report is just the
 verdict.
 
+This skill may run as one sub-step of a longer process — for example, one section of a broader
+code review whose caller embeds the report and continues with its own remaining steps. The
+report is then an intermediate result, not the final deliverable, and what the caller does
+with it is not this skill's concern. The report contains findings only: a verdict, drift
+entries, and possible-drift questions. It states no conclusion about the surrounding process
+and addresses no instruction to the caller.
+
 ## Guidelines
 
-- **Read-only by default.** Do not edit docs unless the user accepts the proposed fixes.
+- **Read-only.** This skill never edits documentation — it only proposes fixes inside its
+  findings. Applying a proposed fix is separate follow-up work outside this skill's run.
 - **The documentation guidelines are the sole rulebook.** Do not invent rules. Do not flag things
   the guidelines don't forbid (e.g., short architecture pages — there is no length cap).
 - **Trivial changes are exempt.** README typos, comment-only edits, dependency bumps with no

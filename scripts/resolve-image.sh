@@ -36,7 +36,7 @@ PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agen
 
 # claude-code-derived workloads; single registration point, also emitted as
 # CI's `workloads` build/merge matrix
-WORKLOADS="nous openevolve shinkaevolve gepa"
+WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -140,6 +140,7 @@ self_check() {
   chk "$(base_of nous)" claude-code
   chk "$(base_of shinkaevolve)" claude-code
   chk "$(base_of gepa)" claude-code
+  chk "$(base_of skydiscover)" claude-code
   chk "$(base_of claude-code)" platform-base
   chk "$(base_of platform-base)" ""
   chk "$(local_tag platform-base)" platform-base
@@ -151,11 +152,13 @@ self_check() {
   has "$(effective_paths shinkaevolve)" packages/agents/claude-code
   has "$(effective_paths gepa)" packages/agents/gepa
   has "$(effective_paths gepa)" packages/agents/claude-code
+  has "$(effective_paths skydiscover)" packages/agents/skydiscover
+  has "$(effective_paths skydiscover)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (main/tag) output without git/docker.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'platform_base=true'
   has "$out" 'agents=["claude-code","codex","pi-agent","bob","k-search"]'
-  has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa"]'
+  has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'claude_code_base_tag=deadbeef'
   has "$out" 'source_shas={"platform-base":"'

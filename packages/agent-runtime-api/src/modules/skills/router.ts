@@ -3,7 +3,9 @@ import { protectedProcedure, t } from "../../trpc.js";
 import {
   skillDeleteLocalInputSchema,
   skillPublishInputSchema,
+  skillListLocalInputSchema,
   skillReadLocalInputSchema,
+  skillReadPullRequestInputSchema,
   skillScanInputSchema,
   skillWriteLocalInputSchema,
 } from "./schemas.js";
@@ -90,16 +92,28 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  listLocal: protectedProcedure.query(async ({ ctx }) => {
-    const result = await ctx.skills.listLocal();
-    if (!result.ok) throw toTrpcError(result.error);
-    return { skills: result.value };
-  }),
+  // Input stays optional so existing callers are untouched.
+  listLocal: protectedProcedure
+    .input(skillListLocalInputSchema.optional())
+    .query(async ({ ctx, input }) => {
+      const result = await ctx.skills.listLocal(input);
+      if (!result.ok) throw toTrpcError(result.error);
+      return { skills: result.value };
+    }),
 
   readLocal: protectedProcedure
     .input(skillReadLocalInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await ctx.skills.readLocal(input);
+      if (!result.ok) throw toTrpcError(result.error);
+      return result.value;
+    }),
+
+  // A query, not a mutation: it reads.
+  readPullRequest: protectedProcedure
+    .input(skillReadPullRequestInputSchema)
+    .query(async ({ ctx, input }) => {
+      const result = await ctx.skills.readPullRequest(input);
       if (!result.ok) throw toTrpcError(result.error);
       return result.value;
     }),

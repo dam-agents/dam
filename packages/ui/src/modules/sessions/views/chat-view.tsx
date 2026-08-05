@@ -469,7 +469,7 @@ export function ChatView() {
         <Button
           variant="ghost"
           size="inline"
-          aria-label="Back to sandboxes"
+          aria-label="Back"
           onClick={handleBack}
           className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
         >

@@ -94,6 +94,7 @@ export function SkillSourceCard({
   onUpdate,
   onOpenSkill,
   onManageConnections,
+  suppressedNames,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -117,12 +118,21 @@ export function SkillSourceCard({
   onUpdate: (skill: Skill) => void;
   /** Open a skill's SKILL.md render modal (05). */
   onOpenSkill: (skill: Skill) => void;
+  /** Scanned skills to leave out of this card entirely — rows *and* the count:
+   *  this source's own copy of a skill published from this sandbox that is still
+   *  byte-identical on disk, so the standalone row above already shows it and a
+   *  second row would claim it is "not installed" (#3019). */
+  suppressedNames?: ReadonlySet<string>;
   /** Navigate to the sandbox's Connections tab — shown as a "Manage
    *  connections" affordance on a scan error with no server CTA. */
   onManageConnections?: () => void;
 }) {
   const loaded = skills !== undefined;
-  const list = skills ?? [];
+  // Suppressed entries drop out before anything else derives from the list, so
+  // the `N of M on` count and the collapse decision agree with the rows on
+  // screen. Counting a row the page deliberately hides reads as a bug — "0 of 3
+  // on" above two rows sends the reader looking for a third.
+  const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
   const enabled = list.filter(
     (s) => installedRef(s.source, s.name) !== undefined,
   );

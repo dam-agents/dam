@@ -1,9 +1,11 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { trpc } from "../../../trpc.js";
 import { totalCostUsd } from "../lib/format.js";
 import { monthRange, monthStart } from "../lib/month-range.js";
 import { keyAgentId } from "../lib/spend-key.js";
+import { isMetricsUnavailable } from "../lib/unavailable.js";
 
 /** The whole Usage tab in one read: per-model, per-agent, and per-day spend over
  *  [from, to) — across all of the user's agents, or one of them when `agentId`
@@ -12,18 +14,22 @@ import { keyAgentId } from "../lib/spend-key.js";
  *  single loading/error state.
  *
  *  The range is part of the key, so paging months would otherwise be a cache
- *  miss and blank the whole tab; the previous month's rows stay put until the
- *  next arrive. Callers must dim on `isPlaceholderData`, or the figures read as
- *  belonging to the month just picked. `agentId` is part of the key too, and a
- *  stand-in from another agent would be a wrong number rather than a stale one —
- *  so only a same-agent predecessor may fill in. */
+ *  miss and blank the whole surface; the previous month's rows stay put until
+ *  the next arrive. Callers must mark the figures while `isPlaceholderData`, or
+ *  they read as belonging to the month just picked. `agentId` is part of the key
+ *  too, and a stand-in from another agent would be a wrong number rather than a
+ *  stale one — so only a same-agent predecessor may fill in.
+ *
+ *  `isUnavailable` latches the deployment-level "metrics are off here" verdict:
+ *  once seen, no further range fires a request we already know will fail. */
 export function useSpendBreakdown(
   from: string,
   to: string,
   timeZone: string,
   agentId?: string,
 ) {
-  return useQuery({
+  const [metricsDisabled, setMetricsDisabled] = useState(false);
+  const query = useQuery({
     // Spread rather than pass `undefined`, so the unnarrowed key stays exactly
     // what it was before agent scoping existed and both surfaces share a cache
     // entry when they ask the same question.
@@ -33,11 +39,26 @@ export function useSpendBreakdown(
       timeZone,
       ...(agentId ? { agentId } : {}),
     }),
+    enabled: !metricsDisabled,
     staleTime: 60_000,
     retry: false,
     placeholderData: (previous, previousQuery) =>
       keyAgentId(previousQuery?.queryKey) === agentId ? previous : undefined,
   });
+  const isUnavailable = metricsDisabled || isMetricsUnavailable(query.error);
+  useEffect(() => {
+    if (isUnavailable) setMetricsDisabled(true);
+  }, [isUnavailable]);
+  // Named fields rather than a spread: spreading the result would read every
+  // property and so opt the page out of React Query's render tracking.
+  return {
+    data: query.data,
+    isPending: query.isPending,
+    isError: query.isError,
+    // True while the figures on screen belong to the previously viewed month.
+    isPlaceholderData: query.isPlaceholderData,
+    isUnavailable,
+  };
 }
 
 /** This calendar month's total spend for one sandbox, for the Configure Sandbox

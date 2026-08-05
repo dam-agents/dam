@@ -59,6 +59,7 @@ includes = [
     "packages/agents/openevolve/tasks.toml",
     "packages/agents/pi-agent/tasks.toml",
     "packages/agents/shinkaevolve/tasks.toml",
+    "packages/agents/skydiscover/tasks.toml",
     "packages/agents/tasks.toml",
     "packages/api-server-api/tasks.toml",
     "packages/api-server/tasks.toml",

@@ -52,9 +52,10 @@ export interface SessionsSlice {
 
   /**
    * Wipe all per-chat-session state (active session, messages, file tree,
-   * session config, queued prompt). Callers like `selectInstance`,
-   * `goBack`, and the popstate handler invoke this so every entry point
-   * leaves chat state in the same clean shape.
+   * docked file/artifact panel, session config, queued prompt). Callers like
+   * `selectInstance`, `goBack`, and the popstate handler invoke this so every
+   * entry point leaves chat state in the same clean shape — nothing from a
+   * previously-viewed sandbox survives into the next one.
    */
   resetChatContext: () => void;
 }
@@ -102,7 +103,17 @@ export const createSessionsSlice: StateCreator<
       messages: [],
       sessionError: null,
       terminalPaused: false,
+      // The right dock is scoped to the sandbox that opened it — both of its
+      // occupants clear here so entering any sandbox starts with the dock
+      // closed instead of showing the previous sandbox's file or artifact.
+      // (The third occupant, the experiment panel, is derived per agent and
+      // needs no reset.) The viewer's edit/dirty flags ride along, mirroring
+      // `setOpenFilePath(null)`: leaving a dirty file behind would otherwise
+      // prompt "Discard unsaved changes?" on the next sandbox's first click.
       openFilePath: null,
+      openArtifactId: null,
+      openFileDirty: false,
+      openFileEdit: false,
       pendingPermissions: [],
       queuedMessage: null,
       pendingResumeSessionId: null,
