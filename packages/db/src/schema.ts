@@ -315,13 +315,18 @@ export const agentSkillPublishes = pgTable(
     prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
     prEtag: text("pr_etag"),
     /** Consecutive failed attempts — the backoff multiplier and, past a
-     *  bound, the retirement gate. Deferred attempts (no warm pod) don't
-     *  count; reset whenever an attempt learns anything. */
+     *  bound, the retirement gate. Only attempts that could have answered
+     *  count (an anonymous read, a warm pod — a sleeping agent's record is
+     *  skipped, not failed); reset whenever an attempt learns anything, so
+     *  retirement means "kept failing for ~a month", never "was asleep". */
     prStateCheckFailures: integer("pr_state_check_failures")
       .notNull()
       .default(0),
-    /** Set once the anonymous read has 404'd; later attempts go straight to
-     *  a publishing agent's pod. Never unset. */
+    /** Set once the anonymous read has 404'd; the record then resolves only
+     *  through a publishing agent's pod. Deliberately never unset: the pod
+     *  path is strictly more capable than the anonymous one, so a stale flag
+     *  (a repo later made public) costs anonymous-budget optimality, never
+     *  correctness — and the row's lifetime is bounded by its agent. */
     prNeedsPod: boolean("pr_needs_pod").notNull().default(false),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],

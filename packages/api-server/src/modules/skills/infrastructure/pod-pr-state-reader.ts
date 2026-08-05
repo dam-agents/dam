@@ -10,11 +10,13 @@ import type { AgentRuntimeSkillsClient } from "./agent-runtime-client.js";
  *
  * Best-effort on purpose, and the guarantee that makes that acceptable is
  * negative: **this never wakes a hibernated agent.** A badge is not worth
- * spending the user's compute on something they did not ask for, so a sleeping
- * sandbox simply yields null and the badge keeps claiming less. What rescues
- * accuracy over time is terminal-state persistence — if the pod happens to be
- * warm when the pull request reaches a terminal state, that state is captured
- * once and kept forever, so the badge only ever gets more accurate.
+ * spending the user's compute on something they did not ask for, so a
+ * sleeping sandbox reports `not-running` and the badge keeps claiming less.
+ * The resolver filters to warm agents before calling here, so the check
+ * below is a race guard, not the schedule. What rescues accuracy over time
+ * is terminal-state persistence — if the pod happens to be warm when the
+ * pull request reaches a terminal state, that state is captured once and
+ * kept forever, so the badge only ever gets more accurate.
  */
 export function createPodPrStateReader(deps: {
   agents: AgentsRepository;
