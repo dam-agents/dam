@@ -49,10 +49,8 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
     label,
     shownMonth,
     data,
-    isPending,
-    isError,
-    isPlaceholderData,
-    unavailable,
+    state,
+    freshness,
   } = useMonthlySpend(agentId);
   const sums = totals(data?.byModel ?? []);
 
@@ -60,12 +58,9 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
     <section className="mb-8">
       <div className="mb-3 flex items-center justify-between gap-4">
         <SectionLabel>Usage</SectionLabel>
-        {!unavailable && (
+        {state !== "unavailable" && (
           <div className="flex items-center gap-3">
-            <UsageStaleLabel
-              isPlaceholderData={isPlaceholderData}
-              isError={isError && data !== undefined}
-            />
+            <UsageStaleLabel freshness={freshness} />
             <MonthSwitcher
               month={month}
               isCurrentMonth={isCurrentMonth}
@@ -80,12 +75,14 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
 
       {/* Only when there is nothing to show: a failed refetch keeps the loaded
           month, and the label by the period control names it as not fresh. */}
-      {isError && !data && (
-        <UsageNotice>{readFailureMessage(unavailable, label)}</UsageNotice>
+      {(state === "failed" || state === "unavailable") && (
+        <UsageNotice>
+          {readFailureMessage(state === "unavailable", label)}
+        </UsageNotice>
       )}
-      {isPending && !isError && <UsageSkeleton />}
-      {data && (
-        <div aria-busy={isPlaceholderData} className="space-y-6">
+      {state === "loading" && <UsageSkeleton />}
+      {state === "ready" && data && (
+        <div aria-busy={freshness === "updating"} className="space-y-6">
           <SpendStatCards {...sums} />
           {data.byModel.length === 0 ? (
             <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>

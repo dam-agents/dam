@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 
+import type { UsageFreshness } from "../hooks/use-monthly-spend.js";
 import { CHART_HEIGHT_CLASS } from "./spend-by-day-chart.js";
 
 /** One-line message at the day chart's height, so standing in for a chart — or
@@ -31,18 +32,11 @@ export function readFailureMessage(
 /** Names why the figures beside it are not the picked month's own — the figures
  *  stay legible, which dimming them cost: at 40% opacity the muted body copy
  *  fell under the AA contrast minimum. */
-export function UsageStaleLabel({
-  isPlaceholderData,
-  isError,
-}: {
-  isPlaceholderData: boolean;
-  isError: boolean;
-}) {
-  const text = isPlaceholderData
-    ? "Updating…"
-    : isError
-      ? "Couldn't refresh"
-      : undefined;
-  if (!text) return null;
-  return <span className="text-xs text-muted-foreground">{text}</span>;
+export function UsageStaleLabel({ freshness }: { freshness: UsageFreshness }) {
+  if (freshness === "fresh") return null;
+  return (
+    <span className="text-xs text-muted-foreground">
+      {freshness === "updating" ? "Updating…" : "Couldn't refresh"}
+    </span>
+  );
 }

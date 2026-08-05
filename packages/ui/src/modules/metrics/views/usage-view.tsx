@@ -36,10 +36,8 @@ export function UsageView() {
     label,
     shownMonth,
     data,
-    isPending,
-    isError,
-    isPlaceholderData,
-    unavailable,
+    state,
+    freshness,
   } = useMonthlySpend();
   const total = totalCostUsd(data?.byModel ?? []);
   const dailyDays = fillMonthDays(
@@ -51,7 +49,7 @@ export function UsageView() {
   // A deployment without a telemetry store has no usage to show for any month,
   // so the verdict is rendered once in place of the period control rather than
   // re-derived per month behind a skeleton.
-  if (unavailable) {
+  if (state === "unavailable") {
     return (
       <div>
         <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
@@ -67,10 +65,7 @@ export function UsageView() {
         description={PAGE_DESCRIPTION}
         actions={
           <div className="flex items-center gap-3">
-            <UsageStaleLabel
-              isPlaceholderData={isPlaceholderData}
-              isError={isError && data !== undefined}
-            />
+            <UsageStaleLabel freshness={freshness} />
             <MonthSwitcher
               month={month}
               isCurrentMonth={isCurrentMonth}
@@ -82,12 +77,12 @@ export function UsageView() {
 
       {/* Only when there is nothing to show: a failed refetch keeps the loaded
           month, and the label by the period control names it as not fresh. */}
-      {isError && !data && (
+      {state === "failed" && (
         <UsageNotice>{readFailureMessage(false, label)}</UsageNotice>
       )}
-      {isPending && !isError && <UsageSkeleton />}
-      {data && (
-        <div aria-busy={isPlaceholderData} className="space-y-10">
+      {state === "loading" && <UsageSkeleton />}
+      {state === "ready" && data && (
+        <div aria-busy={freshness === "updating"} className="space-y-10">
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
             <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
