@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
-import { totalCostUsd } from "../lib/format.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
+import { totalCostUsd } from "../lib/totals.js";
 import { ModelSpendBars } from "./model-spend-bars.js";
 import { MonthSwitcher } from "./month-switcher.js";
 import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";

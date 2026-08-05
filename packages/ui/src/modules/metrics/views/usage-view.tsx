@@ -15,8 +15,9 @@ import {
   UsageStaleLabel,
 } from "../components/usage-notice.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
-import { formatUsdCents, totalCostUsd } from "../lib/format.js";
+import { formatUsdCents } from "../lib/format.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
+import { totalCostUsd } from "../lib/totals.js";
 
 const PAGE_DESCRIPTION = (
   <span className="block max-w-[460px]">

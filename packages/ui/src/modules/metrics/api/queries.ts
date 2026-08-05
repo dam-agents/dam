@@ -2,9 +2,9 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { trpc } from "../../../trpc.js";
-import { totalCostUsd } from "../lib/format.js";
 import { monthRange, monthStart } from "../lib/month-range.js";
 import { keyAgentId } from "../lib/spend-key.js";
+import { totalCostUsd } from "../lib/totals.js";
 import { isMetricsUnavailable } from "../lib/unavailable.js";
 
 /** The whole Usage tab in one read: per-model, per-agent, and per-day spend over

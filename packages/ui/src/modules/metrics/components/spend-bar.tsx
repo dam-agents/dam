@@ -33,7 +33,13 @@ export function SpendBar({ label, value, pct, color, caption }: Props) {
         // Width is the only visual encoding, so state it for anything that
         // can't see it — matching how the day chart labels each column.
         role="img"
-        aria-label={`${Math.round(pct)}% of the largest`}
+        // Rounding alone would announce "0%" for a row the 8px floor still draws
+        // — present to the eye, absent to the ear.
+        aria-label={
+          pct > 0 && pct < 1
+            ? "less than 1% of the largest"
+            : `${Math.round(pct)}% of the largest`
+        }
       >
         {/* 8px floor so any nonzero spend stays visible; zero stays empty. */}
         <div

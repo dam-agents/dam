@@ -23,13 +23,15 @@ function Sub({ children }: { children: ReactNode }) {
   return <span className="text-sm text-muted-foreground/70">{children}</span>;
 }
 
+// `dt`/`dd` pair the label with its figure, so jumping straight to a number
+// still carries what the number is.
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Card className="flex flex-col gap-1.5 p-4">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="whitespace-nowrap font-mono text-xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+    <Card className="p-4">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="mt-1.5 whitespace-nowrap font-mono text-xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
         {children}
-      </span>
+      </dd>
     </Card>
   );
 }
@@ -44,7 +46,7 @@ export function SpendStatCards({
   durationMs,
 }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Stat label="Total cost">{formatUsdCents(costUsd)}</Stat>
       <Stat label="API calls">{calls.toLocaleString()}</Stat>
       <Stat label="Tokens in / out">
@@ -64,6 +66,6 @@ export function SpendStatCards({
           ),
         )}
       </Stat>
-    </div>
+    </dl>
   );
 }
