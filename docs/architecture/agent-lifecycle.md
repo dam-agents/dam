@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-04
+Last verified: 2026-08-05
 
 ## Overview
 
@@ -131,8 +131,10 @@ rather than start/stop edges, and while that set is non-empty the runtime will n
 close the session and reports itself busy, so the [idle checker](#hibernate)
 cannot hibernate the pod underneath the work. An empty report ends both. Reporting
 is optional: a harness that never reports behaves exactly as it did before the
-contract. What is held is published on the runtime's status surface, so a sandbox
-that stays awake can be explained by the work holding it.
+contract. What is held is published on the runtime's status surface — no longer
+diagnosis-only: the api-server reads it passively (never waking a pod) to show
+a background-work indicator on the session in the UI, so a sandbox that stays
+awake can be explained by the work holding it.
 
 Only work a harness *supervises* reaches its report, which bounds what the
 contract promises. A job the agent detached from the harness is invisible to it,
