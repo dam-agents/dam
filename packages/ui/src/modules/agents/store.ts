@@ -135,7 +135,11 @@ export const createAgentsSlice: StateCreator<
   },
 
   openAgentSession: (agentId, sessionId) => {
-    history.pushState(null, "", routeToPath({ view: "chat", agent: agentId }));
+    history.pushState(
+      null,
+      "",
+      routeToPath({ view: "chat", agent: agentId, session: sessionId }),
+    );
     get().resetChatContext();
     set({
       selectedAgent: agentId,

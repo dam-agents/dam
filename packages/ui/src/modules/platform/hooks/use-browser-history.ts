@@ -34,6 +34,17 @@ export function useBrowserHistory(): void {
         useStore.setState({
           ...routeToNavigationState(route),
           selectedAgent: route.agent,
+          // A session in the path is a conversation to re-open — a link
+          // followed from a channel, a reload, or a back/forward step. Set
+          // after the reset, which clears it, exactly like `openAgentSession`;
+          // chat consumes it on arrival. Naming a session also means landing in
+          // it, so mobile opens the chat screen rather than the session list.
+          ...("session" in route && route.session
+            ? {
+                pendingResumeSessionId: route.session,
+                mobileScreen: "chat" as const,
+              }
+            : {}),
         });
         return;
       }

@@ -23,7 +23,10 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
   | { view: "list" }
-  | { view: "chat"; agent: string }
+  /** `session` addresses one conversation inside the agent's chat. It is what
+   *  makes a session linkable from outside the UI (a channel reply pointing back
+   *  at the thread it answered) and what a reload or a shared link re-opens. */
+  | { view: "chat"; agent: string; session?: string }
   | { view: "settings"; settingsTab: SettingsTab }
   | { view: "inbox" }
   | { view: "terms" }
@@ -46,8 +49,14 @@ const sandboxHomeRe = new RegExp(
 );
 
 export function parseRoute(path: string): Route {
-  if (path.startsWith("/chat/"))
-    return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
+  const chatMatch = path.match(/^\/chat\/([^/]+)(?:\/([^/]+))?\/?$/);
+  if (chatMatch) {
+    return {
+      view: "chat",
+      agent: decodeURIComponent(chatMatch[1]!),
+      ...(chatMatch[2] ? { session: decodeURIComponent(chatMatch[2]) } : {}),
+    };
+  }
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
@@ -101,8 +110,12 @@ export function routeToPath(route: Route): string {
   switch (route.view) {
     case "list":
       return "/";
-    case "chat":
-      return `/chat/${encodeURIComponent(route.agent)}`;
+    case "chat": {
+      const base = `/chat/${encodeURIComponent(route.agent)}`;
+      return route.session
+        ? `${base}/${encodeURIComponent(route.session)}`
+        : base;
+    }
     case "settings":
       return route.settingsTab === "account"
         ? "/settings"
