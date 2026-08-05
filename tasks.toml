@@ -221,7 +221,7 @@ echo "e2e data reset complete."
 '''
 
 ["e2e:loop"]
-description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent"
+description = "Fast e2e rerun against the warm test cluster (no VM recreate): optionally rebuild components, wipe data, run the smoke suite. Options: --headed --full --rebuild=apiserver,ui,controller,keycloak,mock-agent --test=<playwright file/title filter, e.g. prompt-delivery; smoke specs still run their dependency chain>"
 dir = "{{config_root}}"
 raw = true
 run = '''
@@ -239,6 +239,7 @@ fi
 PLAYWRIGHT_TASK="e2e-playwright:run"
 REBUILD=""
 REBUILD_SET=false
+TEST_FILTER=""
 for arg in "$@"; do
   case "$arg" in
     --headed) PLAYWRIGHT_TASK="e2e-playwright:run-headed" ;;
@@ -246,6 +247,15 @@ for arg in "$@"; do
     # The pipeline default is smoke only; this flag is the manual trigger.
     --full) PLAYWRIGHT_TASK="e2e-playwright:run-full" ;;
     --rebuild=*) REBUILD="${arg#--rebuild=}"; REBUILD_SET=true ;;
+    # Positional Playwright filter (file/title substring or regex). It fully
+    # narrows the run only for full-only projects, which have no dependencies
+    # — e.g. --full --test=prompt-delivery runs just the four prompt-delivery
+    # specs. A smoke spec still pulls in its whole dependency chain: Playwright
+    # always runs a selected project's dependencies, and here they're needed
+    # anyway because e2e:reset (step 3) wipes the state the chain builds up.
+    # Full-only specs also need --full, or their project doesn't exist and
+    # the filter matches nothing.
+    --test=*) TEST_FILTER="${arg#--test=}" ;;
   esac
 done
 
@@ -314,10 +324,11 @@ if [ "$READY" != true ]; then
 fi
 
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
-# for the next loop.
+# for the next loop. The filter rides after `--` so mise appends it to the
+# playwright command instead of parsing it as its own flag.
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
-  mise run "$PLAYWRIGHT_TASK"
+  mise run "$PLAYWRIGHT_TASK" ${TEST_FILTER:+-- "$TEST_FILTER"}
 '''
 
 # -- Git hooks --
