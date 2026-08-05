@@ -463,8 +463,8 @@ const server = http.createServer((req, res) => {
     const acp = acpRuntime.status();
     const status = {
       idle: acp.idle && ptySlots.size === 0,
-      // Published for diagnosis only — the controller reads `idle`, which
-      // already accounts for these. It answers "why is this pod awake?".
+      // The controller reads `idle` (which already accounts for these); the
+      // api-server reads this passively to surface it in the session UI.
       backgroundWork: acp.backgroundWork,
     };
     res

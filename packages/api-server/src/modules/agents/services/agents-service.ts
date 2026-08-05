@@ -21,6 +21,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 
 /** Outbox-derived contribution status, supplied by runtime-delivery. */
@@ -36,11 +37,6 @@ export interface ContributionsSettledPort {
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
 }
 
-/** Port: live read of a pod's status surface (#2965). Passive — never wakes
- *  a pod or bumps its activity. */
-export interface PodStatusPort {
-  backgroundWork(agentId: string): Promise<SessionBackgroundWork[]>;
-}
 import {
   assembleAgent,
   type InfraAgent,
@@ -218,7 +214,7 @@ export function executeTelegramBind(deps: {
  *  the same. Extracted like the bind flows for narrow-deps tests. */
 export function executeBackgroundWorkRead(deps: {
   getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
-  podStatus: PodStatusPort;
+  podStatus: PodStatusClient;
 }) {
   return async (id: string): Promise<SessionBackgroundWork[] | null> => {
     const infra = await deps.getAgent(id);
@@ -521,7 +517,7 @@ export function createAgentsService(deps: {
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
   /** Live pod status reads (#2965); passive by contract. */
-  podStatus: PodStatusPort;
+  podStatus: PodStatusClient;
   /** Chart-default agent size (limits), stamped concretely at create (#1900). */
   agentDefaultLimits: DefaultResourceLimits;
   /** KubeVirt vm backend available in this install; absent = false. */

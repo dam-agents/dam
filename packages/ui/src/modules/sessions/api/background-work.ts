@@ -23,13 +23,16 @@ export function useAgentBackgroundWork(
   agentId: string | null,
 ): readonly SessionBackgroundWork[] {
   const awake = useAgentRunState(agentId) === "running";
+  // No errorToast: decorative indicator, and the server already folds an
+  // unreachable pod into []. No retry: a failed tick waits for the next poll.
   const { data } = useQuery({
     queryKey: backgroundWorkKeys.agent(agentId),
     queryFn:
       agentId && awake
         ? () => api.agents.backgroundWork.query({ id: agentId })
         : skipToken,
-    refetchInterval: BACKGROUND_WORK_POLL_MS,
+    refetchInterval: agentId && awake ? BACKGROUND_WORK_POLL_MS : false,
+    retry: false,
   });
   return awake ? (data ?? NO_SESSIONS) : NO_SESSIONS;
 }
