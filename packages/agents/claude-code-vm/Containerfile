@@ -44,9 +44,11 @@ RUN curl -sfL https://get.k3s.io | \
     curl -fL "https://github.com/k3s-io/k3s/releases/download/${ver}/k3s-airgap-images-${arch}.tar.zst" \
       -o /var/lib/rancher/k3s/agent/images/k3s-airgap-images.tar.zst
 
-# Harness content from the pod image. /usr/local resolves to /var/usrlocal on
-# bootc — fine here: the qcow2 seeds /var at deploy and these VMs never
-# bootc-upgrade. /app is agent-runtime (node dist/server.js + node_modules).
+# Harness content from the pod image. /app is agent-runtime (node
+# dist/server.js + node_modules). NOTE: these COPYs replace fedora-bootc's
+# `/usr/local -> ../var/usrlocal` symlink with a real directory under the
+# read-only /usr — the final RUN below restores the symlink so /usr/local
+# (mise installs, agent-added tools) is writable at runtime.
 COPY --from=agent /usr/local/bin/ /usr/local/bin/
 # sbin too, not just bin: the mise shims are symlinks to /usr/local/sbin/mise,
 # so without it every shim dangles — `node` doesn't resolve and agent-runtime
@@ -134,3 +136,15 @@ RUN chmod 755 /usr/libexec/platform-scratch.sh /usr/libexec/platform-boot-gate.s
       platform-scratch.service platform-ca.service platform-boot-gate.service \
       platform-net-config.service \
       agent-runtime.service
+
+# Restore fedora-bootc's `/usr/local -> ../var/usrlocal` symlink (the COPYs
+# above materialized a real dir under the immutable /usr, which left
+# MISE_DATA_DIR — and every agent-installed tool — read-only at runtime).
+# /var content is seeded into the deployment by bootc-image-builder, and
+# these VMs never bootc-upgrade, so image-baked /usr/local content survives
+# the move. Keep last: anything COPY'd to /usr/local afterwards would
+# silently recreate the real dir.
+RUN if [ ! -L /usr/local ]; then \
+      mkdir -p /var && mv /usr/local /var/usrlocal && ln -s ../var/usrlocal /usr/local; \
+    fi && \
+    readlink /usr/local && test -d /var/usrlocal/share/mise
