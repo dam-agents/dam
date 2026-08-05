@@ -1,3 +1,4 @@
+import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
 import { queryClient } from "../../../query-client.js";
@@ -38,7 +39,8 @@ export function useAcpSession(
   // Derive busy from the projection instead of explicit setBusy calls in
   // sendPrompt / resume / disconnect paths. The projection owns streaming
   // state on every message, so "any streaming assistant" is authoritative.
-  const busy = hasStreamingAssistant(messages);
+  const busy =
+    sessionMode !== SessionMode.Terminal && hasStreamingAssistant(messages);
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
