@@ -268,6 +268,38 @@ describe("applyUpdate — turn boundaries", () => {
     ]);
   });
 
+  test("a system wrapper holding a nested element leaves no orphan closing tag", () => {
+    // The harness injects background-work notifications as a user message
+    // wrapping a nested element. A name-agnostic strip ended the match at
+    // `</task>` and left `</task-notification>` as the entire bubble.
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: '<task-notification>\n<task id="ab12" status="completed">\ndiag run finished\n</task>\n</task-notification>',
+      },
+    });
+    expect(out).toEqual([]);
+  });
+
+  test("a system wrapper with nested elements still closes the active bubble", () => {
+    const start: Message[] = [
+      userMsg("u1", "go"),
+      assistantMsg("a1", "working", true),
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u2",
+      content: {
+        type: "text" as const,
+        text: "<system-reminder>\n<note>heads up</note>\n</system-reminder>",
+      },
+    });
+    expect(out).toHaveLength(2);
+    expect(out[1].streaming).toBe(false);
+  });
+
   test("user_message_chunk extracts binary file reference as file chip", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,

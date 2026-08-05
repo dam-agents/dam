@@ -46,8 +46,15 @@ import type { AcpUpdate } from "./types.js";
  * user messages are whole, not streamed, so trimming is safe. Do NOT apply
  * to agent chunks: those arrive piece by piece and trimming would collapse
  * inter-chunk spaces into `"helloworld"`.
+ *
+ * The closing tag must match the opening one by name (backreference). Without
+ * that, the lazy body ends at the *first* closing tag of any name, so a
+ * wrapper holding a nested element — the harness's
+ * `<task-notification><task …>…</task></task-notification>` — matched
+ * `<task-notification>…</task>` and left the orphan `</task-notification>`
+ * as the whole visible user bubble (issue: stray closing tag in transcript).
  */
-const SYSTEM_TAG_RE = /(<[a-z-]+>)([\s\S]*?)(<\/[a-z-]+>)/g;
+const SYSTEM_TAG_RE = /<([a-z-]+)>[\s\S]*?<\/\1>/g;
 function stripUserTags(raw: string): string {
   let result = raw;
   let prev;
