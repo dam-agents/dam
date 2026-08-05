@@ -455,6 +455,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
               hibernated: infra?.hibernated,
               agentPodNotReadyReason: infra?.agentPodNotReadyReason,
               gatewayPodReady: infra?.gatewayPodReady,
+              gatewayPodNotReadyReason: infra?.gatewayPodNotReadyReason,
               reconciledReason: infra?.reconciledReason,
               podTerminationReason: infra?.podTerminationReason,
             },

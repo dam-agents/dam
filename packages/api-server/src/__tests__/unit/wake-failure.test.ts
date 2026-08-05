@@ -82,6 +82,37 @@ describe("classifyWakeFailure", () => {
       expected: { kind: "gateway-not-ready" },
     },
     {
+      // #2817: must not land in the progressing class.
+      name: "StuckOnSupersededRevision → gateway-pod-failed",
+      snapshot: {
+        ...base,
+        gatewayPodReady: false,
+        gatewayPodNotReadyReason: "StuckOnSupersededRevision",
+      },
+      expected: {
+        kind: "gateway-pod-failed",
+        gatewayReason: "StuckOnSupersededRevision",
+      },
+    },
+    {
+      name: "gateway OutOfMemory → gateway-pod-failed",
+      snapshot: {
+        ...base,
+        gatewayPodReady: false,
+        gatewayPodNotReadyReason: "OutOfMemory",
+      },
+      expected: { kind: "gateway-pod-failed", gatewayReason: "OutOfMemory" },
+    },
+    {
+      name: "gateway plain PodNotReady → still progressing",
+      snapshot: {
+        ...base,
+        gatewayPodReady: false,
+        gatewayPodNotReadyReason: "PodNotReady",
+      },
+      expected: { kind: "gateway-not-ready" },
+    },
+    {
       name: "nothing diagnostic on the CR → unknown",
       snapshot: base,
       expected: { kind: "unknown" },
@@ -142,6 +173,12 @@ describe("isTransientWakeFailure", () => {
         kind: "reconcile-error",
         message: "x",
         backoffExceeded: false,
+      }),
+    ).toBe(false);
+    expect(
+      isTransientWakeFailure({
+        kind: "gateway-pod-failed",
+        gatewayReason: "StuckOnSupersededRevision",
       }),
     ).toBe(false);
   });

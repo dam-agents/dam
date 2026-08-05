@@ -97,6 +97,8 @@ export interface InfraAgent {
   agentPodReady?: boolean;
   /** GatewayPodReady condition is True. Undefined until published. */
   gatewayPodReady?: boolean;
+  /** GatewayPodReady reason when False — PodNotReady, or a hard cause. */
+  gatewayPodNotReadyReason?: string;
 }
 
 /** Map the controller's conditions to the public-facing AgentState. Mostly
@@ -216,6 +218,8 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       agentPod?.status === "False" ? agentPod.reason : undefined,
     agentPodReady: agentPod ? agentPod.status === "True" : undefined,
     gatewayPodReady: gatewayPod ? gatewayPod.status === "True" : undefined,
+    gatewayPodNotReadyReason:
+      gatewayPod?.status === "False" ? gatewayPod.reason : undefined,
   };
 }
 

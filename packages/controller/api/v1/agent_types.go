@@ -179,6 +179,11 @@ const ReasonHibernated = "Hibernated"
 // lapses.
 const ReasonOverBudget = "OverBudget"
 
+// ReasonStuckOnSupersededRevision marks a pod that will never become ready,
+// its revision having been superseded — typically a template still referencing
+// a deleted credential Secret. Terminal, unlike PodNotReady.
+const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
+
 // AgentStatus is the observed state of an Agent. The controller is the sole
 // writer, via the status subresource.
 type AgentStatus struct {
