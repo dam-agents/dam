@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
 import type { SpendByDay } from "api-server-api";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,13 @@ import { formatUsdCents } from "../lib/format.js";
 // resulting instants, so "calendar month" means the user's wall-clock month.
 const monthStart = (base: Date, offset: number) =>
   new Date(base.getFullYear(), base.getMonth() + offset, 1);
+
+const PAGE_DESCRIPTION = (
+  <span className="block max-w-[460px]">
+    LLM API spend across all supported agents (currently only Claude Code and
+    derivatives).
+  </span>
+);
 
 // The browser owns calendar semantics: from the sparse per-day rows the server
 // returns, build the full day list for the selected month, zero-filling days
@@ -45,11 +53,21 @@ function fillMonthDays(
   return days;
 }
 
+// Which month the rows on screen actually describe. While a month switch is in
+// flight the previous month's figures are still displayed, so the chart has to
+// be zero-filled against *their* calendar — remapping them onto the newly
+// selected month would draw a flat, empty chart the data never claimed.
+function monthOfRows(rows: SpendByDay[] | undefined, fallback: Date): Date {
+  const [year, month] = rows?.[0]?.day.split("-").map(Number) ?? [];
+  return year && month ? new Date(year, month - 1, 1) : fallback;
+}
+
 /** Settings tab: the user's LLM API spend for one calendar month, totalled
  *  and broken down per model across all their agents. */
 export function UsageView() {
   const [month, setMonth] = useState(() => monthStart(new Date(), 0));
-  const isCurrentMonth = month >= monthStart(new Date(), 0);
+  const currentMonth = monthStart(new Date(), 0);
+  const isCurrentMonth = month >= currentMonth;
   const monthLabel = formatDate(month, {
     month: "long",
     year: "numeric",
@@ -60,58 +78,97 @@ export function UsageView() {
   // One query backs the whole tab, so per-model / per-agent / per-day spend
   // land together under a single loading/error state — the chart never renders
   // an all-zero month while its data is still in flight.
-  const { data, isPending, isError } = useSpendBreakdown(from, to, timeZone);
+  const { data, isPending, isError, isPlaceholderData, isUnavailable } =
+    useSpendBreakdown(from, to, timeZone);
+
+  // A deployment without a telemetry store has no usage to show for any month,
+  // so the verdict is rendered once in place of the period control rather than
+  // re-derived per month behind a skeleton.
+  if (isUnavailable) {
+    return (
+      <div>
+        <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
+        <NoticeCard>
+          Usage metrics are unavailable on this deployment.
+        </NoticeCard>
+      </div>
+    );
+  }
+
   const total = data?.byModel.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
-  const dailyDays = fillMonthDays(month, isCurrentMonth, data?.byDay);
+  const dataMonth = monthOfRows(data?.byDay, month);
+  // Copy inside the figures block describes the month the rows came from, not
+  // the one the user just picked — while a switch is in flight those differ,
+  // and naming the selection would assert something about a month whose data
+  // has not arrived. The period control keeps showing `month`, the selection.
+  const dataMonthLabel = formatDate(dataMonth, {
+    month: "long",
+    year: "numeric",
+  });
+  const dailyDays = fillMonthDays(
+    dataMonth,
+    dataMonth >= currentMonth,
+    data?.byDay,
+  );
 
   return (
     <div>
       <PageHeader
         title="Usage"
-        description={
-          <span className="block max-w-[460px]">
-            LLM API spend across all supported agents (currently only Claude
-            Code and derivatives).
-          </span>
-        }
+        description={PAGE_DESCRIPTION}
         actions={
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Previous month"
-              onClick={() => setMonth(monthStart(month, -1))}
-            >
-              <ChevronLeft size={16} className="text-muted-foreground" />
-            </Button>
-            <span className="min-w-[120px] text-center text-sm font-medium">
-              {monthLabel}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Next month"
-              disabled={isCurrentMonth}
-              onClick={() => setMonth(monthStart(month, 1))}
-            >
-              <ChevronRight size={16} className="text-muted-foreground" />
-            </Button>
+          <div className="flex items-center gap-3">
+            {/* Names the staleness instead of only dimming it: the figures
+                below still belong to the previously viewed month. Dimming the
+                whole block was the earlier cue, but at 60% its
+                `text-muted-foreground` body copy fell under the AA contrast
+                minimum. */}
+            {isPlaceholderData && (
+              <span className="text-xs text-muted-foreground">Updating…</span>
+            )}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() => setMonth(monthStart(month, -1))}
+              >
+                <ChevronLeft size={16} className="text-muted-foreground" />
+              </Button>
+              <span className="min-w-[120px] text-center text-sm font-medium">
+                {monthLabel}
+              </span>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next month"
+                disabled={isCurrentMonth}
+                onClick={() => setMonth(monthStart(month, 1))}
+              >
+                <ChevronRight size={16} className="text-muted-foreground" />
+              </Button>
+            </div>
           </div>
         }
       />
 
+      {/* A failed month replaces the figures rather than holding them: React
+          Query applies `placeholderData` only while a query is pending, so the
+          rejected key has no data to keep, and `retry: false` means that is the
+          first failure. Showing the previous month's numbers under an error
+          would need a last-good cache of our own — deliberately out of scope,
+          since the figures are money and a stale total beside a failure notice
+          is worse than an honest gap. */}
       {isError && (
-        <Card
-          className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
-        >
-          <p className="text-sm text-muted-foreground">
-            Usage metrics are unavailable on this deployment.
-          </p>
-        </Card>
+        <NoticeCard>Couldn't load usage for {monthLabel}.</NoticeCard>
       )}
-      {isPending && !isError && <UsageSkeleton />}
+      {isPending && <UsageSkeleton />}
       {data && (
-        <div className="space-y-10">
+        // `isPlaceholderData` means these are the previously viewed month's
+        // figures, held on screen while the selected month loads. `aria-busy`
+        // carries that to assistive tech; the visible cue is the "Updating…"
+        // label by the period control.
+        <div aria-busy={isPlaceholderData} className="space-y-10">
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
             <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
@@ -121,13 +178,7 @@ export function UsageView() {
           {data.byModel.length === 0 ? (
             <section>
               <SectionLabel spaced>Spend by day</SectionLabel>
-              <Card
-                className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
-              >
-                <p className="text-sm text-muted-foreground">
-                  No LLM calls in {monthLabel}.
-                </p>
-              </Card>
+              <NoticeCard>No LLM calls in {dataMonthLabel}.</NoticeCard>
             </section>
           ) : (
             <>
@@ -156,6 +207,18 @@ export function UsageView() {
         </div>
       )}
     </div>
+  );
+}
+
+/** One-line message at the day chart's height, so standing in for a chart —
+ *  or for the whole page — doesn't collapse the layout. */
+function NoticeCard({ children }: { children: ReactNode }) {
+  return (
+    <Card
+      className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
+    >
+      <p className="text-sm text-muted-foreground">{children}</p>
+    </Card>
   );
 }
 
