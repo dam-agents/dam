@@ -76,6 +76,7 @@ export function SkillsSurface({
     skillsBySource,
     loadingBySource,
     errorBySource,
+    scannedAtBySource,
     standalone,
     publishes,
     busyKey,
@@ -323,6 +324,7 @@ export function SkillsSurface({
                     skills={skillsBySource[src.id]}
                     loading={!!loadingBySource[src.id]}
                     error={errorBySource[src.id] ?? null}
+                    scannedAt={scannedAtBySource[src.id]}
                     installedRef={installedRef}
                     busyKey={busyKey}
                     disabled={!agentId || isError}

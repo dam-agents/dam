@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { externalLinkProps } from "@/lib/external-link";
+import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { parsePlatformCta } from "@/lib/platform-cta";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,7 @@ export function SkillSourceCard({
   skills,
   loading,
   error,
+  scannedAt,
   installedRef,
   busyKey,
   disabled,
@@ -103,6 +105,10 @@ export function SkillSourceCard({
   skills: Skill[] | undefined;
   loading: boolean;
   error: string | null;
+  /** ISO 8601 time this source's list was last read from upstream; absent
+   *  until its first successful scan. Rendered as "scanned X ago", and hidden
+   *  while errored so we never date a list the user can see failed. */
+  scannedAt?: string;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
@@ -182,6 +188,14 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {!error && scannedAt && (
+            <span
+              className="shrink-0 text-sm text-muted-foreground"
+              title={formatTimestamp(scannedAt)}
+            >
+              scanned {timeAgo(scannedAt)}
+            </span>
+          )}
           {loading && <Spinner size={15} />}
           {/* Source administration (re-scan / view repo / remove) is
               account-scoped and pod-independent, so it stays available even

@@ -30,6 +30,9 @@ export interface SkillsSurface {
   skillsBySource: Record<string, Skill[]>;
   loadingBySource: Record<string, boolean>;
   errorBySource: Record<string, string | null>;
+  /** ISO 8601 time each source's list was last read from upstream; absent
+   *  until that source's first successful scan. */
+  scannedAtBySource: Record<string, string>;
   installed: SkillRef[];
   standalone: LocalSkill[];
   /** Publish records for this agent — drives the "Published" pill. */
@@ -108,6 +111,9 @@ export function useSkillsSurface(
   const [errorBySource, setErrorBySource] = useState<
     Record<string, string | null>
   >({});
+  const [scannedAtBySource, setScannedAtBySource] = useState<
+    Record<string, string>
+  >({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
   const [standalone, setStandalone] = useState<LocalSkill[]>([]);
   const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
@@ -130,8 +136,12 @@ export function useSkillsSurface(
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
-        const { skills } = await api.skills.list.query({ sourceId, agentId });
+        const { skills, scannedAt } = await api.skills.list.query({
+          sourceId,
+          agentId,
+        });
         setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
+        setScannedAtBySource((m) => ({ ...m, [sourceId]: scannedAt }));
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to load skills");
         setErrorBySource((e) => ({ ...e, [sourceId]: msg }));
@@ -370,6 +380,11 @@ export function useSkillsSurface(
       delete next[id];
       return next;
     });
+    setScannedAtBySource((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
+    });
     return true;
   }, []);
 
@@ -459,6 +474,7 @@ export function useSkillsSurface(
     skillsBySource,
     loadingBySource,
     errorBySource,
+    scannedAtBySource,
     installed,
     standalone,
     publishes,
