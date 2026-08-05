@@ -98,8 +98,8 @@ estimate, but an informed user may pre-authorize it (see below).
    metric (runtime, accuracy, size, error rate) and agree on it first.
 2. **You've authored the run inputs** — `evaluator.py` (an `evaluate(...)`
    returning `combined_score`) and `initial.py` (with `EVOLVE-BLOCK` markers;
-   for a from-scratch problem, a minimal stub) — both are required CLI
-   arguments; see the skill.
+   for a from-scratch problem, a minimal stub — the CLI can run without one,
+   but a stub gives the smoke-eval a baseline); see the skill.
 3. **You've run a smoke-eval** — call the evaluator directly on the initial
    program and show the user a baseline score they recognize as sensible.
    This catches the silent failure mode where the evaluator runs but scores

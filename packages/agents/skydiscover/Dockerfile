@@ -40,10 +40,16 @@ RUN uv python install 3.11 &&\
 # (the exact gap the git-ref install exists to close)
 RUN "$SKYDISCOVER_VENV/bin/python" - <<'EOF'
 import pathlib, yaml, skydiscover
-cfg = pathlib.Path(skydiscover.__file__).parent / "search/evox/config"
+pkg = pathlib.Path(skydiscover.__file__).parent
+cfg = pkg / "search/evox/config"
 assert yaml.safe_load((cfg / "search.yaml").read_text()), "empty search.yaml"
 assert (cfg / "evox_search_sys_prompt.txt").stat().st_size > 0, "empty sys prompt"
-print("evox config ok")
+# Inverted canary: agentic mode is documented as unsupported because upstream
+# packaging omits the tool schemas. If a future ref ships them, fail the build
+# so the skill's "unsupported" note gets updated instead of silently rotting.
+assert not (pkg / "llm/tool_schemas").exists(), \
+    "tool_schemas now ships — agentic mode may work; update the skydiscover skill"
+print("evox config ok; agentic still unpackaged")
 EOF
 
 ENV PATH="/opt/skydiscover-venv/bin:${PATH}"

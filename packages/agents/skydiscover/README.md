@@ -65,7 +65,7 @@ skill's Step 1.
 ## Build
 
 ```sh
-mise run agents:skydiscover:image            # plain docker build (pip-installs skydiscover)
+mise run agents:skydiscover:image            # build-or-reuse: pulls from the registry when the effective source is unchanged, else docker-builds (installs skydiscover from the pinned git ref)
 mise run cluster:build-agent                 # rebuild + restart agent pods in the dev cluster
 ```
 

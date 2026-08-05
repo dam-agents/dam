@@ -84,21 +84,19 @@ Then wire the run with three rules:
   header on the wire, but the client refuses to send a request with no key at
   all.
 - If the endpoint can't list models, fall back to a pinned known-good id (for
-  IBM LiteLLM: `aws/claude-sonnet-4-6` — but see the sampling-params quirk
-  below before using it for the loop).
+  IBM LiteLLM: `aws/claude-sonnet-4-6`).
 
-**Known quirk — sampling params:** SkyDiscover's LLM client sends both
-`temperature` and `top_p` on every call, and **some** proxied backends
-reject that combination with a deterministic 400 ("temperature and top_p
-cannot both be specified"). It is per-model, not per-vendor — observed on
-IBM LiteLLM: `aws/claude-sonnet-4-6` and `azure/gpt-5.5` reject it,
-`aws/claude-opus-5` and the `rits/…` models accept it. So don't trust a
-list: **probe the chosen model with a cheap completion passing both
-`temperature` and `top_p`** before launching. The retry loop cannot fix a
-deterministic 400: if every proposal call fails this way, kill the run and
-relaunch on a model that passed the probe. Only reuse `--checkpoint` state
-if some iterations actually completed; a run that never got past the first
-proposal is cleaner started fresh.
+**Sampling params:** at the pinned ref SkyDiscover sends `top_p` only when
+a config explicitly sets it (upstream fixed the old always-send-both
+behavior that used to 400 on Bedrock-hosted Claude) — so there is no
+temperature+top_p conflict to probe for and no per-model denylist. A
+deterministic 4xx on sampling params can still happen two ways: a config
+YAML that sets `top_p` explicitly (the old conflict returns on some
+backends — leave it unset), or a model family that rejects `temperature`
+outright (reasoning models). Retries never fix a deterministic 4xx: adjust
+the config or switch models. Only reuse `--checkpoint` state if some
+iterations actually completed; a run that never got past the first proposal
+is cleaner started fresh.
 
 **Known quirk — EvoX's auxiliary models bypass `-m`:** EvoX's label
 generation (`gpt-5-mini`) and search-strategy evolution (`gpt-5`) read their
@@ -141,8 +139,11 @@ Pass it with `-c task/config.yaml`.
 
 ## Step 2 — author the run inputs
 
-A run needs an **evaluator** and an **initial program** — both are required
-CLI arguments. Keep both under the run's `task/` dir.
+A run needs an **evaluator**; an **initial program** is optional on the CLI
+(omitting it takes the from-scratch path) — but in this pod author one
+anyway, even a minimal stub, so the search starts from a known baseline and
+the smoke-eval has something to score. Keep both under the run's `task/`
+dir.
 
 **`evaluator.py`** — scores a candidate. SkyDiscover calls
 `evaluate(program_path)` and selects on `combined_score` (higher = better):
@@ -205,14 +206,14 @@ with `-o` on the persisted workspace (see `AGENTS.md`).
 ## CLI reference
 
 ```
-skydiscover-run INITIAL_PROGRAM EVALUATOR --search <type> \
+skydiscover-run [INITIAL_PROGRAM] EVALUATOR --search <type> \
   -i <N> -m <model-id> --api-base <url> -o <dir> \
-  [-c <yaml>] [--checkpoint <dir>] [--codebase <dir>]
+  [-c <yaml>] [--checkpoint <dir>]
 ```
 
 | Flag | Meaning |
 |---|---|
-| `INITIAL_PROGRAM` | required — the starting program (`EVOLVE-BLOCK` markers; a minimal stub for from-scratch problems) |
+| `INITIAL_PROGRAM` | optional on the CLI (omitting it takes the from-scratch path) — but author one anyway in this pod, even a minimal stub, so the smoke-eval has a baseline (`EVOLVE-BLOCK` markers) |
 | `EVALUATOR` | required — the `evaluate(program_path)` file |
 | `--search` | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`; unset → `adaevolve`); only those two work in this pod |
 | `-i, --iterations` | the run's iteration budget — always bound; on resume, set to the *remainder* of the approved total |
@@ -221,7 +222,12 @@ skydiscover-run INITIAL_PROGRAM EVALUATOR --search <type> \
 | `-o, --output` | output dir — **always** an explicit path on `$SKYDISCOVER_OUTPUT_ROOT`, outside the target repo |
 | `-c, --config` | YAML config (model ensemble, `search.*` tuning) — flags win over it |
 | `--checkpoint` | resume from a prior `output/checkpoints/checkpoint_<N>` dir |
-| `--codebase` | path to a codebase dir — enables agentic generation (the LLM reads/searches it before writing code); costlier per iteration, only with the user's explicit OK |
+
+**Agentic mode (`--agentic`) is unsupported in this image**: the CLI
+advertises the flag, but the installed package ships without its tool
+schemas (`llm/tool_schemas/`), so it crashes at startup. Don't offer it;
+the Dockerfile asserts the gap so a ref bump that fixes upstream packaging
+will surface as a build failure prompting a docs update.
 
 **Resume:** relaunch with `--checkpoint output/checkpoints/checkpoint_<N>`
 (the highest-numbered one). The checkpoint number is the iterations already
@@ -238,8 +244,9 @@ originally approved spend: say so and get a fresh go-ahead. For short evox
 runs, warn up front that a hibernation before iteration 10 loses the run.
 
 **Triage errors by class, not by count.** Deterministic 4xx bodies (403
-"team not allowed…", 400 "temperature and top_p…") mean a wrong model or
-config — retries can't fix them, rewire and relaunch. Connection-class
+"team not allowed…", 400 unsupported-parameter — e.g. `temperature` on a
+reasoning model, or an explicitly configured `top_p` on some backends) mean
+a wrong model or config — retries can't fix them, rewire and relaunch. Connection-class
 errors ("upstream connect error", "no healthy upstream", "connection
 timeout") mean the endpoint is unreachable right now — a VPN or network-path
 drop, not a config problem: the run's own retries usually ride it out, and a
@@ -264,9 +271,10 @@ Under `-o`:
 
 ## Worked example — approximate sin(x) on [0, π]
 
-A self-contained objective: evolve a polynomial to approximate `math.sin` with
-minimum mean-squared error. (Also the CI/local smoke fixture — not a
-user-facing "demo".)
+A self-contained objective: evolve a polynomial to approximate `math.sin`
+with minimum mean-squared error — with the guard sections above applied: a
+structural gate (or the search just returns `math.sin(x)`) and a log-scaled
+score (or every good candidate saturates to 1.0).
 
 `task/initial.py`:
 
@@ -280,16 +288,33 @@ def approx(x):
 `task/evaluator.py`:
 
 ```python
-import importlib.util
+import ast
 import math
 
 def evaluate(program_path):
-    spec = importlib.util.spec_from_file_location("candidate", program_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    src = open(program_path).read()
+    # hard gate: pure arithmetic only — no imports, attributes, or calls,
+    # or the winning move is simply `return math.sin(x)`
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, (ast.Import, ast.ImportFrom, ast.Attribute, ast.Call)):
+            return {"combined_score": 0.0, "error": "not a pure polynomial"}
+    ns = {}
+    exec(compile(src, program_path, "exec"), {"__builtins__": {}}, ns)
     xs = [i * math.pi / 50 for i in range(51)]
-    mse = sum((mod.approx(x) - math.sin(x)) ** 2 for x in xs) / len(xs)
-    return {"combined_score": 1.0 / (1.0 + mse)}
+    mse = sum((ns["approx"](x) - math.sin(x)) ** 2 for x in xs) / len(xs)
+    # log-scaled: still discriminating at mse ~1e-22, where 1/(1+mse) is 1.0
+    score = (min(max(-math.log10(mse), -1.0), 30.0) + 1.0) / 31.0 if mse > 0 else 1.0
+    return {"combined_score": score, "mse": mse}
+```
+
+Smoke-eval with the mandatory cheat case (must score 0) next to the baseline:
+
+```sh
+cd task && python3 -c "
+from evaluator import evaluate
+print('baseline:', evaluate('initial.py'))
+open('/tmp/cheat.py','w').write('import math\ndef approx(x):\n    return math.sin(x)\n')
+print('cheat   :', evaluate('/tmp/cheat.py'))"
 ```
 
 Run it (after Step 1 resolved `$base` and a model id):
@@ -302,8 +327,9 @@ skydiscover-run task/initial.py task/evaluator.py \
   -o "$SKYDISCOVER_OUTPUT_ROOT/sin-approx/output"
 ```
 
-`combined_score` rises toward 1.0 as the MSE falls; pull the winner from
-`output/best/best_program.py`.
+`combined_score` climbs with every decade of MSE improvement (no
+saturation); pull the winner from `output/best/best_program.py` — and read
+it before trusting it, per the guard section.
 
 ## Reporting (and optional PR)
 
