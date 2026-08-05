@@ -8,10 +8,12 @@ import {
   metricsSpendBreakdownInputSchema,
 } from "./schemas.js";
 
-// Ownership is enforced in the service (it resolves the caller's owned agent
-// IDs and filters on them). Whenever a procedure is narrowed to a specific
-// agentId we also apply the API-key binding check, matching the rest of the
-// agent-read surface.
+// Authorization splits the same way as the rest of the agent surface: owner
+// scoping belongs to the service (it resolves the caller's owned agent IDs and
+// filters on them), API-key binding belongs to the router — `checkAgentBinding`
+// on any input narrowed to one agentId. The service alone would already deny an
+// unbound agent, since its owned-ID list is narrowed to the key's binding; the
+// check turns that empty result into a FORBIDDEN.
 export const metricsRouter = t.router({
   overview: readAgentProcedure
     .input(metricsOverviewInputSchema)
