@@ -115,16 +115,19 @@ RUN mkdir -p /usr/lib/systemd/system.conf.d && \
       > /usr/lib/systemd/system.conf.d/platform-timeouts.conf
 
 COPY system/platform-scratch.sh /usr/libexec/platform-scratch.sh
+COPY system/platform-net-config.sh /usr/libexec/platform-net-config.sh
 COPY system/platform-boot-gate.sh /usr/libexec/platform-boot-gate.sh
 COPY system/platform-scratch.service system/platform-ca.service \
      system/platform-boot-gate.service system/agent-runtime.service \
+     system/platform-net-config.service \
      /usr/lib/systemd/system/
 COPY system/proxy-dropin.conf /usr/lib/systemd/system/docker.service.d/platform.conf
 COPY system/proxy-dropin.conf /usr/lib/systemd/system/k3s.service.d/platform.conf
 COPY system/k3s-config.yaml /etc/rancher/k3s/config.yaml
 COPY system/profile-platform.sh /etc/profile.d/platform-vm.sh
 
-RUN chmod 755 /usr/libexec/platform-scratch.sh /usr/libexec/platform-boot-gate.sh && \
+RUN chmod 755 /usr/libexec/platform-scratch.sh /usr/libexec/platform-boot-gate.sh /usr/libexec/platform-net-config.sh && \
     systemctl enable docker.service k3s.service qemu-guest-agent.service \
       platform-scratch.service platform-ca.service platform-boot-gate.service \
+      platform-net-config.service \
       agent-runtime.service
