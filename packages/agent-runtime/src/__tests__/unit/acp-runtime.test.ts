@@ -6,7 +6,10 @@ import type {
   SessionMetaEntry,
   SessionMetadataStore,
 } from "../../modules/acp/infrastructure/session-metadata-store.js";
-import type { BackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
+import {
+  createBackgroundWorkRegistry,
+  type BackgroundWorkRegistry,
+} from "../../modules/acp/services/background-work-registry.js";
 
 interface FakeAgent {
   agent: AgentProcess;
@@ -2581,6 +2584,27 @@ describe("createAcpRuntime — env recycle", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("reported background work holds a deferred refresh; its release drains it", () => {
+    const registry = createBackgroundWorkRegistry();
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      backgroundWork: registry,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
+
+    registry.report(SID, [{ id: "job-1" }]);
+    runtime.refreshEnv({ force: false });
+    expect(fa.killed()).toBe(false);
+
+    registry.report(SID, []);
+    expect(fa.killed()).toBe(true);
   });
 
   it("a queued prompt defers the boundary recycle until the queue drains", () => {

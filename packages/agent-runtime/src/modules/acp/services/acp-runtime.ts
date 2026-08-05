@@ -584,6 +584,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
       pendingFromAgent.delete(id);
     }
+    if (toExpire.length > 0) maybeRecycleForEnv();
   }
 
   // ── Agent lifecycle ──
@@ -681,11 +682,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     old.kill();
   }
 
-  /** Recycle now if an env refresh is pending and no turn is in flight. */
-  function maybeRecycleForEnv(): void {
-    if (envRefreshPending && activePromptBySession.size === 0)
-      recycleAgentForEnv();
+  /** The runtime's single definition of in-flight work — shared by the idle
+   * status and the env-recycle boundary, so a recycle never kills what the
+   * idle flag still reports as busy. */
+  function runtimeBusy(): boolean {
+    if (activePromptBySession.size > 0 || pendingFromAgent.size > 0)
+      return true;
+    for (const q of promptQueueBySession.values())
+      if (q.length > 0) return true;
+    return (deps.backgroundWork?.held().length ?? 0) > 0;
   }
+
+  /** Recycle now if an env refresh is pending and nothing is in flight. */
+  function maybeRecycleForEnv(): void {
+    if (envRefreshPending && !runtimeBusy()) recycleAgentForEnv();
+  }
+
+  // A released background hold is a boundary too — re-check the deferred recycle.
+  deps.backgroundWork?.onRelease?.(() => maybeRecycleForEnv());
 
   // ── Channel lifecycle ──
 
@@ -1093,11 +1107,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
           const active = activePromptBySession.get(sid);
-          if (active && active.outboundId === outboundId) {
+          const turnEnded =
+            active !== undefined && active.outboundId === outboundId;
+          if (turnEnded) {
             activePromptBySession.delete(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
-            // Turn boundary — apply a deferred env change if nothing's in flight.
-            maybeRecycleForEnv();
           }
           // A completed turn is activity too — a response landing with no
           // viewer attached is what makes the session unread.
@@ -1115,6 +1129,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           // activePromptBySession now has it and maybeCloseIdleSession is a
           // no-op.
           maybeCloseIdleSession(sid);
+          // Turn boundary — last, so viewers receive the turn-ended fan-out
+          // before a recycle closes their channels and drops the log.
+          if (turnEnded) maybeRecycleForEnv();
         }
       }
       return;
@@ -1170,6 +1187,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       pendingFromAgent.delete(frame.id);
       if (pending.sessionId) updateOrphanTimerForSession(pending.sessionId);
       a.send(frame);
+      maybeRecycleForEnv();
       return;
     }
 
@@ -1410,16 +1428,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     status() {
-      let queued = 0;
-      for (const q of promptQueueBySession.values()) queued += q.length;
-      const backgroundWork = deps.backgroundWork?.held() ?? [];
       return {
-        idle:
-          activePromptBySession.size === 0 &&
-          pendingFromAgent.size === 0 &&
-          queued === 0 &&
-          backgroundWork.length === 0,
-        backgroundWork,
+        idle: !runtimeBusy(),
+        backgroundWork: deps.backgroundWork?.held() ?? [],
       };
     },
 
@@ -1437,14 +1448,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       // Nothing running → the next spawn reads the new env for free.
       if (!agent || agentExited) return;
       envRefreshPending = true;
-      if (activePromptBySession.size === 0) {
+      if (!runtimeBusy()) {
         recycleAgentForEnv();
         return;
       }
-      // A turn is in flight: recycle at the next turn boundary; force after a bound only when asked.
+      // Work is in flight: recycle once it drains; force after a bound only when asked.
       deps.log?.(
-        `env recycle deferred: ${activePromptBySession.size} turn(s) in flight` +
-          (opts.force ? ` (forcing in ${envForceRecycleMs}ms)` : ""),
+        `env recycle deferred: ${activePromptBySession.size} turn(s), ` +
+          `${pendingFromAgent.size} pending request(s), ` +
+          `${deps.backgroundWork?.held().length ?? 0} background hold(s)` +
+          (opts.force ? ` — forcing in ${envForceRecycleMs}ms` : ""),
       );
       if (opts.force && !envForceTimer)
         envForceTimer = setTimeout(recycleAgentForEnv, envForceRecycleMs);
