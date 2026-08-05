@@ -68,6 +68,14 @@ export interface GithubFetchOpts {
   withAuth?: boolean;
 }
 
+/** `/repos/{owner}/{repo}` with both segments encoded. Owner and repo come
+ *  from a user-typed git URL (anything non-`/` survives
+ *  `detectGithubOwnerRepo`), so encoding is defense-in-depth: a stray
+ *  character must never change the request target. */
+function repoPath(host: DetectedOwnerRepo): string {
+  return `/repos/${encodeURIComponent(host.owner)}/${encodeURIComponent(host.repo)}`;
+}
+
 /**
  * Thin port over `api.github.com`. Sequencing of these primitives (publish's
  * blob → tree → commit → ref → PR; scan's commit → tarball) is application
@@ -141,17 +149,14 @@ export interface GitHubRestClient {
 export function createGitHubRestClient(): GitHubRestClient {
   return {
     async getRepo(host) {
-      const r = await ghJson<{ default_branch: string }>(
-        "GET",
-        `/repos/${host.owner}/${host.repo}`,
-      );
+      const r = await ghJson<{ default_branch: string }>("GET", repoPath(host));
       if (!r.ok) return r;
       return ok({ defaultBranch: r.value.default_branch });
     },
     async getRef(host, ref) {
       const r = await ghJson<{ object: { sha: string } }>(
         "GET",
-        `/repos/${host.owner}/${host.repo}/git/refs/heads/${encodeURIComponent(ref)}`,
+        `${repoPath(host)}/git/refs/heads/${encodeURIComponent(ref)}`,
       );
       if (!r.ok) return r;
       return ok({ sha: r.value.object.sha });
@@ -159,7 +164,7 @@ export function createGitHubRestClient(): GitHubRestClient {
     async getCommitHead(host, opts) {
       const r = await ghJson<{ sha: string }>(
         "GET",
-        `/repos/${host.owner}/${host.repo}/commits/HEAD`,
+        `${repoPath(host)}/commits/HEAD`,
         undefined,
         opts,
       );
@@ -174,7 +179,7 @@ export function createGitHubRestClient(): GitHubRestClient {
         state: string;
         draft?: boolean;
         merged_at?: string | null;
-      }>("GET", `/repos/${host.owner}/${host.repo}/pulls/${number}`);
+      }>("GET", `${repoPath(host)}/pulls/${number}`);
       if (!r.ok) return r;
       return ok({
         state:
@@ -186,14 +191,14 @@ export function createGitHubRestClient(): GitHubRestClient {
     async fetchTarball(host, sha, opts) {
       return await ghBytes(
         "GET",
-        `/repos/${host.owner}/${host.repo}/tarball/${encodeURIComponent(sha)}`,
+        `${repoPath(host)}/tarball/${encodeURIComponent(sha)}`,
         opts,
       );
     },
     async createBlob(host, body) {
       const r = await ghJson<{ sha: string }>(
         "POST",
-        `/repos/${host.owner}/${host.repo}/git/blobs`,
+        `${repoPath(host)}/git/blobs`,
         body,
       );
       if (!r.ok) return r;
@@ -202,7 +207,7 @@ export function createGitHubRestClient(): GitHubRestClient {
     async createTree(host, body) {
       const r = await ghJson<{ sha: string }>(
         "POST",
-        `/repos/${host.owner}/${host.repo}/git/trees`,
+        `${repoPath(host)}/git/trees`,
         body,
       );
       if (!r.ok) return r;
@@ -211,23 +216,19 @@ export function createGitHubRestClient(): GitHubRestClient {
     async createCommit(host, body) {
       const r = await ghJson<{ sha: string }>(
         "POST",
-        `/repos/${host.owner}/${host.repo}/git/commits`,
+        `${repoPath(host)}/git/commits`,
         body,
       );
       if (!r.ok) return r;
       return ok({ sha: r.value.sha });
     },
     async createRef(host, body) {
-      return await ghJson<unknown>(
-        "POST",
-        `/repos/${host.owner}/${host.repo}/git/refs`,
-        body,
-      );
+      return await ghJson<unknown>("POST", `${repoPath(host)}/git/refs`, body);
     },
     async createPullRequest(host, body) {
       const r = await ghJson<{ html_url: string }>(
         "POST",
-        `/repos/${host.owner}/${host.repo}/pulls`,
+        `${repoPath(host)}/pulls`,
         body,
       );
       if (!r.ok) return r;

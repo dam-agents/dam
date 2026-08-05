@@ -33,7 +33,10 @@ export interface PrStateReader {
 export function createGitHubPrStateReader(): PrStateReader {
   return {
     async read(coords, etag) {
-      const url = `https://api.github.com/repos/${coords.owner}/${coords.repo}/pulls/${coords.number}`;
+      // Encoded as defense-in-depth: owner/repo come from a stored URL and the
+      // host is locked, but a stray character must never change the request
+      // target. `number` is already numeric by parsing.
+      const url = `https://api.github.com/repos/${encodeURIComponent(coords.owner)}/${encodeURIComponent(coords.repo)}/pulls/${coords.number}`;
       let res: Response;
       try {
         res = await fetch(url, {
