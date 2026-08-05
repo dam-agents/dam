@@ -78,7 +78,7 @@ RUN mkdir -p /var/home && \
     usermod -aG docker agent && \
     echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent && \
     chown -R agent /etc/mise /app /usr/local/share/mise && chown agent /etc/AGENTS.md && \
-    printf '\n## VM sandbox\n\nThis sandbox is a full virtual machine: systemd, `docker` (moby), a preinstalled `k3s` Kubernetes cluster (`kubectl` works out of the box), and passwordless `sudo`. OS state outside your home and workspace is discarded on hibernation.\n' >> /etc/AGENTS.md
+    printf '\n## VM sandbox\n\nThis sandbox is a full virtual machine: systemd, `docker` (moby), a preinstalled `k3s` Kubernetes cluster (`kubectl` works out of the box), and passwordless `sudo`. OS state outside your home and workspace is discarded on hibernation.\n\nThe in-VM k3s cluster is entirely yours: nothing that manages this sandbox runs on it, so you can freely reconfigure, wipe, or reinstall it. The platform managing this sandbox lives outside the VM and is unaffected by anything you do to the inner cluster. The inner k3s deliberately uses non-default CIDRs (`/etc/rancher/k3s/config.yaml`) so it does not clash with the host network — keep those when changing its config, and prefer drop-ins under `/etc/rancher/k3s/config.yaml.d/` over editing the main file.\n' >> /etc/AGENTS.md
 
 # The guest has no SSH and an ephemeral rootfs, so a boot that fails before
 # agent-runtime leaves the journal unreachable — the serial console (captured
