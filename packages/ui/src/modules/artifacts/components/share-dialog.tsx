@@ -35,7 +35,15 @@ interface Props {
  *  which closes the dialog and confirms through a toast — a save that only
  *  flipped the button back to "Save" read as a no-op. A failure keeps the
  *  dialog open and surfaces through the mutation's `errorToast`, so the user
- *  can retry without re-entering anything. */
+ *  can retry without re-entering anything.
+ *
+ *  Both exits are gated while the save is in flight. The confirmation lives in
+ *  a `mutate`-scoped `onSuccess`, which React Query skips once the observer has
+ *  no listeners — leaving on a closed dialog would land the write with nothing
+ *  to show for it, the very no-op this dialog was fixed to stop reading as.
+ *  Gating is the narrow fix: a hook-level `onSuccess` would fire after unmount,
+ *  but `defaultMutationOptions` shallow-merges, so it would silently replace
+ *  the client-wide `onSuccess` that applies `meta.invalidates`. */
 export function ShareDialog({ artifact, onClose }: Props) {
   const [isPublic, setIsPublic] = useState(artifact.visibility === "public");
   const [expiry, setExpiry] = useState<string>(
@@ -65,7 +73,28 @@ export function ShareDialog({ artifact, onClose }: Props) {
                   message: "Sharing updated — the public link is live.",
                   action: {
                     label: "Copy link",
-                    onClick: () => void copy(savedUrl),
+                    // Runs after this dialog has unmounted, so `useCopy`'s
+                    // state-based failure channel would have no renderer left
+                    // and a rejected write (insecure context, denied
+                    // permission) would look like a success. Report the
+                    // outcome as its own toast instead.
+                    onClick: () => {
+                      void navigator.clipboard
+                        .writeText(savedUrl)
+                        .then(() =>
+                          emitToast({
+                            kind: "success",
+                            message: "Link copied.",
+                          }),
+                        )
+                        .catch(() =>
+                          emitToast({
+                            kind: "error",
+                            message:
+                              "Couldn't copy the link — use “Copy share link” on the artifact row.",
+                          }),
+                        );
+                    },
                   },
                 }
               : {
@@ -81,7 +110,11 @@ export function ShareDialog({ artifact, onClose }: Props) {
 
   return (
     <Modal>
-      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
+      <DialogHeader
+        title={`Share “${artifact.title}”`}
+        onClose={onClose}
+        closeDisabled={sharing.isPending}
+      />
       <DialogBody>
         <div className="flex flex-col gap-5">
           <label className="flex items-center justify-between gap-3">
@@ -152,6 +185,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
         label="Save"
         pendingLabel="Saving…"
         pending={sharing.isPending}
+        cancelDisabled={sharing.isPending}
         onSubmit={save}
       />
     </Modal>
