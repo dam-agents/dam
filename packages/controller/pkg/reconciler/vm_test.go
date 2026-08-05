@@ -146,6 +146,11 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 	assert.True(t, strings.HasPrefix(userdata, "#cloud-config\n"))
 	assert.Contains(t, userdata, "HTTPS_PROXY='http://10.96.42.42:10000'")
 	assert.Contains(t, userdata, "PLATFORM_AGENT_ID='my-agent'")
+	// The JVM ignores http_proxy env and $HOME — proxy + user.home must ride
+	// JAVA_TOOL_OPTIONS or Maven/Gradle bypass the gateway and read the
+	// wrong ~/.m2 (user.home resolves via getpwuid, /root on the VM).
+	assert.Contains(t, userdata, "JAVA_TOOL_OPTIONS='-Duser.home=/home/agent")
+	assert.Contains(t, userdata, "-Dhttp.proxyHost=10.96.42.42 -Dhttp.proxyPort=")
 	assert.Contains(t, userdata, "PLATFORM_KUBE_API_DENY='10.43.0.1:443'")
 	assert.Contains(t, userdata, "PEMDATA")
 	// The share must be mounted from bootcmd, never cloud-init's `mounts:`

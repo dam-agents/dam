@@ -3,6 +3,8 @@ package reconciler
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -74,6 +76,16 @@ const (
 // resolved Secret set changes.
 const annRollRev = "agent-platform.ai/roll-rev"
 
+// hostPortOf splits an http://host:port proxy URL into host and port for
+// tools that take them separately (the JVM's proxy properties).
+func hostPortOf(proxyURL string) (string, string) {
+	hostPort := strings.TrimPrefix(proxyURL, "http://")
+	if h, p, err := net.SplitHostPort(hostPort); err == nil {
+		return h, p
+	}
+	return hostPort, "80"
+}
+
 // agentProxyAddr is the agent's HTTPS_PROXY value — IP-direct, no DNS.
 // The reconcilers requeue until the gateway ClusterIP is
 // assigned, so this never sees an empty IP at steady state.
@@ -89,7 +101,19 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 // hosts AND the harness API — cross the paired gateway pod, whose SPIFFE
 // principal (per-instance SA) is the identity the waypoint enforces.
 func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr string) []corev1.EnvVar {
+	// The JVM reads neither http_proxy env nor the system store's view of
+	// HOME: proxies come from -Dhttp(s).proxyHost/Port and home from
+	// user.home (getpwuid, which on the VM backend resolves root's passwd
+	// entry, not $HOME). JAVA_TOOL_OPTIONS is the JVM's official env hook
+	// for both — without it Maven/Gradle bypass the egress gateway and
+	// read ~/.m2 from the wrong home.
+	proxyHost, proxyPort := hostPortOf(proxyAddr)
+	javaToolOptions := fmt.Sprintf(
+		"-Duser.home=%s -Dhttp.proxyHost=%s -Dhttp.proxyPort=%s -Dhttps.proxyHost=%s -Dhttps.proxyPort=%s",
+		agentHome, proxyHost, proxyPort, proxyHost, proxyPort,
+	)
 	return []corev1.EnvVar{
+		{Name: "JAVA_TOOL_OPTIONS", Value: javaToolOptions},
 		{Name: "HTTPS_PROXY", Value: proxyAddr},
 		{Name: "HTTP_PROXY", Value: proxyAddr},
 		{Name: "https_proxy", Value: proxyAddr},
