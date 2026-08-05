@@ -81,14 +81,14 @@ export interface SkillsServiceDeps {
    *  signal to the caller to fall back to the agent-runtime path for
    *  private-repo auth (if the instance is running). */
   scanPublic: (gitUrl: string, path?: string) => Promise<Skill[]>;
-  /** Read one skill's raw `SKILL.md` (plus its source-relative directory) from
-   *  a public GitHub repo. Throws `PublicArchiveNotFoundError` on 404 (private
-   *  repo). */
-  readPublicSkill: (
+  /** Read one skill's raw `SKILL.md` at a pinned commit, given the repo-relative
+   *  directory the scan already reported — one small GET, no tarball. Throws
+   *  `PublicArchiveNotFoundError` on 404 (private repo). */
+  readPublicSkillFile: (
     gitUrl: string,
-    path: string | undefined,
-    name: string,
-  ) => Promise<{ content: string; dir: string } | null>;
+    version: string,
+    dir: string,
+  ) => Promise<string>;
   /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
    *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
@@ -397,32 +397,47 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // Private sources' in-product preview is deferred — reading their content
       // must route through the agent pod for the credential swap, which needs a
       // new agent-runtime read; until then the UI falls back to a GitHub link.
+      const deferred =
+        "in-product preview isn't available for private sources yet";
       if (!detectHost(src.gitUrl)) {
-        throw new TRPCError({
-          code: "NOT_IMPLEMENTED",
-          message: "in-product preview isn't available for private sources yet",
-        });
+        throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
       }
-      let read: { content: string; dir: string } | null;
+      // Resolve the skill's pinned {version, dir} from the same cached scan
+      // `list` uses (one shared cache entry), then GET that one file — no repo
+      // download. A private github.com repo 404s the scan with
+      // PublicArchiveNotFoundError, the same deferred-preview outcome the
+      // tarball read used to produce.
       try {
-        read = await deps.readPublicSkill(src.gitUrl, src.path, name);
+        const skills = await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
+          deps.scanPublic(gitUrl, src.path),
+        );
+        const skill = skills.find((s) => s.name === name);
+        if (!skill) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: `skill ${JSON.stringify(name)} not found in source`,
+          });
+        }
+        // Found but `dir`-less means the cached scan came from agent-runtime —
+        // a private github.com repo whose public archive 404s and falls through
+        // to the pod scan, which doesn't report a directory. Preview is deferred
+        // for private sources exactly as in the non-GitHub guard above and the
+        // archive-404 path on a cold cache; never build a URL from `undefined`.
+        if (!skill.dir) {
+          throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
+        }
+        const content = await deps.readPublicSkillFile(
+          src.gitUrl,
+          skill.version,
+          skill.dir,
+        );
+        return { content, dir: skill.dir };
       } catch (err) {
         if (err instanceof PublicArchiveNotFoundError) {
-          throw new TRPCError({
-            code: "NOT_IMPLEMENTED",
-            message:
-              "in-product preview isn't available for private sources yet",
-          });
+          throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
         }
         throw err;
       }
-      if (read === null) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: `skill ${JSON.stringify(name)} not found in source`,
-        });
-      }
-      return { content: read.content, dir: read.dir };
     },
 
     async install(input: SkillInstallInput) {

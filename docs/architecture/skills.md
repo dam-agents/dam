@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-07-29
+Last verified: 2026-08-05
 
 ## Overview
 
@@ -125,7 +125,7 @@ Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/s
 - The **Skill Source catalogue** — CRUD on user sources, merging in system seeds and template sources, dedupe and badge resolution.
 - The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source.
 - **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, enumerates skills across the [Source Roots](#source-roots) (or the source's `path` when set), parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no agent is running.
-- **SKILL.md content read** (`getSkillContent`) — serves one skill's raw `SKILL.md` (frontmatter + markdown body) for the in-product preview, reading through the same public-archive path via `readPublicSkill`. Public sources only; private sources return `NOT_IMPLEMENTED` (preview deferred).
+- **SKILL.md content read** (`getSkillContent`) — serves one skill's raw `SKILL.md` (frontmatter + markdown body) for the in-product preview. It resolves the skill's directory and commit from the cached scan, then fetches that one file pinned at that commit — so a preview costs no repo download and renders the same revision the catalog listed. Public sources only; private sources return `NOT_IMPLEMENTED` (preview deferred).
 - **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the shared `ensureReady` primitive rather than refusing (still requires an `agentId` to target).
 - **Install / uninstall orchestration** — wakes a hibernated agent before recording the change, then upserts the `agent_skills` row and bumps the outbox; the unified apply worker applies it onto the (now-warm) pod. The api-server is the only pod whose NetworkPolicy can reach the agent's tRPC listener; no Bearer token is sent.
 - **Create Local orchestration** — wakes a hibernated agent via `ensureReady`, delegates the write to agent-runtime `writeLocal`, and security-logs it. Records **nothing** in Postgres: an uploaded skill is a standalone Local Skill by design, so the reconciled `state` read picks it up on the next poll — no `agent_skills` row, no outbox bump. A pod-side collision comes back as `CONFLICT` and is passed through with its message (the offending names) intact.
@@ -237,7 +237,7 @@ GitHub errors (missing scope, repo not found) surface to agent-runtime as the up
 - **Public GitHub** → `public-archive-scanner` from the api-server, served from the per-`gitUrl` cache when fresh. No agent required.
 - **Anything else** → agent-runtime `skills.scan`. Requires an `agentId` (surfaces a clear error if missing) and **wakes a hibernated agent** via the shared `ensureReady` primitive before scanning.
 
-The cache is invalidated on `sources.refresh` and after every successful publish to that source — the latter so a freshly-merged PR shows up on the next list.
+The cache is invalidated on `sources.refresh` and after every successful publish to that source — the latter so a freshly-merged PR shows up on the next list. The in-product content read shares this cache, so an invalidation also updates which revision a preview renders.
 
 ### Reconciled state
 

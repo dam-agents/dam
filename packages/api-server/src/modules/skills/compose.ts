@@ -6,7 +6,7 @@ import type { TemplatesRepository } from "../templates/infrastructure/templates-
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import {
-  readPublicGithubSkill,
+  readPublicGithubSkillFile,
   scanPublicGithubArchive,
 } from "./infrastructure/public-archive-scanner.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
@@ -85,7 +85,7 @@ export function composeSkillsModule(
     scanSource: scanWithCache,
     invalidateScan: invalidateScanCache,
     scanPublic: scanPublicGithubArchive,
-    readPublicSkill: readPublicGithubSkill,
+    readPublicSkillFile: readPublicGithubSkillFile,
     brandName,
   });
 }
