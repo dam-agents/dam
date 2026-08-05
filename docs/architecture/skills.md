@@ -76,7 +76,7 @@ A source may carry an optional repo-relative **path** — a subdirectory the sca
 
 ### Skill, Installed Skill Ref, Local Skill
 
-A **Scanned Skill** is what an api-server scan returns from a Source: `(name, description, version, contentHash)`, where `version` is the source's HEAD commit SHA and `contentHash` is a deterministic SHA-256 over the skill directory.
+A **Scanned Skill** is what an api-server scan reports about one skill in a Source: its identity, a `version` that is the source's HEAD commit SHA, a `contentHash` that is a deterministic SHA-256 over the skill directory (what drift detection compares), and the repo-relative directory it was found in (whichever [Source Root](#source-roots) that came from — what a raw-file URL needs to read it). The field-level shape lives in the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)).
 
 An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent. The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
 

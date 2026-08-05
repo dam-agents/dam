@@ -231,6 +231,7 @@ export async function scanPublicGithubArchive(
           description: fm.description?.trim() || "",
           version,
           contentHash,
+          dir: rel,
         };
       }),
     );

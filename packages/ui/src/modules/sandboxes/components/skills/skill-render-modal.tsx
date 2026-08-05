@@ -35,10 +35,11 @@ export function SkillRenderModal({
       ...(agentId ? { agentId } : {}),
     }),
   );
-  // Prefer the exact directory the content read resolved; before it loads (or
-  // for a private source that can't be read) fall back to guessing the dir
-  // from the source path + skill name — best-effort, may 404 if they diverge.
-  const dir = data?.dir ?? `${source.path ?? "skills"}/${skill.name}`;
+  // The scan reports each skill's real directory, so the link is right before
+  // the content query resolves. The guess is the private-source fallback only —
+  // there the scan comes from agent-runtime, which doesn't report `dir`.
+  const dir =
+    skill.dir ?? data?.dir ?? `${source.path ?? "skills"}/${skill.name}`;
   const link = gitBlobUrl(source.gitUrl, skill.version, `${dir}/SKILL.md`);
 
   return (
