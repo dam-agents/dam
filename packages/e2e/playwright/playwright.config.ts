@@ -171,9 +171,8 @@ export default defineConfig({
             use: { ...devices["Desktop Chrome"] },
           },
           {
-            // Gateway rollout recovery (#2817). Full-only on two counts: it
-            // waits out a wedge and a heal, and it parks the controller
-            // cluster-wide, so it must never overlap another spec.
+            // Gateway rollout recovery (#2817): waits out a wedge and a heal,
+            // and parks the controller cluster-wide — must never overlap.
             name: "gateway-full",
             testMatch: /full\/gateway-.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },

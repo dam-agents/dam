@@ -53,9 +53,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
       );
     case "gateway-pod-failed":
       switch (c.gatewayReason) {
-        // The platform replaces such a gateway by itself, but this copy is only
-        // reached at the wake deadline — by then the replacement has had the
-        // whole wake budget and not come back, so don't promise it is imminent.
+        // Self-repairing, but read at the deadline — don't promise it's imminent.
         case "StuckOnSupersededRevision":
           return (
             "This agent can't reach the network: its gateway is stuck on an " +

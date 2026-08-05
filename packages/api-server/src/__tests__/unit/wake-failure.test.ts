@@ -82,7 +82,7 @@ describe("classifyWakeFailure", () => {
       expected: { kind: "gateway-not-ready" },
     },
     {
-      // #2817: must not land in the progressing gateway-not-ready class.
+      // #2817: must not land in the progressing class.
       name: "StuckOnSupersededRevision → gateway-pod-failed",
       snapshot: {
         ...base,

@@ -18,8 +18,7 @@ function kubeconfig(): string {
   return join(limaHome, vm, "copied-from-guest", "kubeconfig.yaml");
 }
 
-/** Run kubectl against the e2e cluster and return stdout. Throws on failure.
- *  Only for specs asserting controller behaviour that has no API surface. */
+/** Only for specs asserting controller behaviour with no API surface. */
 export function kubectl(...args: string[]): string {
   return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
     encoding: "utf8",
@@ -27,8 +26,7 @@ export function kubectl(...args: string[]): string {
   }).trim();
 }
 
-/** kubectl that yields "" instead of throwing — for polling resources that
- *  legitimately come and go mid-test. */
+/** Yields "" instead of throwing — for polling resources that come and go. */
 function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);
@@ -57,8 +55,7 @@ export function podField(name: string, jsonpath: string): string {
   return get("pod", name, jsonpath);
 }
 
-/** Filter projection, not `range` — a range needs a matching `{end}`, and
- *  without it kubectl appends the whole status object to the output. */
+/** Filter projection: a `range` without `{end}` silently dumps whole objects. */
 function conditionPath(type: string): string {
   return `.status.conditions[?(@.type=="${type}")].status`;
 }
@@ -86,8 +83,7 @@ export function podEvents(name: string): string {
   );
 }
 
-/** Teardown fallback for when the API is unusable (e.g. a long spec outlived
- *  its access token). The controller reaps the workloads from the CR. */
+/** Teardown fallback when the API is unusable (e.g. an expired token). */
 export function deleteAgentCr(name: string): void {
   kubectlOrEmpty(
     "-n",
@@ -99,9 +95,8 @@ export function deleteAgentCr(name: string): void {
   );
 }
 
-/** Park or restore the controller. Parking is cluster-wide — always restore it
- *  in a finally. Scaling to 0 waits for the pod to actually go away, so a
- *  caller can rely on no reconcile racing whatever it does next. */
+/** Parking is cluster-wide — always restore in a finally. Scaling to 0 waits
+ *  for the pod to go, so no reconcile races what the caller does next. */
 export function scaleController(replicas: 0 | 1): void {
   kubectl(
     "-n",

@@ -15,22 +15,13 @@ import {
 } from "../../lib/cluster.js";
 import { harnessName } from "../../lib/fixtures.js";
 
-// Full-suite-only spec (see playwright.config.ts): run on demand with
-// `mise run e2e:loop -- --full`.
+// Full-suite-only spec (see playwright.config.ts).
 //
-// #2817: disconnecting a connection deletes its Secret, and a gateway roll
-// already in flight can carry the reference past the deletion. The mount is
-// mandatory, so that pod never starts — and Kubernetes will not replace a
-// not-ready pod with the corrected revision that lands seconds later, so the
-// agent keeps its gateway Service and loses all egress until an operator
-// deletes the pod by hand.
-//
-// The race is not reproducible on demand, so this manufactures the state it
-// produces and asserts the platform gets out of it unaided. This must be an
-// e2e test: the deadlock lives entirely in behaviour a fake client cannot
-// model — kubelet failing a mandatory Secret mount, the StatefulSet's
-// OrderedReady monotonic invariant, and Kubernetes reusing an earlier
-// revision when a template reverts.
+// #2817: a gateway roll can carry a reference to a just-deleted credential
+// Secret, and that pod never starts nor gets replaced — the agent silently
+// loses all egress. The race is not reproducible on demand, so this
+// manufactures the state it produces. Must be e2e: the deadlock is all real-
+// Kubernetes behaviour (mandatory mounts, OrderedReady, revision reuse).
 const agentName = "e2e-gateway-wedge";
 const deadSecret = "platform-conn-deleted";
 
@@ -64,8 +55,7 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
     });
 
     const gw = `${agentId}-gateway`;
-    // Agent state "running" tolerates a gateway that is still rolling, so wait
-    // on the gateway pod itself before touching it.
+    // Agent state "running" tolerates a gateway that is still rolling.
     await expect
       .poll(() => podIsReady(`${gw}-0`), {
         timeout: 180_000,
@@ -74,14 +64,11 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
       })
       .toBe(true);
 
-    // Parking the controller stands in for the render window the real race
-    // opens; without it the controller can restore the good template before
-    // the StatefulSet recreates the pod, and no wedge forms. Cluster-wide, so
-    // the finally below always undoes it.
+    // Parking stands in for the race's render window; without it the controller
+    // restores the good template before the pod is recreated and no wedge forms.
     await test.step("wedge the gateway on a Secret that does not exist", async () => {
       scaleController(0);
-      // Volume *and* mount: kubelet never resolves a volume no container
-      // mounts, so the volume alone would not wedge anything.
+      // Volume *and* mount: an unmounted volume is never resolved by kubelet.
       kubectl(
         "-n",
         AGENT_NS,
@@ -126,8 +113,7 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
         })
         .toContain("FailedMount");
 
-      // Recorded while the controller is parked, so it is stable: the fix has
-      // to move the pod off this revision, and only an eviction can.
+      // Stable while the controller is parked; only an eviction moves it off.
       wedgedRev = podField(
         `${gw}-0`,
         ".metadata.labels.controller-revision-hash",
@@ -150,9 +136,7 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
     });
 
     await test.step("the gateway recovers without operator intervention", async () => {
-      // Before the fix this never happens: the pod sits Pending forever on a
-      // revision that is neither current nor update, and only a manual pod
-      // delete recovers the agent's egress.
+      // Before the fix the pod sits Pending forever.
       await expect
         .poll(() => podIsReady(`${gw}-0`), {
           timeout: 300_000,
@@ -174,9 +158,8 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
         .toBe("True");
     });
   } finally {
-    // Nothing here may throw: on failure the assertion above is the story, and
-    // a cleanup error would replace it. Restoring the controller matters most —
-    // leaving it parked would break every later spec.
+    // Nothing here may throw, or it replaces the real failure. Restoring the
+    // controller matters most: leaving it parked breaks every later spec.
     try {
       scaleController(1);
     } catch {

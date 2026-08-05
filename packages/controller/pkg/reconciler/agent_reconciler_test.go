@@ -532,10 +532,8 @@ func gatewayRevFixture(currentRev, updateRev, podRev string, ready bool) (*appsv
 	return ss, pod
 }
 
-// #2817: the pod wedged on a deleted credential Secret is on an intermediate
-// revision — currentRevision is frozen at the last completed rollout, and the
-// correction (carrying the recreated connection's Secret) hashes to a newer
-// one. Matches neither, so the old currentRevision-only predicate skipped it.
+// #2817 with the connection recreated: the correction hashes to a new revision,
+// leaving the wedged pod on an intermediate one that matches neither.
 func TestForceRollStuckPod_DeletesNotReadyPodAtIntermediateRev(t *testing.T) {
 	ss, stuckPod := gatewayRevFixture("rev-1", "rev-3", "rev-2", false)
 	r, client := setupReconciler(t, nil, ss, stuckPod)
@@ -547,10 +545,9 @@ func TestForceRollStuckPod_DeletesNotReadyPodAtIntermediateRev(t *testing.T) {
 		"pod wedged on an intermediate revision must be evicted; got err=%v", err)
 }
 
-// #2817, and the observed shape on a real cluster: with no replacement
-// connection the correction reverts to an earlier template, so K8s reuses its
-// revision and update == current while the pod sits on a third. Matching
-// revisions therefore do not mean "nothing to unstick".
+// #2817's shape on a real cluster: the correction reverts to an earlier
+// template, so K8s reuses its revision and update == current — which therefore
+// does not mean "nothing to unstick".
 func TestForceRollStuckPod_DeletesStuckPodWhenCorrectionReusedPriorRevision(t *testing.T) {
 	ss, stuckPod := gatewayRevFixture("rev-1", "rev-1", "rev-2", false)
 	r, client := setupReconciler(t, nil, ss, stuckPod)
@@ -562,8 +559,7 @@ func TestForceRollStuckPod_DeletesStuckPodWhenCorrectionReusedPriorRevision(t *t
 		"pod off the update revision must be evicted even when current==update; got err=%v", err)
 }
 
-// An unobserved template means updateRevision is not yet a settled target, so
-// eviction waits rather than judging a pod against a stale one.
+// An unobserved template means updateRevision is not yet a settled target.
 func TestForceRollStuckPod_WaitsForObservedGeneration(t *testing.T) {
 	ss, stuckPod := gatewayRevFixture("rev-1", "rev-1", "rev-2", false)
 	ss.Generation = 2
@@ -613,9 +609,8 @@ func TestGatewayNotReadyCause(t *testing.T) {
 			wantReason: apiv1.ReasonStuckOnSupersededRevision,
 		},
 		{
-			// The pod is off-revision but healthy, so it is mid-roll, not
-			// wedged — and the evictor leaves it to normal rolling update.
-			// Stamping it would fail a wake hard during an ordinary roll.
+			// Off-revision but healthy = mid-roll; stamping it would fail a
+			// wake hard during an ordinary roll.
 			name: "ready pod on an old revision is an ordinary roll",
 			objects: []runtime.Object{
 				rolloutSS("my-agent-gateway", 1, 1, "rev-3"),
@@ -624,8 +619,7 @@ func TestGatewayNotReadyCause(t *testing.T) {
 			wantReason: "PodNotReady",
 		},
 		{
-			// updateRevision is not a settled target until the StatefulSet has
-			// observed the newest template, so nothing can be judged against it.
+			// Nothing to judge against until the newest template is observed.
 			name: "statefulset has not observed the newest template",
 			objects: []runtime.Object{
 				rolloutSS("my-agent-gateway", 2, 1, "rev-2"),

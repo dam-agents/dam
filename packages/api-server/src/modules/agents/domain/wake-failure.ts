@@ -28,10 +28,8 @@ export type WakeFailureCause =
    *  retriable class (slow image pull, volume attach, probes). */
   | { kind: "agent-pod-not-ready" }
   | { kind: "gateway-not-ready" }
-  /** The controller named a gateway cause a wake cannot outwait — superseded
-   *  revision, OOM, unpullable image. Hard, not "still starting" (#2817):
-   *  reached only at the deadline, so a self-repairing cause has already had
-   *  the whole wake budget to clear and hasn't. */
+  /** A gateway cause a wake cannot outwait (#2817). Hard even when the platform
+   *  self-repairs it: reached only once the budget is spent. */
   | { kind: "gateway-pod-failed"; gatewayReason: string }
   | { kind: "reconcile-error"; message: string; backoffExceeded: boolean }
   | { kind: "unknown" };
@@ -69,8 +67,7 @@ const POD_FAILURE_REASONS = new Set([
   "ContainerTerminated",
 ]);
 
-/** GatewayPodReady reasons a wake cannot outwait. Anything else (PodNotReady)
- *  is a pod still on its way up. */
+/** GatewayPodReady reasons a wake cannot outwait; PodNotReady is not one. */
 const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",

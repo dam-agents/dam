@@ -399,8 +399,7 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 
-	// Same for the gateway, so a permanently wedged one is distinguishable
-	// from one still booting (#2817).
+	// Same for the gateway: wedged must be distinguishable from booting (#2817).
 	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
 	if !gatewayReady {
 		gatewayFailReason, gatewayFailMsg = r.gatewayNotReadyCause(ctx, GatewayName(name))
@@ -426,14 +425,10 @@ func (r *AgentReconciler) publishReconciled(ctx context.Context, agent *apiv1.Ag
 	})
 }
 
-// podStuckOnSupersededRevision reports whether a pod can never become ready on
-// the spec it booted with, because the StatefulSet has moved past that
-// revision. One definition, shared by the evictor and the status reporter, so
-// the two can never disagree on what "stuck" means.
-//
-// False until the StatefulSet has observed the newest template — there is no
-// settled target to judge against yet — and false for a Ready off-revision
-// pod, which is just an ordinary rolling update in progress.
+// podStuckOnSupersededRevision: the pod can never become ready, its revision
+// having been superseded. Shared by the evictor and the status reporter so they
+// cannot disagree. False while the target revision is unsettled, and false for
+// a Ready off-revision pod — that is an ordinary roll.
 func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
 	if ss.Status.UpdateRevision == "" || ss.Status.ObservedGeneration != ss.Generation {
 		return false
@@ -444,11 +439,9 @@ func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
 	return !isPodReady(*p)
 }
 
-// gatewayNotReadyCause names why the gateway pod isn't ready, so callers can
-// tell "still starting" from "will never start" (#2817). The superseded-revision
-// verdict comes from the same predicate that drives eviction, so the condition
-// never claims a pod is being replaced when it isn't. Falls back to
-// PodNotReady, read errors included — a diagnosis must never fail the publish.
+// gatewayNotReadyCause lets callers tell "still starting" from "will never
+// start" (#2817). Falls back to PodNotReady on read errors — a diagnosis must
+// never fail the publish.
 func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
 	pod := r.getPod(ctx, ssName)
 	if pod == nil {
@@ -902,16 +895,11 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 	})
 }
 
-// forceRollStuckPod evicts pods that are NotReady on a superseded revision.
-// K8s won't: a non-Ready pod trips the OrderedReady monotonic invariant before
-// the loop that replaces off-revision pods (all maxUnavailable governs).
-//
-// The predicate is "not on updateRevision", not "on currentRevision" (#2817):
-// currentRevision is frozen at the last completed rollout, and a correction
-// reverting to an earlier template reuses its revision, so a wedged pod
-// usually matches neither — hence no early return on matching revisions.
-// Pods on updateRevision are always left alone, so an unbootable spec fails in
-// place instead of hot-looping. Best-effort; the next reconcile retries.
+// forceRollStuckPod evicts stuck pods, which K8s won't: a non-Ready pod trips
+// the OrderedReady invariant before the loop that replaces off-revision pods
+// (all maxUnavailable governs). Note there is deliberately no early return when
+// the revisions match — a wedged pod is often on a third one (#2817).
+// Best-effort; the next reconcile retries.
 func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, statefulSetName string) error {
 	ss, err := r.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSetName, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -920,8 +908,7 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	if err != nil {
 		return fmt.Errorf("getting statefulset: %w", err)
 	}
-	// Mirrors the predicate's first clause, to skip the pod LIST when there is
-	// no settled target revision to judge against.
+	// Predicate's first clause, hoisted to skip the pod LIST.
 	if ss.Status.UpdateRevision == "" || ss.Status.ObservedGeneration != ss.Generation {
 		return nil
 	}
