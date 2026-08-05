@@ -29,6 +29,11 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 interface CacheEntry {
   skills: Skill[];
   expiresAt: number;
+  /** Epoch ms of the upstream read this entry came from — carried to the UI so
+   *  a source card can show how fresh its list is. An empty cache after a
+   *  restart forces a real scan, so this never claims a read that didn't
+   *  happen. */
+  scannedAt: number;
 }
 
 /**
@@ -49,17 +54,22 @@ async function scanWithCache(
   gitUrl: string,
   path: string | undefined,
   scanner: (gitUrl: string) => Promise<Skill[]>,
-): Promise<Skill[]> {
+): Promise<{ skills: Skill[]; scannedAt: number }> {
   const key = cacheKey(gitUrl, path);
   const hit = sharedScanCache.get(key);
   if (hit && hit.expiresAt > Date.now()) {
     process.stderr.write(`[skills] cache hit: ${key}\n`);
-    return hit.skills;
+    return { skills: hit.skills, scannedAt: hit.scannedAt };
   }
   process.stderr.write(`[skills] cache miss: ${key}\n`);
   const skills = await scanner(gitUrl);
-  sharedScanCache.set(key, { skills, expiresAt: Date.now() + CACHE_TTL_MS });
-  return skills;
+  const scannedAt = Date.now();
+  sharedScanCache.set(key, {
+    skills,
+    expiresAt: scannedAt + CACHE_TTL_MS,
+    scannedAt,
+  });
+  return { skills, scannedAt };
 }
 
 /** Drop the cached listing for a `(gitUrl, path)` so the next scan hits

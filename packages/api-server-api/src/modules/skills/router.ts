@@ -17,6 +17,7 @@ import {
   skillInstallInputSchema,
   skillListInputSchema,
   skillListLocalInputSchema,
+  skillListResultSchema,
   skillListSourcesInputSchema,
   skillLocalFilesSchema,
   skillPublishInputSchema,
@@ -24,7 +25,6 @@ import {
   skillReadLocalInputSchema,
   skillRefSchema,
   skillRefreshSourceInputSchema,
-  skillSchema,
   skillSourceSchema,
   skillStateInputSchema,
   skillStateOutputSchema,
@@ -57,7 +57,7 @@ export const skillsRouter = t.router({
 
   list: readAgentProcedure
     .input(skillListInputSchema)
-    .output(z.array(skillSchema))
+    .output(skillListResultSchema)
     .query(async ({ ctx, input }) => {
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       const src = await ctx.skills.getSource(input.sourceId);

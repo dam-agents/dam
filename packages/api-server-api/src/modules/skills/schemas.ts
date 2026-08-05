@@ -49,6 +49,14 @@ export const skillSchema = z.object({
   dir: z.string().optional(),
 });
 
+/** A source's scanned skill list plus when that scan was read from upstream. */
+export const skillListResultSchema = z.object({
+  skills: z.array(skillSchema),
+  /** ISO 8601 time the source's skill list was last read from upstream. A
+   *  cache hit reports the original read, not the moment of the hit. */
+  scannedAt: z.string(),
+});
+
 /** An installed skill on an instance, keyed by source + name. Version
  *  is a commit SHA. */
 export const skillRefSchema = z.object({

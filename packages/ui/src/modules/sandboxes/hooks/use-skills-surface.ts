@@ -130,8 +130,8 @@ export function useSkillsSurface(
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
-        const list = await api.skills.list.query({ sourceId, agentId });
-        setSkillsBySource((s) => ({ ...s, [sourceId]: list }));
+        const { skills } = await api.skills.list.query({ sourceId, agentId });
+        setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
       } catch (err) {
         const msg = getErrorMessage(err, "Failed to load skills");
         setErrorBySource((e) => ({ ...e, [sourceId]: msg }));

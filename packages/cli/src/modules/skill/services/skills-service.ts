@@ -237,7 +237,7 @@ export function createSkillsService(deps: { trpc: TrpcClient }): SkillsService {
     },
     async catalog(sourceId, agentId) {
       try {
-        const skills = await deps.trpc.skills.list.query({
+        const { skills } = await deps.trpc.skills.list.query({
           sourceId,
           agentId,
         });
