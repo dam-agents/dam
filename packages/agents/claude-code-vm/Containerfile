@@ -71,6 +71,10 @@ COPY --from=agent /opt/ /opt/
 # /home is a bootc symlink to /var/home, absent at build time
 RUN mkdir -p /var/home && \
     useradd -u 65532 -d /home/agent -s /bin/bash agent && \
+    # agent-runtime (and the harness) run as root here; anything resolving
+    # home via getpwuid — the JVM's user.home, ~ expansion in tools that
+    # ignore $HOME — must land on the workspace, not /root.
+    usermod -d /home/agent root && \
     usermod -aG docker agent && \
     echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent && \
     chown -R agent /etc/mise /app /usr/local/share/mise && chown agent /etc/AGENTS.md && \
