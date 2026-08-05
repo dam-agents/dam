@@ -472,6 +472,10 @@ jobs:
       - name: Build containerDisk and push
         env:
           AGENT_IMAGE: ${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
+          # Raises mise's GitHub API rate limit for the agent-browser install
+          # (build.sh passes it through as a BuildKit secret, never baked
+          # into the image).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           docker pull "$AGENT_IMAGE"
