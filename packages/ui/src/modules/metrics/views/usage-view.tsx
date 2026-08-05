@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 import { formatDate } from "@/lib/format-time";
-import { cn } from "@/lib/utils";
 
 import { useSpendBreakdown } from "../api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
@@ -98,6 +97,14 @@ export function UsageView() {
 
   const total = data?.byModel.reduce((sum, row) => sum + row.costUsd, 0) ?? 0;
   const dataMonth = monthOfRows(data?.byDay, month);
+  // Copy inside the figures block describes the month the rows came from, not
+  // the one the user just picked — while a switch is in flight those differ,
+  // and naming the selection would assert something about a month whose data
+  // has not arrived. The period control keeps showing `month`, the selection.
+  const dataMonthLabel = formatDate(dataMonth, {
+    month: "long",
+    year: "numeric",
+  });
   const dailyDays = fillMonthDays(
     dataMonth,
     dataMonth >= currentMonth,
@@ -110,46 +117,58 @@ export function UsageView() {
         title="Usage"
         description={PAGE_DESCRIPTION}
         actions={
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Previous month"
-              onClick={() => setMonth(monthStart(month, -1))}
-            >
-              <ChevronLeft size={16} className="text-muted-foreground" />
-            </Button>
-            <span className="min-w-[120px] text-center text-sm font-medium">
-              {monthLabel}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Next month"
-              disabled={isCurrentMonth}
-              onClick={() => setMonth(monthStart(month, 1))}
-            >
-              <ChevronRight size={16} className="text-muted-foreground" />
-            </Button>
+          <div className="flex items-center gap-3">
+            {/* Names the staleness instead of only dimming it: the figures
+                below still belong to the previously viewed month. Dimming the
+                whole block was the earlier cue, but at 60% its
+                `text-muted-foreground` body copy fell under the AA contrast
+                minimum. */}
+            {isPlaceholderData && (
+              <span className="text-xs text-muted-foreground">Updating…</span>
+            )}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() => setMonth(monthStart(month, -1))}
+              >
+                <ChevronLeft size={16} className="text-muted-foreground" />
+              </Button>
+              <span className="min-w-[120px] text-center text-sm font-medium">
+                {monthLabel}
+              </span>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next month"
+                disabled={isCurrentMonth}
+                onClick={() => setMonth(monthStart(month, 1))}
+              >
+                <ChevronRight size={16} className="text-muted-foreground" />
+              </Button>
+            </div>
           </div>
         }
       />
 
+      {/* A failed month replaces the figures rather than holding them: React
+          Query applies `placeholderData` only while a query is pending, so the
+          rejected key has no data to keep, and `retry: false` means that is the
+          first failure. Showing the previous month's numbers under an error
+          would need a last-good cache of our own — deliberately out of scope,
+          since the figures are money and a stale total beside a failure notice
+          is worse than an honest gap. */}
       {isError && (
         <NoticeCard>Couldn't load usage for {monthLabel}.</NoticeCard>
       )}
-      {isPending && !isError && <UsageSkeleton />}
+      {isPending && <UsageSkeleton />}
       {data && (
         // `isPlaceholderData` means these are the previously viewed month's
-        // figures, held on screen while the selected month loads; dim them so
-        // the numbers don't read as final.
-        <div
-          aria-busy={isPlaceholderData}
-          className={cn(
-            "space-y-10 transition-opacity",
-            isPlaceholderData && "opacity-60",
-          )}
-        >
+        // figures, held on screen while the selected month loads. `aria-busy`
+        // carries that to assistive tech; the visible cue is the "Updating…"
+        // label by the period control.
+        <div aria-busy={isPlaceholderData} className="space-y-10">
           <section>
             <SectionLabel spaced>Total spend</SectionLabel>
             <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
@@ -159,7 +178,7 @@ export function UsageView() {
           {data.byModel.length === 0 ? (
             <section>
               <SectionLabel spaced>Spend by day</SectionLabel>
-              <NoticeCard>No LLM calls in {monthLabel}.</NoticeCard>
+              <NoticeCard>No LLM calls in {dataMonthLabel}.</NoticeCard>
             </section>
           ) : (
             <>
