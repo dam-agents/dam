@@ -7,6 +7,7 @@ import type { Attachment, Message } from "../../../types.js";
 import { extractErrorMessage } from "../../acp/errors.js";
 import {
   finalizeAllStreaming,
+  hasAgentContent,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
@@ -16,8 +17,9 @@ const DELIVERY_TIMEOUT_MS = 60_000;
 
 export interface SendPromptOptions {
   /** Send the prompt to the agent without rendering a user bubble, and drop
-   *  the turn silently if it fails — so an auto-sent prompt reads as the agent
-   *  speaking first rather than the user having typed a command. */
+   *  the turn silently if it fails before producing anything — so an auto-sent
+   *  prompt reads as the agent speaking first rather than the user having
+   *  typed a command. */
   hidden?: boolean;
 }
 
@@ -73,8 +75,8 @@ export function useAcpPrompt(
 
       // Hidden sends (e.g. a KB's auto-run onboarding) still reach the agent
       // but render no user bubble, so the turn reads as the agent speaking
-      // first. A hidden send that fails is dropped silently rather than
-      // leaving an error the user never asked for.
+      // first. A hidden send that fails with nothing to show is dropped
+      // silently rather than leaving an error the user never asked for.
       const hidden = opts?.hidden ?? false;
 
       const userParts: Message["parts"] = [];
@@ -132,7 +134,6 @@ export function useAcpPrompt(
                       ...m,
                       streaming: false,
                       queued: false,
-                      parts: [],
                       error: {
                         message: "Couldn't deliver — the agent didn't respond.",
                         retryWith: { text, attachments },
@@ -168,23 +169,24 @@ export function useAcpPrompt(
           ),
         );
       } catch (err: unknown) {
-        if (hidden) {
+        const bubble = useStore.getState().messages.find((m) => m.id === aId);
+        const streamed = !!bubble && hasAgentContent(bubble);
+        if (hidden && !streamed) {
           dropBubble();
         } else {
-          const errMsg = extractErrorMessage(err);
+          // Whatever already streamed stays put — an interruption is not a
+          // lost turn, and the error card renders below it. A hidden turn
+          // keeps its content but still surfaces no error.
+          const error = hidden
+            ? undefined
+            : {
+                message: extractErrorMessage(err),
+                retryWith: { text, attachments },
+              };
           setMessages((p) =>
             p.map((m) =>
               m.id === aId
-                ? {
-                    ...m,
-                    streaming: false,
-                    queued: false,
-                    parts: [],
-                    error: {
-                      message: errMsg,
-                      retryWith: { text, attachments },
-                    },
-                  }
+                ? { ...m, streaming: false, queued: false, error }
                 : m,
             ),
           );

@@ -79,6 +79,8 @@ export interface Message {
    *  catch-up when the session log has been truncated. Invisible to the
    *  projection's routing (findActiveAssistant skips these). */
   notice?: boolean;
+  /** A failed or interrupted turn. Coexists with `parts`: an interruption
+   *  keeps whatever streamed and renders the notice underneath it. */
   error?: {
     message: string;
     /** Cleared once any subsequent send starts, so the Retry button only lives

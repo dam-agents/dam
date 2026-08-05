@@ -42,6 +42,7 @@ import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { describeSendError } from "../../acp/errors.js";
+import { hasAgentContent } from "../../acp/session-projection.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
@@ -691,20 +692,7 @@ export function ChatView() {
                           <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
                             {m.role === "user" ? "You" : "Agent"}
                           </span>
-                          {m.error ? (
-                            <SendErrorCard
-                              rawError={m.error.message}
-                              onRetry={
-                                m.error.retryWith
-                                  ? () =>
-                                      sendPrompt(
-                                        m.error!.retryWith!.text,
-                                        m.error!.retryWith!.attachments,
-                                      )
-                                  : undefined
-                              }
-                            />
-                          ) : (
+                          {(!m.error || m.parts.length > 0) && (
                             <div
                               className={
                                 m.role === "user"
@@ -788,6 +776,21 @@ export function ChatView() {
                                   <BusyIndicator className="py-1" />
                                 )}
                             </div>
+                          )}
+                          {m.error && (
+                            <SendErrorCard
+                              rawError={m.error.message}
+                              interrupted={hasAgentContent(m)}
+                              onRetry={
+                                m.error.retryWith
+                                  ? () =>
+                                      sendPrompt(
+                                        m.error!.retryWith!.text,
+                                        m.error!.retryWith!.attachments,
+                                      )
+                                  : undefined
+                              }
+                            />
                           )}
                         </div>
                       ),
@@ -978,24 +981,35 @@ function SessionErrorCard({
   );
 }
 
+/** `interrupted` means the turn had already streamed content before it broke —
+ *  the card then sits under that content and says so, instead of reading as a
+ *  send that never landed. */
 function SendErrorCard({
   rawError,
+  interrupted,
   onRetry,
 }: {
   rawError: string;
+  interrupted?: boolean;
   onRetry?: () => void;
 }) {
   const { message, hint } = describeSendError(rawError);
   return (
     <Callout
       tone="danger"
-      className="flex max-w-[620px] items-start gap-2.5"
+      className={cn(
+        "flex max-w-[620px] items-start gap-2.5 anim-in",
+        interrupted && "mt-2",
+      )}
       role="alert"
     >
       <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="text-sm text-foreground break-words">
-          <span className="font-bold text-danger">Send failed:</span> {message}
+          <span className="font-bold text-danger">
+            {interrupted ? "Response interrupted:" : "Send failed:"}
+          </span>{" "}
+          {message}
         </div>
         {hint && (
           <p className="text-xs text-muted-foreground break-words">{hint}</p>
