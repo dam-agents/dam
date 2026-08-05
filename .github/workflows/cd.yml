@@ -175,7 +175,7 @@ jobs:
 
   merge-images:
     name: merge multi-arch manifests
-    needs: [build-images, appversion, check]
+    needs: [changes, build-images, appversion, check]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -197,12 +197,17 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
+          # keycloak also gets its source-sha tag (see merge-platform-base):
+          # publish pins it into the chart so releases that don't change the
+          # keycloak image don't roll the Keycloak pod. Non-PR runs only —
+          # a PR's amd64-only manifest must never overwrite it.
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=${{ needs.appversion.outputs.composite }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ fromJSON(needs.changes.outputs.source_shas)['keycloak'] }},enable=${{ matrix.component == 'keycloak' && github.event_name != 'pull_request' }}
       - name: Create manifest list and push
         env:
           IMAGE: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
@@ -613,7 +618,7 @@ jobs:
           if-no-files-found: ignore
 
   publish:
-    needs: [merge-images, merge-agents, merge-workloads, appversion]
+    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -645,6 +650,19 @@ jobs:
 
       - name: Build Helm chart dependencies
         run: mise run helm:deps
+
+      # Pin the keycloak image to its content tag (source sha, pushed by
+      # merge-images) so the chart only moves the tag — and only rolls the
+      # Keycloak pod — when the image inputs actually changed. The repo
+      # default stays `""` (appVersion fallback) for charts rendered from git.
+      - name: Pin keycloak image tag
+        env:
+          KC_TAG: ${{ fromJSON(needs.changes.outputs.source_shas)['keycloak'] }}
+        run: |
+          set -euo pipefail
+          [ -n "$KC_TAG" ]
+          sed -i "s|^\\(\\s*\\)tag: \"\" # @ci-pin keycloak-image-tag$|\\1tag: \"$KC_TAG\"|" deploy/helm/platform/values.yaml
+          grep -q "tag: \"$KC_TAG\"" deploy/helm/platform/values.yaml
 
       - name: Push Helm chart (release)
         if: startsWith(github.ref, 'refs/tags/v')

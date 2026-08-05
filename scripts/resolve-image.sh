@@ -45,6 +45,12 @@ own_paths() {
   case "$1" in
     platform-base) echo "$PLATFORM_BASE_PATHS" ;;
     claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
+    # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
+    # build also depends on dev-config and (any) lockfile change — lockfile
+    # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
+    # source-sha tag is what the published chart pins as the image tag, so a
+    # release that doesn't touch these paths doesn't roll the Keycloak pod.
+    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml" ;;
     mock) echo "packages/e2e/agents/mock" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -53,7 +59,7 @@ own_paths() {
 base_of() {
   if is_workload "$1"; then echo "claude-code"; return; fi
   case "$1" in
-    platform-base) echo "" ;;
+    platform-base|keycloak) echo "" ;;
     claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
@@ -113,7 +119,7 @@ gha_outputs() {
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base claude-code codex pi-agent bob k-search $WORKLOADS; do
+  src="$(for a in platform-base keycloak claude-code codex pi-agent bob k-search $WORKLOADS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
@@ -143,6 +149,8 @@ self_check() {
   chk "$(base_of skydiscover)" claude-code
   chk "$(base_of claude-code)" platform-base
   chk "$(base_of platform-base)" ""
+  chk "$(base_of keycloak)" ""
+  has "$(effective_paths keycloak)" packages/keycloak-theme
   chk "$(local_tag platform-base)" platform-base
   chk "$(local_tag bob)" "platform-bob:latest"
   has "$(effective_paths nous)" packages/platform-base

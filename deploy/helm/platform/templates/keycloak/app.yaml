@@ -31,17 +31,30 @@ metadata:
   {{- include "platform.annotations" (dict "root" $ "component" .Values.keycloak) | nindent 2 }}
 spec:
   replicas: 1
+  # Rolling, surge-first: the old pod keeps serving logins and JWKS until the
+  # new one is ready, so a Keycloak roll is not an auth outage. In production
+  # mode (`start`, scheme https) the overlapping pods form an Infinispan
+  # cluster via jdbc-ping through the shared DB, so in-flight login flows
+  # survive the roll too; start-dev (local/e2e) uses a local cache, where an
+  # in-flight login may bounce once. A failed startup (e.g. schema migration)
+  # leaves the old pod serving instead of taking auth down.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/component: keycloak
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
+      # Not `platform.labels`: it embeds the chart version (helm.sh/chart),
+      # which would change the pod template — and needlessly roll the pod —
+      # on every release. Same deliberate omission as postgres/redis.
       labels:
-        {{- include "platform.labels" . | nindent 8 }}
         app.kubernetes.io/component: keycloak
+        app.kubernetes.io/instance: {{ .Release.Name }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.keycloak) | nindent 6 }}
     spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
