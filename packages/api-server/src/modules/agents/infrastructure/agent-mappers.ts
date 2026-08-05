@@ -97,7 +97,7 @@ export interface InfraAgent {
   agentPodReady?: boolean;
   /** GatewayPodReady condition is True. Undefined until published. */
   gatewayPodReady?: boolean;
-  /** GatewayPodReady reason when False — PodNotReady, or a hard cause (#2817). */
+  /** GatewayPodReady reason when False — PodNotReady, or a hard cause. */
   gatewayPodNotReadyReason?: string;
 }
 

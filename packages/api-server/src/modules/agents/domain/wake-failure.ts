@@ -28,7 +28,7 @@ export type WakeFailureCause =
    *  retriable class (slow image pull, volume attach, probes). */
   | { kind: "agent-pod-not-ready" }
   | { kind: "gateway-not-ready" }
-  /** A gateway cause a wake cannot outwait (#2817). Hard even when the platform
+  /** A gateway cause a wake cannot outwait. Hard even when the platform
    *  self-repairs it: reached only once the budget is spent. */
   | { kind: "gateway-pod-failed"; gatewayReason: string }
   | { kind: "reconcile-error"; message: string; backoffExceeded: boolean }

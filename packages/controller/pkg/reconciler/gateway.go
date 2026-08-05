@@ -94,7 +94,7 @@ func BuildGatewayStatefulSet(agentName string, hibernated bool, cfg *config.Conf
 			Selector:    &metav1.LabelSelector{MatchLabels: labels},
 			// Single-replica pair: nothing to roll gracefully. Near a no-op —
 			// alpha-gated, and 1 is the default — and it does not unstick a
-			// wedged rollout; forceRollStuckPod owns that (#2817).
+			// wedged rollout; forceRollStuckPod owns that.
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{

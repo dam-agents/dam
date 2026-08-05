@@ -399,7 +399,7 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 
-	// Same for the gateway: wedged must be distinguishable from booting (#2817).
+	// Same for the gateway: wedged must be distinguishable from booting.
 	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
 	if !gatewayReady {
 		gatewayFailReason, gatewayFailMsg = r.gatewayNotReadyCause(ctx, GatewayName(name))
@@ -440,7 +440,7 @@ func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
 }
 
 // gatewayNotReadyCause lets callers tell "still starting" from "will never
-// start" (#2817). Falls back to PodNotReady on read errors — a diagnosis must
+// start". Falls back to PodNotReady on read errors — a diagnosis must
 // never fail the publish.
 func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
 	pod := r.getPod(ctx, ssName)
@@ -898,7 +898,7 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 // forceRollStuckPod evicts stuck pods, which K8s won't: a non-Ready pod trips
 // the OrderedReady invariant before the loop that replaces off-revision pods
 // (all maxUnavailable governs). Note there is deliberately no early return when
-// the revisions match — a wedged pod is often on a third one (#2817).
+// the revisions match — a wedged pod is often on a third one.
 // Best-effort; the next reconcile retries.
 func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, statefulSetName string) error {
 	ss, err := r.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSetName, metav1.GetOptions{})
