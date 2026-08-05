@@ -165,6 +165,13 @@ export function hasStreamingAssistant(messages: Message[]): boolean {
   return messages.some((m) => m.role === "assistant" && m.streaming);
 }
 
+/** True if the agent actually produced something. Verdict parts are minted by
+ *  the client when the user answers a permission prompt — they can land on a
+ *  bubble the agent never wrote to, so they don't count as agent output. */
+export function hasAgentContent(m: Message): boolean {
+  return m.parts.some((p) => p.kind !== "verdict");
+}
+
 function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
   const queued = u._meta?.queued === true;
   const mid = u.messageId ?? null;

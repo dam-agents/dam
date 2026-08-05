@@ -1,9 +1,7 @@
 import {
   ArrowDown,
   ArrowLeft,
-  Document,
   OverflowMenuVertical,
-  Renew,
   Settings,
   TrashCan,
   Warning,
@@ -31,17 +29,14 @@ import {
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
-import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { describeSendError } from "../../acp/errors.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
@@ -72,17 +67,12 @@ import {
   optimisticInsertSession,
   setSessionRunning,
 } from "../api/queries.js";
-import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
-import {
-  PermissionStatusLine,
-  PermissionVerdictLine,
-} from "../components/permission-prompt.js";
+import { ChatMessage } from "../components/chat-message.js";
+import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
-import { ThoughtBlock } from "../components/thought-block.js";
-import { ToolChip } from "../components/tool-chip.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -667,131 +657,16 @@ export function ChatView() {
                           </p>
                         </div>
                       ))}
-                    {messages.map((m, mi) =>
-                      m.notice ? (
-                        <div key={m.id} className="flex justify-center anim-in">
-                          <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
-                            {m.parts.find((p) => p.kind === "text")?.kind ===
-                            "text"
-                              ? (
-                                  m.parts.find((p) => p.kind === "text") as {
-                                    text: string;
-                                  }
-                                ).text
-                              : "…"}
-                          </span>
-                        </div>
-                      ) : (
-                        <div
-                          key={m.id}
-                          data-testid="chat-message"
-                          data-role={m.role}
-                          className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
-                        >
-                          <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
-                            {m.role === "user" ? "You" : "Agent"}
-                          </span>
-                          {m.error ? (
-                            <SendErrorCard
-                              rawError={m.error.message}
-                              onRetry={
-                                m.error.retryWith
-                                  ? () =>
-                                      sendPrompt(
-                                        m.error!.retryWith!.text,
-                                        m.error!.retryWith!.attachments,
-                                      )
-                                  : undefined
-                              }
-                            />
-                          ) : (
-                            <div
-                              className={
-                                m.role === "user"
-                                  ? "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
-                                  : "flex flex-col gap-4 w-full max-w-full"
-                              }
-                            >
-                              {m.parts.map((p, i) =>
-                                p.kind === "text" ? (
-                                  m.role === "assistant" ? (
-                                    <Markdown
-                                      key={i}
-                                      onFileClick={openFileHandler}
-                                    >
-                                      {p.text}
-                                    </Markdown>
-                                  ) : (
-                                    <span
-                                      key={i}
-                                      className="whitespace-pre-wrap break-words"
-                                    >
-                                      {p.text}
-                                      {m.streaming &&
-                                        i === m.parts.length - 1 && (
-                                          <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
-                                        )}
-                                    </span>
-                                  )
-                                ) : p.kind === "thought" ? (
-                                  <ThoughtBlock
-                                    key={i}
-                                    text={p.text}
-                                    streaming={m.streaming}
-                                  />
-                                ) : p.kind === "image" ? (
-                                  <img
-                                    key={i}
-                                    src={`data:${p.mimeType};base64,${p.data}`}
-                                    alt="image"
-                                    className="max-w-[400px] max-h-[400px] rounded-lg border border-border object-contain"
-                                  />
-                                ) : p.kind === "verdict" ? (
-                                  <PermissionVerdictLine key={i} verdict={p} />
-                                ) : p.kind === "file" ? (
-                                  <div
-                                    key={i}
-                                    className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2"
-                                  >
-                                    <Document
-                                      size={14}
-                                      className="text-muted-foreground shrink-0"
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                      {p.name}
-                                    </span>
-                                    {p.size !== undefined && (
-                                      <span className="text-[10px] text-muted-foreground">
-                                        {formatBytes(p.size)}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <ToolChip key={i} chip={p} />
-                                ),
-                              )}
-                              {m.streaming &&
-                                m.queued &&
-                                m.parts.length === 0 && (
-                                  <span className="text-xs text-muted-foreground italic">
-                                    Waiting for previous prompt…
-                                  </span>
-                                )}
-                              {m.role === "assistant" &&
-                                mi === messages.length - 1 && (
-                                  <PermissionStatusLine />
-                                )}
-                              {m.role === "assistant" &&
-                                m.streaming &&
-                                !m.queued &&
-                                !hasPendingPermission && (
-                                  <BusyIndicator className="py-1" />
-                                )}
-                            </div>
-                          )}
-                        </div>
-                      ),
-                    )}
+                    {messages.map((m, mi) => (
+                      <ChatMessage
+                        key={m.id}
+                        message={m}
+                        isLast={mi === messages.length - 1}
+                        hasPendingPermission={hasPendingPermission}
+                        onRetry={sendPrompt}
+                        onFileClick={openFileHandler}
+                      />
+                    ))}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>
@@ -971,43 +846,6 @@ function SessionErrorCard({
         {error.kind === "not-found" && (
           <Button variant="destructive" size="sm" onClick={onDelete}>
             <TrashCan size={12} /> Delete orphaned session
-          </Button>
-        )}
-      </div>
-    </Callout>
-  );
-}
-
-function SendErrorCard({
-  rawError,
-  onRetry,
-}: {
-  rawError: string;
-  onRetry?: () => void;
-}) {
-  const { message, hint } = describeSendError(rawError);
-  return (
-    <Callout
-      tone="danger"
-      className="flex max-w-[620px] items-start gap-2.5"
-      role="alert"
-    >
-      <Warning size={16} className="text-danger shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <div className="text-sm text-foreground break-words">
-          <span className="font-bold text-danger">Send failed:</span> {message}
-        </div>
-        {hint && (
-          <p className="text-xs text-muted-foreground break-words">{hint}</p>
-        )}
-        {onRetry && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRetry}
-            className="self-start"
-          >
-            <Renew size={11} /> Retry
           </Button>
         )}
       </div>
