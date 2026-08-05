@@ -92,7 +92,7 @@ export interface AcpRuntime {
   /** Env on disk changed: recycle a running harness so it respawns with the
    * new env. `force: false` never kills an in-flight turn — it waits for the
    * next turn boundary instead of forcing after the bound. */
-  refreshEnv(opts?: { force?: boolean }): void;
+  refreshEnv(opts: { force: boolean }): void;
   shutdown(): void;
 }
 
@@ -765,6 +765,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     sessionLogs.delete(sessionId);
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+    // session/close cancels the session's ongoing work, so its turn slot and
+    // queue must not outlive it — a stale slot would strand a deferred env
+    // recycle (and the idle flag) until the pod rolls.
+    activePromptBySession.delete(sessionId);
+    promptQueueBySession.delete(sessionId);
+    maybeRecycleForEnv();
     // The subprocess is going away, so anything it was still running goes with
     // it — the hold has nothing left to protect.
     deps.backgroundWork?.forget(sessionId);
@@ -1436,7 +1442,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
       // A turn is in flight: recycle at the next turn boundary; force after a bound only when asked.
-      if ((opts?.force ?? true) && !envForceTimer)
+      deps.log?.(
+        `env recycle deferred: ${activePromptBySession.size} turn(s) in flight` +
+          (opts.force ? ` (forcing in ${envForceRecycleMs}ms)` : ""),
+      );
+      if (opts.force && !envForceTimer)
         envForceTimer = setTimeout(recycleAgentForEnv, envForceRecycleMs);
     },
 

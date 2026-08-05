@@ -2511,55 +2511,92 @@ describe("createAcpRuntime — platform _meta round-trip", () => {
       scheduleId: "sch-1",
     });
   });
+});
 
-  it("a deferred env refresh (force: false) outlives the force bound and recycles at the turn boundary", () => {
+describe("createAcpRuntime — env recycle", () => {
+  /** Spawn a runtime with one session and an in-flight turn. */
+  function startTurn() {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      envForceRecycleMs: 100,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+    c.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
+    c.pushMessage(promptRequest(2));
+    const turnOutbound = outboundId(fa.sent.at(-1));
+    return {
+      fa,
+      runtime,
+      channel: c,
+      endTurn: () => fa.pushLine(agentPromptResponse(turnOutbound)),
+    };
+  }
+
+  it("a deferred refresh (force: false) outlives the force bound and recycles at the turn boundary", () => {
     vi.useFakeTimers();
     try {
-      const fa = makeFakeAgent();
-      const runtime = createAcpRuntime({
-        spawnAgent: () => fa.agent,
-        workingDir: "/tmp",
-        envForceRecycleMs: 100,
-      });
-      const c = makeFakeChannel();
-      runtime.attach(c.channel);
-      c.pushMessage(newSessionRequest(1));
-      fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
-      c.pushMessage(promptRequest(2));
-      const promptOutbound = outboundId(fa.sent.at(-1));
-
-      runtime.refreshEnv({ force: false });
+      const t = startTurn();
+      t.runtime.refreshEnv({ force: false });
       vi.advanceTimersByTime(1_000);
-      expect(fa.killed()).toBe(false);
-
-      // Turn boundary: the deferred recycle applies now.
-      fa.pushLine(agentPromptResponse(promptOutbound));
-      expect(fa.killed()).toBe(true);
+      expect(t.fa.killed()).toBe(false);
+      t.endTurn();
+      expect(t.fa.killed()).toBe(true);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("a forced env refresh still recycles mid-turn after the bound", () => {
+  it("a forced refresh still recycles mid-turn after the bound", () => {
     vi.useFakeTimers();
     try {
-      const fa = makeFakeAgent();
-      const runtime = createAcpRuntime({
-        spawnAgent: () => fa.agent,
-        workingDir: "/tmp",
-        envForceRecycleMs: 100,
-      });
-      const c = makeFakeChannel();
-      runtime.attach(c.channel);
-      c.pushMessage(newSessionRequest(1));
-      fa.pushLine(newSessionResponse(outboundId(fa.sent.at(-1))));
-      c.pushMessage(promptRequest(2));
-
-      runtime.refreshEnv({ force: true });
+      const t = startTurn();
+      t.runtime.refreshEnv({ force: true });
       vi.advanceTimersByTime(99);
-      expect(fa.killed()).toBe(false);
+      expect(t.fa.killed()).toBe(false);
       vi.advanceTimersByTime(2);
-      expect(fa.killed()).toBe(true);
+      expect(t.fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the force timer survives a later deferred refresh, in either order", () => {
+    vi.useFakeTimers();
+    try {
+      const forcedFirst = startTurn();
+      forcedFirst.runtime.refreshEnv({ force: true });
+      forcedFirst.runtime.refreshEnv({ force: false });
+      vi.advanceTimersByTime(101);
+      expect(forcedFirst.fa.killed()).toBe(true);
+
+      const deferredFirst = startTurn();
+      deferredFirst.runtime.refreshEnv({ force: false });
+      deferredFirst.runtime.refreshEnv({ force: true });
+      vi.advanceTimersByTime(101);
+      expect(deferredFirst.fa.killed()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a queued prompt defers the boundary recycle until the queue drains", () => {
+    vi.useFakeTimers();
+    try {
+      const t = startTurn();
+      t.channel.pushMessage(promptRequest(3));
+      t.runtime.refreshEnv({ force: false });
+
+      // First turn ends; the queued prompt is promoted before the recycle check.
+      t.endTurn();
+      expect(t.fa.killed()).toBe(false);
+
+      const queuedOutbound = outboundId(t.fa.sent.at(-1));
+      t.fa.pushLine(agentPromptResponse(queuedOutbound));
+      expect(t.fa.killed()).toBe(true);
     } finally {
       vi.useRealTimers();
     }
