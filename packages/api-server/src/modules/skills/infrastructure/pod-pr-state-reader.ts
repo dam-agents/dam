@@ -27,14 +27,22 @@ export function createPodPrStateReader(deps: {
       const infra = await deps.agents.get(agentId);
       // The only gate. Read the state, never change it — there is deliberately
       // no ensureReady/wakeIfHibernated call anywhere on this path.
-      if (!infra || computeAgentState(infra) !== "running") return null;
+      if (!infra || computeAgentState(infra) !== "running") {
+        return { kind: "not-running" };
+      }
       try {
-        return await deps.runtimeClient.readPullRequest(agentId, coords);
+        return {
+          kind: "state",
+          disposition: await deps.runtimeClient.readPullRequest(
+            agentId,
+            coords,
+          ),
+        };
       } catch (e) {
         deps.log(
           `pod read failed for ${coords.owner}/${coords.repo}#${coords.number}: ${(e as Error).message}`,
         );
-        return null;
+        return { kind: "failed" };
       }
     },
   };

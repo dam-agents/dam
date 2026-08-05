@@ -7,6 +7,14 @@ export interface PrDisposition {
   mergedAt: string | null;
 }
 
+/** `not-running` is distinct from `failed` because a pod that is not running
+ *  says nothing about the pull request — only a warm pod that couldn't
+ *  answer is a real failed attempt. */
+export type PodPrReadResult =
+  | { kind: "state"; disposition: PrDisposition }
+  | { kind: "not-running" }
+  | { kind: "failed" };
+
 /**
  * Authenticated read through the owning agent's own pod — the only way a
  * private source resolves, since the token lives as a gateway injection paired
@@ -16,13 +24,12 @@ export interface PrDisposition {
  * implement it without infrastructure importing from services.
  */
 export interface PodPrStateReader {
-  /** Null when the read is not possible — the agent is not *already* running,
-   *  or the call failed. Not an error: the record stays unresolved and its
-   *  badge says so. Implementations must never wake a hibernated agent. */
+  /** Anything but `state` is a normal outcome, not an error. Implementations
+   *  must never wake a hibernated agent. */
   read(
     agentId: string,
     coords: { owner: string; repo: string; number: number },
-  ): Promise<PrDisposition | null>;
+  ): Promise<PodPrReadResult>;
 }
 
 /**

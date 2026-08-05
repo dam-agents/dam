@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { derivePrState } from "../../modules/skills/domain/pr-state.js";
 import type {
+  PodPrReadResult,
   PodPrStateReader,
-  PrDisposition,
 } from "../../modules/skills/domain/pr-state.js";
 import { parsePrUrl } from "../../modules/skills/domain/pr-url.js";
 import {
@@ -62,13 +62,13 @@ describe("groupByPrUrl", () => {
   it("keeps every publisher's agentId for one shared pull request", () => {
     expect(
       groupByPrUrl([
-        { agentId: "a1", prUrl: "u1", prEtag: "e1" },
-        { agentId: "a2", prUrl: "u1", prEtag: "e1" },
-        { agentId: "a1", prUrl: "u2", prEtag: null },
+        { agentId: "a1", prUrl: "u1", prEtag: "e1", prNeedsPod: false },
+        { agentId: "a2", prUrl: "u1", prEtag: "e1", prNeedsPod: false },
+        { agentId: "a1", prUrl: "u2", prEtag: null, prNeedsPod: true },
       ]),
     ).toEqual([
-      { prUrl: "u1", prEtag: "e1", agentIds: ["a1", "a2"] },
-      { prUrl: "u2", prEtag: null, agentIds: ["a1"] },
+      { prUrl: "u1", prEtag: "e1", prNeedsPod: false, agentIds: ["a1", "a2"] },
+      { prUrl: "u2", prEtag: null, prNeedsPod: true, agentIds: ["a1"] },
     ]);
   });
 });
@@ -76,14 +76,20 @@ describe("groupByPrUrl", () => {
 const PR_URL = "https://github.com/acme/skills/pull/7";
 
 function makeResolver(opts: {
-  candidates: { agentId: string; prUrl: string; prEtag: string | null }[];
+  candidates: {
+    agentId: string;
+    prUrl: string;
+    prEtag: string | null;
+    prNeedsPod: boolean;
+  }[];
   reads?: PrStateReadResult[];
-  podReads?: (PrDisposition | null)[];
+  podReads?: PodPrReadResult[];
 }) {
   const agentSkills = {
     listPrStateCandidates: vi.fn().mockResolvedValue(opts.candidates),
     setPrState: vi.fn().mockResolvedValue(undefined),
     touchPrState: vi.fn().mockResolvedValue(undefined),
+    markPrNeedsPod: vi.fn().mockResolvedValue(undefined),
   } as unknown as AgentSkillsRepository;
   const read = vi.fn<PrStateReader["read"]>();
   for (const r of opts.reads ?? []) read.mockResolvedValueOnce(r);
@@ -102,10 +108,12 @@ const candidate = (
   agentId = "a1",
   prUrl = PR_URL,
   prEtag: string | null = null,
+  prNeedsPod = false,
 ) => ({
   agentId,
   prUrl,
   prEtag,
+  prNeedsPod,
 });
 
 describe("pr-state resolver tick", () => {
@@ -165,13 +173,20 @@ describe("pr-state resolver tick", () => {
     expect(agentSkills.setPrState).not.toHaveBeenCalled();
   });
 
-  it("escalates a 404 through each publisher's pod until a warm one answers", async () => {
+  it("escalates a 404 through each publisher's pod until a warm one answers, remembering the 404", async () => {
     const { resolver, agentSkills, podRead } = makeResolver({
       candidates: [candidate("a1"), candidate("a2")],
       reads: [{ kind: "unavailable", reason: "not-found" }],
       podReads: [
-        null,
-        { state: "closed", draft: false, mergedAt: "2026-08-01T00:00:00Z" },
+        { kind: "not-running" },
+        {
+          kind: "state",
+          disposition: {
+            state: "closed",
+            draft: false,
+            mergedAt: "2026-08-01T00:00:00Z",
+          },
+        },
       ],
     });
 
@@ -186,6 +201,8 @@ describe("pr-state resolver tick", () => {
       repo: "skills",
       number: 7,
     });
+    // The next attempt must skip the anonymous read entirely.
+    expect(agentSkills.markPrNeedsPod).toHaveBeenCalledWith(PR_URL);
     // The pod path reads no ETag back; the anonymous validator belongs to a
     // resource the anonymous read failed to see.
     expect(agentSkills.setPrState).toHaveBeenCalledWith(PR_URL, {
@@ -195,18 +212,37 @@ describe("pr-state resolver tick", () => {
     });
   });
 
-  it("stamps a failure when no pod can answer a 404", async () => {
+  it.each([
+    ["defers when every pod is cold", { kind: "not-running" }, "deferred"],
+    ["fails when a warm pod cannot answer", { kind: "failed" }, "failed"],
+  ] as const)("%s", async (_label, podRead, outcome) => {
     const { resolver, agentSkills } = makeResolver({
       candidates: [candidate("a1")],
       reads: [{ kind: "unavailable", reason: "not-found" }],
-      podReads: [null],
+      podReads: [podRead],
     });
 
     await expect(resolver.tick()).resolves.toBe(0);
     expect(agentSkills.touchPrState).toHaveBeenCalledWith(
       PR_URL,
       expect.any(Date),
-      "failed",
+      outcome,
+    );
+  });
+
+  it("reads a marked-private record through pods only, spending nothing anonymous", async () => {
+    const { resolver, agentSkills, read, podRead } = makeResolver({
+      candidates: [candidate("a1", PR_URL, null, true)],
+      podReads: [{ kind: "not-running" }],
+    });
+
+    await expect(resolver.tick()).resolves.toBe(0);
+    expect(read).not.toHaveBeenCalled();
+    expect(podRead).toHaveBeenCalledTimes(1);
+    expect(agentSkills.touchPrState).toHaveBeenCalledWith(
+      PR_URL,
+      expect.any(Date),
+      "deferred",
     );
   });
 

@@ -314,14 +314,15 @@ export const agentSkillPublishes = pgTable(
      *  clock that keeps unresolvable records off the anonymous rate limit. */
     prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
     prEtag: text("pr_etag"),
-    /** Consecutive attempts that yielded no state — the multiplier on the
-     *  backoff clock above. A record that can never resolve (a private source
-     *  whose agent stays hibernated, a deleted repo) would otherwise hold an
-     *  hourly slot of the shared anonymous GitHub budget forever; this decays
-     *  it toward one read a day. Reset whenever an attempt learns anything. */
+    /** Consecutive failed attempts — the backoff multiplier and, past a
+     *  bound, the retirement gate. Deferred attempts (no warm pod) don't
+     *  count; reset whenever an attempt learns anything. */
     prStateCheckFailures: integer("pr_state_check_failures")
       .notNull()
       .default(0),
+    /** Set once the anonymous read has 404'd; later attempts go straight to
+     *  a publishing agent's pod. Never unset. */
+    prNeedsPod: boolean("pr_needs_pod").notNull().default(false),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );

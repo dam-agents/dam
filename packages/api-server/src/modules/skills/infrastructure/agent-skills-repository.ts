@@ -29,8 +29,7 @@ export interface AgentSkillsRepository {
    *  every agent — the resolver is background work, not owner-scoped. Due
    *  means the per-record backoff has elapsed: hourly for a record whose last
    *  attempt learned something, doubling per consecutive failed attempt up to
-   *  daily, so a record that can never resolve stops holding an hourly slot
-   *  of the shared anonymous budget. See {@link PrStateCandidate}. */
+   *  daily; a record that keeps failing outright is eventually retired. */
   listPrStateCandidates(now: Date, limit: number): Promise<PrStateCandidate[]>;
 
   /** Persist a resolved state. Terminal states (`merged`, `closed`) are
@@ -43,16 +42,18 @@ export interface AgentSkillsRepository {
   ): Promise<void>;
   /** Stamp an attempt that yielded no new state, so the record's backoff clock
    *  moves even when nothing was learned. Never touches `prState` — a
-   *  rate-limit blip must not erase a resolved `merged`. The outcome decides
-   *  the rest: `confirmed` (a 304 — the resource is readable and the cached
-   *  state stands) keeps the validator and resets the failure counter, while
-   *  `failed` (unreadable, unparsable, no warm pod) discards a validator we no
-   *  longer trust and grows the backoff. */
+   *  rate-limit blip must not erase a resolved `merged`. `confirmed` (a 304)
+   *  keeps the validator and resets the failure counter; `failed` discards
+   *  the validator and grows the backoff; `deferred` (no publishing pod was
+   *  warm, so no attempt actually happened) moves only the clock. */
   touchPrState(
     prUrl: string,
     checkedAt: Date,
-    outcome: "confirmed" | "failed",
+    outcome: "confirmed" | "failed" | "deferred",
   ): Promise<void>;
+  /** Flag every record of this pull request as unresolvable anonymously,
+   *  discarding the validator. */
+  markPrNeedsPod(prUrl: string): Promise<void>;
 
   deleteByAgent(agentId: string): Promise<void>;
 }
@@ -65,7 +66,15 @@ export interface PrStateCandidate {
   agentId: string;
   prUrl: string;
   prEtag: string | null;
+  /** True once an anonymous read has 404'd: skip the anonymous request and
+   *  go straight to a publishing pod. */
+  prNeedsPod: boolean;
 }
+
+/** Consecutive outright failures after which a record is retired from the
+ *  candidate set (~a month at the daily backoff cap), so dead records drain
+ *  instead of holding a daily slot forever. */
+const MAX_CHECK_FAILURES = 30;
 
 function generatePublishId(): string {
   return `pub-${crypto.randomBytes(8).toString("hex")}`;
@@ -199,6 +208,7 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
           agentId: agentSkillPublishes.agentId,
           prUrl: agentSkillPublishes.prUrl,
           prEtag: agentSkillPublishes.prEtag,
+          prNeedsPod: agentSkillPublishes.prNeedsPod,
         })
         .from(agentSkillPublishes)
         .where(
@@ -210,21 +220,23 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
               isNull(agentSkillPublishes.prState),
               inArray(agentSkillPublishes.prState, ["draft", "open"]),
             ),
+            sql`${agentSkillPublishes.prStateCheckFailures} < ${MAX_CHECK_FAILURES}`,
             // Throttle every record. A conditional request is NOT exempt from
             // the anonymous rate limit — measured against api.github.com, each
             // 304 decrements x-ratelimit-remaining by one exactly like a 200 —
             // so an ETag saves bandwidth but buys no budget, and re-checking on
             // every tick would let ~10 open pull requests exhaust the
-            // instance's whole hourly allowance. The wait is per-record: an
-            // hour after an attempt that learned something, doubling per
-            // consecutive failure up to a day, so a record that can never
-            // resolve (private source, hibernated agent) decays to one request
-            // a day instead of holding its hourly slot forever. A record never
-            // attempted is exempt, so a fresh publish still resolves on the
-            // next tick.
+            // instance's whole hourly allowance. A record never attempted is
+            // exempt, so a fresh publish still resolves on the next tick.
+            // Two traps: the inner least() caps the *exponent* (power() is
+            // double precision and overflows at 2^1024, failing the whole
+            // query — WHERE conditions have no guaranteed evaluation order,
+            // so the retirement bound cannot shield it), and `now` crosses as
+            // an ISO string (raw sql`` params skip drizzle's column mappers
+            // and postgres-js throws on a Date instance).
             or(
               isNull(agentSkillPublishes.prStateCheckedAt),
-              sql`${agentSkillPublishes.prStateCheckedAt} + least(power(2, ${agentSkillPublishes.prStateCheckFailures}), 24) * interval '1 hour' <= ${now}`,
+              sql`${agentSkillPublishes.prStateCheckedAt} + least(power(2, least(${agentSkillPublishes.prStateCheckFailures}, 5)), 24) * interval '1 hour' <= ${now.toISOString()}`,
             ),
           ),
         )
@@ -262,8 +274,17 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
                 prEtag: null,
                 prStateCheckFailures: sql`${agentSkillPublishes.prStateCheckFailures} + 1`,
               }
-            : { prStateCheckFailures: 0 }),
+            : outcome === "confirmed"
+              ? { prStateCheckFailures: 0 }
+              : {}),
         })
+        .where(eq(agentSkillPublishes.prUrl, prUrl));
+    },
+
+    async markPrNeedsPod(prUrl) {
+      await db
+        .update(agentSkillPublishes)
+        .set({ prNeedsPod: true, prEtag: null })
         .where(eq(agentSkillPublishes.prUrl, prUrl));
     },
 

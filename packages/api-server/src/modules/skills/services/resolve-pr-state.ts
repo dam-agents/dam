@@ -16,10 +16,13 @@
  *  - a per-record backoff, so cost is at most one request per unresolved pull
  *    request per hour and ~50 of them fit inside the ceiling — checking every
  *    record on every tick instead would let ten exhaust it. The backoff
- *    doubles per consecutive attempt that learns nothing (capped at a day),
- *    so a record that can never resolve — a private source whose agent stays
- *    hibernated, a deleted repo — decays to one request a day instead of
- *    spending its hourly slot forever;
+ *    doubles per consecutive *failed* attempt (capped at a day), and past a
+ *    bound the record is retired outright;
+ *  - a pull request the anonymous read has once 404'd is marked, and every
+ *    later attempt goes straight to a publishing agent's pod — the user's
+ *    own authenticated bucket — spending nothing anonymous. An all-pods-cold
+ *    attempt is `deferred`, not failed: a cold pod says nothing about the
+ *    pull request;
  *
  * Note what is deliberately *not* on that list. Conditional requests do not
  * reduce the anonymous budget: measured against api.github.com, a 304
@@ -38,11 +41,8 @@ import type {
   PrStateCandidate,
 } from "../infrastructure/agent-skills-repository.js";
 import type { PrStateReader } from "../infrastructure/pr-state-reader.js";
-import {
-  derivePrState,
-  type PodPrStateReader,
-  type PrDisposition,
-} from "../domain/pr-state.js";
+import { derivePrState, type PodPrStateReader } from "../domain/pr-state.js";
+import type { PrCoordinates } from "../domain/pr-url.js";
 import { parsePrUrl } from "../domain/pr-url.js";
 
 /** Backstop against a pathological backlog; the per-record backoff (owned by
@@ -51,8 +51,8 @@ import { parsePrUrl } from "../domain/pr-url.js";
  *  than leaving headroom under it, so a saturated backlog spends the whole
  *  budget and depends on the `rate-limited` early return below to stay correct
  *  at the boundary — and any other anonymous GitHub call sharing this egress
- *  IP can tip such a tick into 429s. Terminal-state exclusion and the failure
- *  backoff are what drain the backlog over time. */
+ *  IP can tip such a tick into 429s. Terminal-state exclusion and failure
+ *  retirement are what drain the backlog over time. */
 const MAX_READS_PER_TICK = 10;
 
 export interface PrStateResolver {
@@ -100,6 +100,11 @@ export function createPrStateResolver(deps: {
           continue;
         }
 
+        if (candidate.prNeedsPod) {
+          resolved += await resolveThroughPods(deps, candidate, coords, now);
+          continue;
+        }
+
         const result = await deps.reader.read(coords, candidate.prEtag);
         if (result.kind === "state") {
           await deps.agentSkills.setPrState(candidate.prUrl, {
@@ -127,29 +132,13 @@ export function createPrStateResolver(deps: {
           return resolved;
         }
         // A 404 means "not resolvable anonymously" — private as much as gone.
-        // Escalate to a publishing agent's pod, whose gateway holds the token.
-        // Every publisher is a candidate — records for the same pull request
-        // can span agents, and only a warm pod answers — so try each until one
-        // does; the reader declines a stopped agent without touching it.
-        // Only `not-found`: an error or a rate limit says nothing about the
-        // source being private.
+        // Remember that and escalate to a publishing agent's pod, whose
+        // gateway holds the token. Only `not-found`: an error or a rate
+        // limit says nothing about the source being private.
         if (result.reason === "not-found") {
-          let disposition: PrDisposition | null = null;
-          for (const agentId of candidate.agentIds) {
-            disposition = await deps.podReader.read(agentId, coords);
-            if (disposition) break;
-          }
-          if (disposition) {
-            await deps.agentSkills.setPrState(candidate.prUrl, {
-              prState: derivePrState(disposition),
-              checkedAt: now,
-              // The pod path reads no ETag back, and the anonymous validator is
-              // for a resource we just failed to see.
-              etag: null,
-            });
-            resolved += 1;
-            continue;
-          }
+          await deps.agentSkills.markPrNeedsPod(candidate.prUrl);
+          resolved += await resolveThroughPods(deps, candidate, coords, now);
+          continue;
         }
         // Unavailable: keep whatever state is already known — a blip must not
         // erase a resolved `merged` — but discard the validator, which belongs
@@ -162,15 +151,58 @@ export function createPrStateResolver(deps: {
   };
 }
 
+/** Try every publisher's pod until a warm one answers. A warm pod that
+ *  couldn't answer is a real failure; nothing but cold pods is a `deferred`
+ *  — no attempt happened, so only the clock moves. */
+async function resolveThroughPods(
+  deps: {
+    agentSkills: Pick<AgentSkillsRepository, "setPrState" | "touchPrState">;
+    podReader: PodPrStateReader;
+  },
+  candidate: { prUrl: string; agentIds: string[] },
+  coords: PrCoordinates,
+  now: Date,
+): Promise<number> {
+  let sawWarmFailure = false;
+  for (const agentId of candidate.agentIds) {
+    const result = await deps.podReader.read(agentId, coords);
+    if (result.kind === "state") {
+      await deps.agentSkills.setPrState(candidate.prUrl, {
+        prState: derivePrState(result.disposition),
+        checkedAt: now,
+        // The pod path reads no ETag back, and any anonymous validator is for
+        // a resource the anonymous path cannot see.
+        etag: null,
+      });
+      return 1;
+    }
+    if (result.kind === "failed") sawWarmFailure = true;
+  }
+  await deps.agentSkills.touchPrState(
+    candidate.prUrl,
+    now,
+    sawWarmFailure ? "failed" : "deferred",
+  );
+  return 0;
+}
+
 /** Several agents can carry a record for the same pull request; read it once
  *  — keeping every publisher's agentId for the pod escalation — and let the
  *  keyed-on-prUrl writes settle all of them. */
-export function groupByPrUrl(
-  candidates: PrStateCandidate[],
-): { prUrl: string; prEtag: string | null; agentIds: string[] }[] {
+export function groupByPrUrl(candidates: PrStateCandidate[]): {
+  prUrl: string;
+  prEtag: string | null;
+  prNeedsPod: boolean;
+  agentIds: string[];
+}[] {
   const byUrl = new Map<
     string,
-    { prUrl: string; prEtag: string | null; agentIds: string[] }
+    {
+      prUrl: string;
+      prEtag: string | null;
+      prNeedsPod: boolean;
+      agentIds: string[];
+    }
   >();
   for (const c of candidates) {
     const group = byUrl.get(c.prUrl);
@@ -178,6 +210,7 @@ export function groupByPrUrl(
       byUrl.set(c.prUrl, {
         prUrl: c.prUrl,
         prEtag: c.prEtag,
+        prNeedsPod: c.prNeedsPod,
         agentIds: [c.agentId],
       });
     } else if (!group.agentIds.includes(c.agentId)) {
