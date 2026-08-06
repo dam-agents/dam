@@ -5,6 +5,8 @@ import { createScanCache } from "../../modules/skills/infrastructure/scan-cache.
 const TTL_MS = 5 * 60 * 1000;
 const URL = "https://github.com/acme/skills";
 const SHARED = { kind: "shared" } as const;
+const ALICE = { kind: "owner", owner: "alice" } as const;
+const BOB = { kind: "owner", owner: "bob" } as const;
 
 function skill(name: string): Skill {
   return {
@@ -124,5 +126,44 @@ describe("skills scan cache", () => {
 
     expect(res.skills.map((s) => s.name)).toEqual(["b"]);
     expect(res.scannedAt).toBe(1_100_000);
+  });
+
+  it("answers a credentialed scan only to the owner who produced it, and lets the others keep their own", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    await cache.scan(ALICE, URL, undefined, async () => [skill("alice")]);
+
+    const bobScan = vi.fn(async () => [skill("bob")]);
+    const sharedScan = vi.fn(async () => [skill("public")]);
+    await cache.scan(BOB, URL, undefined, bobScan);
+    await cache.scan(SHARED, URL, undefined, sharedScan);
+
+    expect(bobScan).toHaveBeenCalledTimes(1);
+    expect(sharedScan).toHaveBeenCalledTimes(1);
+
+    // Neither reader displaced Alice: a second user of one private source is
+    // not an eviction, or the cache stops hitting for everyone sharing it.
+    const rescan = vi.fn(async () => [skill("refetched")]);
+    const hit = await cache.scan(ALICE, URL, undefined, rescan);
+
+    expect(hit.skills.map((s) => s.name)).toEqual(["alice"]);
+    expect(rescan).not.toHaveBeenCalled();
+  });
+
+  it("invalidation drops every scope's entry for the source", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    await cache.scan(ALICE, URL, undefined, async () => [skill("alice")]);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("public")]);
+
+    cache.invalidate(URL, undefined);
+
+    const aliceScan = vi.fn(async () => [skill("a2")]);
+    const sharedScan = vi.fn(async () => [skill("s2")]);
+    await cache.scan(ALICE, URL, undefined, aliceScan);
+    await cache.scan(SHARED, URL, undefined, sharedScan);
+
+    expect(aliceScan).toHaveBeenCalledTimes(1);
+    expect(sharedScan).toHaveBeenCalledTimes(1);
   });
 });
