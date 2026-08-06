@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# work-backup.sh — durable backup / restore of the shared-volume work/ state to
+# the $GITHUB_REPO_WORK remote, performed ENTIRELY inside a private tmpfs clone:
+# the home volume is virtiofs-over-NFS, and a .git mutated there under
+# concurrent runs produces ESTALE + .nfs* silly-rename corruption — so work/ is
+# a plain data directory and git only ever runs in /dev/shm. Rationale:
+# docs/persistence.md.
+#
+#   work-backup.sh persist   # end of run: snapshot work/ -> commit -> push
+#   work-backup.sh restore   # fresh volume: remote state -> work/ (data only)
+#
+# Durability: nothing authoritative lives on tmpfs — live state is work/
+# (persistent volume), history is the remote, the clone is disposable scratch
+# re-seeded whenever missing or broken. Concurrency: the persist step is
+# serialized by a mkdir lock next to the clone (lock-or-skip + stale TTL;
+# a skipped persist is safe — work/ is the source of truth and the next run
+# backs it up); a rejected non-fast-forward push re-seeds from the new tip and
+# retries with a fresh snapshot. work/ files are only ever READ here (tar).
+#
+# Never fails the run: all error paths exit 0 (a missed backup is retried next
+# run). Requires: git, tar. Sources scripts/log.sh when present.
+# TODO(creator): rename the env var / identity if the design chose different
+# names, then delete the TODO comments.
+set -u
+
+MODE="${1:-persist}"
+WORK="${WORK_DIR:-${HOME:-/home/agent}/work}"
+LOCAL="${WORK_BACKUP_LOCAL:-/dev/shm/{{AGENT_NAME}}-work-backup}"
+BRANCH="${WORK_BACKUP_BRANCH:-main}"
+RETRIES="${WORK_BACKUP_RETRIES:-3}"
+LOCK="$LOCAL.lock"                                # tmpfs too; mtime = acquire time
+LOCK_TTL_MIN="${WORK_BACKUP_LOCK_TTL_MIN:-10}"    # a persist takes seconds
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_JOB="${LOG_JOB:-session}"
+if ! . "$SCRIPT_DIR/log.sh" 2>/dev/null; then logev() { :; }; fi
+
+say() { echo "work-backup: $*"; }
+
+if [ -z "${GITHUB_REPO_WORK:-}" ]; then
+  say "GITHUB_REPO_WORK unset — local-only, nothing to $MODE."; exit 0
+fi
+if ! command -v git >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
+  say "git/tar unavailable — skipping $MODE."; logev warn work_backup "git/tar unavailable — $MODE skipped"; exit 0
+fi
+
+REMOTE_URL="${WORK_BACKUP_REMOTE:-https://github.com/$GITHUB_REPO_WORK}"
+
+# (Re)seed a usable clone in $LOCAL. tmpfs may be empty (fresh pod), stale, or
+# half-written (interrupted run) — validate and re-clone defensively.
+seed_clone() {
+  if ! ( cd "$LOCAL" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); then
+    rm -rf "$LOCAL" 2>/dev/null || true
+    if ! git clone -q "$REMOTE_URL" "$LOCAL" 2>/dev/null; then
+      # empty/nonexistent remote (first-ever backup): start a fresh repo
+      rm -rf "$LOCAL" 2>/dev/null || true
+      mkdir -p "$LOCAL" || return 1
+      ( cd "$LOCAL" && git init -q && git remote add origin "$REMOTE_URL" ) || return 1
+    fi
+  fi
+  ( cd "$LOCAL" || exit 1
+    git config user.name  "{{AGENT_NAME}}"              2>/dev/null || true
+    git config user.email "{{AGENT_NAME}}@agents.local" 2>/dev/null || true
+    if git fetch -q origin "$BRANCH" 2>/dev/null; then
+      git checkout -q -B "$BRANCH" FETCH_HEAD 2>/dev/null
+    else
+      git checkout -q -B "$BRANCH" 2>/dev/null || true
+    fi
+  ) || return 1
+  return 0
+}
+
+# Mirror work/ into the clone's worktree (deletions included): wipe all but
+# .git, then lay down the current state. tar keeps this a pure READ of the
+# volume; .nfs* junk is never backed up.
+sync_in() {
+  find "$LOCAL" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} + 2>/dev/null || true
+  ( cd "$WORK" && tar -c --exclude='./.git' --exclude='.nfs*' -f - . ) \
+    | ( cd "$LOCAL" && tar -xf - ) || return 1
+  return 0
+}
+
+# Serialize the persist step (lock-or-skip): concurrent sessions share $LOCAL,
+# and two persists over one clone would race. mkdir is atomic; stale locks
+# (crashed persist) expire by TTL.
+acquire_lock() {
+  mkdir "$LOCK" 2>/dev/null && return 0
+  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin "+$LOCK_TTL_MIN" 2>/dev/null)" ]; then
+    rm -rf "$LOCK" 2>/dev/null
+    if mkdir "$LOCK" 2>/dev/null; then
+      say "stole a stale persist lock (>${LOCK_TTL_MIN}m — crashed persist)."
+      logev warn work_backup "stale persist lock stolen"; return 0
+    fi
+  fi
+  return 1
+}
+release_lock() { rm -rf "$LOCK" 2>/dev/null || true; }
+
+persist() {
+  local rc
+  if ! acquire_lock; then
+    say "another persist is running — skipping; state stays on work/ and the next run backs it up."
+    logev info work_backup "persist skipped — concurrent persist holds the lock"
+    return 0
+  fi
+  do_persist; rc=$?
+  release_lock
+  return "$rc"
+}
+
+do_persist() {
+  local attempt=0 rc
+  while [ "$attempt" -lt "$RETRIES" ]; do
+    attempt=$((attempt + 1))
+    seed_clone || { logev warn work_backup "seed failed (attempt $attempt)"; continue; }
+    sync_in    || { logev warn work_backup "sync failed (attempt $attempt)"; continue; }
+    ( cd "$LOCAL" || exit 1
+      git add -A || exit 3
+      if git diff --cached --quiet; then exit 42; fi   # nothing to persist
+      git commit -q -m "chore(work): persist state $(date -u +%Y-%m-%dT%H:%M:%SZ)" || exit 3
+    ); rc=$?
+    if [ "$rc" -eq 42 ]; then say "nothing to persist."; return 0; fi
+    if [ "$rc" -ne 0 ]; then logev warn work_backup "commit failed (attempt $attempt)"; continue; fi
+    if ( cd "$LOCAL" && git push -q origin "HEAD:$BRANCH" 2>/dev/null ); then
+      say "pushed (attempt $attempt)."; logev info work_backup "pushed work/ (attempt $attempt)"; return 0
+    fi
+    say "push rejected (attempt $attempt) — re-seeding from remote tip."
+    logev warn work_backup "push rejected (attempt $attempt) — retrying"
+  done
+  say "push failed after $RETRIES attempt(s); state is safe on work/, retry next run."
+  logev error work_backup "push failed after $RETRIES attempts — retry next run"
+  return 0
+}
+
+restore() {
+  seed_clone || { say "restore: could not reach remote — leaving work/ as-is."; logev warn work_backup "restore: remote unreachable"; return 0; }
+  # copy data into work/ — never .git, and never historical .nfs* junk an older
+  # layout may have committed. Targets a fresh/empty volume; existing files
+  # with the same names are overwritten, nothing is deleted.
+  if ( cd "$LOCAL" && git rev-parse HEAD >/dev/null 2>&1 ); then
+    ( cd "$LOCAL" && tar -c --exclude='./.git' --exclude='.nfs*' -f - . ) | ( cd "$WORK" && tar -xf - ) \
+      && { say "restored work/ from remote."; logev info work_backup "restored work/ from remote"; } \
+      || { say "restore copy failed."; logev warn work_backup "restore copy failed"; }
+  else
+    say "remote is empty — nothing to restore."
+  fi
+  return 0
+}
+
+mkdir -p "$WORK" 2>/dev/null || true
+case "$MODE" in
+  persist) persist ;;
+  restore) restore ;;
+  *) say "unknown mode '$MODE' (use persist|restore)"; exit 0 ;;
+esac

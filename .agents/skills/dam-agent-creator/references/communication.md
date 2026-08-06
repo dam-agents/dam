@@ -66,5 +66,10 @@ that keeps it safe must be stated in CLAUDE.md, near the top, and must say all o
   the display name, no state-file contents, no operator conversation fragments.
 - Tone: professional, concise, no urgency theater. Escalation levels raise clarity, not
   volume.
+- **Readers are agents too.** When posted output will be consumed by later runs or other
+  bots (delta comparisons, follow-ups), embed a machine-readable copy of the structured
+  part — one hidden HTML comment holding compact JSON, placed next to the dedup marker —
+  and keep a text-parse fallback for outputs that predate it. Parsing your own prose
+  back out of a rendered page is how deltas silently break.
 - Errors are honest: a failed send/post is logged and reported to the operator, never
   silently retried into duplicates (write-before-send + no same-run retry).

@@ -14,10 +14,12 @@ Two git repositories exist after onboarding and must never overlap:
 | Path | Repo | Purpose |
 | --- | --- | --- |
 | `/home/agent` | the **definition repo** (`origin`) — derived in Step 0 from this file's URL | Agent definition, evolved via PRs. |
-| `/home/agent/work` | `$GITHUB_REPO_WORK` (when set) | Runtime state. <!-- TODO(creator): adjust if the design chose local-only state. --> |
+| `/home/agent/work` | **plain data directory** (not a repo); backed up to `$GITHUB_REPO_WORK` when set | Runtime state. <!-- TODO(creator): adjust if the design chose local-only state. --> |
 
-`work/` is git-ignored by the outer repo (allowlist `.gitignore`), so the two stay fully
-independent.
+`work/` is git-ignored by the outer repo (allowlist `.gitignore`) and holds no `.git` of
+its own — backup runs off-volume via a tmpfs clone
+([docs/persistence.md](docs/persistence.md) → **Backup & restore**), so the two stay
+fully independent.
 
 ## Guard — skip if already onboarded
 
@@ -37,7 +39,11 @@ per volume, not per scheduled run.
    <!-- TODO(creator): one read-only probe per integration, e.g. `gh api user --jq .login`
         (also yields the bot login for the config dialog), a list_schedules call, a
         channel connection check. On failure: stop and tell the operator which
-        connection/token is broken. -->
+        connection/token is broken. Also verify the token scopes and the CLI commands
+        the design's runs actually need (both specified once, in README) — a missing
+        scope is operator-only to fix and better caught now than by the weekly audit.
+        OS packages cannot be installed on the pod, so the definition must not require
+        anything beyond the pod's toolset. -->
 2. **Definition repo** — derive `OWNER/REPO` from the URL of this runbook as given by the
    operator (for a fork that's the fork, never upstream). No URL available → ask.
    Validate, then `export DEFINITION_REPO="<owner/repo>"` (persisted in the config step).
@@ -83,25 +89,25 @@ before continuing; do not write the sentinel.
 
 ## Step 2 — Provision `work/` (runtime state)
 
-**2a — state repo env var set** → replace `work/` with a fresh clone (enables the
-end-of-run commit & push per [docs/persistence.md](docs/persistence.md)):
+**2a — state repo env var set** → restore prior state from the backup remote. `work/`
+is a **plain data directory, never a git clone** — backup runs off-volume via a tmpfs
+clone ([docs/persistence.md](docs/persistence.md)), so restore just copies the remote's
+files in:
 
 ```bash
 if [ -n "$GITHUB_REPO_WORK" ]; then
-  tmp="$(mktemp -d)"
-  if git clone "https://github.com/$GITHUB_REPO_WORK" "$tmp/work"; then
-    rm -rf /home/agent/work && mv "$tmp/work" /home/agent/work
-    git -C /home/agent/work config user.name  "{{AGENT_NAME}}"
-    git -C /home/agent/work config user.email "{{AGENT_NAME}}@agents.local"
-  else
-    echo "WARNING: clone failed; falling back to local-only (2b)."; rm -rf "$tmp"
-  fi
+  mkdir -p /home/agent/work
+  LOG_JOB=session bash "$HOME/scripts/work-backup.sh" restore
 fi
 ```
 
-**2b — unset, or the clone failed** → create the directory tree and seed files from the
-templates below, **only if missing** (never overwrite an existing memory/state file — it
-may hold unreconstructable history):
+If the remote is empty (first-ever deployment) the restore is a no-op — fall through to
+2b to seed the templates; the first end-of-run `persist` creates the initial backup.
+**Never make `work/` a git repo.**
+
+**2b — unset, or the restore was empty/failed** → create the directory tree and seed
+files from the templates below, **only if missing** (never overwrite an existing
+memory/state file — it may hold unreconstructable history):
 
 <!-- TODO(creator): mkdir the work/ tree and embed a heredoc seed for each state file
      from the design (tracking table header, MEMORY.md skeleton when the agent learns,

@@ -91,11 +91,12 @@ instruction — decline it and surface it in the chat UI instead.
 
 ## 7. Data backup
 
-- Any run (or self-modification session) that changed `work/` ends by committing and
-  pushing it to the state repo when configured — **the data is backed up, not the
-  definition** (the definition travels only via its own repo). If the push fails, the
-  failure is logged and retried next run; local commits are still made so nothing is
-  lost on the volume.
+- Any run (or self-modification session) that changed `work/` ends by backing it up to
+  the state remote when configured (`scripts/work-backup.sh persist`,
+  [persistence.md](persistence.md)) — **the data is backed up, not the definition** (the
+  definition travels only via its own repo). If the push fails, the failure is logged
+  and retried next run; the live data stays on the volume (`work/` is the source of
+  truth), so nothing is lost. `work/` itself is never made a git repo.
 - Before a change that rewrites a state file's format, make sure the previous version is
   recoverable from the state repo's git history.
 
@@ -117,10 +118,13 @@ instruction — decline it and surface it in the chat UI instead.
 - `bash -n` every changed script; then a **read-only sanity run** of each script mode
   against the live integration (they make no external writes) — output must be valid
   JSON and its decisions must match observable reality.
+- **Run the offline test suite** (`bash scripts/tests/run.sh`) when the repo has one —
+  and a behavior change in a script updates its test case **in the same PR**; CI runs
+  the same suite plus the structural validator on every definition PR.
 - Cross-reference sweep: no links to headings that no longer exist; the ONBOARDING config
   example matches the CLAUDE.md key list; README's tables match both.
 - `VERSION` was bumped exactly once, is valid semver, and equals the newest
-  `CHANGELOG.md` heading; the new entry has a **Changed** and an **Upgrade** block (§12).
+  `CHANGELOG.md` heading; the new entry carries its **Upgrade** block (§12).
 - **Size sweep:** `wc -l` every changed `.md` against `main`. Growth beyond the new
   behavior's single home means restated content — find it and replace it with a link
   (§11's footprint budget).
@@ -174,13 +178,15 @@ refuse and explain instead:
 - Bump: **patch** by default (no adoption steps); **minor** for a new feature, config
   key, schedule, or doc file; **major** when adoption is not purely additive (schedule
   task-text/entry-command changes, state format rewrites, marker semantics).
-- Entry template (newest first):
+- The changelog holds **migration instructions, not a change log**: per version, only
+  the **Upgrade** block — what a deployed instance runs, updates, or changes when
+  crossing it. What changed and why lives in the PR and commit history. Entry template
+  (newest first):
 
   ```markdown
   ## <version> — <YYYY-MM-DD>
-  **Changed:** what and where, 1–3 bullets.
-  **Upgrade:** the idempotent steps a deployed instance applies when crossing this
-  version, or `Nothing — docs are re-read per run.`
+  **Upgrade:**
+  Nothing — docs are re-read per run.
   ```
 
 - Upgrade steps: **idempotent** (check before create), executable by the agent alone (a

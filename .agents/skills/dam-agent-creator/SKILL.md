@@ -33,8 +33,10 @@ Every agent this skill produces shares one proven operating architecture:
 - **Definition repo checked out at the agent's `$HOME`** — instructions (`CLAUDE.md`),
   procedures (`docs/`), scripts (`scripts/`), onboarding runbook, version + changelog. An
   allowlist `.gitignore` makes a repo-at-`$HOME` safe.
-- **Runtime state in `$HOME/work/`** — config, memory, domain state files, logs. Invisible
-  to the definition repo; optionally backed by its own git repo for durable state.
+- **Runtime state in `$HOME/work/`** — config, memory, domain state files, logs. A plain
+  data directory, invisible to the definition repo and **never a git repo** (the shared
+  NFS volume corrupts a concurrently-mutated `.git`); optionally backed up to its own git
+  remote via a disposable tmpfs clone.
 - **Interactive one-time onboarding** — sentinel-guarded, idempotent runbook that sets up
   repos, walks the operator through configuration, and registers platform schedules.
 - **A hard instruction trust boundary** — only the operator in the direct session changes
@@ -44,8 +46,10 @@ Every agent this skill produces shares one proven operating architecture:
   every action the agent takes is driven by an auditable, versioned script.
 - **A weekly self-audit** — deterministic health checks plus agent judgment checks,
   reported traffic-light style. Recommended for every agent, even purely reactive ones.
-- **Versioned definition** — semver `VERSION` + `CHANGELOG.md` with idempotent upgrade
-  steps, so deployed instances can detect drift and migrate deliberately.
+- **Versioned definition** — semver `VERSION` + `CHANGELOG.md` holding idempotent upgrade
+  steps (migration instructions, not a change log), so deployed instances can detect
+  drift and migrate deliberately; an offline test suite + CI keep every definition PR
+  syntax-checked, validated, and tested.
 - **Self-modification rules** — the generated repo contains its own guardrails for future
   changes (project-agnosticism, config discipline, cost assessment, never-weaken invariants).
 
@@ -118,6 +122,10 @@ agent with no scheduled runs). Templates:
 | `templates/docs/self-modification.md.template` | `docs/self-modification.md` | Add the domain invariants to §10. |
 | `templates/docs/persistence.md.template` | `docs/persistence.md` | State backup + definition evolution + version check. |
 | `templates/preflight.sh.template` | `scripts/preflight.sh` | Only when the agent has scheduled runs (see Phase 4). |
+| `templates/work-backup.sh.template` | `scripts/work-backup.sh` | Only when git-backed state backup was chosen — tmpfs-clone persist/restore. |
+| `templates/log.sh.template` | `scripts/log.sh` | Structured JSONL events log with secret masking — extend the masks per integration. |
+| `templates/tests-run.sh.template` | `scripts/tests/run.sh` | Offline test runner (see Phase 4). |
+| `templates/ci.yml.template` | `.github/workflows/ci.yml` | CI on every definition PR (see Phase 5). |
 
 Beyond the templates, write the **domain procedure docs** — one `docs/<topic>.md` per run
 type or major procedure (e.g. `docs/triage.md` and `docs/escalation.md` for a
@@ -127,16 +135,28 @@ Also ask which **license** applies (default: the org's standard): add the `LICEN
 or — when none — drop the `!/LICENSE` re-include from `.gitignore` and the `LICENSE` path
 from the `git add` allowlist in `docs/persistence.md`.
 
-### Phase 4 — Scripts (agents with scheduled runs)
+### Phase 4 — Scripts
 
-Fill in `scripts/preflight.sh` from the template: the domain detection logic per run mode,
-per `references/preflight.md`. The contract is absolute — the script **detects, it never
-acts**: read-only toward external systems, local writes limited to bookkeeping and logs,
-single JSON object on stdout, `nothing_to_do: true` short-circuits the run.
+Copy and adapt the operational scripts the design needs:
 
-Validate: `bash -n`, then — when the target integration is reachable from this machine — a
-read-only dry run; otherwise tell the operator the dry run must happen on the pod after
-onboarding.
+- `scripts/log.sh` — whenever the agent keeps the structured events log; extend the
+  credential masks to every token shape its integrations use.
+- `scripts/work-backup.sh` — when git-backed state backup was chosen. Never generate a
+  `work/`-as-git-clone flow — `work/` stays a plain data directory
+  (`references/platform-dam.md` → State backup).
+- `scripts/preflight.sh` (agents with scheduled runs) — fill in the domain detection
+  logic per run mode, per `references/preflight.md`. The contract is absolute — the
+  script **detects, it never acts**: read-only toward external systems, local writes
+  limited to bookkeeping and logs, single JSON object on stdout, `nothing_to_do: true`
+  short-circuits the run.
+- `scripts/tests/` — `run.sh` from the template plus one offline `test_<mode>.sh` per
+  pre-flight mode: stubbed CLIs on `PATH`, sandboxed `WORK_DIR`, assertions on the
+  emitted JSON (happy path, `nothing_to_do`, dedup/skip decisions, lock takeover, error
+  fallback).
+
+Validate: `bash -n` everything, run the test suite, then — when the target integration is
+reachable from this machine — a read-only dry run of each pre-flight mode; otherwise tell
+the operator the dry run must happen on the pod after onboarding.
 
 ### Phase 5 — Validate
 
@@ -152,6 +172,13 @@ on all scripts, and dead relative links. Fix everything it reports, then re-run 
 clean. Also do a judgment pass the script cannot: no instance-specific values hard-coded
 into the definition (they belong in `work/CONFIG.md`), no concept restated in two places,
 CLAUDE.md still slim.
+
+Then make the checks permanent: copy the validator itself into the generated repo as
+`scripts/validate-definition.sh` (it is self-copy-safe) and generate
+`.github/workflows/ci.yml` from the template — every definition PR then runs the syntax
+sweep, this validator, and the offline test suite. That is the self-modification §9
+validation sweep, mechanized; the generated §9 already tells the agent to run the tests
+and to update a changed script's test case in the same PR.
 
 ### Phase 6 — Deployment handoff
 
