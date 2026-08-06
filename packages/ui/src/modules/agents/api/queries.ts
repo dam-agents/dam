@@ -97,6 +97,34 @@ export function useIsAgentOperable(agentId: string | null): boolean {
   return runState === "running" && !restarting && !pausing && !unreachable;
 }
 
+/** The server refusing to name an agent to this user: it is someone else's or
+ *  it is gone, and the two are deliberately indistinguishable — the read is
+ *  owner-scoped, so an agent that isn't theirs simply isn't there. Anything else
+ *  (an unreachable server, a transport hiccup) is not an access verdict. */
+function isDeniedAgentRead(error: unknown): boolean {
+  const code = (error as { data?: { code?: unknown } } | null)?.data?.code;
+  return code === "NOT_FOUND" || code === "FORBIDDEN";
+}
+
+/**
+ * Whether this user may open the agent at all — the gate in front of a link
+ * followed from outside the UI (a channel reply pointing at a session), where
+ * the follower may be anyone in the conversation rather than the owner.
+ *
+ * Server-authoritative rather than "absent from my list": the list lags a
+ * just-created agent, which would flash the no-access screen at the person who
+ * just made it, and a failed list read must not read as a denial. Stays false
+ * until the server actually refuses, so the lifecycle overlay keeps the surface
+ * meanwhile.
+ */
+export function useIsAgentInaccessible(agentId: string | null): boolean {
+  const { error } = useQuery({
+    ...trpc.agents.get.queryOptions(agentId ? { id: agentId } : skipToken),
+    retry: false,
+  });
+  return isDeniedAgentRead(error);
+}
+
 /**
  * Per-agent app-connection grants. The agent might not yet be fully reconciled
  * (controller syncs asynchronously after create), so errors stay silent and

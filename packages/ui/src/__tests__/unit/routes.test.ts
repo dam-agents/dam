@@ -8,6 +8,7 @@ import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 const canonicalPaths = [
   "/",
   "/chat/agent-1",
+  "/chat/agent-1/sess-1",
   "/settings",
   "/settings/connections",
   "/inbox",
@@ -37,5 +38,45 @@ describe("route round-trip", () => {
 
   it("parses the legacy /knowledge-bases/new as the wizard, not a KB id", () => {
     expect(parseRoute("/knowledge-bases/new").view).toBe("sandbox-new");
+  });
+});
+
+// A chat link is the shape a channel reply hands back to a reader, so both
+// halves have to survive the round trip through the address bar.
+describe("chat route", () => {
+  it("carries the session a link points at", () => {
+    expect(parseRoute("/chat/agent-1/sess-1")).toEqual({
+      view: "chat",
+      agent: "agent-1",
+      session: "sess-1",
+    });
+  });
+
+  it("leaves the session absent when the path names only the agent", () => {
+    expect(parseRoute("/chat/agent-1")).toEqual({
+      view: "chat",
+      agent: "agent-1",
+    });
+  });
+
+  it("round-trips ids that need escaping", () => {
+    const path = routeToPath({
+      view: "chat",
+      agent: "agent/1",
+      session: "sess 1",
+    });
+    expect(parseRoute(path)).toEqual({
+      view: "chat",
+      agent: "agent/1",
+      session: "sess 1",
+    });
+  });
+
+  it("tolerates a trailing slash", () => {
+    expect(parseRoute("/chat/agent-1/sess-1/")).toEqual({
+      view: "chat",
+      agent: "agent-1",
+      session: "sess-1",
+    });
   });
 });

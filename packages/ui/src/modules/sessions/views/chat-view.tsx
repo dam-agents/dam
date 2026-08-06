@@ -39,7 +39,12 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
-import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useAgents,
+  useIsAgentInaccessible,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
+import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
@@ -76,12 +81,18 @@ import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useSessionUrlSync } from "../hooks/use-session-url-sync.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
+  // A followed link may land anyone here, not just the owner.
+  const agentInaccessible = useIsAgentInaccessible(selectedAgent);
+
+  // The open session rides in the URL, so this chat is linkable as itself.
+  useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
   useAgentReachabilityProbe(selectedAgent);
@@ -296,11 +307,13 @@ export function ChatView() {
     if (!selectedAgent || !pendingTerminal) return;
     setPendingTerminal(false);
     // Same fresh-terminal spawn as the blank chat → terminal toggle: a
-    // client-side ephemeral PTY session, no server registration.
+    // client-side ephemeral PTY session, no server registration. Mode first:
+    // the URL carries the open session, and an ephemeral PTY id is not one —
+    // seeing it before the mode would put it in the address bar for a frame.
     const id = crypto.randomUUID();
     ephemeralTerminalIdRef.current = id;
-    setSessionId(id);
     setSessionMode(SessionMode.Terminal);
+    setSessionId(id);
   }, [
     selectedAgent,
     pendingTerminal,
@@ -366,8 +379,9 @@ export function ChatView() {
     const id = crypto.randomUUID();
     ephemeralTerminalIdRef.current = id;
     terminalFreshRef.current = true;
-    setSessionId(id);
+    // Mode before id — see the pending-terminal effect above.
     setSessionMode(SessionMode.Terminal);
+    setSessionId(id);
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
@@ -770,14 +784,19 @@ export function ChatView() {
 
       <EgressApprovalToasts agentId={selectedAgent} />
 
-      {selectedAgent && !agentOperable && (
+      {/* Access outranks lifecycle: an agent the user may not open has no
+          lifecycle state to report, and its overlay would otherwise sit on
+          "Loading agent…" for as long as they kept the tab open. */}
+      {selectedAgent && agentInaccessible ? (
+        <AgentInaccessibleOverlay onLeave={goBack} />
+      ) : selectedAgent && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
           name={selectedAgentName ?? ""}
           onBack={handleBack}
         />
-      )}
+      ) : null}
     </div>
   );
 }

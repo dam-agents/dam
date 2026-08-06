@@ -1,10 +1,16 @@
 import type { SlackBlock, SlackMessage } from "./slack-gateway.js";
 
-/** The UI route that deep-links to an agent. The agent id rides in this path so
- *  the footer doubles as a machine-readable author marker: humans click the
- *  name, the api-server parses the id back out of injected history. Keep in
- *  step with the UI router (`/sandboxes/:id`). */
-const AGENT_PATH = "/sandboxes/";
+/** The UI route that deep-links to an agent's chat, optionally at one session.
+ *  The agent id rides in this path so the footer doubles as a machine-readable
+ *  author marker: humans click the name, the api-server parses the id back out
+ *  of injected history. Keep in step with the UI router
+ *  (`/chat/:agent/:session?`). */
+const CHAT_PATH = "/chat/";
+
+/** Footers minted before the link carried a session pointed at the agent's
+ *  configuration page. Those messages still sit in channel history, so the
+ *  author parse below has to recognize the older shape too. */
+const LEGACY_AGENT_PATH = "/sandboxes/";
 
 /** Agent identity needed to render (and later recover) an attribution footer. */
 export interface AgentFooter {
@@ -12,6 +18,10 @@ export interface AgentFooter {
   agentId: string;
   /** Human-readable agent name; falls back to the id when unset. */
   agentName: string;
+  /** The session this message belongs to, when the post is part of a turn: the
+   *  link then opens that conversation in the UI rather than the agent's chat
+   *  at large. Absent on proactive posts, which belong to no turn. */
+  sessionId?: string;
 }
 
 /** Slack mrkdwn escapes: `&`, `<`, `>` are the only chars special in link text.
@@ -35,11 +45,16 @@ function unescapeLinkLabel(label: string): string {
     .trim();
 }
 
-/** The footer mrkdwn: the agent's name rendered as a link to its UI page, with
- *  the stable, unique agent id carried in the URL. */
+/** The footer mrkdwn: the agent's name rendered as a link into the UI, with the
+ *  stable, unique agent id carried in the URL. A turn's reply links to the
+ *  session it was written in, so following it continues the same conversation in
+ *  the UI; without a session the link opens the agent's chat. */
 export function agentFooterMrkdwn(footer: AgentFooter): string {
   const label = escapeLinkLabel(footer.agentName || footer.agentId);
-  return `<${footer.uiBaseUrl}${AGENT_PATH}${footer.agentId}|${label || footer.agentId}>`;
+  const session = footer.sessionId
+    ? `/${encodeURIComponent(footer.sessionId)}`
+    : "";
+  return `<${footer.uiBaseUrl}${CHAT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
 }
 
 /** The Slack `context` block crediting the responding agent — the visible
@@ -51,10 +66,12 @@ export function agentContextBlock(footer: AgentFooter): SlackBlock {
   };
 }
 
-// `<…/sandboxes/<id>|<label>>` — the id is anchored to the path so a name
-// containing "/sandboxes/" can't be mistaken for it (labels sit after the `|`).
+// `<…/chat/<id>[/<session>]|<label>>` — the id is anchored to the path so a
+// name containing "/chat/" can't be mistaken for it (labels sit after the `|`),
+// and the trailing segment is optional so both a turn's session link and a
+// bare agent link parse. The legacy agent-page path is accepted alongside it.
 const FOOTER_RE = new RegExp(
-  `<[^>|]*${AGENT_PATH}(agent-[A-Za-z0-9]+)\\|([^>]*)>`,
+  `<[^>|]*(?:${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:/[^>|]*)?\\|([^>]*)>`,
 );
 
 /** Recover the authoring agent from a Slack message's footer block, or null if

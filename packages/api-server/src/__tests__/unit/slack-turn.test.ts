@@ -256,6 +256,46 @@ describe("slack reply / react tools", () => {
     });
   });
 
+  it("reply footers link at the session the turn ran on", async () => {
+    // The whole point of the link: whoever reads the reply in the channel can
+    // follow it into this very conversation in the UI.
+    const h = harness({
+      sendPrompt: async (_prompt, opts) => {
+        opts.onSession?.("sess-42");
+        return "the answer";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    // The fake gateway's records drop `blocks`, so read the posted args directly.
+    const posts = vi.spyOn(h.gw, "postMessage");
+    await h.worker.reply("agent-1", { text: "here you go" });
+
+    expect(posts).toHaveBeenCalledTimes(1);
+    expect(posts.mock.calls[0]![0].blocks).toContainEqual({
+      type: "context",
+      elements: [
+        { type: "mrkdwn", text: "<http://ui/chat/agent-1/sess-42|agent-1>" },
+      ],
+    });
+  });
+
+  it("reply footers fall back to the agent when no session is known", async () => {
+    // A turn whose session never resolved still posts a usable link.
+    const h = harness({});
+    await h.mention();
+    await tick();
+
+    const posts = vi.spyOn(h.gw, "postMessage");
+    await h.worker.reply("agent-1", { text: "here you go" });
+
+    expect(posts.mock.calls[0]![0].blocks).toContainEqual({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "<http://ui/chat/agent-1|agent-1>" }],
+    });
+  });
+
   it("reply errors when there is no active thread and none is given", async () => {
     const h = harness({});
     await h.start();

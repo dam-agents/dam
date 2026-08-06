@@ -147,6 +147,11 @@ export type SendPromptOpts = (
   /** Live per-notification progress for this turn only — resume replays of
    *  prior history are withheld. Must not throw; failures are swallowed. */
   onUpdate?: (update: PromptUpdate) => void;
+  /** The session this turn runs on, reported once it is known (resumed or
+   *  freshly minted) and before the prompt is sent. Callers that need to name
+   *  the session outside the turn — a channel worker linking a reply back to
+   *  the UI — have no other way to learn a new session's id. */
+  onSession?: (sessionId: string) => void;
 };
 
 export type TriggerSessionOpts = {
@@ -400,6 +405,14 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
               }),
             } as Parameters<typeof connection.newSession>[0]);
             sessionId = s.sessionId;
+          }
+          try {
+            sendOpts.onSession?.(sessionId);
+          } catch (err) {
+            getLogger().debug(
+              { err },
+              "acp onSession callback failed; ignoring",
+            );
           }
 
           const blocks: ContentBlock[] =

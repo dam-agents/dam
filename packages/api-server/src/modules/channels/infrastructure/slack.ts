@@ -689,8 +689,16 @@ export function createSlackWorker(
   let gateway: SlackGateway | null = null;
 
   /** A turn the `reply`/`react` tools can target when the agent doesn't echo
-   *  ids: the thread to reply into and the message to react to. */
-  type TurnRef = { channel: string; threadTs: string; eventTs: string };
+   *  ids: the thread to reply into and the message to react to. `sessionId` is
+   *  filled in once the turn's session is resolved — later than the ref itself,
+   *  since resolving it means waking the pod and matching the thread key — and
+   *  is what lets a posted reply link back to the conversation in the UI. */
+  type TurnRef = {
+    channel: string;
+    threadTs: string;
+    eventTs: string;
+    sessionId?: string;
+  };
 
   /** Turns currently driving the harness per agent. A single agent pod
    *  multiplexes every thread over one harness process and one MCP identity,
@@ -866,12 +874,15 @@ export function createSlackWorker(
     "messageTs shown in your turn instructions so this inspects the message " +
     "you mean.";
 
-  /** Attribution footer for a post by `instanceName`: the agent's name linked to
-   *  its UI page, with the id carried in the URL so the author can be recovered
-   *  from injected history. The name lookup is best-effort — a lookup failure or
-   *  a nameless agent degrades to the id as the (still clickable) link label. */
+  /** Attribution footer for a post by `instanceName`: the agent's name linked
+   *  into the UI, with the id carried in the URL so the author can be recovered
+   *  from injected history. `sessionId` (a turn's own session) makes the link
+   *  open that conversation, so a reader can pick the thread up in the UI. The
+   *  name lookup is best-effort — a lookup failure or a nameless agent degrades
+   *  to the id as the (still clickable) link label. */
   async function resolveAgentFooter(
     instanceName: string,
+    sessionId?: string,
   ): Promise<AgentFooter> {
     let agentName = instanceName;
     try {
@@ -880,7 +891,12 @@ export function createSlackWorker(
     } catch {
       // best-effort — fall back to the id as the link label
     }
-    return { uiBaseUrl, agentId: instanceName, agentName };
+    return {
+      uiBaseUrl,
+      agentId: instanceName,
+      agentName,
+      ...(sessionId ? { sessionId } : {}),
+    };
   }
 
   async function ephemeral(
@@ -972,6 +988,10 @@ export function createSlackWorker(
     onImagesDropped?: () => void;
     /** Live per-update stream for the turn (omitted → no status presentation). */
     onUpdate?: (update: PromptUpdate) => void;
+    /** The session this turn ended up running on — resumed, or minted here.
+     *  Called before the prompt, and again if a failed resume re-runs the turn
+     *  on a fresh session, so the caller always holds the live one. */
+    onSession?: (sessionId: string) => void;
     /** The resume attempt failed after it may have delivered the prompt (a
      *  relay drop mid-turn leaves the harness running it), and the turn is
      *  being re-run on a fresh session. The caller must keep the turn's ref
@@ -1001,26 +1021,28 @@ export function createSlackWorker(
         args.threadKey,
         args.legacyThreadKey,
       );
+      const sendOpts = {
+        onImagesDropped: args.onImagesDropped,
+        onUpdate: args.onUpdate,
+        onSession: args.onSession,
+      };
       if (existing) {
         try {
           return await acp.sendPrompt(args.resumePrompt, {
             resumeSessionId: existing.sessionId,
-            onImagesDropped: args.onImagesDropped,
-            onUpdate: args.onUpdate,
+            ...sendOpts,
           });
         } catch {
           args.onGhostTurn?.();
           return acp.sendPrompt(await args.buildFreshPrompt(), {
             platformMeta,
-            onImagesDropped: args.onImagesDropped,
-            onUpdate: args.onUpdate,
+            ...sendOpts,
           });
         }
       }
       return acp.sendPrompt(await args.buildFreshPrompt(), {
         platformMeta,
-        onImagesDropped: args.onImagesDropped,
-        onUpdate: args.onUpdate,
+        ...sendOpts,
       });
     });
   }
@@ -1113,6 +1135,9 @@ export function createSlackWorker(
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
+        onSession: (sessionId) => {
+          turnRef.sessionId = sessionId;
+        },
         onGhostTurn: () => {
           ghostTurn = true;
         },
@@ -1743,6 +1768,11 @@ export function createSlackWorker(
             contract,
             guidance,
           ),
+        // Every message in a coalesced batch runs on the one session, so they
+        // all link back to the same conversation.
+        onSession: (sessionId) => {
+          for (const ref of turnRefs) ref.sessionId = sessionId;
+        },
         onGhostTurn: () => {
           ghostTurn = true;
         },
@@ -2174,39 +2204,38 @@ export function createSlackWorker(
       if (!args.text) return { error: "nothing to send — reply needs text" };
 
       let threadTs = args.threadTs;
-      let turnChannel: string | undefined;
+      let turn: TurnRef | undefined;
       if (!threadTs) {
-        const turn = resolveTurn(instanceName, "reply");
-        if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
-        if ("none" in turn) {
+        const resolved = resolveTurn(instanceName, "reply");
+        if ("ambiguous" in resolved) return { error: AMBIGUOUS_THREAD_ERROR };
+        if ("none" in resolved) {
           return {
             error:
               "no active thread to reply to — use send_channel_message for a top-level post",
           };
         }
-        threadTs = turn.ref.threadTs;
-        // A threadTs is only meaningful inside its own conversation — post
-        // where the resolved turn ran, not wherever the agent is bound *now*,
-        // or a mid-turn rebind would redirect the reply into the new channel.
-        turnChannel = turn.ref.channel;
+        threadTs = resolved.ref.threadTs;
+        turn = resolved.ref;
       } else {
         // An explicit id that names a live/lingering turn follows that turn's
         // conversation too — batch turns must pass ids, and the rebind
         // protection would otherwise skip exactly them.
         const id = threadTs;
-        turnChannel = findTurnRef(
-          instanceName,
-          (ref) => ref.threadTs === id,
-        )?.channel;
+        turn = findTurnRef(instanceName, (ref) => ref.threadTs === id);
       }
+      // A threadTs is only meaningful inside its own conversation — post where
+      // the resolved turn ran, not wherever the agent is bound *now*, or a
+      // mid-turn rebind would redirect the reply into the new channel.
       const target = await resolveOutboundTarget(
         gw,
         boundChannelIds,
-        args.conversationId ?? turnChannel,
+        args.conversationId ?? turn?.channel,
       );
       if ("error" in target) return target;
 
-      const footer = await resolveAgentFooter(instanceName);
+      // The reply carries the turn's session, so its footer link opens this
+      // conversation in the UI rather than the agent's chat at large.
+      const footer = await resolveAgentFooter(instanceName, turn?.sessionId);
       try {
         await gw.postMessage({
           channel: target.id,

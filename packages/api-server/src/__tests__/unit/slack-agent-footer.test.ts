@@ -19,13 +19,20 @@ const footer: AgentFooter = {
 describe("agent footer", () => {
   it("renders the name as a link with the id in the URL", () => {
     expect(agentFooterMrkdwn(footer)).toBe(
-      "<http://ui/sandboxes/agent-8acde0e1a059835a|Helper>",
+      "<http://ui/chat/agent-8acde0e1a059835a|Helper>",
+    );
+  });
+
+  it("links at the session when the post belongs to a turn", () => {
+    // What a channel reader follows to pick this conversation up in the UI.
+    expect(agentFooterMrkdwn({ ...footer, sessionId: "sess-42" })).toBe(
+      "<http://ui/chat/agent-8acde0e1a059835a/sess-42|Helper>",
     );
   });
 
   it("falls back to the id as link text when the name is empty", () => {
     expect(agentFooterMrkdwn({ ...footer, agentName: "" })).toBe(
-      "<http://ui/sandboxes/agent-8acde0e1a059835a|agent-8acde0e1a059835a>",
+      "<http://ui/chat/agent-8acde0e1a059835a|agent-8acde0e1a059835a>",
     );
   });
 
@@ -36,7 +43,7 @@ describe("agent footer", () => {
     });
     // No stray pipe/newline; & < > all escaped so the link stays intact.
     expect(mrkdwn).toBe(
-      "<http://ui/sandboxes/agent-8acde0e1a059835a|a b &lt;c&gt; &amp; d next>",
+      "<http://ui/chat/agent-8acde0e1a059835a|a b &lt;c&gt; &amp; d next>",
     );
     expect(agentFooterMrkdwn({ ...footer, agentName: "R&D" })).toContain(
       "|R&amp;D>",
@@ -49,6 +56,34 @@ describe("agent footer", () => {
       agentId: "agent-8acde0e1a059835a",
       agentName: "Helper",
     });
+  });
+
+  it("recovers the author from a session link", () => {
+    const block = agentContextBlock({ ...footer, sessionId: "sess-42" });
+    expect(parseAgentFooter({ blocks: [block] })).toEqual({
+      agentId: "agent-8acde0e1a059835a",
+      agentName: "Helper",
+    });
+  });
+
+  it("recovers the author from a footer minted before session links", () => {
+    // Those messages are still in channel history, and history injection has to
+    // keep telling their author apart from the reading agent.
+    expect(
+      parseAgentFooter({
+        blocks: [
+          {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: "<http://ui/sandboxes/agent-8acde0e1a059835a|Helper>",
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({ agentId: "agent-8acde0e1a059835a", agentName: "Helper" });
   });
 
   it("recovers a sanitized name on parse", () => {
@@ -138,7 +173,7 @@ describe("renderAssistantBlocks", () => {
         elements: [
           {
             type: "mrkdwn",
-            text: "<http://ui/sandboxes/agent-8acde0e1a059835a|Helper>",
+            text: "<http://ui/chat/agent-8acde0e1a059835a|Helper>",
           },
         ],
       },
