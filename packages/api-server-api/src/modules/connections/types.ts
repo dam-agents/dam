@@ -63,6 +63,13 @@ export const githubAppAuth = z.object({
   connectedAt: z.number().int().optional(),
   refreshFailedAt: z.number().int().optional(),
   host: z.string().min(1).optional(),
+  // Optional narrowing of the minted token, stored because every re-mint must
+  // ask for the same subset — a scope kept only on the create input would widen
+  // back to the whole installation at the first renewal. Absent means the
+  // installation's full authority, which is what every connection made before
+  // this field existed carries.
+  repositories: z.array(z.string().min(1)).nonempty().optional(),
+  permissions: z.record(z.string(), z.string()).optional(),
 });
 
 export const headerAuth = z.object({

@@ -71,10 +71,12 @@ function makeDeps(opts: { privateKey: string | null }) {
   } as unknown as Db;
 
   const tokenCalls: string[] = [];
+  const tokenBodies: (string | undefined)[] = [];
   const githubAppEngine = createGitHubAppEngine({
     now: () => NOW_MS,
-    fetchImpl: (async (url: RequestInfo | URL) => {
+    fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
       tokenCalls.push(String(url));
+      tokenBodies.push(typeof init?.body === "string" ? init.body : undefined);
       return new Response(
         JSON.stringify({
           token: "ghs_next",
@@ -85,7 +87,15 @@ function makeDeps(opts: { privateKey: string | null }) {
     }) as typeof fetch,
   });
 
-  return { githubAppEngine, secretStore, db, putCalls, dbUpdates, tokenCalls };
+  return {
+    githubAppEngine,
+    secretStore,
+    db,
+    putCalls,
+    dbUpdates,
+    tokenCalls,
+    tokenBodies,
+  };
 }
 
 describe("github-app re-mint", () => {
@@ -129,5 +139,53 @@ describe("github-app re-mint", () => {
     const parsed = connectionAuthConfigSchema.safeParse(AUTH);
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.data).toEqual(AUTH);
+  });
+
+  it("sends no body for a connection with no scope stored", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
+    await remintGitHubAppOne(CONN, AUTH, deps);
+    expect(deps.tokenBodies).toEqual([undefined]);
+  });
+});
+
+// The whole point of storing the scope rather than applying it once at create:
+// a token is re-minted every hour, so a scope the renewal forgot would widen
+// the connection back to the full installation without anyone noticing.
+describe("github-app re-mint with a stored scope", () => {
+  const SCOPED_AUTH: Extract<ConnectionAuthConfig, { kind: "github-app" }> = {
+    ...AUTH,
+    repositories: ["docs"],
+    permissions: { contents: "read", metadata: "read" },
+  };
+  const SCOPED_CONN: Connection = { ...CONN, auth: SCOPED_AUTH };
+
+  it("re-mints asking for the same subset", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
+    await remintGitHubAppOne(SCOPED_CONN, SCOPED_AUTH, deps);
+
+    expect(deps.tokenBodies).toHaveLength(1);
+    expect(JSON.parse(deps.tokenBodies[0]!)).toEqual({
+      repositories: ["docs"],
+      permissions: { contents: "read", metadata: "read" },
+    });
+  });
+
+  it("keeps the scope on the row it writes back", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
+    await remintGitHubAppOne(SCOPED_CONN, SCOPED_AUTH, deps);
+
+    const updated = deps.dbUpdates[0].auth;
+    if (updated.kind !== "github-app") throw new Error("wrong kind");
+    expect(updated.repositories).toEqual(["docs"]);
+    expect(updated.permissions).toEqual({
+      contents: "read",
+      metadata: "read",
+    });
+  });
+
+  it("scoped auth round-trips through the wire schema", () => {
+    const parsed = connectionAuthConfigSchema.safeParse(SCOPED_AUTH);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data).toEqual(SCOPED_AUTH);
   });
 });

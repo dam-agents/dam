@@ -40,6 +40,8 @@ interface ConnectOpts {
   appId?: string;
   installationId?: string;
   privateKey?: string;
+  repositories?: string;
+  permissions?: string;
   headerName?: string;
   valueFormat?: string;
   envName?: string;
@@ -97,6 +99,14 @@ export function buildConnectCommand(deps: {
     .option(
       "--private-key <pem>",
       'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
+    )
+    .option(
+      "--repositories <names>",
+      "input: limit the minted token to these repository names, space- or comma-separated (GitHub App installation)",
+    )
+    .option(
+      "--permissions <pairs>",
+      "input: limit the minted token to these name:level permissions, e.g. contents:read (GitHub App installation)",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -323,6 +333,21 @@ async function resolveSlugTemplate(args: {
     process.exit(EXIT_INVALID_INPUT);
   }
 
+  // An older server declares no such input, and unknown keys are stripped
+  // server-side, so the flag would vanish and the token be minted with the
+  // installation's *full* authority. Every other stripped input lands in the
+  // safe direction; these two land in the unsafe one, so fail rather than
+  // report success for a connection that was never narrowed.
+  for (const flag of ["repositories", "permissions"] as const) {
+    if (opts[flag] && !template.inputs.some((i) => i.name === flag)) {
+      process.stderr.write(
+        `error: this server does not support --${camelToKebab(flag)} for '${template.id}' — ` +
+          "the token would carry the installation's full authority\n",
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
+  }
+
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
   validateName(name);
   const { values, presetsApplied } = await collectInputs(template, opts, json);
@@ -510,6 +535,8 @@ function buildPayload(
         appId,
         installationId,
         privateKey,
+        ...(v("repositories") ? { repositories: v("repositories")! } : {}),
+        ...(v("permissions") ? { permissions: v("permissions")! } : {}),
       };
     }
     case "header": {

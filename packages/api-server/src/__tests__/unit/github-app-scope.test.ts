@@ -1,0 +1,152 @@
+import { describe, it, expect } from "vitest";
+import {
+  parseGitHubAppScope,
+  parsePermissions,
+  parseRepositories,
+} from "../../modules/connections/domain/github-app-scope.js";
+
+describe("parseRepositories", () => {
+  // Blank must stay indistinguishable from unset: both mean the installation's
+  // full reach, which is what every pre-existing connection carries.
+  it("treats absent, empty, and whitespace-only input as no narrowing", () => {
+    expect(parseRepositories(undefined)).toBeUndefined();
+    expect(parseRepositories("")).toBeUndefined();
+    expect(parseRepositories("   ")).toBeUndefined();
+  });
+
+  it("splits on spaces, commas, and newlines alike", () => {
+    expect(parseRepositories("docs handbook")).toEqual(["docs", "handbook"]);
+    expect(parseRepositories("docs,handbook")).toEqual(["docs", "handbook"]);
+    expect(parseRepositories("docs, handbook")).toEqual(["docs", "handbook"]);
+    expect(parseRepositories("docs\nhandbook")).toEqual(["docs", "handbook"]);
+  });
+
+  it("accepts the punctuation GitHub allows in a repository name", () => {
+    expect(parseRepositories("my-repo my.repo my_repo r2")).toEqual([
+      "my-repo",
+      "my.repo",
+      "my_repo",
+      "r2",
+    ]);
+  });
+
+  it("drops duplicates while preserving order", () => {
+    expect(parseRepositories("docs handbook docs")).toEqual([
+      "docs",
+      "handbook",
+    ]);
+  });
+
+  // `owner/repo` is the likely paste; GitHub would answer 422 an hour later on
+  // a refresh, so it's worth catching at create with the fix spelled out.
+  it("rejects owner/name and names the repository to use instead", () => {
+    expect(() => parseRepositories("dam-agents/docs")).toThrow(
+      /just the repository name.*"docs"/s,
+    );
+  });
+
+  it("names the repository from a pasted repository URL too", () => {
+    expect(() =>
+      parseRepositories("https://github.com/dam-agents/docs"),
+    ).toThrow(/just the repository name.*"docs"/s);
+  });
+
+  // Suggesting a value that fails again wastes a round trip; suggesting an
+  // empty one is worse, since blank means "no narrowing" rather than an error.
+  it("suggests nothing rather than a replacement that would fail again", () => {
+    for (const bad of ["dam-agents/docs/", "docs/", "owner/docs!"]) {
+      expect(() => parseRepositories(bad)).toThrow(/without the owner\.$/);
+    }
+  });
+
+  it("rejects a name with characters GitHub does not allow", () => {
+    expect(() => parseRepositories("do cs")).not.toThrow(); // splits into two
+    expect(() => parseRepositories("docs!")).toThrow(/not a valid repository/);
+  });
+
+  it("rejects more repositories than one request may carry", () => {
+    const many = Array.from({ length: 501 }, (_, i) => `r${i}`).join(" ");
+    expect(() => parseRepositories(many)).toThrow(/at most 500/);
+  });
+
+  it("allows exactly the maximum", () => {
+    const many = Array.from({ length: 500 }, (_, i) => `r${i}`).join(" ");
+    expect(parseRepositories(many)).toHaveLength(500);
+  });
+});
+
+describe("parsePermissions", () => {
+  it("treats absent, empty, and whitespace-only input as no narrowing", () => {
+    expect(parsePermissions(undefined)).toBeUndefined();
+    expect(parsePermissions("")).toBeUndefined();
+    expect(parsePermissions("   ")).toBeUndefined();
+  });
+
+  it("parses name:level pairs", () => {
+    expect(parsePermissions("contents:read, issues:write")).toEqual({
+      contents: "read",
+      issues: "write",
+    });
+  });
+
+  it("accepts the underscored permission names GitHub uses", () => {
+    expect(parsePermissions("pull_requests:write")).toEqual({
+      pull_requests: "write",
+    });
+  });
+
+  it("normalizes the level's case", () => {
+    expect(parsePermissions("contents:READ")).toEqual({ contents: "read" });
+  });
+
+  it("lets a later duplicate correct an earlier one", () => {
+    expect(parsePermissions("contents:write contents:read")).toEqual({
+      contents: "read",
+    });
+  });
+
+  it("rejects a pair with no level", () => {
+    expect(() => parsePermissions("contents")).toThrow(/name:level/);
+  });
+
+  it("rejects a level GitHub does not accept", () => {
+    expect(() => parsePermissions("contents:readonly")).toThrow(
+      /:read, :write, or :admin/,
+    );
+  });
+
+  it("rejects an invalid permission name", () => {
+    expect(() => parsePermissions("Contents:read")).toThrow(
+      /invalid permission name/,
+    );
+  });
+});
+
+describe("parseGitHubAppScope", () => {
+  it("omits both halves when neither is given", () => {
+    expect(parseGitHubAppScope({})).toEqual({});
+  });
+
+  // Either half narrows on its own — repositories without permissions is the
+  // common "read everything, but only here" shape.
+  it("narrows on repositories alone", () => {
+    expect(parseGitHubAppScope({ repositories: "docs" })).toEqual({
+      repositories: ["docs"],
+    });
+  });
+
+  it("narrows on permissions alone", () => {
+    expect(parseGitHubAppScope({ permissions: "contents:read" })).toEqual({
+      permissions: { contents: "read" },
+    });
+  });
+
+  it("carries both halves when both are given", () => {
+    expect(
+      parseGitHubAppScope({
+        repositories: "docs",
+        permissions: "contents:read",
+      }),
+    ).toEqual({ repositories: ["docs"], permissions: { contents: "read" } });
+  });
+});

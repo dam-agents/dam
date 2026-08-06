@@ -15,6 +15,8 @@ const FIELD_LABELS: Record<string, string> = {
   appId: "App ID",
   installationId: "Installation ID",
   privateKey: "Private key (PEM)",
+  repositories: "Limit to repositories",
+  permissions: "Limit to permissions",
   envName: "Environment variable",
   caData: "Server CA certificate",
 };
@@ -34,6 +36,8 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   appId: "123456",
   installationId: "987654",
   privateKey: "-----BEGIN RSA PRIVATE KEY-----\n…",
+  repositories: "docs handbook",
+  permissions: "contents:read metadata:read",
   envName: "MY_API_KEY",
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };

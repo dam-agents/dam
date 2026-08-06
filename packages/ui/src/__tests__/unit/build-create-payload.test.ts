@@ -19,6 +19,15 @@ const GITHUB_APP_TEMPLATE: ConnectionTemplateView = {
   ],
 };
 
+const GITHUB_APP_SCOPED_TEMPLATE: ConnectionTemplateView = {
+  ...GITHUB_APP_TEMPLATE,
+  inputs: [
+    ...GITHUB_APP_TEMPLATE.inputs,
+    { name: "repositories", state: "optional" },
+    { name: "permissions", state: "optional" },
+  ],
+};
+
 const GITHUB_ENTERPRISE_APP_TEMPLATE: ConnectionTemplateView = {
   id: "github-enterprise-app",
   name: "GitHub Enterprise (App installation)",
@@ -59,6 +68,46 @@ describe("buildCreatePayload (github-app)", () => {
       installationId: "2",
       privateKey: "pem",
     });
+  });
+
+  it("carries the scope fields when the user fills them", () => {
+    const payload = buildCreatePayload(
+      GITHUB_APP_SCOPED_TEMPLATE,
+      values({
+        appId: "1",
+        installationId: "2",
+        privateKey: "pem",
+        repositories: "docs",
+        permissions: "contents:read",
+      }),
+    );
+    expect(payload).toEqual({
+      templateId: "github-app",
+      name: "my-connection",
+      authKind: "github-app",
+      appId: "1",
+      installationId: "2",
+      privateKey: "pem",
+      repositories: "docs",
+      permissions: "contents:read",
+    });
+  });
+
+  // Blank must not reach the server as an empty string — that would be a scope
+  // of "nothing" rather than the absence of one.
+  it("omits the scope fields when the user leaves them blank", () => {
+    const payload = buildCreatePayload(
+      GITHUB_APP_SCOPED_TEMPLATE,
+      values({
+        appId: "1",
+        installationId: "2",
+        privateKey: "pem",
+        repositories: "   ",
+        permissions: "",
+      }),
+    );
+    expect(payload).not.toHaveProperty("repositories");
+    expect(payload).not.toHaveProperty("permissions");
   });
 
   it("rejects an empty required host with an inline error, not a passthrough", () => {

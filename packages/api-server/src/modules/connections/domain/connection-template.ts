@@ -276,6 +276,18 @@ function inputsFor(
           label: "Private key (PEM)",
           hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
         },
+        {
+          name: "repositories",
+          state: "optional",
+          label: "Limit to repositories",
+          hint: "Repository names, separated by spaces or commas — just the name, not owner/name. Leave blank for every repository the installation can reach.",
+        },
+        {
+          name: "permissions",
+          state: "optional",
+          label: "Limit to permissions",
+          hint: "Pairs like contents:read, issues:write. Leave blank for every permission the app was granted. You can only narrow what the installation already allows.",
+        },
       );
       return out;
     }

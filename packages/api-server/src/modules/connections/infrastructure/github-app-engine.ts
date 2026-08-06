@@ -18,6 +18,12 @@ export interface MintInstallationTokenOpts {
   privateKeyPem: string;
   /** GitHub REST base the installation-token endpoint hangs off (no trailing slash needed). */
   apiBaseUrl: string;
+  /** Repository names the token should be limited to. Omit for every
+   *  repository the installation can reach. */
+  repositories?: string[];
+  /** Fine-grained permissions the token should carry, as name → level. Omit
+   *  for every permission the installation holds. */
+  permissions?: Record<string, string>;
 }
 
 export interface GitHubAppEngine {
@@ -95,9 +101,21 @@ export function createGitHubAppEngine(
       installationId,
       privateKeyPem,
       apiBaseUrl,
+      repositories,
+      permissions,
     }): Promise<GitHubAppTokenSet> {
       const jwt = signAppJwt(id, appId, privateKeyPem);
       const url = `${apiBaseUrl.replace(/\/+$/, "")}/app/installations/${encodeURIComponent(installationId)}/access_tokens`;
+      // Omitting the body entirely is what grants the installation's full
+      // authority, so an unscoped connection must send no body at all — an
+      // empty list or object would be a different request, not the same one.
+      const scope = {
+        ...(repositories?.length ? { repositories } : {}),
+        ...(permissions && Object.keys(permissions).length
+          ? { permissions }
+          : {}),
+      };
+      const scoped = Object.keys(scope).length > 0;
       const res = await fetchImpl(url, {
         method: "POST",
         headers: {
@@ -105,19 +123,28 @@ export function createGitHubAppEngine(
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": userAgent,
+          ...(scoped ? { "Content-Type": "application/json" } : {}),
         },
+        ...(scoped ? { body: JSON.stringify(scope) } : {}),
       });
       if (!res.ok) {
         const txt = await res.text();
         // REST, not OAuth, so there is no error code to carry: translate the
-        // two dead ends (401 = key rejected, 404 = app/installation gone) into
-        // the classifier's vocabulary so the loop parks them.
-        const permanentlyRejected = res.status === 401 || res.status === 404;
+        // dead ends into the classifier's vocabulary so the loop parks them.
+        // 401 = key rejected, 404 = app/installation gone — both about the
+        // client's own credential.
+        const clientRejected = res.status === 401 || res.status === 404;
+        // 422 answers a scoped request that asks for a repository or permission
+        // the installation no longer covers. Retrying re-sends the same losing
+        // request, so park it — but only when we actually asked for a subset;
+        // an unscoped 422 is not about the scope and stays retryable.
+        const scopeRejected = scoped && res.status === 422;
         throw new OAuthTokenEndpointError(
           `GitHub App ${id}: installation-token request failed — ${res.status} ${txt.slice(0, 500)}`,
           {
             status: res.status,
-            ...(permanentlyRejected ? { oauthError: "invalid_client" } : {}),
+            ...(clientRejected ? { oauthError: "invalid_client" } : {}),
+            ...(scopeRejected ? { oauthError: "invalid_grant" } : {}),
           },
         );
       }
