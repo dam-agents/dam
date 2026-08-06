@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-08-05
+Last verified: 2026-08-06
 
 ## Overview
 
@@ -125,7 +125,7 @@ The ordering lives in one place shared by both scanners and the install-time res
 Lives in [`packages/api-server/src/modules/skills/`](../../packages/api-server/src/modules/skills/). Owns:
 
 - The **Skill Source catalogue** — CRUD on user sources, merging in system seeds and template sources, dedupe and badge resolution.
-- The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source.
+- The **scan cache** — per-`gitUrl`, 5-minute TTL, invalidated on `sources.refresh` or after a successful publish to that source. Each entry also records the time of the upstream read it came from, so a source card can show how fresh its list is. The cache is per-replica and in-memory: the recorded time describes the read that replica performed, and invalidation reaches only that replica.
 - **Public-archive scanning** — for `github.com` URLs, downloads `archive/HEAD.tar.gz` directly from GitHub, enumerates skills across the [Source Roots](#source-roots) (or the source's `path` when set), parses frontmatter, computes `contentHash`. No credentials required. This is the path that lets the catalog UI render even when no agent is running.
 - **SKILL.md content read** (`getSkillContent`) — serves one skill's raw `SKILL.md` (frontmatter + markdown body) for the in-product preview. It resolves the skill's directory and commit from the cached scan, then fetches that one file pinned at that commit — so a preview costs no repo download and renders the same revision the catalog listed. Public sources only; private sources return `NOT_IMPLEMENTED` (preview deferred).
 - **Private / non-GitHub fallback** — falls through to the agent-runtime `skills.scan` over the harness port. Needs the credential path's paired gateway pod, so it **wakes a hibernated agent** via the shared `ensureReady` primitive rather than refusing (still requires an `agentId` to target).
@@ -234,7 +234,7 @@ GitHub errors (missing scope, repo not found) surface to agent-runtime as the up
 
 `skills.sources.list(agentId?)` merges the three Source kinds and returns `canPublish: true` only for GitHub URLs.
 
-`skills.list(sourceId, agentId?)` resolves the source and dispatches:
+`skills.list(sourceId, agentId?)` returns a source's scanned skill list; a sibling read returns the same list plus when it was read from upstream, so a source card can render how fresh it is. A cache hit reports the original read, not the moment of the hit; a miss reports the scan it just performed. Both resolve the source and dispatch:
 
 - **Public GitHub** → `public-archive-scanner` from the api-server, served from the per-`gitUrl` cache when fresh. No agent required.
 - **Anything else** → agent-runtime `skills.scan`. Requires an `agentId` (surfaces a clear error if missing) and **wakes a hibernated agent** via the shared `ensureReady` primitive before scanning.

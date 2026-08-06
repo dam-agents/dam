@@ -1,6 +1,6 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
-import type { Skill, SkillsService } from "api-server-api";
+import type { SkillsService } from "api-server-api";
 import {
   createAgentsRepository,
   type AgentsRepository,
@@ -12,6 +12,7 @@ import {
   readPublicGithubSkillFile,
   scanPublicGithubArchive,
 } from "./infrastructure/public-archive-scanner.js";
+import { createScanCache } from "./infrastructure/scan-cache.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
 import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
@@ -24,52 +25,9 @@ import {
 } from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-interface CacheEntry {
-  skills: Skill[];
-  expiresAt: number;
-}
-
-/**
- * Cache shared across all users, keyed by `(gitUrl, path)` — the same repo
- * pointed at different subdirs yields different skills, but the result is
- * independent of who's asking. The service is re-composed per request
- * (context-scoped), so the cache must live at module scope to persist.
- */
-const sharedScanCache = new Map<string, CacheEntry>();
-
-function cacheKey(gitUrl: string, path: string | undefined): string {
-  // NUL separator can't appear in a URL or a validated path, so the key is
-  // collision-proof across (gitUrl, path) pairs.
-  return `${gitUrl}\0${path ?? ""}`;
-}
-
-async function scanWithCache(
-  gitUrl: string,
-  path: string | undefined,
-  scanner: (gitUrl: string) => Promise<Skill[]>,
-): Promise<Skill[]> {
-  const key = cacheKey(gitUrl, path);
-  const hit = sharedScanCache.get(key);
-  if (hit && hit.expiresAt > Date.now()) {
-    process.stderr.write(`[skills] cache hit: ${key}\n`);
-    return hit.skills;
-  }
-  process.stderr.write(`[skills] cache miss: ${key}\n`);
-  const skills = await scanner(gitUrl);
-  sharedScanCache.set(key, { skills, expiresAt: Date.now() + CACHE_TTL_MS });
-  return skills;
-}
-
-/** Drop the cached listing for a `(gitUrl, path)` so the next scan hits
- *  upstream. Called on successful publish + manual refresh. */
-function invalidateScanCache(gitUrl: string, path: string | undefined): void {
-  const key = cacheKey(gitUrl, path);
-  if (sharedScanCache.delete(key)) {
-    process.stderr.write(`[skills] cache invalidated: ${key}\n`);
-  }
-}
+/** The service is re-composed per request (context-scoped), so the cache must
+ *  outlive it at module scope to ever hit. */
+const sharedScanCache = createScanCache();
 
 /**
  * The pull-request state resolver, composed for background use. Separate from
@@ -115,8 +73,8 @@ export function composeSkillsModule(
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     runtimeMutator,
     owner,
-    scanSource: scanWithCache,
-    invalidateScan: invalidateScanCache,
+    scanSource: sharedScanCache.scan,
+    invalidateScan: sharedScanCache.invalidate,
     scanPublic: scanPublicGithubArchive,
     readPublicSkillFile: readPublicGithubSkillFile,
     brandName,

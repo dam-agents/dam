@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { t } from "../../trpc.js";
+import type { ApiContext } from "../../context.js";
 import {
   checkAgentBinding,
   manageAgentsProcedure,
@@ -17,6 +18,7 @@ import {
   skillInstallInputSchema,
   skillListInputSchema,
   skillListLocalInputSchema,
+  skillListResultSchema,
   skillListSourcesInputSchema,
   skillLocalFilesSchema,
   skillPublishInputSchema,
@@ -30,6 +32,19 @@ import {
   skillStateOutputSchema,
   skillUninstallInputSchema,
 } from "./schemas.js";
+import type { SkillListResult } from "./types.js";
+
+/** The one read behind both list shapes below: same binding check, same source
+ *  pre-resolve, same cached scan. */
+async function listSkills(
+  ctx: ApiContext,
+  input: { sourceId: string; agentId?: string },
+): Promise<SkillListResult> {
+  if (input.agentId) checkAgentBinding(ctx, input.agentId);
+  const src = await ctx.skills.getSource(input.sourceId);
+  if (!src) throw new TRPCError({ code: "NOT_FOUND" });
+  return ctx.skills.list(input.sourceId, input.agentId);
+}
 
 export const skillsRouter = t.router({
   sources: t.router({
@@ -55,15 +70,21 @@ export const skillsRouter = t.router({
       .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
   }),
 
+  /** A source's skills as a bare array. This shape is published: `dam` CLIs
+   *  are installed on users' own machines and outlive any one server, so an
+   *  npm-released `dam skill catalog` would break if it grew an envelope.
+   *  Callers that also want scan freshness use `listWithScan`. */
   list: readAgentProcedure
     .input(skillListInputSchema)
     .output(z.array(skillSchema))
-    .query(async ({ ctx, input }) => {
-      if (input.agentId) checkAgentBinding(ctx, input.agentId);
-      const src = await ctx.skills.getSource(input.sourceId);
-      if (!src) throw new TRPCError({ code: "NOT_FOUND" });
-      return ctx.skills.list(input.sourceId, input.agentId);
-    }),
+    .query(async ({ ctx, input }) => (await listSkills(ctx, input)).skills),
+
+  /** `list` plus when that list was read from upstream — the read behind the
+   *  UI's "scanned X ago". */
+  listWithScan: readAgentProcedure
+    .input(skillListInputSchema)
+    .output(skillListResultSchema)
+    .query(({ ctx, input }) => listSkills(ctx, input)),
 
   getSkillContent: readAgentProcedure
     .input(skillGetContentInputSchema)

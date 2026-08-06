@@ -69,12 +69,14 @@ export interface SkillsServiceDeps {
   owner: string;
   /** Scan via the provided scanner with a shared TTL cache, keyed by
    *  `(gitUrl, path)` — the catalogue depends on both, and the cache is shared
-   *  across users who may point the same repo at different subdirs. */
+   *  across users who may point the same repo at different subdirs. Also
+   *  reports when the returned list was read from upstream (epoch ms), which a
+   *  cache hit answers with the original read rather than the hit. */
   scanSource: (
     gitUrl: string,
     path: string | undefined,
     scanner: (gitUrl: string) => Promise<Skill[]>,
-  ) => Promise<Skill[]>;
+  ) => Promise<{ skills: Skill[]; scannedAt: number }>;
   invalidateScan: (gitUrl: string, path: string | undefined) => void;
   /** Scan a public GitHub repo directly from the api-server pod. Throws
    *  `PublicArchiveNotFoundError` when the archive endpoint returns 404 —
@@ -354,9 +356,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // egress — it never touches the agent pod's per-grant gating.
       if (detectHost(src.gitUrl)) {
         try {
-          return await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
-            deps.scanPublic(gitUrl, src.path),
+          const { skills, scannedAt } = await deps.scanSource(
+            src.gitUrl,
+            src.path,
+            (gitUrl) => deps.scanPublic(gitUrl, src.path),
           );
+          return { skills, scannedAt: new Date(scannedAt).toISOString() };
         } catch (err) {
           if (!(err instanceof PublicArchiveNotFoundError)) throw err;
           // 404 → repo is private (or nonexistent). Only the authenticated
@@ -377,9 +382,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
       await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
       try {
-        return await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
-          deps.runtimeClient.scan(agentId, gitUrl, src.path),
+        const { skills, scannedAt } = await deps.scanSource(
+          src.gitUrl,
+          src.path,
+          (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
         );
+        return { skills, scannedAt: new Date(scannedAt).toISOString() };
       } catch (err) {
         throw privateScanErrorToTrpc(err) ?? err;
       }
@@ -408,8 +416,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // PublicArchiveNotFoundError, the same deferred-preview outcome the
       // tarball read used to produce.
       try {
-        const skills = await deps.scanSource(src.gitUrl, src.path, (gitUrl) =>
-          deps.scanPublic(gitUrl, src.path),
+        const { skills } = await deps.scanSource(
+          src.gitUrl,
+          src.path,
+          (gitUrl) => deps.scanPublic(gitUrl, src.path),
         );
         const skill = skills.find((s) => s.name === name);
         if (!skill) {

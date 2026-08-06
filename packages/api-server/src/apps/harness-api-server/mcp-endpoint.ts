@@ -531,7 +531,9 @@ export function createMcpSession(
       textTool(
         "Failed to list skills",
         () => deps.skills.list(sourceId, agentId),
-        (list) => JSON.stringify(list),
+        // Agents get the bare array the tool description promises; the
+        // response's scan timestamp is a UI freshness hint, not theirs.
+        (result) => JSON.stringify(result.skills),
       ),
   );
 

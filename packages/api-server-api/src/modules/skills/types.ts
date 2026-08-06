@@ -5,6 +5,7 @@ import type {
   skillCreateSourceInputSchema,
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,
+  skillListResultSchema,
   skillLocalFilesSchema,
   skillPublishInputSchema,
   skillPublishRecordSchema,
@@ -20,6 +21,7 @@ import type {
 export type SkillRef = z.infer<typeof skillRefSchema>;
 export type SkillSource = z.infer<typeof skillSourceSchema>;
 export type Skill = z.infer<typeof skillSchema>;
+export type SkillListResult = z.infer<typeof skillListResultSchema>;
 export type LocalSkill = z.infer<typeof localSkillSchema>;
 export type SkillOrigin = NonNullable<LocalSkill["origin"]>;
 
@@ -53,7 +55,7 @@ export interface SkillsService {
   createSource: (input: SkillCreateSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
-  list: (sourceId: string, agentId?: string) => Promise<Skill[]>;
+  list: (sourceId: string, agentId?: string) => Promise<SkillListResult>;
   getSkillContent: (
     sourceId: string,
     name: string,
