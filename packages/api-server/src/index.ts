@@ -721,7 +721,7 @@ await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
 
 // Re-read the pull requests behind skill publish records so the badge reports
 // their real state. Ten minutes is the tick, but each record is re-checked at
-// most hourly (the resolver owns that backoff) — the short tick exists so a
+// most hourly (the resolver owns that throttle) — the short tick exists so a
 // freshly published pull request resolves promptly rather than waiting an hour.
 const prStateResolver = composePrStateResolver({
   db,

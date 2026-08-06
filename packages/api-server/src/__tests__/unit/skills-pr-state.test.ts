@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { derivePrState } from "../../modules/skills/domain/pr-state.js";
 import type {
+  PodPrReadResult,
   PodPrStateReader,
-  PrDisposition,
 } from "../../modules/skills/domain/pr-state.js";
 import { parsePrUrl } from "../../modules/skills/domain/pr-url.js";
 import {
@@ -78,7 +78,7 @@ const PR_URL = "https://github.com/acme/skills/pull/7";
 function makeResolver(opts: {
   candidates: { agentId: string; prUrl: string; prEtag: string | null }[];
   reads?: PrStateReadResult[];
-  podReads?: (PrDisposition | null)[];
+  podReads?: PodPrReadResult[];
 }) {
   const agentSkills = {
     listPrStateCandidates: vi.fn().mockResolvedValue(opts.candidates),
@@ -102,11 +102,7 @@ const candidate = (
   agentId = "a1",
   prUrl = PR_URL,
   prEtag: string | null = null,
-) => ({
-  agentId,
-  prUrl,
-  prEtag,
-});
+) => ({ agentId, prUrl, prEtag });
 
 describe("pr-state resolver tick", () => {
   it("writes a resolved state with its validator and reports it", async () => {
@@ -137,7 +133,7 @@ describe("pr-state resolver tick", () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
-  it("confirms on 304 — backoff resets, validator kept", async () => {
+  it("stamps a 304 so the record waits its hour", async () => {
     const { resolver, agentSkills } = makeResolver({
       candidates: [candidate("a1", PR_URL, "etag-0")],
       reads: [{ kind: "notModified" }],
@@ -147,7 +143,6 @@ describe("pr-state resolver tick", () => {
     expect(agentSkills.touchPrState).toHaveBeenCalledWith(
       PR_URL,
       expect.any(Date),
-      "confirmed",
     );
   });
 
@@ -170,8 +165,15 @@ describe("pr-state resolver tick", () => {
       candidates: [candidate("a1"), candidate("a2")],
       reads: [{ kind: "unavailable", reason: "not-found" }],
       podReads: [
-        null,
-        { state: "closed", draft: false, mergedAt: "2026-08-01T00:00:00Z" },
+        { kind: "not-running" },
+        {
+          kind: "state",
+          disposition: {
+            state: "closed",
+            draft: false,
+            mergedAt: "2026-08-01T00:00:00Z",
+          },
+        },
       ],
     });
 
@@ -195,22 +197,22 @@ describe("pr-state resolver tick", () => {
     });
   });
 
-  it("stamps a failure when no pod can answer a 404", async () => {
+  it("stamps a 404 whose publishers are all cold — never waking one", async () => {
     const { resolver, agentSkills } = makeResolver({
       candidates: [candidate("a1")],
       reads: [{ kind: "unavailable", reason: "not-found" }],
-      podReads: [null],
+      podReads: [{ kind: "not-running" }],
     });
 
     await expect(resolver.tick()).resolves.toBe(0);
+    expect(agentSkills.setPrState).not.toHaveBeenCalled();
     expect(agentSkills.touchPrState).toHaveBeenCalledWith(
       PR_URL,
       expect.any(Date),
-      "failed",
     );
   });
 
-  it("stamps an unparsable URL as failed without spending a read", async () => {
+  it("stamps an unparsable URL as attempted without spending a read", async () => {
     const { resolver, agentSkills, read } = makeResolver({
       candidates: [candidate("a1", "https://example.com/not-github")],
     });
@@ -220,7 +222,6 @@ describe("pr-state resolver tick", () => {
     expect(agentSkills.touchPrState).toHaveBeenCalledWith(
       "https://example.com/not-github",
       expect.any(Date),
-      "failed",
     );
   });
 
