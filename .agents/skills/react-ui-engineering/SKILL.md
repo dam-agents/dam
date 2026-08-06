@@ -13,7 +13,8 @@ Opinionated standards for React+TS UI code. When a rule doesn't fit, say so and 
 2. **Separation by lineage** — state is classified by where its source of truth lives (server, UI, local, URL). Each has a designated home. Mixing lineages is the single biggest driver of drift.
 3. **Small surface, small files** — a component or hook that can't be held in working memory is a bug report waiting to happen. Split along responsibilities.
 4. **Meaningful names** — identifiers carry intent: `selectedAgentId` over `sel`, `hasUnsavedChanges` over `flag`, `useFilteredAgents` over `useData`. Naming is the cheapest documentation you can write.
-5. **Types at boundaries, not assertions** — `any`, `as`, and untyped fetch responses are how large codebases rot. Prefer Zod inference and type guards.
+5. **No unnecessary comments** — names and structure say *what*; a comment says *why*, and only when the reason isn't visible in the code (a subtle invariant, an external constraint, a workaround for a specific bug). One line is usually enough. If a rename or a restructure removes the need for the comment, do that instead.
+6. **Types at boundaries, not assertions** — `any`, `as`, and untyped fetch responses are how large codebases rot. Prefer Zod inference and type guards.
 
 ## Severity tiers
 
@@ -44,9 +45,9 @@ Read only what the task needs. Don't pre-load these.
 | Deciding where a piece of state lives | `references/state-management.md` |
 | Anything that talks to the server | `references/async-data.md` |
 | Building a form | `references/forms.md` |
-| Styling decisions, inline styles, class composition | `references/styling.md` |
+| Styling, inline styles, class composition, reusing an existing component | `references/styling.md` |
 | API / fetch / tRPC setup and error handling | `references/api-layer.md` |
-| Typing a prop, a response, or an error | `references/types.md` |
+| Typing a prop, a response, an error, or defining constants / union literals | `references/types.md` |
 
 ## Legacy code migration
 

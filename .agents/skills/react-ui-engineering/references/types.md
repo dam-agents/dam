@@ -178,6 +178,64 @@ Then `err instanceof ApiError` narrows in `catch` blocks and toast/logging code.
 
 See `references/api-layer.md` for the end-to-end error contract.
 
+## Constants & literals
+
+**[HIGH] No magic strings/numbers.** A literal that carries meaning beyond its value, or appears more than once, becomes a named constant. The bar isn't "extract every literal" — single-use, self-explanatory values stay inline. It's "if a future reader has to read surrounding code to understand what `3000` or `"idle"` means, name it."
+
+Common offenders:
+
+```ts
+❌ if (agent.status === "running" && Date.now() - agent.startedAt > 30_000) { ... }
+❌ await fetch(`/api/v2/agents/${id}`);
+❌ setTimeout(refetch, 5000);
+```
+
+Fixed:
+
+```ts
+✅ if (agent.status === AGENT_STATUS.RUNNING && Date.now() - agent.startedAt > AGENT_STALL_MS) { ... }
+✅ await fetch(`${API_BASE}/agents/${id}`);
+✅ setTimeout(refetch, REFETCH_INTERVAL_MS);
+```
+
+### Where constants live
+
+- **Domain-scoped** (a status set, a domain-specific limit) → `modules/{domain}/constants.ts`.
+- **App-wide** (API base path, default page size, shared animation durations) → `src/utils/constants.ts` or `src/lib/constants.ts`.
+- **Single-use in one file** → module-scope `const` at the top of the same file. Don't relocate it to a constants file just to satisfy the rule.
+
+### Union literals — no TS `enum`
+
+For sets of allowed string values, the source of truth is a Zod schema or an `as const` tuple — **never a TypeScript `enum`** (emits a runtime object, doesn't tree-shake, doesn't compose with Zod, has surprising numeric-enum semantics).
+
+```ts
+// Pattern A — Zod schema is the source; type and tuple both fall out of it.
+✅ export const agentStatusSchema = z.enum(["idle", "running", "failed"]);
+   export type AgentStatus = z.infer<typeof agentStatusSchema>;
+   export const AGENT_STATUSES = agentStatusSchema.options; // readonly ["idle", "running", "failed"]
+
+// Pattern B — tuple is the source; type is derived from it.
+✅ export const AGENT_STATUSES = ["idle", "running", "failed"] as const;
+   export type AgentStatus = (typeof AGENT_STATUSES)[number];
+
+❌ enum AgentStatus { Idle = "idle", Running = "running", Failed = "failed" }
+```
+
+If you need a tuple guaranteed to cover every union member (i.e. exhaustiveness, not just no-typos), use Pattern A — Zod's `.options` gives you the full tuple by construction.
+
+### When inline is fine
+
+- Self-explanatory at the call site: `arr.slice(0, 1)`, `disabled={count === 0}`, `flex: 1`, `opacity-0`.
+- Math constants whose meaning is the literal itself: `width / 2` for centering.
+- Test fixtures and one-off mock data.
+
+Extracting these adds noise without adding meaning.
+
+### Already covered elsewhere
+
+- **Tailwind arbitrary values** repeated 3+ times → theme token. See `references/styling.md`.
+- **Query keys** → always come from the per-domain factory, never string literals. See `references/async-data.md`.
+
 ## Anti-patterns
 
 - **`any` anywhere except in a temporary migration comment with a `TODO` deadline.**
@@ -187,3 +245,5 @@ See `references/api-layer.md` for the end-to-end error contract.
 - **Redundant annotations** (`const name: string = getName()` when `getName` is typed).
 - **Missing types on exported function parameters** — always annotate the public surface.
 - **`type Props = {}`** (empty props) — omit the parameter.
+- **Magic strings / numbers** — repeated literals with semantic meaning belong in a named constant.
+- **TypeScript `enum`** — use Zod enums or `as const` tuples instead.
