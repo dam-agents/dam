@@ -102,12 +102,19 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
       - id: d
         env:
-          # PR: reuse from the registry what the merge-base already built.
-          # Everything else (main/tag/schedule/dispatch) rebuilds & republishes all.
+          # PR: reuse from the registry what the merge-base already built, and
+          # never build workloads. main push: rebuild & republish everything
+          # EXCEPT workloads, which rebuild only when their effective source
+          # moved — publish pins their source-sha tags into the chart, so an
+          # unchanged workload keeps last deploy's tag. tag/schedule/dispatch
+          # rebuild & republish all (releases get semver tags, the nightly
+          # keeps workloads on the freshly rebuilt base).
           EVENT: ${{ github.event_name }}
+          MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           [ "$EVENT" = pull_request ] || export RESOLVE_NO_REUSE=1
+          [ "$MAIN_PUSH" != true ] || export RESOLVE_REUSE_WORKLOADS=1
           out="$(scripts/resolve-image.sh gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
           printf '::notice::%s\n' "$(printf '%s' "$out" | tr '\n' ' ')"
@@ -395,7 +402,9 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
 
-  # all claude-code-derived workload images; list = resolve-image.sh WORKLOADS
+  # all claude-code-derived workload images; list = resolve-image.sh WORKLOADS.
+  # PRs never build these; main pushes build only those whose effective source
+  # moved (reused ones keep their source-sha tag in the published chart).
   build-workloads:
     needs: [merge-agents, changes]
     if: ${{ needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
@@ -519,7 +528,9 @@ jobs:
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.component }}
-          # source-sha tag: see merge-platform-base.
+          # source-sha tag: see merge-platform-base. publish pins it into the
+          # chart (@ci-pin), so an unchanged workload keeps its tag across
+          # deploys instead of being rebuilt for every one.
           tags: |
             type=sha,prefix=,format=long
             type=semver,pattern={{version}}
@@ -623,7 +634,15 @@ jobs:
 
   publish:
     needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
-    if: github.event_name == 'push'
+    # merge-workloads skips on main pushes where every workload was reused —
+    # the implicit success() would skip publish with it, so spell out the
+    # direct needs (see e2e). A failed workload build must still block the
+    # chart: it would pin a source-sha tag that was never pushed.
+    if: >-
+      ${{ github.event_name == 'push' && !cancelled() &&
+          needs.merge-images.result == 'success' &&
+          needs.merge-agents.result == 'success' &&
+          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -655,18 +674,23 @@ jobs:
       - name: Build Helm chart dependencies
         run: mise run helm:deps
 
-      # Pin the keycloak image to its content tag (source sha, pushed by
-      # merge-images) so the chart only moves the tag — and only rolls the
-      # Keycloak pod — when the image inputs actually changed. The repo
-      # default stays `""` (appVersion fallback) for charts rendered from git.
-      - name: Pin keycloak image tag
+      # Pin content-tagged images (source sha, pushed by merge-images /
+      # merge-workloads) so the chart only moves a tag — and only rolls the
+      # Keycloak pod or rebuilds a workload — when the image inputs actually
+      # changed. The repo default stays `""` (appVersion fallback) for charts
+      # rendered from git.
+      - name: Pin content-tagged image tags
         env:
-          KC_TAG: ${{ fromJSON(needs.changes.outputs.source_shas)['keycloak'] }}
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: |
           set -euo pipefail
-          [ -n "$KC_TAG" ]
-          sed -i "s|^\\(\\s*\\)tag: \"\" # @ci-pin keycloak-image-tag$|\\1tag: \"$KC_TAG\"|" deploy/helm/platform/values.yaml
-          grep -q "tag: \"$KC_TAG\"" deploy/helm/platform/values.yaml
+          for comp in keycloak $(scripts/resolve-image.sh list-workloads); do
+            tag="$(jq -re --arg c "$comp" '.[$c]' <<< "$SOURCE_SHAS")"
+            sed -i "s|^\\(\\s*\\)tag: \"\" # @ci-pin ${comp}-image-tag$|\\1tag: \"$tag\"|" deploy/helm/platform/values.yaml
+          done
+          # every marker must have been consumed — a leftover means the
+          # component list and the values.yaml markers drifted apart
+          ! grep -n '@ci-pin .*-image-tag' deploy/helm/platform/values.yaml
 
       - name: Push Helm chart (release)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -852,7 +876,9 @@ jobs:
         merge-agents,
         merge-workloads,
       ]
-    if: github.ref == 'refs/heads/main'
+    # !failure()/!cancelled(): merge-workloads skips on main pushes where every
+    # workload was reused — the implicit success() would skip all scans with it.
+    if: ${{ github.ref == 'refs/heads/main' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -882,7 +908,7 @@ jobs:
             echo "${QUAY_PASSWORD}" | docker login quay.io -u "${QUAY_USERNAME}" --password-stdin
           fi
           report=$(mise run "$TASK" --json --tag="$SHA") || {
-            echo "::notice::Trivy scan skipped for ${TASK} (no ${SHA} image — build may have failed); see log"
+            echo "::notice::Trivy scan skipped for ${TASK} (no ${SHA} image — reused unchanged, or its build failed); see log"
             exit 0
           }
           out=$(echo "$report" | jq '
