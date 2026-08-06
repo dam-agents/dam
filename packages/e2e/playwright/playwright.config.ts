@@ -177,6 +177,13 @@ export default defineConfig({
             testMatch: /full\/gateway-.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
+          {
+            // Cron firing (#435): waits up to a minute for a `* * * * *`
+            // schedule to fire on its own — hence full-only.
+            name: "schedules-full",
+            testMatch: /full\/schedule-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
         ]
       : []),
   ],
