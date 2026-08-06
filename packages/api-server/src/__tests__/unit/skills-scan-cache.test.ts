@@ -4,6 +4,9 @@ import { createScanCache } from "../../modules/skills/infrastructure/scan-cache.
 
 const TTL_MS = 5 * 60 * 1000;
 const URL = "https://github.com/acme/skills";
+const SHARED = { kind: "shared" } as const;
+const ALICE = { kind: "owner", owner: "alice" } as const;
+const BOB = { kind: "owner", owner: "bob" } as const;
 
 function skill(name: string): Skill {
   return {
@@ -26,7 +29,9 @@ describe("skills scan cache", () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
 
-    const res = await cache.scan(URL, undefined, async () => [skill("a")]);
+    const res = await cache.scan(SHARED, URL, undefined, async () => [
+      skill("a"),
+    ]);
 
     expect(res.skills.map((s) => s.name)).toEqual(["a"]);
     expect(res.scannedAt).toBe(1_000_000);
@@ -36,10 +41,10 @@ describe("skills scan cache", () => {
     const cache = quiet();
     const scanner = vi.fn(async () => [skill("a")]);
     vi.setSystemTime(1_000_000);
-    await cache.scan(URL, undefined, scanner);
+    await cache.scan(SHARED, URL, undefined, scanner);
 
     vi.setSystemTime(1_000_000 + TTL_MS - 1);
-    const hit = await cache.scan(URL, undefined, scanner);
+    const hit = await cache.scan(SHARED, URL, undefined, scanner);
 
     expect(hit.scannedAt).toBe(1_000_000);
     expect(scanner).toHaveBeenCalledTimes(1);
@@ -48,10 +53,12 @@ describe("skills scan cache", () => {
   it("re-reads and re-stamps once the entry expires", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
-    await cache.scan(URL, undefined, async () => [skill("a")]);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("a")]);
 
     vi.setSystemTime(1_000_000 + TTL_MS);
-    const fresh = await cache.scan(URL, undefined, async () => [skill("b")]);
+    const fresh = await cache.scan(SHARED, URL, undefined, async () => [
+      skill("b"),
+    ]);
 
     expect(fresh.skills.map((s) => s.name)).toEqual(["b"]);
     expect(fresh.scannedAt).toBe(1_000_000 + TTL_MS);
@@ -62,14 +69,14 @@ describe("skills scan cache", () => {
     vi.setSystemTime(1_000_000);
 
     await expect(
-      cache.scan(URL, undefined, async () => {
+      cache.scan(SHARED, URL, undefined, async () => {
         throw new Error("upstream down");
       }),
     ).rejects.toThrow("upstream down");
 
     const scanner = vi.fn(async () => [skill("a")]);
     vi.setSystemTime(2_000_000);
-    const res = await cache.scan(URL, undefined, scanner);
+    const res = await cache.scan(SHARED, URL, undefined, scanner);
 
     expect(scanner).toHaveBeenCalledTimes(1);
     expect(res.scannedAt).toBe(2_000_000);
@@ -78,16 +85,16 @@ describe("skills scan cache", () => {
   it("keeps a fresh entry intact when a later scan of another key throws", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
-    await cache.scan(URL, undefined, async () => [skill("a")]);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("a")]);
 
     await expect(
-      cache.scan(URL, "sub", async () => {
+      cache.scan(SHARED, URL, "sub", async () => {
         throw new Error("upstream down");
       }),
     ).rejects.toThrow();
 
     const scanner = vi.fn(async () => [skill("z")]);
-    const hit = await cache.scan(URL, undefined, scanner);
+    const hit = await cache.scan(SHARED, URL, undefined, scanner);
 
     expect(hit.scannedAt).toBe(1_000_000);
     expect(scanner).not.toHaveBeenCalled();
@@ -96,9 +103,9 @@ describe("skills scan cache", () => {
   it("keys on (gitUrl, path) so one subdir's scan never answers another's", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
-    await cache.scan(URL, undefined, async () => [skill("root")]);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("root")]);
 
-    const res = await cache.scan(URL, "packages/skills", async () => [
+    const res = await cache.scan(SHARED, URL, "packages/skills", async () => [
       skill("nested"),
     ]);
 
@@ -108,14 +115,55 @@ describe("skills scan cache", () => {
   it("invalidation forces the next scan upstream", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
-    await cache.scan(URL, undefined, async () => [skill("a")]);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("a")]);
 
     cache.invalidate(URL, undefined);
 
     vi.setSystemTime(1_100_000);
-    const res = await cache.scan(URL, undefined, async () => [skill("b")]);
+    const res = await cache.scan(SHARED, URL, undefined, async () => [
+      skill("b"),
+    ]);
 
     expect(res.skills.map((s) => s.name)).toEqual(["b"]);
     expect(res.scannedAt).toBe(1_100_000);
+  });
+
+  it("answers a credentialed scan only to the owner who produced it, and lets the others keep their own", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    await cache.scan(ALICE, URL, undefined, async () => [skill("alice")]);
+
+    const bobScan = vi.fn(async () => [skill("bob")]);
+    const sharedScan = vi.fn(async () => [skill("public")]);
+    await cache.scan(BOB, URL, undefined, bobScan);
+    await cache.scan(SHARED, URL, undefined, sharedScan);
+
+    expect(bobScan).toHaveBeenCalledTimes(1);
+    expect(sharedScan).toHaveBeenCalledTimes(1);
+
+    // Neither reader displaced Alice: a second user of one private source is
+    // not an eviction, or the cache stops hitting for everyone sharing it.
+    const rescan = vi.fn(async () => [skill("refetched")]);
+    const hit = await cache.scan(ALICE, URL, undefined, rescan);
+
+    expect(hit.skills.map((s) => s.name)).toEqual(["alice"]);
+    expect(rescan).not.toHaveBeenCalled();
+  });
+
+  it("invalidation drops every scope's entry for the source", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    await cache.scan(ALICE, URL, undefined, async () => [skill("alice")]);
+    await cache.scan(SHARED, URL, undefined, async () => [skill("public")]);
+
+    cache.invalidate(URL, undefined);
+
+    const aliceScan = vi.fn(async () => [skill("a2")]);
+    const sharedScan = vi.fn(async () => [skill("s2")]);
+    await cache.scan(ALICE, URL, undefined, aliceScan);
+    await cache.scan(SHARED, URL, undefined, sharedScan);
+
+    expect(aliceScan).toHaveBeenCalledTimes(1);
+    expect(sharedScan).toHaveBeenCalledTimes(1);
   });
 });
