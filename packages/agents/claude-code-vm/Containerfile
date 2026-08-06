@@ -150,6 +150,7 @@ COPY system/platform-scratch.service system/platform-ca.service \
      system/platform-boot-gate.service system/agent-runtime.service \
      system/platform-net-config.service \
      /usr/lib/systemd/system/
+COPY system/vm-no-proxy.env /usr/lib/platform/vm-no-proxy.env
 COPY system/proxy-dropin.conf /usr/lib/systemd/system/docker.service.d/platform.conf
 COPY system/proxy-dropin.conf /usr/lib/systemd/system/k3s.service.d/platform.conf
 COPY system/k3s-config.yaml /etc/rancher/k3s/config.yaml
