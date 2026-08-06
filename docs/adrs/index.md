@@ -76,6 +76,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 079 | [One channel access model — the binding is the authorization](079-single-channel-access-model.md) | 027, 076 | channels | Per-person channel access (identity linking, allow-lists, per-turn impersonation forks) is removed; every binding lends the Agent to the conversation and every turn runs as the Agent, attributed to the messenger-native sender. |
 | 080 | [Agent workspaces on ReadWriteOnce storage, migrated in place](080-rwo-workspace-storage.md) |  | persistence | Workspace volumes are ReadWriteOnce on ordinary storage; a controller-run, checksum-verified migration drains existing RWX volumes; the bundled NFS server is deprecated and dam-run is disabled until it has a non-shared-workspace model. |
 | 081 | [Admit a blocked start by hibernating the owner's idle agents early](081-admit-by-hibernation.md) |  | budgets | The per-user budget gate may admit an over-budget start by hibernating that owner's unattended idle agents ahead of their timeout, longest-idle first, instead of refusing until the user frees room by hand. |
+| 082 | [UI live updates — thin invalidation events over tRPC WebSocket subscriptions](082-ui-live-updates.md) |  | platform-topology | The UI stops polling; server-side changes are announced as thin, signal-only invalidation events pushed over a per-tab tRPC WebSocket subscription, and the client re-reads the affected queries over the same dual-transport tRPC surface. |
 
 ## Superseded
 
