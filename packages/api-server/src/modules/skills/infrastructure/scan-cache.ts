@@ -18,7 +18,6 @@ interface CacheEntry {
    *  a source card can show how fresh its list is. A hit reports this original
    *  read rather than the moment of the hit. */
   scannedAt: number;
-  scope: ScanScope;
 }
 
 export interface ScanResult {
@@ -27,33 +26,24 @@ export interface ScanResult {
 }
 
 export interface ScanCache {
-  /** Serve `(gitUrl, path)` from cache while the entry is fresh *and* was
-   *  produced under the caller's scope, otherwise run `scanner` and record the
-   *  read. A throwing scanner caches nothing. */
+  /** Serve `(scope, gitUrl, path)` from cache while fresh, otherwise run
+   *  `scanner` and record the read. A throwing scanner caches nothing. */
   scan: (
     scope: ScanScope,
     gitUrl: string,
     path: string | undefined,
     scanner: (gitUrl: string) => Promise<Skill[]>,
   ) => Promise<ScanResult>;
-  /** Drop the cached listing for a `(gitUrl, path)` so the next scan hits
-   *  upstream. Called on successful publish + manual refresh. Scope-blind:
-   *  there is one entry per key whatever produced it. */
+  /** Drop every scope's cached listing for a `(gitUrl, path)` so the next scan
+   *  hits upstream. Called on successful publish + manual refresh: the upstream
+   *  moved, which is true no matter whose access read it. */
   invalidate: (gitUrl: string, path: string | undefined) => void;
 }
 
-function cacheKey(gitUrl: string, path: string | undefined): string {
+function sourceKey(gitUrl: string, path: string | undefined): string {
   // NUL separator can't appear in a URL or a validated path, so the key is
   // collision-proof across (gitUrl, path) pairs.
   return `${gitUrl}\0${path ?? ""}`;
-}
-
-// Exact match, not "shared also satisfies owner". The service always tries the
-// shared read first, so the permissive case would be unreachable, and an exact
-// rule is the easier invariant to keep true.
-function sameScope(a: ScanScope, b: ScanScope): boolean {
-  if (a.kind === "shared") return b.kind === "shared";
-  return b.kind === "owner" && a.owner === b.owner;
 }
 
 function scopeLabel(scope: ScanScope): string {
@@ -61,13 +51,19 @@ function scopeLabel(scope: ScanScope): string {
 }
 
 /**
- * A scan cache keyed by `(gitUrl, path)`, holding one entry per key alongside
- * the scope that produced it. An entry from a scan that ran under one user's
- * credentials is never served to anyone else; an uncredentialed scan, whose
- * result is the same for every caller, is shared across all of them.
+ * A scan cache keyed by `(gitUrl, path, scope)`. An entry from a scan that ran
+ * under one user's credentials is never served to anyone else; an
+ * uncredentialed scan, whose result is the same for every caller, is shared
+ * across all of them.
  *
- * A scope mismatch reads as a miss, so the caller's own scan simply overwrites
- * the slot — which is what keeps invalidation a single scope-blind delete.
+ * Scope is part of the key rather than a check applied to a shared slot, so
+ * two users of the same private source hold separate entries instead of
+ * evicting each other on every request — and no comparison stands between a
+ * lookup and another user's skills.
+ *
+ * That multiplies entries by the number of users, so a miss first drops
+ * everything expired: the map holds roughly what was scanned in the last TTL
+ * window rather than growing for the life of the process.
  *
  * State is closure-scoped so callers hold the lifetime: the composition root
  * keeps one instance for the process (the service is re-composed per request,
@@ -78,31 +74,44 @@ export function createScanCache(
 ): ScanCache {
   const entries = new Map<string, CacheEntry>();
 
+  function dropExpired(now: number): void {
+    for (const [key, entry] of entries) {
+      if (entry.expiresAt <= now) entries.delete(key);
+    }
+  }
+
   return {
     async scan(scope, gitUrl, path, scanner) {
-      const key = cacheKey(gitUrl, path);
+      const source = sourceKey(gitUrl, path);
       const label = scopeLabel(scope);
-      const hit = entries.get(key);
-      if (hit && hit.expiresAt > Date.now() && sameScope(hit.scope, scope)) {
-        log(`[skills] cache hit: ${key} (${label})\n`);
+      const hit = entries.get(`${source}\0${label}`);
+      if (hit && hit.expiresAt > Date.now()) {
+        log(`[skills] cache hit: ${source} (${label})\n`);
         return { skills: hit.skills, scannedAt: hit.scannedAt };
       }
-      log(`[skills] cache miss: ${key} (${label})\n`);
+      log(`[skills] cache miss: ${source} (${label})\n`);
       const skills = await scanner(gitUrl);
       const scannedAt = Date.now();
-      entries.set(key, {
+      dropExpired(scannedAt);
+      entries.set(`${source}\0${label}`, {
         skills,
         expiresAt: scannedAt + CACHE_TTL_MS,
         scannedAt,
-        scope,
       });
       return { skills, scannedAt };
     },
 
     invalidate(gitUrl, path) {
-      const key = cacheKey(gitUrl, path);
-      if (entries.delete(key)) {
-        log(`[skills] cache invalidated: ${key}\n`);
+      // Every scope's entry for this source, whoever produced it. The trailing
+      // NUL stops the prefix at the source boundary, so a longer gitUrl sharing
+      // this one's opening characters is untouched.
+      const source = sourceKey(gitUrl, path);
+      let dropped = 0;
+      for (const key of entries.keys()) {
+        if (key.startsWith(`${source}\0`) && entries.delete(key)) dropped++;
+      }
+      if (dropped > 0) {
+        log(`[skills] cache invalidated: ${source} (${dropped})\n`);
       }
     },
   };
