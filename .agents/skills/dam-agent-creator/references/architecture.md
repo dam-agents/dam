@@ -4,12 +4,13 @@ The structural rules every generated definition follows. Read before writing the
 proposal; cite these rules in the generated `docs/self-modification.md` rather than
 restating them there at length.
 
-## Two repos, one inside the other
+## One repo, one data directory, one backup remote
 
-| Path | Repo | Holds |
+| Path | Kind | Holds |
 | --- | --- | --- |
 | `$HOME` (`/home/agent`) | **definition repo** (`origin` = where ONBOARDING.md was fetched from, fork-aware) | `CLAUDE.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
-| `$HOME/work` | optional state repo (env var, e.g. `GITHUB_REPO_WORK`) | `CONFIG.md`, `MEMORY.md`, domain state files, logs |
+| `$HOME/work` | **plain data directory — never a git repo** (the shared volume corrupts a concurrently-mutated `.git`; `references/platform-dam.md`) | `CONFIG.md`, `MEMORY.md`, `LESSONS.md`, domain state files, logs |
+| state remote | optional git remote (env var, e.g. `GITHUB_REPO_WORK`) | durable, versioned backup of `work/`, written only via the tmpfs backup script |
 
 Why this shape works:
 
@@ -71,6 +72,11 @@ Assemble the subset the domain needs; name each chosen mechanism in CLAUDE.md's 
 - **Verified pruning** — remove an item's state only after per-item verification that it
   is really gone (never from absence in a list call — a truncated listing would mass-prune),
   and clean up everything the item owned (published artifacts, history files).
+- **Undeliverable effect → substitute channel** — when an effect becomes undeliverable
+  mid-pipeline (the item closed/vanished after the work was done), critical findings are
+  delivered through a designated fallback surface (e.g. a linked issue instead of the
+  gone item's thread) with its **own dedup marker**, instead of being discarded; minor
+  findings may be dropped. Name the fallback per effect in the design.
 - **State reconstruction** — when markers exist, a lost `work/` is rebuildable: list live
   items, find the agent's markers, rewrite tracking rows with the **external-system
   timestamps** (history, not "now"). Only learned memory is unrecoverable — which is why
@@ -101,15 +107,33 @@ cap) and a weekly consolidation in the audit run (merge duplicates, promote the 
 confirmed, drop the stale; operator-tagged entries are never dropped). Bounded memory is
 what lets the agent improve forever without the file growing forever.
 
+A third route, useful for every agent (not just learning ones): **`work/LESSONS.md`** —
+operational lessons. Verified environment facts and recurring failure modes ("GraphQL is
+not proxied here — use REST", "this API paginates at 100"), written **only when a root
+cause was actually reproduced**, read at the start of work runs. It prevents every future
+run from re-diagnosing the same environmental quirk; entries name the evidence.
+
 ## Logging
 
-- One append-only log per run type (`work/<RUNTYPE>.log`), one line per run:
-  `<ISO-UTC> <summary counters>`. Grep-friendly by design — the audit reads these.
-- Error lines share a stable prefix (`ERROR:`) so a log scan is one grep. A log whose own
+Two layers, both under `work/`:
+
+- **Per-run-type summary logs** (`work/<RUNTYPE>.log`): append-only, one line per run,
+  `<ISO-UTC> <summary counters>`. Grep-friendly — the audit reads these for cadence gaps.
+  Error lines share a stable prefix (`ERROR:`) so a log scan is one grep; a log whose own
   content would trip the scan (like the audit's) avoids the trigger substrings.
-- Optional **debug/progress log**, gated by a config key (default off): one line per
-  pipeline milestone, so a session that dies mid-item is diagnosable at the exact step.
-  Diagnostic only — never gates behavior.
+- **Structured events log** (`work/logs/events-YYYY-MM-DD.jsonl`), written through a
+  shared `scripts/log.sh` (template provided): one JSON line per event —
+  `{ts, run, job, level, event, msg}` with a per-session run id, so a dead session is
+  diagnosable at the exact step and errors are groupable across weeks. Rules baked into
+  the template: **secret masking** before anything is written (token-shaped strings never
+  reach disk), `debug` level gated by a `log_level` config key (default `info`,
+  diagnostic only — never gates behavior), every failure path swallowed (logging must
+  never break a run), and a retention sweep (e.g. 14 days) in the audit-mode pre-flight.
+- **Harness adapters** (only when the harness offers hooks): small hook scripts under
+  `scripts/harness/<harness>/` that log tool failures and pipeline progress events
+  automatically — better than asking the model to log manually (it forgets exactly in
+  the failure cases that matter). An idempotent `install.sh` registers them; the audit
+  checks each expected hook **by name** (a partially-registered instance must warn).
 - Big logs are never loaded into context — `tail`/`grep` them.
 - No secrets in any log, ever. All user-visible errors also land in the chat UI.
 
@@ -122,6 +146,8 @@ docs/self-modification.md, docs/persistence.md), write per-domain:
   sequence, output formats, error handling, and a **self-check list** the agent walks
   before declaring the run done.
 - `docs/preferences.md` — only if the agent learns (memory routes, consolidation bounds).
+- `docs/logging.md` — when the agent keeps the structured events log: event catalogue,
+  who writes what (script vs. agent vs. harness hook), triage guidance.
 - `docs/audit.md` — the audit task list (`references/audit.md`).
 - `README.md` — for humans: what it does, setup, config table, runtime requirements,
   external surfaces, token scopes.

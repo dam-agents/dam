@@ -21,9 +21,11 @@
 !/LICENSE
 !/docs/
 !/scripts/
+!/.github/
 
 # TODO(creator): if the design adds top-level definition files, re-include them above —
-# nothing else at $HOME top level may ever become trackable. Then delete this comment.
+# nothing else at $HOME top level may ever become trackable. Drop the !/.github/ line
+# when the design skipped CI. Then delete this comment.
 
 # Never track these even if a future allowlist entry would pull them in.
 .DS_Store

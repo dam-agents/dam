@@ -31,9 +31,19 @@ Include what applies; add domain checks from the design's effects list.
 
 - Auth/connectivity to each integration (an unauthenticated GET; plus rate-limit headroom
   where the API reports it).
-- State-repo push backlog (local commits not on the remote when git-backed state).
+- **Token scopes and CLI deps**: assert the scopes the scheduled runs actually need
+  (specified in exactly one place — README) and that required commands exist. A missing
+  scope is operator-only to fix and silently breaks posting — check it weekly, not only
+  at onboarding.
+- Backup invariants (git-backed state): no `work/.git` on the volume; `.nfs*` junk count
+  under `work/` as an early concurrency signal (`references/platform-dam.md`).
 - Run cadence: gaps in each run type's log vs. its schedule (missed runs).
-- Error scan: `ERROR:`-prefixed lines across the week's logs.
+- Error scan: `ERROR:`-prefixed lines across the week's logs; with a structured events
+  log, also group **every `level: error` event of the week into `failures[]` signatures**
+  (`event`/`tool`/`error` with volatile bits normalized, each dated first/last) for the
+  agent-side diagnosis below, and apply the log retention sweep.
+- Open issues on the definition repo (PRs filtered out) — the agent's own tracking
+  issues wait for the operator; counting them weekly keeps them from being forgotten.
 - State consistency: tracking rows vs. external markers (sampled cross-verification both
   directions — rows without markers, markers without rows).
 - Stale locks, duplicate tracking rows, prune backlog, orphaned per-item files, orphaned
@@ -48,6 +58,13 @@ Include what applies; add domain checks from the design's effects list.
 - Every designed schedule exists and is enabled (`mcp__platform-outbound__list_schedules`)
   with the cron ONBOARDING registered — a dead schedule is invisible to every other check;
   the log-gap check catches the past, this catches the future.
+- **Failure diagnosis** — for every `failures[]` signature the script grouped: cause +
+  fix, classified as *environment* / *agent mistake* / *definition bug*. Counting errors
+  is never enough — nothing else asks *why*. A verified environment cause goes to
+  `work/LESSONS.md`; a definition bug gets a **deduplicated tracking issue on the
+  definition repo** (search open issues first) — the audit's only external write.
+- Harness adapters registered (when the design has them) — verify **each expected hook
+  by name**; a partially-registered instance must warn.
 - Sample this week's outputs (~3): required markers present, formats honored, memory
   rules/overrides respected, gates (labels, opt-ins) actually gated.
 - Channel-facing agents: claimed-but-unsent messages (write-before-send means state may
