@@ -86,6 +86,7 @@ export function StandaloneSkillsGroup({
   onDownload,
   onDelete,
   onTrack,
+  onOpenSkill,
   trackUnavailableNames,
   action,
 }: {
@@ -101,6 +102,9 @@ export function StandaloneSkillsGroup({
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   /** Hand a merged skill over to its source. */
   onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
+  /** Open a skill's SKILL.md preview. Absent when there is no pod to read
+   *  the file from, which leaves the names inert. */
+  onOpenSkill?: (skill: LocalSkill) => void;
   /** Names whose source hasn't been scanned, so tracking can't be offered yet. */
   trackUnavailableNames: ReadonlySet<string>;
   /** Header-right slot (e.g. the "+ Add source" button). */
@@ -128,6 +132,7 @@ export function StandaloneSkillsGroup({
               onDownload={() => onDownload(skill)}
               onDelete={() => onDelete(skill, pub)}
               onTrack={pub ? () => onTrack(skill, pub) : undefined}
+              onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
               trackUnavailable={trackUnavailableNames.has(skill.name)}
             />
           );

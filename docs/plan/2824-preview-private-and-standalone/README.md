@@ -48,7 +48,7 @@ Architecture pages this feature changes: [`docs/architecture/skills.md`](../../a
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [Preview a standalone or image-baked skill](./01-standalone-and-builtin-preview.md) | UI only. Clickable name on standalone + built-in rows; a `readLocal`-backed preview modal sharing one shell with the source-backed one. | — |
+| 01 | ✅ [Preview a standalone or image-baked skill](./01-standalone-and-builtin-preview.md) | UI only. Clickable name on standalone + built-in rows; a `readLocal`-backed preview modal sharing one shell with the source-backed one. | — |
 | 02 | [Preview a private GitHub source's skill](./02-private-source-preview.md) | Vertical. Pod scan reports `dir`; new pod `readSkillFile`; api-server dispatch + gate removal; architecture doc. | — |
 
 Technically independent — 02 does not need 01. **Implement 01 first anyway:** it is a few

@@ -225,6 +225,26 @@ passthrough is deliberately unlogged.)
 needs no change; `scanSource` is `sharedScanCache.scan`, and `runtimeClient` and
 `readPublicSkillFile` are already wired.
 
+### 4b. The modal must actually render a `NOT_IMPLEMENTED` message
+
+Found while smoke-testing slice 01, and pre-existing on `main` (verified by reverting
+`skill-render-modal.tsx` and reproducing): a `getSkillContent` that answers `501` leaves the
+modal on the loading skeleton **forever**. The api-server returns one well-formed tRPC error,
+no retries follow, and `isPending` never flips to `isError`, so the fallback paragraph never
+renders.
+
+This slice owns the fix, because gate 1 survives it: a non-GitHub source still returns
+`NOT_IMPLEMENTED`, and the acceptance criterion below requires a message *naming the host* —
+which is unverifiable while the message can't reach the screen. Diagnose the stuck pending
+state first (start at the `useQuery` in
+[`skill-render-modal.tsx`](../../../packages/ui/src/modules/sandboxes/components/skills/skill-render-modal.tsx),
+the `retry: 3` default in [`query-client.ts`](../../../packages/ui/src/query-client.ts), and the
+custom `fetch` in [`api.ts`](../../../packages/ui/src/api.ts) that reacts only to 502/503), then
+fix it there rather than papering over it in the shell.
+
+Also update the now-false comment above that `dir` fallback — "there the scan comes from
+agent-runtime, which doesn't report `dir`" — which step 2 falsifies.
+
 ### 5. Architecture doc — [`docs/architecture/skills.md`](../../architecture/skills.md)
 
 - **§ api-server skills service**, the `getSkillContent` bullet (line 130): drop "Public sources
