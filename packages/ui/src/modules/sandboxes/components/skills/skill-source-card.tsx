@@ -188,6 +188,10 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* This label re-renders only because the surface's 5s installed-state
+              poll hands back a fresh array identity. Memoizing this card, or
+              moving that poll to react-query with structural sharing, freezes
+              it at whatever it said on mount — give it its own tick first. */}
           {!error && scannedAt && (
             <span
               className="shrink-0 text-sm text-muted-foreground"
