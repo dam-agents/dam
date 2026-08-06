@@ -101,7 +101,18 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER root
 WORKDIR /app
+# MISE_PROVENANCE_API_FAILURES_FATAL: the lazy-tools shims (below) run `mise
+# install` on every jq/fd/rg/gh call. mise re-verifies each tool's GitHub
+# artifact attestation against api.github.com, and a long-lived agent doing
+# this thousands of times/hr exhausts the per-token rate limit — every call
+# then loops on 429s (observed on dev: one agent driving ~1k 429/hr). Keeping
+# provenance on but non-fatal makes a rate-limited/unreachable api.github.com
+# fall back to the locked checksums (which still guarantee integrity) instead
+# of failing. MISE_NODE_VERIFY=false is the same story for node. Needs mise
+# >=2026.5 (pinned v2026.6.3 above honors it). Ported from Locki.
 ENV MISE_DATA_DIR=/usr/local/share/mise \
+    MISE_PROVENANCE_API_FAILURES_FATAL=false \
+    MISE_NODE_VERIFY=false \
     PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
