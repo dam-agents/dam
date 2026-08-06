@@ -4,6 +4,7 @@ import { useCallback, useRef } from "react";
 
 import { useStore } from "../../../store.js";
 import { optimisticInsertSession } from "../api/queries.js";
+import type { EngagedSession } from "../lib/prompt-target.js";
 
 /**
  * Owns the "engage a live ACP connection with the active session" decision.
@@ -19,10 +20,15 @@ import { optimisticInsertSession } from "../api/queries.js";
  * `engagedSessionIdRef` is the source of truth for "the session this live
  * conn is currently bound to". The orchestrator's WS close handler and
  * `resetSession` call `clear()` to drop the binding.
+ *
+ * `engage` reports the session it bound **and whether it created it**. Callers
+ * that captured an intent before awaiting need `created` to tell "the session I
+ * asked for" from "the session the view moved to while I waited" — see
+ * `resolvePromptTarget`.
  */
 export function useAcpSessionEngagement(selectedAgent: string | null): {
   engagedSessionIdRef: React.MutableRefObject<string | null>;
-  engage: (conn: ClientSideConnection) => Promise<void>;
+  engage: (conn: ClientSideConnection) => Promise<EngagedSession | null>;
   clear: () => void;
 } {
   const setSessionId = useStore((s) => s.setSessionId);
@@ -30,9 +36,10 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
   const engagedSessionIdRef = useRef<string | null>(null);
 
   const engage = useCallback(
-    async (conn: ClientSideConnection) => {
-      if (!selectedAgent) return;
-      if (engagedSessionIdRef.current) return;
+    async (conn: ClientSideConnection): Promise<EngagedSession | null> => {
+      if (!selectedAgent) return null;
+      const already = engagedSessionIdRef.current;
+      if (already) return { sessionId: already, created: false };
 
       const sid = useStore.getState().sessionId;
       if (sid) {
@@ -42,6 +49,7 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
           mcpServers: [],
         });
         engagedSessionIdRef.current = sid;
+        return { sessionId: sid, created: false };
       } else {
         // Stamp platform metadata so the session records as a regular
         // chat session rather than decoding as terminal-by-default.
@@ -55,6 +63,7 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
         setSessionId(s.sessionId);
         engagedSessionIdRef.current = s.sessionId;
         optimisticInsertSession(selectedAgent, s.sessionId, SessionMode.Chat);
+        return { sessionId: s.sessionId, created: true };
       }
     },
     [selectedAgent, setSessionId],

@@ -9,6 +9,7 @@ import { openConnection } from "../../acp/acp.js";
 import { finalizeAllStreaming } from "../../acp/session-projection.js";
 import type { UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import type { EngagedSession } from "../lib/prompt-target.js";
 
 interface LiveConnection {
   connection: ClientSideConnection;
@@ -41,16 +42,29 @@ interface UseAcpConnectionOptions {
    *  ensureReady. */
   agentOperable: boolean;
   makeUpdateHandler: () => UpdateHandler;
-  engage: (conn: ClientSideConnection) => Promise<void>;
+  engage: (conn: ClientSideConnection) => Promise<EngagedSession | null>;
   clearEngagement: () => void;
   loadHistory: (sid: string) => Promise<Message[]>;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
 }
 
+/**
+ * An open connection together with the session it is engaged to. `created` is
+ * true when this call minted the session via `session/new` rather than resuming
+ * one — the only signal that distinguishes "the session the caller asked for"
+ * from "the session the view moved to while the caller was awaiting". Callers
+ * that captured an intent must check it (`resolvePromptTarget`) before acting.
+ */
+export interface LiveSession {
+  connection: ClientSideConnection;
+  sessionId: string;
+  created: boolean;
+}
+
 export interface UseAcpConnectionResult {
   state: ConnectionState;
-  /** Open + engage if needed; resolves to the live connection or null. */
-  ensureLive: () => Promise<ClientSideConnection | null>;
+  /** Open + engage if needed; resolves to the live session or null. */
+  ensureLive: () => Promise<LiveSession | null>;
   /** Connection handle for callers that need synchronous access (stopAgent
    *  cancels via the live conn without a round-trip through ensureLive). */
   connectionRef: React.MutableRefObject<LiveConnection | null>;
@@ -94,9 +108,7 @@ export function useAcpConnection(
   } = opts;
 
   const connectionRef = useRef<LiveConnection | null>(null);
-  const ensureInFlightRef = useRef<Promise<ClientSideConnection | null> | null>(
-    null,
-  );
+  const ensureInFlightRef = useRef<Promise<LiveSession | null> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -131,81 +143,81 @@ export function useAcpConnection(
     [clearEngagement],
   );
 
-  const ensureInner =
-    useCallback(async (): Promise<ClientSideConnection | null> => {
-      if (!selectedAgent) return null;
+  const ensureInner = useCallback(async (): Promise<LiveSession | null> => {
+    if (!selectedAgent) return null;
 
-      // If the previous live WS died with an active session, replay history
-      // before opening a fresh socket. We swap the messages array in one
-      // render rather than pre-clearing, so the user keeps seeing their
-      // existing conversation until the fresh array is ready.
-      if (pendingReloadRef.current) {
-        const sid = useStore.getState().sessionId;
-        pendingReloadRef.current = false;
-        if (sid) {
-          setState("reloading");
-          try {
-            const fresh = await loadHistory(sid);
+    // If the previous live WS died with an active session, replay history
+    // before opening a fresh socket. We swap the messages array in one
+    // render rather than pre-clearing, so the user keeps seeing their
+    // existing conversation until the fresh array is ready.
+    if (pendingReloadRef.current) {
+      const sid = useStore.getState().sessionId;
+      pendingReloadRef.current = false;
+      if (sid) {
+        setState("reloading");
+        try {
+          const fresh = await loadHistory(sid);
 
-            if (useStore.getState().sessionId !== sid) return null;
-            setMessages(fresh);
-          } catch (e) {
-            // Network still unreachable — restore the flag so the next
-            // ensureLive (likely the next reconnect-timer fire) tries again.
-            pendingReloadRef.current = true;
-            throw e;
-          }
+          if (useStore.getState().sessionId !== sid) return null;
+          setMessages(fresh);
+        } catch (e) {
+          // Network still unreachable — restore the flag so the next
+          // ensureLive (likely the next reconnect-timer fire) tries again.
+          pendingReloadRef.current = true;
+          throw e;
         }
       }
+    }
 
-      if (
-        !connectionRef.current ||
-        connectionRef.current.ws.readyState !== WebSocket.OPEN
-      ) {
-        const { connection, ws } = await openConnection(
-          selectedAgent,
-          makeUpdateHandler(),
-        );
-        await connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
-          },
-        });
-        // addEventListener (not onclose=) so we don't clobber the handler that
-        // closes the ACP ReadableStream controller inside openConnection.
-        ws.addEventListener("close", () => {
-          // Skip if a newer WS has taken over (resetConnection→ensureLive race).
-          if (connectionRef.current?.ws !== ws) return;
-          connectionRef.current = null;
-          clearEngagement();
-          // Mark reload-on-next-ensureLive only if a session is bound — no
-          // session means there's nothing to reload.
-          if (useStore.getState().sessionId) pendingReloadRef.current = true;
-          // Any in-flight stream is now dead. Finalize streaming bubbles so
-          // busy clears and the next turn opens a fresh bubble instead of
-          // merging into a stale one.
-          setMessages((prev) => finalizeAllStreaming(prev));
-          setState("idle");
-          reconnectFnRef.current?.();
-        });
-        connectionRef.current = { connection, ws };
-      }
+    if (
+      !connectionRef.current ||
+      connectionRef.current.ws.readyState !== WebSocket.OPEN
+    ) {
+      const { connection, ws } = await openConnection(
+        selectedAgent,
+        makeUpdateHandler(),
+      );
+      await connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+        },
+      });
+      // addEventListener (not onclose=) so we don't clobber the handler that
+      // closes the ACP ReadableStream controller inside openConnection.
+      ws.addEventListener("close", () => {
+        // Skip if a newer WS has taken over (resetConnection→ensureLive race).
+        if (connectionRef.current?.ws !== ws) return;
+        connectionRef.current = null;
+        clearEngagement();
+        // Mark reload-on-next-ensureLive only if a session is bound — no
+        // session means there's nothing to reload.
+        if (useStore.getState().sessionId) pendingReloadRef.current = true;
+        // Any in-flight stream is now dead. Finalize streaming bubbles so
+        // busy clears and the next turn opens a fresh bubble instead of
+        // merging into a stale one.
+        setMessages((prev) => finalizeAllStreaming(prev));
+        setState("idle");
+        reconnectFnRef.current?.();
+      });
+      connectionRef.current = { connection, ws };
+    }
 
-      const conn = connectionRef.current.connection;
-      await engage(conn);
-      setState("live");
-      return conn;
-    }, [
-      selectedAgent,
-      makeUpdateHandler,
-      engage,
-      clearEngagement,
-      loadHistory,
-      setMessages,
-    ]);
+    const conn = connectionRef.current.connection;
+    const engaged = await engage(conn);
+    if (!engaged) return null;
+    setState("live");
+    return { connection: conn, ...engaged };
+  }, [
+    selectedAgent,
+    makeUpdateHandler,
+    engage,
+    clearEngagement,
+    loadHistory,
+    setMessages,
+  ]);
 
-  const ensureLive = useCallback((): Promise<ClientSideConnection | null> => {
+  const ensureLive = useCallback((): Promise<LiveSession | null> => {
     if (!ensureInFlightRef.current) {
       ensureInFlightRef.current = ensureInner().finally(() => {
         ensureInFlightRef.current = null;

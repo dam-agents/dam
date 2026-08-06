@@ -108,7 +108,7 @@ export async function openConnection(
         return awaitPermission(params);
       },
       async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update);
+        onUpdate(params.update, params.sessionId);
       },
       async writeTextFile() {
         return {};
@@ -130,7 +130,10 @@ export async function openConnection(
             );
             return;
           }
-          onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
+          onUpdate(
+            { sessionUpdate: "platform_turn_ended", ...parsed.data },
+            parsed.data.sessionId,
+          );
         }
       },
     }),

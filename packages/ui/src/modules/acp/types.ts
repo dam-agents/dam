@@ -18,4 +18,10 @@ export type AcpUpdate =
   | ({ sessionUpdate: "platform_turn_ended" } & PlatformTurnEndedParams)
   | { sessionUpdate: "platform_clipped_replay" };
 
-export type UpdateHandler = (update: AcpUpdate) => void;
+/**
+ * `sessionId` is the session the notification belongs to, and consumers must
+ * filter on it. One WebSocket can be engaged to a session the user is no
+ * longer viewing — a send in flight while they click another session — and
+ * applying its updates would paint the wrong conversation.
+ */
+export type UpdateHandler = (update: AcpUpdate, sessionId: string) => void;

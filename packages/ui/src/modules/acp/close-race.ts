@@ -7,6 +7,18 @@ export class ConnectionClosedError extends Error {
   }
 }
 
+/** Whether a rejection is this module's close race rather than a real failure
+ *  answer from the agent. Callers need it to tell "the socket went away" from
+ *  "the harness said no", which have opposite user-facing meanings. */
+export function isConnectionClosed(e: unknown): boolean {
+  return (
+    e instanceof ConnectionClosedError ||
+    (typeof e === "object" &&
+      e !== null &&
+      (e as { name?: unknown }).name === "ConnectionClosedError")
+  );
+}
+
 /**
  * Wrap a `ClientSideConnection` so every Promise-returning call races against
  * the connection's `closed` promise. On close, in-flight calls reject with

@@ -37,6 +37,11 @@ export function useAcpHistory(selectedAgent: string | null): {
       let replayed: Message[] = [];
       let ws: WebSocket | null = null;
       try {
+        // No session filter here: this socket is engaged to `sid` alone (via
+        // `loadSession` below), so every update it sees is the replay we asked
+        // for. Filtering against the store would break a replay the user has
+        // already navigated past — the caller decides what to do with the
+        // result.
         const conn = await openConnection(selectedAgent, (update) => {
           replayed = applyUpdate(replayed, update);
         });
