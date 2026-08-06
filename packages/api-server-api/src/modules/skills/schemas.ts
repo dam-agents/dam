@@ -54,7 +54,7 @@ export const skillListResultSchema = z.object({
   skills: z.array(skillSchema),
   /** ISO 8601 time the source's skill list was last read from upstream. A
    *  cache hit reports the original read, not the moment of the hit. */
-  scannedAt: z.string(),
+  scannedAt: z.string().datetime(),
 });
 
 /** An installed skill on an instance, keyed by source + name. Version
