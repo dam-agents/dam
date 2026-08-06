@@ -635,11 +635,13 @@ jobs:
   publish:
     needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
     # merge-workloads skips on main pushes where every workload was reused —
-    # the implicit success() would skip publish with it, so spell out the
+    # the implicit success() would skip publish with it, so spell out all the
     # direct needs (see e2e). A failed workload build must still block the
     # chart: it would pin a source-sha tag that was never pushed.
     if: >-
       ${{ github.event_name == 'push' && !cancelled() &&
+          needs.changes.result == 'success' &&
+          needs.appversion.result == 'success' &&
           needs.merge-images.result == 'success' &&
           needs.merge-agents.result == 'success' &&
           (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
