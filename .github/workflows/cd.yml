@@ -715,32 +715,16 @@ jobs:
           set -euo pipefail
           results=$(mise run controller:scan:govulncheck --json) || true
           out=$(printf '%s' "$results" | jq -s '
-            (reduce .[] as $m ({}; if $m.osv then . + {($m.osv.id): $m.osv} else . end)) as $defs
-            | [ .[]
-                | select(.finding != null and .finding.trace[0].function != null)
-                | .finding as $f
-                | { id: $f.osv,
-                    fixed: ($f.fixed_version // ""),
-                    package: ($f.trace[0].package // $f.trace[0].module),
-                    summary: ($defs[$f.osv].summary // ""),
-                    details: ($defs[$f.osv].details // ""),
-                    aliases: (($defs[$f.osv].aliases // []) | join(", ")) } ]
+            [ .[]
+              | select(.finding != null and .finding.trace[0].function != null)
+              | .finding
+              | { id: .osv,
+                  url: ("https://pkg.go.dev/vuln/" + .osv),
+                  severity: "unknown",
+                  scope: "controller (Go)",
+                  pkg: (.trace[0].package // .trace[0].module),
+                  fixed: (.fixed_version // "") } ]
             | unique_by(.id)
-            | map({
-                title: ("[" + .id + "] vulnerability in " + .package + " (govulncheck)"),
-                searchTerms: [.id, .package],
-                comment: ("Still present. Package: `" + .package + "`. Fixed in: `" + (if .fixed == "" then "—" else .fixed end) + "`."),
-                body: ([
-                  "**Source:** govulncheck (Go call-graph analysis)",
-                  "**ID:** [`" + .id + "`](https://pkg.go.dev/vuln/" + .id + ")" + (if .aliases == "" then "" else " (aliases: " + .aliases + ")" end),
-                  "**Package:** `" + .package + "`",
-                  "**Fixed in:** `" + (if .fixed == "" then "—" else .fixed end) + "`",
-                  "",
-                  .summary,
-                  "",
-                  .details
-                ] | join("\n"))
-              })
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::govulncheck: $(jq length findings.json) finding(s)"
@@ -772,30 +756,12 @@ jobs:
           out=$(printf '%s' "$results" | jq '
             [ (.advisories // {}) | to_entries[] | .value
               | { id: (((.cves // []) | first) // .github_advisory_id // (.id | tostring)),
-                  module: .module_name,
-                  severity: (.severity // "unknown"),
-                  vtitle: (.title // ""),
                   url: (.url // ""),
-                  patched: (.patched_versions // ""),
-                  recommendation: (.recommendation // ""),
-                  overview: (.overview // "") } ]
-            | unique_by(.id + "|" + .module)
-            | map({
-                title: ("[" + .id + "] " + .severity + " vulnerability in " + .module + " (pnpm audit)"),
-                searchTerms: [.id, .module],
-                comment: ("Still present. Package: `" + .module + "`. Patched: `" + (if .patched == "" then "—" else .patched end) + "`."),
-                body: ([
-                  "**Source:** pnpm audit (npm advisory database)",
-                  "**Advisory:** [`" + .id + "`](" + .url + ") (" + .severity + ")",
-                  "**Package:** `" + .module + "`",
-                  "**Patched versions:** `" + (if .patched == "" then "—" else .patched end) + "`",
-                  "**Recommendation:** " + (if .recommendation == "" then "—" else .recommendation end),
-                  "",
-                  "**" + .vtitle + "**",
-                  "",
-                  .overview
-                ] | join("\n"))
-              })
+                  severity: (.severity // "unknown"),
+                  scope: "pnpm audit",
+                  pkg: .module_name,
+                  fixed: (.patched_versions // "") } ]
+            | unique_by(.id + "|" + .pkg)
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::pnpm audit: $(jq length findings.json) finding(s)"
@@ -842,23 +808,10 @@ jobs:
           out=$(echo "$results" | jq '
             [.. | objects | select(.vulnerabilities) |
               .name as $lib | .vulnerabilities[] |
-              { cve: .name, severity: .severity, score: .cvss3_score,
-                description: .description, url: .url,
-                library: $lib, fix: (.topFix.fixResolution // "—") }]
-            | unique_by(.cve + "|" + .library)
-            | map({
-                title: ("[" + .cve + "] " + .severity + " vulnerability in " + .library + " (SCA)"),
-                searchTerms: [.cve, .library],
-                comment: ("Still present. Library: `" + .library + "`. Fix: `" + .fix + "`."),
-                body: ([
-                  "**Source:** Mend SCA",
-                  "**CVE:** [`" + .cve + "`](" + .url + ") (" + .severity + ", CVSS " + (.score | tostring) + ")",
-                  "**Library:** `" + .library + "`",
-                  "**Fix:** `" + .fix + "`",
-                  "",
-                  .description
-                ] | join("\n"))
-              })
+              { id: .name, url: .url, severity: .severity,
+                scope: "Mend SCA", pkg: $lib,
+                fixed: (.topFix.fixResolution // "") }]
+            | unique_by(.id + "|" + .pkg)
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::Mend SCA: $(jq length findings.json) finding(s)"
@@ -932,31 +885,16 @@ jobs:
             echo "::notice::Trivy scan skipped for ${TASK} (no ${SHA} image — build may have failed); see log"
             exit 0
           }
-          out=$(echo "$report" | jq --arg task "$TASK" '
-            (.ArtifactName // "") as $image
-            | ($image | split("/") | last | split(":") | first) as $component
+          out=$(echo "$report" | jq '
+            ((.ArtifactName // "") | split("/") | last | split(":") | first) as $component
             | [ (.Results // [])[] | (.Vulnerabilities // [])[]
-                | { id: .VulnerabilityID, pkg: .PkgName, installed: .InstalledVersion,
-                    fixed: (.FixedVersion // ""), severity: (.Severity // "UNKNOWN"),
-                    vtitle: (.Title // ""), url: (.PrimaryURL // ""),
-                    description: (.Description // "") } ]
+                | { id: .VulnerabilityID,
+                    url: (.PrimaryURL // ""),
+                    severity: (.Severity // "unknown"),
+                    scope: $component,
+                    pkg: (.PkgName + " " + .InstalledVersion),
+                    fixed: (.FixedVersion // "") } ]
             | unique_by(.id + "|" + .pkg)
-            | map({
-                title: ("[" + .id + "] " + .severity + " vulnerability in " + $component + " (" + .pkg + ")"),
-                searchTerms: [.id, $component, .pkg],
-                comment: ("Still present in `" + $component + "`. Package: `" + .pkg + "` " + .installed + ". Fixed in: `" + (if .fixed == "" then "—" else .fixed end) + "`."),
-                body: ([
-                  "**Source:** Trivy (`" + $task + "`)",
-                  "**Image:** `" + $image + "`",
-                  "**CVE:** [`" + .id + "`](" + .url + ") (" + .severity + ")",
-                  "**Package:** `" + .pkg + "` " + .installed,
-                  "**Fixed in:** `" + (if .fixed == "" then "—" else .fixed end) + "`",
-                  "",
-                  .vtitle,
-                  "",
-                  .description
-                ] | join("\n"))
-              })
           ')
           printf '%s\n' "${out:-[]}" > findings.json
           echo "::notice::Trivy (${TASK}): $(jq length findings.json) finding(s)"
@@ -1003,7 +941,7 @@ jobs:
             --json number \
             --jq '.[0].number // empty')
 
-          count=$(jq -s 'add // [] | unique_by(.title) | length' "${files[@]}")
+          count=$(jq -s 'add // [] | unique_by([.id, .scope, .pkg]) | length' "${files[@]}")
           echo "::notice::$count finding(s) across all scanners"
 
           if [ "$count" -eq 0 ]; then
@@ -1016,11 +954,16 @@ jobs:
           fi
 
           body=$(jq -s -r --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" '
-            add // [] | unique_by(.title) | sort_by(.title)
+            { critical: 0, high: 1, medium: 2, moderate: 2, low: 3 } as $rank
+            | add // []
+            | unique_by([.id, .scope, .pkg])
+            | sort_by([($rank[.severity | ascii_downcase] // 4), .scope, .pkg])
             | ([ "Open vulnerabilities found by the scheduled scanners (\(length) total).",
                  "This issue is regenerated on every scan — last update: [run](\($run)).",
-                 "" ]
-               + map("<details><summary>\(.title)</summary>\n\n\(.body)\n\n</details>")
+                 "",
+                 "| CVE | Severity | Image / source | Package | Fixed in |",
+                 "| --- | --- | --- | --- | --- |" ]
+               + map("| [\(.id)](\(.url)) | \(.severity | ascii_upcase) | \(.scope) | `\(.pkg)` | `\(if .fixed == "" then "—" else .fixed end)` |")
                + [ "",
                    "---",
                    "See [docs/security/supply-chain.md](../blob/main/docs/security/supply-chain.md) for the remediation flow." ])
