@@ -362,9 +362,13 @@ keycloak:
   # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
   # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  # In published charts CI replaces the empty tag with the image's content
+  # tag (the commit that last touched its inputs — see cd.yml `publish`),
+  # so a release that doesn't change the image doesn't roll the pod.
+  # Empty falls back to .Chart.AppVersion.
   image:
     repository: quay.io/dam-agents/keycloak
-    tag: "" # defaults to .Chart.AppVersion
+    tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
   configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
   port: 8080
