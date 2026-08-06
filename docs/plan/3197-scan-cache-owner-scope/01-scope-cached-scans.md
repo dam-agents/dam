@@ -66,20 +66,25 @@ Apply the `/typescript-engineering` skill throughout.
    agent-runtime branch as before — where it hits its own owner-scoped entry. Nothing in the
    error handling changes; confirm by reading, not by adding guards.
 
-9. **Extend the existing tests** in
-   [`packages/api-server/src/__tests__/unit/skills-scan-cache.test.ts`](../../../packages/api-server/src/__tests__/unit/skills-scan-cache.test.ts).
-   This is the flagged exception to not authoring tests: cross-owner isolation has no manual
-   smoke path that doesn't involve staging two accounts against a private repository, so a test
-   is the only practical verification. Existing cases need their `scan` calls updated for the new
-   parameter. Add:
+9. **Correct the `!skill.dir` guard in `getSkillContent`** (~line 435). Its comment says a
+   `dir`-less skill means the cached scan came from agent-runtime — that is, it documents the
+   uncredentialed lookup reading a credentialed entry. Scan scoping ends that, so the branch
+   becomes unreachable: the public-archive scan always sets `dir`, and only a public-archive scan
+   can now reach this point.
 
-   - an owner-scoped entry does not satisfy a shared lookup
-   - an owner-scoped entry does not satisfy a *different* owner's lookup
-   - an owner-scoped entry does satisfy the *same* owner's lookup
-   - a shared entry still satisfies shared lookups from any caller (today's behaviour, preserved)
-   - `invalidate` still clears the entry whatever its scope
+   The guard itself must stay — `readPublicSkillFile` takes `dir` as a required string while
+   `skill.dir` is optional, so the check is what gives the read below it a correct type. Rewrite
+   the comment to state that invariant, and add a `securityLog` warning on the branch: if it ever
+   runs, an owner-scoped entry answered a shared lookup, and that must be visible rather than
+   degrade quietly into the existing `NOT_IMPLEMENTED`. `securityLog` is already imported and used
+   twice in this file — match those call shapes. User-visible behaviour does not change.
 
-10. **Update the architecture page.** In
+10. **Keep the existing cache tests compiling.** The cases in
+    [`packages/api-server/src/__tests__/unit/skills-scan-cache.test.ts`](../../../packages/api-server/src/__tests__/unit/skills-scan-cache.test.ts)
+    call `scan` and need the new scope parameter. Update the call sites only — do not add cases;
+    the scoping is verified by the smoke test below.
+
+11. **Update the architecture page.** In
     [`docs/architecture/skills.md`](../../architecture/skills.md), the scan-cache bullet under
     "api-server skills service" describes the cache as keyed per repository. Say that an entry
     also records whether the scan it came from depended on a user's credentials, and is reused
@@ -97,32 +102,33 @@ Apply the `/typescript-engineering` skill throughout.
 - [ ] Uncredentialed public-archive scans are still shared across all users — no per-owner
       re-scan of public sources.
 - [ ] `sources.refresh` and the post-publish invalidation still clear the entry, unchanged.
+- [ ] The `getSkillContent` guard reports rather than absorbs an unscoped read, and its comment
+      no longer describes the old cross-scope behaviour.
 - [ ] `mise run check` and `mise run test` pass.
 - [ ] The skills architecture page describes the scoping accurately and stays within its size cap.
 
 ## Smoke test
 
-Run the suite and the gate:
+Run the existing suite and the gate:
 
 ```
 mise run api-server:test
 mise run check
 ```
 
-Then confirm the two cache behaviours by hand against the dev cluster, reading the api-server's
-own log lines (step 6 puts the scope in them):
+Then confirm the scoping by hand against the dev cluster. One account is enough — the property is
+visible in the api-server's own log lines, which step 6 puts the scope into. Deploy first with
+`mise run cluster:build-apiserver`, then read the lines with
+`kubectl logs deploy/platform-apiserver | grep '\[skills\]'`.
 
-1. `mise run cluster:build-apiserver` to deploy the change.
-2. Open the skills surface for a sandbox with a **public** GitHub source registered. Reload.
-   `kubectl logs deploy/platform-apiserver | grep '\[skills\]'` shows a miss then a hit, both at
-   `shared` scope — public scans are still shared.
-3. Open the skills surface for a sandbox with a **credentialed** source registered. Reload.
-   The log shows a `shared` miss (the archive probe) followed by an `owner` hit on the second
-   view — the credentialed result is being reused for its own owner, and is not answering the
-   shared lookup.
+1. Open the skills surface for a sandbox with a **public** GitHub source. Reload it.
+   Expect a miss then a hit, both at `shared` scope — uncredentialed scans are still shared.
+2. Open the skills surface for a sandbox with a **credentialed** source. Reload it.
+   Expect a `shared` miss on every view (the archive probe), and an `owner` hit on the second.
 
-Cross-owner isolation itself is covered by the tests in step 9 rather than by hand; staging a
-second account against a private repository is not worth the setup here.
+Step 2 is the whole fix: before this change, the second view hits on the *shared* lookup, because
+the credentialed entry answers an uncredentialed request. After it, the shared lookup never hits
+and only the owner lookup does. No second account is needed to see the difference.
 
 The implementing agent runs this itself, then prints a short manual smoke-test guide so the user
 can confirm it by hand.

@@ -37,6 +37,7 @@ import {
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { detectHost } from "../domain/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
+import type { ScanScope } from "../infrastructure/scan-cache.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";
 import { privateScanErrorToTrpc } from "../infrastructure/upstream-to-trpc.js";
@@ -67,12 +68,15 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   runtimeMutator: RuntimeMutator;
   owner: string;
-  /** Scan via the provided scanner with a shared TTL cache, keyed by
-   *  `(gitUrl, path)` — the catalogue depends on both, and the cache is shared
-   *  across users who may point the same repo at different subdirs. Also
-   *  reports when the returned list was read from upstream (epoch ms), which a
-   *  cache hit answers with the original read rather than the hit. */
+  /** Scan via the provided scanner with a TTL cache, keyed by `(gitUrl, path)`
+   *  — the catalogue depends on both, and the same repo may be pointed at
+   *  different subdirs. `scope` says what the result depended on: an
+   *  uncredentialed scan is shared across users, a scan that ran under one
+   *  user's credentials is served only back to them. Also reports when the
+   *  returned list was read from upstream (epoch ms), which a cache hit answers
+   *  with the original read rather than the hit. */
   scanSource: (
+    scope: ScanScope,
     gitUrl: string,
     path: string | undefined,
     scanner: (gitUrl: string) => Promise<Skill[]>,
@@ -357,6 +361,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (detectHost(src.gitUrl)) {
         try {
           const { skills, scannedAt } = await deps.scanSource(
+            { kind: "shared" },
             src.gitUrl,
             src.path,
             (gitUrl) => deps.scanPublic(gitUrl, src.path),
@@ -383,6 +388,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
       try {
         const { skills, scannedAt } = await deps.scanSource(
+          { kind: "owner", owner: deps.owner },
           src.gitUrl,
           src.path,
           (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
@@ -417,6 +423,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // tarball read used to produce.
       try {
         const { skills } = await deps.scanSource(
+          { kind: "shared" },
           src.gitUrl,
           src.path,
           (gitUrl) => deps.scanPublic(gitUrl, src.path),
@@ -428,12 +435,20 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             message: `skill ${JSON.stringify(name)} not found in source`,
           });
         }
-        // Found but `dir`-less means the cached scan came from agent-runtime —
-        // a private github.com repo whose public archive 404s and falls through
-        // to the pod scan, which doesn't report a directory. Preview is deferred
-        // for private sources exactly as in the non-GitHub guard above and the
-        // archive-404 path on a cold cache; never build a URL from `undefined`.
+        // `dir` is optional because the pod scan doesn't report one, but the
+        // public-archive scan always sets it — and under scan scoping only a
+        // public-archive scan reaches here. The check still narrows the type for
+        // the read below; reaching it means an owner-scoped entry answered a
+        // shared lookup, which is worth a line rather than a quiet deferral.
         if (!skill.dir) {
+          securityLog("warn", "skill.preview.unscoped_scan", {
+            category: "privileged",
+            actor: deps.owner,
+            actorKind: "user",
+            target: src.gitUrl,
+            result: "failure",
+            detail: { name },
+          });
           throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
         }
         const content = await deps.readPublicSkillFile(
