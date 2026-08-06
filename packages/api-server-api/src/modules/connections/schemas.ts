@@ -128,6 +128,12 @@ const githubAppCreateInput = z.object({
   appId: z.string().min(1),
   installationId: z.string().min(1),
   privateKey: z.string().min(1),
+  // Optional narrowing of the minted token. Space- or comma-separated; the
+  // server parses both. Single strings keep the schema-driven forms all-string,
+  // as client-credentials `scopes` does. Blank leaves the token with the
+  // installation's full authority.
+  repositories: z.string().optional(),
+  permissions: z.string().optional(),
 });
 
 const noneCreateInput = z.object({

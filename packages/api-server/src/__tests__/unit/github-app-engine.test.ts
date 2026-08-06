@@ -17,6 +17,7 @@ interface RecordedCall {
   url: string;
   method: string | undefined;
   headers: Record<string, string>;
+  body: string | undefined;
 }
 
 function makeEngine(respond: (call: RecordedCall) => Response) {
@@ -28,6 +29,7 @@ function makeEngine(respond: (call: RecordedCall) => Response) {
         url: String(url),
         method: init?.method,
         headers: (init?.headers as Record<string, string>) ?? {},
+        body: typeof init?.body === "string" ? init.body : undefined,
       };
       calls.push(call);
       return respond(call);
@@ -164,5 +166,101 @@ describe("github app engine mintInstallationToken", () => {
       }),
     ).rejects.toThrow(/could not sign/);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("github app engine token scoping", () => {
+  const scopedMint = (
+    engine: ReturnType<typeof makeEngine>["engine"],
+    scope: { repositories?: string[]; permissions?: Record<string, string> },
+  ) =>
+    engine.mintInstallationToken({
+      id: "connection:conn-1:github-app",
+      appId: "123456",
+      installationId: "987654",
+      privateKeyPem: PRIVATE_KEY_PEM,
+      apiBaseUrl: "https://api.github.com",
+      ...scope,
+    });
+
+  // Omitting the body is what asks for the installation's full authority, so an
+  // unscoped connection must keep sending no body at all.
+  it("sends no body and no content-type when nothing is scoped", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await mint(engine);
+    expect(calls[0].body).toBeUndefined();
+    expect(calls[0].headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("sends no body when the scope is present but empty", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, { repositories: [], permissions: {} });
+    expect(calls[0].body).toBeUndefined();
+    expect(calls[0].headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("sends repositories in the request body", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, { repositories: ["docs"] });
+    expect(calls[0].headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(calls[0].body!)).toEqual({ repositories: ["docs"] });
+  });
+
+  it("sends permissions in the request body", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, { permissions: { contents: "read" } });
+    expect(JSON.parse(calls[0].body!)).toEqual({
+      permissions: { contents: "read" },
+    });
+  });
+
+  it("sends both halves together when both are scoped", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, {
+      repositories: ["docs", "handbook"],
+      permissions: { contents: "read", metadata: "read" },
+    });
+    expect(JSON.parse(calls[0].body!)).toEqual({
+      repositories: ["docs", "handbook"],
+      permissions: { contents: "read", metadata: "read" },
+    });
+  });
+
+  // A 422 answers a scope the installation no longer covers. Retrying re-sends
+  // the same losing request, so it has to park rather than spin.
+  it("marks a 422 on a scoped request as permanently rejected", async () => {
+    const { engine } = makeEngine(
+      () => new Response("no access to repository", { status: 422 }),
+    );
+    await expect(
+      scopedMint(engine, { repositories: ["gone"] }),
+    ).rejects.toMatchObject({ status: 422, oauthError: "invalid_grant" });
+  });
+
+  it("leaves a 422 on an unscoped request retryable", async () => {
+    const { engine } = makeEngine(() => new Response("nope", { status: 422 }));
+    await expect(mint(engine)).rejects.toMatchObject({
+      status: 422,
+      oauthError: undefined,
+    });
+  });
+
+  it("still reports a rejected key as invalid_client when scoped", async () => {
+    const { engine } = makeEngine(
+      () => new Response("Bad credentials", { status: 401 }),
+    );
+    await expect(
+      scopedMint(engine, { repositories: ["docs"] }),
+    ).rejects.toMatchObject({ status: 401, oauthError: "invalid_client" });
   });
 });

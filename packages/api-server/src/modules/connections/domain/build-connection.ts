@@ -17,6 +17,7 @@ import {
   CONNECTION_TOKEN_PLACEHOLDER,
   UPSTREAM_CA_SECRET_FIELD,
 } from "./connection-sds.js";
+import { parseGitHubAppScope } from "./github-app-scope.js";
 import {
   buildKubernetesContributions,
   decodeCaData,
@@ -479,6 +480,11 @@ function buildGitHubApp(
     contributions.push(...githubEnterpriseHostContributions(host));
   }
 
+  // Rejected here rather than at GitHub so a typo fails the create with a
+  // usable message; whether the installation actually covers the subset is
+  // GitHub's call, made by the synchronous mint that follows.
+  const scope = parseGitHubAppScope(input);
+
   return {
     auth: {
       kind: "github-app",
@@ -488,6 +494,8 @@ function buildGitHubApp(
       accessTokenRef: { ...secretPath, field: "access_token" },
       apiBaseUrl,
       ...(host ? { host } : {}),
+      ...(scope.repositories ? { repositories: scope.repositories } : {}),
+      ...(scope.permissions ? { permissions: scope.permissions } : {}),
     },
     contributions,
     secrets: new Map([[secretPath.path, { private_key: privateKeyPem }]]),

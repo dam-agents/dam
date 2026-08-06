@@ -6,9 +6,12 @@ export type GitHubAppAuth = Extract<
   { kind: "github-app" }
 >;
 
-/** One installation-token exchange, shared by connection create and the refresh
- *  loop. Maps the stored auth config onto the engine's mint call; `expiresAt` is
- *  always set (the engine falls back to a 1h horizon). */
+/** One installation-token exchange, shared by connection create, private-key
+ *  rotation, and the refresh loop. Maps the stored auth config onto the engine's
+ *  mint call; `expiresAt` is always set (the engine falls back to a 1h horizon).
+ *
+ *  The stored scope is read here rather than passed in, so every re-mint asks
+ *  for the same subset the connection was created with. */
 export async function mintGitHubAppToken(
   engine: GitHubAppEngine,
   opts: {
@@ -23,5 +26,7 @@ export async function mintGitHubAppToken(
     installationId: opts.auth.installationId,
     privateKeyPem: opts.privateKeyPem,
     apiBaseUrl: opts.auth.apiBaseUrl,
+    ...(opts.auth.repositories ? { repositories: opts.auth.repositories } : {}),
+    ...(opts.auth.permissions ? { permissions: opts.auth.permissions } : {}),
   });
 }
