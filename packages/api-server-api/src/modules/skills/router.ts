@@ -70,15 +70,17 @@ export const skillsRouter = t.router({
       .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
   }),
 
-  // The bare array is a published shape: `dam` CLIs are installed on users'
-  // own machines and outlive any one server, so an npm-released `dam skill
-  // catalog` would break on an object here. Freshness rides on the sibling
-  // read below instead.
+  /** A source's skills as a bare array. This shape is published: `dam` CLIs
+   *  are installed on users' own machines and outlive any one server, so an
+   *  npm-released `dam skill catalog` would break if it grew an envelope.
+   *  Callers that also want scan freshness use `listWithScan`. */
   list: readAgentProcedure
     .input(skillListInputSchema)
     .output(z.array(skillSchema))
     .query(async ({ ctx, input }) => (await listSkills(ctx, input)).skills),
 
+  /** `list` plus when that list was read from upstream — the read behind the
+   *  UI's "scanned X ago". */
   listWithScan: readAgentProcedure
     .input(skillListInputSchema)
     .output(skillListResultSchema)
