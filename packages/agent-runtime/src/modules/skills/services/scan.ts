@@ -125,6 +125,7 @@ async function scanGitClone(
         description: fm.description?.trim() || "",
         version: versionRes.value,
         contentHash,
+        dir: rel,
       });
     }
     return ok(out.sort((a, b) => a.name.localeCompare(b.name)));
@@ -150,6 +151,7 @@ async function collectSkills(
         description: fm.description?.trim() || "",
         version,
         contentHash,
+        dir: rel,
       };
     }),
   );

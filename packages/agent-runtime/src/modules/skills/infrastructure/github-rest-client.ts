@@ -7,6 +7,10 @@ import { err, ok } from "agent-runtime-api";
 
 const GITHUB_API = "https://api.github.com";
 
+/** Matches the api-server's bound on its own pinned read — a SKILL.md is
+ *  kilobytes. */
+const MAX_SKILL_FILE_BYTES = 1024 * 1024;
+
 export interface DetectedOwnerRepo {
   owner: string;
   repo: string;
@@ -76,6 +80,12 @@ function repoPath(host: DetectedOwnerRepo): string {
   return `/repos/${encodeURIComponent(host.owner)}/${encodeURIComponent(host.repo)}`;
 }
 
+/** Encode each segment and rejoin: escaping the whole path would escape the
+ *  separators too and change the request target. */
+function encodePath(filePath: string): string {
+  return filePath.split("/").map(encodeURIComponent).join("/");
+}
+
 /**
  * Thin port over `api.github.com`. Sequencing of these primitives (publish's
  * blob → tree → commit → ref → PR; scan's commit → tarball) is application
@@ -98,6 +108,12 @@ export interface GitHubRestClient {
     host: DetectedOwnerRepo,
     number: number,
   ) => Promise<Result<PullRequestState, SkillsDomainError>>;
+  /** One file's decoded UTF-8 text at `ref`, via the Contents API. */
+  getFileContent: (
+    host: DetectedOwnerRepo,
+    ref: string,
+    filePath: string,
+  ) => Promise<Result<string, SkillsDomainError>>;
   fetchTarball: (
     host: DetectedOwnerRepo,
     sha: string,
@@ -187,6 +203,39 @@ export function createGitHubRestClient(): GitHubRestClient {
         draft: r.value.draft ?? false,
         mergedAt: r.value.merged_at ?? null,
       });
+    },
+    async getFileContent(host, ref, filePath) {
+      // Authenticated by default, same reason as getPullRequest: the gateway
+      // injects the owner's token for api.github.com, so a private repo
+      // resolves here where the api-server's anonymous read could only 404.
+      const r = await ghJson<{ content?: string; encoding?: string }>(
+        "GET",
+        `${repoPath(host)}/contents/${encodePath(filePath)}?ref=${encodeURIComponent(ref)}`,
+      );
+      if (!r.ok) return r;
+      // A directory or submodule omits `content` entirely; a file over the
+      // endpoint's own 1 MB ceiling returns `content: ""` with
+      // `encoding: "none"`. Requiring base64 rejects both, where a bare
+      // `content` check would decode the empty string into an empty preview.
+      if (
+        typeof r.value.content !== "string" ||
+        r.value.encoding !== "base64"
+      ) {
+        return err({
+          kind: "SourceFetchFailed",
+          source: `${host.owner}/${host.repo}`,
+          detail: `no readable file content at ${filePath}@${ref}`,
+        });
+      }
+      const buf = Buffer.from(r.value.content, "base64");
+      if (buf.byteLength > MAX_SKILL_FILE_BYTES) {
+        return err({
+          kind: "SourceFetchFailed",
+          source: `${host.owner}/${host.repo}`,
+          detail: `${filePath} too large: ${buf.byteLength} bytes`,
+        });
+      }
+      return ok(buf.toString("utf8"));
     },
     async fetchTarball(host, sha, opts) {
       return await ghBytes(

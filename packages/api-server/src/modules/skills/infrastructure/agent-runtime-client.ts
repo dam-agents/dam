@@ -55,6 +55,13 @@ export interface AgentRuntimeSkillsClient {
     agentId: string,
     coords: { owner: string; repo: string; number: number },
   ): Promise<PrDisposition>;
+  /** One skill's `SKILL.md` at a pinned commit, read through the pod so the
+   *  paired gateway can inject the owner's token — the only way a private
+   *  source's content resolves. */
+  readSkillFile(
+    agentId: string,
+    input: { source: string; version: string; dir: string },
+  ): Promise<{ content: string }>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -230,6 +237,10 @@ export function createAgentRuntimeSkillsClient(
     readPullRequest: (agentId, coords) =>
       runWithUpstreamMapping(`agent-runtime readPullRequest ${agentId}`, () =>
         makeClient(agentId, namespace).skills.readPullRequest.query(coords),
+      ),
+    readSkillFile: (agentId, input) =>
+      runWithUpstreamMapping(`agent-runtime readSkillFile ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.readSkillFile.query(input),
       ),
   };
 }

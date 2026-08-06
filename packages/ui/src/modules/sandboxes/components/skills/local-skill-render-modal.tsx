@@ -21,9 +21,12 @@ export function LocalSkillRenderModal({
   agentId: string;
   onClose: () => void;
 }) {
-  const { data, isPending, isError } = useQuery(
-    trpc.skills.readLocal.queryOptions({ agentId, name: skill.name }),
-  );
+  const { data, isPending, isError } = useQuery({
+    ...trpc.skills.readLocal.queryOptions({ agentId, name: skill.name }),
+    // Same reasoning as the source-backed modal: the pod's NOT_FOUND /
+    // PAYLOAD_TOO_LARGE are verdicts, and retrying them strands the skeleton.
+    retry: false,
+  });
   // Every Local Skill has a SKILL.md by definition, so a missing (or binary)
   // one means something is wrong — the shell's error state, not a blank body.
   const manifest = data?.files.find((f) => f.relPath === "SKILL.md");

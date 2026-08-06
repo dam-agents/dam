@@ -7,6 +7,7 @@ import type {
   skillListLocalInputSchema,
   skillReadLocalInputSchema,
   skillReadPullRequestInputSchema,
+  skillReadSkillFileInputSchema,
   skillScanInputSchema,
   skillUninstallInputSchema,
   skillWriteLocalInputSchema,
@@ -21,6 +22,9 @@ export type SkillReadLocalInput = z.infer<typeof skillReadLocalInputSchema>;
 export type SkillReadPullRequestInput = z.infer<
   typeof skillReadPullRequestInputSchema
 >;
+export type SkillReadSkillFileInput = z.infer<
+  typeof skillReadSkillFileInputSchema
+>;
 export type SkillDeleteLocalInput = z.infer<typeof skillDeleteLocalInputSchema>;
 export type SkillWriteLocalInput = z.infer<typeof skillWriteLocalInputSchema>;
 
@@ -30,6 +34,10 @@ export interface ScannedSkill {
   description: string;
   version: string;
   contentHash: string;
+  /** Repo-relative directory the skill was found in, whichever Source Root
+   *  that was — what a pinned single-file read needs to locate its SKILL.md.
+   *  Required: both scan paths always know it. */
+  dir: string;
 }
 
 /** Provenance vs. the image's pristine workspace copy: shipped untouched,
@@ -135,6 +143,13 @@ export interface SkillsService {
   writeLocal: (
     input: SkillWriteLocalInput,
   ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
+  /** One skill's `SKILL.md` at a pinned commit, read through the Contents API.
+   *  Authenticated through the paired gateway, so it resolves private repos the
+   *  api-server's anonymous read cannot. An object, not a bare string, so the
+   *  response can grow without a breaking change. */
+  readSkillFile: (
+    input: SkillReadSkillFileInput,
+  ) => Promise<Result<{ content: string }, SkillsDomainError>>;
   scan: (
     input: SkillScanInput,
   ) => Promise<Result<ScannedSkill[], SkillsDomainError>>;

@@ -304,7 +304,13 @@ commit body that it stands in for the manual check.
       rather than claiming private previews are deferred.
 - [ ] A private preview with **no** connected GitHub credential surfaces the
       `access_restricted` / `app_not_connected` CTA, not a bare 404.
-- [ ] Previewing a private source's skill on a **hibernated** sandbox wakes it and renders.
+- ~~Previewing a private source's skill on a **hibernated** sandbox wakes it and renders.~~
+      **Dropped — unreachable in the UI, verified on the dev cluster.** The Skills surface is
+      `pointer-events-none` whenever the agent isn't operable, so no name is clickable while
+      hibernated; and opening the panel already wakes the sandbox, because the eager per-source
+      scan needs the pod for a private source. The wake itself is implemented and still matters
+      for non-UI callers — it comes from `ensureAgentReachable` inside the shared scan dispatch —
+      so `skills.md` states it as a property of the read rather than a click path.
 - [ ] `getSkillContent` and `list` share one scan dispatch — `getSkillContent` no longer calls
       `scanPublic` directly.
 - [ ] Both `ScanScope` arguments survived the extraction: the public branch still scans as
@@ -343,8 +349,7 @@ At **`http://localhost:4444`** (https 404s at Traefik):
 2. Click a skill's name → the modal renders its `SKILL.md`.
 3. Click a skill in a **public** source → still renders, and the sandbox is not woken.
 4. Disconnect the GitHub credential and retry the private one → the connection CTA, not a raw
-   error.
-5. Hibernate the sandbox, then click a private source's skill → it wakes and renders.
+   error. Reconnecting needs an OAuth sign-in, so budget for that before disconnecting.
 
 If a response is missing `dir`, suspect a stale api-server before suspecting the code — zod
 `.output()` strips fields an older api-server doesn't send.

@@ -59,6 +59,9 @@ export interface SkillsService {
   getSkillContent: (
     sourceId: string,
     name: string,
+    /** Targets the pod for a private source's read — the only path that can
+     *  reach a repo the api-server cannot see anonymously. */
+    agentId?: string,
   ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;

@@ -49,7 +49,7 @@ Architecture pages this feature changes: [`docs/architecture/skills.md`](../../a
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 | ✅ [Preview a standalone or image-baked skill](./01-standalone-and-builtin-preview.md) | UI only. Clickable name on standalone + built-in rows; a `readLocal`-backed preview modal sharing one shell with the source-backed one. | — |
-| 02 | [Preview a private GitHub source's skill](./02-private-source-preview.md) | Vertical. Pod scan reports `dir`; new pod `readSkillFile`; api-server dispatch + gate removal; architecture doc. | — |
+| 02 | ✅ [Preview a private GitHub source's skill](./02-private-source-preview.md) | Vertical. Pod scan reports `dir`; new pod `readSkillFile`; api-server dispatch + gate removal; architecture doc. | — |
 
 Technically independent — 02 does not need 01. **Implement 01 first anyway:** it is a few
 hours and delivers half the issue on its own, whereas 02 needs a private-repo fixture with a
@@ -187,8 +187,11 @@ Skills panel and click **every** skill name on the page:
    instead of the "isn't available yet" fallback.
 5. Stop the sandbox: rows are non-interactive (the surface is `pointer-events-none` when
    `readOnly`), so no preview is reachable and nothing throws.
-6. With the sandbox **hibernated**, click a private source's skill → the sandbox wakes and the
-   preview renders (the decision above, made visible).
+
+The hibernated-wake step this list used to carry was dropped — see
+[02 § Acceptance criteria](./02-private-source-preview.md#acceptance-criteria). It cannot happen:
+the same `readOnly` rule as step 5 applies while hibernated, and opening the panel wakes the
+sandbox before any preview is reachable.
 
 Then `mise run check` and `mise run test` green.
 
