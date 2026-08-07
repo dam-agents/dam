@@ -29,6 +29,10 @@ import type { EngagedSession } from "../lib/prompt-target.js";
 export function useAcpSessionEngagement(selectedAgent: string | null): {
   engagedSessionIdRef: React.MutableRefObject<string | null>;
   engage: (conn: ClientSideConnection) => Promise<EngagedSession | null>;
+  /** Record a binding this hook didn't make: a first prompt creates its session
+   *  on its own connection, and handing that connection over to the chat means
+   *  handing over the binding too. */
+  adopt: (sessionId: string) => void;
   clear: () => void;
 } {
   const setSessionId = useStore((s) => s.setSessionId);
@@ -69,9 +73,13 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
     [selectedAgent, setSessionId],
   );
 
+  const adopt = useCallback((sessionId: string) => {
+    engagedSessionIdRef.current = sessionId;
+  }, []);
+
   const clear = useCallback(() => {
     engagedSessionIdRef.current = null;
   }, []);
 
-  return { engagedSessionIdRef, engage, clear };
+  return { engagedSessionIdRef, engage, adopt, clear };
 }

@@ -43,6 +43,8 @@ interface UseAcpConnectionOptions {
   agentOperable: boolean;
   makeUpdateHandler: () => UpdateHandler;
   engage: (conn: ClientSideConnection) => Promise<EngagedSession | null>;
+  /** Record the session binding of a connection handed over via `adopt`. */
+  adoptEngagement: (sessionId: string) => void;
   clearEngagement: () => void;
   loadHistory: (sid: string) => Promise<Message[]>;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
@@ -65,6 +67,14 @@ export interface UseAcpConnectionResult {
   state: ConnectionState;
   /** Open + engage if needed; resolves to the live session or null. */
   ensureLive: () => Promise<LiveSession | null>;
+  /** Take over a connection opened elsewhere as the chat's live channel, bound
+   *  to `sessionId`. Used when a first prompt's private connection has done its
+   *  job and the chat is still on the session it created. */
+  adopt: (
+    connection: ClientSideConnection,
+    ws: WebSocket,
+    sessionId: string,
+  ) => void;
   /** Connection handle for callers that need synchronous access (stopAgent
    *  cancels via the live conn without a round-trip through ensureLive). */
   connectionRef: React.MutableRefObject<LiveConnection | null>;
@@ -102,6 +112,7 @@ export function useAcpConnection(
     agentOperable,
     makeUpdateHandler,
     engage,
+    adoptEngagement,
     clearEngagement,
     loadHistory,
     setMessages,
@@ -141,6 +152,46 @@ export function useAcpConnection(
       clearEngagement();
     },
     [clearEngagement],
+  );
+
+  // addEventListener (not onclose=) so we don't clobber the handler that closes
+  // the ACP ReadableStream controller inside openConnection. Shared by the
+  // connection this hook opens and by one handed to it via `adopt`.
+  const wireClose = useCallback(
+    (ws: WebSocket) => {
+      ws.addEventListener("close", () => {
+        // Skip if a newer WS has taken over (resetConnection→ensureLive race).
+        if (connectionRef.current?.ws !== ws) return;
+        connectionRef.current = null;
+        clearEngagement();
+        // Mark reload-on-next-ensureLive only if a session is bound — no
+        // session means there's nothing to reload.
+        if (useStore.getState().sessionId) pendingReloadRef.current = true;
+        // Any in-flight stream is now dead. Finalize streaming bubbles so
+        // busy clears and the next turn opens a fresh bubble instead of
+        // merging into a stale one.
+        setMessages((prev) => finalizeAllStreaming(prev));
+        setState("idle");
+        reconnectFnRef.current?.();
+      });
+    },
+    [clearEngagement, setMessages],
+  );
+
+  const adopt = useCallback(
+    (connection: ClientSideConnection, ws: WebSocket, sessionId: string) => {
+      // Refs before any store write: committing the session id runs the
+      // keep-alive effect, and it must find this connection already in place or
+      // it opens a second channel to the same session — two channels, every
+      // update applied twice.
+      connectionRef.current?.ws.close();
+      wireClose(ws);
+      connectionRef.current = { connection, ws };
+      adoptEngagement(sessionId);
+      pendingReloadRef.current = false;
+      setState("live");
+    },
+    [wireClose, adoptEngagement],
   );
 
   const ensureInner = useCallback(async (): Promise<LiveSession | null> => {
@@ -183,23 +234,7 @@ export function useAcpConnection(
           fs: { readTextFile: true, writeTextFile: true },
         },
       });
-      // addEventListener (not onclose=) so we don't clobber the handler that
-      // closes the ACP ReadableStream controller inside openConnection.
-      ws.addEventListener("close", () => {
-        // Skip if a newer WS has taken over (resetConnection→ensureLive race).
-        if (connectionRef.current?.ws !== ws) return;
-        connectionRef.current = null;
-        clearEngagement();
-        // Mark reload-on-next-ensureLive only if a session is bound — no
-        // session means there's nothing to reload.
-        if (useStore.getState().sessionId) pendingReloadRef.current = true;
-        // Any in-flight stream is now dead. Finalize streaming bubbles so
-        // busy clears and the next turn opens a fresh bubble instead of
-        // merging into a stale one.
-        setMessages((prev) => finalizeAllStreaming(prev));
-        setState("idle");
-        reconnectFnRef.current?.();
-      });
+      wireClose(ws);
       connectionRef.current = { connection, ws };
     }
 
@@ -211,8 +246,8 @@ export function useAcpConnection(
   }, [
     selectedAgent,
     makeUpdateHandler,
+    wireClose,
     engage,
-    clearEngagement,
     loadHistory,
     setMessages,
   ]);
@@ -311,5 +346,5 @@ export function useAcpConnection(
     reset();
   }, [sessionId, sessionMode, reset]);
 
-  return { state, ensureLive, connectionRef, reset };
+  return { state, ensureLive, adopt, connectionRef, reset };
 }
