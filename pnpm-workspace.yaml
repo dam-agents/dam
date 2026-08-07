@@ -10,6 +10,8 @@ minimumReleaseAgeExclude:
   - "fast-uri@3.1.5"
   # security fix for CVE-2026-69207, published 2026-08-03; remove after 2026-08-10
   - "hono@4.12.34"
+  # security fix for CVE-2026-67213/67214, published 2026-08-03; remove after 2026-08-10
+  - "nanoid@3.3.17"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
