@@ -209,7 +209,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "instanceId",
       envName: "BOB_INSTANCE_ID",
       label: "Instance ID",
-      hint: "Sets the x-instance-id header (IBM tenant scoping).",
+      hint: "IBM tenant scoping. Bob 2.x applies it in terminal (TUI) sessions only; chat-mode headless runs select the instance via Bob profiles.",
     },
     {
       inputName: "teamId",
@@ -220,8 +220,8 @@ const BOB: HeaderConnectionTemplate = {
     {
       inputName: "maxCoins",
       envName: "BOB_MAX_COINS",
-      label: "Max coins",
-      hint: "Budget cap; Bob exits when exceeded.",
+      label: "Max cost",
+      hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
       pattern: "^[1-9]\\d*$",
       patternHint: "a positive integer",
     },

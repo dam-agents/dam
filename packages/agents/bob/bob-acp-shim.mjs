@@ -1,550 +1,246 @@
 #!/usr/bin/env node
-// ACP translation shim for Bob Shell.
+// ACP bridge for Bob Shell 2.x.
 //
-// Bob speaks ACP protocol-correctly but uses Cline/Roo conventions that don't
-// match platform UI expectations. This shim sits between agent-runtime and bob,
-// translating on the way out (bob→client) and handling a few agent→client
-// requests locally where the platform client has no useful implementation.
+// Bob 2.0 removed the `--experimental-acp` mode this shim used to translate;
+// the headless surface is now `bob run --format stream-json` plus a native
+// `--resume <task-id>`. The shim is therefore a small ACP *agent* on
+// stdin/stdout: agent-runtime speaks ACP to it, and each prompt turn spawns
+// one `bob run` whose stream-json events are translated to session/update
+// frames.
 //
 // ──────────────────────────────────────────────────────────────────────────
-// Translation table (bob → platform UI)
+// Translation table (bob run stream-json → ACP session/update)
 //
-//   session/update
-//     agent_message_chunk              → processed by a <thinking>…</thinking>
-//                                         state machine. Bob emits reasoning
-//                                         (same content as agent_thought_chunk)
-//                                         wrapped in <thinking> tags, and the
-//                                         actual user-facing answer AFTER the
-//                                         closing </thinking>. Default state
-//                                         is *inside thinking* because bob
-//                                         skips the opening tag in some cases.
-//                                         "[using tool X: …]" meta hints are
-//                                         stripped. Text outside the thinking
-//                                         block is emitted as agent_message.
-//     agent_thought_chunk (cumulative) → re-emit as incremental delta. Bob
-//                                         re-sends the full thought on every
-//                                         token; platform UI appends, so without
-//                                         delta computation we'd duplicate.
-//     tool_call kind="think"           → DROP. Synthetic "attempt_completion"
-//                                         wrapper; the real text lives in its
-//                                         tool_call_update.content.
-//     tool_call_update on think id     → on status=completed, extract nested
-//                                         text and emit as final
-//                                         agent_message_chunk.
-//     all other session/update types   → passthrough (real tool_calls for
-//                                         shell exec, their updates, etc.).
+//   message role=user                  → DROP. Echo of the submitted prompt
+//                                        (and, on --resume, a replay of the
+//                                        task's history — see replay gate).
+//   message role=assistant isReasoning → agent_thought_chunk
+//   message role=assistant             → agent_message_chunk
+//   tool_use                           → tool_call (in_progress, kind mapped
+//                                        from the tool name)
+//   tool_result                        → tool_call_update (completed/failed)
+//   result                             → records stats.task_id as the
+//                                        session's bob task id; resolves the
+//                                        prompt with stopReason end_turn.
+//   error                              → surfaced as agent_message_chunk
+//                                        (budget/turn caps land here).
 //
-//   agent→client JSON-RPC requests
-//     session/request_permission       → intercepted. Bob bundles the tool
-//                                         payload inside params.toolCall for
-//                                         permission-gated tools (e.g. file
-//                                         edits). We promote it to a
-//                                         session/update:tool_call (in_progress)
-//                                         so platform UI shows a chip, then auto-
-//                                         approve with the first allow-type
-//                                         option. Bob's own tool_call_update
-//                                         closes the chip later.
-//     fs/*                             → dispatched to local handlers below.
-//                                         platform UI has no-op stubs that would
-//                                         silently swallow writes; the shim
-//                                         runs in the same container as the
-//                                         agent workdir, so local I/O is the
-//                                         right target. Unknown fs/* methods
-//                                         are rejected with Method not found
-//                                         so bob can fall back.
-//     everything else                  → passthrough. If agent-runtime/UI
-//                                         can't handle it, the standard JSON-
-//                                         RPC "Method not found" will reach
-//                                         bob.
-//
-//   client→agent stdin (human → bob)   → piped through unchanged.
+// Replay gate: on --resume bob re-emits the task's stored messages before the
+// new turn. Everything is dropped until the user-message echo matching the
+// submitted prompt (first assistant stream chunk as fallback).
 //
 // ──────────────────────────────────────────────────────────────────────────
 // Session history (list / load / resume)
 //
-// Bob's ACP has no session listing and a disabled `loadSession`, but it does
-// persist every chat to `$HOME/.bob/tmp/<projectHash>/chats/session-*.json`
-// (survives restarts on the PVC). The shim serves history from that store:
-//   initialize   → advertise loadSession + sessionCapabilities.list.
-//   session/list → scan chats/, one session per file.
-//   session/load → replay the file's messages as user/agent chunks.
-//   session/prompt into a loaded session → Bob can't continue a session it
-//     didn't create this process, so spawn a fresh session/new, map old↔new
-//     sessionId, and prepend the prior transcript (capped at
-//     BOB_RESUME_MAX_MESSAGES, default 40) to the first prompt.
+// Bob 2.0 persists tasks in SQLite (`~/.bob/db/bob.db`, tables tasks +
+// messages) on the PVC. The shim serves ACP history straight from it:
+//   session/list → SELECT from tasks, one session per task.
+//   session/load → replay the task's messages as user/agent chunks.
+//   session/prompt → `bob run --resume <taskId>` — native continuation, no
+//     transcript re-injection.
+// ACP session ids issued by session/new are shim-generated; the sessionId ↔
+// taskId mapping is persisted to `~/.bob/platform-shim-sessions.json` so a
+// pod restart keeps loaded sessions resumable.
+//
+// Settings: `bob run` has no yolo/auto-approve flag — approvals ride
+// `~/.bob/settings/settings.json`. ensureSettings() merge-writes the platform
+// posture (license consent, all permission groups approved, wildcard command
+// allowlist, model/mode/cost from the BOB_* env). The trust boundary is the
+// platform's Envoy gateway + K8s isolation, not Bob's approval layer.
 //
 // Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
 // ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
-import {
-  copyFileSync,
-  mkdirSync,
-  promises as fsp,
-  readdirSync,
-  readFileSync,
-} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import readline from "node:readline";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const TRACE = process.env.BOB_SHIM_TRACE === "1";
-const thinkToolCallIds = new Set();
-let lastThoughtText = "";
+const BOB_HOME = process.env.HOME || "/home/agent";
+const BOB_DB_PATH = join(BOB_HOME, ".bob", "db", "bob.db");
+const SETTINGS_PATH = join(BOB_HOME, ".bob", "settings", "settings.json");
+const SESSION_MAP_PATH = join(BOB_HOME, ".bob", "platform-shim-sessions.json");
+const UPLOADS_ROOT = resolve(BOB_HOME, ".uploads");
 
-// Shim-faked ACP setSessionMode: `<mode>X</mode>` prepended per prompt.
 const AVAILABLE_MODES = [
-  { id: "ask", name: "Ask" },
-  { id: "code", name: "Code" },
+  { id: "agent", name: "Agent" },
   { id: "plan", name: "Plan" },
-  { id: "advanced", name: "Advanced" },
+  { id: "ask", name: "Ask" },
 ];
-let currentModeId = (() => {
-  const env = process.env.BOB_CHAT_MODE;
-  if (env && AVAILABLE_MODES.some((m) => m.id === env)) return env;
-  return "ask";
-})();
-const pendingNewSessionIds = new Set();
-// Session workspace (ACP cwd) — the only dir Bob's read guard allows; set on session/new.
-let sessionCwd = process.cwd();
-// Chat uploads land here; only files under it get staged into the workspace.
-const UPLOADS_ROOT = resolve(process.env.HOME || "/home/agent", ".uploads");
-let pendingModeSwitch = null;
 
-// agent_message_chunk state machine. Bob wraps reasoning in <thinking>…</thinking>;
-// user-facing text is what's outside. Default state is "inside" — Bob omits the
-// opening tag on direct-answer turns. messageCarry holds the tail in case a tag is
-// split across token boundaries.
-//
-// outsideBuf accumulates out-of-thinking text for meta-hint filtering: Bob peppers
-// "[using tool X: …]" status lines across many tokens, so we strip complete
-// "[using tool … ]" segments and keep the tail while a "[using tool" is still open.
-const THINK_OPEN = "<thinking>";
-const THINK_CLOSE = "</thinking>";
-const META_COMPLETE = /\[using tool [^\]]*\]\n?/g;
-const META_UNCLOSED = /\[using tool [^\]]*$/;
-const META_PREFIX = "[using tool ";
+// BOB_CHAT_MODE may still carry a 1.x value pinned on an existing provider
+// secret; 2.0 merged code+advanced into agent.
+function normalizeMode(mode) {
+  if (mode === "code" || mode === "advanced") return "agent";
+  return AVAILABLE_MODES.some((m) => m.id === mode) ? mode : null;
+}
+let currentModeId = normalizeMode(process.env.BOB_CHAT_MODE) ?? "agent";
 
 function isNonNullObject(v) {
   return typeof v === "object" && v !== null;
 }
 
-// Longest suffix of s that is a proper prefix of tag — the part of a tag that
-// may have been split across chunk boundaries and must be held back.
-function partialSuffixLen(s, tag) {
-  const max = Math.min(s.length, tag.length - 1);
-  for (let n = max; n > 0; n--) {
-    if (s.endsWith(tag.slice(0, n))) return n;
-  }
-  return 0;
+function trace(dir, line) {
+  if (TRACE) process.stderr.write(`[${dir}] ${line}\n`);
 }
-let messageState = "inside";
-let messageCarry = "";
-let outsideBuf = "";
-let lastSessionId = null;
 
-// ── session history state ───────────────────────────────────────────────────
-const BOB_HOME = process.env.HOME || "/home/agent";
-const CHATS_GLOB_ROOT = join(BOB_HOME, ".bob", "tmp");
-const RESUME_MAX_MESSAGES = (() => {
-  const n = Number.parseInt(process.env.BOB_RESUME_MAX_MESSAGES ?? "", 10);
-  return Number.isInteger(n) && n > 0 ? n : 40;
+// ── settings bootstrap ──────────────────────────────────────────────────────
+// Also runnable standalone (`--settings-only`) so harness-terminal can share it.
+
+export function ensureSettings() {
+  let existing = {};
+  try {
+    existing = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+  } catch {
+    /* first boot */
+  }
+  const maxCost = Number(process.env.BOB_MAX_COINS ?? process.env.BOB_MAX_COST);
+  const settings = {
+    ...existing,
+    licenseConsent: true,
+    session: {
+      ...(isNonNullObject(existing.session) ? existing.session : {}),
+      defaultMode: currentModeId,
+      ...(process.env.BOB_SHELL_MODEL ? { model: process.env.BOB_SHELL_MODEL } : {}),
+      ...(Number.isFinite(maxCost) && maxCost > 0 ? { maxCost } : {}),
+    },
+    approval: {
+      ...(isNonNullObject(existing.approval) ? existing.approval : {}),
+      autoApprovalEnabled: true,
+      outsideWorkspaceAllowed: true,
+      allowed_permissions: ["read", "edit", "execute", "browser", "mcp"],
+      allowedExecutors: [
+        { toolId: "execute_command", approvedCommands: ["*"], deniedCommands: [] },
+      ],
+    },
+  };
+  mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
+  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+}
+
+// ── sessionId ↔ taskId mapping ──────────────────────────────────────────────
+
+const sessionToTask = new Map();
+(() => {
+  try {
+    const stored = JSON.parse(readFileSync(SESSION_MAP_PATH, "utf8"));
+    for (const [sid, tid] of Object.entries(stored)) sessionToTask.set(sid, tid);
+  } catch {
+    /* no mapping yet */
+  }
 })();
 
-// Client (or runtime) initialize request id → patch its result to enable load.
-const pendingInitIds = new Set();
-// Resume mapping for sessions the client loaded but Bob has no live copy of.
-//   loadedSessions:      oldSid → { transcript: string, injected: bool }
-//   oldToNew / newToOld: bidirectional sid mapping once a live Bob session exists
-//   resumeNewSessionIds: shim-initiated session/new request id → oldSid
-//   pendingResumePrompts:oldSid → queued client prompt frames awaiting newSid
-const loadedSessions = new Map();
-const oldToNew = new Map();
-const newToOld = new Map();
-const resumeNewSessionIds = new Map();
-const pendingResumePrompts = new Map();
-
-// Read Bob's on-disk chats. Each file is one session; returns newest-first.
-function readBobChatFiles() {
-  const out = [];
-  let projectDirs;
+function bindTask(sessionId, taskId) {
+  if (!taskId || sessionToTask.get(sessionId) === taskId) return;
+  sessionToTask.set(sessionId, taskId);
   try {
-    projectDirs = readdirSync(CHATS_GLOB_ROOT, { withFileTypes: true });
-  } catch {
-    return out;
+    writeFileSync(
+      SESSION_MAP_PATH,
+      JSON.stringify(Object.fromEntries(sessionToTask), null, 2) + "\n",
+    );
+  } catch (err) {
+    process.stderr.write(`[bob-acp-shim] session map write failed: ${err.message}\n`);
   }
-  for (const pd of projectDirs) {
-    if (!pd.isDirectory()) continue;
-    const chatsDir = join(CHATS_GLOB_ROOT, pd.name, "chats");
-    let files;
+}
+
+function taskIdFor(sessionId) {
+  return sessionToTask.get(sessionId) ?? null;
+}
+
+function sessionIdFor(taskId) {
+  for (const [sid, tid] of sessionToTask) if (tid === taskId) return sid;
+  return taskId;
+}
+
+// ── task store (bob.db, read-only) ──────────────────────────────────────────
+
+function withDb(fn) {
+  let db;
+  try {
+    db = new DatabaseSync(BOB_DB_PATH, { readOnly: true });
+    return fn(db);
+  } catch (err) {
+    trace("db", `read failed: ${err.message}`);
+    return null;
+  } finally {
     try {
-      files = readdirSync(chatsDir);
-    } catch {
-      continue;
-    }
-    for (const name of files) {
-      if (!name.endsWith(".json")) continue;
-      const path = join(chatsDir, name);
-      try {
-        const data = JSON.parse(readFileSync(path, "utf8"));
-        if (typeof data?.sessionId !== "string") continue;
-        out.push(data);
-      } catch {
-        /* skip unreadable/partial files */
-      }
-    }
+      db?.close();
+    } catch {}
   }
-  out.sort((a, b) =>
-    String(b.lastUpdated ?? "").localeCompare(String(a.lastUpdated ?? "")),
-  );
-  return out;
 }
 
-function findBobChat(sessionId) {
-  return readBobChatFiles().find((c) => c.sessionId === sessionId) ?? null;
+function listTasks() {
+  return (
+    withDb((db) =>
+      db
+        .prepare(
+          `SELECT id, title, first_message, directory, updated_at
+             FROM tasks
+            WHERE task_type = 'normal' AND time_archived IS NULL
+            ORDER BY updated_at DESC`,
+        )
+        .all(),
+    ) ?? []
+  );
 }
 
-function titleFromChat(chat) {
-  const firstUser = (chat.messages ?? []).find(
-    (m) => m?.type === "user" && typeof m.content === "string",
+function taskMessages(taskId) {
+  return (
+    withDb((db) =>
+      db
+        .prepare(
+          `SELECT role, data FROM messages WHERE task_id = ? ORDER BY created_at ASC`,
+        )
+        .all(taskId),
+    ) ?? []
   );
-  const raw = (firstUser?.content ?? "").replace(/\s+/g, " ").trim();
+}
+
+function taskTitle(task) {
+  const raw = String(task.title || task.first_message || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!raw) return "Untitled session";
   return raw.length > 120 ? raw.slice(0, 119) + "…" : raw;
 }
 
-// Strip a stored bob-shell message's <thinking> block and "[using tool …]"
-// hints, leaving the user-facing answer.
-function userFacingText(content) {
-  if (typeof content !== "string") return "";
-  let text = content;
-  const close = text.lastIndexOf(THINK_CLOSE);
-  if (close !== -1) text = text.slice(close + THINK_CLOSE.length);
-  return text.replace(META_COMPLETE, "").trim();
+// messages.data is Bob's serialized message JSON; content is a string (or
+// block list on some tool messages). Extract user-facing text, or "".
+function messageText(data) {
+  let m;
+  try {
+    m = JSON.parse(data);
+  } catch {
+    return "";
+  }
+  if (typeof m?.content === "string") return m.content;
+  if (Array.isArray(m?.content)) {
+    return m.content
+      .map((b) => (typeof b?.text === "string" ? b.text : ""))
+      .filter(Boolean)
+      .join("");
+  }
+  return "";
 }
 
-// Bob puts the final answer in an `attempt_completion` toolCall; `content` is
-// often just the <thinking> block. Prefer the toolCall, fall back to content.
-function assistantAnswer(message) {
-  const calls = Array.isArray(message?.toolCalls) ? message.toolCalls : [];
-  const results = calls
-    .filter((t) => t?.name === "attempt_completion" && typeof t?.args?.result === "string")
-    .map((t) => t.args.result.trim())
-    .filter(Boolean);
-  if (results.length > 0) return results.join("\n\n");
-  return userFacingText(message?.content);
-}
-
-function buildTranscript(chat) {
-  const msgs = (chat.messages ?? []).slice(-RESUME_MAX_MESSAGES);
-  const lines = [];
-  for (const m of msgs) {
-    if (m?.type === "user" && typeof m.content === "string") {
-      lines.push(`User: ${m.content.trim()}`);
-    } else if (m?.type === "bob-shell") {
-      const t = assistantAnswer(m);
-      if (t) lines.push(`Assistant: ${t}`);
-    }
-  }
-  return lines.join("\n\n");
-}
-
-const bob = spawn("bob", ["--experimental-acp", "--yolo", "--auth-method", "api-key", ...process.argv.slice(2)], {
-  stdio: ["pipe", "pipe", "inherit"],
-  cwd: process.cwd(),
-  env: process.env,
-});
-
-const clientStdin = readline.createInterface({ input: process.stdin });
-clientStdin.on("line", (line) => {
-  if (TRACE) process.stderr.write(`[client→shim] ${line}\n`);
-  handleClientLine(line);
-});
-clientStdin.on("close", () => {
-  try { bob.stdin.end(); } catch {}
-});
-
-function forwardToBob(line) {
-  if (!bob.stdin.writable) return;
-  bob.stdin.write(line + "\n");
-}
-
-function handleClientLine(line) {
-  let f;
-  try { f = JSON.parse(line); } catch { return forwardToBob(line); }
-
-  const isClientRequest = f.id !== undefined && typeof f.method === "string";
-
-  if (isClientRequest && f.method === "initialize") {
-    // Track so the response can advertise loadSession (Bob reports false).
-    pendingInitIds.add(f.id);
-    // Bob rejects initialize without clientCapabilities.fs; some clients send
-    // none. The shim answers fs/* itself, so it can always advertise fs.
-    if (isNonNullObject(f.params)) {
-      const cc = isNonNullObject(f.params.clientCapabilities) ? f.params.clientCapabilities : {};
-      f.params.clientCapabilities = {
-        ...cc,
-        fs: { readTextFile: true, writeTextFile: true, ...(isNonNullObject(cc.fs) ? cc.fs : {}) },
-      };
-      return forwardToBob(JSON.stringify(f));
-    }
-    return forwardToBob(line);
-  }
-
-  if (isClientRequest && f.method === "session/new") {
-    pendingNewSessionIds.add(f.id);
-    if (typeof f.params?.cwd === "string") sessionCwd = f.params.cwd;
-    return forwardToBob(line);
-  }
-
-  if (isClientRequest && f.method === "session/list") {
-    const sessions = readBobChatFiles().map((chat) => ({
-      sessionId: chat.sessionId,
-      // Last-seen prompt cwd, not the chat's original cwd (Bob doesn't store
-      // it). Fine for the sidebar; revisit if a consumer needs per-session cwd.
-      cwd: sessionCwd,
-      title: titleFromChat(chat),
-      updatedAt: chat.lastUpdated ?? chat.startTime ?? null,
-      // Tag as chat so agent-runtime's list enrichment doesn't decode a
-      // store-less session as terminal.
-      _meta: { platform: { mode: "chat" } },
-    }));
-    emitToClient({ jsonrpc: "2.0", id: f.id, result: { sessions } });
-    return;
-  }
-
-  if (isClientRequest && f.method === "session/load") {
-    handleSessionLoad(f);
-    return;
-  }
-
-  if (isClientRequest && f.method === "session/set_mode") {
-    const modeId = typeof f.params?.modeId === "string" ? f.params.modeId : null;
-    const sessionId = f.params?.sessionId;
-    if (modeId && modeId !== currentModeId && AVAILABLE_MODES.some((m) => m.id === modeId)) {
-      currentModeId = modeId;
-      pendingModeSwitch = modeId;
-      if (sessionId) {
-        emitToClient({
-          jsonrpc: "2.0",
-          method: "session/update",
-          params: {
-            sessionId,
-            update: { sessionUpdate: "current_mode_update", currentModeId: modeId },
-          },
-        });
-      }
-    }
-    emitToClient({ jsonrpc: "2.0", id: f.id, result: null });
-    return;
-  }
-
-  if (isClientRequest && f.method === "session/prompt" && Array.isArray(f.params?.prompt)) {
-    // Bob rejects resource_link blocks (#441); stage each and pass a text path pointer.
-    f.params.prompt = f.params.prompt.map((b) =>
-      b?.type === "resource_link" ? { type: "text", text: stageAttachment(b) } : b,
-    );
-    // One-shot mode switch: prepend an instruction so the LLM calls the switch-mode tool.
-    if (pendingModeSwitch) {
-      const firstText = f.params.prompt.find(
-        (p) => p?.type === "text" && typeof p?.text === "string",
-      );
-      if (firstText) {
-        firstText.text = `[System: switch to ${pendingModeSwitch} mode now using the switch-mode tool, then continue.]\n\n${firstText.text}`;
-        pendingModeSwitch = null;
-      }
-    }
-    // Resume: a prompt into a loaded session Bob never created this process —
-    // route it onto a lazily-spawned fresh Bob session.
-    const sid = f.params?.sessionId;
-    if (typeof sid === "string" && loadedSessions.has(sid) && !oldToNew.has(sid)) {
-      queueResumePrompt(sid, f);
-      return;
-    }
-    return forwardToBob(JSON.stringify(rewriteClientSessionId(f)));
-  }
-
-  // Any other client request carrying a loaded session's id (cancel, set_mode
-  // already handled above) must target Bob's live session id.
-  if (isClientRequest && typeof f.params?.sessionId === "string" && oldToNew.has(f.params.sessionId)) {
-    return forwardToBob(JSON.stringify(rewriteClientSessionId(f)));
-  }
-
-  forwardToBob(line);
-}
-
-// Rewrite a client frame's sessionId from the loaded (old) id to Bob's live id.
-function rewriteClientSessionId(f) {
-  const sid = f.params?.sessionId;
-  const mapped = typeof sid === "string" ? oldToNew.get(sid) : undefined;
-  if (!mapped) return f;
-  return { ...f, params: { ...f.params, sessionId: mapped } };
-}
-
-// Answer session/load locally: replay the stored conversation to the client and
-// register the session as resumable. No frame reaches Bob (it can't load).
-function handleSessionLoad(f) {
-  const sid = f.params?.sessionId;
-  const chat = typeof sid === "string" ? findBobChat(sid) : null;
-  if (!chat) {
-    emitToClient({
-      jsonrpc: "2.0",
-      id: f.id,
-      error: { code: -32602, message: `Unknown session: ${sid}` },
-    });
-    return;
-  }
-  for (const m of chat.messages ?? []) {
-    if (m?.type === "user" && typeof m.content === "string") {
-      update(sid, {
-        sessionUpdate: "user_message_chunk",
-        content: { type: "text", text: m.content },
-      });
-    } else if (m?.type === "bob-shell") {
-      const text = assistantAnswer(m);
-      if (text) emitAgentMessage(sid, text);
-    }
-  }
-  // Register for lazy resume; the live Bob session is created on first prompt.
-  loadedSessions.set(sid, { transcript: buildTranscript(chat), injected: false });
-  emitToClient({
-    jsonrpc: "2.0",
-    id: f.id,
-    result: {
-      modes: {
-        availableModes: AVAILABLE_MODES.map((m) => ({ ...m })),
-        currentModeId,
-      },
-    },
-  });
-}
-
-// Queue a resume prompt and ensure a fresh Bob session is being created for the
-// loaded session (coalesced per session via resumeNewSessionIds).
-function queueResumePrompt(oldSid, frame) {
-  const queue = pendingResumePrompts.get(oldSid) ?? [];
-  queue.push(frame);
-  pendingResumePrompts.set(oldSid, queue);
-  const alreadyRequesting = [...resumeNewSessionIds.values()].includes(oldSid);
-  if (alreadyRequesting) return;
-  const reqId = `shim-resume-${oldSid}`;
-  resumeNewSessionIds.set(reqId, oldSid);
-  sendToBob({
-    jsonrpc: "2.0",
-    id: reqId,
-    method: "session/new",
-    params: { cwd: sessionCwd, mcpServers: [] },
-  });
-}
-
-// Bob answered a shim-initiated resume session/new: wire the mapping and flush.
-function onResumeSessionCreated(reqId, newSid) {
-  const oldSid = resumeNewSessionIds.get(reqId);
-  resumeNewSessionIds.delete(reqId);
-  if (!oldSid || typeof newSid !== "string") return;
-  oldToNew.set(oldSid, newSid);
-  newToOld.set(newSid, oldSid);
-  const queue = pendingResumePrompts.get(oldSid) ?? [];
-  pendingResumePrompts.delete(oldSid);
-  const state = loadedSessions.get(oldSid);
-  for (const frame of queue) {
-    const routed = { ...frame, params: { ...frame.params, sessionId: newSid } };
-    if (state && !state.injected && state.transcript) {
-      const firstText = routed.params.prompt.find(
-        (p) => p?.type === "text" && typeof p?.text === "string",
-      );
-      const preamble =
-        "[System: this continues an earlier conversation. Transcript below for context; do not greet again.]\n\n" +
-        state.transcript +
-        "\n\n[End of prior transcript. The user's new message follows.]\n\n";
-      if (firstText) firstText.text = preamble + firstText.text;
-      else routed.params.prompt.unshift({ type: "text", text: preamble });
-      state.injected = true;
-    }
-    forwardToBob(JSON.stringify(routed));
+function messageRole(data) {
+  try {
+    return JSON.parse(data)?.role;
+  } catch {
+    return undefined;
   }
 }
 
-// Copy an upload into the workspace so Bob's read guard (workspace + temp only) can see it.
-function stageAttachment(block) {
-  let src = typeof block.uri === "string" ? block.uri : "";
-  const name = typeof block.name === "string" && block.name ? ` "${block.name}"` : "";
-  const mime = block.mimeType ? ` (${block.mimeType})` : "";
-  if (src.startsWith("file://")) {
-    try {
-      src = fileURLToPath(src);
-    } catch {
-      /* keep the raw uri */
-    }
-  } else if (/^[a-z][a-z0-9+.-]*:/i.test(src)) {
-    // Non-file scheme (http, data, …): nothing to stage, and resolve() below
-    // would mangle the URI into a bogus workspace path. Pass it through as-is.
-    return `[Attached link${name}${mime}: ${src}]`;
-  }
-  // Resolve before the containment check so `..` can't escape UPLOADS_ROOT and
-  // smuggle an arbitrary file past Bob's read guard.
-  src = resolve(src);
-  if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
-    try {
-      const destDir = join(sessionCwd, ".attachments");
-      mkdirSync(destDir, { recursive: true });
-      const dest = join(destDir, basename(src));
-      copyFileSync(src, dest);
-      src = dest;
-    } catch (err) {
-      if (TRACE) process.stderr.write(`[bob-acp-shim] stage failed: ${err.message}\n`);
-    }
-  }
-  return `[Attached file${name}${mime}: ${src}]`;
-}
-
-function sendToBob(frame) {
-  if (!bob.stdin.writable) return;
-  const line = JSON.stringify(frame);
-  if (TRACE) process.stderr.write(`[shim→bob] ${line}\n`);
-  bob.stdin.write(line + "\n");
-}
+// ── ACP plumbing ────────────────────────────────────────────────────────────
 
 function emitToClient(frame) {
   const line = JSON.stringify(frame);
-  if (TRACE) process.stderr.write(`[shim→client] ${line}\n`);
+  trace("shim→client", line);
   process.stdout.write(line + "\n");
 }
-
-function passthrough(line) {
-  if (TRACE) process.stderr.write(`[bob→client] ${line}\n`);
-  process.stdout.write(line + "\n");
-}
-
-let buf = "";
-bob.stdout.on("data", (chunk) => {
-  buf += chunk.toString();
-  const lines = buf.split("\n");
-  buf = lines.pop();
-  for (const line of lines) if (line.trim()) handleLine(line);
-});
-
-for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
-  process.on(sig, () => bob.kill(sig));
-}
-
-bob.on("exit", (code, signal) => {
-  if (signal) {
-    // Drop the forwarding handler before re-raising: with it installed the
-    // re-raised signal would just call bob.kill() on the already-dead child
-    // and the shim would hang until the pod's SIGKILL grace period expires.
-    process.removeAllListeners(signal);
-    process.kill(process.pid, signal);
-  } else {
-    process.exit(code ?? 0);
-  }
-});
-
-bob.on("error", (err) => {
-  process.stderr.write(`[bob-acp-shim] spawn error: ${err.message}\n`);
-  process.exit(1);
-});
-
-// ── emitters ──────────────────────────────────────────────────────────────
 
 function update(sessionId, update) {
   emitToClient({ jsonrpc: "2.0", method: "session/update", params: { sessionId, update } });
@@ -558,312 +254,387 @@ function emitThoughtChunk(sessionId, text) {
   update(sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } });
 }
 
-function emitToolCallOpen(sessionId, toolCall) {
-  if (!toolCall?.toolCallId) return;
-  update(sessionId, {
-    sessionUpdate: "tool_call",
-    toolCallId: toolCall.toolCallId,
-    status: toolCall.status ?? "in_progress",
-    title: toolCall.title,
-    content: toolCall.content ?? [],
-    locations: toolCall.locations ?? [],
-    kind: toolCall.kind,
+function respond(id, result) {
+  emitToClient({ jsonrpc: "2.0", id, result });
+}
+
+function respondError(id, code, message) {
+  emitToClient({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
+// ── session state ───────────────────────────────────────────────────────────
+
+// sessionId → { cwd, running: Promise (turn serialization), child, cancelled }
+const sessions = new Map();
+
+function sessionState(sessionId) {
+  let s = sessions.get(sessionId);
+  if (!s) {
+    s = { cwd: process.cwd(), running: Promise.resolve(), child: null, cancelled: false };
+    sessions.set(sessionId, s);
+  }
+  return s;
+}
+
+// ── attachments ─────────────────────────────────────────────────────────────
+// Chat uploads land under ~/.uploads; copy them into the workspace so Bob's
+// read guard can see them, and hand Bob a text pointer (it takes no
+// resource_link blocks).
+
+function stageAttachment(block, cwd) {
+  let src = typeof block.uri === "string" ? block.uri : "";
+  const name = typeof block.name === "string" && block.name ? ` "${block.name}"` : "";
+  const mime = block.mimeType ? ` (${block.mimeType})` : "";
+  if (src.startsWith("file://")) {
+    try {
+      src = fileURLToPath(src);
+    } catch {
+      /* keep the raw uri */
+    }
+  } else if (/^[a-z][a-z0-9+.-]*:/i.test(src)) {
+    return `[Attached link${name}${mime}: ${src}]`;
+  }
+  // Resolve before the containment check so `..` can't escape UPLOADS_ROOT.
+  src = resolve(src);
+  if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
+    try {
+      const destDir = join(cwd, ".attachments");
+      mkdirSync(destDir, { recursive: true });
+      const dest = join(destDir, basename(src));
+      copyFileSync(src, dest);
+      src = dest;
+    } catch (err) {
+      trace("bob-acp-shim", `stage failed: ${err.message}`);
+    }
+  }
+  return `[Attached file${name}${mime}: ${src}]`;
+}
+
+function promptToText(promptBlocks, cwd) {
+  const parts = [];
+  for (const b of promptBlocks ?? []) {
+    if (b?.type === "text" && typeof b.text === "string") parts.push(b.text);
+    else if (b?.type === "resource_link") parts.push(stageAttachment(b, cwd));
+  }
+  return parts.join("\n\n");
+}
+
+// ── tool kind mapping (bob tool name → ACP tool_call kind) ─────────────────
+
+function toolKind(name) {
+  const n = String(name ?? "");
+  if (n.includes("command") || n.includes("execute")) return "execute";
+  if (n.includes("read")) return "read";
+  if (n.includes("write") || n.includes("diff") || n.includes("edit")) return "edit";
+  if (n.includes("search") || n.includes("list")) return "search";
+  if (n.includes("browser") || n.includes("fetch") || n.includes("url")) return "fetch";
+  return "other";
+}
+
+// ── prompt turn: spawn bob run and translate its stream ─────────────────────
+
+function buildRunArgs(state, taskId, promptText) {
+  const args = [
+    "run",
+    "--format",
+    "stream-json",
+    "--accept-license",
+    "--trust",
+    "-w",
+    state.cwd,
+    "--mode",
+    currentModeId,
+  ];
+  if (process.env.BOB_TEAM_ID) args.push("--team-id", process.env.BOB_TEAM_ID);
+  const maxCost = Number(process.env.BOB_MAX_COINS ?? process.env.BOB_MAX_COST);
+  if (Number.isFinite(maxCost) && maxCost > 0) args.push("--max-cost", String(maxCost));
+  if (taskId) args.push("--resume", taskId);
+  // Positional prompt; `--` keeps a leading-dash prompt out of option parsing.
+  args.push("--", promptText);
+  return args;
+}
+
+function runTurn(sessionId, requestId, promptText) {
+  const state = sessionState(sessionId);
+  const taskId = taskIdFor(sessionId);
+  const args = buildRunArgs(state, taskId, promptText);
+  state.cancelled = false;
+
+  return new Promise((resolveTurn) => {
+    trace("shim→bob", `bob ${args.join(" ")}`);
+    const child = spawn("bob", args, {
+      stdio: ["ignore", "pipe", "inherit"],
+      cwd: state.cwd,
+      env: process.env,
+    });
+    state.child = child;
+
+    // Replay gate: drop history bob re-emits on --resume until the echo of
+    // this turn's prompt (or the first live stream chunk).
+    let replayDone = !taskId;
+    let sawResult = false;
+    let lastError = null;
+    let buf = "";
+
+    const handleEvent = (ev) => {
+      switch (ev.type) {
+        case "message": {
+          if (ev.role === "user") {
+            if (!replayDone && ev.content === promptText) replayDone = true;
+            return; // echo — the client already renders its own prompt
+          }
+          if (ev.role !== "assistant" || typeof ev.content !== "string") return;
+          replayDone = true;
+          if (ev.isReasoning) emitThoughtChunk(sessionId, ev.content);
+          else emitAgentMessage(sessionId, ev.content);
+          return;
+        }
+        case "tool_use": {
+          if (!replayDone) return;
+          update(sessionId, {
+            sessionUpdate: "tool_call",
+            toolCallId: String(ev.tool_id ?? randomUUID()),
+            status: "in_progress",
+            title: String(ev.tool_name ?? "tool"),
+            kind: toolKind(ev.tool_name),
+            rawInput: ev.parameters,
+            content: [],
+            locations: [],
+          });
+          return;
+        }
+        case "tool_result": {
+          if (!replayDone) return;
+          const failed = ev.status === "error";
+          const text = failed ? ev.error?.message : ev.output;
+          update(sessionId, {
+            sessionUpdate: "tool_call_update",
+            toolCallId: String(ev.tool_id ?? ""),
+            status: failed ? "failed" : "completed",
+            content:
+              typeof text === "string" && text.length > 0
+                ? [{ type: "content", content: { type: "text", text } }]
+                : [],
+          });
+          return;
+        }
+        case "result": {
+          sawResult = true;
+          const tid = ev.stats?.task_id;
+          if (typeof tid === "string" && tid) bindTask(sessionId, tid);
+          return;
+        }
+        case "error": {
+          lastError = String(ev.message ?? "unknown error");
+          if (replayDone) emitAgentMessage(sessionId, `\n${lastError}\n`);
+          return;
+        }
+        default:
+          return;
+      }
+    };
+
+    child.stdout.on("data", (chunk) => {
+      buf += chunk.toString();
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        trace("bob→shim", line);
+        try {
+          handleEvent(JSON.parse(line));
+        } catch {
+          process.stderr.write(`[bob] ${line}\n`);
+        }
+      }
+    });
+
+    child.on("error", (err) => {
+      state.child = null;
+      respondError(requestId, -32603, `bob spawn failed: ${err.message}`);
+      resolveTurn();
+    });
+
+    child.on("exit", (code) => {
+      state.child = null;
+      if (state.cancelled) respond(requestId, { stopReason: "cancelled" });
+      else if (sawResult) respond(requestId, { stopReason: "end_turn" });
+      else respondError(requestId, -32603, lastError ?? `bob run exited with code ${code}`);
+      resolveTurn();
+    });
   });
 }
 
-// ── fs dispatcher ─────────────────────────────────────────────────────────
-// Add a new entry to extend support (e.g. fs/delete_file). Each handler
-// receives the JSON-RPC params and returns the `result` value to send back.
+// ── ACP request handlers ────────────────────────────────────────────────────
 
-const fsHandlers = {
-  async "fs/read_text_file"(params) {
-    const path = requireString(params, "path");
-    let content;
-    try {
-      content = await fsp.readFile(path, "utf8");
-    } catch (err) {
-      // Bob's create-new-file flow reads before writing; ENOENT → empty.
-      if (err?.code === "ENOENT") content = "";
-      else throw err;
-    }
-    const line = Number.isInteger(params?.line) ? params.line : null;
-    const limit = Number.isInteger(params?.limit) ? params.limit : null;
-    if (line !== null || limit !== null) {
-      const lines = content.split("\n");
-      const start = line !== null ? Math.max(0, line - 1) : 0;
-      const end = limit !== null ? start + limit : lines.length;
-      content = lines.slice(start, end).join("\n");
-    }
-    return { content };
-  },
-
-  async "fs/write_text_file"(params) {
-    const path = requireString(params, "path");
-    const content = typeof params?.content === "string" ? params.content : "";
-    await fsp.mkdir(dirname(path), { recursive: true });
-    await fsp.writeFile(path, content, "utf8");
-    return null;
-  },
-};
-
-function requireString(params, key) {
-  const v = params?.[key];
-  if (typeof v !== "string" || !v) {
-    const err = new Error(`${key} is required`);
-    err.jsonrpcCode = -32602;
-    throw err;
-  }
-  return v;
+function handleInitialize(f) {
+  respond(f.id, {
+    protocolVersion: 1,
+    agentCapabilities: {
+      loadSession: true,
+      sessionCapabilities: { list: {}, close: {} },
+      promptCapabilities: { image: false, audio: false, embeddedContext: false },
+    },
+    authMethods: [],
+  });
 }
 
-async function dispatchFsRequest(frame) {
-  const handler = fsHandlers[frame.method];
-  if (!handler) {
-    sendToBob({
-      jsonrpc: "2.0",
-      id: frame.id,
-      error: { code: -32601, message: `Method not found: ${frame.method}` },
-    });
+function handleSessionNew(f) {
+  const sessionId = `bob-${randomUUID()}`;
+  const state = sessionState(sessionId);
+  if (typeof f.params?.cwd === "string") state.cwd = f.params.cwd;
+  respond(f.id, {
+    sessionId,
+    modes: { availableModes: AVAILABLE_MODES.map((m) => ({ ...m })), currentModeId },
+  });
+}
+
+function handleSessionList(f) {
+  const sessions = listTasks().map((t) => ({
+    sessionId: sessionIdFor(t.id),
+    cwd: t.directory,
+    title: taskTitle(t),
+    updatedAt: Number.isFinite(t.updated_at) ? new Date(t.updated_at).toISOString() : null,
+    // Tag as chat so agent-runtime's list enrichment doesn't decode a
+    // store-less session as terminal.
+    _meta: { platform: { mode: "chat" } },
+  }));
+  respond(f.id, { sessions });
+}
+
+function handleSessionLoad(f) {
+  const sid = f.params?.sessionId;
+  const taskId = typeof sid === "string" ? taskIdFor(sid) ?? sid : null;
+  const rows = taskId ? taskMessages(taskId) : [];
+  if (rows.length === 0) {
+    respondError(f.id, -32602, `Unknown session: ${sid}`);
     return;
   }
-  try {
-    const result = await handler(frame.params);
-    sendToBob({ jsonrpc: "2.0", id: frame.id, result });
-  } catch (err) {
-    sendToBob({
-      jsonrpc: "2.0",
-      id: frame.id,
-      error: { code: err?.jsonrpcCode ?? -32603, message: err?.message ?? String(err) },
-    });
+  bindTask(sid, taskId);
+  const state = sessionState(sid);
+  const dir = withDb((db) =>
+    db.prepare(`SELECT directory FROM tasks WHERE id = ?`).get(taskId),
+  );
+  if (typeof dir?.directory === "string" && dir.directory) state.cwd = dir.directory;
+  for (const row of rows) {
+    const role = row.role || messageRole(row.data);
+    const text = messageText(row.data);
+    if (!text) continue;
+    if (role === "user") {
+      update(sid, {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text },
+      });
+    } else if (role === "assistant") {
+      emitAgentMessage(sid, text);
+    }
   }
+  respond(f.id, {
+    modes: { availableModes: AVAILABLE_MODES.map((m) => ({ ...m })), currentModeId },
+  });
 }
 
-function flushOutside(sessionId, finalize) {
-  if (!outsideBuf) return;
-  // Strip complete "[using tool ...]" segments.
-  outsideBuf = outsideBuf.replace(META_COMPLETE, "");
-  // If a still-unclosed "[using tool" start is present, hold everything from
-  // that point onward until the closer arrives (or until turn end, when we
-  // conservatively drop it).
-  const unclosedAt = outsideBuf.search(META_UNCLOSED);
-  if (unclosedAt !== -1 && !finalize) {
-    const emit = outsideBuf.slice(0, unclosedAt);
-    outsideBuf = outsideBuf.slice(unclosedAt);
-    if (emit) emitAgentMessage(sessionId, emit);
+function handleSessionSetMode(f) {
+  const modeId = normalizeMode(f.params?.modeId);
+  const sessionId = f.params?.sessionId;
+  if (modeId && modeId !== currentModeId) {
+    currentModeId = modeId;
+    if (sessionId) {
+      update(sessionId, { sessionUpdate: "current_mode_update", currentModeId: modeId });
+    }
+  }
+  respond(f.id, null);
+}
+
+function handleSessionPrompt(f) {
+  const sessionId = f.params?.sessionId;
+  if (typeof sessionId !== "string") {
+    respondError(f.id, -32602, "sessionId is required");
     return;
   }
-  if (finalize) {
-    outsideBuf = outsideBuf.replace(META_UNCLOSED, "");
-  } else {
-    // META_UNCLOSED only matches once the full "[using tool " prefix has
-    // arrived; hold back a shorter partial ("[usi…") split across chunks too.
-    const keep = partialSuffixLen(outsideBuf, META_PREFIX);
-    if (keep > 0) {
-      const emit = outsideBuf.slice(0, outsideBuf.length - keep);
-      outsideBuf = outsideBuf.slice(outsideBuf.length - keep);
-      if (emit) emitAgentMessage(sessionId, emit);
-      return;
-    }
+  const state = sessionState(sessionId);
+  const promptText = promptToText(f.params?.prompt, state.cwd);
+  if (!promptText.trim()) {
+    respond(f.id, { stopReason: "end_turn" });
+    return;
   }
-  if (outsideBuf) emitAgentMessage(sessionId, outsideBuf);
-  outsideBuf = "";
+  // Serialize turns per session; bob locks the task row while running.
+  state.running = state.running.then(() => runTurn(sessionId, f.id, promptText));
 }
 
-function processMessageChunk(sessionId, text) {
-  lastSessionId = sessionId;
-  let buf = messageCarry + text;
-  messageCarry = "";
-
-  while (buf.length > 0) {
-    if (messageState === "inside") {
-      const idx = buf.indexOf(THINK_CLOSE);
-      if (idx === -1) {
-        // Retain a short tail so a </thinking> split across chunks matches next time.
-        messageCarry = buf.slice(-(THINK_CLOSE.length - 1));
-        return;
-      }
-      messageState = "outside";
-      buf = buf.slice(idx + THINK_CLOSE.length);
-      continue;
-    }
-
-    const idx = buf.indexOf(THINK_OPEN);
-    if (idx === -1) {
-      // Hold back a suffix that could be the start of a <thinking> tag split
-      // across chunks — without this the partial tag leaks to the user AND the
-      // state machine misses the flip to "inside", streaming the reasoning as
-      // a visible message. The carry re-enters via messageCarry next chunk.
-      const keep = partialSuffixLen(buf, THINK_OPEN);
-      messageCarry = keep > 0 ? buf.slice(buf.length - keep) : "";
-      outsideBuf += keep > 0 ? buf.slice(0, buf.length - keep) : buf;
-      flushOutside(sessionId, false);
-      return;
-    }
-    outsideBuf += buf.slice(0, idx);
-    flushOutside(sessionId, false);
-    messageState = "inside";
-    buf = buf.slice(idx + THINK_OPEN.length);
+function handleSessionCancel(f) {
+  const sessionId = f.params?.sessionId;
+  const state = typeof sessionId === "string" ? sessions.get(sessionId) : null;
+  if (state?.child) {
+    state.cancelled = true;
+    state.child.kill("SIGINT");
   }
+  if (f.id !== undefined) respond(f.id, null);
 }
 
-function flushMessageStateAtTurnEnd() {
-  if (lastSessionId) {
-    // A held-back partial-tag suffix is ordinary text at turn end — no more
-    // chunks are coming that could complete the tag.
-    if (messageState === "outside" && messageCarry) outsideBuf += messageCarry;
-    flushOutside(lastSessionId, true);
+// The task lives in bob.db; only the in-memory turn state goes (the persisted
+// sessionId↔taskId binding stays so the session remains loadable).
+function handleSessionClose(f) {
+  const sessionId = f.params?.sessionId;
+  const state = typeof sessionId === "string" ? sessions.get(sessionId) : null;
+  if (state) {
+    state.child?.kill("SIGTERM");
+    sessions.delete(sessionId);
   }
-  messageState = "inside";
-  messageCarry = "";
-  outsideBuf = "";
-  lastThoughtText = "";
-  thinkToolCallIds.clear();
+  if (f.id !== undefined) respond(f.id, null);
 }
 
-function pickAllowOption(options) {
-  if (!Array.isArray(options)) return null;
-  const allow =
-    options.find((o) => o?.kind === "allow_always") ??
-    options.find((o) => o?.kind === "allow_once");
-  return allow?.optionId ?? options[0]?.optionId ?? null;
-}
-
-// ── stdout handler ────────────────────────────────────────────────────────
-
-function handleLine(line) {
-  if (TRACE) process.stderr.write(`[bob→shim] ${line}\n`);
+function handleClientLine(line) {
   let f;
   try {
     f = JSON.parse(line);
   } catch {
-    // Non-JSON line (e.g. Bob's "Migrated MCP settings …" startup print) is
-    // never an ACP frame — keep it off the client stream, log to stderr.
-    process.stderr.write(`[bob] ${line}\n`);
     return;
   }
+  const isRequest = typeof f.method === "string";
+  if (!isRequest) return;
 
-  // Resume: Bob's reply to a shim-initiated session/new — wire the mapping,
-  // don't forward (the client already holds its loaded session).
-  if (f.id !== undefined && resumeNewSessionIds.has(f.id)) {
-    if (f.result?.sessionId) onResumeSessionCreated(f.id, f.result.sessionId);
-    return;
-  }
-
-  // Rewrite Bob's live session id back to the loaded id the client knows.
-  if (typeof f.params?.sessionId === "string" && newToOld.has(f.params.sessionId)) {
-    f = { ...f, params: { ...f.params, sessionId: newToOld.get(f.params.sessionId) } };
-    line = JSON.stringify(f);
-  }
-
-  // Agent→client RPC requests from bob: { id, method, params } with no result/error.
-  const isAgentRequest = f.id !== undefined && typeof f.method === "string";
-
-  if (f.id !== undefined && pendingInitIds.has(f.id)) {
-    pendingInitIds.delete(f.id);
-    if (isNonNullObject(f.result) && isNonNullObject(f.result.agentCapabilities)) {
-      // Advertise the capabilities the shim emulates (Bob reports neither):
-      // loadSession gates session/load, sessionCapabilities.list gates
-      // session/list — clients skip un-advertised methods.
-      const caps = f.result.agentCapabilities;
-      caps.loadSession = true;
-      caps.sessionCapabilities = {
-        ...(isNonNullObject(caps.sessionCapabilities) ? caps.sessionCapabilities : {}),
-        list: {},
-      };
+  switch (f.method) {
+    case "initialize":
+      return handleInitialize(f);
+    case "session/new":
+      return handleSessionNew(f);
+    case "session/list":
+      return handleSessionList(f);
+    case "session/load":
+      return handleSessionLoad(f);
+    case "session/set_mode":
+      return handleSessionSetMode(f);
+    case "session/prompt":
+      return handleSessionPrompt(f);
+    case "session/cancel":
+      return handleSessionCancel(f);
+    case "session/close":
+      return handleSessionClose(f);
+    default: {
+      if (f.id !== undefined) respondError(f.id, -32601, `Method not found: ${f.method}`);
     }
-    process.stdout.write(JSON.stringify(f) + "\n");
-    return;
   }
+}
 
-  if (isAgentRequest && f.method === "session/request_permission") {
-    emitToolCallOpen(f.params?.sessionId, f.params?.toolCall);
-    const optionId = pickAllowOption(f.params?.options);
-    sendToBob({
-      jsonrpc: "2.0",
-      id: f.id,
-      result: optionId
-        ? { outcome: { outcome: "selected", optionId } }
-        : { outcome: { outcome: "cancelled" } },
+// ── main ────────────────────────────────────────────────────────────────────
+
+const settingsOnly = process.argv.includes("--settings-only");
+ensureSettings();
+if (!settingsOnly) {
+  const clientStdin = readline.createInterface({ input: process.stdin });
+  clientStdin.on("line", (line) => {
+    trace("client→shim", line);
+    handleClientLine(line);
+  });
+  clientStdin.on("close", () => {
+    for (const s of sessions.values()) s.child?.kill("SIGTERM");
+    process.exit(0);
+  });
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+    process.on(sig, () => {
+      for (const s of sessions.values()) s.child?.kill(sig);
+      process.exit(0);
     });
-    return;
-  }
-
-  if (isAgentRequest && f.method.startsWith("fs/")) {
-    dispatchFsRequest(f);
-    return;
-  }
-
-  // Reset streaming state at turn boundary (session/prompt reply).
-  if (f.id !== undefined && f.result?.stopReason) {
-    flushMessageStateAtTurnEnd();
-    return passthrough(line);
-  }
-
-  if (f.id !== undefined && pendingNewSessionIds.has(f.id)) {
-    pendingNewSessionIds.delete(f.id);
-    if (f.result) {
-      const patched = {
-        ...f,
-        result: {
-          ...f.result,
-          modes: {
-            availableModes: AVAILABLE_MODES.map((m) => ({ ...m })),
-            currentModeId,
-          },
-        },
-      };
-      process.stdout.write(JSON.stringify(patched) + "\n");
-      return;
-    }
-    return passthrough(line);
-  }
-
-  if (f.method !== "session/update" || !f.params?.update) return passthrough(line);
-
-  const { sessionId, update: u } = f.params;
-
-  switch (u.sessionUpdate) {
-    case "agent_message_chunk": {
-      const text = u.content?.text;
-      if (typeof text !== "string") return;
-      processMessageChunk(sessionId, text);
-      return;
-    }
-
-    case "agent_thought_chunk": {
-      const text = u.content?.text;
-      if (typeof text !== "string") return passthrough(line);
-      lastSessionId = sessionId;
-      const delta = text.startsWith(lastThoughtText)
-        ? text.slice(lastThoughtText.length)
-        : text;
-      lastThoughtText = text;
-      if (delta) emitThoughtChunk(sessionId, delta);
-      return;
-    }
-
-    case "tool_call": {
-      if (u.kind === "think") {
-        thinkToolCallIds.add(u.toolCallId);
-        return;
-      }
-      return passthrough(line);
-    }
-
-    case "tool_call_update": {
-      if (!thinkToolCallIds.has(u.toolCallId)) return passthrough(line);
-      if (u.status !== "completed") return;
-      for (const part of u.content ?? []) {
-        const inner = part?.content;
-        if (inner?.type === "text" && typeof inner.text === "string" && inner.text.length > 0) {
-          emitAgentMessage(sessionId, inner.text);
-        }
-      }
-      thinkToolCallIds.delete(u.toolCallId);
-      return;
-    }
-
-    default:
-      return passthrough(line);
   }
 }

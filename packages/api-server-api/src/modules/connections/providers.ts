@@ -96,7 +96,9 @@ export function bobPinsFromEnvMappings(
   return pins;
 }
 
-export const BOB_CHAT_MODES = ["plan", "code", "advanced", "ask"] as const;
+// Bob 2.0 merged the code/advanced modes into agent; the harness still maps
+// legacy pinned values onto agent for existing secrets.
+export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
 
 export interface ProviderPresetMode {
   key: string;

@@ -167,7 +167,7 @@ export function BobForm({
           />
           <PinField
             label="Instance ID"
-            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping for outbound API calls."
+            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping; Bob 2.x applies it in terminal (TUI) sessions only."
             error={errors.agentId?.message}
             register={register("agentId")}
           />
@@ -178,15 +178,15 @@ export function BobForm({
             register={register("teamId")}
           />
           <PinField
-            label="Max coins"
-            hint="BOB_MAX_COINS → --max-coins. Budget cap; Bob exits when exceeded."
+            label="Max cost"
+            hint="BOB_MAX_COINS → --max-cost. Per-task cost cap; Bob stops the task when exceeded."
             placeholder="(no cap)"
             error={errors.maxCoins?.message}
             register={register("maxCoins")}
           />
           <PinField
-            label="Chat mode"
-            hint={`BOB_CHAT_MODE → --chat-mode. One of: ${BOB_CHAT_MODES.join(", ")}.`}
+            label="Mode"
+            hint={`BOB_CHAT_MODE → --mode. One of: ${BOB_CHAT_MODES.join(", ")}.`}
             placeholder="(Bob default)"
             list="bob-chat-modes"
             error={errors.chatMode?.message}
