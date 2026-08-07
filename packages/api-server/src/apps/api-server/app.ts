@@ -326,6 +326,21 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
   });
   app.use("*", createShareHostGate(config.shareBaseUrl, shareViewerApp));
 
+  // Baseline security headers for every app response (JSON API + the brand
+  // asset routes below). The static UI sets its own equivalents in
+  // packages/ui/default.conf; nothing here overlaps with the share viewer,
+  // which the gate above already returned from for its own host.
+  app.use("*", async (c, next) => {
+    await next();
+    c.header("X-Content-Type-Options", "nosniff");
+    c.header("X-Frame-Options", "DENY");
+    c.header("Referrer-Policy", "no-referrer");
+    c.header(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains",
+    );
+  });
+
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   // Readiness (not liveness): 503 until the Keycloak JWKS has been fetched
   // once, so a rolling update keeps the old pod serving while this pod's
