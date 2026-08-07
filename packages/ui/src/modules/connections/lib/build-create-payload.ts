@@ -80,6 +80,7 @@ export function buildCreatePayload(
         installationId,
         privateKey,
         repositories: submitted("repositories"),
+        repositoryIds: submitted("repositoryIds"),
         permissions: submitted("permissions"),
       });
     }

@@ -61,6 +61,15 @@ export function useProbeClusterCa() {
   });
 }
 
+// Failure is expected while the user is still typing the app's details, and
+// the picker renders the reason inline next to the button, so no global toast.
+export function useProbeGitHubAppInstallation() {
+  return useMutation({
+    ...trpc.connections.probeGitHubAppInstallation.mutationOptions(),
+    meta: { suppressErrorToast: true },
+  });
+}
+
 /**
  * Verifies an Anthropic credential against Anthropic before save. Returns
  * `{ ok: true } | { ok: false; message }` rather than throwing — callers

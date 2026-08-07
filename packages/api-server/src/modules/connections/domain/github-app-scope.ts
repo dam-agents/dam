@@ -22,6 +22,7 @@ const PERMISSION_NAME = /^[a-z][a-z_]*$/;
 
 export interface GitHubAppScope {
   repositories?: string[];
+  repositoryIds?: number[];
   permissions?: Record<string, string>;
 }
 
@@ -98,16 +99,54 @@ export function parsePermissions(
   return permissions;
 }
 
-/** Both halves are independent — naming only repositories still narrows the
- *  token, and so does naming only permissions. */
+/** Repositories identified by GitHub's numeric id — what the installation
+ *  picker records, since an id survives a repository rename. */
+export function parseRepositoryIds(
+  raw: string | undefined,
+): number[] | undefined {
+  if (raw === undefined) return undefined;
+  const entries = split(raw);
+  if (entries.length === 0) return undefined;
+  const ids: number[] = [];
+  for (const entry of entries) {
+    // Guard the whole string: Number("12abc") is NaN but Number("12 ") is 12,
+    // and a silently-truncated id would narrow to the wrong repository.
+    if (!/^\d+$/.test(entry)) {
+      throw new Error(`Repository id "${entry}" must be a whole number.`);
+    }
+    const id = Number(entry);
+    if (!Number.isSafeInteger(id)) {
+      throw new Error(`Repository id "${entry}" is out of range.`);
+    }
+    ids.push(id);
+  }
+  const unique = [...new Set(ids)];
+  if (unique.length > MAX_REPOSITORIES) {
+    throw new Error(
+      `A connection can name at most ${MAX_REPOSITORIES} repositories (got ${unique.length}).`,
+    );
+  }
+  return unique;
+}
+
+/** Each half narrows independently — naming only repositories still narrows the
+ *  token, and so does naming only permissions. Repositories may arrive as ids
+ *  (from the picker) or as names (typed, or from the CLI); GitHub takes one
+ *  form or the other, so ids win and the names are dropped rather than sent
+ *  alongside them. */
 export function parseGitHubAppScope(input: {
   repositories?: string | undefined;
+  repositoryIds?: string | undefined;
   permissions?: string | undefined;
 }): GitHubAppScope {
-  const repositories = parseRepositories(input.repositories);
+  const repositoryIds = parseRepositoryIds(input.repositoryIds);
+  const repositories = repositoryIds
+    ? undefined
+    : parseRepositories(input.repositories);
   const permissions = parsePermissions(input.permissions);
   return {
     ...(repositories ? { repositories } : {}),
+    ...(repositoryIds ? { repositoryIds } : {}),
     ...(permissions ? { permissions } : {}),
   };
 }

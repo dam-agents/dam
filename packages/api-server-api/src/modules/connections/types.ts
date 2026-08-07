@@ -70,6 +70,11 @@ export const githubAppAuth = z.object({
   // this field existed carries.
   repositories: z.array(z.string().min(1)).nonempty().optional(),
   permissions: z.record(z.string(), z.string()).optional(),
+  // Repositories named by GitHub's numeric id rather than by name — what the
+  // picker records, since an id survives a rename where a name would start
+  // failing at the next renewal. Only one of the two reaches GitHub; ids win
+  // when both are set, and connections predating the picker carry names only.
+  repositoryIds: z.array(z.number().int()).nonempty().optional(),
 });
 
 export const headerAuth = z.object({
@@ -198,6 +203,29 @@ export interface ClusterCaProbe {
   error?: string;
 }
 
+/** What a GitHub App installation actually grants, read back from GitHub so a
+ *  user narrows by picking from what exists rather than by typing names and
+ *  levels blind. `permissions` maps a permission to the level the installation
+ *  holds — the ceiling for that permission, since GitHub refuses any request
+ *  above it. `repositorySelection` distinguishes a fixed set of repositories
+ *  from an account-wide installation, whose list is everything there is today
+ *  and grows with the account. */
+export interface GitHubAppInstallationProbe {
+  permissions: Record<string, string>;
+  repositories: { id: number; name: string }[];
+  repositorySelection: "all" | "selected";
+  accountLogin?: string;
+  /** Why the repository list is missing, when it could not be read. Reading
+   *  the grant and listing the repositories are separate calls with different
+   *  authority, so the second can fail alone — leaving permission narrowing
+   *  available and repository narrowing to be typed instead. */
+  repositoriesUnavailable?: string;
+  /** Set when the installation reaches more repositories than one probe pages
+   *  through, so the list is a prefix rather than the whole set and a
+   *  repository past it has to be named rather than ticked. */
+  repositoriesTruncated?: boolean;
+}
+
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
@@ -222,6 +250,19 @@ export interface ConnectionsService {
   // CA paste for an untrusted endpoint rather than trusting it blindly. `host`
   // may include a `:port`. See ClusterCaProbe.
   probeClusterCa(input: { host: string }): Promise<ClusterCaProbe>;
+
+  // Reads back what a GitHub App installation grants, so the create form can
+  // offer exactly those repositories and permissions to narrow against. Needs
+  // the private key because the read is authenticated as the app itself; the
+  // key is used for the probe and never stored by it. See
+  // GitHubAppInstallationProbe.
+  probeGitHubAppInstallation(input: {
+    appId: string;
+    installationId: string;
+    privateKey: string;
+    host?: string;
+    templateId: string;
+  }): Promise<GitHubAppInstallationProbe>;
 
   startOAuth(
     connectionId: string,

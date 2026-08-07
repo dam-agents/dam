@@ -1,0 +1,301 @@
+import type {
+  ConnectionTemplateInput,
+  GitHubAppInstallationProbe,
+} from "api-server-api";
+import { useEffect, useRef } from "react";
+import { type Control, useWatch } from "react-hook-form";
+
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { CheckboxItem } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { SectionLabel } from "@/components/ui/section-label";
+
+import { useProbeGitHubAppInstallation } from "../api/mutations.js";
+import {
+  canProbe,
+  levelsUpTo,
+  type PermissionLevel,
+  readPermissions,
+  readRepositoryIds,
+  writePermissions,
+  writeRepositoryIds,
+} from "../lib/github-app-scope-fields.js";
+import type { TemplateFormValues } from "../lib/template-form-schema.js";
+import { TemplateFieldInput } from "./template-field-input.js";
+
+interface Props {
+  control: Control<TemplateFormValues>;
+  templateId: string;
+  setField: (name: string, value: string) => void;
+  /** The template's own `repositories` / `permissions` inputs, rendered as
+   *  plain text fields whenever the installation has not been read. */
+  fallbackInputs: ConnectionTemplateInput[];
+  /** Whether this template requires a host — the probe cannot resolve a
+   *  GitHub Enterprise REST base without one. */
+  hostRequired: boolean;
+}
+
+/** Narrows a GitHub App connection by picking from what the installation
+ *  actually grants, rather than typing names and levels blind. The selection
+ *  lives in the form's own fields — this renders from them and writes back
+ *  through them, so there is no second copy to drift. */
+export function GithubAppScopePicker({
+  control,
+  templateId,
+  setField,
+  fallbackInputs,
+  hostRequired,
+}: Props) {
+  const fields = useWatch({ control, name: "fields" }) ?? {};
+  const probe = useProbeGitHubAppInstallation();
+  const installation = probe.data;
+
+  // Which installation the current result describes. Editing any part of it
+  // leaves the rendered lists — and the selection made against them — talking
+  // about a different installation than the one being created.
+  const identity = [
+    fields.host?.trim() ?? "",
+    fields.appId?.trim() ?? "",
+    fields.installationId?.trim() ?? "",
+  ].join(" ");
+  const probedIdentity = useRef<string | null>(null);
+  const { reset: resetProbe } = probe;
+
+  useEffect(() => {
+    if (probedIdentity.current === null) return;
+    if (probedIdentity.current === identity) return;
+    probedIdentity.current = null;
+    resetProbe();
+    // A selection is only meaningful against the installation it was made on:
+    // ids may name different repositories elsewhere, and a level may exceed
+    // what the new installation grants. Typed names go too — when the listing
+    // is unavailable they are the selection, and they name repositories in the
+    // account the user has just navigated away from.
+    setField("repositoryIds", "");
+    setField("repositories", "");
+    setField("permissions", "");
+  }, [identity, resetProbe, setField]);
+
+  const permissions = readPermissions(fields.permissions ?? "");
+  const selectedRepoIds = new Set(
+    readRepositoryIds(fields.repositoryIds ?? ""),
+  );
+
+  const setPermission = (name: string, level: PermissionLevel | "off") => {
+    const next = { ...permissions };
+    if (level === "off") delete next[name];
+    else next[name] = level;
+    setField("permissions", writePermissions(next));
+  };
+
+  const toggleRepo = (id: number, checked: boolean) => {
+    const next = new Set(selectedRepoIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setField("repositoryIds", writeRepositoryIds([...next]));
+  };
+
+  const ready = canProbe(fields, hostRequired);
+
+  // The template's own text input for a scope field, used wherever the picker
+  // has nothing to offer in its place.
+  const textInput = (name: string) => {
+    const input = fallbackInputs.find((i) => i.name === name);
+    if (!input) return null;
+    return (
+      <TemplateFieldInput
+        key={input.name}
+        control={control}
+        templateId={templateId}
+        input={input}
+      />
+    );
+  };
+
+  const runProbe = () => {
+    probedIdentity.current = identity;
+    probe.mutate({
+      templateId,
+      appId: (fields.appId ?? "").trim(),
+      installationId: (fields.installationId ?? "").trim(),
+      privateKey: fields.privateKey ?? "",
+      ...(fields.host?.trim() ? { host: fields.host.trim() } : {}),
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>Limit this connection</SectionLabel>
+      <p className="text-sm text-muted-foreground">
+        By default the connection can do everything the app installation can.
+        Read the installation to narrow it to the repositories and permissions
+        this agent actually needs.
+      </p>
+
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!ready || probe.isPending}
+          onClick={runProbe}
+          data-testid="github-app-probe"
+        >
+          {probe.isPending
+            ? "Reading…"
+            : installation
+              ? "Re-read installation"
+              : "Read installation"}
+        </Button>
+        {!ready && (
+          <span className="text-xs text-muted-foreground">
+            Fill in the {hostRequired ? "host, " : ""}app ID, installation ID,
+            and private key first.
+          </span>
+        )}
+      </div>
+
+      {probe.isError && (
+        <Callout tone="danger" size="sm">
+          {probe.error.message}
+        </Callout>
+      )}
+
+      {installation ? (
+        <>
+          {installation.repositoriesUnavailable ? (
+            // The grant was read but its repository list was not. Permissions
+            // are still pickable; repositories fall back to being typed.
+            <>
+              <Callout tone="muted" size="sm">
+                Couldn&rsquo;t list this installation&rsquo;s repositories, so
+                name them instead. Permissions below are still the
+                installation&rsquo;s own.
+              </Callout>
+              {textInput("repositories")}
+            </>
+          ) : (
+            <>
+              <RepositorySection
+                installation={installation}
+                selected={selectedRepoIds}
+                onToggle={toggleRepo}
+              />
+              {installation.repositoriesTruncated && (
+                // The list is a prefix, so a repository past it can only be
+                // reached by name — offer that rather than let the checkboxes
+                // read as the whole set.
+                <>
+                  <Callout tone="muted" size="sm">
+                    This installation reaches more repositories than are listed
+                    above. Name any that aren&rsquo;t shown.
+                  </Callout>
+                  {textInput("repositories")}
+                </>
+              )}
+            </>
+          )}
+          <PermissionSection
+            installation={installation}
+            selection={permissions}
+            onChange={setPermission}
+          />
+        </>
+      ) : (
+        // Until the installation has been read — and if reading it fails —
+        // narrowing stays typeable, so a probe that cannot run never costs the
+        // user the ability to limit the token.
+        fallbackInputs.map((input) => textInput(input.name))
+      )}
+    </div>
+  );
+}
+
+function RepositorySection({
+  installation,
+  selected,
+  onToggle,
+}: {
+  installation: GitHubAppInstallationProbe;
+  selected: Set<number>;
+  onToggle: (id: number, checked: boolean) => void;
+}) {
+  if (installation.repositories.length === 0) return null;
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-sm font-medium">Repositories</legend>
+      <p className="text-xs text-muted-foreground">
+        Nothing ticked means every repository the installation can reach.
+        {installation.repositorySelection === "all" &&
+          " This app is installed on every repository in the account, so that set grows as the account does — tick the ones this agent needs to pin it."}
+      </p>
+      <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+        {installation.repositories.map((repo) => (
+          <CheckboxItem
+            key={repo.id}
+            label={repo.name}
+            labelClassName="font-mono"
+            checked={selected.has(repo.id)}
+            onCheckedChange={(checked) => onToggle(repo.id, checked === true)}
+            testId={`github-app-repo-${repo.name}`}
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function PermissionSection({
+  installation,
+  selection,
+  onChange,
+}: {
+  installation: GitHubAppInstallationProbe;
+  selection: Record<string, PermissionLevel>;
+  onChange: (name: string, level: PermissionLevel | "off") => void;
+}) {
+  const granted = Object.keys(installation.permissions).sort();
+  if (granted.length === 0) return null;
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-sm font-medium">Permissions</legend>
+      <p className="text-xs text-muted-foreground">
+        All off means every permission the app was granted. A permission can be
+        set no higher than the installation holds it.
+      </p>
+      <div className="flex flex-col gap-1">
+        {granted.map((name) => (
+          <div
+            key={name}
+            className="flex items-center justify-between gap-4 rounded-md px-2 py-1 hover:bg-muted/50"
+          >
+            <span className="font-mono text-sm">{name}</span>
+            <RadioGroup
+              className="flex flex-row gap-3"
+              value={selection[name] ?? "off"}
+              onValueChange={(level) =>
+                onChange(name, level as PermissionLevel | "off")
+              }
+              aria-label={`Level for ${name}`}
+            >
+              <RadioGroupItem
+                value="off"
+                label="Off"
+                testId={`github-app-perm-${name}-off`}
+              />
+              {levelsUpTo(installation.permissions[name]).map((level) => (
+                <RadioGroupItem
+                  key={level}
+                  value={level}
+                  label={level[0].toUpperCase() + level.slice(1)}
+                  testId={`github-app-perm-${name}-${level}`}
+                />
+              ))}
+            </RadioGroup>
+          </div>
+        ))}
+      </div>
+    </fieldset>
+  );
+}

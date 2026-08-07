@@ -3,6 +3,7 @@ import {
   parseGitHubAppScope,
   parsePermissions,
   parseRepositories,
+  parseRepositoryIds,
 } from "../../modules/connections/domain/github-app-scope.js";
 
 describe("parseRepositories", () => {
@@ -122,6 +123,37 @@ describe("parsePermissions", () => {
   });
 });
 
+describe("parseRepositoryIds", () => {
+  it("treats absent, empty, and whitespace-only input as no narrowing", () => {
+    expect(parseRepositoryIds(undefined)).toBeUndefined();
+    expect(parseRepositoryIds("")).toBeUndefined();
+    expect(parseRepositoryIds("   ")).toBeUndefined();
+  });
+
+  it("parses ids and drops duplicates", () => {
+    expect(parseRepositoryIds("12 34, 12")).toEqual([12, 34]);
+  });
+
+  // Number("12abc") is NaN but Number("12 ") is 12 — a partially-numeric entry
+  // must not silently narrow to some other repository.
+  it("rejects anything that is not a whole number", () => {
+    for (const bad of ["12abc", "1.5", "-3", "0x10", "1e3"]) {
+      expect(() => parseRepositoryIds(bad)).toThrow(/whole number/);
+    }
+  });
+
+  it("rejects an id beyond safe integer range", () => {
+    expect(() => parseRepositoryIds("9007199254740993")).toThrow(
+      /out of range/,
+    );
+  });
+
+  it("rejects more repositories than one request may carry", () => {
+    const many = Array.from({ length: 501 }, (_, i) => i + 1).join(" ");
+    expect(() => parseRepositoryIds(many)).toThrow(/at most 500/);
+  });
+});
+
 describe("parseGitHubAppScope", () => {
   it("omits both halves when neither is given", () => {
     expect(parseGitHubAppScope({})).toEqual({});
@@ -148,5 +180,25 @@ describe("parseGitHubAppScope", () => {
         permissions: "contents:read",
       }),
     ).toEqual({ repositories: ["docs"], permissions: { contents: "read" } });
+  });
+
+  it("narrows on repository ids alone", () => {
+    expect(parseGitHubAppScope({ repositoryIds: "12 34" })).toEqual({
+      repositoryIds: [12, 34],
+    });
+  });
+
+  // GitHub rejects a request carrying both spellings, so only one may survive.
+  // Ids win because they outlive a rename.
+  it("drops names when ids are also given", () => {
+    expect(
+      parseGitHubAppScope({ repositories: "docs", repositoryIds: "12" }),
+    ).toEqual({ repositoryIds: [12] });
+  });
+
+  it("still validates names when no ids are given", () => {
+    expect(() =>
+      parseGitHubAppScope({ repositories: "dam-agents/docs" }),
+    ).toThrow(/just the repository name/);
   });
 });

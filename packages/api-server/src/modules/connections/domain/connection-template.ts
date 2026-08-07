@@ -276,11 +276,20 @@ function inputsFor(
           label: "Private key (PEM)",
           hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
         },
+        // The UI renders these three through the installation picker rather
+        // than as text fields; they stay declared inputs so the CLI and any
+        // scripted caller can still set them directly.
         {
           name: "repositories",
           state: "optional",
           label: "Limit to repositories",
-          hint: "Repository names, separated by spaces or commas — just the name, not owner/name. Leave blank for every repository the installation can reach.",
+          hint: "Repository names, separated by spaces or commas. Leave blank for every repository the installation can reach.",
+        },
+        {
+          name: "repositoryIds",
+          state: "optional",
+          label: "Limit to repository ids",
+          hint: "Numeric repository ids, separated by spaces or commas. Takes precedence over names, and survives a repository rename.",
         },
         {
           name: "permissions",

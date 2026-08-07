@@ -22,6 +22,7 @@ import {
 } from "../domain/connection-template.js";
 import {
   buildConnection,
+  gitHubAppApiBase,
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import {
@@ -680,6 +681,32 @@ export function createConnectionsService(deps: {
 
     probeClusterCa(input) {
       return probeClusterCa(input.host);
+    },
+
+    async probeGitHubAppInstallation(input) {
+      const template = deps.templates.get(input.templateId);
+      if (!template || template.authKind !== "github-app") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This template does not use a GitHub App installation.",
+        });
+      }
+      // Inside the wrapper: a missing host and an unusable key are both the
+      // caller's to fix, so they read as bad input rather than as a server
+      // fault carrying an internal message.
+      return rejectIfInvalid(async () => {
+        const { apiBaseUrl } = gitHubAppApiBase(template, input.host);
+        // Same normalization the create path applies, so a key that probes
+        // successfully is one that will also store successfully.
+        const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
+        return deps.githubAppEngine.readInstallation({
+          id: `template:${template.id}`,
+          appId: input.appId,
+          installationId: input.installationId,
+          privateKeyPem,
+          apiBaseUrl,
+        });
+      });
     },
   };
 }

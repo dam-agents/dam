@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-06
+Last verified: 2026-08-07
 
 ## Overview
 
@@ -287,6 +287,18 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   merely failing, so the Connection reads expired and waits for someone to
   widen the installation or narrow the Connection, instead of retrying a
   request that cannot succeed.
+
+  The subset is chosen against **what the installation actually grants, read
+  back from GitHub** before the Connection is created: the api-server
+  authenticates as the app, asks what the installation holds, and offers those
+  repositories and permissions to choose from. So narrowing is a selection
+  rather than a guess, and a permission can be taken at a *lower* level than
+  the installation holds it — the read-only agent on a read-write installation
+  is the case that motivates this, and it cannot be expressed by picking whole
+  permissions alone. Repositories chosen this way are remembered by GitHub's
+  identifier rather than by name, so renaming one does not quietly turn a
+  working Connection into a rejected renewal. The read needs the app's private
+  key and is authenticated the same way minting is; it stores nothing.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
