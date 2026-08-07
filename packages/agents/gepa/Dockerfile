@@ -25,7 +25,8 @@ RUN uv python install 3.11 &&\
       "litellm>=1.83.0,<1.92" \
       "tqdm>=4.66.1" \
       "cloudpickle>=3.0.0" \
-      "datasets>=2.14.6" &&\
+      "datasets>=2.14.6" \
+      "setuptools>=83.0.0" &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/gepa-venv /opt/uv
 
