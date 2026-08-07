@@ -142,7 +142,13 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 // backing pod) rather than the StatefulSet's `-0` pod DNS, so the same URL
 // reaches a container pod or a vm backend's virt-launcher pod.
 func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
-	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, c.config.Namespace)
+	return agentPodIsBusy(ctx, c.config.Namespace, agentName)
+}
+
+// agentPodIsBusy is the probe itself, shared with the budget gate's reclaim
+// pass (#3184) so both scale-down paths ask the runtime the same question.
+func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
+	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

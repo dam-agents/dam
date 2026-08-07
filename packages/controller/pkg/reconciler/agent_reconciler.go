@@ -41,10 +41,17 @@ type AgentReconciler struct {
 	// Denied wake attempts, keyed agent → last-activity value at denial;
 	// see wakeAlreadyDenied.
 	deniedWakes map[string]string
+	// busyProbe reports whether a reclaim candidate's pod is mid-work (#3184).
+	// Defaults to the live probe the idle checker uses; overridable in tests.
+	busyProbe func(ctx context.Context, agentName string) bool
 }
 
 func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
-	return &AgentReconciler{client: client, config: cfg}
+	r := &AgentReconciler{client: client, config: cfg}
+	r.busyProbe = func(ctx context.Context, name string) bool {
+		return agentPodIsBusy(ctx, r.config.Namespace, name)
+	}
+	return r
 }
 
 // WithDynamicClient supplies a dynamic client used to apply cert-manager.io/v1
@@ -201,6 +208,22 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 				// Transient infra failure — requeue without stamping ReconcileError,
 				// mirroring the gateway ClusterIP wait below.
 				return fmt.Errorf("agent %s: budget check: %w", name, err)
+			}
+			// Refused ⇒ try to make room by hibernating this owner's own
+			// unattended idle agents ahead of their timeout (#3184), then ask
+			// the gate again. Reserved counts desired replicas, so a reclaim
+			// that lands is visible to the re-check immediately and admission
+			// stays a synchronous verdict.
+			if !verdict.allowed {
+				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
+				if err != nil {
+					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
+				}
+				if freed {
+					if verdict, err = r.budgetAllows(ctx, agent, owner); err != nil {
+						return fmt.Errorf("agent %s: budget re-check: %w", name, err)
+					}
+				}
 			}
 			if !verdict.allowed {
 				running = false
