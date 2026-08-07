@@ -113,9 +113,11 @@ export function ConnectionCatalogModal({
     );
   };
 
-  if (maintenance.updating) {
-    // The credential dialog replaces the catalogue while open — stacking two
-    // modals would trap focus in whichever mounted last.
+  if (maintenance.updating || maintenance.editingScope) {
+    // A maintenance dialog replaces the catalogue while open — stacking two
+    // modals would trap focus in whichever mounted last. Both kinds must be
+    // named here: one left out is a menu item that does nothing, and its state
+    // then lingers to shadow the next dialog opened from another row.
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
   }
 

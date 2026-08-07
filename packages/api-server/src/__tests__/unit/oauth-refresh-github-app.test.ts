@@ -60,7 +60,10 @@ function makeDeps(opts: { privateKey: string | null }) {
     },
   } as unknown as SecretStore;
 
-  const dbUpdates: { auth: ConnectionAuthConfig }[] = [];
+  // The re-mint writes `auth` as a server-side jsonb merge, so what lands here
+  // is a SQL fragment rather than a replacement object — which is the point:
+  // the keys it does not name cannot be clobbered.
+  const dbUpdates: { auth: unknown }[] = [];
   const db = {
     update: () => ({
       set: (row: { auth: ConnectionAuthConfig }) => {
@@ -98,6 +101,22 @@ function makeDeps(opts: { privateKey: string | null }) {
   };
 }
 
+/** The `auth` value the re-mint writes, flattened to text. It is a jsonb-merge
+ *  fragment rather than a replacement object, so this is how a test can say
+ *  which keys the write names — and, more importantly, which it does not. */
+function authWrite(auth: unknown): string {
+  const chunks = (auth as { queryChunks?: unknown[] }).queryChunks ?? [];
+  return chunks
+    .map((chunk) => {
+      const value = (chunk as { value?: unknown }).value;
+      if (Array.isArray(value)) return value.join("");
+      // Table and column chunks carry no literal text worth matching on.
+      if (value === undefined || typeof value === "object") return "";
+      return String(value);
+    })
+    .join(" ");
+}
+
 describe("github-app re-mint", () => {
   it("signs with the stored key, hits the installation endpoint, and hot-swaps token + SDS", async () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
@@ -117,11 +136,12 @@ describe("github-app re-mint", () => {
     expect(deps.putCalls[0].fields.private_key).toBeUndefined();
 
     expect(deps.dbUpdates).toHaveLength(1);
-    const updated = deps.dbUpdates[0].auth;
-    if (updated.kind !== "github-app") throw new Error("wrong kind");
-    expect(updated.expiresAt).toBe(
-      Math.floor(Date.parse("2027-01-15T13:00:00Z") / 1000),
-    );
+    // The horizon is merged into the stored auth server-side, and the failure
+    // marker cleared, without replacing the row's `auth`.
+    const write = authWrite(deps.dbUpdates[0].auth);
+    expect(write).toContain("jsonb_set");
+    expect(write).toContain("expiresAt");
+    expect(write).toContain("refreshFailedAt");
   });
 
   it("throws (leaving state untouched) when the private key is gone", async () => {
@@ -170,17 +190,17 @@ describe("github-app re-mint with a stored scope", () => {
     });
   });
 
-  it("keeps the scope on the row it writes back", async () => {
+  // The scope survives by not being written at all: the tick merges only the
+  // keys it owns, so a re-scope that lands mid-mint is not overwritten by the
+  // copy this tick read before it.
+  it("never names the scope in the row it writes back", async () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
     await remintGitHubAppOne(SCOPED_CONN, SCOPED_AUTH, deps);
 
-    const updated = deps.dbUpdates[0].auth;
-    if (updated.kind !== "github-app") throw new Error("wrong kind");
-    expect(updated.repositories).toEqual(["docs"]);
-    expect(updated.permissions).toEqual({
-      contents: "read",
-      metadata: "read",
-    });
+    const write = authWrite(deps.dbUpdates[0].auth);
+    expect(write).toContain("expiresAt");
+    expect(write).not.toContain("repositories");
+    expect(write).not.toContain("permissions");
   });
 
   it("scoped auth round-trips through the wire schema", () => {
@@ -209,12 +229,10 @@ describe("github-app re-mint with picked repository ids", () => {
     });
   });
 
-  it("keeps the ids on the row it writes back", async () => {
+  it("never names the ids in the row it writes back", async () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
     await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
-    const updated = deps.dbUpdates[0].auth;
-    if (updated.kind !== "github-app") throw new Error("wrong kind");
-    expect(updated.repositoryIds).toEqual([12, 34]);
+    expect(authWrite(deps.dbUpdates[0].auth)).not.toContain("repositoryIds");
   });
 
   it("id-scoped auth round-trips through the wire schema", () => {

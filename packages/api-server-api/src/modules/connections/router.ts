@@ -11,6 +11,8 @@ import {
   connectionDiscoverMcpInputSchema,
   connectionProbeClusterCaInputSchema,
   connectionProbeGitHubAppInputSchema,
+  connectionProbeGitHubAppForConnectionInputSchema,
+  connectionUpdateGitHubAppScopeInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
@@ -69,6 +71,16 @@ export const connectionsRouter = t.router({
     .mutation(({ ctx, input }) =>
       ctx.connections.probeGitHubAppInstallation(input),
     ),
+
+  probeGitHubAppInstallationForConnection: manageCredentialsProcedure
+    .input(connectionProbeGitHubAppForConnectionInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.probeGitHubAppInstallationForConnection(input),
+    ),
+
+  updateGitHubAppScope: manageCredentialsProcedure
+    .input(connectionUpdateGitHubAppScopeInputSchema)
+    .mutation(({ ctx, input }) => ctx.connections.updateGitHubAppScope(input)),
 
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)

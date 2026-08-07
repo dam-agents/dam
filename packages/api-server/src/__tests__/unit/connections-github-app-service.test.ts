@@ -81,7 +81,7 @@ function makeSecretStoreFake() {
 }
 
 function makeService(
-  respond: () => Response = () =>
+  respond: (url: string) => Response = () =>
     new Response(
       JSON.stringify({ token: "ghs_1", expires_at: "2027-01-15T13:00:00Z" }),
       { status: 201, headers: { "content-type": "application/json" } },
@@ -90,11 +90,17 @@ function makeService(
   const { repo, rows } = makeRepoFake();
   const { store, stored, deleted } = makeSecretStoreFake();
   const tokenCalls: string[] = [];
+  const tokenBodies: (string | undefined)[] = [];
   const githubAppEngine = createGitHubAppEngine({
     now: () => NOW_MS,
-    fetchImpl: (async (url: RequestInfo | URL) => {
+    fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
       tokenCalls.push(String(url));
-      return respond();
+      if (String(url).includes("/access_tokens")) {
+        tokenBodies.push(
+          typeof init?.body === "string" ? init.body : undefined,
+        );
+      }
+      return respond(String(url));
     }) as typeof fetch,
   });
   const oauthFlow: OAuthFlowService = {
@@ -120,7 +126,7 @@ function makeService(
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
   });
-  return { svc, rows, stored, deleted, tokenCalls };
+  return { svc, rows, stored, deleted, tokenCalls, tokenBodies };
 }
 
 function createInput(overrides: Record<string, string> = {}) {
@@ -275,5 +281,200 @@ describe("github-app connection create", () => {
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
     expect(rows.get(id)!.auth).toEqual(authBefore);
+  });
+});
+
+describe("github-app scope editing", () => {
+  const okToken = () =>
+    new Response(
+      JSON.stringify({ token: "ghs_2", expires_at: "2027-01-15T13:00:00Z" }),
+      { status: 201, headers: { "content-type": "application/json" } },
+    );
+
+  it("re-mints against the new scope and stores it", async () => {
+    const { svc, rows, stored, tokenBodies } = makeService(okToken);
+    const id = await svc.createFromTemplate(createInput());
+
+    await svc.updateGitHubAppScope({
+      id,
+      repositoryIds: "12 34",
+      permissions: "contents:read",
+    });
+
+    // The edit mints again rather than waiting for the next renewal, so the
+    // live token is the narrowed one.
+    expect(JSON.parse(tokenBodies.at(-1)!)).toEqual({
+      repository_ids: [12, 34],
+      permissions: { contents: "read" },
+    });
+    const auth = rows.get(id)!.auth;
+    if (auth.kind !== "github-app") throw new Error("kind");
+    expect(auth.repositoryIds).toEqual([12, 34]);
+    expect(auth.permissions).toEqual({ contents: "read" });
+    expect(stored.get(SECRET_PATH)!.access_token).toBe("ghs_2");
+    expect(
+      stored.get(SECRET_PATH)![sdsFileKeyForHost("api.github.com")],
+    ).toContain("ghs_2");
+  });
+
+  it("keeps the credential and the connection's identity", async () => {
+    const { svc, rows, stored } = makeService(okToken);
+    const id = await svc.createFromTemplate(createInput());
+    const before = rows.get(id)!;
+
+    await svc.updateGitHubAppScope({ id, repositoryIds: "12" });
+
+    const after = rows.get(id)!;
+    expect(after.name).toBe(before.name);
+    expect(after.contributions).toEqual(before.contributions);
+    expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
+  });
+
+  // Clearing is a widening, so it has to reach GitHub as "no body" rather than
+  // leaving the previous narrowing quietly in place.
+  it("clears the scope back to the full installation", async () => {
+    const { svc, rows, tokenBodies } = makeService(okToken);
+    const id = await svc.createFromTemplate(
+      createInput({ repositories: "docs", permissions: "contents:read" }),
+    );
+
+    await svc.updateGitHubAppScope({ id });
+
+    expect(tokenBodies.at(-1)).toBeUndefined();
+    const auth = rows.get(id)!.auth;
+    if (auth.kind !== "github-app") throw new Error("kind");
+    expect(auth).not.toHaveProperty("repositories");
+    expect(auth).not.toHaveProperty("repositoryIds");
+    expect(auth).not.toHaveProperty("permissions");
+  });
+
+  it("replaces a name-based scope rather than merging with it", async () => {
+    const { svc, rows } = makeService(okToken);
+    const id = await svc.createFromTemplate(
+      createInput({ repositories: "docs" }),
+    );
+
+    await svc.updateGitHubAppScope({ id, repositoryIds: "12" });
+
+    const auth = rows.get(id)!.auth;
+    if (auth.kind !== "github-app") throw new Error("kind");
+    expect(auth.repositoryIds).toEqual([12]);
+    expect(auth).not.toHaveProperty("repositories");
+  });
+
+  // Proven before it is stored, exactly as create does — otherwise a scope the
+  // installation cannot cover would park the connection an hour later instead
+  // of failing the edit the user is looking at.
+  it("leaves everything untouched when GitHub rejects the new scope", async () => {
+    let mints = 0;
+    const { svc, rows, stored } = makeService((url) => {
+      if (!url.includes("/access_tokens")) return okToken();
+      mints += 1;
+      // The create's mint succeeds; the edit's is refused.
+      return mints === 1
+        ? okToken()
+        : new Response("no access to that repository", { status: 422 });
+    });
+    const id = await svc.createFromTemplate(createInput());
+    const authBefore = rows.get(id)!.auth;
+    const tokenBefore = stored.get(SECRET_PATH)!.access_token;
+
+    await expect(
+      svc.updateGitHubAppScope({ id, repositoryIds: "999" }),
+    ).rejects.toThrow();
+
+    expect(rows.get(id)!.auth).toEqual(authBefore);
+    expect(stored.get(SECRET_PATH)!.access_token).toBe(tokenBefore);
+  });
+
+  // The mint proves the credential still works, which is what un-parks a
+  // connection everywhere else in this module.
+  it("clears a refresh-failure marker on a successful re-scope", async () => {
+    const { svc, rows } = makeService(okToken);
+    const id = await svc.createFromTemplate(createInput());
+    const created = rows.get(id)!;
+    if (created.auth.kind !== "github-app") throw new Error("kind");
+    rows.set(id, {
+      ...created,
+      auth: { ...created.auth, refreshFailedAt: 1700000000 },
+    });
+    expect((await svc.getConnection(id))?.status).toBe("expired");
+
+    await svc.updateGitHubAppScope({ id, repositoryIds: "12" });
+
+    const auth = rows.get(id)!.auth;
+    if (auth.kind !== "github-app") throw new Error("kind");
+    expect(auth.refreshFailedAt).toBeUndefined();
+    expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  it("rejects an id that is not a whole number before reaching GitHub", async () => {
+    const { svc } = makeService(okToken);
+    const id = await svc.createFromTemplate(createInput());
+    await expect(
+      svc.updateGitHubAppScope({ id, repositoryIds: "12abc" }),
+    ).rejects.toThrow(/whole number/);
+  });
+
+  it("refuses a connection that is not a GitHub App installation", async () => {
+    const { svc } = makeService(okToken);
+    const id = await svc.createFromTemplate({
+      templateId: "github-pat",
+      name: "pat",
+      authKind: "header" as const,
+      value: "ghp_x",
+    });
+    await expect(svc.updateGitHubAppScope({ id })).rejects.toThrow(
+      /not a GitHub App/,
+    );
+  });
+
+  it("surfaces the stored scope on the connection view", async () => {
+    const { svc } = makeService(okToken);
+    const id = await svc.createFromTemplate(
+      createInput({ repositories: "docs", permissions: "contents:read" }),
+    );
+    expect((await svc.getConnection(id))?.githubAppScope).toEqual({
+      repositories: ["docs"],
+      permissions: { contents: "read" },
+    });
+  });
+
+  it("omits the scope from the view when nothing is narrowed", async () => {
+    const { svc } = makeService(okToken);
+    const id = await svc.createFromTemplate(createInput());
+    expect((await svc.getConnection(id))?.githubAppScope).toBeUndefined();
+  });
+
+  // The connection already holds its key, so editing must never ask for it.
+  it("probes the installation using the connection's stored key", async () => {
+    const { svc, tokenCalls } = makeService((url) =>
+      url.endsWith("/app/installations/987654")
+        ? new Response(
+            JSON.stringify({
+              permissions: { contents: "write" },
+              repository_selection: "selected",
+              account: { login: "dam-agents" },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          )
+        : url.includes("/installation/repositories")
+          ? new Response(
+              JSON.stringify({ repositories: [{ id: 12, name: "docs" }] }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            )
+          : okToken(),
+    );
+    const id = await svc.createFromTemplate(createInput());
+
+    const probe = await svc.probeGitHubAppInstallationForConnection({
+      connectionId: id,
+    });
+
+    expect(probe.permissions).toEqual({ contents: "write" });
+    expect(probe.repositories).toEqual([{ id: 12, name: "docs" }]);
+    expect(tokenCalls).toContain(
+      "https://api.github.com/app/installations/987654",
+    );
   });
 });

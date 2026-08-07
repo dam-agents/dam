@@ -388,12 +388,16 @@ export async function remintGitHubAppOne(
     access_token: next.accessToken,
     ...buildConnectionSdsFields(conn.contributions, next.accessToken),
   });
-  const updatedAuth: ConnectionAuthConfig = {
-    ...withoutRefreshFailureMarker(auth),
-    expiresAt: next.expiresAt,
-  };
+  // Merge the two keys this tick owns rather than writing back the whole `auth`
+  // it read at the start. A github-app connection's scope is editable in place,
+  // so a re-scope that landed while this mint was in flight would otherwise be
+  // overwritten by the pre-edit copy — quietly restoring authority the user had
+  // just taken away. Same shape as the failure-marker write above.
   await deps.db
     .update(connectionsTable)
-    .set({ auth: updatedAuth, updatedAt: new Date() })
+    .set({
+      auth: sql`jsonb_set(${connectionsTable.auth}, '{expiresAt}', to_jsonb(${next.expiresAt}::bigint)) - 'refreshFailedAt'`,
+      updatedAt: new Date(),
+    })
     .where(eq(connectionsTable.id, conn.id));
 }
