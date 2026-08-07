@@ -192,6 +192,16 @@ export function createAcpRelay(
         pending.push({ data: data as Buffer, isBinary });
       });
 
+      // A client that leaves while we're still waking the pod would otherwise
+      // strand its upstream: the close→upstream handler below is only registered
+      // once `connectUpstream` resolves, and the pod-side channel stays engaged
+      // forever, pinning that session against the runtime's idle reap.
+      let clientGone = false;
+      client.once("close", () => {
+        clientGone = true;
+        pending.length = 0;
+      });
+
       const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp`;
 
       identityLookup
@@ -217,6 +227,10 @@ export function createAcpRelay(
         })
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {
+          if (clientGone) {
+            upstream.close(1000, "client gone");
+            return;
+          }
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.send(msg.data, { binary: msg.isBinary });
