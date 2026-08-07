@@ -77,6 +77,38 @@ func TestReclaimedPeerStaysDownUnderTheActivityItWasReclaimedUnder(t *testing.T)
 	assert.True(t, shouldRun(ann, time.Hour, stamp.Add(time.Second)), "a newer bump must revive a reclaimed peer")
 }
 
+// The non-recursion guarantee, end to end: a real reclaim must write the stamp,
+// and the victim's own next reconcile must leave it down. Without the stamp the
+// victim's activity is still inside its timeout, so that reconcile would scale
+// it straight back up and steal the room the claimant was just admitted with.
+func TestReclaimedVictimStaysDownOnItsOwnNextReconcile(t *testing.T) {
+	peer, peerSS := idlePeer("peer", "3900m", "1Gi", 10*time.Minute, nil)
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+	r, _ := setupReconciler(t, agent, peerSS)
+	r.busyProbe = func(context.Context, string) bool { return false }
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.Equal(t, int32(0), agentSSReplicas(t, r, "peer"), "precondition: peer was reclaimed")
+
+	// The stamp must actually have been written to the victim's CR.
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "peer", metav1.GetOptions{})
+	require.NoError(t, err)
+	reclaimed, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	require.NotEmpty(t, reclaimed.Annotations[annReclaimedAt], "reclaim must stamp the victim, else its next reconcile takes the room back")
+
+	// Its own next reconcile must not resurrect it, even though last-activity
+	// is still well inside the 1h timeout.
+	require.NoError(t, r.Reconcile(context.Background(), reclaimed))
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, "peer"), "reclaimed victim must stay down")
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, "my-agent"), "claimant must keep the room it was admitted with")
+}
+
 func TestReclaimHibernatesNothingWhenRoomIsInsufficient(t *testing.T) {
 	// The only idle peer is too small to cover the shortfall: the start must be
 	// refused as before, with the peer left running — no agent is killed for a
