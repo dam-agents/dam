@@ -21,12 +21,18 @@ function makeFakeRedis(opts?: { failScan?: boolean }) {
     }),
     scan: vi.fn(async (cursor: string, _m: string, pattern: string) => {
       if (opts?.failScan) throw new Error("redis down");
-      const re = new RegExp(`^${pattern.replace("*", ".*")}$`);
+      // Every pattern the store issues is a literal prefix plus one trailing
+      // "*", so matching is a prefix test — no glob-to-regex translation to get
+      // subtly wrong. Reject anything else rather than quietly mismatching it.
+      if (!pattern.endsWith("*") || pattern.slice(0, -1).includes("*"))
+        throw new Error(`fake redis: unsupported scan pattern ${pattern}`);
+      const prefix = pattern.slice(0, -1);
       const all = [...keys];
       // Hand back one key per page so a match on a later page still counts.
       const i = Number(cursor);
       const next = i + 1 >= all.length ? "0" : String(i + 1);
-      const page = all[i] !== undefined && re.test(all[i]!) ? [all[i]!] : [];
+      const page =
+        all[i] !== undefined && all[i]!.startsWith(prefix) ? [all[i]!] : [];
       return [next, page] as [string, string[]];
     }),
   };
