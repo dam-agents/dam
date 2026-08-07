@@ -1,4 +1,5 @@
 import type { TtlStore } from "../../../core/ttl-store.js";
+import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
   Actions,
   Card,
@@ -20,6 +21,7 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import {
   buildAuthorizeUrl,
   generatePkce,
@@ -372,11 +374,22 @@ export function createTelegramWorker(deps: {
   /** Lowercase slash-command name for the unified `/dam bind` / `/dam unbind`
    *  surface; from the brand config, matching the Slack worker. */
   brandShort: string;
+  /** Display brand name, used where the agent is told where its owner acts
+   *  (network-access guidance). Falls back to `brandShort` when unset. */
+  brandName?: string;
   emit?: (event: DomainEvent) => void;
+  /** Marks the agent as channel-driven for the length of each turn, so the
+   *  egress gate can refuse a request no Telegram participant could approve.
+   *  Defaults to a no-op for tests that don't exercise it. */
+  attendance?: ChannelTurnAttendance;
   /** Test seam; defaults to the Bot API getChatMember check. */
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
+  const attendance: ChannelTurnAttendance = deps.attendance ?? {
+    openChannelTurn: () => () => {},
+  };
+  const brandName = deps.brandName ?? deps.brandShort;
   const { botToken, makeAcpClient, agents } = deps;
 
   // One bot for the install. The poller and the in-memory turn state below
@@ -423,12 +436,16 @@ export function createTelegramWorker(deps: {
       `To reply, call the \`mcp__platform-outbound__send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       "To deliberately stay silent — a group message that isn't for you, or one already handled — call `mcp__platform-outbound__no_reply_needed` instead of replying.",
+      channelNetworkAccessGuidance(brandName),
       "",
       `Message: ${text}`,
     ].join("\n");
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    // Held for the whole turn, resumed sessions included: the egress gate reads
+    // this to tell that a refused host has nobody here who could allow it.
+    const releaseAttendance = attendance.openChannelTurn(agentId);
     try {
       await agents().ensureReady(agentId);
       const acp = makeAcpClient(agentId);
@@ -466,6 +483,7 @@ export function createTelegramWorker(deps: {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       }
     } finally {
+      releaseAttendance();
       emitTurn(agentId, outcome, author.userId, failureReason);
     }
   }

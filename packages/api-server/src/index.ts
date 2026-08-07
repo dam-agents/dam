@@ -127,6 +127,7 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease } from "./core/leader-lease.js";
+import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
@@ -188,6 +189,11 @@ const sharedRedis = createBullConnection(
   config.redisUrl,
   config.redisPassword ?? undefined,
 ) as import("ioredis").Redis;
+
+// Who can answer an egress approval for an agent: the channel workers mark a
+// turn open for its duration, and the ext_authz gate reads that plus the
+// relays' session-presence keys to decide whether holding is worth anything.
+const turnAttendance = createTurnAttendance(sharedRedis);
 
 // Periodic background work runs as BullMQ job schedulers, one queue per job
 // ("periodic.<name>") — one execution per period across replicas, and a
@@ -489,6 +495,8 @@ const slackWorker = slackGatewayFactory
       { name: config.brand.name, short: config.brand.short },
       isTermsAccepted,
       config.uiBaseUrl,
+      undefined, // emit — keep the default in-process event bus
+      turnAttendance,
     )
   : undefined;
 
@@ -517,6 +525,8 @@ const telegramWorker =
         isTermsAccepted,
         uiBaseUrl: config.uiBaseUrl,
         brandShort: config.brand.short,
+        brandName: config.brand.name,
+        attendance: turnAttendance,
       })
     : undefined;
 
@@ -608,6 +618,7 @@ const {
       return matched ? { verdict: matched.verdict } : null;
     },
   },
+  attendance: turnAttendance,
   wrapperFrameSender,
   holdSeconds: config.approvalHoldSeconds,
   // The presigned link is the per-request authorization for the store, so
@@ -953,6 +964,7 @@ async function shutdown() {
   await runtimeDelivery.queue.close();
   await schedulesBoot.close();
   await redisBus.close();
+  turnAttendance.close();
   await sharedRedis.quit().catch(() => {});
   await sql.end();
   extAuthzGrpcServer.tryShutdown(() => {});

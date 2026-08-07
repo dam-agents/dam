@@ -23,7 +23,7 @@ Channels split along a structural axis that has real consequences for secrets an
 
 The binding itself is the authorization: anyone the messenger admits to the conversation drives the Agent under the Agent's own credentials. There is no per-person access mode, no identity link required to drive a turn, and no allow-list. Every turn relays single-track to the main agent pod; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis _place_ and the sender's Slack user id; and the prompt text is speaker-labelled with the sender's Slack mention, so a multi-speaker session stays attributable inside the conversation itself.
 
-Telegram is structurally identical — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent. The two messengers behave the same.
+Telegram is structurally identical — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent.
 
 #### Ambient mode
 
@@ -166,7 +166,7 @@ sequenceDiagram
 
 A few observations the diagram glosses over:
 
-- **The gates are the binding check plus the binding owner's Terms-of-Use acceptance** — no sender identity is resolved. Both messengers behave identically here.
+- **The gates are the binding check plus the binding owner's Terms-of-Use acceptance** — no sender identity is resolved. Both messengers behave identically here. An unallowed host is refused, not held ([egress](security-and-credentials.md)).
 - **An undecodable attachment is withheld, not forwarded.** An inbound image becomes prompt content only when its bytes are a format the harness decodes: the sniffed type outranks the messenger's label, and a label claiming no format is still sniffed. Handed anything else, a harness substitutes an internal error for the picture and the agent reports that as its answer. So what was withheld is named to the sender — separating a format nothing decodes from a download that returned a page instead of the file, the shape a missing permission takes — and to the agent in its prompt, so it never answers blind about a picture it did not receive.
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI. Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note and waits one more window before answering, so a healthy-but-slow start never loses the turn. A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string, and never raw controller messages; a cause the platform is itself repairing still invites a retry. Telegram replies with the same copy on wake failures (no early notice, no extended wait).

@@ -530,6 +530,26 @@ header are gone.
 The HTTP filter on TLS-terminated chains sees method/path; the network
 filter on the catch-all chain sees SNI only.
 
+**Unattended requests are refused, not held.** Holding is only worth
+doing where a verdict can be made. A turn driven from a messenger
+([channels](channels.md)) cannot produce one — the owner is not
+necessarily present, and the conversation's other members are not the
+owner — so a hold raised by such a turn would occupy the entire window
+and deny anyway, with the turn silent throughout. So when the gate sees
+a channel turn open on the agent and no interactive session attached to
+answer for it, it records the request and denies at once. The record is
+the point: it stays actionable in the inbox, a permanent verdict there
+writes the rule the agent's next attempt consumes, and retries reuse
+that one row instead of filing a copy each time. No in-session prompt
+is published on this path — the only consumers are the relay clients
+whose absence defines it. Both signals are read across api-server
+replicas (the replica relaying a turn is rarely the one a Check lands
+on) and fail toward *attended*, so losing them degrades to the ordinary
+hold rather than to silent denial. An attached browser or CLI session
+means someone can decide, so a channel turn running alongside one holds
+as usual; and an agent whose rules allow everything never reaches this
+path, because nothing it requests is unmatched.
+
 **Egress Aliasing.** An Invocation target has no egress identity of its
 own: before any decision, the gate resolves the calling agent to its
 driver — recursively for chained Invocations, up to the root non-target
@@ -552,9 +572,11 @@ Binding a conversation surface — a Slack channel/DM or a Telegram
 chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
 relays to the main agent pod and runs under the Agent's own
-credential set, gated by the owner's HITL rules and egress rules
-exactly like any other turn; no per-speaker credential selection
-happens. The binding owner's Terms-of-Use acceptance gates each turn
+credential set, gated by the owner's egress rules exactly like any
+other turn; no per-speaker credential selection happens. What such a
+turn cannot do is raise a *hold* — the decision has nowhere to be made
+from a messenger, so an unmatched request is refused rather than
+waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
 — the terms bind the party whose credentials run it — and the
 security log attributes the allow to the messenger-native sender id
 with basis *place*.
