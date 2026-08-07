@@ -431,6 +431,60 @@ describe("github app engine readInstallation", () => {
     expect(info.repositories).toEqual([{ id: 12, name: "docs" }]);
   });
 
+  // The grant is read as the app and needs no token; the repository list is a
+  // separate, weaker call. Losing the second must not cost the first.
+  it("keeps the permissions when the repository listing fails", async () => {
+    const { engine } = makeEngine((call) => {
+      if (call.url.endsWith("/app/installations/987654")) {
+        return installationResponse("selected");
+      }
+      if (call.url.includes("/access_tokens")) {
+        return jsonResponse({ token: "ghs_probe" });
+      }
+      return new Response("Resource not accessible by integration", {
+        status: 403,
+      });
+    });
+
+    const info = await read(engine);
+    expect(info.permissions).toEqual({ contents: "write", issues: "read" });
+    expect(info.repositories).toEqual([]);
+    expect(info.repositoriesUnavailable).toMatch(/403/);
+  });
+
+  it("keeps the permissions when the token for listing cannot be minted", async () => {
+    const { engine } = makeEngine((call) =>
+      call.url.endsWith("/app/installations/987654")
+        ? installationResponse("selected")
+        : new Response("nope", { status: 422 }),
+    );
+    const info = await read(engine);
+    expect(info.permissions).toEqual({ contents: "write", issues: "read" });
+    expect(info.repositoriesUnavailable).toBeTruthy();
+  });
+
+  // Nothing else will ever use the probe's token, so it should not outlive the
+  // probe just because GitHub would have expired it in an hour.
+  it("revokes the token it minted for the listing", async () => {
+    const { engine, calls } = makeEngine(respondFor("selected"));
+    await read(engine);
+    const revoke = calls.find((c) => c.url.endsWith("/installation/token"));
+    expect(revoke?.method).toBe("DELETE");
+    expect(revoke?.headers["Authorization"]).toBe("Bearer ghs_probe");
+  });
+
+  it("still returns the listing when revoking the probe token fails", async () => {
+    const { engine } = makeEngine((call) => {
+      if (call.url.endsWith("/installation/token")) {
+        return new Response("boom", { status: 500 });
+      }
+      return respondFor("selected")(call);
+    });
+    const info = await read(engine);
+    expect(info.repositories).toEqual([{ id: 12, name: "docs" }]);
+    expect(info.repositoriesUnavailable).toBeUndefined();
+  });
+
   it("surfaces the status when the installation cannot be read", async () => {
     const { engine } = makeEngine(
       () => new Response("Not Found", { status: 404 }),

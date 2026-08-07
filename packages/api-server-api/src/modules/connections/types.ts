@@ -215,6 +215,11 @@ export interface GitHubAppInstallationProbe {
   repositories: { id: number; name: string }[];
   repositorySelection: "all" | "selected";
   accountLogin?: string;
+  /** Why the repository list is missing, when it could not be read. Reading
+   *  the grant and listing the repositories are separate calls with different
+   *  authority, so the second can fail alone — leaving permission narrowing
+   *  available and repository narrowing to be typed instead. */
+  repositoriesUnavailable?: string;
 }
 
 export interface ConnectionsService {

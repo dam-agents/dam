@@ -46,6 +46,10 @@ export interface GitHubAppInstallationInfo {
   repositories: { id: number; name: string }[];
   repositorySelection: "all" | "selected";
   accountLogin?: string;
+  /** Why the repository list is missing, when it could not be read. Reading it
+   *  is a second, weaker call than reading the grant itself, so its failure
+   *  costs the caller that list and nothing else. */
+  repositoriesUnavailable?: string;
 }
 
 export interface GitHubAppEngine {
@@ -214,6 +218,69 @@ export function createGitHubAppEngine(
     };
   }
 
+  /** Pages the installation's repositories. Needs an installation token — the
+   *  app JWT is the wrong identity for this endpoint — so it mints one, uses
+   *  it, and revokes it, leaving nothing behind that outlives the probe. */
+  async function listRepositories(opts: {
+    id: string;
+    appId: string;
+    installationId: string;
+    privateKeyPem: string;
+    apiBaseUrl: string;
+    base: string;
+    asApp: () => Record<string, string>;
+  }): Promise<{ id: number; name: string }[]> {
+    const { accessToken } = await mintInstallationToken({
+      id: opts.id,
+      appId: opts.appId,
+      installationId: opts.installationId,
+      privateKeyPem: opts.privateKeyPem,
+      apiBaseUrl: opts.apiBaseUrl,
+    });
+    const asInstallation = {
+      ...opts.asApp(),
+      Authorization: `Bearer ${accessToken}`,
+    };
+    try {
+      const repositories: { id: number; name: string }[] = [];
+      for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+        const listed = await fetchImpl(
+          `${opts.base}/installation/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`,
+          { headers: asInstallation },
+        );
+        if (!listed.ok) {
+          const txt = await listed.text();
+          throw new OAuthTokenEndpointError(
+            `GitHub App ${opts.id}: could not list the installation's repositories — ${listed.status} ${txt.slice(0, 500)}`,
+            { status: listed.status },
+          );
+        }
+        const body = (await listed.json()) as InstallationRepositoriesResponse;
+        const batch = body.repositories ?? [];
+        for (const repo of batch) {
+          if (typeof repo.id === "number" && repo.name) {
+            repositories.push({ id: repo.id, name: repo.name });
+          }
+        }
+        if (batch.length < REPOS_PER_PAGE) break;
+      }
+      return repositories;
+    } finally {
+      // The probe's token has done its one job. Revoking beats waiting out its
+      // hour: nothing else will ever use it, and a token that no longer exists
+      // cannot be misused. Best-effort — failing to revoke must not fail the
+      // probe, since the token expires on its own regardless.
+      try {
+        await fetchImpl(`${opts.base}/installation/token`, {
+          method: "DELETE",
+          headers: asInstallation,
+        });
+      } catch {
+        // Ignored deliberately; see above.
+      }
+    }
+  }
+
   return {
     mintInstallationToken,
 
@@ -250,47 +317,28 @@ export function createGitHubAppEngine(
       const permissions = info.permissions ?? {};
       const accountLogin = info.account?.login;
 
-      // Listed for either selection: a token may name a subset of an
-      // account-wide installation just as it may of a hand-picked one, and
-      // GitHub enumerates both. `repositorySelection` is carried out only so
-      // the caller can say the list will grow as the account does.
-      //
-      // Listing is authenticated as the installation, not as the app, so this
-      // needs a token. It is minted unscoped, used for the listing, and never
-      // stored or injected.
-      const { accessToken } = await mintInstallationToken({
-        id,
-        appId,
-        installationId,
-        privateKeyPem,
-        apiBaseUrl,
-      });
-      const repositories: { id: number; name: string }[] = [];
-      for (let page = 1; page <= MAX_REPO_PAGES; page++) {
-        const listed = await fetchImpl(
-          `${base}/installation/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`,
-          {
-            headers: {
-              ...asApp(),
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
-        );
-        if (!listed.ok) {
-          const txt = await listed.text();
-          throw new OAuthTokenEndpointError(
-            `GitHub App ${id}: could not list the installation's repositories — ${listed.status} ${txt.slice(0, 500)}`,
-            { status: listed.status },
-          );
-        }
-        const body = (await listed.json()) as InstallationRepositoriesResponse;
-        const batch = body.repositories ?? [];
-        for (const repo of batch) {
-          if (typeof repo.id === "number" && repo.name) {
-            repositories.push({ id: repo.id, name: repo.name });
-          }
-        }
-        if (batch.length < REPOS_PER_PAGE) break;
+      // The grant above is read as the app and is the half that matters. The
+      // repository list is a second, weaker call: it is authenticated as the
+      // *installation*, so it needs a token, and it can fail on its own
+      // (rate limit, a GitHub Enterprise that answers differently, an
+      // installation suspended between the two calls). Best-effort, therefore
+      // — losing the list must not also lose the permission ceiling, which
+      // cost no token to read and is what a caller can always narrow with.
+      let repositories: { id: number; name: string }[] = [];
+      let repositoriesUnavailable: string | undefined;
+      try {
+        repositories = await listRepositories({
+          id,
+          appId,
+          installationId,
+          privateKeyPem,
+          apiBaseUrl,
+          base,
+          asApp,
+        });
+      } catch (err) {
+        repositoriesUnavailable =
+          err instanceof Error ? err.message : "the list could not be read";
       }
 
       return {
@@ -298,6 +346,7 @@ export function createGitHubAppEngine(
         repositories,
         repositorySelection,
         ...(accountLogin ? { accountLogin } : {}),
+        ...(repositoriesUnavailable ? { repositoriesUnavailable } : {}),
       };
     },
   };
