@@ -31,6 +31,14 @@ const (
 	// Records whether the agent was running when its storage migration
 	// gated it down, so the manager can wake it back up after the flip.
 	annStorageMigrationWasRunning = "agent-platform.ai/storage-migration-was-running"
+	// Room reclaimed to admit a same-owner start (#3184), stamped by the
+	// controller when the budget gate hibernates this agent ahead of its idle
+	// timeout. Spends the activity stamp it was reclaimed under: the agent
+	// stays down until a bump *newer* than this value arrives, so the start it
+	// paid for cannot have the room stolen straight back by the victim's own
+	// next reconcile. Self-clearing — a deliberate touch outdates it, and the
+	// wake goes back through the gate like any other.
+	annReclaimedAt = "agent-platform.ai/reclaimed-at"
 	// Ephemeral invocation target (#2942), stamped by the api-server at
 	// create. Read by the budget gate: sweepable agents are exempt from the
 	// denied-wake memo (their driver is blocked waiting on the result, so a
@@ -72,6 +80,11 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	t, err := time.Parse(time.RFC3339, last)
 	if err != nil {
 		return true
+	}
+	// Room already reclaimed under this very activity stamp (#3184) — only a
+	// newer bump revives it. Fails open like every other stamp read.
+	if r, err := time.Parse(time.RFC3339, annotations[annReclaimedAt]); err == nil && !t.After(r) {
+		return false
 	}
 	return now.Sub(t) <= idleTimeout
 }

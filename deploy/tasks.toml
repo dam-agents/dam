@@ -136,7 +136,14 @@ fi
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-  if [ ! -d /var/lib/rancher/k3s ]; then
+  # Keyed on the kubeconfig, which k3s writes only once it is actually
+  # serving — not on /var/lib/rancher/k3s, which the provision scripts create
+  # early. An install interrupted mid-provision leaves that directory behind,
+  # and skipping on it wedged every later run: no k3s, no service, and a
+  # 120s wait ending in a misleading "stat k3s.yaml: no such file". The
+  # provision scripts are idempotent, so re-running over a partial state heals
+  # it.
+  if [ ! -f "$KUBECONFIG" ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
     # Lima provision scripts may shell out to apt-get; stub it so the loop
     # below doesn't fail on a non-Debian host. Idempotent.
