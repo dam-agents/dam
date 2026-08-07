@@ -31,6 +31,7 @@ function fakeTelegramWorker(): TelegramWorker {
     type: ChannelType.Telegram,
     start: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
+    resolveIdentity: vi.fn(async () => {}),
     botUsername: vi.fn(() => null),
     listConversations: vi.fn(async () => []),
     postMessage: vi.fn(async () => ({ ok: true as const })),
