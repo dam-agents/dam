@@ -113,6 +113,10 @@ function makeLoop(opts?: {
   let mode: Mode = "transient";
   let fetchCount = 0;
   let rows: RawRow[] = [rowFor("conn-1", auth)];
+  // Whether the rows currently read as due, without discarding them — models
+  // a connection whose expiry moved out and later back in, keeping whatever
+  // the loop persisted on it.
+  let due = true;
   const written: ConnectionAuthConfig[] = [];
 
   const fetchImpl = (async () => {
@@ -181,7 +185,9 @@ function makeLoop(opts?: {
       from: () => ({
         where: () =>
           Promise.resolve(
-            rows.filter((r) => !("refreshFailedAt" in (r.auth as object))),
+            due
+              ? rows.filter((r) => !("refreshFailedAt" in (r.auth as object)))
+              : [],
           ),
       }),
     }),
@@ -240,6 +246,8 @@ function makeLoop(opts?: {
     setClock: (t: number) => (clock = t),
     setMode: (m: Mode) => (mode = m),
     setRows: (ids: string[]) => (rows = ids.map((id) => rowFor(id, auth))),
+    /** Take the rows out of / back into the due set, preserving their auth. */
+    setDue: (v: boolean) => (due = v),
     fetchCount: () => fetchCount,
     /** Auth objects the loop persisted, oldest first. */
     written: () => written,
@@ -375,27 +383,32 @@ describe("oauth refresh loop backoff", () => {
     expect(h.fetchCount()).toBe(2);
   });
 
-  it("prunes backoff state once a connection leaves the due set", async () => {
+  it("keeps the backoff across a trip out of the due set, and a success clears it", async () => {
     const h = makeLoop({ baseMs: 100_000 });
 
     h.setClock(0);
     await h.loop.tickOnce(); // fail → nextAttempt = 100_000
     expect(h.fetchCount()).toBe(1);
 
-    // Connection no longer due (refreshed elsewhere / deleted) → entry pruned.
-    h.setRows([]);
-    expect(await h.loop.tickOnce()).toEqual({
-      refreshed: 0,
-      failed: 0,
-      skipped: 0,
-    });
+    // Leaves the due set and comes back — same row, so the backoff comes back
+    // with it. The in-memory version pruned here and handed the connection a
+    // free retry; persisted, a still-failing connection stays held.
+    h.setDue(false);
+    expect((await h.loop.tickOnce()).skipped).toBe(0);
+    h.setDue(true);
 
-    // It reappears well before the old window: a stale entry would skip it,
-    // but the pruned state means it is attempted immediately.
-    h.setRows(["conn-1"]);
     h.setClock(50_000);
+    expect((await h.loop.tickOnce()).skipped).toBe(1);
+    expect(h.fetchCount()).toBe(1);
+
+    // A success is what clears it — every credential write strips the record,
+    // so the connection is never held on a stale one after it is fixed.
+    h.setClock(150_000);
+    h.setMode("ok");
+    expect((await h.loop.tickOnce()).refreshed).toBe(1);
+    h.setMode("transient");
+    h.setClock(150_001);
     expect((await h.loop.tickOnce()).failed).toBe(1);
-    expect(h.fetchCount()).toBe(2);
   });
 });
 
