@@ -50,7 +50,170 @@ function fakeSlackWorker(): SlackWorker {
   };
 }
 
+/** In-memory stand-in for the Redis blob handoff. */
+function fakeBlobs() {
+  const store = new Map<string, Buffer>();
+  return {
+    store,
+    handoff: {
+      put: async (data: Buffer) => {
+        const key = `blob:${store.size}`;
+        store.set(key, data);
+        return key;
+      },
+      take: async (key: string) => {
+        const v = store.get(key) ?? null;
+        store.delete(key);
+        return v;
+      },
+    },
+  };
+}
+
+describe("channel attachments across replicas", () => {
+  it("delivers the bytes intact to the leader's worker", async () => {
+    const bus = fakeBus();
+    const blobs = fakeBlobs();
+    const leaderWorker = fakeSlackWorker();
+
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      blobs: blobs.handoff,
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      blobs: blobs.handoff,
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+
+    // Non-UTF8 bytes: a Buffer put through JSON.stringify comes back as
+    // `{type:"Buffer",data:[…]}`, which the worker would upload as garbage.
+    const data = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+    const result = await follower.postMessage(
+      "agent-1",
+      ChannelType.Slack,
+      "here",
+      { attachment: { filename: "x.png", data } },
+    );
+
+    expect(result).toEqual({ ok: true });
+    const passed = vi.mocked(leaderWorker.postMessage).mock.calls[0]![2]!
+      .attachment!;
+    expect(Buffer.isBuffer(passed.data)).toBe(true);
+    expect([...passed.data]).toEqual([...data]);
+    expect(passed.filename).toBe("x.png");
+    // Handed off, not leaked.
+    expect(blobs.store.size).toBe(0);
+  });
+
+  it("refuses rather than posting a message with the attachment silently missing", async () => {
+    const bus = fakeBus();
+    const blobs = fakeBlobs();
+    const leaderWorker = fakeSlackWorker();
+
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      blobs: blobs.handoff,
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+      }),
+      blobs: blobs.handoff,
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+
+    // The handoff expired before the leader read it.
+    const original = blobs.handoff.take;
+    blobs.handoff.take = async () => null;
+
+    expect(
+      await follower.postMessage("agent-1", ChannelType.Slack, "here", {
+        attachment: { filename: "x.png", data: Buffer.from([1, 2, 3]) },
+      }),
+    ).toEqual({ error: expect.stringMatching(/attachment/i) });
+    expect(leaderWorker.postMessage).not.toHaveBeenCalled();
+
+    blobs.handoff.take = original;
+    await leader.stopAll();
+    await follower.stopAll();
+  });
+});
+
 describe("channel outbound across replicas", () => {
+  it("runs a request once when two replicas both serve", async () => {
+    const bus = fakeBus();
+    const workerA = fakeSlackWorker();
+    const workerB = fakeSlackWorker();
+    // One claim keyspace, as Redis would be.
+    const claimed = new Set<string>();
+    const claim = async (id: string) =>
+      claimed.has(id) ? false : (claimed.add(id), true);
+
+    // Mid-handover: the outgoing holder hasn't noticed it lost the lease and
+    // the incoming one has already started serving. PUBLISH reaches both.
+    const outgoing = createChannelManager({
+      slackWorker: workerA,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+        claim,
+      }),
+      isLeader: () => true,
+    });
+    const incoming = createChannelManager({
+      slackWorker: workerB,
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+        claim,
+      }),
+      isLeader: () => true,
+    });
+    await outgoing.bootstrap(new Map());
+    await incoming.bootstrap(new Map());
+
+    const follower = createChannelManager({
+      slackWorker: fakeSlackWorker(),
+      rpc: createBusRpc<ChannelRpcRequest, unknown>({
+        bus,
+        service: "channels",
+        claim,
+      }),
+      isLeader: () => false,
+    });
+
+    await follower.postMessage("agent-1", ChannelType.Slack, "hello");
+
+    // Exactly one post reaches Slack — not one per serving replica.
+    const posts =
+      vi.mocked(workerA.postMessage).mock.calls.length +
+      vi.mocked(workerB.postMessage).mock.calls.length;
+    expect(posts).toBe(1);
+
+    await outgoing.stopAll();
+    await incoming.stopAll();
+    await follower.stopAll();
+  });
+
   it("routes a follower's reply to the leader's worker", async () => {
     const bus = fakeBus();
     const leaderWorker = fakeSlackWorker();

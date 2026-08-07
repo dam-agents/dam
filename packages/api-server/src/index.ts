@@ -125,6 +125,7 @@ import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
+import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease } from "./core/leader-lease.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -529,12 +530,19 @@ const telegramWorker =
 const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
   bus: redisBus,
   service: "channels",
+  // Exactly-once execution across a lease handover, when the outgoing and
+  // incoming holders both briefly serve. Without it both would run the
+  // request and post the message twice.
+  claim: async (id) =>
+    (await sharedRedis.set(`rpc:claim:channels:${id}`, "1", "EX", 60, "NX")) ===
+    "OK",
 });
 
 const channelManager = createChannelManager({
   slackWorker,
   telegramWorker,
   rpc: channelRpc,
+  blobs: createRedisBlobHandoff(sharedRedis),
   // Read per dispatch, so it always reflects the live lease rather than
   // whatever was true at construction.
   isLeader: () => channelLease.isLeader(),

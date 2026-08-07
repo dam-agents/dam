@@ -11,6 +11,7 @@ import {
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
+import type { BlobHandoff } from "../../../core/blob-handoff.js";
 
 export interface ChannelAttachment {
   filename: string;
@@ -210,16 +211,25 @@ export type ChannelRpcRequest = {
   args: unknown[];
 };
 
+/** `PostMessageOptions` as it crosses the bus: the attachment's bytes are
+ *  replaced by the key naming them in the blob handoff, since a Buffer cannot
+ *  survive JSON. */
+type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
+
 export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
   telegramWorker?: TelegramWorker;
   /** Cross-replica hop to the leader. Omitted, every call runs locally —
    *  the single-replica shape, and what the tests use. */
   rpc?: BusRpc<ChannelRpcRequest, unknown>;
+  /** Carries attachment bytes alongside the rpc. Required for cross-replica
+   *  attachments; without it a follower refuses one rather than posting the
+   *  message with the file silently missing. */
+  blobs?: BlobHandoff;
   /** Whether this replica holds the channel lease. Omitted, always true. */
   isLeader?: () => boolean;
 }): ChannelManager {
-  const { slackWorker, telegramWorker, rpc } = deps;
+  const { slackWorker, telegramWorker, rpc, blobs } = deps;
   const isLeader = deps.isLeader ?? (() => true);
   const workers: Worker[] = [slackWorker, telegramWorker].filter(
     Boolean,
@@ -271,7 +281,7 @@ export function createChannelManager(deps: {
       if (!worker) return Promise.resolve([]);
       return worker.listConversations(instanceName);
     },
-    postMessage: (
+    postMessage: async (
       instanceName: string,
       channelType: ChannelType,
       text: string,
@@ -279,9 +289,23 @@ export function createChannelManager(deps: {
     ) => {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker)
-        return Promise.resolve({
-          error: `channel type ${channelType} not available`,
-        });
+        return { error: `channel type ${channelType} not available` };
+
+      // A call that came over the bus carries the attachment's bytes in the
+      // blob handoff, not in the payload. Rehydrate before the worker sees it.
+      const wire = options?.attachment as
+        | (ChannelAttachment & Partial<WireAttachment>)
+        | undefined;
+      if (wire?.dataKey) {
+        const data = await blobs?.take(wire.dataKey);
+        if (!data)
+          return {
+            error:
+              "attachment bytes were not available on the posting replica; retry the send",
+          };
+        const { dataKey: _key, ...meta } = wire;
+        options = { ...options, attachment: { ...meta, data } };
+      }
       return worker.postMessage(instanceName, text, options);
     },
     reply: (
@@ -452,10 +476,28 @@ export function createChannelManager(deps: {
       ).catch(() => []);
     },
 
-    postMessage(instanceName, channelType, text, options) {
+    async postMessage(instanceName, channelType, text, options) {
+      // Attachment bytes can't ride the JSON payload, so on a hop they go
+      // through the blob handoff and only the key travels. Done here rather
+      // than inside the rpc because this is the one call that carries bytes.
+      let wireOptions = options;
+      if (!isLeader() && rpc && options?.attachment) {
+        if (!blobs)
+          return {
+            error: "cannot post an attachment from this replica (no handoff)",
+          };
+        const { data, ...meta } = options.attachment;
+        wireOptions = {
+          ...options,
+          attachment: {
+            ...meta,
+            dataKey: await blobs.put(data),
+          } as unknown as ChannelAttachment,
+        };
+      }
       return dispatchResult(
         "postMessage",
-        [instanceName, channelType, text, options],
+        [instanceName, channelType, text, wireOptions],
         () =>
           localHandlers.postMessage(instanceName, channelType, text, options),
       );

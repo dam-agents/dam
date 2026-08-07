@@ -39,6 +39,14 @@ export function createBusRpc<Req, Res>(opts: {
   /** Names the request channel (`rpc:<service>`). */
   service: string;
   timeoutMs?: number;
+  /** Wins the right to execute one request, exactly once across replicas.
+   *  PUBLISH fans out to *every* subscriber, so during a lease handover — the
+   *  old holder has not yet noticed it lost, the new one has already started
+   *  serving — two replicas receive the same request and would both run it,
+   *  double-posting to a conversation. Whoever claims the id executes; the
+   *  other drops it. Omitted, every server executes (single-server setups and
+   *  tests). */
+  claim?: (requestId: string) => Promise<boolean>;
 }): BusRpc<Req, Res> {
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const requestChannel = `rpc:${opts.service}`;
@@ -100,6 +108,19 @@ export function createBusRpc<Req, Res>(opts: {
           return;
         }
         void (async () => {
+          // Before any side effect: a request we don't win belongs to another
+          // replica, and running it too would duplicate the effect.
+          if (opts.claim) {
+            let won = false;
+            try {
+              won = await opts.claim(envelope.id);
+            } catch {
+              // Can't establish exclusivity — decline rather than risk a
+              // double post. The caller times out and surfaces an error.
+              return;
+            }
+            if (!won) return;
+          }
           let reply: Reply<Res>;
           try {
             reply = {
