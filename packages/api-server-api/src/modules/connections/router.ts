@@ -10,6 +10,7 @@ import {
   connectionCreateInputSchema,
   connectionDiscoverMcpInputSchema,
   connectionProbeClusterCaInputSchema,
+  connectionProbeGitHubAppInputSchema,
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
@@ -62,6 +63,12 @@ export const connectionsRouter = t.router({
   probeClusterCa: manageCredentialsProcedure
     .input(connectionProbeClusterCaInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.probeClusterCa(input)),
+
+  probeGitHubAppInstallation: manageCredentialsProcedure
+    .input(connectionProbeGitHubAppInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.probeGitHubAppInstallation(input),
+    ),
 
   update: manageCredentialsProcedure
     .input(connectionUpdateInputSchema)

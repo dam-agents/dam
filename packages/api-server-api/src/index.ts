@@ -265,6 +265,7 @@ export type {
   AppConnectionStatus,
   AppConnectionView,
   ClusterCaProbe,
+  GitHubAppInstallationProbe,
   ConnectionsService,
   Connection,
   ConnectionStatus,

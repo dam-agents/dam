@@ -134,6 +134,20 @@ const githubAppCreateInput = z.object({
   // installation's full authority.
   repositories: z.string().optional(),
   permissions: z.string().optional(),
+  // Repository ids, as picked from the installation. Same all-string shape as
+  // the sibling fields; ids take precedence over names when both arrive.
+  repositoryIds: z.string().optional(),
+});
+
+// Reads an installation's granted repositories and permissions before create,
+// so the form can offer them. Carries the private key for one request and
+// stores nothing — the same secret the create call is about to send anyway.
+export const connectionProbeGitHubAppInputSchema = z.object({
+  templateId: z.string().min(1),
+  appId: z.string().min(1),
+  installationId: z.string().min(1),
+  privateKey: z.string().min(1),
+  host: z.string().min(1).optional(),
 });
 
 const noneCreateInput = z.object({

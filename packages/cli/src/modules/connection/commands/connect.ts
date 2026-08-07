@@ -41,6 +41,7 @@ interface ConnectOpts {
   installationId?: string;
   privateKey?: string;
   repositories?: string;
+  repositoryIds?: string;
   permissions?: string;
   headerName?: string;
   valueFormat?: string;
@@ -103,6 +104,10 @@ export function buildConnectCommand(deps: {
     .option(
       "--repositories <names>",
       "input: limit the minted token to these repository names, space- or comma-separated (GitHub App installation)",
+    )
+    .option(
+      "--repository-ids <ids>",
+      "input: limit the minted token to these numeric repository ids; takes precedence over --repositories (GitHub App installation)",
     )
     .option(
       "--permissions <pairs>",
@@ -338,7 +343,11 @@ async function resolveSlugTemplate(args: {
   // installation's *full* authority. Every other stripped input lands in the
   // safe direction; these two land in the unsafe one, so fail rather than
   // report success for a connection that was never narrowed.
-  for (const flag of ["repositories", "permissions"] as const) {
+  for (const flag of [
+    "repositories",
+    "repositoryIds",
+    "permissions",
+  ] as const) {
     if (opts[flag] && !template.inputs.some((i) => i.name === flag)) {
       process.stderr.write(
         `error: this server does not support --${camelToKebab(flag)} for '${template.id}' — ` +
@@ -536,6 +545,7 @@ function buildPayload(
         installationId,
         privateKey,
         ...(v("repositories") ? { repositories: v("repositories")! } : {}),
+        ...(v("repositoryIds") ? { repositoryIds: v("repositoryIds")! } : {}),
         ...(v("permissions") ? { permissions: v("permissions")! } : {}),
       };
     }

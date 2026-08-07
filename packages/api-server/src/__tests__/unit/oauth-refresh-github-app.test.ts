@@ -189,3 +189,37 @@ describe("github-app re-mint with a stored scope", () => {
     if (parsed.success) expect(parsed.data).toEqual(SCOPED_AUTH);
   });
 });
+
+// Repository ids are what the installation picker records, so they carry the
+// same survive-every-renewal requirement the names do.
+describe("github-app re-mint with picked repository ids", () => {
+  const ID_AUTH: Extract<ConnectionAuthConfig, { kind: "github-app" }> = {
+    ...AUTH,
+    repositoryIds: [12, 34],
+    permissions: { contents: "read" },
+  };
+  const ID_CONN: Connection = { ...CONN, auth: ID_AUTH };
+
+  it("re-mints asking for the same repository ids", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
+    await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
+    expect(JSON.parse(deps.tokenBodies[0]!)).toEqual({
+      repository_ids: [12, 34],
+      permissions: { contents: "read" },
+    });
+  });
+
+  it("keeps the ids on the row it writes back", async () => {
+    const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
+    await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
+    const updated = deps.dbUpdates[0].auth;
+    if (updated.kind !== "github-app") throw new Error("wrong kind");
+    expect(updated.repositoryIds).toEqual([12, 34]);
+  });
+
+  it("id-scoped auth round-trips through the wire schema", () => {
+    const parsed = connectionAuthConfigSchema.safeParse(ID_AUTH);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data).toEqual(ID_AUTH);
+  });
+});

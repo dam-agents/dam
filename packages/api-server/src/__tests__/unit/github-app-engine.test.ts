@@ -172,7 +172,11 @@ describe("github app engine mintInstallationToken", () => {
 describe("github app engine token scoping", () => {
   const scopedMint = (
     engine: ReturnType<typeof makeEngine>["engine"],
-    scope: { repositories?: string[]; permissions?: Record<string, string> },
+    scope: {
+      repositories?: string[];
+      repositoryIds?: number[];
+      permissions?: Record<string, string>;
+    },
   ) =>
     engine.mintInstallationToken({
       id: "connection:conn-1:github-app",
@@ -262,5 +266,177 @@ describe("github app engine token scoping", () => {
     await expect(
       scopedMint(engine, { repositories: ["docs"] }),
     ).rejects.toMatchObject({ status: 401, oauthError: "invalid_client" });
+  });
+
+  it("sends repository ids under GitHub's own key name", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, { repositoryIds: [12, 34] });
+    expect(JSON.parse(calls[0].body!)).toEqual({ repository_ids: [12, 34] });
+  });
+
+  // GitHub rejects a request carrying both spellings of the repository limit.
+  it("sends ids alone when both ids and names are given", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, {
+      repositories: ["docs"],
+      repositoryIds: [12],
+    });
+    const body = JSON.parse(calls[0].body!);
+    expect(body).toEqual({ repository_ids: [12] });
+    expect(body).not.toHaveProperty("repositories");
+  });
+
+  it("falls back to names when the id list is empty", async () => {
+    const { engine, calls } = makeEngine(() =>
+      jsonResponse({ token: "ghs_abc" }),
+    );
+    await scopedMint(engine, { repositories: ["docs"], repositoryIds: [] });
+    expect(JSON.parse(calls[0].body!)).toEqual({ repositories: ["docs"] });
+  });
+});
+
+describe("github app engine readInstallation", () => {
+  const read = (engine: ReturnType<typeof makeEngine>["engine"]) =>
+    engine.readInstallation({
+      id: "template:github-app",
+      appId: "123456",
+      installationId: "987654",
+      privateKeyPem: PRIVATE_KEY_PEM,
+      apiBaseUrl: "https://api.github.com",
+    });
+
+  function installationResponse(
+    selection: "all" | "selected",
+    permissions: Record<string, string> = { contents: "write", issues: "read" },
+  ) {
+    return jsonResponse(
+      {
+        permissions,
+        repository_selection: selection,
+        account: { login: "dam-agents" },
+      },
+      200,
+    );
+  }
+
+  function respondFor(selection: "all" | "selected") {
+    return (call: RecordedCall) => {
+      if (call.url.endsWith("/app/installations/987654")) {
+        return installationResponse(selection);
+      }
+      if (call.url.includes("/access_tokens")) {
+        return jsonResponse({ token: "ghs_probe" });
+      }
+      return jsonResponse({ repositories: [{ id: 12, name: "docs" }] });
+    };
+  }
+
+  it("returns the installation's granted permissions", async () => {
+    const { engine, calls } = makeEngine(respondFor("all"));
+    const info = await read(engine);
+    expect(calls[0].url).toBe(
+      "https://api.github.com/app/installations/987654",
+    );
+    expect(info.permissions).toEqual({ contents: "write", issues: "read" });
+    expect(info.accountLogin).toBe("dam-agents");
+  });
+
+  // A token may name a subset of an account-wide installation exactly as it may
+  // of a hand-picked one, so the repositories must be listed either way —
+  // otherwise the commonest install type could not be narrowed at all.
+  it("lists repositories for an all-repositories installation too", async () => {
+    const { engine } = makeEngine(respondFor("all"));
+    const info = await read(engine);
+    expect(info.repositorySelection).toBe("all");
+    expect(info.repositories).toEqual([{ id: 12, name: "docs" }]);
+  });
+
+  it("mints a token and lists repositories for a selected installation", async () => {
+    const { engine, calls } = makeEngine((call) => {
+      if (call.url.endsWith("/app/installations/987654")) {
+        return installationResponse("selected");
+      }
+      if (call.url.includes("/access_tokens")) {
+        return jsonResponse({ token: "ghs_probe" });
+      }
+      return jsonResponse({
+        repositories: [
+          { id: 12, name: "docs" },
+          { id: 34, name: "handbook" },
+        ],
+      });
+    });
+
+    const info = await read(engine);
+    expect(info.repositories).toEqual([
+      { id: 12, name: "docs" },
+      { id: 34, name: "handbook" },
+    ]);
+    // The listing is authenticated as the installation, not as the app.
+    const listing = calls.find((c) => c.url.includes("/installation/repos"));
+    expect(listing?.headers["Authorization"]).toBe("Bearer ghs_probe");
+    // …and the token minted to read it is never a narrowed one.
+    const mintCall = calls.find((c) => c.url.includes("/access_tokens"));
+    expect(mintCall?.body).toBeUndefined();
+  });
+
+  it("follows pages until a short one, then stops", async () => {
+    const pages: Record<string, { id: number; name: string }[]> = {
+      "page=1": Array.from({ length: 100 }, (_, i) => ({
+        id: i + 1,
+        name: `r${i + 1}`,
+      })),
+      "page=2": [{ id: 101, name: "last" }],
+    };
+    const { engine, calls } = makeEngine((call) => {
+      if (call.url.endsWith("/app/installations/987654")) {
+        return installationResponse("selected");
+      }
+      if (call.url.includes("/access_tokens")) {
+        return jsonResponse({ token: "ghs_probe" });
+      }
+      const page = call.url.includes("page=2") ? "page=2" : "page=1";
+      return jsonResponse({ repositories: pages[page] });
+    });
+
+    const info = await read(engine);
+    expect(info.repositories).toHaveLength(101);
+    expect(
+      calls.filter((c) => c.url.includes("/installation/repos")),
+    ).toHaveLength(2);
+  });
+
+  // readInstallation mints a token internally; that must not depend on the
+  // method being called through the engine object.
+  it("works when the method is called detached from the engine", async () => {
+    const { engine } = makeEngine((call) =>
+      call.url.endsWith("/app/installations/987654")
+        ? installationResponse("selected")
+        : call.url.includes("/access_tokens")
+          ? jsonResponse({ token: "ghs_probe" })
+          : jsonResponse({ repositories: [{ id: 12, name: "docs" }] }),
+    );
+    const { readInstallation } = engine;
+    const info = await readInstallation({
+      id: "template:github-app",
+      appId: "123456",
+      installationId: "987654",
+      privateKeyPem: PRIVATE_KEY_PEM,
+      apiBaseUrl: "https://api.github.com",
+    });
+    expect(info.repositories).toEqual([{ id: 12, name: "docs" }]);
+  });
+
+  it("surfaces the status when the installation cannot be read", async () => {
+    const { engine } = makeEngine(
+      () => new Response("Not Found", { status: 404 }),
+    );
+    await expect(read(engine)).rejects.toThrow(
+      /could not read the installation/,
+    );
   });
 });

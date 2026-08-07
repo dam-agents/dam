@@ -441,6 +441,31 @@ export function normalizePrivateKeyPem(raw: string): string {
   return pem;
 }
 
+/** The GitHub REST base a `github-app` template's installation endpoints hang
+ *  off. A host-parameterized template (its `apiBaseUrl` carries `{host}`, e.g.
+ *  the GitHub Enterprise sibling) takes the host from user input and
+ *  substitutes it through, same as the OAuth GHE path; the fixed github.com
+ *  template has nothing to substitute and keeps its static host. Shared so the
+ *  pre-create installation probe reads from exactly the base the create will
+ *  mint against. */
+export function gitHubAppApiBase(
+  template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
+  inputHost: string | undefined,
+): { apiBaseUrl: string; host: string | undefined; needsHost: boolean } {
+  const apiBaseUrlTemplate = template.apiBaseUrl ?? "https://api.github.com";
+  const needsHost = apiBaseUrlTemplate.includes("{host}");
+  const host = needsHost ? (inputHost ?? template.host) : template.host;
+  if (needsHost && !host)
+    throw new Error(`template ${template.id}: missing host`);
+  return {
+    apiBaseUrl: host
+      ? apiBaseUrlTemplate.replace(/\{host\}/g, host)
+      : apiBaseUrlTemplate,
+    host,
+    needsHost,
+  };
+}
+
 // GitHub App installation grant. Like client-credentials, the secret map carries
 // only the signing material (the private key); the installation token and its
 // SDS files are minted by the service before the secret write. The token reaches
@@ -459,18 +484,10 @@ function buildGitHubApp(
   }
   const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
 
-  // A host-parameterized template (its apiBaseUrl carries `{host}`, e.g. the
-  // GitHub Enterprise sibling) takes the host from user input and substitutes
-  // it through, same as the OAuth GHE path; the fixed github.com template has
-  // nothing to substitute and keeps its static host + contributions.
-  const apiBaseUrlTemplate = template.apiBaseUrl ?? "https://api.github.com";
-  const needsHost = apiBaseUrlTemplate.includes("{host}");
-  const host = needsHost ? (input.host ?? template.host) : template.host;
-  if (needsHost && !host)
-    throw new Error(`template ${template.id}: missing host`);
-  const apiBaseUrl = host
-    ? apiBaseUrlTemplate.replace(/\{host\}/g, host)
-    : apiBaseUrlTemplate;
+  const { apiBaseUrl, host, needsHost } = gitHubAppApiBase(
+    template,
+    input.host,
+  );
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
   const contributions: Contribution[] = template.contributions.map((c) =>
@@ -495,6 +512,7 @@ function buildGitHubApp(
       apiBaseUrl,
       ...(host ? { host } : {}),
       ...(scope.repositories ? { repositories: scope.repositories } : {}),
+      ...(scope.repositoryIds ? { repositoryIds: scope.repositoryIds } : {}),
       ...(scope.permissions ? { permissions: scope.permissions } : {}),
     },
     contributions,

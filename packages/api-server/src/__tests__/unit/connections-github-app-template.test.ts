@@ -28,6 +28,7 @@ function build(
     installationId: string;
     privateKey: string;
     repositories: string;
+    repositoryIds: string;
     permissions: string;
   }> = {},
 ) {
@@ -184,6 +185,13 @@ describe("github-app template build", () => {
     await expect(build({ permissions: "contents" })).rejects.toThrow(
       /name:level/,
     );
+  });
+
+  it("stores picked repository ids on the auth config", async () => {
+    const built = await build({ repositoryIds: "12 34" });
+    if (built.auth.kind !== "github-app") throw new Error("wrong kind");
+    expect(built.auth.repositoryIds).toEqual([12, 34]);
+    expect(built.auth).not.toHaveProperty("repositories");
   });
 
   it("offers the scope as optional form inputs", () => {

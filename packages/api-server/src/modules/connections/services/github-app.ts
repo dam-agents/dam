@@ -27,6 +27,9 @@ export async function mintGitHubAppToken(
     privateKeyPem: opts.privateKeyPem,
     apiBaseUrl: opts.auth.apiBaseUrl,
     ...(opts.auth.repositories ? { repositories: opts.auth.repositories } : {}),
+    ...(opts.auth.repositoryIds
+      ? { repositoryIds: opts.auth.repositoryIds }
+      : {}),
     ...(opts.auth.permissions ? { permissions: opts.auth.permissions } : {}),
   });
 }
