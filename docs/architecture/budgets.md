@@ -1,10 +1,10 @@
 # Per-user resource budgets
 
-Last verified: 2026-08-04
+Last verified: 2026-08-06
 
 ## Overview
 
-A **Budget** is a per-user ceiling on the CPU and memory that user's *running* agents can use concurrently. The cluster has a fixed compute pool and all agents share one namespace, so without a ceiling the first users to spin up agents can starve everyone else. Within their Ceiling a user is free: deploy whatever they want, for as long as they want — the Budget constrains **starting** an agent, never running one. Nothing is ever evicted because a ceiling changed.
+A **Budget** is a per-user ceiling on the CPU and memory that user's *running* agents can use concurrently. The cluster has a fixed compute pool and all agents share one namespace, so without a ceiling the first users to spin up agents can starve everyone else. Within their Ceiling a user is free: deploy whatever they want, for as long as they want — the Budget constrains **starting** an agent, never running one. Nothing is ever evicted because a ceiling changed. *(Being narrowed, issue #3184: a blocked start may reclaim room by hibernating the same owner's unattended idle agents ahead of their timeout — admission pressure from one owner becomes the single exception, and a ceiling change remains no grounds to evict.)*
 
 Enforcement lives in the **controller, at the 0→1 scale transition**. The reconciler is the single actuator that brings an agent's pod pair up, so every wake path — UI, ACP/terminal/SSH relays, channels, the scheduler, or a bare annotation stamp — converges on one check that no api-server code path can bypass. The api-server's role is legibility: it translates the controller's refusal into a typed, immediate error and serves the visibility surface. (Kubernetes offers no native per-user primitive here: `ResourceQuota` is namespace-scoped and all agents share one namespace.)
 
