@@ -220,6 +220,10 @@ export interface GitHubAppInstallationProbe {
    *  authority, so the second can fail alone — leaving permission narrowing
    *  available and repository narrowing to be typed instead. */
   repositoriesUnavailable?: string;
+  /** Set when the installation reaches more repositories than one probe pages
+   *  through, so the list is a prefix rather than the whole set and a
+   *  repository past it has to be named rather than ticked. */
+  repositoriesTruncated?: boolean;
 }
 
 export interface ConnectionsService {

@@ -485,6 +485,35 @@ describe("github app engine readInstallation", () => {
     expect(info.repositoriesUnavailable).toBeUndefined();
   });
 
+  // A truncated list presented as the whole one would hide repositories the
+  // user cannot then pick, so the cap has to be visible.
+  it("flags the list as truncated when the page cap is hit", async () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      name: `r${i + 1}`,
+    }));
+    const { engine } = makeEngine((call) => {
+      if (call.url.endsWith("/app/installations/987654")) {
+        return installationResponse("all");
+      }
+      if (call.url.includes("/access_tokens")) {
+        return jsonResponse({ token: "ghs_probe" });
+      }
+      // Every page comes back full, so GitHub always has more to give.
+      return jsonResponse({ repositories: full });
+    });
+
+    const info = await read(engine);
+    expect(info.repositoriesTruncated).toBe(true);
+    expect(info.repositories).toHaveLength(500);
+  });
+
+  it("does not flag a list that ended before the cap", async () => {
+    const { engine } = makeEngine(respondFor("selected"));
+    const info = await read(engine);
+    expect(info.repositoriesTruncated).toBeUndefined();
+  });
+
   it("surfaces the status when the installation cannot be read", async () => {
     const { engine } = makeEngine(
       () => new Response("Not Found", { status: 404 }),

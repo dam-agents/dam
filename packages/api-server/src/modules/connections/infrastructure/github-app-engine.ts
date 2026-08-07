@@ -50,6 +50,11 @@ export interface GitHubAppInstallationInfo {
    *  is a second, weaker call than reading the grant itself, so its failure
    *  costs the caller that list and nothing else. */
   repositoriesUnavailable?: string;
+  /** Set when the installation reaches more repositories than one probe will
+   *  page through, so the list shown is a prefix. Without this the caller
+   *  would present a truncated list as if it were the whole one, and a
+   *  repository past the cap could not be chosen at all. */
+  repositoriesTruncated?: boolean;
 }
 
 export interface GitHubAppEngine {
@@ -229,7 +234,10 @@ export function createGitHubAppEngine(
     apiBaseUrl: string;
     base: string;
     asApp: () => Record<string, string>;
-  }): Promise<{ id: number; name: string }[]> {
+  }): Promise<{
+    repositories: { id: number; name: string }[];
+    truncated: boolean;
+  }> {
     const { accessToken } = await mintInstallationToken({
       id: opts.id,
       appId: opts.appId,
@@ -243,6 +251,7 @@ export function createGitHubAppEngine(
     };
     try {
       const repositories: { id: number; name: string }[] = [];
+      let truncated = false;
       for (let page = 1; page <= MAX_REPO_PAGES; page++) {
         const listed = await fetchImpl(
           `${opts.base}/installation/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`,
@@ -263,8 +272,10 @@ export function createGitHubAppEngine(
           }
         }
         if (batch.length < REPOS_PER_PAGE) break;
+        // A full last page means GitHub has more to give than the cap allows.
+        if (page === MAX_REPO_PAGES) truncated = true;
       }
-      return repositories;
+      return { repositories, truncated };
     } finally {
       // The probe's token has done its one job. Revoking beats waiting out its
       // hour: nothing else will ever use it, and a token that no longer exists
@@ -325,9 +336,10 @@ export function createGitHubAppEngine(
       // — losing the list must not also lose the permission ceiling, which
       // cost no token to read and is what a caller can always narrow with.
       let repositories: { id: number; name: string }[] = [];
+      let repositoriesTruncated = false;
       let repositoriesUnavailable: string | undefined;
       try {
-        repositories = await listRepositories({
+        const listed = await listRepositories({
           id,
           appId,
           installationId,
@@ -336,6 +348,8 @@ export function createGitHubAppEngine(
           base,
           asApp,
         });
+        repositories = listed.repositories;
+        repositoriesTruncated = listed.truncated;
       } catch (err) {
         repositoriesUnavailable =
           err instanceof Error ? err.message : "the list could not be read";
@@ -347,6 +361,7 @@ export function createGitHubAppEngine(
         repositorySelection,
         ...(accountLogin ? { accountLogin } : {}),
         ...(repositoriesUnavailable ? { repositoriesUnavailable } : {}),
+        ...(repositoriesTruncated ? { repositoriesTruncated: true } : {}),
       };
     },
   };
