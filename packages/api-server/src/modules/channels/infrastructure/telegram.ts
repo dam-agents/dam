@@ -60,7 +60,11 @@ export interface TelegramWorker {
   type: ChannelType.Telegram;
   start(): Promise<void>;
   stopAll(): Promise<void>;
-  /** Handle of the bot (no @), from getMe at start; null until started. */
+  /** Resolve the bot handle without starting the poller. Every replica calls
+   *  this at boot — only the lease holder runs `start`, but the handle is
+   *  read on any replica (it renders in the UI's bind instructions). */
+  resolveIdentity(): Promise<void>;
+  /** Handle of the bot (no @), from getMe; null until resolved. */
   botUsername(): string | null;
   listConversations(agentId: string): Promise<ChannelConversation[]>;
   postMessage(
@@ -375,8 +379,11 @@ export function createTelegramWorker(deps: {
   const emit = deps.emit ?? defaultEmit;
   const { botToken, makeAcpClient, agents } = deps;
 
-  // One bot for the install; in-memory state assumes a single replica, like
-  // the OAuth pending-flow maps.
+  // One bot for the install. The poller and the in-memory turn state below
+  // are single-holder: the Bot API admits one getUpdates consumer per token,
+  // so `start` runs only on the replica holding the channel lease
+  // (`core/leader-lease.ts`), and outbound calls from other replicas arrive
+  // over the channel rpc rather than through a second worker.
   let bot: {
     chat: Chat;
     adapter: ReturnType<typeof createTelegramAdapter>;
@@ -487,6 +494,11 @@ export function createTelegramWorker(deps: {
 
     botUsername() {
       return username;
+    },
+
+    async resolveIdentity() {
+      if (username) return;
+      username = await fetchTelegramBotUsername(botToken).catch(() => null);
     },
 
     async start() {

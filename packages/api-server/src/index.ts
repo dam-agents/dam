@@ -37,7 +37,10 @@ import {
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
-import { createChannelManager } from "./modules/channels/services/channel-manager.js";
+import {
+  createChannelManager,
+  type ChannelRpcRequest,
+} from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
@@ -121,6 +124,9 @@ import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
+import { createBusRpc } from "./core/bus-rpc.js";
+import { createRedisBlobHandoff } from "./core/blob-handoff.js";
+import { createLeaderLease } from "./core/leader-lease.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
@@ -514,9 +520,44 @@ const telegramWorker =
       })
     : undefined;
 
+// Channel workers are single-holder: Slack Socket Mode load-balances each
+// event across the app's open connections and Telegram admits one getUpdates
+// consumer per token, while every piece of per-turn state in both workers
+// (in-flight/lingering turn refs, the ambient queues, the per-thread turn
+// lock) is in-process. So one replica runs them, elected by lease, and the
+// outbound half — an agent's reply/react, which lands wherever the harness
+// Service pinned its gateway — hops to that replica over the bus.
+const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
+  bus: redisBus,
+  service: "channels",
+  // Exactly-once execution across a lease handover, when the outgoing and
+  // incoming holders both briefly serve. Without it both would run the
+  // request and post the message twice.
+  claim: async (id) =>
+    (await sharedRedis.set(`rpc:claim:channels:${id}`, "1", "EX", 60, "NX")) ===
+    "OK",
+});
+
 const channelManager = createChannelManager({
   slackWorker,
   telegramWorker,
+  rpc: channelRpc,
+  blobs: createRedisBlobHandoff(sharedRedis),
+  // Read per dispatch, so it always reflects the live lease rather than
+  // whatever was true at construction.
+  isLeader: () => channelLease.isLeader(),
+});
+
+const channelLease = createLeaderLease({
+  redis: sharedRedis,
+  name: "channels",
+  onAcquired: async () => {
+    // Re-read the bindings on every acquisition: this replica may be taking
+    // over minutes after boot, from a leader that died.
+    const channelsByInstance = await listChannelsByOwner(db, "")();
+    await channelManager.bootstrap(channelsByInstance);
+  },
+  onLost: () => channelManager.standDown(),
 });
 
 // Seed list for the `trusted` egress preset.
@@ -888,11 +929,11 @@ const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp({
   releaseName: config.releaseName,
 });
 
-listChannelsByOwner(db, "")()
-  .then((channelsByInstance) => {
-    channelManager.bootstrap(channelsByInstance);
-  })
-  .catch(() => {});
+// The bot handle renders in bind instructions on any replica, so resolve it
+// everywhere; only the lease holder actually runs the poller.
+void telegramWorker?.resolveIdentity();
+// Campaigns for the channel lease and bootstraps the workers if it wins.
+void channelLease.start();
 
 async function shutdown() {
   process.stderr.write("shutting down...\n");
@@ -903,6 +944,10 @@ async function shutdown() {
   usage.stop();
   audit.stop();
   await periodicJobs.close();
+  // Release the lease before tearing the workers down, so a surviving replica
+  // can pick the channels up without waiting out the TTL.
+  await channelLease.stop();
+  channelRpc.close();
   await channelManager.stopAll();
   await runtimeDelivery.worker.close();
   await runtimeDelivery.queue.close();

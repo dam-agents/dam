@@ -1067,6 +1067,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     config.namespace,
     agentsRepo,
     sessionPresence,
+    redisBus,
   );
 
   const sshRelay = createSshRelay(

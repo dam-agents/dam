@@ -6,6 +6,20 @@ import type { ConnectionCreateInput } from "./schemas.js";
 export const connectionCategory = z.enum(["app", "mcp", "other"]);
 export type ConnectionCategory = z.infer<typeof connectionCategory>;
 
+/** Transient refresh-failure backoff. Unlike `refreshFailedAt` (a permanent
+ *  rejection, which parks the connection) this only defers the next attempt,
+ *  so a revoked-but-retryable credential isn't retried on every sweep tick.
+ *  Persisted rather than held per-replica: the sweep runs as a periodic job on
+ *  whichever replica draws the tick, so in-process state would be a different
+ *  replica's each time and the backoff would never apply. Every successful
+ *  token write strips it (`withoutRefreshFailureMarker`). */
+export const refreshBackoff = z.object({
+  failures: z.number().int(),
+  /** Epoch seconds; ticks before this skip the connection. */
+  nextAttempt: z.number().int(),
+});
+export type RefreshBackoff = z.infer<typeof refreshBackoff>;
+
 export const oauthAuth = z.object({
   kind: z.literal("oauth"),
   clientId: z.string(),
@@ -20,6 +34,7 @@ export const oauthAuth = z.object({
   // Epoch seconds, set only on a *permanent* token rejection: derives
   // `expired` and parks the connection. Any successful token write clears it.
   refreshFailedAt: z.number().int().optional(),
+  refreshBackoff: refreshBackoff.optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   extraAuthParams: z.record(z.string(), z.string()).optional(),
   host: z.string().min(1).optional(),
@@ -42,6 +57,7 @@ export const clientCredentialsAuth = z.object({
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
   refreshFailedAt: z.number().int().optional(),
+  refreshBackoff: refreshBackoff.optional(),
   tokenEndpointAcceptJson: z.boolean().optional(),
   host: z.string().min(1).optional(),
 });
@@ -62,6 +78,7 @@ export const githubAppAuth = z.object({
   expiresAt: z.number().int().optional(),
   connectedAt: z.number().int().optional(),
   refreshFailedAt: z.number().int().optional(),
+  refreshBackoff: refreshBackoff.optional(),
   host: z.string().min(1).optional(),
   // Optional narrowing of the minted token, stored because every re-mint must
   // ask for the same subset — a scope kept only on the create input would widen

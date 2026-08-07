@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
@@ -6,9 +7,11 @@ import type { AgentsRepository } from "../../modules/agents/infrastructure/agent
 import { isAgentWakeTimeoutError } from "../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
 import type { SessionPresence } from "./session-presence.js";
+import type { RedisBus } from "../../core/redis-bus.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
+const EVICT_CHANNEL = "terminal:evict";
 
 export interface TerminalRelay {
   handleUpgrade(
@@ -17,33 +20,60 @@ export interface TerminalRelay {
     head: Buffer,
     agentId: string,
   ): void;
-  closeSession(sessionId: string): void;
+  closeSession(agentId: string, sessionId: string): void;
+  close(): void;
 }
 
 export function createTerminalRelay(
   namespace: string,
   repo: AgentsRepository,
   presence: SessionPresence,
+  /** Cross-replica supersede signal. Omitted, eviction is local only. */
+  bus?: RedisBus,
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
+  const replicaId = randomUUID();
+  // Keyed by agent AND session: a session id is only unique within its agent,
+  // and the `?? "default"` fallback below is shared by every agent that
+  // connects without one — so a bare session id would have one agent's
+  // terminal evict another's.
   const activeClients = new Map<string, WebSocket>();
+  const clientKey = (agentId: string, sessionId: string) =>
+    `${agentId}:${sessionId}`;
 
-  function closeSession(sessionId: string) {
-    const ws = activeClients.get(sessionId);
-    if (!ws) {
-      activeClients.delete(sessionId);
-      return;
-    }
+  function evictLocal(key: string, reason: string) {
+    const ws = activeClients.get(key);
+    activeClients.delete(key);
+    if (!ws) return;
     if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
     else if (ws.readyState === WebSocket.OPEN) {
       try {
-        ws.close(1000, "session mode changed");
+        ws.close(1000, reason);
       } catch {
         ws.terminate();
       }
     }
-    activeClients.delete(sessionId);
+  }
+
+  // One PTY per session admits one client. The previous client may be held on
+  // another replica (nothing pins a browser to the replica its earlier tab
+  // used), so supersede is announced on the bus as well as applied locally —
+  // otherwise both tabs stay attached and interleave input into one PTY.
+  const unsubscribeEvict = bus?.subscribe(EVICT_CHANNEL, (payload) => {
+    try {
+      const { key, from } = JSON.parse(payload) as {
+        key: string;
+        from: string;
+      };
+      if (from !== replicaId) evictLocal(key, "superseded");
+    } catch {
+      /* malformed frame — nothing to evict */
+    }
+  });
+
+  function closeSession(agentId: string, sessionId: string) {
+    evictLocal(clientKey(agentId, sessionId), "session mode changed");
   }
 
   async function handleUpgrade(
@@ -66,21 +96,23 @@ export function createTerminalRelay(
         } catch {}
       });
 
-      const prev = activeClients.get(sessionId);
-      if (prev) {
-        if (prev.readyState === WebSocket.CONNECTING) prev.terminate();
-        else if (prev.readyState === WebSocket.OPEN) {
-          try {
-            prev.close(1000, "superseded");
-          } catch {
-            prev.terminate();
-          }
-        }
-      }
-      activeClients.set(sessionId, client);
+      const key = clientKey(agentId, sessionId);
+      evictLocal(key, "superseded");
+      // Tell the other replicas too — the client we are superseding may be
+      // attached to any of them.
+      void bus?.publish(
+        EVICT_CHANNEL,
+        JSON.stringify({ key, from: replicaId }),
+      );
+      activeClients.set(key, client);
 
       const release = presence.acquire(agentId);
-      client.once("close", release);
+      client.once("close", () => {
+        release();
+        // Only if we are still the active client: a supersede already
+        // reassigned the slot, and this late close must not evict it.
+        if (activeClients.get(key) === client) activeClients.delete(key);
+      });
 
       const pending: { data: Buffer; isBinary: boolean }[] = [];
       let pendingBytes = 0;
@@ -171,8 +203,8 @@ export function createTerminalRelay(
           });
 
           client.on("close", () => {
-            if (activeClients.get(sessionId) === client)
-              activeClients.delete(sessionId);
+            // Slot cleanup is handled by the `once("close")` above, which is
+            // registered whether or not the upstream dial ever succeeded.
             if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });
         })
@@ -189,5 +221,11 @@ export function createTerminalRelay(
     });
   }
 
-  return { handleUpgrade, closeSession };
+  return {
+    handleUpgrade,
+    closeSession,
+    close() {
+      unsubscribeEvict?.();
+    },
+  };
 }
