@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import { spawnSupervised } from "../core/supervised-process.js";
 
 const GH_TOKEN_ENV = "GH_TOKEN";
 const SETUP_TIMEOUT_MS = 10_000;
@@ -11,13 +11,14 @@ export function configureGitCredentialHelper(
   const env = mergedSpawnEnv(envReader);
   if (!env[GH_TOKEN_ENV]) return;
 
-  const proc = spawn("gh", ["auth", "setup-git"], {
+  const supervised = spawnSupervised("gh", ["auth", "setup-git"], {
     stdio: ["ignore", "ignore", "pipe"],
     env,
   });
+  const proc = supervised.child;
   const stderr: Buffer[] = [];
   const timer = setTimeout(() => {
-    proc.kill("SIGKILL");
+    void supervised.terminate({ log });
     log(`gh auth setup-git timed out after ${SETUP_TIMEOUT_MS}ms`);
   }, SETUP_TIMEOUT_MS);
   proc.stderr?.on("data", (c: Buffer) => stderr.push(c));

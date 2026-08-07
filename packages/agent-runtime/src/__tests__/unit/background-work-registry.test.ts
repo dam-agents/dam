@@ -1,15 +1,20 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { createBackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
+import { createFileDocumentStoreBackend } from "../../core/document-store.js";
+import { createBackgroundWorkRegistry } from "../../modules/background-work.js";
 
 const job = (id: string, description?: string) => ({ id, description });
 
-function setup(
-  overrides: Parameters<typeof createBackgroundWorkRegistry>[0] = {},
-) {
+function setup() {
   const logs: string[] = [];
   const registry = createBackgroundWorkRegistry({
-    log: (m) => logs.push(m),
-    ...overrides,
+    // Only the declared-process side touches it; these cover reported holds.
+    stateBackend: createFileDocumentStoreBackend(
+      mkdtempSync(join(tmpdir(), "background-work-")),
+    ),
+    log: (m: string) => logs.push(m),
   });
   return { registry, logs };
 }
@@ -21,7 +26,7 @@ describe("createBackgroundWorkRegistry", () => {
     registry.report("s1", [job("t1", "training run")]);
     expect(registry.hasWork("s1")).toBe(true);
     expect(registry.held()).toEqual([
-      { sessionId: "s1", items: [job("t1", "training run")] },
+      { id: "t1", description: "training run", sessionId: "s1" },
     ]);
 
     registry.report("s1", []);
@@ -35,7 +40,7 @@ describe("createBackgroundWorkRegistry", () => {
     registry.report("s1", [job("t1"), job("t2")]);
     registry.report("s1", [job("t2")]);
 
-    expect(registry.held()[0]!.items).toEqual([job("t2")]);
+    expect(registry.held()).toEqual([{ id: "t2", sessionId: "s1" }]);
   });
 
   it("keeps sessions apart", () => {
@@ -56,14 +61,6 @@ describe("createBackgroundWorkRegistry", () => {
     }
 
     expect(registry.hasWork("s1")).toBe(true);
-  });
-
-  it("refuses every hold when disabled, the feature's kill switch", () => {
-    const { registry } = setup({ enabled: false });
-
-    registry.report("s1", [job("t1")]);
-
-    expect(registry.hasWork("s1")).toBe(false);
   });
 
   it("names what a hold is for, so an awake sandbox is explainable", () => {

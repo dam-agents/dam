@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { spawnSupervised } from "../../../core/supervised-process.js";
 import type {
   LocalSkill,
   LocalSkillFile,
@@ -587,11 +587,14 @@ function hasNullBytes(buf: Buffer): boolean {
 
 async function runProc(cmd: string, args: string[]): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const supervised = spawnSupervised(cmd, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const proc = supervised.child;
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
+      void supervised.terminate();
       reject(
         new Error(
           `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,

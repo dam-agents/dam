@@ -8,14 +8,8 @@ import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
-import {
-  createAcpRuntime,
-  type AcpRuntime,
-} from "./services/acp-runtime/acp-runtime.js";
-import {
-  createBackgroundWorkRegistry,
-  type BackgroundWorkRegistry,
-} from "./services/background-work-registry.js";
+import type { BackgroundWorkRegistry } from "../background-work.js";
+import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime/acp-runtime.js";
 import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
@@ -27,7 +21,7 @@ export interface ComposeAcpOptions {
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   isTerminalSessionActive?: (sessionId: string) => boolean;
-  backgroundWorkHolds?: boolean;
+  backgroundWork: BackgroundWorkRegistry;
   log?: (msg: string) => void;
 }
 
@@ -35,13 +29,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
   runtime: AcpRuntime;
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
-  backgroundWork: BackgroundWorkRegistry;
 } {
   const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
-  const backgroundWork = createBackgroundWorkRegistry({
-    enabled: opts.backgroundWorkHolds,
-    log: opts.log,
-  });
   const runtime = createAcpRuntime({
     spawnAgent: () =>
       createChildAgentProcess({
@@ -49,7 +38,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         workingDir: opts.workingDir,
         env: mergedSpawnEnv(opts.envReader),
       }),
-    backgroundWork,
+    backgroundWork: opts.backgroundWork,
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
@@ -58,5 +47,5 @@ export function composeAcp(opts: ComposeAcpOptions): {
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver, sessionMetadata, backgroundWork };
+  return { runtime, triggerDriver, sessionMetadata };
 }

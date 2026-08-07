@@ -136,27 +136,42 @@ One failure is deliberately **not** detected: an agent alive but permanently stu
 
 When a session goes idle — no engaged channel, no active or queued prompt, no agent-initiated request still pending — the runtime sends `session/close` to the harness. The per-session subprocess is reaped, freeing memory; the next attach respawns it. Permission requests with no engaged channel time out after ten minutes and the runtime responds to the agent with an error so the tool call aborts cleanly.
 
-One further condition holds that reap back: **background work the session
-reports**. Closing a session tears down the harness's per-session subprocess, and
-a harness that supervises background jobs kills them as it goes, so a job an agent
-left running would die seconds after the last tab closed. ACP carries no signal to
+**Teardown reaps a process session, not a process.** Every child the runtime spawns — the harness, a terminal's PTY, a per-connection `sshd`, the pod service, short-lived utility commands — is spawned as a *session leader*, and tearing one down signals it, allows one grace window, then force-kills whatever remains in its session. Without that, each teardown killed exactly one pid and everything that pid had started was inherited by the pod's init, which reaps the dead but never terminates the living: a leaked process ran until the pod restarted, holding every file it had open. The scope is the session rather than the process group because a shell with job control puts each background job in its own group, so a group-scoped kill would miss most of a terminal's subtree.
+
+One further condition holds that reap back: **background work still running**.
+Closing a session tears down the harness's per-session subprocess, and a harness
+that supervises background jobs kills them as it goes, so a job an agent left
+running would die seconds after the last tab closed. ACP carries no signal to
 consult — a session emits nothing between turns, and `session/close` is specified
 to cancel any ongoing work — so the platform asks instead of inferring. A session
 reports its **complete in-flight set** to the runtime's in-pod surface, as a level
 rather than start/stop edges, and while that set is non-empty the runtime will not
 close the session and reports itself busy, so the [idle checker](#hibernate)
-cannot hibernate the pod underneath the work. An empty report ends both. Reporting
-is optional: a harness that never reports behaves exactly as it did before the
-contract. What is held is published on the runtime's status surface, so a sandbox
-that stays awake can be explained by the work holding it.
+cannot hibernate the pod underneath the work. An empty report ends both.
 
-Only work a harness *supervises* reaches its report, which bounds what the
-contract promises. A job the agent detached from the harness is invisible to it,
-and what is reported can be adjacent to the real work — a detached loop whose
-progress a supervised log tail watches holds the session for the tail. Nothing
-times a hold out, so a sandbox with reported work does not scale to zero until
-that work ends; a [hard stop or pause](#hibernate) reclaims it regardless, and an
-install can refuse holds outright.
+Reports share one registry with the processes an agent
+[declares](#reaping-orphaned-work), because both answer one question — is
+something still running that a teardown would destroy. They differ only in
+liveness and scope: a report is a session's, renewed until it comes back empty; a
+declaration is pod-wide and expires when its process does. Everything held is
+published on the runtime's status surface, so a sandbox that stays awake can be
+explained by the work holding it, and nothing times a hold out — a [hard stop or
+pause](#hibernate) reclaims the pod regardless.
+
+Only work a harness *supervises* reaches its report: a job the agent detached is
+invisible to it, and a report can be adjacent to the real work rather than the
+work itself. What is held is thereby also survivable: a held session is never
+torn down, so the teardown above cannot reach it, and the [orphan
+reaper](#reaping-orphaned-work) cannot run at all while a hold stands, because a
+hold makes the pod non-quiet.
+
+**No hold preserves the agent's live handle on the output.** That handle belongs
+to the harness's per-session subprocess, so `session/close` takes it with the
+session: supervised jobs are killed, and work that detached keeps running but its
+output survives only where it was redirected — which is why `platform-bg` reports
+a log path. The close needs no user action: it follows three seconds after the
+last channel detaches (tab closed, session switched), or immediately when a turn
+ends with no viewer attached, as with a scheduled or Slack trigger.
 
 Terminal-mode sessions follow a different model from the chat path above. agent-runtime accepts at most one WebSocket per `sessionId` on `/api/terminal`, allocates a PTY, spawns `harness-terminal` attached to it, and pipes raw bytes both ways through a small binary frame protocol (`OP_INPUT` / `OP_OUTPUT` / `OP_RESIZE` / `OP_EXIT`). A headless xterm tracks scrollback so that reattaching while the PTY lives replays the serialized buffer. A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace (30 s, sized for a tab refresh), it is killed only once the harness has also been quiet — no output for five minutes. Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up. There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record (e.g. `~/.claude/projects/.../<HARNESS_SESSION_ID>.jsonl`).
 
@@ -173,12 +188,54 @@ next changes. When the env driver rewrites the env, the runtime refreshes a
 well-known env snapshot file and sends SIGHUP: a service that handles it
 reloads in place (in-flight work finishes, new work uses the fresh env); one
 that doesn't dies by the signal's default action and is respawned with the
-fresh env. Its output joins the pod log stream. The pod's
-PID 1 is a minimal init (catatonit) wrapping agent-runtime, so descendants
-the runtime did not spawn — processes orphaned by a dying harness or service
-— are reaped rather than left as zombies. claude-code uses the hook to front
+fresh env. Its output joins the pod log stream. A service that exits for any
+reason has its whole process session torn down behind it, since anything it
+started is orphaned from that moment. claude-code uses the hook to front
 custom Anthropic-compatible upstreams with a local model gateway;
 images without a pod service are unaffected.
+
+### Reaping orphaned work
+
+The pod's PID 1 is a minimal init (catatonit) wrapping agent-runtime. It reaps
+*dead* orphans so they don't accumulate as zombies, but never terminates a live
+one. Session-scoped teardown covers work still attached to something the runtime
+spawned; it cannot cover work that detached *before* any teardown. A tool call
+that backgrounds a command leaves a process whose shell has already exited, in a
+session and process group of its own, sharing nothing with the harness — only
+orphanhood identifies it.
+
+The sweep runs only when the pod is completely quiet: no engaged chat channel,
+no prompt running or queued, no pending request to the client, no reported
+background work, no open terminal, no open SSH. It is stricter than the `idle`
+flag the controller reads, which excludes SSH on purpose.
+
+Orphanhood alone is too broad to act on — agent-runtime is itself a child of
+init, and on the VM backend init is systemd, parenting the guest's own services.
+The sweep therefore also requires a process to share the runtime's cgroup, which
+scopes it to the pod in a container and to the runtime's own service under
+systemd. An unreadable cgroup disables reaping rather than widening it.
+
+A process in uninterruptible I/O cannot be killed until that I/O completes; the
+sweep still targets it and logs that it did. Two kinds of process are spared: one
+still **listening** on a socket, because a leak is what nothing can reach any
+more, and one the agent **declared** on purpose. Only a declaration also holds the
+pod awake — a listener merely survives the sweep. Every reap, and every listener
+kept, is logged to the pod's stream.
+
+**Declaring work that is meant to detach.** Some agents background their real
+work on purpose: a campaign running for hours belongs to no session and must
+survive every turn that ends. Such a process is indistinguishable from a leak,
+so the agent says which it is by starting it through the `platform-bg` wrapper
+instead of a bare `nohup`. The wrapper backgrounds the command and registers the
+resulting pid, and the reaper skips what is registered — which covers the whole
+subtree, since the children of a live process are not orphans.
+
+A declaration needs no retraction: liveness is the process itself, so it expires
+when the work ends. It lands in the same registry as
+[reported](#session-inside-the-pod) background work, so it keeps the Agent awake
+too — the idle checker sees a declaration exactly as it sees a report. The
+registry is persisted, since on the VM backend a runtime restart that forgot its
+declarations would hand every running campaign to the reaper.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
 
@@ -197,15 +254,17 @@ Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU
 
 **What counts as activity.** Those two checks rest on three signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while an agent-initiated request (e.g. a permission prompt) awaits the client, while a session reports background work still running ([above](#session-inside-the-pod)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal. It does **not** see SSH, which runs as its own `sshd` outside the runtime's PTY tracking. A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe. What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while an agent-initiated request (e.g. a permission prompt) awaits the client, while background work is outstanding — a session's report or an agent's declaration ([above](#session-inside-the-pod)) — or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal. It does **not** see SSH, which runs as its own `sshd` outside the runtime's PTY tracking. A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe. What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
 - **api-server (`active-session` annotation).** A refcount of open chat, terminal, and SSH connections — set on the first, cleared on the last, regardless of traffic. So a chat merely open in the UI keeps the Agent awake, exactly as an open terminal does. Since the probe is blind to SSH, an SSH session leans on this annotation, which alone suffices while the connection is open. A half-dead connection is reclaimed by a WS ping/pong, and pins orphaned by a dead replica are swept by a periodic reconcile over per-replica Redis presence keys (the keys expire by TTL when their replica stops refreshing them).
 - **api-server (`last-activity` annotation).** The one traffic-driven signal, and the clock the idle timeout measures against. Bumped (debounced ~30 s) by the chat, terminal, and SSH relays as bytes flow, by every proxied call, by an explicit wake, and by the scheduler on a fire.
 
 None of this depends on *who* opened the session: the UI, a connected channel, and the CLI all dial the same three relays, so a session's signals follow its **kind** — chat, terminal, or SSH — not its caller. A CLI terminal is covered by both checks like a UI terminal; a CLI SSH session is seen only by the annotations, never the probe — like any other SSH.
 
-**The blind spot — unreported work.** The signals above see sessions, connections, and background work a session [reports](#session-inside-the-pod). What none of them see is work nobody reports: a job the agent detached from its harness, anything a non-reporting harness leaves running, a batch pipeline with no session behind it. For that work `active-session` is clear, `last-activity` ages out, the runtime reports `idle`, both checks agree, and the controller hibernates the pod **mid-job, killing the work**.
+**The blind spot — unreported work.** The signals above see sessions, connections, and background work a session [reports or an agent declares](#session-inside-the-pod). What none of them see is work nobody accounted for: a job detached with a bare `nohup`, anything a non-reporting harness leaves running, a batch pipeline with no session behind it. For that work `active-session` is clear, `last-activity` ages out, the runtime reports `idle`, both checks agree, and the controller hibernates the pod **mid-job, killing the work**.
 
-That remainder is deliberate. The platform *can* see that processes are running in the pod — what it cannot do is tell what they *are*: a working batch job looks no different from an always-on model gateway, a language server, or an orphan a dead session left behind. Keying on mere existence inherits that ambiguity, pinning the pod open forever on idle infrastructure or letting one leaked process defeat hibernation outright. Reported work escapes the ambiguity because something that knows declared it; unreported work offers nothing to stand on. The session reap is no threat to it either — work its harness doesn't supervise survives `session/close` precisely because nothing kills it there — so hibernation is its only killer.
+That remainder is deliberate. The platform *can* see that processes are running — what it cannot do is tell what they *are*: a working batch job looks no different from an always-on model gateway or an orphan a dead session left behind. Keying on mere existence inherits that ambiguity, pinning the pod open on idle infrastructure. A report or a declaration escapes it because something that knows said so.
+
+Such work is therefore not preserved. It is killed by hibernation as described, and — once the pod goes quiet — by the [orphan reaper](#reaping-orphaned-work) if it detached from whatever started it. The reaper's contribution is that it also acts where hibernation is disabled, so "eventually" does not mean never. Work that should survive has to say so, and is then safe from both.
 
 **The per-agent hibernation timeout.** Since the platform can't *detect* that work, it lets an operator *budget* for it. Each Agent carries an optional timeout override: unset inherits the cluster-wide default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never scales down. A Template can seed this override, so every Agent created from it starts with a chosen default rather than the cluster-wide one — a workload image whose real work runs off-session (e.g. a Nous experimentation campaign) ships a *never-hibernate* default so the idle checker can't reclaim its pod mid-run; a user's explicit choice at create time still wins. The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down. The sandbox settings expose it as a minutes field showing that *effective* value, so an Agent with no override displays the inherited default, not a blank.
 

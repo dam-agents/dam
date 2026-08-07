@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { z } from "zod";
 import type { DocumentStoreBackend } from "../core/document-store.js";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import { spawnSupervised } from "../core/supervised-process.js";
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -23,21 +24,23 @@ export function createPodServiceSupervisor(opts: {
     initial: () => ({ env: {} }),
   });
 
-  let child: ReturnType<typeof spawn> | null = null;
+  let child: ChildProcess | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let backoffMs = BACKOFF_INITIAL_MS;
 
   process.once("exit", () => {
+    // No time for a graceful sweep here; the kernel tears the namespace down anyway.
     try {
-      child?.kill("SIGKILL");
+      if (child?.pid !== undefined) process.kill(-child.pid, "SIGKILL");
     } catch {}
   });
 
   function start(): void {
-    const proc = spawn(command, [], {
+    const supervised = spawnSupervised(command, [], {
       env: mergedSpawnEnv(envReader),
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const proc = supervised.child;
     child = proc;
     const startedAt = Date.now();
     log("started");
@@ -45,6 +48,8 @@ export function createPodServiceSupervisor(opts: {
     proc.stderr?.on("data", (c: Buffer) => log(c.toString().trimEnd()));
 
     const onExit = (code: number | null, signal: string | null): void => {
+      // Before the supersede guard: any exited instance orphans what it started.
+      void supervised.terminate({ log: (msg) => log(msg) });
       if (child !== proc) return;
       child = null;
       if (signal === "SIGHUP") {

@@ -10,10 +10,6 @@ const schema = z.object({
   WORK_DIR: z.string().default("/home/agent/work"),
   IMAGE_WORKSPACE_DIR: z.string().default("/app/working-dir"),
   API_SERVER_URL: z.string().default(""),
-  BACKGROUND_WORK_HOLDS: z
-    .string()
-    .default("on")
-    .transform((v) => v !== "off"),
 });
 
 export const config = schema.parse(process.env);

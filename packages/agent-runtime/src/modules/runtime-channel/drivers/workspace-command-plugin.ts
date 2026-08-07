@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { spawnSupervised } from "../../../core/supervised-process.js";
 import type {
   DriverBinding,
   EventHandler,
@@ -72,10 +72,11 @@ function runCommand(
   log: (msg: string) => void,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const proc = spawn("bash", ["-lc", command], {
+    const supervised = spawnSupervised("bash", ["-lc", command], {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const proc = supervised.child;
     const relay = (chunk: Buffer) => {
       const text = chunk.toString("utf8").replace(/\n$/, "");
       if (text) log(`[workspace-command] ${text}`);
@@ -83,7 +84,8 @@ function runCommand(
     proc.stdout?.on("data", relay);
     proc.stderr?.on("data", relay);
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
+      // A hanging setup command is usually hanging *in* something it spawned.
+      void supervised.terminate({ log });
       reject(
         new Error(`workspace command timed out after ${COMMAND_TIMEOUT_MS}ms`),
       );
@@ -94,6 +96,7 @@ function runCommand(
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
+      // No sweep on exit: a setup command may mean to leave a service running.
       if (code === 0) resolve();
       else reject(new Error(`workspace command exited with code ${code}`));
     });

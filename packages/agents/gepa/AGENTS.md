@@ -198,7 +198,9 @@ not a resume.
 the background-work contract (launched detached, or the report was refused),
 an open **terminal or SSH session** pins the pod awake until it finishes —
 but the primary mechanism is launching as a reported harness task in the
-first place.
+first place. A run that must be detached should be started with
+`platform-bg`, which declares it to the platform: a declared run is neither
+reaped as a leak nor hibernated mid-run.
 
 ## Hard guardrails
 

@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import readline from "node:readline";
+import { spawnSupervised } from "../../../core/supervised-process.js";
 import type { AgentProcess } from "./agent-process.js";
 
 export interface ChildAgentProcessOptions {
@@ -28,11 +28,12 @@ export function createChildAgentProcess(
     );
   }
 
-  const child = spawn(cmd, args, {
+  const supervised = spawnSupervised(cmd, args, {
     stdio: ["pipe", "pipe", "inherit"],
     cwd: opts.workingDir,
     env: cleanEnv,
   });
+  const child = supervised.child;
 
   child.on("error", (err) => {
     process.stderr.write(`[agent-process] spawn error: ${err.message}\n`);
@@ -65,7 +66,10 @@ export function createChildAgentProcess(
       handlers.push(handler);
     },
     kill() {
-      child.kill();
+      // The harness stops its own workers; what *those* started outlives them.
+      void supervised.terminate({
+        log: (msg) => process.stderr.write(`[agent-process] ${msg}\n`),
+      });
     },
     exited,
   };

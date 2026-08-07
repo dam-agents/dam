@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import type { Result, SkillsDomainError } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
+import { spawnSupervised } from "../../../core/supervised-process.js";
 
 const COMMAND_TIMEOUT_MS = 60_000;
 
@@ -101,10 +101,14 @@ export function createGitProtocolClient(): GitProtocolClient {
 
 async function runProc(cmd: string, args: string[]): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const supervised = spawnSupervised(cmd, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const proc = supervised.child;
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
+      // git's network I/O runs in a helper child that outlives a kill on git.
+      void supervised.terminate();
       reject(
         new Error(
           `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
@@ -118,6 +122,8 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
+      // auto-gc forks a repack that keeps old packs mmap'd past the command.
+      void supervised.terminate();
       if (code === 0) {
         resolve();
         return;
@@ -134,11 +140,14 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
 
 async function runCapture(cmd: string, args: string[]): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const supervised = spawnSupervised(cmd, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const proc = supervised.child;
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
+      void supervised.terminate();
       reject(
         new Error(
           `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
@@ -153,6 +162,7 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
+      void supervised.terminate();
       if (code === 0) {
         resolve(Buffer.concat(stdoutChunks).toString("utf8"));
         return;

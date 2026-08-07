@@ -24,9 +24,9 @@ import {
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
 import type {
+  BackgroundWorkEntry,
   BackgroundWorkRegistry,
-  HeldSession,
-} from "../background-work-registry.js";
+} from "../../../background-work.js";
 
 const PROMPT_QUEUE_CAP = 32;
 
@@ -42,7 +42,10 @@ const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
-  backgroundWork: HeldSession[];
+  /** Watchers, not work, so not in `idle`; engagement, not mere attachment. */
+  engagedChannels: number;
+  /** Work still running, reported or declared, and what it is. */
+  backgroundWork: BackgroundWorkEntry[];
 }
 
 export interface AcpRuntime {
@@ -64,6 +67,7 @@ export interface AcpRuntimeDeps {
   warmStartTimeoutMs?: number;
   logBytesCap?: number;
   sessionMetadata?: SessionMetadataStore;
+  /** Omitted, a session is reaped on refcount alone — as in most tests. */
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   isTerminalSessionActive?: (sessionId: string) => boolean;
@@ -406,6 +410,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
       pendingFromAgent.clear();
+      // No session it served can report again; `kill()` handles what it started.
       deps.backgroundWork?.clear();
     });
     return a;
@@ -455,12 +460,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     old.kill();
   }
 
+  /** In-flight work: drives `idle` and bounds a recycle, which declared work escapes. */
   function runtimeBusy(): boolean {
     if (activePromptBySession.size > 0 || pendingFromAgent.size > 0)
       return true;
     for (const q of promptQueueBySession.values())
       if (q.length > 0) return true;
-    return (deps.backgroundWork?.held().length ?? 0) > 0;
+    return (deps.backgroundWork?.reportedHolds() ?? 0) > 0;
   }
 
   function maybeRecycleForEnv(): void {
@@ -523,6 +529,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
     activePromptBySession.delete(sessionId);
     promptQueueBySession.delete(sessionId);
+    // Work the worker *detached* outlives this; the reaper catches it.
     deps.backgroundWork?.forget(sessionId);
     maybeRecycleForEnv();
     const reap = idleReapTimers.get(sessionId);
@@ -1052,6 +1059,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     status() {
       return {
         idle: !runtimeBusy(),
+        engagedChannels: [...engagedSessions].filter(
+          ([channel, sessions]) => sessions.size > 0 && channel.isOpen(),
+        ).length,
         backgroundWork: deps.backgroundWork?.held() ?? [],
       };
     },
@@ -1075,7 +1085,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `env recycle deferred: ${activePromptBySession.size} turn(s), ` +
           `${pendingFromAgent.size} pending request(s), ` +
-          `${deps.backgroundWork?.held().length ?? 0} background hold(s)` +
+          `${deps.backgroundWork?.reportedHolds() ?? 0} background hold(s)` +
           (opts.force ? ` — forcing in ${envForceRecycleMs}ms` : ""),
       );
       if (opts.force && !envForceTimer)
