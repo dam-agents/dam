@@ -1,79 +1,49 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { SessionMode, SessionType } from "api-server-api";
 import { useCallback, useRef } from "react";
 
 import { useStore } from "../../../store.js";
-import { optimisticInsertSession } from "../api/queries.js";
-import type { EngagedSession } from "../lib/prompt-target.js";
 
 /**
- * Owns the "engage a live ACP connection with the active session" decision.
- *
- *   - If the store has a `sessionId` already → `unstable_resumeSession`
- *     reattaches the live channel.
- *   - If not → `newSession` creates one and commits the id to the store.
- *
- * Persistence to the platform DB is driven server-side by the api-server
- * relay on first `session/prompt` (option B). The UI never writes session
- * rows itself.
+ * Owns the "engage a live ACP connection with the active session" decision:
+ * `unstable_resumeSession` reattaches the live channel to whatever session the
+ * store holds. Creating a session is deliberately *not* here — that happens once,
+ * on a first prompt's own connection (`useAcpConnection.beginSession`), so the
+ * view can never be repointed at a session nobody asked for.
  *
  * `engagedSessionIdRef` is the source of truth for "the session this live
  * conn is currently bound to". The orchestrator's WS close handler and
  * `resetSession` call `clear()` to drop the binding.
- *
- * `engage` reports the session it bound **and whether it created it**. Callers
- * that captured an intent before awaiting need `created` to tell "the session I
- * asked for" from "the session the view moved to while I waited" — see
- * `resolvePromptTarget`.
  */
 export function useAcpSessionEngagement(selectedAgent: string | null): {
   engagedSessionIdRef: React.MutableRefObject<string | null>;
-  engage: (conn: ClientSideConnection) => Promise<EngagedSession | null>;
-  /** Record a binding this hook didn't make: a first prompt creates its session
-   *  on its own connection, and handing that connection over to the chat means
-   *  handing over the binding too. */
-  adopt: (sessionId: string) => void;
+  /** Resolves to the bound session, or null when there is nothing to bind. */
+  engage: (conn: ClientSideConnection) => Promise<string | null>;
+  /** Record a binding this hook didn't make, for a connection handed over. */
+  bind: (sessionId: string) => void;
   clear: () => void;
 } {
-  const setSessionId = useStore((s) => s.setSessionId);
-
   const engagedSessionIdRef = useRef<string | null>(null);
 
   const engage = useCallback(
-    async (conn: ClientSideConnection): Promise<EngagedSession | null> => {
+    async (conn: ClientSideConnection): Promise<string | null> => {
       if (!selectedAgent) return null;
-      const already = engagedSessionIdRef.current;
-      if (already) return { sessionId: already, created: false };
+      const boundSessionId = engagedSessionIdRef.current;
+      if (boundSessionId) return boundSessionId;
 
       const sid = useStore.getState().sessionId;
-      if (sid) {
-        await conn.unstable_resumeSession({
-          sessionId: sid,
-          cwd: ".",
-          mcpServers: [],
-        });
-        engagedSessionIdRef.current = sid;
-        return { sessionId: sid, created: false };
-      } else {
-        // Stamp platform metadata so the session records as a regular
-        // chat session rather than decoding as terminal-by-default.
-        const s = await conn.newSession({
-          cwd: ".",
-          mcpServers: [],
-          _meta: {
-            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
-          },
-        });
-        setSessionId(s.sessionId);
-        engagedSessionIdRef.current = s.sessionId;
-        optimisticInsertSession(selectedAgent, s.sessionId, SessionMode.Chat);
-        return { sessionId: s.sessionId, created: true };
-      }
+      if (!sid) return null;
+      await conn.unstable_resumeSession({
+        sessionId: sid,
+        cwd: ".",
+        mcpServers: [],
+      });
+      engagedSessionIdRef.current = sid;
+      return sid;
     },
-    [selectedAgent, setSessionId],
+    [selectedAgent],
   );
 
-  const adopt = useCallback((sessionId: string) => {
+  const bind = useCallback((sessionId: string) => {
     engagedSessionIdRef.current = sessionId;
   }, []);
 
@@ -81,5 +51,5 @@ export function useAcpSessionEngagement(selectedAgent: string | null): {
     engagedSessionIdRef.current = null;
   }, []);
 
-  return { engagedSessionIdRef, engage, adopt, clear };
+  return { engagedSessionIdRef, engage, bind, clear };
 }

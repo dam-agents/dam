@@ -1,17 +1,15 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
-import { SessionMode } from "api-server-api";
+import { SessionMode, SessionType } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
-import { openConnection } from "../../acp/acp.js";
+import { openInitializedConnection } from "../../acp/acp.js";
 import { finalizeAllStreaming } from "../../acp/session-projection.js";
 import type { UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
-import type { EngagedSession } from "../lib/prompt-target.js";
 
-interface LiveConnection {
+export interface LiveConnection {
   connection: ClientSideConnection;
   ws: WebSocket;
 }
@@ -42,39 +40,47 @@ interface UseAcpConnectionOptions {
    *  ensureReady. */
   agentOperable: boolean;
   makeUpdateHandler: () => UpdateHandler;
-  engage: (conn: ClientSideConnection) => Promise<EngagedSession | null>;
-  /** Record the session binding of a connection handed over via `adopt`. */
-  adoptEngagement: (sessionId: string) => void;
+  engage: (conn: ClientSideConnection) => Promise<string | null>;
+  /** Record the session binding of a connection this hook kept. */
+  bindEngagement: (sessionId: string) => void;
   clearEngagement: () => void;
   loadHistory: (sid: string) => Promise<Message[]>;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
 }
 
-/**
- * An open connection together with the session it is engaged to. `created` is
- * true when this call minted the session via `session/new` rather than resuming
- * one — the only signal that distinguishes "the session the caller asked for"
- * from "the session the view moved to while the caller was awaiting". Callers
- * that captured an intent must check it (`resolvePromptTarget`) before acting.
- */
+/** An open connection and the session it is engaged to. */
 export interface LiveSession {
   connection: ClientSideConnection;
   sessionId: string;
-  created: boolean;
+  /** Whether the socket is still open — the nearest thing to a delivery check. */
+  isOpen: () => boolean;
+}
+
+/**
+ * A session created on its own private connection, before anything else knows
+ * about either. The caller drives the two moments that follow.
+ */
+export interface StartedSession {
+  connection: ClientSideConnection;
+  sessionId: string;
+  /** Whether the socket is still open — the nearest thing to a delivery check. */
+  isOpen: () => boolean;
+  /** Once the prompt is away: `true` keeps the channel as the chat's live
+   *  connection, `false` gives it up — muted at once, closed by `finish`. The
+   *  first caller decides; sends sharing this channel are no-ops. */
+  settle: (keep: boolean) => void;
+  /** Once the turn has settled. Closes the channel unless it was kept or another
+   *  send is still using it. */
+  finish: () => void;
 }
 
 export interface UseAcpConnectionResult {
   state: ConnectionState;
   /** Open + engage if needed; resolves to the live session or null. */
   ensureLive: () => Promise<LiveSession | null>;
-  /** Take over a connection opened elsewhere as the chat's live channel, bound
-   *  to `sessionId`. Used when a first prompt's private connection has done its
-   *  job and the chat is still on the session it created. */
-  adopt: (
-    connection: ClientSideConnection,
-    ws: WebSocket,
-    sessionId: string,
-  ) => void;
+  /** Create a session on a connection of its own. Concurrent callers share one
+   *  session — a blank chat sent to twice must not become two conversations. */
+  beginSession: () => Promise<StartedSession>;
   /** Connection handle for callers that need synchronous access (stopAgent
    *  cancels via the live conn without a round-trip through ensureLive). */
   connectionRef: React.MutableRefObject<LiveConnection | null>;
@@ -89,11 +95,14 @@ export interface UseAcpConnectionResult {
  *
  *   1. `ensureLive()` opens a WS if needed, wires close/error handlers, and
  *      asks the engagement hook to bind it to the active session.
- *   2. On unexpected WS close with an active session, schedules a reload-
+ *   2. `beginSession()` opens a *private* WS and creates a session on it, for a
+ *      first prompt that has no session to belong to yet. Nothing else can close
+ *      or repoint it, so navigating away mid-creation cannot lose the prompt.
+ *   3. On unexpected WS close with an active session, schedules a reload-
  *      then-reconnect: the runtime appended events while we were offline,
  *      so we must `loadSession` before `unstable_resumeSession` (the latter
  *      only attaches the channel for *future* events).
- *   3. The keep-alive effect makes sure a live WS exists whenever the user
+ *   4. The keep-alive effect makes sure a live WS exists whenever the user
  *      is viewing a session — without it, sidebar-click resume opens a
  *      throwaway socket and never re-engages.
  *
@@ -112,7 +121,7 @@ export function useAcpConnection(
     agentOperable,
     makeUpdateHandler,
     engage,
-    adoptEngagement,
+    bindEngagement,
     clearEngagement,
     loadHistory,
     setMessages,
@@ -129,6 +138,13 @@ export function useAcpConnection(
   // engages for *future* events, so anything appended during the gap stays
   // stranded otherwise.
   const pendingReloadRef = useRef(false);
+  // Bumped whenever the live connection is replaced or dropped. An `ensureLive`
+  // that started before the bump must not install its socket afterwards.
+  const generationRef = useRef(0);
+  const startInFlightRef = useRef<{
+    holders: { count: number };
+    promise: Promise<StartedSession>;
+  } | null>(null);
 
   const [state, setState] = useState<ConnectionState>("idle");
 
@@ -139,9 +155,12 @@ export function useAcpConnection(
     operableRef.current = agentOperable;
   }, [agentOperable]);
 
-  // Cleanup on unmount: cancel any in-flight reconnect, close the live WS.
-  useEffect(
-    () => () => {
+  // Assign on mount, not just on cleanup: StrictMode runs setup → cleanup →
+  // setup on one fiber, and a ref that is only ever cleared stays false for the
+  // component's whole life in dev.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
       isMountedRef.current = false;
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
@@ -150,14 +169,12 @@ export function useAcpConnection(
       connectionRef.current?.ws.close();
       connectionRef.current = null;
       clearEngagement();
-    },
-    [clearEngagement],
-  );
+    };
+  }, [clearEngagement]);
 
   // addEventListener (not onclose=) so we don't clobber the handler that closes
-  // the ACP ReadableStream controller inside openConnection. Shared by the
-  // connection this hook opens and by one handed to it via `adopt`.
-  const wireClose = useCallback(
+  // the ACP ReadableStream controller inside openConnection.
+  const attachCloseHandler = useCallback(
     (ws: WebSocket) => {
       ws.addEventListener("close", () => {
         // Skip if a newer WS has taken over (resetConnection→ensureLive race).
@@ -178,24 +195,117 @@ export function useAcpConnection(
     [clearEngagement, setMessages],
   );
 
-  const adopt = useCallback(
-    (connection: ClientSideConnection, ws: WebSocket, sessionId: string) => {
-      // Refs before any store write: committing the session id runs the
-      // keep-alive effect, and it must find this connection already in place or
-      // it opens a second channel to the same session — two channels, every
-      // update applied twice.
+  const keepAsLive = useCallback(
+    (
+      connection: ClientSideConnection,
+      ws: WebSocket,
+      startedSessionId: string,
+    ) => {
+      // Refs and generation before the store write: committing the session id
+      // wakes the keep-alive effect, which must find this connection or it opens
+      // a second channel to the same session and every update applies twice.
       connectionRef.current?.ws.close();
-      wireClose(ws);
+      attachCloseHandler(ws);
       connectionRef.current = { connection, ws };
-      adoptEngagement(sessionId);
+      bindEngagement(startedSessionId);
       pendingReloadRef.current = false;
+      generationRef.current += 1;
+      ensureInFlightRef.current = null;
       setState("live");
+      useStore.getState().setSessionId(startedSessionId);
     },
-    [wireClose, adoptEngagement],
+    [attachCloseHandler, bindEngagement],
   );
+
+  const startSession = useCallback(
+    async (holders: { count: number }): Promise<StartedSession> => {
+      if (!selectedAgent) throw new Error("No agent selected");
+
+      // Muted when the channel is given up, not when it closes: navigating away
+      // and straight back would otherwise leave two channels painting one session.
+      let listening = true;
+      let settled = false;
+      let kept = false;
+      const handler = makeUpdateHandler();
+      const { connection, ws } = await openInitializedConnection(
+        selectedAgent,
+        (update, updateSessionId) => {
+          if (listening) handler(update, updateSessionId);
+        },
+      );
+
+      let startedSessionId: string;
+      try {
+        // Unstamped sessions decode as terminal-by-default.
+        const session = await connection.newSession({
+          cwd: ".",
+          mcpServers: [],
+          _meta: {
+            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
+          },
+        });
+        startedSessionId = session.sessionId;
+      } catch (err) {
+        try {
+          ws.close();
+        } catch {}
+        throw err;
+      }
+
+      return {
+        connection,
+        sessionId: startedSessionId,
+        isOpen: () => ws.readyState === WebSocket.OPEN,
+        settle: (keep) => {
+          if (settled) return;
+          settled = true;
+          kept = keep;
+          // Later sends belong to a session that now exists, so they take the
+          // ordinary path; this channel stops being shareable.
+          if (startInFlightRef.current?.holders === holders) {
+            startInFlightRef.current = null;
+          }
+          if (!keep) {
+            listening = false;
+            return;
+          }
+          keepAsLive(connection, ws, startedSessionId);
+        },
+        finish: () => {
+          holders.count -= 1;
+          // A second send may still be queued on this channel; closing now would
+          // have the runtime discard its prompt.
+          if (holders.count > 0 || kept) return;
+          listening = false;
+          try {
+            ws.close();
+          } catch {}
+        },
+      };
+    },
+    [selectedAgent, makeUpdateHandler, keepAsLive],
+  );
+
+  const beginSession = useCallback((): Promise<StartedSession> => {
+    const pending = startInFlightRef.current;
+    if (pending) {
+      pending.holders.count += 1;
+      return pending.promise;
+    }
+    const holders = { count: 1 };
+    const promise = startSession(holders);
+    startInFlightRef.current = { holders, promise };
+    promise.catch(() => {
+      if (startInFlightRef.current?.holders === holders) {
+        startInFlightRef.current = null;
+      }
+    });
+    return promise;
+  }, [startSession]);
 
   const ensureInner = useCallback(async (): Promise<LiveSession | null> => {
     if (!selectedAgent) return null;
+    const generation = generationRef.current;
 
     // If the previous live WS died with an active session, replay history
     // before opening a fresh socket. We swap the messages array in one
@@ -224,29 +334,35 @@ export function useAcpConnection(
       !connectionRef.current ||
       connectionRef.current.ws.readyState !== WebSocket.OPEN
     ) {
-      const { connection, ws } = await openConnection(
+      const { connection, ws } = await openInitializedConnection(
         selectedAgent,
         makeUpdateHandler(),
       );
-      await connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: {
-          fs: { readTextFile: true, writeTextFile: true },
-        },
-      });
-      wireClose(ws);
+      // The live connection was replaced or dropped while we were connecting —
+      // installing this socket now would orphan the one that took over.
+      if (generation !== generationRef.current) {
+        try {
+          ws.close();
+        } catch {}
+        return null;
+      }
+      attachCloseHandler(ws);
       connectionRef.current = { connection, ws };
     }
 
-    const conn = connectionRef.current.connection;
-    const engaged = await engage(conn);
-    if (!engaged) return null;
+    const live = connectionRef.current;
+    const engagedSessionId = await engage(live.connection);
+    if (!engagedSessionId || generation !== generationRef.current) return null;
     setState("live");
-    return { connection: conn, ...engaged };
+    return {
+      connection: live.connection,
+      sessionId: engagedSessionId,
+      isOpen: () => live.ws.readyState === WebSocket.OPEN,
+    };
   }, [
     selectedAgent,
     makeUpdateHandler,
-    wireClose,
+    attachCloseHandler,
     engage,
     loadHistory,
     setMessages,
@@ -254,9 +370,12 @@ export function useAcpConnection(
 
   const ensureLive = useCallback((): Promise<LiveSession | null> => {
     if (!ensureInFlightRef.current) {
-      ensureInFlightRef.current = ensureInner().finally(() => {
-        ensureInFlightRef.current = null;
+      const inFlight = ensureInner().finally(() => {
+        if (ensureInFlightRef.current === inFlight) {
+          ensureInFlightRef.current = null;
+        }
       });
+      ensureInFlightRef.current = inFlight;
     }
     return ensureInFlightRef.current;
   }, [ensureInner]);
@@ -330,6 +449,8 @@ export function useAcpConnection(
     connectionRef.current = null;
     clearEngagement();
     pendingReloadRef.current = false;
+    generationRef.current += 1;
+    ensureInFlightRef.current = null;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -346,5 +467,5 @@ export function useAcpConnection(
     reset();
   }, [sessionId, sessionMode, reset]);
 
-  return { state, ensureLive, adopt, connectionRef, reset };
+  return { state, ensureLive, beginSession, connectionRef, reset };
 }

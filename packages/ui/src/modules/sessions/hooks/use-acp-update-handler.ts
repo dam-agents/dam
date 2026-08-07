@@ -29,16 +29,9 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
 
   return useCallback(() => {
     return (update: AcpUpdate, sessionId: string) => {
-      // A live WS can outlive the view that opened it — a send in flight while
-      // the user clicks another session leaves this channel engaged to a
-      // session that is no longer on screen. Its updates (including
-      // `platform_turn_ended`, which would close a bubble that isn't its own)
-      // must not reach the projection.
-      //
-      // No session in the store is *not* a mismatch: a session being created
-      // streams its first updates between the runtime engaging this channel and
-      // `session/new` returning an id to commit, and the blank chat those land
-      // in is exactly the one the user is looking at.
+      // Updates for a session no longer on screen must not reach the projection.
+      // No session in the store isn't a mismatch — a session being created
+      // streams its first updates before there is an id to commit.
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
 

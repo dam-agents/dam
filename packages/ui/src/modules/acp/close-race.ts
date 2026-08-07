@@ -7,16 +7,10 @@ export class ConnectionClosedError extends Error {
   }
 }
 
-/** Whether a rejection is this module's close race rather than a real failure
- *  answer from the agent. Callers need it to tell "the socket went away" from
- *  "the harness said no", which have opposite user-facing meanings. */
+/** Whether a rejection is this module's close race rather than an answer from
+ *  the agent — the two mean opposite things to the user. */
 export function isConnectionClosed(e: unknown): boolean {
-  return (
-    e instanceof ConnectionClosedError ||
-    (typeof e === "object" &&
-      e !== null &&
-      (e as { name?: unknown }).name === "ConnectionClosedError")
-  );
+  return e instanceof ConnectionClosedError;
 }
 
 /**
