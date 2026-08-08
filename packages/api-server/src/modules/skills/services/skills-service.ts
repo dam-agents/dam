@@ -40,7 +40,14 @@ import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-sca
 import type { ScanScope } from "../infrastructure/scan-cache.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";
-import { privateScanErrorToTrpc } from "../infrastructure/upstream-to-trpc.js";
+import {
+  hasScanFailure,
+  privateScanFailure,
+  scanFailureError,
+  scanFailureToTrpc,
+} from "../infrastructure/upstream-to-trpc.js";
+import type { GithubCredentialPort } from "../infrastructure/github-credential-port.js";
+import { getLogger } from "../../../core/logger.js";
 
 /** Stable, deterministic id for a template-derived source row. The hash
  *  prefix keeps the id compact while avoiding collisions when a template
@@ -66,6 +73,10 @@ export interface SkillsServiceDeps {
    *  `system: true` and protected from deletion. */
   seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
+  /** Answers whether a sandbox can authenticate to GitHub at all — the one
+   *  thing a failed scan's upstream status cannot tell us apart from a repo
+   *  the connection simply wasn't granted. Read only on the failure path. */
+  githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
   owner: string;
   /** Scan via the provided scanner with a TTL cache, keyed by `(gitUrl, path)`
@@ -259,9 +270,9 @@ interface SourceScan {
   skills: Skill[];
   scannedAt: number;
   /** Which branch answered. `false` means the public archive under the
-   *  `shared` scope; `true` means the agent's pod under the owner's scope. It
-   *  is trustworthy because the cache is scoped: a `shared` lookup can never be
-   *  served an `owner`-scoped entry, so the branch that produced the list is
+   *  `shared` scope; `true` means the agent's pod under that sandbox's scope.
+   *  It is trustworthy because the cache is scoped: a `shared` lookup can never
+   *  be served an `agent`-scoped entry, so the branch that produced the list is
    *  also the access level it was read with. */
   viaPod: boolean;
 }
@@ -271,8 +282,83 @@ interface SourceScan {
  * and the content read so neither can drift into a different dispatch — the
  * content read used to call `scanPublic` directly, which is why a private
  * source could never resolve a directory.
+ *
+ * Every failure leaves here as a named verdict. The catch-all is the point:
+ * whatever went wrong, the user gets a sentence they can act on and the real
+ * error stays in the api-server's log, where a parser's complaint or a
+ * Kubernetes message belongs.
  */
 async function scanForSource(
+  deps: SkillsServiceDeps,
+  src: SkillSource,
+  agentId?: string,
+): Promise<SourceScan> {
+  try {
+    return await runScanForSource(deps, src, agentId);
+  } catch (err) {
+    if (hasScanFailure(err)) throw err;
+    getLogger().error(
+      { err, source: src.gitUrl, path: src.path, agentId },
+      "skills scan: unclassified failure",
+    );
+    throw scanFailureError("other");
+  }
+}
+
+/**
+ * Advice for a sandbox that couldn't be made ready, chosen from its state —
+ * the generic "try again in a moment" is only true for a sandbox that is
+ * coming up. Read on the failure path only.
+ */
+async function unreachableSandboxCopy(
+  deps: SkillsServiceDeps,
+  agentId: string,
+): Promise<{ title: string; detail: string } | undefined> {
+  const infra = await deps.agentsRepo.get(agentId, deps.owner);
+  switch (infra ? computeAgentState(infra) : undefined) {
+    case "hibernated":
+      return {
+        title: "This sandbox isn't running",
+        detail: "Start the sandbox, then re-scan to list this source's skills.",
+      };
+    case "error":
+    case "over_budget":
+      return {
+        title: "This sandbox can't be started",
+        detail:
+          "Open the sandbox to see why, then re-scan to list this source's skills.",
+      };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The verdict for a GitHub failure that came back through a sandbox pod, or
+ * null when this flow doesn't own the error.
+ *
+ * "Can't access the repo" and "there is no GitHub credential here" arrive as
+ * the same 401/404 — only the sandbox's own connections tell them apart. That
+ * read happens here and nowhere else, so it costs nothing until a scan has
+ * already failed.
+ */
+async function podGithubVerdict(
+  deps: SkillsServiceDeps,
+  err: unknown,
+  agentId: string,
+): Promise<TRPCError | null> {
+  const failure = privateScanFailure(err);
+  if (!failure) return null;
+  if (
+    failure.code === "repo_unreachable" &&
+    !(await deps.githubCredential.hasGithubApiCredential(agentId))
+  ) {
+    return scanFailureError("needs_github_connection");
+  }
+  return scanFailureToTrpc(failure);
+}
+
+async function runScanForSource(
   deps: SkillsServiceDeps,
   src: SkillSource,
   agentId?: string,
@@ -303,22 +389,36 @@ async function scanForSource(
   // Without an agentId we can't target a pod — refuse with a clear
   // message.
   if (!agentId) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "source is private; select an instance to scan it",
-    });
+    throw scanFailureError("needs_sandbox");
   }
-  await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
+  // A sandbox that can't be woken is a verdict of its own — the raw wake
+  // failure names a pod and a Kubernetes condition, neither of which the user
+  // can act on. Its own state decides the advice, because "try again in a
+  // moment" is false for a sandbox the owner stopped or the budget parked.
+  try {
+    await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
+  } catch (err) {
+    getLogger().warn(
+      { err, source: src.gitUrl, agentId },
+      "skills scan: sandbox unreachable",
+    );
+    throw scanFailureError(
+      "agent_unreachable",
+      await unreachableSandboxCopy(deps, agentId),
+    );
+  }
   try {
     const { skills, scannedAt } = await deps.scanSource(
-      { kind: "owner", owner: deps.owner },
+      { kind: "agent", owner: deps.owner, agentId },
       src.gitUrl,
       src.path,
       (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
     );
     return { skills, scannedAt, viaPod: true };
   } catch (err) {
-    throw privateScanErrorToTrpc(err) ?? err;
+    const verdict = await podGithubVerdict(deps, err, agentId);
+    if (!verdict) throw err;
+    throw verdict;
   }
 }
 
@@ -460,7 +560,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!viaPod) {
         // The public-archive scan always sets `dir`, and under scan scoping only
         // a public-archive scan answers a shared lookup — so a missing one means
-        // an owner-scoped entry did, which is a scoping violation worth a line
+        // a credentialed entry did, which is a scoping violation worth a line
         // rather than a quiet deferral.
         if (!skill.dir) {
           securityLog("warn", "skill.preview.unscoped_scan", {
@@ -496,7 +596,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
       }
 
-      // Pod scan, owner scope: the source is private. Here a missing `dir`
+      // Pod scan, sandbox scope: the source is private. Here a missing `dir`
       // means the sandbox's runtime predates reporting it — a stale deployment,
       // not a scoping violation, so no security log.
       if (!skill.dir) {
@@ -522,9 +622,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
         return { content, dir: skill.dir };
       } catch (err) {
-        // Same mapping the pod scan uses, so a missing GitHub grant renders the
-        // access_restricted CTA rather than a raw 404.
-        throw privateScanErrorToTrpc(err) ?? err;
+        // Same verdicts the pod scan reaches, so a missing GitHub connection
+        // reads the same here as it does on the source card.
+        throw (await podGithubVerdict(deps, err, agentId)) ?? err;
       }
     },
 

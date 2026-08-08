@@ -62,19 +62,21 @@ describe("skills list scan scope", () => {
     expect(scanSource.mock.calls[0][0]).toEqual({ kind: "shared" });
   });
 
-  it("scans a private source under the caller's own scope, never shared", async () => {
+  it("scans a private source under the scanning sandbox's own scope, never shared", async () => {
     const { service, scanSource } = serviceWithScanSpy(async () => {
       throw new PublicArchiveNotFoundError(GIT_URL);
     });
 
     await service.list(SOURCE_ID, AGENT_ID);
 
-    // The public probe runs first and 404s; the pod scan that answers is the
-    // one that carried the user's credentials, so it must be owner-scoped.
+    // The public probe runs first and 404s; the pod scan that answers carried
+    // one sandbox's credentials, so it is scoped to that sandbox — a sibling
+    // with different grants must not be served this list.
     expect(scanSource).toHaveBeenCalledTimes(2);
     expect(scanSource.mock.calls[1][0]).toEqual({
-      kind: "owner",
+      kind: "agent",
       owner: OWNER,
+      agentId: AGENT_ID,
     });
   });
 });

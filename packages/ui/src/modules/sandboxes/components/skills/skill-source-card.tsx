@@ -3,8 +3,9 @@ import {
   ChevronUp,
   Launch,
   OverflowMenuHorizontal,
+  WarningAlt,
 } from "@carbon/icons-react";
-import type { Skill, SkillRef, SkillSource } from "api-server-api";
+import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { externalLinkProps } from "@/lib/external-link";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
-import { parsePlatformCta } from "@/lib/platform-cta";
+import { isConnectionFailure } from "@/lib/scan-failure";
 import { cn } from "@/lib/utils";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
@@ -32,41 +32,34 @@ function repoLabel(source: SkillSource): string {
   return source.path ? `${base} · ${source.path}` : base;
 }
 
-/** Splits a scan/publish error into its message and an optional call-to-action
- *  URL, which the services encode as `\nplatform-cta:<url>` (not connected /
- *  access not granted / repo not allow-listed). When there's no server CTA, an
- *  errored source with sandbox context gets a client-built "Manage connections"
- *  affordance instead — the server owns only the message. */
+/** Why a source's scan failed: the cause on one line, the fix beneath it. Both
+ *  come from the server's verdict, which is closed-set — the card never renders
+ *  a raw error message, so a parser or transport string can't reach the user.
+ *  "Manage connections" appears only where connections are the fix. */
 function SourceError({
-  error,
+  failure,
   onManageConnections,
 }: {
-  error: string;
+  failure: ScanFailure;
   onManageConnections?: () => void;
 }) {
-  const { message, cta } = parsePlatformCta(error);
+  const canManage = onManageConnections && isConnectionFailure(failure);
   return (
-    <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-sm text-danger">
-      <span className="flex-1">{message}</span>
-      {cta ? (
-        <a
-          href={cta}
-          {...externalLinkProps}
-          className="shrink-0 font-semibold underline hover:opacity-80"
+    <div className="flex items-start gap-2 border-t border-border bg-danger-light px-4 py-3 text-sm text-danger">
+      <WarningAlt size={16} className="mt-px shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">{failure.title}</p>
+        <p>{failure.detail}</p>
+      </div>
+      {canManage && (
+        <Button
+          variant="link"
+          size="inline"
+          onClick={onManageConnections}
+          className="shrink-0 font-semibold text-current underline hover:opacity-80"
         >
-          Fix it →
-        </a>
-      ) : (
-        onManageConnections && (
-          <Button
-            variant="link"
-            size="inline"
-            onClick={onManageConnections}
-            className="shrink-0 font-semibold text-current underline hover:opacity-80"
-          >
-            Manage connections
-          </Button>
-        )
+          Manage connections
+        </Button>
       )}
     </div>
   );
@@ -104,7 +97,9 @@ export function SkillSourceCard({
    *  "No skills". */
   skills: Skill[] | undefined;
   loading: boolean;
-  error: string | null;
+  /** The server's verdict on the last failed scan, already classified — the
+   *  card renders it verbatim rather than interpreting an error. */
+  error: ScanFailure | null;
   /** ISO 8601 time this source's list was last read from upstream; absent
    *  until its first successful scan. Rendered as "scanned X ago", and hidden
    *  while errored so we never date a list the user can see failed. */
@@ -237,7 +232,10 @@ export function SkillSourceCard({
 
       {!loaded && !error && <SkillRowsSkeleton />}
       {error && (
-        <SourceError error={error} onManageConnections={onManageConnections} />
+        <SourceError
+          failure={error}
+          onManageConnections={onManageConnections}
+        />
       )}
       {loaded && !error && list.length === 0 && (
         <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">

@@ -1,5 +1,6 @@
 import type {
   LocalSkill,
+  ScanFailure,
   Skill,
   SkillPublishRecord,
   SkillRef,
@@ -9,6 +10,7 @@ import type {
 import { useCallback, useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
+import { toScanFailure } from "@/lib/scan-failure";
 
 import { api } from "../../../api.js";
 import { parsePlatformCta } from "../../../lib/platform-cta.js";
@@ -29,7 +31,10 @@ export interface SkillsSurface {
   stateLoaded: boolean;
   skillsBySource: Record<string, Skill[]>;
   loadingBySource: Record<string, boolean>;
-  errorBySource: Record<string, string | null>;
+  /** Why each source's last scan failed, as the server's own verdict — never a
+   *  raw message. A failure the server didn't classify becomes the generic
+   *  verdict on the way in, so nothing here needs interpreting downstream. */
+  errorBySource: Record<string, ScanFailure | null>;
   /** ISO 8601 time each source's list was last read from upstream; absent
    *  until that source's first successful scan. */
   scannedAtBySource: Record<string, string>;
@@ -109,7 +114,7 @@ export function useSkillsSurface(
     Record<string, boolean>
   >({});
   const [errorBySource, setErrorBySource] = useState<
-    Record<string, string | null>
+    Record<string, ScanFailure | null>
   >({});
   const [scannedAtBySource, setScannedAtBySource] = useState<
     Record<string, string>
@@ -143,8 +148,7 @@ export function useSkillsSurface(
         setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
         setScannedAtBySource((m) => ({ ...m, [sourceId]: scannedAt }));
       } catch (err) {
-        const msg = getErrorMessage(err, "Failed to load skills");
-        setErrorBySource((e) => ({ ...e, [sourceId]: msg }));
+        setErrorBySource((e) => ({ ...e, [sourceId]: toScanFailure(err) }));
         setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
       } finally {
         setLoadingBySource((l) => ({ ...l, [sourceId]: false }));

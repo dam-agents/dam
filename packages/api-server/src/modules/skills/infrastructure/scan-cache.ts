@@ -6,10 +6,18 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * What a scan's result depended on, and therefore who may be served it.
  *
  * This describes the *scan*, not the repository: a publicly readable repo that
- * reached the credentialed path is still `owner`-scoped, because the result
- * came back through one user's access.
+ * reached the credentialed path is still `agent`-scoped, because the result
+ * came back through one sandbox's access.
+ *
+ * The credentialed scope is per **sandbox**, not per user: connections are
+ * granted to one sandbox at a time, so two sandboxes of the same owner can see
+ * different repositories. Scoping to the owner would let a sandbox with no
+ * GitHub connection be served a list its own credentials could never fetch —
+ * and then fail to install from it.
  */
-export type ScanScope = { kind: "shared" } | { kind: "owner"; owner: string };
+export type ScanScope =
+  | { kind: "shared" }
+  | { kind: "agent"; owner: string; agentId: string };
 
 interface CacheEntry {
   skills: Skill[];
@@ -47,23 +55,30 @@ function sourceKey(gitUrl: string, path: string | undefined): string {
 }
 
 function scopeLabel(scope: ScanScope): string {
-  return scope.kind === "shared" ? "shared" : `owner:${scope.owner}`;
+  // The owner rides the key alongside the agent id even though ids are already
+  // unique — the key alone is what stands between a lookup and another user's
+  // list, so it should not depend on id allocation to be safe.
+  return scope.kind === "shared"
+    ? "shared"
+    : `agent:${scope.owner}:${scope.agentId}`;
 }
 
 /**
  * A scan cache keyed by `(gitUrl, path, scope)`. An entry from a scan that ran
- * under one user's credentials is never served to anyone else; an
+ * under one sandbox's credentials is never served to another; an
  * uncredentialed scan, whose result is the same for every caller, is shared
  * across all of them.
  *
  * Scope is part of the key rather than a check applied to a shared slot, so
- * two users of the same private source hold separate entries instead of
- * evicting each other on every request — and no comparison stands between a
- * lookup and another user's skills.
+ * two sandboxes reading the same private source hold separate entries instead
+ * of evicting each other on every request — and no comparison stands between a
+ * lookup and another reader's skills.
  *
- * That multiplies entries by the number of users, so a miss first drops
+ * That multiplies entries by the number of sandboxes, so a miss first drops
  * everything expired: the map holds roughly what was scanned in the last TTL
- * window rather than growing for the life of the process.
+ * window rather than growing for the life of the process. Only credentialed
+ * scans multiply — a public source stays on one `shared` entry, which is the
+ * common case.
  *
  * State is closure-scoped so callers hold the lifetime: the composition root
  * keeps one instance for the process (the service is re-composed per request,

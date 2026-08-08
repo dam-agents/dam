@@ -57,6 +57,30 @@ export const skillListResultSchema = z.object({
   scannedAt: z.string().datetime(),
 });
 
+/** Why a source's scan failed, in the user's language. Carried structurally on
+ *  the tRPC error (`data.scanFailure`) rather than inside its message, so a
+ *  client can tell a verdict the server actually reached from a transport
+ *  failure that never got there — the latter arrives with no `scanFailure` at
+ *  all and must never be rendered verbatim.
+ *
+ *  `other` means "classified, but not one of the named causes"; it still
+ *  carries copy the user can act on. The internal error stays server-side. */
+export const scanFailureCodes = [
+  "needs_github_connection",
+  "needs_sandbox",
+  "repo_unreachable",
+  "agent_unreachable",
+  "other",
+] as const;
+
+export const scanFailureSchema = z.object({
+  code: z.enum(scanFailureCodes),
+  /** Single line naming the cause. */
+  title: z.string(),
+  /** Single line naming the fix. */
+  detail: z.string(),
+});
+
 /** An installed skill on an instance, keyed by source + name. Version
  *  is a commit SHA. */
 export const skillRefSchema = z.object({
