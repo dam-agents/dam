@@ -63,10 +63,10 @@ describe("scanFailureError", () => {
       (err.cause as unknown as { scanFailure: unknown }).scanFailure,
     ).toEqual({
       code: "needs_github_connection",
-      title: "This source needs a GitHub connection",
+      title: "Can't load skills from this source",
       detail:
-        "Add a GitHub connection to this sandbox, then re-scan to list its skills. " +
-        "If the repository should be public, check the URL instead.",
+        "The repository may be private or the URL may not be valid. " +
+        "Add a GitHub connection or check the URL, then re-scan.",
     });
   });
 

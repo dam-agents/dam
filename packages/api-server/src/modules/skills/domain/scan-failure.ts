@@ -9,15 +9,14 @@ import type { ScanFailure, ScanFailureCode } from "api-server-api";
  * to do — but it names no cause, because the server could not determine one.
  */
 const COPY: Record<ScanFailureCode, Omit<ScanFailure, "code">> = {
-  // The second sentence is the one hedge this verdict needs: a repository that
-  // does not exist is indistinguishable from a private one we have no
-  // credential for, so a mistyped URL lands here too and no connection will
-  // ever fix it.
+  // Deliberately hedged rather than confident: a repository that does not
+  // exist is indistinguishable from a private one we hold no credential for,
+  // so a mistyped URL lands here too and no connection would ever fix it.
   needs_github_connection: {
-    title: "This source needs a GitHub connection",
+    title: "Can't load skills from this source",
     detail:
-      "Add a GitHub connection to this sandbox, then re-scan to list its skills. " +
-      "If the repository should be public, check the URL instead.",
+      "The repository may be private or the URL may not be valid. " +
+      "Add a GitHub connection or check the URL, then re-scan.",
   },
   needs_sandbox: {
     title: "This source needs a sandbox to scan it",
