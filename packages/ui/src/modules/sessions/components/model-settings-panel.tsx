@@ -16,11 +16,16 @@ import { queryClient } from "../../../query-client.js";
 import {
   harnessConfigCurrentKey,
   useApplyHarnessConfig,
-  useHarnessConfigCurrent,
   useHarnessConfigSettled,
   useHarnessConfigStatus,
+  useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
 import { Section } from "./config-section.js";
+import {
+  SnapshotNote,
+  StaleModelCallout,
+  unavailableModel,
+} from "./model-settings-snapshot.js";
 
 interface Choice {
   id: string;
@@ -52,7 +57,11 @@ export function ModelSettingsPanel({
   headerAction?: ReactNode;
 }) {
   const { data: status } = useHarnessConfigStatus(agentId);
-  const { data: current } = useHarnessConfigCurrent(agentId);
+  const {
+    values: current,
+    origin,
+    capturedAt,
+  } = useResolvedHarnessConfig(agentId);
   const apply = useApplyHarnessConfig();
 
   // `awaitingSettle` is set only after the apply is enqueued, so the settle poll
@@ -182,13 +191,20 @@ export function ModelSettingsPanel({
   );
 
   if (isPage) {
+    const fromSnapshot = origin === "snapshot";
+    const staleModel =
+      fromSnapshot && current ? unavailableModel(current) : null;
     return (
       <section className="mb-8">
+        {staleModel && <StaleModelCallout model={staleModel} />}
         <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
           <SectionLabel>Model settings</SectionLabel>
           {headerAction ?? (saving ? <SavingHint /> : null)}
         </div>
         <Callout inset>
+          {fromSnapshot && capturedAt && (
+            <SnapshotNote capturedAt={capturedAt} />
+          )}
           {groups}
           {note}
         </Callout>
