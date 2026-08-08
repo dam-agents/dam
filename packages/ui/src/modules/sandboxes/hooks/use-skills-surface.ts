@@ -121,6 +121,10 @@ export function useSkillsSurface(
   >({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
   const [standalone, setStandalone] = useState<LocalSkill[]>([]);
+  // Set only while the pod is unreachable, when `standalone` came from a
+  // recording rather than a live read.
+  const [standaloneSnapshot, setStandaloneSnapshot] =
+    useState<SkillsState["standaloneSnapshot"]>(undefined);
   const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
@@ -129,8 +133,20 @@ export function useSkillsSurface(
     // arrays are empty placeholders, and publishing those would blank a summary
     // the sidebar's own one-shot fetch already populated.
     if (!stateLoaded) return;
-    onStateChange?.({ installed, standalone, instancePublishes: publishes });
-  }, [stateLoaded, installed, standalone, publishes, onStateChange]);
+    onStateChange?.({
+      installed,
+      standalone,
+      instancePublishes: publishes,
+      standaloneSnapshot,
+    });
+  }, [
+    stateLoaded,
+    installed,
+    standalone,
+    publishes,
+    standaloneSnapshot,
+    onStateChange,
+  ]);
 
   const loadSkills = useCallback(
     async (sourceId: string) => {
@@ -168,6 +184,7 @@ export function useSkillsSurface(
           setInstalled([]);
           setStandalone([]);
           setPublishes([]);
+          setStandaloneSnapshot(undefined);
           setStateLoaded(true);
         }
         return;
@@ -178,6 +195,7 @@ export function useSkillsSurface(
           setInstalled(state.installed);
           setStandalone(state.standalone);
           setPublishes(state.instancePublishes);
+          setStandaloneSnapshot(state.standaloneSnapshot);
         }
       } catch {
       } finally {
