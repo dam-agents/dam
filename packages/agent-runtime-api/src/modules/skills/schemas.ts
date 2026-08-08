@@ -50,6 +50,15 @@ export const skillReadPullRequestInputSchema = z.object({
   number: z.number().int().positive(),
 });
 
+export const skillReadSkillFileInputSchema = z.object({
+  source: z.string().min(1),
+  /** Commit SHA the scan pinned — the preview renders the revision the
+   *  catalog listed. */
+  version: z.string().min(1),
+  /** Repo-relative skill directory from the scan; `SKILL.md` is read inside it. */
+  dir: z.string().min(1),
+});
+
 // No skillPaths: the runtime resolves them from its manifest, same as
 // readLocal/writeLocal. (Contrast skillUninstallInputSchema, whose paths come
 // from the driver applying a declarative install.)

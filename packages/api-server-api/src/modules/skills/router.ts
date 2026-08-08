@@ -90,11 +90,16 @@ export const skillsRouter = t.router({
     .input(skillGetContentInputSchema)
     .output(skillContentSchema)
     .query(async ({ ctx, input }) => {
-      // agentId only scopes the auth check — reading public content needs no
-      // pod (private preview is deferred). The service resolves the source and
-      // throws a descriptive NOT_FOUND, so there's no pre-resolve here.
+      // Public content needs no pod; a private source's read is issued from
+      // the pod, where the paired gateway injects the owner's token — so that
+      // path needs the agentId, not just the auth check. The service resolves
+      // the source and throws a descriptive NOT_FOUND, so no pre-resolve here.
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
-      return ctx.skills.getSkillContent(input.sourceId, input.name);
+      return ctx.skills.getSkillContent(
+        input.sourceId,
+        input.name,
+        input.agentId,
+      );
     }),
 
   install: manageAgentsProcedure

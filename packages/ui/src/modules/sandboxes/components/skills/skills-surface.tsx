@@ -21,6 +21,7 @@ import type { AgentState } from "../../../../types.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
 import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
+import { LocalSkillRenderModal } from "./local-skill-render-modal.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
 import { publishedDuplicatesBySource } from "./published-duplicates.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
@@ -69,6 +70,7 @@ export function SkillsSurface({
     source: SkillSource;
     skill: Skill;
   } | null>(null);
+  const [localRenderFor, setLocalRenderFor] = useState<LocalSkill | null>(null);
   const {
     sources,
     sourcesLoaded,
@@ -291,6 +293,7 @@ export function SkillsSurface({
               onDownload={(skill) => void downloadStandalone(skill)}
               onDelete={(skill, pub) => void deleteWithConfirm(skill, pub)}
               onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
+              onOpenSkill={agentId ? setLocalRenderFor : undefined}
               trackUnavailableNames={trackUnavailableNames}
               action={addSourceButton}
             />
@@ -302,7 +305,12 @@ export function SkillsSurface({
             <StandaloneSkillsEmptyState action={addSourceButton} />
           )}
 
-          {builtIn.length > 0 && <BuiltInSkillsGroup skills={builtIn} />}
+          {builtIn.length > 0 && (
+            <BuiltInSkillsGroup
+              skills={builtIn}
+              onOpenSkill={agentId ? setLocalRenderFor : undefined}
+            />
+          )}
 
           <section>
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -376,6 +384,14 @@ export function SkillsSurface({
           skill={renderFor.skill}
           agentId={agentId}
           onClose={() => setRenderFor(null)}
+        />
+      )}
+
+      {localRenderFor && agentId && (
+        <LocalSkillRenderModal
+          skill={localRenderFor}
+          agentId={agentId}
+          onClose={() => setLocalRenderFor(null)}
         />
       )}
     </div>

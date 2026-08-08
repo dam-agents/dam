@@ -58,6 +58,7 @@ export function StandaloneSkillRow({
   onDownload,
   onDelete,
   onTrack,
+  onOpen,
   trackUnavailable,
 }: {
   skill: LocalSkill;
@@ -73,6 +74,9 @@ export function StandaloneSkillRow({
   /** Hand the skill over to its source, so it becomes governed by the normal
    *  source → install → drift → Update loop. Offered only once merged. */
   onTrack?: () => void;
+  /** Open the skill's SKILL.md render modal. Makes the name clickable; absent
+   *  when there is no pod to read the file from. */
+  onOpen?: () => void;
   /** The source hasn't been scanned yet (or is unreachable), so we can't tell
    *  whether the local copy diverged — disable rather than guess. */
   trackUnavailable?: boolean;
@@ -88,9 +92,21 @@ export function StandaloneSkillRow({
       )}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-medium text-foreground">
-          {skill.name}
-        </p>
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            /* max-w-full, not min-w-0: an inline-block button in a block
+               parent would otherwise size to its nowrap text and overflow. */
+            className="max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
+          >
+            {skill.name}
+          </button>
+        ) : (
+          <p className="truncate text-[15px] font-medium text-foreground">
+            {skill.name}
+          </p>
+        )}
         <p
           className={cn(
             "truncate text-sm text-muted-foreground",

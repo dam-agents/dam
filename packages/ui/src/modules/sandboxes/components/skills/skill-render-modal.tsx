@@ -1,21 +1,15 @@
-import { Launch } from "@carbon/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Skill, SkillSource } from "api-server-api";
 
-import { Markdown } from "@/components/markdown";
-import { DialogBody, DialogHeader, Modal } from "@/components/modal";
-import { Tooltip } from "@/components/ui/tooltip";
-import { externalLinkProps } from "@/lib/external-link";
 import { gitBlobUrl } from "@/lib/git-source";
 
 import { trpc } from "../../../../trpc.js";
+import { SkillMarkdownModal } from "./skill-markdown-modal.js";
 
 /**
- * Renders a skill's `SKILL.md` in-product (frontmatter + markdown body) so a
- * user can understand it without leaving for GitHub. Content is read from the
- * source (slice 05, public sources only — private falls back to the GitHub
- * link). The <Markdown> component handles the frontmatter block, GFM, and code
- * highlighting.
+ * Renders a source-backed skill's `SKILL.md` in-product (frontmatter + markdown
+ * body) so a user can understand it without leaving for GitHub. The Local Skill
+ * counterpart is {@link LocalSkillRenderModal}; both share the modal shell.
  */
 export function SkillRenderModal({
   source,
@@ -28,65 +22,33 @@ export function SkillRenderModal({
   agentId: string | null;
   onClose: () => void;
 }) {
-  const { data, isPending, isError } = useQuery(
-    trpc.skills.getSkillContent.queryOptions({
+  const { data, isPending, isError } = useQuery({
+    ...trpc.skills.getSkillContent.queryOptions({
       sourceId: source.id,
       name: skill.name,
       ...(agentId ? { agentId } : {}),
     }),
-  );
-  // The scan reports each skill's real directory, so the link is right before
-  // the content query resolves. The guess is the private-source fallback only —
-  // there the scan comes from agent-runtime, which doesn't report `dir`.
+    // A refusal here is a verdict (unsupported host, skill gone, no GitHub
+    // grant), not a transient fault. The global `retry: 3` would also strand
+    // the modal on its skeleton: with networkMode "online" the retryer pauses
+    // instead of failing, leaving the query `pending` and the message unseen.
+    retry: false,
+  });
+  // Both scans report each skill's real directory, so the link is right before
+  // the content query resolves. The guess covers only a sandbox whose runtime
+  // predates reporting `dir`.
   const dir =
     skill.dir ?? data?.dir ?? `${source.path ?? "skills"}/${skill.name}`;
-  const link = gitBlobUrl(source.gitUrl, skill.version, `${dir}/SKILL.md`);
 
   return (
-    <Modal widthClass="w-[720px]">
-      <DialogHeader
-        className="border-b border-border"
-        title={skill.name}
-        truncateTitle
-        titleAccessory={
-          link && (
-            <Tooltip content="View SKILL.md on GitHub">
-              <a
-                href={link}
-                {...externalLinkProps}
-                aria-label="View SKILL.md on GitHub"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Launch size={15} />
-              </a>
-            </Tooltip>
-          )
-        }
-        subtitle={
-          skill.description && (
-            <span className="block truncate">{skill.description}</span>
-          )
-        }
-        onClose={onClose}
-      />
-
-      <DialogBody>
-        {isPending ? (
-          <div className="flex flex-col gap-2">
-            <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-full animate-pulse rounded bg-muted/60" />
-            <div className="h-3 w-5/6 animate-pulse rounded bg-muted/60" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-muted/60" />
-          </div>
-        ) : isError || !data ? (
-          <p className="text-sm text-muted-foreground">
-            An in-product preview isn&rsquo;t available for this skill yet.
-            {link ? " Open it on GitHub from the link above." : ""}
-          </p>
-        ) : (
-          <Markdown>{data.content}</Markdown>
-        )}
-      </DialogBody>
-    </Modal>
+    <SkillMarkdownModal
+      title={skill.name}
+      description={skill.description}
+      linkHref={gitBlobUrl(source.gitUrl, skill.version, `${dir}/SKILL.md`)}
+      isPending={isPending}
+      isError={isError}
+      content={data?.content}
+      onClose={onClose}
+    />
   );
 }

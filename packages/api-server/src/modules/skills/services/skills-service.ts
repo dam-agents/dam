@@ -255,6 +255,73 @@ async function standaloneFor(
   return all.filter((s) => !trackedNames.has(s.name));
 }
 
+interface SourceScan {
+  skills: Skill[];
+  scannedAt: number;
+  /** Which branch answered. `false` means the public archive under the
+   *  `shared` scope; `true` means the agent's pod under the owner's scope. It
+   *  is trustworthy because the cache is scoped: a `shared` lookup can never be
+   *  served an `owner`-scoped entry, so the branch that produced the list is
+   *  also the access level it was read with. */
+  viaPod: boolean;
+}
+
+/**
+ * One source's scanned skill list, and how it was obtained. Shared by `list`
+ * and the content read so neither can drift into a different dispatch — the
+ * content read used to call `scanPublic` directly, which is why a private
+ * source could never resolve a directory.
+ */
+async function scanForSource(
+  deps: SkillsServiceDeps,
+  src: SkillSource,
+  agentId?: string,
+): Promise<SourceScan> {
+  // Fast path: public GitHub repo scanned directly from api-server. This
+  // works in every connection state (no app configured, not Connected,
+  // not granted, fully granted) because api-server has direct internet
+  // egress — it never touches the agent pod's per-grant gating.
+  if (detectHost(src.gitUrl)) {
+    try {
+      const { skills, scannedAt } = await deps.scanSource(
+        { kind: "shared" },
+        src.gitUrl,
+        src.path,
+        (gitUrl) => deps.scanPublic(gitUrl, src.path),
+      );
+      return { skills, scannedAt, viaPod: false };
+    } catch (err) {
+      if (!(err instanceof PublicArchiveNotFoundError)) throw err;
+      // 404 → repo is private (or nonexistent). Only the authenticated
+      // agent-runtime path can distinguish those and surface a useful
+      // CTA, so we fall through.
+    }
+  }
+
+  // Private/authenticated path: delegate to agent-runtime inside a
+  // running instance pod, whose Envoy sidecar performs the token swap.
+  // Without an agentId we can't target a pod — refuse with a clear
+  // message.
+  if (!agentId) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "source is private; select an instance to scan it",
+    });
+  }
+  await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
+  try {
+    const { skills, scannedAt } = await deps.scanSource(
+      { kind: "owner", owner: deps.owner },
+      src.gitUrl,
+      src.path,
+      (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
+    );
+    return { skills, scannedAt, viaPod: true };
+  } catch (err) {
+    throw privateScanErrorToTrpc(err) ?? err;
+  }
+}
+
 function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
   const filtered = current.filter(
     (s) => !(s.source === next.source && s.name === next.name),
@@ -354,52 +421,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      // Fast path: public GitHub repo scanned directly from api-server. This
-      // works in every connection state (no app configured, not Connected,
-      // not granted, fully granted) because api-server has direct internet
-      // egress — it never touches the agent pod's per-grant gating.
-      if (detectHost(src.gitUrl)) {
-        try {
-          const { skills, scannedAt } = await deps.scanSource(
-            { kind: "shared" },
-            src.gitUrl,
-            src.path,
-            (gitUrl) => deps.scanPublic(gitUrl, src.path),
-          );
-          return { skills, scannedAt: new Date(scannedAt).toISOString() };
-        } catch (err) {
-          if (!(err instanceof PublicArchiveNotFoundError)) throw err;
-          // 404 → repo is private (or nonexistent). Only the authenticated
-          // agent-runtime path can distinguish those and surface a useful
-          // CTA, so we fall through.
-        }
-      }
-
-      // Private/authenticated path: delegate to agent-runtime inside a
-      // running instance pod, whose Envoy sidecar performs the token swap.
-      // Without an agentId we can't target a pod — refuse with a clear
-      // message.
-      if (!agentId) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "source is private; select an instance to scan it",
-        });
-      }
-      await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
-      try {
-        const { skills, scannedAt } = await deps.scanSource(
-          { kind: "owner", owner: deps.owner },
-          src.gitUrl,
-          src.path,
-          (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
-        );
-        return { skills, scannedAt: new Date(scannedAt).toISOString() };
-      } catch (err) {
-        throw privateScanErrorToTrpc(err) ?? err;
-      }
+      const { skills, scannedAt } = await scanForSource(deps, src, agentId);
+      return { skills, scannedAt: new Date(scannedAt).toISOString() };
     },
 
-    async getSkillContent(sourceId: string, name: string) {
+    async getSkillContent(sourceId: string, name: string, agentId?: string) {
       const src = await resolveSource(deps, sourceId);
       if (!src) {
         throw new TRPCError({
@@ -407,39 +433,35 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: `skill source ${JSON.stringify(sourceId)} not found`,
         });
       }
-      // Public GitHub: read directly from the api-server (no pod needed).
-      // Private sources' in-product preview is deferred — reading their content
-      // must route through the agent pod for the credential swap, which needs a
-      // new agent-runtime read; until then the UI falls back to a GitHub link.
-      const deferred =
-        "in-product preview isn't available for private sources yet";
+      // The one surviving limit, and it is about the host rather than privacy:
+      // the pinned single-file read is GitHub-only, and reading one file out of
+      // another host would mean a repo download per preview.
       if (!detectHost(src.gitUrl)) {
-        throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "in-product preview is only available for github.com sources",
+        });
       }
       // Resolve the skill's pinned {version, dir} from the same cached scan
-      // `list` uses (one shared cache entry), then GET that one file — no repo
-      // download. A private github.com repo 404s the scan with
-      // PublicArchiveNotFoundError, the same deferred-preview outcome the
-      // tarball read used to produce.
-      try {
-        const { skills } = await deps.scanSource(
-          { kind: "shared" },
-          src.gitUrl,
-          src.path,
-          (gitUrl) => deps.scanPublic(gitUrl, src.path),
-        );
-        const skill = skills.find((s) => s.name === name);
-        if (!skill) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `skill ${JSON.stringify(name)} not found in source`,
-          });
-        }
-        // `dir` is optional because the pod scan doesn't report one, but the
-        // public-archive scan always sets it — and under scan scoping only a
-        // public-archive scan reaches here. The check still narrows the type for
-        // the read below; reaching it means an owner-scoped entry answered a
-        // shared lookup, which is worth a line rather than a quiet deferral.
+      // `list` uses, then GET that one file — no repo download. A private repo
+      // 404s the public archive inside the helper and escalates to the pod,
+      // which is what makes a private preview possible at all. The wake, when
+      // one is needed, happens in there too.
+      const { skills, viaPod } = await scanForSource(deps, src, agentId);
+      const skill = skills.find((s) => s.name === name);
+      if (!skill) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill ${JSON.stringify(name)} not found in source`,
+        });
+      }
+
+      if (!viaPod) {
+        // The public-archive scan always sets `dir`, and under scan scoping only
+        // a public-archive scan answers a shared lookup — so a missing one means
+        // an owner-scoped entry did, which is a scoping violation worth a line
+        // rather than a quiet deferral.
         if (!skill.dir) {
           securityLog("warn", "skill.preview.unscoped_scan", {
             category: "privileged",
@@ -449,19 +471,60 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             result: "failure",
             detail: { name },
           });
-          throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
+          throw new TRPCError({
+            code: "NOT_IMPLEMENTED",
+            message: "in-product preview isn't available for this skill",
+          });
         }
-        const content = await deps.readPublicSkillFile(
-          src.gitUrl,
-          skill.version,
-          skill.dir,
-        );
+        try {
+          const content = await deps.readPublicSkillFile(
+            src.gitUrl,
+            skill.version,
+            skill.dir,
+          );
+          return { content, dir: skill.dir };
+        } catch (err) {
+          // The scan located this file, so a 404 on the pinned path means the
+          // cached entry outlived the revision it described.
+          if (err instanceof PublicArchiveNotFoundError) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: `skill ${JSON.stringify(name)} no longer exists at the scanned revision`,
+            });
+          }
+          throw err;
+        }
+      }
+
+      // Pod scan, owner scope: the source is private. Here a missing `dir`
+      // means the sandbox's runtime predates reporting it — a stale deployment,
+      // not a scoping violation, so no security log.
+      if (!skill.dir) {
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "this sandbox's runtime is too old to locate the skill's directory",
+        });
+      }
+      // Reaching this branch required an agentId — the helper throws
+      // PRECONDITION_FAILED otherwise — but narrow it rather than assert.
+      if (!agentId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "source is private; select an instance to read it",
+        });
+      }
+      try {
+        const { content } = await deps.runtimeClient.readSkillFile(agentId, {
+          source: src.gitUrl,
+          version: skill.version,
+          dir: skill.dir,
+        });
         return { content, dir: skill.dir };
       } catch (err) {
-        if (err instanceof PublicArchiveNotFoundError) {
-          throw new TRPCError({ code: "NOT_IMPLEMENTED", message: deferred });
-        }
-        throw err;
+        // Same mapping the pod scan uses, so a missing GitHub grant renders the
+        // access_restricted CTA rather than a raw 404.
+        throw privateScanErrorToTrpc(err) ?? err;
       }
     },
 

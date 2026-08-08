@@ -512,8 +512,10 @@ function assertSafeTarEntry(entry: string): void {
 }
 
 /** A configured source subdir is api-server-validated, but guard at the join
- *  site too so a stray `..`/absolute path can never escape the clone. */
-function subPathEscapes(subPath: string): boolean {
+ *  site too so a stray `..`/absolute path can never escape the clone. Exported
+ *  so the pinned single-file read guards the same value the same way, rather
+ *  than growing a third copy of this check. */
+export function subPathEscapes(subPath: string): boolean {
   return subPath.startsWith("/") || subPath.split("/").includes("..");
 }
 
