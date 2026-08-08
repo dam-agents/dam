@@ -270,9 +270,9 @@ interface SourceScan {
   skills: Skill[];
   scannedAt: number;
   /** Which branch answered. `false` means the public archive under the
-   *  `shared` scope; `true` means the agent's pod under the owner's scope. It
-   *  is trustworthy because the cache is scoped: a `shared` lookup can never be
-   *  served an `owner`-scoped entry, so the branch that produced the list is
+   *  `shared` scope; `true` means the agent's pod under that sandbox's scope.
+   *  It is trustworthy because the cache is scoped: a `shared` lookup can never
+   *  be served an `agent`-scoped entry, so the branch that produced the list is
    *  also the access level it was read with. */
   viaPod: boolean;
 }
@@ -564,7 +564,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!viaPod) {
         // The public-archive scan always sets `dir`, and under scan scoping only
         // a public-archive scan answers a shared lookup — so a missing one means
-        // an owner-scoped entry did, which is a scoping violation worth a line
+        // a credentialed entry did, which is a scoping violation worth a line
         // rather than a quiet deferral.
         if (!skill.dir) {
           securityLog("warn", "skill.preview.unscoped_scan", {
@@ -600,7 +600,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
       }
 
-      // Pod scan, owner scope: the source is private. Here a missing `dir`
+      // Pod scan, sandbox scope: the source is private. Here a missing `dir`
       // means the sandbox's runtime predates reporting it — a stale deployment,
       // not a scoping violation, so no security log.
       if (!skill.dir) {
