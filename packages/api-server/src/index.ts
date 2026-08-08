@@ -63,6 +63,7 @@ import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
+import { createHarnessConfigSnapshotRepo } from "./modules/harness-config/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
 import {
   createKubernetesSecretStore,
@@ -244,6 +245,7 @@ const runtimeDelivery = composeRuntimeDelivery({
   agentRunningPort: {
     isRunning: (agentId) => agentsRepo.isReady(agentId),
   },
+  snapshotWriter: createHarnessConfigSnapshotRepo(db),
   harnessServerUrl: config.harnessServerUrl,
 });
 await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>

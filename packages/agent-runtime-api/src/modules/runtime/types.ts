@@ -238,6 +238,15 @@ export const harnessConfigChoice = z.object({
 });
 export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
 
+/** The harness's own config file as the pod reads it back. `null` means the key
+ *  is unset, so the harness's built-in default applies. */
+export const harnessConfigValues = z.object({
+  model: z.string().nullable(),
+  mode: z.string().nullable(),
+  configOptions: z.record(z.string().min(1), z.string()),
+});
+export type HarnessConfigValues = z.infer<typeof harnessConfigValues>;
+
 export const harnessConfigOptionGroup = z.object({
   // "model", "mode", or a configOption id (e.g. "effort").
   id: z.string().min(1),
@@ -258,6 +267,15 @@ export const harnessConfigCatalog = z.object({
     .optional(),
 });
 export type HarnessConfigCatalog = z.infer<typeof harnessConfigCatalog>;
+
+/** What the pod reports about its harness config after an apply: the file's
+ *  values plus the models the provider offered. Discovery resolves its base URL
+ *  from materialized env, so only the apply path can fill the list — `hello`
+ *  runs before env exists and carries the values alone. */
+export const harnessConfigReport = harnessConfigValues.extend({
+  availableModels: z.array(harnessConfigChoice).nullable(),
+});
+export type HarnessConfigReport = z.infer<typeof harnessConfigReport>;
 
 export const capabilities = z.object({
   contributions: z.array(contributionKind),
@@ -298,12 +316,16 @@ export const applyStateResult = z.discriminatedUnion("status", [
     appliedHash: z.string().min(1).nullable(), // null until the first clean settle
     failures: z.array(driverFailure).default([]),
     settledEvents: z.array(z.string()).default([]),
+    // Absent from a pod predating this, or one whose manifest declares no
+    // harness-config driver — the server then keeps whatever it holds.
+    harnessConfigCurrent: harnessConfigReport.optional(),
   }),
   // Contributions already at ≥ the requested version; worker reconciles. Events still apply (own version) — settledEvents reports which.
   z.object({
     status: z.literal("stale"),
     appliedVersion: z.number().int().nonnegative(),
     settledEvents: z.array(z.string()).default([]),
+    harnessConfigCurrent: harnessConfigReport.optional(),
   }),
 ]);
 export type ApplyStateResult = z.infer<typeof applyStateResult>;
@@ -314,6 +336,9 @@ export const helloInput = z.object({
   protocolVersion: z.literal("v1"),
   agentRuntimeVersion: z.string(),
   capabilities,
+  // The config file as it stands at boot. No discovered model list here: `hello`
+  // must not wait on a network call, and env hasn't materialized yet anyway.
+  harnessConfigCurrent: harnessConfigValues.optional(),
 });
 export type HelloInput = z.infer<typeof helloInput>;
 

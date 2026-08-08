@@ -4,6 +4,7 @@ import type {
   EventHandler,
   HarnessConfigCurrent,
   HarnessConfigEventPayload,
+  HarnessConfigValues,
   Plugin,
 } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
@@ -29,6 +30,9 @@ export type ApplyHarnessConfigFn = (
 export interface HarnessConfigPlugin extends Plugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
+  /** The config file alone — no discovery, so no network call. This is what
+   *  `hello` reports: it must not block boot on the provider. */
+  readValues(): HarnessConfigValues;
   readCurrent(): Promise<HarnessConfigCurrent>;
   apply: ApplyHarnessConfigFn;
 }
@@ -101,28 +105,26 @@ export function createHarnessConfigPlugin(deps: {
     });
   };
 
+  const readValues = (): HarnessConfigValues =>
+    binding
+      ? readCurrentValues(binding, agentHome, log)
+      : { model: null, mode: null, configOptions: {} };
+
   const readCurrent = async (): Promise<HarnessConfigCurrent> => {
-    if (!binding) {
-      return {
-        model: null,
-        mode: null,
-        configOptions: {},
-        availableModels: null,
-      };
-    }
+    if (!binding) return { ...readValues(), availableModels: null };
     // Discover even when the file is missing, so a fresh agent still lists models.
-    const current = readCurrentValues(binding, agentHome, log);
     const availableModels = await discoverModels(
       binding.modelDiscovery,
       envReader.current(),
     );
-    return { ...current, availableModels };
+    return { ...readValues(), availableModels };
   };
 
   return {
     name: IMPL_NAME,
     supported: binding !== undefined,
     catalog: binding?.catalog,
+    readValues,
     readCurrent,
     apply,
     // Binding already captured above; the registry routes the event here.
@@ -132,14 +134,16 @@ export function createHarnessConfigPlugin(deps: {
   };
 }
 
-type CurrentValues = Omit<HarnessConfigCurrent, "availableModels">;
-
 function readCurrentValues(
   binding: HarnessConfigBinding,
   agentHome: string,
   log: (msg: string) => void,
-): CurrentValues {
-  const empty: CurrentValues = { model: null, mode: null, configOptions: {} };
+): HarnessConfigValues {
+  const empty: HarnessConfigValues = {
+    model: null,
+    mode: null,
+    configOptions: {},
+  };
   const path = expandHome(binding.file, agentHome);
   if (!existsSync(path)) return empty;
   let obj: Record<string, unknown>;
