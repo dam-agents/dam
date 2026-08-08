@@ -269,11 +269,19 @@ export const harnessConfigCatalog = z.object({
 export type HarnessConfigCatalog = z.infer<typeof harnessConfigCatalog>;
 
 /** What the pod reports about its harness config after an apply: the file's
- *  values plus the models the provider offered. Discovery resolves its base URL
- *  from materialized env, so only the apply path can fill the list — `hello`
- *  runs before env exists and carries the values alone. */
+ *  values plus what the provider offers. Discovery resolves its base URL from
+ *  materialized env, so only the apply path can fill the list — `hello` runs
+ *  before env exists and carries the values alone.
+ *
+ *  `availableModels` is three-valued on purpose, because the platform stores it
+ *  durably and must not lose a good list to a blip:
+ *  - **absent** — this attempt could not resolve the list (no base URL yet, a
+ *    non-2xx, a timeout). Says nothing about the provider, so the receiver keeps
+ *    whatever it already holds.
+ *  - **null** — this harness declares no discovery source at all.
+ *  - **array** — the provider answered; empty means it offers no chat models. */
 export const harnessConfigReport = harnessConfigValues.extend({
-  availableModels: z.array(harnessConfigChoice).nullable(),
+  availableModels: z.array(harnessConfigChoice).nullable().optional(),
 });
 export type HarnessConfigReport = z.infer<typeof harnessConfigReport>;
 

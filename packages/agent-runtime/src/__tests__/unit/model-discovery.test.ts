@@ -24,21 +24,23 @@ function stubFetch(opts: {
 }
 
 describe("createOpenAiModelDiscovery", () => {
-  it("returns null when no spec is declared", async () => {
+  it("reports not-configured when no spec is declared", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover(undefined, { OPENAI_PROXY_URL: "https://x" }),
-    ).toBeNull();
+    ).toEqual({ status: "not-configured" });
     expect(urls).toEqual([]);
   });
 
-  it("returns null when no candidate env var is set (no fetch)", async () => {
+  // Declared but the env hasn't materialized the URL: unavailable, not
+  // not-configured, so a recorded list is preserved rather than cleared.
+  it("reports unavailable when no candidate env var is set (no fetch)", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover({ urlEnv: ["OPENAI_PROXY_URL", "RITS_URL"] }, {}),
-    ).toBeNull();
+    ).toEqual({ status: "unavailable" });
     expect(urls).toEqual([]);
   });
 
@@ -74,37 +76,49 @@ describe("createOpenAiModelDiscovery", () => {
       },
     });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual([
-      { value: "a-model", name: "a-model" },
-      { value: "b-model", name: "b-model" },
-    ]);
+    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
+      status: "observed",
+      models: [
+        { value: "a-model", name: "a-model" },
+        { value: "b-model", name: "b-model" },
+      ],
+    });
   });
 
-  it("returns null when the body's data is not an array", async () => {
+  it("reports unavailable when the body's data is not an array", async () => {
     const { fetchImpl } = stubFetch({ body: { data: "nope" } });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toBeNull();
+    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
+      status: "unavailable",
+    });
   });
 
-  it("returns null when the list is empty after filtering embeddings", async () => {
+  // The provider answered and offers no chat models. That is an observation, not
+  // a failure, so it is allowed to clear a previously recorded list.
+  it("reports an observed empty list when everything filtered out", async () => {
     const { fetchImpl } = stubFetch({
       body: { data: [{ id: "text-embedding-3-large" }] },
     });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toBeNull();
+    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
+      status: "observed",
+      models: [],
+    });
   });
 
-  it("returns null on a non-2xx response", async () => {
+  it("reports unavailable on a non-2xx response", async () => {
     const { fetchImpl } = stubFetch({ ok: false, status: 502, body: {} });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toBeNull();
+    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
+      status: "unavailable",
+    });
   });
 
-  it("returns null (never throws) when fetch fails", async () => {
+  it("reports unavailable (never throws) when fetch fails", async () => {
     const { fetchImpl } = stubFetch({ throws: true });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
     await expect(
       discover({ urlEnv: ["U"] }, { U: "https://p" }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ status: "unavailable" });
   });
 });

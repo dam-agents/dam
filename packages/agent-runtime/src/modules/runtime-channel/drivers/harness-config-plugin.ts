@@ -4,6 +4,7 @@ import type {
   EventHandler,
   HarnessConfigCurrent,
   HarnessConfigEventPayload,
+  HarnessConfigReport,
   HarnessConfigValues,
   Plugin,
 } from "agent-runtime-api";
@@ -13,7 +14,10 @@ import {
   getNested,
   type FileDesired,
 } from "../infrastructure/file-ops.js";
-import type { ModelDiscovery } from "../infrastructure/model-discovery.js";
+import type {
+  ModelDiscovery,
+  ModelDiscoveryOutcome,
+} from "../infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../manifest.js";
 import { expandHome } from "../../../core/expand-home.js";
 import type { RuntimeEnvReader } from "../../../core/runtime-env.js";
@@ -33,7 +37,13 @@ export interface HarnessConfigPlugin extends Plugin {
   /** The config file alone — no discovery, so no network call. This is what
    *  `hello` reports: it must not block boot on the provider. */
   readValues(): HarnessConfigValues;
+  /** For the live UI read: an unresolvable model list collapses to null so the
+   *  panel falls back to the static catalog. */
   readCurrent(): Promise<HarnessConfigCurrent>;
+  /** For the durable snapshot: distinguishes a list the provider actually
+   *  answered with from one this attempt simply couldn't resolve. `availableModels`
+   *  is absent in the latter case, so the recorded list survives. */
+  readReport(): Promise<HarnessConfigReport>;
   apply: ApplyHarnessConfigFn;
 }
 
@@ -110,14 +120,33 @@ export function createHarnessConfigPlugin(deps: {
       ? readCurrentValues(binding, agentHome, log)
       : { model: null, mode: null, configOptions: {} };
 
+  // Discover even when the file is missing, so a fresh agent still lists models.
+  const discover = async (): Promise<ModelDiscoveryOutcome> =>
+    binding
+      ? await discoverModels(binding.modelDiscovery, envReader.current())
+      : { status: "not-configured" };
+
   const readCurrent = async (): Promise<HarnessConfigCurrent> => {
-    if (!binding) return { ...readValues(), availableModels: null };
-    // Discover even when the file is missing, so a fresh agent still lists models.
-    const availableModels = await discoverModels(
-      binding.modelDiscovery,
-      envReader.current(),
-    );
-    return { ...readValues(), availableModels };
+    const outcome = await discover();
+    return {
+      ...readValues(),
+      availableModels: outcome.status === "observed" ? outcome.models : null,
+    };
+  };
+
+  const readReport = async (): Promise<HarnessConfigReport> => {
+    const values = readValues();
+    const outcome = await discover();
+    switch (outcome.status) {
+      case "observed":
+        return { ...values, availableModels: outcome.models };
+      case "not-configured":
+        // A permanent property of this harness, so worth recording as "none".
+        return { ...values, availableModels: null };
+      case "unavailable":
+        // Omitted, not null: the server keeps whatever it already holds.
+        return values;
+    }
   };
 
   return {
@@ -126,6 +155,7 @@ export function createHarnessConfigPlugin(deps: {
     catalog: binding?.catalog,
     readValues,
     readCurrent,
+    readReport,
     apply,
     // Binding already captured above; the registry routes the event here.
     bindEvent(_kind: string, _binding: DriverBinding): EventHandler {

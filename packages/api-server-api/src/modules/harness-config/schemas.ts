@@ -33,10 +33,16 @@ export const harnessConfigSnapshotSchema = z.object({
   model: z.string().nullable(),
   mode: z.string().nullable(),
   configOptions: agentConfigOptionsSchema,
-  /** Models the provider offered at capture time; null when the manifest
-   *  declares no `modelDiscovery` source, or discovery failed. */
+  /** Models the provider offered when it was last successfully asked; null when
+   *  the harness declares no discovery source. A failed attempt leaves this
+   *  alone, so it can be older than the rest of the snapshot. */
   availableModels: z.array(harnessConfigChoice).nullable(),
   capturedAt: z.string().datetime(),
+  /** The model that was in effect when `availableModels` was observed. Comparing
+   *  the two is only meaningful while this still equals `model`: a model changed
+   *  since the list was read proves nothing about whether the provider offers it.
+   *  Absent on rows written before this field existed — treat as unpaired. */
+  modelAtDiscovery: z.string().nullable().optional(),
   /** False while the only source is an apply the pod has not reported back. */
   confirmed: z.boolean(),
 });

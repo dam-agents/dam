@@ -9,7 +9,9 @@ import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifes
 
 const noop = () => {};
 const noEnv: RuntimeEnvReader = { current: () => ({}), ready: () => true };
-const noDiscovery: ModelDiscovery = async () => null;
+const noDiscovery: ModelDiscovery = async () => ({
+  status: "not-configured",
+});
 
 const BINDING: HarnessConfigBinding = {
   file: "$HOME/.claude/settings.json",
@@ -47,7 +49,10 @@ describe("createReadHarnessConfig", () => {
       permissions: { defaultMode: "auto" },
       effortLevel: "high",
     });
-    const out = await read(async () => [{ value: "opus", name: "opus" }])();
+    const out = await read(async () => ({
+      status: "observed",
+      models: [{ value: "opus", name: "opus" }],
+    }))();
     expect(out).toEqual({
       model: "opus",
       mode: "auto",
@@ -57,7 +62,10 @@ describe("createReadHarnessConfig", () => {
   });
 
   it("returns empty current values for a missing file but still discovers", async () => {
-    const out = await read(async () => [{ value: "x", name: "x" }])();
+    const out = await read(async () => ({
+      status: "observed",
+      models: [{ value: "x", name: "x" }],
+    }))();
     expect(out).toEqual({
       model: null,
       mode: null,

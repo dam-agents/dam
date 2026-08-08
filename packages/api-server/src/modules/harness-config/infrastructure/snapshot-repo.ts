@@ -46,15 +46,28 @@ export function createHarnessConfigSnapshotRepo(
 
     async merge(agentId, patch, opts): Promise<void> {
       const stored = await read(agentId);
+      const at = new Date().toISOString();
       const next: HarnessConfigSnapshot = {
         ...(stored ?? EMPTY),
         ...patch,
-        capturedAt: new Date().toISOString(),
+        capturedAt: at,
         confirmed: opts.confirmed,
       };
+      // Pin the list to the model it was observed against, but only when this
+      // patch actually carried a list. A patch that omits it keeps the older
+      // pin, which is what later tells a reader the two have drifted apart.
+      if ("availableModels" in patch) next.modelAtDiscovery = next.model;
       // Skip the no-op write: `hello` and every apply report the same values on
-      // an unchanged sandbox, and 04's read path is poll-driven.
-      if (stored && sameSnapshot(stored, next)) return;
+      // an unchanged sandbox, and 04's read path is poll-driven. The pin is part
+      // of the comparison — re-observing a list that happens to be identical is
+      // still news, because it re-pairs a snapshot that had drifted.
+      if (
+        stored &&
+        sameSnapshot(stored, next) &&
+        stored.modelAtDiscovery === next.modelAtDiscovery
+      ) {
+        return;
+      }
       await db
         .update(agentsTable)
         .set({ harnessConfigSnapshot: next })

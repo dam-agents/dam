@@ -135,7 +135,7 @@ export async function composeRuntimeChannel(
     stateStore,
     readHarnessConfig: async () =>
       harnessConfigPlugin.supported
-        ? await harnessConfigPlugin.readCurrent()
+        ? await harnessConfigPlugin.readReport()
         : undefined,
     log,
   });

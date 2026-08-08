@@ -61,6 +61,7 @@ export function ModelSettingsPanel({
     values: current,
     origin,
     capturedAt,
+    modelsPaired,
   } = useResolvedHarnessConfig(agentId);
   const apply = useApplyHarnessConfig();
 
@@ -192,8 +193,11 @@ export function ModelSettingsPanel({
 
   if (isPage) {
     const fromSnapshot = origin === "snapshot";
+    // Only judge a model against a list observed against that same model.
     const staleModel =
-      fromSnapshot && current ? unavailableModel(current) : null;
+      fromSnapshot && current && modelsPaired
+        ? unavailableModel(current)
+        : null;
     return (
       <section className="mb-8">
         {staleModel && <StaleModelCallout model={staleModel} />}

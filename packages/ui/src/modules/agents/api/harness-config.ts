@@ -71,6 +71,10 @@ export interface ResolvedHarnessConfig {
   capturedAt: string | null;
   /** The sandbox has sent `hello` at least once, so a snapshot was possible. */
   hasRun: boolean;
+  /** The recorded model list was observed against the model now shown, so the
+   *  two can be compared. False once they have drifted — a model applied since
+   *  the list was read, or a list that outlived a failed re-read. */
+  modelsPaired: boolean;
 }
 
 /**
@@ -101,6 +105,8 @@ export function useResolvedHarnessConfig(
       origin: values ? "live" : "none",
       capturedAt: null,
       hasRun,
+      // A live read takes both from the pod at once; nothing to reconcile.
+      modelsPaired: true,
     };
   }
   const snapshot = recorded?.snapshot;
@@ -110,9 +116,18 @@ export function useResolvedHarnessConfig(
       origin: "snapshot",
       capturedAt: snapshot.capturedAt,
       hasRun,
+      // `undefined` on rows predating the pin, which reads as unpaired — the
+      // conservative direction, since it only withholds a warning.
+      modelsPaired: snapshot.modelAtDiscovery === snapshot.model,
     };
   }
-  return { values: null, origin: "none", capturedAt: null, hasRun };
+  return {
+    values: null,
+    origin: "none",
+    capturedAt: null,
+    hasRun,
+    modelsPaired: false,
+  };
 }
 
 export function useApplyHarnessConfig() {

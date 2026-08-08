@@ -17,7 +17,9 @@ import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifes
 
 // apply needs neither env nor discovery; stub them to construct the driver.
 const noEnv: RuntimeEnvReader = { current: () => ({}), ready: () => true };
-const noDiscovery: ModelDiscovery = async () => null;
+const noDiscovery: ModelDiscovery = async () => ({
+  status: "not-configured",
+});
 
 const BINDING: HarnessConfigBinding = {
   file: "$HOME/.claude/settings.json",
