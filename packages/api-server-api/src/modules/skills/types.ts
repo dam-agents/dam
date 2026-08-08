@@ -10,6 +10,7 @@ import type {
   skillPublishInputSchema,
   skillPublishRecordSchema,
   skillPublishResultSchema,
+  scanFailureSchema,
   skillReadLocalInputSchema,
   skillRefSchema,
   skillSchema,
@@ -18,6 +19,8 @@ import type {
   skillUninstallInputSchema,
 } from "./schemas.js";
 
+export type ScanFailure = z.infer<typeof scanFailureSchema>;
+export type ScanFailureCode = ScanFailure["code"];
 export type SkillRef = z.infer<typeof skillRefSchema>;
 export type SkillSource = z.infer<typeof skillSourceSchema>;
 export type Skill = z.infer<typeof skillSchema>;

@@ -341,6 +341,8 @@ export type {
 
 export type {
   LocalSkill,
+  ScanFailure,
+  ScanFailureCode,
   Skill,
   SkillCreateLocalInput,
   SkillCreateSourceInput,
@@ -361,6 +363,7 @@ export type {
 } from "./modules/skills/types.js";
 export {
   localSkillSchema,
+  scanFailureSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
   skillInstallInputSchema,

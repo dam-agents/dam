@@ -67,6 +67,12 @@ Run `mise run lint:fix` after editing.
 5. **Pass it through.** In `skills-surface.tsx`, the `error={errorBySource[src.id] ?? null}` prop
    needs no logic change — only the type follows.
 
+6. **Gate "Manage connections" on the verdict.** Found while smoke-testing slice 01: the card
+   renders that affordance for *every* error, so a GitLab clone failure (`other`) and a stopped
+   sandbox (`agent_unreachable`) both invite the user to go fix their connections, which will not
+   help. Show it only for `needs_github_connection` and `repo_unreachable`. The UI's own
+   transport fallback carries no code the user can act on either — leave it off there too.
+
 ## Acceptance criteria
 
 - [ ] An errored source card shows an alert icon, a bold cause line, a detail line, and
@@ -77,6 +83,8 @@ Run `mise run lint:fix` after editing.
 - [ ] No component on this path calls `getErrorMessage` on a scan error.
 - [ ] `SourceError` no longer renders the `platform-cta` "Fix it →" branch, and
       `platform-cta.ts` still exists for its publish-flow caller.
+- [ ] "Manage connections" appears only on the two connection-related verdicts, not on
+      `agent_unreachable`, `other`, or the client-side fallback.
 - [ ] `mise run check` and `mise run lint:fix` are clean.
 
 ## Smoke test

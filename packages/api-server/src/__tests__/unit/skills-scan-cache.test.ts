@@ -5,8 +5,10 @@ import { createScanCache } from "../../modules/skills/infrastructure/scan-cache.
 const TTL_MS = 5 * 60 * 1000;
 const URL = "https://github.com/acme/skills";
 const SHARED = { kind: "shared" } as const;
-const ALICE = { kind: "owner", owner: "alice" } as const;
-const BOB = { kind: "owner", owner: "bob" } as const;
+const ALICE = { kind: "agent", owner: "alice", agentId: "agent-a1" } as const;
+const BOB = { kind: "agent", owner: "bob", agentId: "agent-b1" } as const;
+/** Alice's second sandbox — same user, different connection grants. */
+const ALICE_2 = { kind: "agent", owner: "alice", agentId: "agent-a2" } as const;
 
 function skill(name: string): Skill {
   return {
@@ -128,7 +130,22 @@ describe("skills scan cache", () => {
     expect(res.scannedAt).toBe(1_100_000);
   });
 
-  it("answers a credentialed scan only to the owner who produced it, and lets the others keep their own", async () => {
+  // Connections are granted per sandbox, so one owner's two sandboxes can see
+  // different repositories. Sharing an entry between them hands a sandbox a
+  // list its own credentials could never fetch.
+  it("answers a credentialed scan only to the sandbox that produced it, not to a sibling of the same owner", async () => {
+    const cache = quiet();
+    vi.setSystemTime(1_000_000);
+    await cache.scan(ALICE, URL, undefined, async () => [skill("granted")]);
+
+    const siblingScan = vi.fn(async () => [skill("own-result")]);
+    const res = await cache.scan(ALICE_2, URL, undefined, siblingScan);
+
+    expect(siblingScan).toHaveBeenCalledTimes(1);
+    expect(res.skills.map((s) => s.name)).toEqual(["own-result"]);
+  });
+
+  it("answers a credentialed scan only to the sandbox that produced it, and lets the others keep their own", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
     await cache.scan(ALICE, URL, undefined, async () => [skill("alice")]);

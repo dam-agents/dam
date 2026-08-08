@@ -1,4 +1,6 @@
 import { TRPCError } from "@trpc/server";
+import type { ScanFailure, ScanFailureCode } from "api-server-api";
+import { scanFailure, scanFailureMessage } from "../domain/scan-failure.js";
 import {
   AgentRuntimeUnreachableError,
   AgentRuntimeUpstreamError,
@@ -49,12 +51,44 @@ export function upstreamToTrpc(err: AgentRuntimeUpstreamError): TRPCError {
   });
 }
 
-/** All private-scan failure shapes that mean "the connection can't reach the
- *  repo" to the user. Hedged because a 404 can't distinguish "private,
- *  ungranted" from "doesn't exist". */
-export const SCAN_ACCESS_MESSAGE =
-  "Can't access this repository. If it's private, grant your GitHub connection access to it, " +
-  "then re-scan — otherwise, double-check the repo URL.";
+const TRPC_CODE: Record<ScanFailureCode, TRPCError["code"]> = {
+  needs_github_connection: "PRECONDITION_FAILED",
+  repo_unreachable: "FORBIDDEN",
+  agent_unreachable: "INTERNAL_SERVER_ERROR",
+  other: "INTERNAL_SERVER_ERROR",
+};
+
+/**
+ * Build the tRPC error for a named scan failure. The verdict rides `cause`
+ * because tRPC strips it from the wire envelope unless the errorFormatter
+ * lifts it — which is exactly what lets a client tell a verdict apart from a
+ * transport failure that never reached the server.
+ */
+export function scanFailureToTrpc(failure: ScanFailure): TRPCError {
+  return new TRPCError({
+    code: TRPC_CODE[failure.code],
+    message: scanFailureMessage(failure),
+    cause: { scanFailure: failure },
+  });
+}
+
+export function scanFailureError(
+  code: ScanFailureCode,
+  override?: Partial<Omit<ScanFailure, "code">>,
+): TRPCError {
+  return scanFailureToTrpc(scanFailure(code, override));
+}
+
+/** Whether a throwable already carries a verdict, so the scan path's catch-all
+ *  leaves it alone instead of flattening it into the generic one. */
+export function hasScanFailure(err: unknown): boolean {
+  return (
+    err instanceof TRPCError &&
+    !!err.cause &&
+    typeof err.cause === "object" &&
+    "scanFailure" in err.cause
+  );
+}
 
 /** agent-runtime relays this envelope (status 0, no HTTP response) when the
  *  pod's request to GitHub died in transit — egress denied at the gateway or
@@ -64,23 +98,31 @@ function isUnreachableUpstream(u: UpstreamGatewayError): boolean {
 }
 
 /**
- * Translate a private-scan failure from the agent-runtime client into the
- * tRPC error the catalog UI renders, or return null for errors this flow
- * doesn't own (the caller rethrows those raw so genuine bugs stay visible).
+ * Which named verdict a private-scan failure from the agent-runtime client
+ * deserves, or null for errors this flow doesn't own (the caller's catch-all
+ * turns those into the generic verdict and logs the original).
  *
- * The "can't reach the repo" family — one hedged FORBIDDEN whose message the
- * UI pairs with a Manage-connections affordance:
+ * The "can't reach the repo" family, all of which the user resolves the same
+ * way — hence one verdict rather than three:
  * - 404: egress reached GitHub but the repo isn't in the connection's grant
  *   (or doesn't exist).
- * - 401: the injected credential is invalid — no GitHub connection for this
- *   agent (the sentinel bearer reached GitHub unswapped) or a revoked token.
+ * - 401: the injected credential is invalid — a revoked token, or the sentinel
+ *   bearer reaching GitHub unswapped.
  * - `upstream_unreachable`: the pod couldn't reach GitHub at all.
  *
- * A pod that never answered (AgentRuntimeUnreachableError) is deliberately
- * NOT in that family: GitHub was never involved, so it maps to a plain
- * retryable error instead of a misleading "grant access" CTA.
+ * The caller narrows this to `needs_github_connection` when the sandbox has no
+ * GitHub credential at all — a distinction the upstream status cannot make,
+ * since an unswapped sentinel and a revoked token look identical from here.
+ *
+ * A pod that never answered (AgentRuntimeUnreachableError) is deliberately NOT
+ * in that family: GitHub was never involved, so a "grant access" fix would be
+ * misleading.
+ *
+ * Any other upstream status is still GitHub answering, so the verdict names
+ * GitHub and reports the status — a number the user can quote in a bug report,
+ * unlike the upstream body, which is where internal text would leak in.
  */
-export function privateScanErrorToTrpc(err: unknown): TRPCError | null {
+export function privateScanFailure(err: unknown): ScanFailure | null {
   if (err instanceof AgentRuntimeUpstreamError) {
     const { status } = err.upstream;
     if (
@@ -88,16 +130,15 @@ export function privateScanErrorToTrpc(err: unknown): TRPCError | null {
       status === 401 ||
       isUnreachableUpstream(err.upstream)
     ) {
-      return new TRPCError({ code: "FORBIDDEN", message: SCAN_ACCESS_MESSAGE });
+      return scanFailure("repo_unreachable");
     }
-    return upstreamToTrpc(err);
+    return scanFailure("other", {
+      title: "GitHub couldn't serve this repository",
+      detail: `GitHub answered with status ${status}. Try re-scanning in a moment.`,
+    });
   }
   if (err instanceof AgentRuntimeUnreachableError) {
-    return new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message:
-        "The agent couldn't be reached to scan this source; try re-scanning in a moment.",
-    });
+    return scanFailure("agent_unreachable");
   }
   return null;
 }

@@ -7,7 +7,9 @@ import {
 } from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
+import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
+import { createGithubCredentialPort } from "./infrastructure/github-credential-port.js";
 import {
   readPublicGithubSkillFile,
   scanPublicGithubArchive,
@@ -71,6 +73,9 @@ export function composeSkillsModule(
     templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
+    githubCredential: createGithubCredentialPort(
+      createConnectionsRepository(db),
+    ),
     runtimeMutator,
     owner,
     scanSource: sharedScanCache.scan,

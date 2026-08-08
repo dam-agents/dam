@@ -106,7 +106,7 @@ reads `.message` and must keep working unchanged.
 
 | `code` | `title` | `detail` | tRPC code |
 |---|---|---|---|
-| `needs_github_connection` | This source needs a GitHub connection | Add a GitHub connection to this sandbox, then re-scan to list its skills. | `PRECONDITION_FAILED` |
+| `needs_github_connection` | This source needs a GitHub connection | Add a GitHub connection to this sandbox, then re-scan to list its skills. If the repository should be public, check the URL instead. | `PRECONDITION_FAILED` |
 | `repo_unreachable` | Can't access this repository | If it's private, grant your GitHub connection access to it, then re-scan — otherwise, double-check the repo URL. | `FORBIDDEN` |
 | `agent_unreachable` | Couldn't reach this sandbox | The sandbox couldn't be reached to scan this source. Try re-scanning in a moment. | `INTERNAL_SERVER_ERROR` |
 | `other` | Couldn't scan this source | Something went wrong reading this repository. Try re-scanning in a moment. | `INTERNAL_SERVER_ERROR` |
@@ -123,8 +123,18 @@ open question when the PR lands.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Server: classify every scan failure | The `ScanFailure` contract, the errorFormatter, the connections port, and the catch-all in `scanForSource` | — |
+| 01 ✅ | Server: classify every scan failure | The `ScanFailure` contract, the errorFormatter, the connections port, and the catch-all in `scanForSource` | — |
 | 02 | UI: render the named cause, never raw text | Read `data.scanFailure`, fall back to the generic pair, restyle `SourceError` to the design | 01 |
+
+Smoke-testing 01 turned up two things that changed the plan, both agreed with the owner:
+
+- The `needs_github_connection` detail gained a hedging sentence — a mistyped repo URL is
+  indistinguishable from a private one, and the design's copy was certain about a cause we
+  cannot be certain of. The table above carries the shipped wording.
+- The scan cache's credentialed scope moved from per-owner to **per-sandbox**. Connections are
+  granted one sandbox at a time, so an owner-scoped entry let a sandbox with no GitHub
+  connection be served a sibling's private list — which made this feature's whole message
+  intermittent. Landed as its own commit.
 
 ## Conventions & glossary
 
