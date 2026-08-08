@@ -86,7 +86,7 @@ procedure calls `ensureAgentReachable` today, so that is a separate capability w
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Snapshot column, write-through on apply, and the read proc | `agents.harness_config_snapshot`, a snapshot repo, `harnessConfig.apply` records what it declared, new `harnessConfig.snapshot` query | — |
+| 01 ✅ | Snapshot column, write-through on apply, and the read proc | `agents.harness_config_snapshot`, a snapshot repo, `harnessConfig.apply` records what it declared, new `harnessConfig.snapshot` query | — |
 | 02 | Reconcile the snapshot from the pod | Pod reports config-file values on `hello` and those plus `availableModels` in the apply result; api-server merges and marks the snapshot confirmed | 01 |
 | 03 | Model settings render from the snapshot | Panel reads live values while operable and the snapshot otherwise; captured-at note; never-run state; stale-model callout | 01, 02 |
 | 04 | Skills snapshot read | `skills.state` records the standalone list on change and serves it with a captured-at while stopped | 01 |

@@ -263,6 +263,10 @@ export const agents = pgTable(
       withTimezone: true,
     }),
     runtimeAgentVersion: text("runtime_agent_version"),
+    /** Last known harness-resolved config (model/mode/options + the discovered
+     *  model list). A snapshot, never authoritative: `harness-config` writes the
+     *  harness's file once and never re-asserts, so the file can move underneath. */
+    harnessConfigSnapshot: jsonb("harness_config_snapshot"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
