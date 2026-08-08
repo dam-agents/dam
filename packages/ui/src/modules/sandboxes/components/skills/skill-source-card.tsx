@@ -3,7 +3,7 @@ import {
   ChevronUp,
   Launch,
   OverflowMenuHorizontal,
-  WarningAlt,
+  Warning,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { useRef, useState } from "react";
@@ -35,7 +35,11 @@ function repoLabel(source: SkillSource): string {
 /** Why a source's scan failed: the cause on one line, the fix beneath it. Both
  *  come from the server's verdict, which is closed-set — the card never renders
  *  a raw error message, so a parser or transport string can't reach the user.
- *  "Manage connections" appears only where connections are the fix. */
+ *  "Manage connections" appears only where connections are the fix.
+ *
+ *  Only the heading, the icon and the link carry the danger colour; the fix
+ *  beneath reads as body text. Colouring the whole band red makes it shout
+ *  where it should explain, and leaves nothing to draw the eye to the cause. */
 function SourceError({
   failure,
   onManageConnections,
@@ -46,10 +50,10 @@ function SourceError({
   const canManage = onManageConnections && isConnectionFailure(failure);
   return (
     <div className="flex items-start gap-2 border-t border-border bg-danger-light px-4 py-3 text-sm text-danger">
-      <WarningAlt size={16} className="mt-px shrink-0" />
+      <Warning size={16} className="mt-px shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="font-semibold">{failure.title}</p>
-        <p>{failure.detail}</p>
+        <p className="text-muted-foreground">{failure.detail}</p>
       </div>
       {canManage && (
         <Button
