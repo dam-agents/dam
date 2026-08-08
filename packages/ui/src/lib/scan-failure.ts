@@ -14,10 +14,14 @@ export function isConnectionFailure(failure: ScanFailure): boolean {
 /** What the card shows when the server reached no verdict of its own. Reaching
  *  for the raw error message here is the defect this replaces: a response that
  *  never made it through the server's classifier carries transport text, and a
- *  parser's complaint is not something a user can act on. */
+ *  parser's complaint is not something a user can act on.
+ *
+ *  Deliberately word-for-word the server's own generic verdict: a failure that
+ *  died in transit and one the server classified as unknown are the same event
+ *  to the user, so they must not read differently. */
 const UNCLASSIFIED: ScanFailure = {
   code: "other",
-  title: "Couldn't scan this source",
+  title: "Can't load skills from this source",
   detail:
     "Something went wrong reading this repository. Try re-scanning in a moment.",
 };

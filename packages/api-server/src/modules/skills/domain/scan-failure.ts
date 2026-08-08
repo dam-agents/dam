@@ -5,6 +5,12 @@ import type { ScanFailure, ScanFailureCode } from "api-server-api";
  * closed on purpose: the scan path classifies into it exhaustively, so no
  * internal error text can reach a source card.
  *
+ * Every source-scan verdict shares one title on purpose: the title states the
+ * outcome, which is the same however the scan failed, and the body carries the
+ * cause and its fix. A title that named the cause would assert a diagnosis the
+ * server cannot be sure of — a missing connection and a mistyped URL are the
+ * same 404. The sandbox verdicts are a different class and keep their own.
+ *
  * `other` is the backstop. It is still a verdict — the copy tells the user what
  * to do — but it names no cause, because the server could not determine one.
  */
@@ -24,10 +30,10 @@ const COPY: Record<ScanFailureCode, Omit<ScanFailure, "code">> = {
       "The repository isn't public, so reading it requires a running sandbox's GitHub connection.",
   },
   repo_unreachable: {
-    title: "Can't access this repository",
+    title: "Can't load skills from this source",
     detail:
-      "If it's private, grant your GitHub connection access to it, then re-scan — " +
-      "otherwise, double-check the repo URL.",
+      "Your GitHub connection may not have access to this repository, or the URL may not be valid. " +
+      "Grant your GitHub connection access to it or check the URL, then re-scan.",
   },
   agent_unreachable: {
     title: "Couldn't reach this sandbox",
@@ -35,7 +41,7 @@ const COPY: Record<ScanFailureCode, Omit<ScanFailure, "code">> = {
       "The sandbox couldn't be reached to scan this source. Try re-scanning in a moment.",
   },
   other: {
-    title: "Couldn't scan this source",
+    title: "Can't load skills from this source",
     detail:
       "Something went wrong reading this repository. Try re-scanning in a moment.",
   },

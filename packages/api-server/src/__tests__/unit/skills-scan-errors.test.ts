@@ -72,7 +72,7 @@ describe("scanFailureError", () => {
 
   it("leaves a readable sentence on `message` for callers that only have it", () => {
     expect(scanFailureError("repo_unreachable").message).toMatch(
-      /^Can't access this repository\. If it's private/,
+      /^Can't load skills from this source\. Your GitHub connection/,
     );
   });
 
