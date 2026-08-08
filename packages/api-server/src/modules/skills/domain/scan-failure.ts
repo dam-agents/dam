@@ -19,6 +19,11 @@ const COPY: Record<ScanFailureCode, Omit<ScanFailure, "code">> = {
       "Add a GitHub connection to this sandbox, then re-scan to list its skills. " +
       "If the repository should be public, check the URL instead.",
   },
+  needs_sandbox: {
+    title: "This source needs a sandbox to scan it",
+    detail:
+      "The repository isn't public, so reading it requires a running sandbox's GitHub connection.",
+  },
   repo_unreachable: {
     title: "Can't access this repository",
     detail:

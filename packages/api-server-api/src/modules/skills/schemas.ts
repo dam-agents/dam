@@ -67,6 +67,7 @@ export const skillListResultSchema = z.object({
  *  carries copy the user can act on. The internal error stays server-side. */
 export const scanFailureCodes = [
   "needs_github_connection",
+  "needs_sandbox",
   "repo_unreachable",
   "agent_unreachable",
   "other",

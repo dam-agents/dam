@@ -389,11 +389,7 @@ async function runScanForSource(
   // Without an agentId we can't target a pod — refuse with a clear
   // message.
   if (!agentId) {
-    throw scanFailureError("other", {
-      title: "This source needs a sandbox to scan it",
-      detail:
-        "The repository isn't public, so reading it requires a running sandbox's GitHub connection.",
-    });
+    throw scanFailureError("needs_sandbox");
   }
   // A sandbox that can't be woken is a verdict of its own — the raw wake
   // failure names a pod and a Kubernetes condition, neither of which the user

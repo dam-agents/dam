@@ -51,8 +51,20 @@ export function upstreamToTrpc(err: AgentRuntimeUpstreamError): TRPCError {
   });
 }
 
+/**
+ * The status each verdict answers with. A client that reads `data.scanFailure`
+ * ignores this, but the CLI branches on the code alone, so the mapping is a
+ * contract in its own right: the three outcomes it prints differently —
+ * "pass --agent", "fix your connection", "the sandbox is the problem" — must
+ * stay on three distinct codes.
+ *
+ * `needs_github_connection` therefore shares `FORBIDDEN` with
+ * `repo_unreachable`: they are the two halves of one 401/404, told apart only
+ * by a connections read, and both are resolved the same way.
+ */
 const TRPC_CODE: Record<ScanFailureCode, TRPCError["code"]> = {
-  needs_github_connection: "PRECONDITION_FAILED",
+  needs_github_connection: "FORBIDDEN",
+  needs_sandbox: "PRECONDITION_FAILED",
   repo_unreachable: "FORBIDDEN",
   agent_unreachable: "INTERNAL_SERVER_ERROR",
   other: "INTERNAL_SERVER_ERROR",
