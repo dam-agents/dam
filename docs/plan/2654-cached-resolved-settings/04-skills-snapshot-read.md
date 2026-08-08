@@ -87,7 +87,7 @@ Apply the `/typescript-engineering` skill.
 - [ ] A never-run sandbox returns `standalone: []` with **no** marker, distinguishable from a snapshot recording an empty list.
 - [ ] Repeated `skills.state` polls against an unchanged sandbox perform no writes.
 - [ ] The stopped branch performs no `agent_skills` reconciliation.
-- [ ] The Skills surface is visually unchanged in both states — no component under `components/skills/` is modified.
+- [ ] No component under `components/skills/` changes behaviour. The stopped surface *does* gain the recorded groups, because `standalone` becoming non-empty is an input the existing origin-driven split already renders — agreed during implementation; #3208 restyles it rather than enabling it.
 - [ ] `skills.md` documents the snapshot; `Last verified:` refreshed.
 
 ## Smoke test

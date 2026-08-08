@@ -267,6 +267,11 @@ export const agents = pgTable(
      *  model list). A snapshot, never authoritative: `harness-config` writes the
      *  harness's file once and never re-asserts, so the file can move underneath. */
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
+    /** Last known standalone skills — the ones that live only on the pod's
+     *  disk, so a stopped sandbox has no other way to report them. Its own
+     *  column, not shared with the harness-config snapshot: different modules
+     *  write them on different triggers. */
+    skillsSnapshot: jsonb("skills_snapshot"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
