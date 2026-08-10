@@ -475,14 +475,20 @@ export function SkillsSurface({
                   >
                     <Add size={14} /> Add skill sets…
                   </Button>
+                  {/* Also gated on every source having reported: the modal's
+                      list and its pre-marks are a one-shot snapshot, so opening
+                      it mid-scan would silently save a set missing the slower
+                      source's skills. */}
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!anyInstalled}
+                    disabled={!anyInstalled || !previewReady}
                     title={
-                      anyInstalled
-                        ? undefined
-                        : "Turn on at least one skill from a source to save a set"
+                      !previewReady
+                        ? "Still reading your sources…"
+                        : anyInstalled
+                          ? undefined
+                          : "Turn on at least one skill from a source to save a set"
                     }
                     onClick={() => setSaveSetOpen(true)}
                   >

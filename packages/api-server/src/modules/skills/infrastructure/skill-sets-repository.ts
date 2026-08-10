@@ -4,6 +4,7 @@ import { skillSets, and, eq } from "db";
 import type { SkillSet, SkillSetEntry } from "api-server-api";
 import { skillSetEntrySchema } from "api-server-api";
 import { z } from "zod";
+import { getLogger } from "../../../core/logger.js";
 
 export interface SkillSetsRepository {
   list(owner: string): Promise<SkillSet[]>;
@@ -22,7 +23,9 @@ function generateId(): string {
 const entriesSchema = z.array(skillSetEntrySchema);
 
 /** Parse the jsonb column defensively: a row written by an older shape reads as
- *  an empty set rather than breaking the whole listing. */
+ *  an empty set rather than breaking the whole listing — but loudly, because an
+ *  empty set applies nothing and would otherwise be indistinguishable from one
+ *  the user really did save empty. */
 function rowToSet(r: {
   id: string;
   name: string;
@@ -30,6 +33,12 @@ function rowToSet(r: {
   createdAt: Date;
 }): SkillSet {
   const parsed = entriesSchema.safeParse(r.skills);
+  if (!parsed.success) {
+    getLogger().error(
+      { setId: r.id, err: parsed.error },
+      "skill set entries unparseable; serving it as empty",
+    );
+  }
   return {
     id: r.id,
     name: r.name,

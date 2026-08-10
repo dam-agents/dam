@@ -444,7 +444,6 @@ export function useSkillsSurface(
     async (setIds: string[]) => {
       if (!agentId || isError || readOnly || setIds.length === 0) return false;
       setApplyingSets(true);
-      const before = installed.length;
       const result = await runAction(
         () => api.skills.sets.applyToAgent.mutate({ agentId, setIds }),
         "Failed to add skill sets",
@@ -453,7 +452,7 @@ export function useSkillsSurface(
       if (result === ACTION_FAILED) return false;
       setInstalled(result.installed);
 
-      const added = result.installed.length - before;
+      const { added } = result;
       const skipped = result.skipped.length;
       // Nothing landed *and* something was refused: a plain failure, so the
       // modal stays open rather than closing on a silent no-result.
@@ -476,7 +475,7 @@ export function useSkillsSurface(
       });
       return true;
     },
-    [agentId, isError, readOnly, installed.length],
+    [agentId, isError, readOnly],
   );
 
   const createSource = useCallback(

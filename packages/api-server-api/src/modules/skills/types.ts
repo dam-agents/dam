@@ -87,8 +87,13 @@ export interface SkillsService {
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
   /** Many changes, one apply cycle. Returns the full installed list, like the
-   *  single-skill paths, so a caller renders from an authoritative result. */
-  applyBatch: (input: SkillApplyBatchInput) => Promise<SkillRef[]>;
+   *  single-skill paths, so a caller renders from an authoritative result.
+   *  `sourcePaths` lets a caller that already resolved the merged source list
+   *  (gitUrl → subdir) pass it in instead of making this re-derive it. */
+  applyBatch: (
+    input: SkillApplyBatchInput,
+    sourcePaths?: ReadonlyMap<string, string | undefined>,
+  ) => Promise<SkillRef[]>;
   /** Skill sets belong to the user, not to a sandbox, so these take no agentId. */
   listSets: () => Promise<SkillSet[]>;
   createSet: (input: SkillSetCreateInput) => Promise<SkillSet>;

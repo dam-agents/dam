@@ -67,6 +67,9 @@ export function templateSourceId(templateId: string, gitUrl: string): string {
 
 export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
+/** Upper bound on one batch, mirroring the contract schema's per-list cap. */
+const MAX_BATCH_ENTRIES = 500;
+
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
   skillSetsRepo: SkillSetsRepository;
@@ -459,7 +462,10 @@ function removeSkillRef(
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
-  return {
+  // Named rather than returned anonymously so the few methods that compose
+  // siblings can call them through `service` instead of `this` — a detached or
+  // wrapped method reference then still works.
+  const service: SkillsService = {
     async listSources(agentId?: string) {
       const [owned, template] = await Promise.all([
         deps.repo.list(deps.owner),
@@ -714,7 +720,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     },
 
-    async applyBatch(input) {
+    async applyBatch(input, sourcePaths) {
       const { agentId, install, uninstall } = input;
 
       // Nothing to do: no wake, no bump, no log. The set-apply path leans on
@@ -743,8 +749,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
+      // The schema caps each list, but that only runs at the tRPC boundary —
+      // an in-process caller (the set-apply path) would otherwise be unbounded.
+      // Enforce it here too, where the one-bump contract actually lives.
+      if (install.length + uninstall.length > MAX_BATCH_ENTRIES) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `too many skills in one batch (${install.length + uninstall.length}; limit ${MAX_BATCH_ENTRIES})`,
+        });
+      }
+
       await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
-      const paths = await sourcePathsByGitUrl(deps, agentId);
+      const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
 
       // Rows first, then one bump for the whole batch — the point of this path.
       // A failure part-way leaves rows the pod hasn't been told about; the next
@@ -835,7 +851,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         actorKind: "user",
         target: set.id,
         result: "success",
-        detail: { name: set.name, skills: set.skills.length },
+        detail: {
+          name: set.name,
+          skills: set.skills.length,
+          sources: [...new Set(set.skills.map((e) => e.source))],
+        },
       });
       return set;
     },
@@ -881,8 +901,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       // The merged source list, so system and template sources count too — not
       // just the user's own rows.
-      const sources = await this.listSources(agentId);
+      const sources = await service.listSources(agentId);
       const connected = new Map(sources.map((s) => [s.gitUrl, s]));
+      // Reuse this listing for the batch's path lookup rather than making it
+      // re-list and re-walk the template chain.
+      const sourcePaths = new Map(sources.map((s) => [s.gitUrl, s.path]));
 
       const skipped: (SkillSetEntry & { reason: SkillSetSkipReason })[] = [];
       const byGitUrl = new Map<string, SkillSetEntry[]>();
@@ -906,13 +929,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // It is still a distinct reason from "not connected", because the fix
       // differs, and the underlying failure is logged rather than dropped.
       const installed = await deps.agentSkillsRepo.listSkills(agentId);
-      const alreadyOn = new Set(installed.map((r) => `${r.source} ${r.name}`));
       const toInstall: SkillApplyBatchInput["install"] = [];
       for (const [gitUrl, entries] of byGitUrl) {
         const source = connected.get(gitUrl)!;
         let scanned: Map<string, Skill>;
         try {
-          const { skills } = await this.list(source.id, agentId);
+          const { skills } = await service.list(source.id, agentId);
           scanned = new Map(skills.map((s) => [s.name, s]));
         } catch (err) {
           getLogger().warn(
@@ -935,12 +957,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           const ref = installed.find(
             (r) => r.source === entry.source && r.name === entry.name,
           );
-          if (
-            alreadyOn.has(`${entry.source} ${entry.name}`) &&
-            ref?.contentHash === match.contentHash
-          ) {
-            continue;
-          }
+          if (ref && ref.contentHash === match.contentHash) continue;
           toInstall.push({
             source: match.source,
             name: match.name,
@@ -952,12 +969,14 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       // Empty uninstall list is the additive guarantee, enforced here rather
       // than trusted to callers: a set adds skills, it never turns one off.
-      const after = await this.applyBatch({
-        agentId,
-        install: toInstall,
-        uninstall: [],
-      });
-      return { installed: after, skipped };
+      const after = await service.applyBatch(
+        { agentId, install: toInstall, uninstall: [] },
+        sourcePaths,
+      );
+      // Authoritative count: what this call actually turned on. A client can't
+      // derive it by diffing lengths, because its own view may have moved under
+      // it between render and response.
+      return { installed: after, skipped, added: toInstall.length };
     },
 
     async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {
@@ -1142,7 +1161,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // the skill resurfaces as a Standalone one the user supposedly authored.
       // One install's window is a single fetch wide; a batch's is N, which is
       // what makes the guard necessary rather than merely tidy.
-      if (await deps.isRuntimeSettled(agentId)) {
+      // A failed settled read defers reaping rather than failing the whole
+      // state read: this is the one query the Skills page cannot do without.
+      let settled = false;
+      try {
+        settled = await deps.isRuntimeSettled(agentId);
+      } catch (err) {
+        getLogger().warn(
+          { err, agentId },
+          "skills state: settled check failed; deferring reconcile",
+        );
+      }
+      if (settled) {
         await deps.agentSkillsRepo.reconcile(agentId, onDisk);
       }
 
@@ -1168,4 +1198,5 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       return { installed, standalone, instancePublishes };
     },
   };
+  return service;
 }

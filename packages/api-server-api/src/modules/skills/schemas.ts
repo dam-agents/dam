@@ -275,6 +275,9 @@ export const skillSetApplyResultSchema = z.object({
   /** Full installed list after the apply — authoritative, like every other
    *  install path's return. */
   installed: z.array(skillRefSchema),
+  /** How many skills this call actually turned on. Reported rather than left to
+   *  the client, which can only diff its own possibly-stale view. */
+  added: z.number().int().nonnegative(),
   skipped: z.array(
     skillSetEntrySchema.extend({ reason: skillSetSkipReasonSchema }),
   ),
