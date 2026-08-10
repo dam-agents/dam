@@ -264,6 +264,10 @@ export const skillSetApplyInputSchema = z.object({
  *  code instead of prose. */
 export const skillSetSkipReasonSchema = z.enum([
   "source-not-connected",
+  /** The source is connected here but could not be read — a credential or
+   *  transport problem. Distinct from the two above because the fix differs:
+   *  connect the source, make it readable, or accept the skill is gone. */
+  "source-unreadable",
   "not-in-source",
 ]);
 

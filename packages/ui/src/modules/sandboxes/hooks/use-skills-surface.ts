@@ -26,16 +26,20 @@ export const skillKey = (source: string, name: string) => `${source}::${name}`;
 /** Turn the server's closed skip verdicts into one readable clause. The reason
  *  codes never reach the user — the client owns the wording. */
 function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
-  const noSource = skipped.filter(
-    (s) => s.reason === "source-not-connected",
-  ).length;
-  const gone = skipped.length - noSource;
-  const parts: string[] = [];
-  if (noSource > 0) {
-    parts.push(`${noSource} from a source this sandbox isn't connected to`);
-  }
-  if (gone > 0) parts.push(`${gone} no longer in its source`);
-  return parts.join(", ");
+  const count = (reason: SkillSetApplyResult["skipped"][number]["reason"]) =>
+    skipped.filter((s) => s.reason === reason).length;
+  const clauses: [number, string][] = [
+    [
+      count("source-not-connected"),
+      "from a source this sandbox isn't connected to",
+    ],
+    [count("source-unreadable"), "from a source that couldn't be read"],
+    [count("not-in-source"), "no longer in its source"],
+  ];
+  return clauses
+    .filter(([n]) => n > 0)
+    .map(([n, text]) => `${n} ${text}`)
+    .join(", ");
 }
 
 export interface SkillsSurface {

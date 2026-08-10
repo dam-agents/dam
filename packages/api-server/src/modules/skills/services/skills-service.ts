@@ -898,16 +898,32 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       // One scan per distinct source, through the same cached dispatch `list`
-      // uses. A scan failure is left to propagate as its own verdict rather than
-      // being reported as `not-in-source`, which would blame the set for what is
-      // really a transport or credential problem.
+      // uses. A source that can't be read blocks its own entries only: everything
+      // reachable still lands and the user is told which skills didn't and why.
+      // Refusing the whole apply would be worse for exactly the case sets exist
+      // for — a set built where credentials are granted, applied where they
+      // aren't — so the verdict is narrowed to a skip rather than propagated.
+      // It is still a distinct reason from "not connected", because the fix
+      // differs, and the underlying failure is logged rather than dropped.
       const installed = await deps.agentSkillsRepo.listSkills(agentId);
       const alreadyOn = new Set(installed.map((r) => `${r.source} ${r.name}`));
       const toInstall: SkillApplyBatchInput["install"] = [];
       for (const [gitUrl, entries] of byGitUrl) {
         const source = connected.get(gitUrl)!;
-        const { skills } = await this.list(source.id, agentId);
-        const scanned = new Map(skills.map((s) => [s.name, s]));
+        let scanned: Map<string, Skill>;
+        try {
+          const { skills } = await this.list(source.id, agentId);
+          scanned = new Map(skills.map((s) => [s.name, s]));
+        } catch (err) {
+          getLogger().warn(
+            { err, source: gitUrl, agentId },
+            "skills set apply: source unreadable, skipping its entries",
+          );
+          for (const entry of entries) {
+            skipped.push({ ...entry, reason: "source-unreadable" });
+          }
+          continue;
+        }
         for (const entry of entries) {
           const match = scanned.get(entry.name);
           if (!match) {

@@ -108,7 +108,7 @@ A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique 
 
 A set stores **`(gitUrl, name)` pairs only**. The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct. No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today. Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
 
-**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. Entries it cannot apply are reported as closed-set verdicts — the source isn't connected, or it is but no longer serves that name — while a scan *failure* propagates as its own verdict instead, so a credential problem is never reported as a missing skill.
+**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
 
 Names reuse the Connection name rule from one shared definition. Renaming is absent: there is no set-management surface yet, so a typo means delete and recreate.
 
