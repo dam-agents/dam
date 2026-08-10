@@ -62,6 +62,7 @@ export function useAcpSession(
   const {
     engagedSessionIdRef,
     engage,
+    bind: bindEngagement,
     clear: clearEngagement,
   } = useAcpSessionEngagement(selectedAgent);
 
@@ -69,6 +70,7 @@ export function useAcpSession(
 
   const {
     ensureLive,
+    beginSession,
     connectionRef,
     state: connectionState,
     reset: resetConnection,
@@ -86,6 +88,7 @@ export function useAcpSession(
     agentOperable,
     makeUpdateHandler,
     engage,
+    bindEngagement,
     clearEngagement,
     loadHistory,
     setMessages,
@@ -148,13 +151,14 @@ export function useAcpSession(
     ],
   );
 
-  const { sendPrompt, stopAgent } = useAcpPrompt(
+  const { sendPrompt, stopAgent } = useAcpPrompt({
     selectedAgent,
-    ensureLive,
+    ensureConnection: ensureLive,
+    beginSession,
     engagedSessionIdRef,
     connectionRef,
     textareaRef,
-  );
+  });
 
   return {
     resetSession,

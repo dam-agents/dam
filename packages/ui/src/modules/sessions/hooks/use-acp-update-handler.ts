@@ -28,7 +28,13 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
   );
 
   return useCallback(() => {
-    return (update: AcpUpdate) => {
+    return (update: AcpUpdate, sessionId: string) => {
+      // Updates for a session no longer on screen must not reach the projection.
+      // No session in the store isn't a mismatch — a session being created
+      // streams its first updates before there is an id to commit.
+      const viewing = useStore.getState().sessionId;
+      if (viewing !== null && viewing !== sessionId) return;
+
       const { sessionUpdate: kind } = update;
 
       if (

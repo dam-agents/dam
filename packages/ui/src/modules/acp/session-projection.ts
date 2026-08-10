@@ -428,5 +428,19 @@ function appendQueuedUser(
     streaming: true,
     queued: true,
   };
-  return [...messages, userMsg, pending];
+  // On replay the turn this prompt is parked behind has no bubble yet, so its
+  // content would land in this one; `queued` proves that turn existed.
+  const parked =
+    messages.length > 0 && !hasStreamingAssistant(messages)
+      ? [
+          ...messages,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant" as const,
+            parts: [],
+            streaming: true,
+          },
+        ]
+      : messages;
+  return [...parked, userMsg, pending];
 }

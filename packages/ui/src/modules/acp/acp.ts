@@ -1,4 +1,7 @@
-import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import {
+  ClientSideConnection,
+  PROTOCOL_VERSION,
+} from "@agentclientprotocol/sdk/dist/acp.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type {
   RequestPermissionRequest,
@@ -94,6 +97,30 @@ function awaitPermission(
   });
 }
 
+/** `openConnection` plus the `initialize` handshake every caller needs, closing
+ *  the socket if the handshake fails — the one shape in which an un-owned socket
+ *  can leak. */
+export async function openInitializedConnection(
+  agentId: string,
+  onUpdate: UpdateHandler,
+  opts?: { passive?: boolean; clientInfo?: { name: string; version: string } },
+): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+  const { connection, ws } = await openConnection(agentId, onUpdate, opts);
+  try {
+    await connection.initialize({
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      ...(opts?.clientInfo ? { clientInfo: opts.clientInfo } : {}),
+    });
+  } catch (err) {
+    try {
+      ws.close();
+    } catch {}
+    throw err;
+  }
+  return { connection, ws };
+}
+
 export async function openConnection(
   agentId: string,
   onUpdate: UpdateHandler,
@@ -108,7 +135,7 @@ export async function openConnection(
         return awaitPermission(params);
       },
       async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update);
+        onUpdate(params.update, params.sessionId);
       },
       async writeTextFile() {
         return {};
@@ -130,7 +157,10 @@ export async function openConnection(
             );
             return;
           }
-          onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
+          onUpdate(
+            { sessionUpdate: "platform_turn_ended", ...parsed.data },
+            parsed.data.sessionId,
+          );
         }
       },
     }),

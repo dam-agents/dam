@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-06
+Last verified: 2026-08-07
 
 ## Overview
 
@@ -117,6 +117,8 @@ The harness child process runs for the pod's lifetime, not per-connection. Multi
 Each session is an append-only in-memory log (≤2 MB soft cap, with a truncation sentinel for older history). Every channel keeps a per-session cursor; new events are appended to the log and fanned out to engaged channels at or behind the new sequence number. `session/load` is served from the log on cache hit and falls through to the agent's on-disk store on cold start.
 
 `session/resume` is mediated entirely by the runtime — the frame never reaches the harness. On the hot path (cached metadata) the runtime engages the channel, advances its cursor to the log tail, and returns a synthetic response with no replay. On the cold path (no metadata, e.g. after the pod restarts) the runtime parks the request as a waiter and issues its own `session/load` to rehydrate the harness; replay events populate the log without reaching any client, and on completion every parked resume waiter is served from memory. This shields the UI from per-harness capability differences (some harnesses, like `pi-agent`, don't implement `unstable_resumeSession` at all) and from the cold-subprocess problem on which even resume-capable harnesses would fail.
+
+A prompt outlives the channel that sent it, but only once the runtime has handed it to the harness. From that point losing the channel costs the sender its live view and nothing else: the turn runs to completion and its output is appended to the log, so any later viewer replays it in full. A prompt still *queued* behind a running turn is discarded when its sender detaches — the queue is per channel as well as per session — though the user's message line was logged when the prompt arrived, so the text survives the prompt that will never run. Every client that reports delivery honestly depends on this split ([channels](channels.md) states it for its own surface).
 
 When a session goes idle — no engaged channel, no active or queued prompt, no agent-initiated request still pending — the runtime sends `session/close` to the harness. The per-session subprocess is reaped, freeing memory; the next attach respawns it. Permission requests with no engaged channel time out after ten minutes and the runtime responds to the agent with an error so the tool call aborts cleanly.
 

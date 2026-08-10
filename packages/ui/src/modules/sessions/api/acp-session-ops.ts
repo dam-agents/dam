@@ -1,8 +1,7 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 
-import { openConnection } from "../../acp/acp.js";
+import { openInitializedConnection } from "../../acp/acp.js";
 
 interface PlatformMeta {
   mode?: string;
@@ -55,13 +54,15 @@ async function withConnection<T>(
   fn: (conn: ClientSideConnection) => Promise<T>,
   opts?: { passive?: boolean },
 ): Promise<T> {
-  const { connection, ws } = await openConnection(agentId, () => {}, opts);
-  try {
-    await connection.initialize({
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {},
+  const { connection, ws } = await openInitializedConnection(
+    agentId,
+    () => {},
+    {
+      ...opts,
       clientInfo: { name: "platform-ui-sessions", version: "1.0.0" },
-    });
+    },
+  );
+  try {
     return await fn(connection);
   } finally {
     try {

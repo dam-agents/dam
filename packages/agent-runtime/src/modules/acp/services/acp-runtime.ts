@@ -1344,9 +1344,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         // Synthesize user_message_chunk(s) from the prompt payload and
         // append them to the log. The SDK drops plain-text user_message_chunk
         // emissions in live, so without this, viewers other than the sender
-        // never see the user's message. The runtime fans out to everyone
-        // including the sender; the sending client's UI reconciles the echo
-        // against its optimistic bubble.
+        // never see the user's message. The sender is skipped on fan-out (it
+        // already has its optimistic bubble) but the line is logged, so a replay
+        // shows it there too.
         const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
         const willQueue = activePromptBySession.has(promptSessionId);

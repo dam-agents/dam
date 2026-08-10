@@ -7,6 +7,12 @@ export class ConnectionClosedError extends Error {
   }
 }
 
+/** Whether a rejection is this module's close race rather than an answer from
+ *  the agent — the two mean opposite things to the user. */
+export function isConnectionClosed(e: unknown): boolean {
+  return e instanceof ConnectionClosedError;
+}
+
 /**
  * Wrap a `ClientSideConnection` so every Promise-returning call races against
  * the connection's `closed` promise. On close, in-flight calls reject with
