@@ -19,16 +19,16 @@ import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
   useToggleSchedule,
 } from "../api/mutations.js";
 import { scheduleCadenceText } from "../lib/schedule-format.js";
+import { scheduleLock } from "../lib/schedule-lock.js";
 import { ScheduleDetails } from "./schedule-details.js";
-
-const NOT_EDITABLE_HINT =
-  "Cron and agent-created schedules can't be edited here.";
+import { scheduleLockNotice } from "./schedule-lock-notice.js";
 
 interface Props {
   schedule: Schedule;
@@ -45,16 +45,40 @@ export function ScheduleCard({
   onEdit,
   onViewResults,
 }: Props) {
-  const { id, name, type, enabled, sessionMode, createdBy, status } = schedule;
+  const { id, name, enabled, sessionMode, status } = schedule;
   const showConfirm = useStore((s) => s.showConfirm);
+  const showAlert = useStore((s) => s.showAlert);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const sandboxName = useAgentDisplayName(schedule.agentId);
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
 
-  const canEdit = type === "rrule" && createdBy !== "agent";
+  const lock = scheduleLock(schedule);
   const cadence = scheduleCadenceText(schedule);
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
+
+  /** A locked schedule opens its reason rather than a dead menu item — a
+   *  disabled item swallows the pointer, so its tooltip never reliably showed
+   *  and keyboard users got nothing at all. */
+  const handleEdit = async () => {
+    if (!lock) {
+      onEdit();
+      return;
+    }
+    const { title, body, action } = scheduleLockNotice(lock, sandboxName);
+    if (!action) {
+      await showAlert(body, title, { kind: "info", confirmLabel: "Close" });
+      return;
+    }
+    const confirmed = await showConfirm(body, title, {
+      kind: "info",
+      confirmLabel: action,
+      cancelLabel: "Close",
+    });
+    if (confirmed) selectAgent(schedule.agentId);
+  };
 
   const handleDelete = async () => {
     if (
@@ -130,15 +154,9 @@ export function ScheduleCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            {canEdit ? (
-              <DropdownMenuItem onSelect={onEdit}>
-                Edit schedule
-              </DropdownMenuItem>
-            ) : (
-              <span title={NOT_EDITABLE_HINT}>
-                <DropdownMenuItem disabled>Edit schedule</DropdownMenuItem>
-              </span>
-            )}
+            <DropdownMenuItem onSelect={handleEdit}>
+              Edit schedule
+            </DropdownMenuItem>
             {sessionMode === "continuous" && (
               <DropdownMenuItem onSelect={handleReset}>
                 Reset session
