@@ -241,6 +241,7 @@ export {
   bobEnvMappings,
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
+  normalizeBobChatMode,
   IBM_LITELLM_HOST,
   BOB_HOST,
   PROVIDER_TEMPLATE_IDS,

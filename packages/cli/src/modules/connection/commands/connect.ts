@@ -157,7 +157,7 @@ export function buildConnectCommand(deps: {
         '      --private-key "$(cat app.pem)"\n' +
         "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
         '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
-        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
+        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=agent\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
     )
