@@ -2,7 +2,9 @@
 
 > Working plan — temporary, committed on the feature branch. Deleted once the feature ships.
 
-**Issue:** https://github.com/dam-agents/dam/issues/3071
+**Issues:** https://github.com/dam-agents/dam/issues/3071 (the landing) and
+https://github.com/dam-agents/dam/issues/3070 (reaching configuration from it) — the second
+is the first's consequence, so they ship together.
 
 ## Goal
 
@@ -39,6 +41,10 @@ around a `CopyableCommand`, already keyed on the agent id. They move out of
 `open-in-menu.tsx` into their own module-level component so the chat empty state can open
 them; the menu itself, and its "Chat (browser)" item, cease to have a purpose and go.
 
+**Reaching configuration.** Making chat the landing takes away the page a row click used to
+open, so #3070 rides along: the chat header's ⋮ stops hiding until hover, and the list row's own
+⋮ gains a "Configure sandbox" item. Nothing becomes unreachable — it moves one click.
+
 **Surfaces.** The knowledge-base chat (`view === "knowledge-base-chat"`) does not get the
 launcher row — that surface speaks in knowledge-base terms and the dialogs speak about a
 sandbox. Experiments and knowledge-base rows already open chat directly
@@ -51,14 +57,26 @@ second resolves the conflict.
 
 ## Sub-issues
 
-| #  | Title | Scope | Depends on |
-|----|-------|-------|------------|
-| 01 | [Sandbox rows open chat and start a sleeping sandbox](./01-rows-open-chat.md) | Home row click → chat; auto-wake on chat entry; e2e helper | — |
-| 02 | [Launch options in the new-session state](./02-launch-options.md) | extract the Open-in dialogs; launcher row in the empty chat; drop the menu from the config header | 01 |
-| 03 | [`+ New` opens a chat session directly](./03-new-opens-chat.md) | sessions sidebar dropdown → plain button | 02 |
+| #  | Title | Scope | Depends on | Done |
+|----|-------|-------|------------|------|
+| 01 | [Sandbox rows open chat and start a sleeping sandbox](./01-rows-open-chat.md) | Home row click → chat; auto-wake on chat entry; e2e helper | — | |
+| 02 | [Launch options in the new-session state](./02-launch-options.md) | extract the Open-in dialogs; launcher row in the empty chat; drop the menu from the config header | 01 | |
+| 03 | [`+ New` opens a chat session directly](./03-new-opens-chat.md) | sessions sidebar dropdown → plain button | 02 | |
+| 04 | [Configuration is visible in chat and reachable from the list](./04-configuration-discoverable.md) | #3070: always-visible chat ⋮; "Configure sandbox" on the row menu | 01 | |
 
 Order between 02 and 03 is load-bearing: 02 lands the "Terminal (browser)" button before 03
-removes the menu item that is currently the only route to a browser terminal.
+removes the menu item that is currently the only route to a browser terminal. 04 only needs
+01, so it can land any time after it.
+
+**Considered and dropped: opening the last conversation on entry.** Landing in the most recent
+conversation reads well until the sandbox is asleep — and asleep is the common case for the
+sandbox you are returning to. The sessions list is a *passive* read by design
+([agent-lifecycle](../../architecture/agent-lifecycle.md#wake): it fails closed when the pod
+isn't up, and may neither wake it nor keep it warm), so the landing cannot know whether a
+conversation exists, let alone which one, until the wake finishes — bounded at two minutes and
+able to fail. That leaves a choice between flashing the new-session state and then replacing it
+with a transcript, or holding a spinner over an unknown outcome. Both are worse than a
+deterministic landing where `+ New` and the session list are one click away.
 
 ## Design references
 
@@ -97,12 +115,15 @@ Against the Vite dev server (`localhost:5173`) — never a cluster deploy:
    Terminal (local), Vs Code / Zed (local). The two local ones open dialogs with copyable
    commands; the browser one opens a terminal in the chat pane.
 3. `+ New` in the sessions sidebar opens a blank chat immediately — no menu.
-4. The chat header ⋮ → "Configure sandbox" reaches the config page, whose header no longer
-   has an "Open in" button.
-5. An **over-budget** sandbox still shows the parked overlay with its Start button — it does
+4. The chat header ⋮ is visible without hovering, and "Configure sandbox" reaches the config
+   page, whose header no longer has an "Open in" button.
+5. A Home row's ⋮ also offers "Configure sandbox"; a knowledge-base row's says
+   "Configure knowledge base".
+6. An **over-budget** sandbox still shows the parked overlay with its Start button — it does
    not retry the gate by itself.
 
 ## Delivery
 
-Each sub-issue is one atomic commit. The whole feature lands as a single PR for
-[#3071](https://github.com/dam-agents/dam/issues/3071).
+Each sub-issue is one atomic commit. The whole feature lands as a single PR closing
+[#3071](https://github.com/dam-agents/dam/issues/3071) and
+[#3070](https://github.com/dam-agents/dam/issues/3070).
