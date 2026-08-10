@@ -433,6 +433,10 @@ export function createTelegramWorker(deps: {
       `To reply, call the \`mcp__platform-outbound__send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       "To deliberately stay silent — a group message that isn't for you, or one already handled — call `mcp__platform-outbound__no_reply_needed` instead of replying.",
+      // This session can also be continued from the platform UI, where the
+      // line above would have the agent answer the person typing there by
+      // posting into Telegram instead.
+      "These instructions apply to messages that arrive from Telegram, not to this conversation as a whole. A message that arrives without them came from somewhere else: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
       channelNetworkAccessGuidance(brandName),
       "",
       `Message: ${text}`,

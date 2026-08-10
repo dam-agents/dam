@@ -151,6 +151,16 @@ function slackTurnContract(ctx: {
         `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
         (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
         ".",
+    // Sessions outlive the surface they started on: this same conversation can
+    // be continued from the platform UI, where an unqualified "only tool calls
+    // reach the channel" has the agent answer the person typing there by
+    // posting into Slack instead. A turn from a surface that names itself
+    // carries its own block; the rest are covered by the second sentence.
+    "These instructions apply to the message they arrive with, not to this " +
+      "conversation as a whole — a later message carries its own. A message " +
+      "that arrives with no such block didn't come from Slack: answer it " +
+      "where it arrived, in plain text, and post to Slack for it only if " +
+      "you're asked to.",
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
     channelNetworkAccessGuidance(ctx.brand.name),

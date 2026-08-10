@@ -5,6 +5,7 @@ import {
   buildPlatformTurnEndedNotification,
 } from "api-server-api";
 
+import { frameDirectTurn, isDirectSurface } from "../domain/direct-turn.js";
 import {
   isRequest,
   isResponse,
@@ -1370,8 +1371,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           ? stripPlatformMeta(frame)
           : frame;
 
+      // A session that also lives in a messenger thread carries that thread's
+      // reply contract in its history; a turn typed here needs to be told it
+      // isn't one of those. Only sessions with a thread are framed — an
+      // ordinary chat has no contract to contradict — and only the forwarded
+      // copy is, so the framing stays out of what viewers see as the prompt.
+      const framedFrame =
+        promptSessionId !== null &&
+        isDirectSurface(extractPromptSurface(frame)) &&
+        deps.sessionMetadata?.get(promptSessionId)?.meta.threadTs !== undefined
+          ? frameDirectTurn(forwardFrame)
+          : forwardFrame;
+
       const rewritten = rewriteCwd(
-        { ...forwardFrame, id: outboundId },
+        { ...framedFrame, id: outboundId },
         deps.workingDir,
       );
       outboundIdToClient.set(outboundId, {
@@ -1580,6 +1593,23 @@ function extractPromptId(frame: unknown): string | null {
   if (!isNonNullObject(platform)) return null;
   const promptId = platform.promptId;
   return typeof promptId === "string" && promptId.length > 0 ? promptId : null;
+}
+
+/**
+ * Pull a `session/prompt`'s originating surface out of
+ * `params._meta.platform.surface`. Null — absent, or anything but a string —
+ * means the sender didn't say, and the turn is framed by nothing.
+ */
+function extractPromptSurface(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return null;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return null;
+  const surface = platform.surface;
+  return typeof surface === "string" && surface.length > 0 ? surface : null;
 }
 
 function stripPlatformMeta(frame: unknown): object {
