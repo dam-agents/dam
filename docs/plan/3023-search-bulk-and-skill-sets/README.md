@@ -94,7 +94,7 @@ installs needs batching.
 | 02 ✅ | Batch install and uninstall | One procedure taking installs and uninstalls: N row writes, one bump, one enqueue, a per-skill security log. Also gates the `state` reconcile on the outbox being settled — batching turned a latent race into a routine one | — |
 | 03 ✅ | Bulk controls on the surface | Per-source Enable all / Disable all, and Update all for drifted skills | 02 |
 | 04 ✅ | Skill sets: table, CRUD, and additive apply | `skill_sets` owner-scoped; list/create/delete; `applyToAgent` resolves names against connected sources and reports what it skipped | 02 |
-| 05 | Save as skill set | Modal: pre-checked from what is on, grouped by source, name validation, source-backed only | 04 |
+| 05 ✅ | Save as skill set | Modal: pre-checked from what is on, grouped by source, name validation, source-backed only | 04 |
 | 06 | Add skill sets | Multi-select modal, union counting, additive apply, skipped-entry reporting | 04 |
 
 ```mermaid

@@ -1,4 +1,4 @@
-import { Add, Upload } from "@carbon/icons-react";
+import { Add, Save, Upload } from "@carbon/icons-react";
 import type {
   LocalSkill,
   Skill,
@@ -24,6 +24,7 @@ import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
 import { LocalSkillRenderModal } from "./local-skill-render-modal.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
 import { publishedDuplicatesBySource } from "./published-duplicates.js";
+import { SaveSkillSetModal } from "./save-skill-set-modal.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
@@ -75,6 +76,7 @@ export function SkillsSurface({
     skill: Skill;
   } | null>(null);
   const [localRenderFor, setLocalRenderFor] = useState<LocalSkill | null>(null);
+  const [saveSetOpen, setSaveSetOpen] = useState(false);
   // Ephemeral filter over data this component already holds. Not URL-owned:
   // routing here is path-based (routeToPath) and no route carries a query
   // param, so a bookmarkable filter would mean new routing infrastructure.
@@ -97,6 +99,8 @@ export function SkillsSurface({
     update,
     toggleSource,
     updateAll,
+    sets,
+    createSet,
     createSource,
     createLocalSkills,
     deleteStandalone,
@@ -188,6 +192,25 @@ export function SkillsSurface({
       shownBuiltIn.length +
       [...filteredBySource.values()].reduce((n, names) => n + names.size, 0)
     : null;
+
+  // Only source-backed skills can go in a set: a set installs by name from a
+  // source, and a created-here or image-shipped skill has nowhere to install
+  // from. Sources with nothing scanned yet are left out rather than shown empty.
+  const setGroups = useMemo(
+    () =>
+      sources
+        .map((source) => ({
+          source,
+          skills: listBySource.get(source.id) ?? [],
+        }))
+        .filter((g) => g.skills.length > 0),
+    [sources, listBySource],
+  );
+  const existingSetNames = useMemo(
+    () => new Set(sets.map((s) => s.name)),
+    [sets],
+  );
+  const anyInstalled = totals.on > 0;
 
   // Drift across every source, not per card: the banner's whole point is that
   // you don't have to find the stale ones yourself.
@@ -414,6 +437,21 @@ export function SkillsSurface({
                   />
                 ) : undefined
               }
+              actions={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!anyInstalled}
+                  title={
+                    anyInstalled
+                      ? undefined
+                      : "Turn on at least one skill from a source to save a set"
+                  }
+                  onClick={() => setSaveSetOpen(true)}
+                >
+                  <Save size={14} /> Save as skill set…
+                </Button>
+              }
             />
           )}
 
@@ -511,6 +549,16 @@ export function SkillsSurface({
           onCreateSkills={createLocalSkills}
           initialTab={modal.tab}
           initialFiles={modal.files}
+        />
+      )}
+
+      {saveSetOpen && (
+        <SaveSkillSetModal
+          groups={setGroups}
+          isOn={(skill) => installedRef(skill.source, skill.name) !== undefined}
+          existingNames={existingSetNames}
+          onCreate={createSet}
+          onClose={() => setSaveSetOpen(false)}
         />
       )}
 

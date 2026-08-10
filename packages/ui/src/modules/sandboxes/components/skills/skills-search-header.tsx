@@ -29,12 +29,15 @@ export function SkillsSearchHeader({
    *  counts line, per the design — an alert about the whole sandbox belongs
    *  above the per-source cards, not inside one. */
   notice,
+  actions,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
   totals: SkillTotals;
   matchCount: number | null;
   notice?: ReactNode;
+  /** Sandbox-level skill actions, on the counts row per the design. */
+  actions?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -52,19 +55,24 @@ export function SkillsSearchHeader({
         />
       </div>
       {notice}
-      <p className="text-sm text-muted-foreground">
-        {matchCount === null ? (
-          <>
-            {plural(totals.skills, "skill")} ·{" "}
-            {plural(totals.sources, "connected source")} · {totals.on} on
-          </>
-        ) : (
-          <>
-            {plural(matchCount, "skill")}{" "}
-            {matchCount === 1 ? "matches" : "match"} “{query}”
-          </>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {matchCount === null ? (
+            <>
+              {plural(totals.skills, "skill")} ·{" "}
+              {plural(totals.sources, "connected source")} · {totals.on} on
+            </>
+          ) : (
+            <>
+              {plural(matchCount, "skill")}{" "}
+              {matchCount === 1 ? "matches" : "match"} “{query}”
+            </>
+          )}
+        </p>
+        {actions && (
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
         )}
-      </p>
+      </div>
     </div>
   );
 }

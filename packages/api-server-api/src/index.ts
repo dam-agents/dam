@@ -393,6 +393,7 @@ export {
   skillSetCreateInputSchema,
   skillSetDeleteInputSchema,
   skillSetEntrySchema,
+  skillSetNameSchema,
   skillSetSchema,
   skillSetSkipReasonSchema,
   skillSourcePathSchema,

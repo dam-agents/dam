@@ -4,6 +4,7 @@ import type {
   Skill,
   SkillPublishRecord,
   SkillRef,
+  SkillSet,
   SkillSource,
   SkillsState,
 } from "api-server-api";
@@ -64,6 +65,14 @@ export interface SkillsSurface {
   /** Re-install every drifted skill at its latest scanned version, in one
    *  apply cycle. */
   updateAll: (drifted: Skill[]) => Promise<void>;
+  /** The user's saved skill sets. Owner-scoped and sandbox-independent, so this
+   *  is loaded once rather than folded into the 5s state poll. */
+  sets: SkillSet[];
+  /** Save a named set. Returns whether it was created. */
+  createSet: (input: {
+    name: string;
+    skills: { source: string; name: string }[];
+  }) => Promise<boolean>;
   /** Publish a standalone skill upstream as a PR. Toasts the PR link on
    *  success (or a CTA on a structured upstream error). Returns success. */
   publish: (input: {
@@ -144,6 +153,7 @@ export function useSkillsSurface(
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [busySourceId, setBusySourceId] = useState<string | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
+  const [sets, setSets] = useState<SkillSet[]>([]);
 
   useEffect(() => {
     // Gate on stateLoaded: before the first `skills.state` resolves all three
@@ -368,6 +378,42 @@ export function useSkillsSurface(
     [agentId, isError, readOnly],
   );
 
+  // Sets belong to the user, not the sandbox, so one load rather than a place
+  // in the 5s poll. Refreshed by createSet from its own result.
+  useEffect(() => {
+    let cancelled = false;
+    api.skills.sets.list
+      .query()
+      .then((s) => {
+        if (!cancelled) setSets(s);
+      })
+      .catch(() => {
+        if (!cancelled) setSets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const createSet = useCallback(
+    async (input: {
+      name: string;
+      skills: { source: string; name: string }[];
+    }) => {
+      const result = await runAction(
+        () => api.skills.sets.create.mutate(input),
+        `Failed to save ${input.name}`,
+      );
+      if (result === ACTION_FAILED) return false;
+      setSets((prev) =>
+        [...prev, result].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      emitToast({ kind: "success", message: `Saved skill set ${result.name}` });
+      return true;
+    },
+    [],
+  );
+
   const createSource = useCallback(
     async (input: { name: string; gitUrl: string; path?: string }) => {
       const result = await runAction(
@@ -585,6 +631,8 @@ export function useSkillsSurface(
     update,
     toggleSource,
     updateAll,
+    sets,
+    createSet,
     createSource,
     createLocalSkills,
     deleteStandalone,
