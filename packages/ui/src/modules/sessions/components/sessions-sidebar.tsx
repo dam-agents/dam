@@ -7,7 +7,6 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -39,7 +38,6 @@ export function SessionsSidebar({
   style,
   onResumeSession,
   onNewSession,
-  onNewTerminal,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -47,7 +45,6 @@ export function SessionsSidebar({
   style?: CSSProperties;
   onResumeSession: (sid: string, mode?: SessionMode) => void;
   onNewSession: () => void;
-  onNewTerminal: () => void;
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -195,21 +192,16 @@ export function SessionsSidebar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="xs" className="text-sm">
-            <Add size={12} /> New
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onNewSession}>
-            New chat session
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onNewTerminal}>
-            New terminal session
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Chat is the answer nearly every time, and the new-session state it
+          opens carries the terminal and editor targets. */}
+      <Button
+        variant="outline"
+        size="xs"
+        className="text-sm"
+        onClick={onNewSession}
+      >
+        <Add size={12} /> New
+      </Button>
     </>
   );
 

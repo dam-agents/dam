@@ -552,7 +552,6 @@ export function ChatView() {
             )}
             onResumeSession={mobileResumeSession}
             onNewSession={handleNewSession}
-            onNewTerminal={handleNewTerminal}
           />
           {sessionsOpen && filesSectionOpen && (
             <ResizeHandle
