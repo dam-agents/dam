@@ -25,7 +25,9 @@ import { LocalSkillRenderModal } from "./local-skill-render-modal.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
 import { publishedDuplicatesBySource } from "./published-duplicates.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
+import { filterByQuery } from "./skill-search.js";
 import { SkillSourceCard } from "./skill-source-card.js";
+import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import {
   StandaloneSkillsEmptyState,
@@ -71,6 +73,10 @@ export function SkillsSurface({
     skill: Skill;
   } | null>(null);
   const [localRenderFor, setLocalRenderFor] = useState<LocalSkill | null>(null);
+  // Ephemeral filter over data this component already holds. Not URL-owned:
+  // routing here is path-based (routeToPath) and no route carries a query
+  // param, so a bookmarkable filter would mean new routing infrastructure.
+  const [query, setQuery] = useState("");
   const {
     sources,
     sourcesLoaded,
@@ -108,6 +114,74 @@ export function SkillsSurface({
     () => publishedDuplicatesBySource(standalone, publishes, skillsBySource),
     [standalone, publishes, skillsBySource],
   );
+
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+
+  // Each source's list minus its suppressed entries — the same list the card
+  // renders and counts from, so the totals below can't disagree with it.
+  const listBySource = useMemo(() => {
+    const out = new Map<string, Skill[]>();
+    for (const src of sources) {
+      const scanned = skillsBySource[src.id];
+      if (scanned === undefined) continue;
+      const suppressed = suppressedBySource.get(src.id);
+      out.set(
+        src.id,
+        suppressed ? scanned.filter((s) => !suppressed.has(s.name)) : scanned,
+      );
+    }
+    return out;
+  }, [sources, skillsBySource, suppressedBySource]);
+
+  // `on` counts source-backed skills only: standalone and image-shipped ones are
+  // simply present on disk, with no install to be on or off.
+  const totals = useMemo(() => {
+    let skills = createdHere.length + builtIn.length;
+    let on = 0;
+    for (const list of listBySource.values()) {
+      skills += list.length;
+      on += list.filter(
+        (s) => installedRef(s.source, s.name) !== undefined,
+      ).length;
+    }
+    return { skills, sources: sources.length, on };
+  }, [createdHere.length, builtIn.length, listBySource, installedRef, sources]);
+
+  const shownCreatedHere = useMemo(
+    () => filterByQuery(createdHere, q),
+    [createdHere, q],
+  );
+  const shownBuiltIn = useMemo(() => filterByQuery(builtIn, q), [builtIn, q]);
+  // Matching names per source, not filtered lists: the card keeps the whole
+  // source so its `N of M on` still describes the source, and shows only these
+  // rows.
+  const filteredBySource = useMemo(() => {
+    if (!searching) return null;
+    const out = new Map<string, ReadonlySet<string>>();
+    for (const [id, list] of listBySource) {
+      out.set(id, new Set(filterByQuery(list, q).map((s) => s.name)));
+    }
+    return out;
+  }, [searching, listBySource, q]);
+
+  // A source stays on screen while searching when it matched something, or when
+  // it is still loading or errored — those report a condition, not content, and
+  // hiding an error behind a filter reads as the filter being broken.
+  const shownSources = useMemo(() => {
+    if (!filteredBySource) return sources;
+    return sources.filter((src) => {
+      if (errorBySource[src.id]) return true;
+      const matches = filteredBySource.get(src.id);
+      return matches === undefined || matches.size > 0;
+    });
+  }, [filteredBySource, sources, errorBySource]);
+
+  const matchCount = filteredBySource
+    ? shownCreatedHere.length +
+      shownBuiltIn.length +
+      [...filteredBySource.values()].reduce((n, names) => n + names.size, 0)
+    : null;
 
   // Tracking stays gated on `merged`, unlike the suppression above: it *writes*
   // — install overwrites the local copy — so waiting until the pull request is
@@ -283,9 +357,27 @@ export function SkillsSurface({
         </section>
       ) : (
         <>
-          {createdHere.length > 0 ? (
+          {/* Left out while read-only, matching the design: search and the
+              per-skill toggles need a running sandbox, so a live control on a
+              dead surface is worse than no control. */}
+          {!readOnly && (
+            <SkillsSearchHeader
+              query={query}
+              onQueryChange={setQuery}
+              totals={totals}
+              matchCount={matchCount}
+            />
+          )}
+
+          {searching && matchCount === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No skills match “{query}”.
+            </p>
+          )}
+
+          {shownCreatedHere.length > 0 ? (
             <StandaloneSkillsGroup
-              skills={createdHere}
+              skills={shownCreatedHere}
               readOnly={readOnly}
               publishes={publishes}
               canPublish={publishableSources.length > 0}
@@ -297,7 +389,7 @@ export function SkillsSurface({
               trackUnavailableNames={trackUnavailableNames}
               action={addSourceButton}
             />
-          ) : readOnly ? (
+          ) : searching ? null : readOnly ? (
             // Stopped/starting: the list is on the offline pod, so show the
             // section with a placeholder instead of dropping it.
             <StandaloneSkillsPlaceholder />
@@ -305,57 +397,60 @@ export function SkillsSurface({
             <StandaloneSkillsEmptyState action={addSourceButton} />
           )}
 
-          {builtIn.length > 0 && (
+          {shownBuiltIn.length > 0 && (
             <BuiltInSkillsGroup
-              skills={builtIn}
+              skills={shownBuiltIn}
               onOpenSkill={agentId ? setLocalRenderFor : undefined}
             />
           )}
 
-          <section>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <SectionLabel>Sourced from GitHub</SectionLabel>
-              {addSourceButton}
-            </div>
-            {!sourcesLoaded ? (
-              <SkillSourcesSkeleton />
-            ) : sources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No skill sources connected.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {sources.map((src) => (
-                  <SkillSourceCard
-                    key={src.id}
-                    source={src}
-                    skills={skillsBySource[src.id]}
-                    loading={!!loadingBySource[src.id]}
-                    error={errorBySource[src.id] ?? null}
-                    scannedAt={scannedAtBySource[src.id]}
-                    installedRef={installedRef}
-                    busyKey={busyKey}
-                    disabled={!agentId || isError}
-                    stateLoaded={stateLoaded}
-                    readOnly={readOnly}
-                    onToggle={toggle}
-                    onUpdate={update}
-                    onRescan={() => void refreshSource(src.id)}
-                    onRemove={() => void removeWithConfirm(src)}
-                    onOpenSkill={(skill) =>
-                      setRenderFor({ source: src, skill })
-                    }
-                    suppressedNames={suppressedBySource.get(src.id)}
-                    onManageConnections={
-                      agentId
-                        ? () => navigateToSandboxHome(agentId, "connections")
-                        : undefined
-                    }
-                  />
-                ))}
+          {(!searching || shownSources.length > 0) && (
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <SectionLabel>Sourced from GitHub</SectionLabel>
+                {addSourceButton}
               </div>
-            )}
-          </section>
+              {!sourcesLoaded ? (
+                <SkillSourcesSkeleton />
+              ) : sources.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No skill sources connected.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {shownSources.map((src) => (
+                    <SkillSourceCard
+                      key={src.id}
+                      source={src}
+                      skills={skillsBySource[src.id]}
+                      filteredNames={filteredBySource?.get(src.id) ?? null}
+                      loading={!!loadingBySource[src.id]}
+                      error={errorBySource[src.id] ?? null}
+                      scannedAt={scannedAtBySource[src.id]}
+                      installedRef={installedRef}
+                      busyKey={busyKey}
+                      disabled={!agentId || isError}
+                      stateLoaded={stateLoaded}
+                      readOnly={readOnly}
+                      onToggle={toggle}
+                      onUpdate={update}
+                      onRescan={() => void refreshSource(src.id)}
+                      onRemove={() => void removeWithConfirm(src)}
+                      onOpenSkill={(skill) =>
+                        setRenderFor({ source: src, skill })
+                      }
+                      suppressedNames={suppressedBySource.get(src.id)}
+                      onManageConnections={
+                        agentId
+                          ? () => navigateToSandboxHome(agentId, "connections")
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
 

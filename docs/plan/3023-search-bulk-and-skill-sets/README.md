@@ -90,7 +90,7 @@ installs needs batching.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Search across every connected source | Client-side filter over all three groups; reaches collapsed rows; match count in the header | — |
+| 01 ✅ | Search across every connected source | Client-side filter over all three groups; reaches collapsed rows; match count in the header | — |
 | 02 | Batch install and uninstall | One procedure taking installs and uninstalls: N row writes, one bump, one enqueue, a per-skill security log | — |
 | 03 | Bulk controls on the surface | Per-source Enable all / Disable all, and Update all for drifted skills | 02 |
 | 04 | Skill sets: table, CRUD, and additive apply | `skill_sets` owner-scoped; list/create/delete; `apply` resolves names against connected sources and reports what it skipped | 02 |

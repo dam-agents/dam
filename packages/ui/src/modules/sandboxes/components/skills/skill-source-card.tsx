@@ -94,6 +94,7 @@ export function SkillSourceCard({
   onOpenSkill,
   onManageConnections,
   suppressedNames,
+  filteredNames,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -131,6 +132,13 @@ export function SkillSourceCard({
   /** Navigate to the sandbox's Connections tab — shown as a "Manage
    *  connections" affordance on a scan error with no server CTA. */
   onManageConnections?: () => void;
+  /** Names to show, when a search filter is active — null when it isn't. Rows
+   *  outside the set are dropped and the collapse control goes away, so a match
+   *  can't hide behind "Expand all"; the user's own collapse choice is left
+   *  untouched and returns when the query clears. The header's `N of M on`
+   *  deliberately keeps counting the whole source: it states a fact about the
+   *  source, not about the filter. */
+  filteredNames?: ReadonlySet<string> | null;
 }) {
   const loaded = skills !== undefined;
   // Suppressed entries drop out before anything else derives from the list, so
@@ -163,7 +171,12 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const visible = collapsible && !expanded ? enabled : sorted;
+  const filtering = filteredNames != null;
+  const visible = filtering
+    ? sorted.filter((s) => filteredNames.has(s.name))
+    : collapsible && !expanded
+      ? enabled
+      : sorted;
 
   // Non-user sources (Seed List / template) are protected from deletion.
   const canRemove = !source.system && !source.fromTemplate;
@@ -278,7 +291,7 @@ export function SkillSourceCard({
           );
         })}
 
-      {loaded && !error && collapsible && (
+      {loaded && !error && collapsible && !filtering && (
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}
