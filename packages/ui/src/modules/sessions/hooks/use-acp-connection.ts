@@ -195,6 +195,17 @@ export function useAcpConnection(
     [clearEngagement, setMessages],
   );
 
+  /** Stop offering a started session for sharing. Called from every path that
+   *  ends its usefulness, so a later send can never join a dead channel. */
+  const releaseStartSlot = useCallback((holders: { count: number }) => {
+    if (startInFlightRef.current?.holders === holders) {
+      startInFlightRef.current = null;
+    }
+  }, []);
+
+  /** Precondition: `ws` is open. Installing a closed socket would leave the chat
+   *  with a connection whose close event has already fired, so nothing clears the
+   *  engagement and the reconnect path can't recover. */
   const keepAsLive = useCallback(
     (
       connection: ClientSideConnection,
@@ -233,6 +244,9 @@ export function useAcpConnection(
           if (listening) handler(update, updateSessionId);
         },
       );
+      // Whatever kills this socket — a send abandoning it, the pod going away —
+      // also ends its shareability. Registered before anyone can join.
+      ws.addEventListener("close", () => releaseStartSlot(holders));
 
       let startedSessionId: string;
       try {
@@ -259,13 +273,14 @@ export function useAcpConnection(
         settle: (keep) => {
           if (settled) return;
           settled = true;
-          kept = keep;
           // Later sends belong to a session that now exists, so they take the
           // ordinary path; this channel stops being shareable.
-          if (startInFlightRef.current?.holders === holders) {
-            startInFlightRef.current = null;
-          }
-          if (!keep) {
+          releaseStartSlot(holders);
+          // A socket that died between issuing the prompt and here is no use to
+          // the chat, and its session was never prompted — give it up instead,
+          // so the send reports honestly rather than committing an orphan.
+          kept = keep && ws.readyState === WebSocket.OPEN;
+          if (!kept) {
             listening = false;
             return;
           }
@@ -277,13 +292,16 @@ export function useAcpConnection(
           // have the runtime discard its prompt.
           if (holders.count > 0 || kept) return;
           listening = false;
+          // Reached without `settle` when a send threw on its way to the prompt
+          // (a failed attachment upload): the slot must go with the socket.
+          releaseStartSlot(holders);
           try {
             ws.close();
           } catch {}
         },
       };
     },
-    [selectedAgent, makeUpdateHandler, keepAsLive],
+    [selectedAgent, makeUpdateHandler, keepAsLive, releaseStartSlot],
   );
 
   const beginSession = useCallback((): Promise<StartedSession> => {
@@ -295,13 +313,10 @@ export function useAcpConnection(
     const holders = { count: 1 };
     const promise = startSession(holders);
     startInFlightRef.current = { holders, promise };
-    promise.catch(() => {
-      if (startInFlightRef.current?.holders === holders) {
-        startInFlightRef.current = null;
-      }
-    });
+    // Failing before there is a socket to carry the eviction (the connect itself).
+    promise.catch(() => releaseStartSlot(holders));
     return promise;
-  }, [startSession]);
+  }, [startSession, releaseStartSlot]);
 
   const ensureInner = useCallback(async (): Promise<LiveSession | null> => {
     if (!selectedAgent) return null;

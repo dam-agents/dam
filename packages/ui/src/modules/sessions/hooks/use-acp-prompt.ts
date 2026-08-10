@@ -245,9 +245,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         delivered = isOpen();
 
         if (started) {
-          // Only once the prompt is away: an unprompted session is never listed,
-          // so the row would be a ghost the next poll reconciles away.
-          optimisticInsertSession(selectedAgent, sessionId, SessionMode.Chat);
+          // Only for a prompt that actually left: an unprompted session is never
+          // listed, so the row would be a ghost the next poll reconciles away.
+          if (delivered) {
+            optimisticInsertSession(selectedAgent, sessionId, SessionMode.Chat);
+          }
           detached = !canKeepConnection(selectedAgent, aId);
           started.settle(!detached);
           if (detached) startedRef.current = null;
