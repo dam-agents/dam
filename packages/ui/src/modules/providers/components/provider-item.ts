@@ -1,4 +1,5 @@
 import type { ConnectionView } from "api-server-api";
+import { normalizeBobChatMode } from "api-server-api";
 
 import type { BobModelPins } from "../../../types.js";
 
@@ -24,11 +25,15 @@ export function bobPinsFromConnection(conn: ConnectionView): BobModelPins {
       .filter((c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env")
       .map((c) => [c.name, c.placeholder] as const),
   );
+  // A pre-2.0 secret can pin a mode 2.0 merged away; normalize on the way out so
+  // the edit form shows (and validates) a mode that still exists, instead of
+  // going invalid at mount over a field the user never touched.
+  const chatMode = env.get("BOB_CHAT_MODE");
   return {
     model: env.get("BOB_SHELL_MODEL"),
     agentId: env.get("BOB_INSTANCE_ID"),
     teamId: env.get("BOB_TEAM_ID"),
     maxCoins: env.get("BOB_MAX_COINS"),
-    chatMode: env.get("BOB_CHAT_MODE"),
+    chatMode: chatMode ? normalizeBobChatMode(chatMode) : chatMode,
   };
 }

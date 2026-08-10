@@ -209,7 +209,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "instanceId",
       envName: "BOB_INSTANCE_ID",
       label: "Instance ID",
-      hint: "IBM tenant scoping. Bob 2.x applies it in terminal (TUI) sessions only; chat-mode headless runs select the instance via Bob profiles.",
+      hint: "IBM tenant scoping. Applies to terminal (TUI) sessions; chat sessions ignore it.",
     },
     {
       inputName: "teamId",
@@ -228,8 +228,8 @@ const BOB: HeaderConnectionTemplate = {
     {
       inputName: "chatMode",
       envName: "BOB_CHAT_MODE",
-      label: "Chat mode",
-      hint: `Default chat persona. One of: ${BOB_CHAT_MODES.join(", ")}.`,
+      label: "Mode",
+      hint: `Default mode for new sessions. One of: ${BOB_CHAT_MODES.join(", ")}.`,
       enumValues: BOB_CHAT_MODES,
     },
   ],

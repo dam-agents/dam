@@ -167,7 +167,7 @@ export function BobForm({
           />
           <PinField
             label="Instance ID"
-            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping; Bob 2.x applies it in terminal (TUI) sessions only."
+            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping; applies to terminal (TUI) sessions, chat sessions ignore it."
             error={errors.agentId?.message}
             register={register("agentId")}
           />

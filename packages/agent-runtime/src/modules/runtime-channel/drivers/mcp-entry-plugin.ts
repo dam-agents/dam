@@ -17,13 +17,34 @@ const DEFAULT_KEY_PATH = "mcpServers";
 // the entry, for those naming the transport in a sibling field (Bob 2.0 wants
 // `transportType:"http"` — without it it treats the server as SSE, which the
 // platform's streamable endpoint rejects).
-const bindingSchema = z.object({
-  impl: z.literal(IMPL_NAME),
-  path: z.string().min(1),
-  keyPath: z.string().optional(),
-  urlKey: z.string().min(1).optional(),
-  extraFields: z.record(z.string(), z.unknown()).optional(),
-});
+// `extraFields` adds siblings, never restates the transport: the keys the driver
+// builds itself stay reserved, so a manifest typo (`url: ""`) fails the binding
+// parse instead of silently clobbering the contributed URL.
+const OWNED_KEYS = ["type", "url", "headers"] as const;
+
+const bindingSchema = z
+  .object({
+    impl: z.literal(IMPL_NAME),
+    path: z.string().min(1),
+    keyPath: z.string().optional(),
+    urlKey: z.string().min(1).optional(),
+    extraFields: z.record(z.string(), z.string()).optional(),
+  })
+  .superRefine((b, ctx) => {
+    const reserved = new Set<string>([
+      ...OWNED_KEYS,
+      ...(b.urlKey ? [b.urlKey] : []),
+    ]);
+    for (const key of Object.keys(b.extraFields ?? {})) {
+      if (reserved.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["extraFields", key],
+          message: `"${key}" is built by the driver and cannot be set via extraFields`,
+        });
+      }
+    }
+  });
 
 export function createMcpEntryPlugin(): Plugin {
   const fileOps = createFileOps();

@@ -92,13 +92,28 @@ export function bobPinsFromEnvMappings(
   if (agentId) pins.agentId = agentId;
   if (teamId) pins.teamId = teamId;
   if (maxCoins) pins.maxCoins = maxCoins;
-  if (chatMode) pins.chatMode = chatMode;
+  // Same normalization as the UI's read path: a stored legacy mode reads back as
+  // the mode it became, so a re-save can't be blocked by it.
+  if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
   return pins;
 }
 
-// Bob 2.0 merged the code/advanced modes into agent; the harness still maps
-// legacy pinned values onto agent for existing secrets.
 export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
+
+// Bob 2.0 merged the 1.x code/advanced modes into agent. Secrets pinned before
+// the upgrade still carry the old value, so a stored pin must be normalized
+// wherever it is read back — never rejected, or the connection becomes
+// un-editable over a field the runtime itself tolerates. Fresh input stays
+// strict against BOB_CHAT_MODES.
+const BOB_LEGACY_CHAT_MODES: Record<string, (typeof BOB_CHAT_MODES)[number]> = {
+  code: "agent",
+  advanced: "agent",
+};
+
+export function normalizeBobChatMode(mode: string | undefined): string {
+  const trimmed = mode?.trim() ?? "";
+  return BOB_LEGACY_CHAT_MODES[trimmed] ?? trimmed;
+}
 
 export interface ProviderPresetMode {
   key: string;

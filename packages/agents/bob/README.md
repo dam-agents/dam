@@ -78,7 +78,7 @@ Bob 2.0 persists every task to SQLite on the PVC (`~/.bob/db/bob.db`, tables `ta
 
 - **`session/list`** — one entry per non-archived task (title from the task row, `_meta.platform.mode: chat`).
 - **`session/load`** — replays the task's stored messages as `user_message_chunk` / `agent_message_chunk` updates.
-- **Resume (prompt into a loaded task)** — native: the shim runs `bob run --resume <task-id> -p <prompt>`. No transcript re-injection; Bob reloads its own context. On `--resume` Bob re-emits the task's stored history on the stream first — the shim drops everything until the echo of the new prompt.
+- **Resume (prompt into a loaded task)** — native: the shim runs `bob run --resume <task-id> -- <prompt>` (the prompt is positional). No transcript re-injection; Bob reloads its own context. The stream carries only the new turn — `--resume` does not re-emit stored history, verified against tasks with several assistant turns — so nothing needs filtering beyond the prompt echo. The turn must run in the task's own workspace or Bob rejects the task outright.
 
 ACP session ids issued by `session/new` are shim-generated (`bob-<uuid>`); the sessionId↔taskId binding is learned from the first turn's `result.stats.task_id` and persisted to `~/.bob/platform-shim-sessions.json` so loaded sessions stay resumable across pod restarts.
 

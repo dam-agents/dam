@@ -73,6 +73,13 @@ describe("mcp-entry plugin", () => {
     });
   });
 
+  it("rejects an `extraFields` key the driver builds itself", () => {
+    expect(() => bind({ extraFields: { url: "" } })).toThrow(/cannot be set/);
+    expect(() =>
+      bind({ urlKey: "httpUrl", extraFields: { httpUrl: "x" } }),
+    ).toThrow(/cannot be set/);
+  });
+
   it("keeps headers alongside a urlKey entry", async () => {
     await bind({ urlKey: "httpUrl" })(
       [
