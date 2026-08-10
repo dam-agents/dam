@@ -19,7 +19,11 @@ export function providerRef(item: ProviderItem): ProviderRef {
 
 // Bob's config inputs ride as `env` contributions whose placeholder holds the
 // (non-secret) value, keyed by the same env names the legacy pins use.
-export function bobPinsFromConnection(conn: ConnectionView): BobModelPins {
+// Takes only what it reads, so a caller (or a test) needs nothing but the
+// contributions — no stand-in for the rest of a ConnectionView.
+export function bobPinsFromConnection(
+  conn: Pick<ConnectionView, "contributions">,
+): BobModelPins {
   const env = new Map(
     conn.contributions
       .filter((c): c is Extract<typeof c, { kind: "env" }> => c.kind === "env")

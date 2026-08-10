@@ -19,8 +19,12 @@ const DEFAULT_KEY_PATH = "mcpServers";
 // platform's streamable endpoint rejects).
 // `extraFields` adds siblings, never restates the transport: the keys the driver
 // builds itself stay reserved, so a manifest typo (`url: ""`) fails the binding
-// parse instead of silently clobbering the contributed URL.
-const OWNED_KEYS = ["type", "url", "headers"] as const;
+// parse instead of silently clobbering the contributed URL. Which keys those are
+// depends on the branch in play — a `urlKey` dialect never builds `type`/`url`,
+// so reserving them there would reject a field the driver does not own.
+function ownedKeys(urlKey: string | undefined): string[] {
+  return ["headers", ...(urlKey ? [urlKey] : ["type", "url"])];
+}
 
 const bindingSchema = z
   .object({
@@ -31,10 +35,7 @@ const bindingSchema = z
     extraFields: z.record(z.string(), z.string()).optional(),
   })
   .superRefine((b, ctx) => {
-    const reserved = new Set<string>([
-      ...OWNED_KEYS,
-      ...(b.urlKey ? [b.urlKey] : []),
-    ]);
+    const reserved = new Set(ownedKeys(b.urlKey));
     for (const key of Object.keys(b.extraFields ?? {})) {
       if (reserved.has(key)) {
         ctx.addIssue({

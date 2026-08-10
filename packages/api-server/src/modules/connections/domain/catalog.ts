@@ -222,8 +222,10 @@ const BOB: HeaderConnectionTemplate = {
       envName: "BOB_MAX_COINS",
       label: "Max cost",
       hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
-      pattern: "^[1-9]\\d*$",
-      patternHint: "a positive integer",
+      // A cost, not a coin count: a task can settle well under a unit (observed
+      // ~0.10), so an integer-only cap could not express anything below 1.
+      pattern: "^(?:[1-9]\\d*(?:\\.\\d+)?|0?\\.\\d*[1-9]\\d*)$",
+      patternHint: "a positive amount, e.g. 0.50 or 5",
     },
     {
       inputName: "chatMode",

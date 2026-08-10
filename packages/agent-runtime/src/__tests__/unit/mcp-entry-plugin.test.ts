@@ -80,6 +80,18 @@ describe("mcp-entry plugin", () => {
     ).toThrow(/cannot be set/);
   });
 
+  it("reserves only what the active branch builds", async () => {
+    // A urlKey dialect never emits `type`/`url`, so setting them is additive.
+    await bind({ urlKey: "httpUrl", extraFields: { type: "sse" } })(
+      [entry("outbound", "http://hs/mcp")],
+      ctx,
+    );
+    expect(readConfig(".bob/settings/mcp.json").mcpServers.outbound).toEqual({
+      httpUrl: "http://hs/mcp",
+      type: "sse",
+    });
+  });
+
   it("keeps headers alongside a urlKey entry", async () => {
     await bind({ urlKey: "httpUrl" })(
       [
