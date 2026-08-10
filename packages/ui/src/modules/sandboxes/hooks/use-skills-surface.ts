@@ -5,6 +5,7 @@ import type {
   SkillPublishRecord,
   SkillRef,
   SkillSet,
+  SkillSetApplyResult,
   SkillSource,
   SkillsState,
 } from "api-server-api";
@@ -21,6 +22,21 @@ import { saveSkillFiles } from "../lib/skill-download.js";
 
 /** Row identity shared by the surface and its child components. */
 export const skillKey = (source: string, name: string) => `${source}::${name}`;
+
+/** Turn the server's closed skip verdicts into one readable clause. The reason
+ *  codes never reach the user — the client owns the wording. */
+function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
+  const noSource = skipped.filter(
+    (s) => s.reason === "source-not-connected",
+  ).length;
+  const gone = skipped.length - noSource;
+  const parts: string[] = [];
+  if (noSource > 0) {
+    parts.push(`${noSource} from a source this sandbox isn't connected to`);
+  }
+  if (gone > 0) parts.push(`${gone} no longer in its source`);
+  return parts.join(", ");
+}
 
 export interface SkillsSurface {
   sources: SkillSource[];
@@ -73,6 +89,11 @@ export interface SkillsSurface {
     name: string;
     skills: { source: string; name: string }[];
   }) => Promise<boolean>;
+  /** Add the chosen sets' skills alongside what's already on. Returns false when
+   *  nothing could be applied, so the caller can keep its modal open. */
+  applySets: (setIds: string[]) => Promise<boolean>;
+  /** A set apply is in flight. */
+  applyingSets: boolean;
   /** Publish a standalone skill upstream as a PR. Toasts the PR link on
    *  success (or a CTA on a structured upstream error). Returns success. */
   publish: (input: {
@@ -154,6 +175,7 @@ export function useSkillsSurface(
   const [busySourceId, setBusySourceId] = useState<string | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [sets, setSets] = useState<SkillSet[]>([]);
+  const [applyingSets, setApplyingSets] = useState(false);
 
   useEffect(() => {
     // Gate on stateLoaded: before the first `skills.state` resolves all three
@@ -414,6 +436,45 @@ export function useSkillsSurface(
     [],
   );
 
+  const applySets = useCallback(
+    async (setIds: string[]) => {
+      if (!agentId || isError || readOnly || setIds.length === 0) return false;
+      setApplyingSets(true);
+      const before = installed.length;
+      const result = await runAction(
+        () => api.skills.sets.applyToAgent.mutate({ agentId, setIds }),
+        "Failed to add skill sets",
+      );
+      setApplyingSets(false);
+      if (result === ACTION_FAILED) return false;
+      setInstalled(result.installed);
+
+      const added = result.installed.length - before;
+      const skipped = result.skipped.length;
+      // Nothing landed *and* something was refused: a plain failure, so the
+      // modal stays open rather than closing on a silent no-result.
+      if (added === 0 && skipped > 0) {
+        emitToast({
+          kind: "error",
+          message: `Nothing to add — ${skippedSummary(result.skipped)}.`,
+        });
+        return false;
+      }
+      emitToast({
+        kind: added === 0 ? "info" : "success",
+        message:
+          added === 0
+            ? "Those skills are already on."
+            : `Turned on ${added} skill${added === 1 ? "" : "s"}` +
+              (skipped > 0
+                ? `. Skipped ${skippedSummary(result.skipped)}.`
+                : ""),
+      });
+      return true;
+    },
+    [agentId, isError, readOnly, installed.length],
+  );
+
   const createSource = useCallback(
     async (input: { name: string; gitUrl: string; path?: string }) => {
       const result = await runAction(
@@ -633,6 +694,8 @@ export function useSkillsSurface(
     updateAll,
     sets,
     createSet,
+    applySets,
+    applyingSets,
     createSource,
     createLocalSkills,
     deleteStandalone,

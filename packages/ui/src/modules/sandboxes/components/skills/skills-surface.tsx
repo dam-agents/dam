@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
+import { AddSkillSetsModal } from "./add-skill-sets-modal.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
 import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
 import { LocalSkillRenderModal } from "./local-skill-render-modal.js";
@@ -77,6 +78,7 @@ export function SkillsSurface({
   } | null>(null);
   const [localRenderFor, setLocalRenderFor] = useState<LocalSkill | null>(null);
   const [saveSetOpen, setSaveSetOpen] = useState(false);
+  const [addSetsOpen, setAddSetsOpen] = useState(false);
   // Ephemeral filter over data this component already holds. Not URL-owned:
   // routing here is path-based (routeToPath) and no route carries a query
   // param, so a bookmarkable filter would mean new routing infrastructure.
@@ -94,6 +96,7 @@ export function SkillsSurface({
     busyKey,
     busySourceId,
     updatingAll,
+    installed,
     installedRef,
     toggle,
     update,
@@ -101,6 +104,8 @@ export function SkillsSurface({
     updateAll,
     sets,
     createSet,
+    applySets,
+    applyingSets,
     createSource,
     createLocalSkills,
     deleteStandalone,
@@ -210,6 +215,30 @@ export function SkillsSurface({
     () => new Set(sets.map((s) => s.name)),
     [sets],
   );
+  // Keyed on `${gitUrl} ${name}` — the identity a set stores, so the modal's
+  // preview matches what the server will resolve.
+  const availableKeys = useMemo(() => {
+    const out = new Set<string>();
+    for (const list of listBySource.values()) {
+      for (const skill of list) out.add(`${skill.source} ${skill.name}`);
+    }
+    return out;
+  }, [listBySource]);
+  const installedKeys = useMemo(
+    () => new Set(installed.map((r) => `${r.source} ${r.name}`)),
+    [installed],
+  );
+  // Connected but unreadable — a failed scan, not a missing source. The set
+  // preview words those two differently because the fix differs.
+  const unreadableSources = useMemo(
+    () =>
+      new Set(sources.filter((s) => errorBySource[s.id]).map((s) => s.gitUrl)),
+    [sources, errorBySource],
+  );
+  // A source that hasn't reported yet is indistinguishable from one that can't
+  // serve a skill, so the set previews stay silent until every source has.
+  const previewReady =
+    sourcesLoaded && sources.every((s) => listBySource.has(s.id));
   const anyInstalled = totals.on > 0;
 
   // Drift across every source, not per card: the banner's whole point is that
@@ -438,19 +467,28 @@ export function SkillsSurface({
                 ) : undefined
               }
               actions={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!anyInstalled}
-                  title={
-                    anyInstalled
-                      ? undefined
-                      : "Turn on at least one skill from a source to save a set"
-                  }
-                  onClick={() => setSaveSetOpen(true)}
-                >
-                  <Save size={14} /> Save as skill set…
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAddSetsOpen(true)}
+                  >
+                    <Add size={14} /> Add skill sets…
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!anyInstalled}
+                    title={
+                      anyInstalled
+                        ? undefined
+                        : "Turn on at least one skill from a source to save a set"
+                    }
+                    onClick={() => setSaveSetOpen(true)}
+                  >
+                    <Save size={14} /> Save as skill set…
+                  </Button>
+                </>
               }
             />
           )}
@@ -499,9 +537,22 @@ export function SkillsSurface({
               {!sourcesLoaded ? (
                 <SkillSourcesSkeleton />
               ) : sources.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No skill sources connected.
-                </p>
+                <div className="flex flex-col items-start gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    No skill sources connected. Add a GitHub repo to browse and
+                    install its skills
+                    {sets.length > 0 && " — or start from a set you've built"}.
+                  </p>
+                  {!readOnly && sets.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddSetsOpen(true)}
+                    >
+                      <Add size={14} /> Add skill sets…
+                    </Button>
+                  )}
+                </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   {shownSources.map((src) => (
@@ -549,6 +600,19 @@ export function SkillsSurface({
           onCreateSkills={createLocalSkills}
           initialTab={modal.tab}
           initialFiles={modal.files}
+        />
+      )}
+
+      {addSetsOpen && (
+        <AddSkillSetsModal
+          sets={sets}
+          available={availableKeys}
+          installedKeys={installedKeys}
+          unreadableSources={unreadableSources}
+          ready={previewReady}
+          applying={applyingSets}
+          onApply={applySets}
+          onClose={() => setAddSetsOpen(false)}
         />
       )}
 
