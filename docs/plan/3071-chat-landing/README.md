@@ -68,15 +68,18 @@ Order between 02 and 03 is load-bearing: 02 lands the "Terminal (browser)" butto
 removes the menu item that is currently the only route to a browser terminal. 04 only needs
 01, so it can land any time after it.
 
-**Considered and dropped: opening the last conversation on entry.** Landing in the most recent
-conversation reads well until the sandbox is asleep — and asleep is the common case for the
-sandbox you are returning to. The sessions list is a *passive* read by design
-([agent-lifecycle](../../architecture/agent-lifecycle.md#wake): it fails closed when the pod
-isn't up, and may neither wake it nor keep it warm), so the landing cannot know whether a
-conversation exists, let alone which one, until the wake finishes — bounded at two minutes and
-able to fail. That leaves a choice between flashing the new-session state and then replacing it
-with a transcript, or holding a spinner over an unknown outcome. Both are worse than a
-deterministic landing where `+ New` and the session list are one click away.
+**Considered and dropped: opening the last conversation on entry.** The landing is where the
+alternative ways into a sandbox live (slice 02) — terminal and editor sit in the new-session
+state, and that state only exists while the chat is empty. Resuming a conversation on entry
+would hide them behind a `+ New` click on every return visit, defeating the scope item that put
+them there. The session list in the sidebar is already one click from the same conversation.
+
+A second reason, had the first not settled it: on a sleeping sandbox — the common case for one
+you are returning to — the sessions list is a passive read that fails closed while the pod is
+down ([agent-lifecycle](../../architecture/agent-lifecycle.md#wake)), so the landing cannot know
+whether a conversation exists, let alone which, until the wake finishes. Both a silent
+auto-resume and a reserved `/chat/<sandbox>/latest` route were worked through and rejected on
+these grounds.
 
 ## Design references
 
