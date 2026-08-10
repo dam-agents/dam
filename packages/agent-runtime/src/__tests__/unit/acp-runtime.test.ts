@@ -2915,7 +2915,10 @@ describe("createAcpRuntime — direct-turn framing", () => {
     const texts = promptTexts(fa.sent[0]);
     expect(texts).toHaveLength(2);
     expect(texts[0]).toContain("didn't arrive from a messenger");
-    expect(texts[0]).toContain("Don't call reply, react or no_reply_needed");
+    // Stated as a rule over messenger tools rather than a list of one
+    // messenger's, so a Telegram-born session is covered by the same sentence.
+    expect(texts[0]).toContain("Don't answer it with a messenger tool");
+    expect(texts[0]).toContain("send_channel_message");
     expect(texts[1]).toBe("what did we decide?");
   });
 

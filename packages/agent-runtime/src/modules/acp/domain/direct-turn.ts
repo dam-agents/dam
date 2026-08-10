@@ -33,7 +33,11 @@ export function directTurnContract(): string {
     "This message didn't arrive from a messenger — someone is talking with " +
       "you directly here, and your reply text reaches them as you write it. " +
       "Answer in plain text.",
-    "Don't call reply, react or no_reply_needed for this message: those " +
+    // Rule first, examples second and explicitly the channel's own set: one
+    // contract serves every channel type, and a closed list of one messenger's
+    // tools would read as leave to answer with another's.
+    "Don't answer it with a messenger tool — whichever ones your channel " +
+      "gives you (reply, react, no_reply_needed, send_channel_message): they " +
       "belong to a messenger turn and deliver nothing here. Post to a " +
       "messenger on this turn only if you're asked to.",
     "</how-to-respond>",
