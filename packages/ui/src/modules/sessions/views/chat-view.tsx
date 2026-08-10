@@ -81,7 +81,10 @@ import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
-import { useSessionUrlSync } from "../hooks/use-session-url-sync.js";
+import {
+  pushSessionPath,
+  useSessionUrlSync,
+} from "../hooks/use-session-url-sync.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -322,10 +325,25 @@ export function ChatView() {
     setSessionMode,
   ]);
 
+  /** Records a session the user picked as its own history entry, so back and
+   *  forward walk the conversations they opened. Only the plain chat route
+   *  addresses a session — a knowledge base's page has its own route and must
+   *  not be rewritten to `/chat`. */
+  const pushSessionUrl = useCallback(
+    (sid: string | null, mode: SessionMode | null) => {
+      if (view !== "chat" || !selectedAgent) return;
+      pushSessionPath(selectedAgent, sid, mode);
+    },
+    [view, selectedAgent],
+  );
+
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       // Deliberate navigation releases the pending-launch chat takeover.
       unfocusPendingLaunch();
+      // Ahead of the store change: the sync effect then finds the address bar
+      // already right and leaves this entry alone.
+      pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
       // Terminal sessions don't use ACP.
@@ -347,6 +365,7 @@ export function ChatView() {
       resumeSession,
       scrollToBottom,
       unfocusPendingLaunch,
+      pushSessionUrl,
     ],
   );
 
@@ -357,6 +376,9 @@ export function ChatView() {
       setMobileScreen("chat");
       return;
     }
+    // Leaving a conversation for a blank one is a step of its own: back
+    // returns to the session that was open.
+    pushSessionUrl(null, null);
     setSessionMode(SessionMode.Chat);
     resetSession();
     setMobileScreen("chat");
@@ -367,6 +389,7 @@ export function ChatView() {
     setMobileScreen,
     setSessionMode,
     unfocusPendingLaunch,
+    pushSessionUrl,
   ]);
 
   const showConfirm = useStore((s) => s.showConfirm);
@@ -632,15 +655,13 @@ export function ChatView() {
                     {!loadingSession && sessionError && (
                       <SessionErrorCard
                         error={sessionError}
-                        onBack={() => {
-                          setSessionError(null);
-                          resetSession();
-                          if (isMobile()) setMobileScreen("sessions");
-                        }}
                         onDelete={async () => {
-                          const sid = sessionError.sessionId;
+                          // Hold the card until the delete lands: clearing
+                          // first would drop the reader into an empty chat
+                          // still bound to the session that won't open.
+                          if (!(await deleteSession(sessionError.sessionId)))
+                            return;
                           setSessionError(null);
-                          await deleteSession(sid);
                           if (isMobile()) setMobileScreen("sessions");
                         }}
                       />
@@ -830,21 +851,43 @@ function ChatHeaderStatus({
   );
 }
 
+/** What a failed resume tells the user. Only the unreachable-agent case is
+ *  worth waiting out, so it is the only one that suggests retrying — telling
+ *  someone to retry a session that is gone is advice that can only fail. Nor
+ *  does the copy guess at a cause: a session can be missing because it was
+ *  deleted, because the link was mistyped, or because it belongs to someone
+ *  else. The raw harness message the card used to print says nothing a reader
+ *  can act on. */
+const RESUME_FAILURE_COPY: Record<
+  SessionError["kind"],
+  { title: string; body: string }
+> = {
+  unavailable: {
+    title: "Can't open this conversation",
+    body: "It may have been deleted, or the link may point somewhere you can't open.",
+  },
+  orphaned: {
+    title: "This conversation can't be reopened",
+    body: "The agent still lists it but no longer holds its history. Deleting it clears the leftover entry from the list.",
+  },
+  connection: {
+    title: "Can't reach the agent",
+    body: "The agent didn't answer. It may be waking up or hibernating — try again in a moment.",
+  },
+  other: {
+    title: "Can't open this conversation",
+    body: "The agent still has it, but it wouldn't load.",
+  },
+};
+
 function SessionErrorCard({
   error,
-  onBack,
   onDelete,
 }: {
   error: SessionError;
-  onBack: () => void;
   onDelete: () => void;
 }) {
-  const title =
-    error.kind === "not-found"
-      ? "Session not found"
-      : error.kind === "connection"
-        ? "Can't reach the agent"
-        : "Failed to load session";
+  const { title, body } = RESUME_FAILURE_COPY[error.kind];
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -853,21 +896,18 @@ function SessionErrorCard({
           <h3 className="text-[15px] font-bold text-foreground mb-1">
             {title}
           </h3>
-          <p className="text-sm text-muted-foreground break-words">
-            {error.message}
-          </p>
+          <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button variant="outline" size="sm" onClick={onBack}>
-          <ArrowLeft size={12} /> Back to sessions
-        </Button>
-        {error.kind === "not-found" && (
+      {/* Deleting needs something to delete: only a session the agent still
+          lists has a row here, and the session list is what confirms it. */}
+      {error.kind === "orphaned" && (
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="destructive" size="sm" onClick={onDelete}>
-            <TrashCan size={12} /> Delete orphaned session
+            <TrashCan size={12} /> Delete this session
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </Callout>
   );
 }

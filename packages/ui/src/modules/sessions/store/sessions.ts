@@ -6,6 +6,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
+import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 import {
@@ -13,12 +14,13 @@ import {
   type SessionCategory,
 } from "../lib/session-category.js";
 
-/** A resume-time failure that blocks showing the session chat. Rendered inline. */
+/** A resume-time failure that blocks showing the session chat. Rendered inline.
+ *  The kind picks the wording and the actions — "orphaned" additionally offers
+ *  to delete the session — and is all the card carries: the underlying error
+ *  text is harness wording, not something a reader can act on. */
 export interface SessionError {
   sessionId: string;
-  message: string;
-  /** "not-found" gets the "Delete orphaned session" action; others just show Back. */
-  kind: "not-found" | "connection" | "other";
+  kind: SessionFailureKind;
 }
 
 export interface SessionsSlice {
@@ -47,8 +49,10 @@ export interface SessionsSlice {
 
   /** Delete a session via the platform API, drop it from the sidebar list
    *  cache immediately, then invalidate to reconcile. Resets the chat context
-   *  if the deleted session was active. */
-  deleteSession: (sessionId: string) => Promise<void>;
+   *  if the deleted session was active. Resolves false when the API refused —
+   *  a toast has already reported it, and the caller keeps whatever it was
+   *  showing rather than acting as if the session were gone. */
+  deleteSession: (sessionId: string) => Promise<boolean>;
 
   /**
    * Wipe all per-chat-session state (active session, messages, file tree,
@@ -122,12 +126,12 @@ export const createSessionsSlice: StateCreator<
 
   deleteSession: async (sessionId) => {
     const agentId = get().selectedAgent;
-    if (!agentId) return;
+    if (!agentId) return false;
     const ok = await runAction(
       () => deleteAgentSession(agentId, sessionId),
       "Failed to delete session",
     );
-    if (ok === ACTION_FAILED) return;
+    if (ok === ACTION_FAILED) return false;
     if (get().sessionId === sessionId) get().resetChatContext();
     // Cancel in-flight list refetches first — then drop the row and reconcile.
     await queryClient.cancelQueries({
@@ -138,5 +142,6 @@ export const createSessionsSlice: StateCreator<
       queryKey: acpSessionsKeys.agentLists(agentId),
     });
     emitToast({ kind: "success", message: "Session deleted" });
+    return true;
   },
 });

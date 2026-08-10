@@ -1,7 +1,10 @@
 import { SessionMode } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import { sessionPath } from "../../modules/sessions/lib/session-path.js";
+import {
+  nextChatUrl,
+  sessionPath,
+} from "../../modules/sessions/lib/session-path.js";
 
 describe("sessionPath", () => {
   it("names the open session so the URL links to this conversation", () => {
@@ -19,5 +22,32 @@ describe("sessionPath", () => {
     expect(sessionPath("agent-1", "pty-1", SessionMode.Terminal)).toBe(
       "/chat/agent-1",
     );
+  });
+});
+
+describe("nextChatUrl", () => {
+  const at = (pathname: string, search = "", hash = "") => ({
+    pathname,
+    search,
+    hash,
+  });
+
+  it("moves to the picked session", () => {
+    expect(
+      nextChatUrl(at("/chat/agent-1/sess-1"), "/chat/agent-1/sess-2"),
+    ).toBe("/chat/agent-1/sess-2");
+  });
+
+  it("writes nothing for the path already showing", () => {
+    // What stops a re-pick — or a switch between two terminals, which both
+    // collapse onto the agent's path — from stacking a back step that changes
+    // nothing on screen.
+    expect(nextChatUrl(at("/chat/agent-1"), "/chat/agent-1")).toBeNull();
+  });
+
+  it("keeps the query and hash, which belong to the tab", () => {
+    expect(
+      nextChatUrl(at("/chat/agent-1", "?panel=files", "#msg-3"), "/chat/a/s"),
+    ).toBe("/chat/a/s?panel=files#msg-3");
   });
 });

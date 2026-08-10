@@ -1,21 +1,42 @@
 import { SessionMode } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { classifyResumeError, extractErrorMessage } from "../../acp/errors.js";
+import {
+  classifyResumeError,
+  resumeFailureKind,
+  type SessionFailureKind,
+  type SessionListing,
+} from "../../acp/errors.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import {
-  deleteAgentSession,
-  listAgentSessions,
-} from "../api/acp-session-ops.js";
-import { acpSessionsKeys, setSessionRunning } from "../api/queries.js";
+import { listAgentSessions } from "../api/acp-session-ops.js";
+import { setSessionRunning } from "../api/queries.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+
+/**
+ * Which failure the user is looking at. The agent's session list settles
+ * whether the session exists — see `resumeFailureKind`. An agent that never
+ * answered can't be asked, so that verdict comes from the error alone.
+ */
+async function classifyResumeFailure(
+  agentId: string,
+  sid: string,
+  e: unknown,
+): Promise<SessionFailureKind> {
+  const kind = classifyResumeError(e);
+  if (kind === "connection") return kind;
+  let listing: SessionListing = "unknown";
+  try {
+    const sessions = await listAgentSessions(agentId);
+    listing = sessions.some((s) => s.sessionId === sid) ? "listed" : "absent";
+  } catch {}
+  return resumeFailureKind(kind, listing);
+}
 
 /**
  * Thin orchestrator: composes the connection, engagement, history, prompt,
@@ -98,7 +119,7 @@ export function useAcpSession(
   }, [resetConnection, setSessionId, setMessages]);
 
   const resumeSession = useCallback(
-    async (sid: string, opts?: { expectNotFound?: boolean }) => {
+    async (sid: string) => {
       if (!selectedAgent) return;
 
       resetConnection();
@@ -121,31 +142,14 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
-        const kind = classifyResumeError(e);
-        if (kind === "not-found" && opts?.expectNotFound) {
-          setLoadingSession(false);
-          await deleteAgentSession(selectedAgent, sid);
-          queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-          resetSession();
-          return;
-        }
-        useStore.getState().setSessionError({
-          sessionId: sid,
-          message: extractErrorMessage(e),
-          kind,
-        });
+        const kind = await classifyResumeFailure(selectedAgent, sid, e);
+        if (useStore.getState().sessionId !== sid) return;
+        useStore.getState().setSessionError({ sessionId: sid, kind });
       } finally {
         if (useStore.getState().sessionId === sid) setLoadingSession(false);
       }
     },
-    [
-      selectedAgent,
-      loadHistory,
-      resetConnection,
-      resetSession,
-      setMessages,
-      setSessionId,
-    ],
+    [selectedAgent, loadHistory, resetConnection, setMessages, setSessionId],
   );
 
   const { sendPrompt, stopAgent } = useAcpPrompt(
