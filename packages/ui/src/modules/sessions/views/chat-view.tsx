@@ -48,6 +48,7 @@ import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccess
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
@@ -96,6 +97,7 @@ export function ChatView() {
 
   useSyncRestartingAgents();
   useAgentReachabilityProbe(selectedAgent);
+  useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),

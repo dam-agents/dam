@@ -49,8 +49,10 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
 
 /**
  * Full-view takeover shown whenever the open agent isn't confirmed `running`.
- * Gates the chat/terminal beneath it and surfaces the lifecycle state, plus an
- * explicit Start (hibernated) or Restart (error) — waking is never automatic.
+ * Gates the chat/terminal beneath it and surfaces the lifecycle state. A
+ * hibernated agent starts by itself once its chat opens (useAutoWakeOnOpen), so
+ * the buttons here serve the two states that need a deliberate click: Start
+ * retries the budget gate for a parked agent, Restart recovers an errored one.
  * A null `display` means the agents list hasn't loaded yet (cold reload): show
  * a neutral spinner so we never flash the chat before the state is known.
  */

@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import {
   chatInput,
-  gotoAgentDetail,
+  gotoAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
   setMockReplyWithFiles,
@@ -56,7 +56,7 @@ test("experiment: plan, execute, watch it run to completion", async ({
       { path: scriptPath, content: experimentScript },
     ]);
     await page.goto(baseUrl);
-    await gotoAgentDetail(page, agentName, agentId);
+    await gotoAgentChat(page, agentName, agentId);
     await sendMessageToAgent(page, `__PYRUN__ ${scriptPath}`);
     // The mock writes exp.py, runs `python3 exp.py` (plan mode: the SDK
     // registers the draft and exits 0), and echoes the run's output.
