@@ -44,10 +44,14 @@ export type {
   HarnessConfigChange,
   HarnessConfigStatus,
   HarnessConfigService,
+  HarnessConfigSnapshot,
+  HarnessConfigSnapshotPatch,
+  HarnessConfigSnapshotResult,
 } from "./modules/harness-config/types.js";
 export {
   agentConfigOptionsSchema,
   harnessConfigApplyInputSchema,
+  harnessConfigSnapshotSchema,
 } from "./modules/harness-config/schemas.js";
 
 export type {

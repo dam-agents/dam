@@ -245,9 +245,9 @@ export function SkillsSurface({
       }
     : {};
 
-  // While stopped, `standalone` is always empty (the list lives on the offline
-  // pod), so an empty standalone list isn't evidence the sandbox is bare —
-  // don't collapse to the "add a source" empty state then.
+  // While stopped, `standalone` is whatever was last recorded — empty for a
+  // sandbox that never ran. Either way it isn't evidence the sandbox is bare,
+  // so don't collapse to the "add a source" empty state then.
   const isEmpty =
     !readOnly &&
     sourcesLoaded &&

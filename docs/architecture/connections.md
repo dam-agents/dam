@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-08-07
+Last verified: 2026-08-08
 
 ## Overview
 
@@ -108,7 +108,9 @@ Kinds are added by extending the union and gating on agent capabilities (see [Ve
 
 A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
-`harness-config` is the model/mode/config-defaults mechanism: a user action in the Config panel fires one event, the agent-runtime writes the mapped keys into the harness's config file (claude-code: `~/.claude/settings.json`) once, and — like `workspace-seed` — never re-asserts, so the file stays the user's to edit (a hand-edit via the Files panel or SSH is never reconciled away). The Config panel is driven entirely outbound, not over an ACP session: the agent's manifest declares a `harness-config` driver entry carrying both the field → file-keyPath mapping and an option **catalog** (the available model/mode/config choices and their per-model validity), and the agent advertises that catalog on `hello` (alongside a `harnessConfig` capability flag) for the api-server to serve to the UI; the *current* values are read back live from the config file via the agent-runtime `harnessConfig.current` query. A manifest may instead declare a `modelDiscovery` source, in which case that same read fills the model list live from the provider rather than from the static catalog. Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section.
+`harness-config` is the model/mode/config-defaults mechanism: a user action in the Config panel fires one event, the agent-runtime writes the mapped keys into the harness's own config file once, and — like `workspace-seed` — never re-asserts, so the file stays the user's to edit (a hand-edit via the Files panel or SSH is never reconciled away). The Config panel is driven entirely outbound, not over an ACP session: the agent's manifest declares a `harness-config` driver entry carrying both the field → file-keyPath mapping and an option **catalog** (the available model/mode/config choices and their per-model validity), and the agent advertises that catalog on `hello` (alongside a `harnessConfig` capability flag) for the api-server to serve to the UI; the *current* values are read back live from the config file via the agent-runtime `harnessConfig.current` query. A manifest may instead declare a `modelDiscovery` source, in which case that same read fills the model list live from the provider rather than from the static catalog. Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section.
+
+Because the live read needs a running pod, the platform also keeps a **snapshot** of these values, so the Config panel renders the last known configuration while the agent is stopped. An apply records what it *declared*; a snapshot is display state and is never re-asserted onto the harness, so the harness's own file stays authoritative and the live read wins whenever the agent is up. A snapshot always carries the moment it was captured, and whether a pod has confirmed it or it is merely what an apply asserted — the distinction matters precisely because the event never re-asserts, so a hand-edit can move the file out from under a declared value. The pod confirms it at two points, and the split is forced: on `hello` it reports the file's values alone, since a clean boot with nothing pending never applies and a hand-edit would otherwise go unseen for that whole run; the apply reply reports those plus the discovered model list, which can only be resolved once the env driver has materialized the provider's base URL. A report omits the model list when it could not be resolved, so a failed read never erases one an earlier read established; a harness with no discovery source records that fact instead.
 
 All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum. Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events. (`harness-config` is the carve-out: every agent can receive the event, but only one whose manifest declares a `harness-config` driver has anywhere to write it — so it advertises a `harnessConfig` capability flag the UI gates on, and the handler no-ops without it.)
 
@@ -404,47 +406,18 @@ Redis is the signal path; BullMQ stores job state in Redis with relaxed durabili
 
 Every agent image ships a `runtime-manifest.yaml`. Each `drivers:` entry binds a kind — contribution **or** event — to an impl, resolved uniformly through the plugin registry. Built-in drivers are **on by default** with default bindings, so a manifest declares an entry only to *configure* a kind (e.g. `harness-config`'s file/keys/catalog), *override* its impl, or *disable* it with `false`; `impl` defaults to the kind name (so it's named only to override). The kinds advertised on `hello` are derived at boot from the resolved drivers — the built-in defaults, plus what the manifest declares, minus what it disables — never declared separately. Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
-```yaml
-# packages/agents/example-agent/runtime-manifest.yaml
-manifestVersion: 1
-
-# env, file, mcp-entry, skill-ref, trigger, schedule-reset, workspace-seed are
-# all on by default — declare an entry only to configure, override, or disable.
-drivers:
-  harness-config:                             # config-bearing → active only when declared
-    file: "$HOME/.claude/settings.json"
-    keys: { model: "model", mode: "permissions.defaultMode" }
-  mcp-entry: false                            # opt a built-in out
-```
-
-A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name declared under `extensions.impls`:
-
-```yaml
-# packages/agents/codex-agent/runtime-manifest.yaml
-manifestVersion: 1
-
-drivers:
-  mcp-entry:
-    impl: codex-mcp-with-sighup               # custom (must be declared below)
-    path: "$HOME/.codex/mcp.json"
-
-extensions:
-  impls:
-    - name: codex-mcp-with-sighup
-      module: "/usr/local/share/dam-runtime/codex-overrides.mjs"
-      export: "codexMcpReloadImpl"
-```
+The shipped manifests live beside their agents in [`packages/agents/`](../../packages/agents/).
 
 The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block — advertised kinds are derived at runtime from the resolved drivers.
 
-Custom impl names may not collide with a built-in name (`file`, `skill-install`, …) — registration rejects collision; boot fails loud. To override a built-in — whether a contribution kind (`file`, `mcp-entry`, …) or an event kind (`trigger`, `harness-config`, …) — rebind that kind to a fresh impl name supplied via `extensions.impls`; the built-in stays registered but unbound.
+A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name supplied under `extensions.impls`, naming the module to load it from; the built-in stays registered but unbound. Custom impl names may not collide with a built-in name — registration rejects collision and boot fails loud.
 
 ### Built-in contribution impls
 
 | Impl | Used by | Behavior |
 |---|---|---|
-| `file` | `file` kind directly, and `mcp-entry` via composition | Format (`yaml`/`json`/`text`/`ini`) × MergeMode (`overwrite`/`section-marker`/`key-targeted`/`yaml-fill-if-missing`). The matrix is the substrate for all file-shaped writes. |
-| `skill-install` | `skill-ref` kind | Wraps the existing skill-fetch helpers; resolves source URL, fetches at version through the gateway, materializes into configured skill paths, removes vanished skills on snapshot reconciliation. |
+| `file` | `file` kind directly, and `mcp-entry` via composition | A format × merge-mode matrix, the substrate for every file-shaped write. |
+| `skill-install` | `skill-ref` kind | Materializes a source's skill onto the PVC at the pinned version and reaps ones that leave the snapshot. Owned in depth by [skills](skills.md). |
 
 ### Driver reconciliation
 
@@ -498,15 +471,15 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Substrate | What lives there | Notes |
 |---|---|---|
 | Postgres `connections` | Connection records (template id, auth, contributions[], inputs, owner) | New table for the unified model. |
-| Postgres `agent_env` | User-typed env per agent (`agent_id`, `name`, `value`) | The Environment editor's store since #1079 — read by the state-builder as `env` contributions (ordered first), replacing the Agent CR's `spec.env`. The CR field is retained but no longer read. |
-| Postgres `runtime_state_outbox` | One row per agent | `agent_id`, `version`, `last_enqueued_at`, `last_applied_version`, `last_applied_hash`, `last_applied_at`. |
-| Postgres `runtime_events` | One row per pending event | `id`, `agent_id`, `kind`, `payload`, `version`, `created_at`, `expires_at`, `dispatched_at`. Read by the state-builder; stamped by the worker in the apply-ack transaction. |
-| Runtime-state file on the agent PVC | Applied cursor (`lastAppliedVersion`, `lastAppliedHash`) and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |
+| Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions (ordered first), replacing the Agent CR's env field, which is retained but no longer read. |
+| Postgres `runtime_state_outbox` | One row per agent — the delivery cursor: current version, what the agent last applied, and when | Compared against the applied hash by the sweep. |
+| Postgres `runtime_events` | One row per pending event — kind, payload, the version slot it occupies, and its ttl | Read by the state-builder; stamped by the worker in the apply-ack transaction. |
+| Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
 | K8s Secret per Connection | Auth credentials (refresh tokens, api-keys) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
-| `agents` table — new columns | `runtime_protocol_version`, `runtime_capabilities`, `runtime_last_hello_at`, `runtime_agent_version` | Populated on every `hello`. |
+| `agents` table | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
 | Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
 

@@ -2,6 +2,7 @@ import type {
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
+  HarnessConfigCurrent,
   RuntimeChannelService,
 } from "agent-runtime-api";
 import type { Dispatcher } from "./dispatcher.js";
@@ -13,6 +14,10 @@ export interface ApplyStateDeps {
   dispatcher: Dispatcher;
   eventDispatcher: EventDispatcher;
   stateStore: StateStore;
+  /** The harness config the server should record, or undefined when this agent
+   *  has no harness-config driver. Read after the drivers run — the env driver
+   *  has just materialized the base URL model discovery needs. */
+  readHarnessConfig: () => Promise<HarnessConfigCurrent | undefined>;
   log: (msg: string) => void;
 }
 
@@ -56,6 +61,7 @@ export function createRuntimeChannelService(
         status: "stale",
         appliedVersion: local.lastAppliedVersion,
         settledEvents,
+        harnessConfigCurrent: await deps.readHarnessConfig(),
       };
     }
 
@@ -76,6 +82,9 @@ export function createRuntimeChannelService(
       deps.log,
     );
 
+    // One read for however this apply ends, taken now that the drivers are done.
+    const harnessConfigCurrent = await deps.readHarnessConfig();
+
     if (failures.length > 0) {
       const summary = failures.map((f) => `${f.kind}: ${f.message}`).join("; ");
       deps.log(
@@ -88,6 +97,7 @@ export function createRuntimeChannelService(
         appliedHash: local.lastAppliedHash,
         failures,
         settledEvents,
+        harnessConfigCurrent,
       };
     }
 
@@ -108,6 +118,7 @@ export function createRuntimeChannelService(
       appliedHash: input.state.hash,
       failures: [],
       settledEvents,
+      harnessConfigCurrent,
     };
   }
 }

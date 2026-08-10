@@ -148,6 +148,20 @@
       "when": 1785923409904,
       "tag": "0020_great_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786194168139,
+      "tag": "0021_eminent_beyonder",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786199278978,
+      "tag": "0022_dear_bullseye",
+      "breakpoints": true
     }
   ]
 }

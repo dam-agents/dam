@@ -3,14 +3,21 @@ import {
   harnessConfigCatalog,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
-import type { HarnessConfigChange, HarnessConfigService } from "api-server-api";
+import type {
+  HarnessConfigChange,
+  HarnessConfigService,
+  HarnessConfigSnapshotPatch,
+} from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
+import { getLogger } from "../../../core/logger.js";
 
 // Long TTL (matching workspace-seed) so a change doesn't expire before the agent is next up.
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createHarnessConfigService(deps: {
   runtimeMutator: RuntimeMutator;
+  snapshotRepo: HarnessConfigSnapshotRepo;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
   isSettled: (agentId: string) => Promise<boolean>;
@@ -39,6 +46,17 @@ export function createHarnessConfigService(deps: {
       return { settled: await deps.isSettled(agentId) };
     },
 
+    async snapshot(agentId) {
+      await requireOwned(agentId);
+      const [capabilities, snapshot] = await Promise.all([
+        deps.getCapabilities(agentId),
+        deps.snapshotRepo.read(agentId),
+      ]);
+      // Capabilities only exist once the agent has hello'd, which is also the
+      // only way anything could have been captured.
+      return { hasRun: capabilities != null, snapshot };
+    },
+
     async apply(agentId, change: HarnessConfigChange) {
       await requireOwned(agentId);
       const ts = now();
@@ -54,8 +72,54 @@ export function createHarnessConfigService(deps: {
         },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
+      // After the bump, never before: a snapshot must not claim a change that
+      // never fired. Declared only — the pod's report is what confirms it.
+      // Swallowed: the change has already fired by now, so failing the caller
+      // here would report "couldn't apply" for a change that did apply. The
+      // pod's next report rebuilds the snapshot anyway.
+      try {
+        await deps.snapshotRepo.merge(
+          agentId,
+          await declaredBy(agentId, change),
+          { confirmed: false },
+        );
+      } catch (err) {
+        getLogger().warn(
+          { err, agentId },
+          "harness-config: recording the declared snapshot failed",
+        );
+      }
     },
   };
+
+  /** What an apply asserts about the harness's file, as a snapshot patch.
+   *  `unset` clears: model/mode go null, a config option leaves the record. */
+  async function declaredBy(
+    agentId: string,
+    change: HarnessConfigChange,
+  ): Promise<HarnessConfigSnapshotPatch> {
+    const unset = new Set(change.unset ?? []);
+    const patch: HarnessConfigSnapshotPatch = {};
+    if (change.model !== undefined) patch.model = change.model;
+    if (unset.has("model")) patch.model = null;
+    if (change.mode !== undefined) patch.mode = change.mode;
+    if (unset.has("mode")) patch.mode = null;
+
+    const optionIds = [
+      ...Object.keys(change.configOptions ?? {}),
+      ...[...unset].filter((f) => f !== "model" && f !== "mode"),
+    ];
+    if (optionIds.length === 0) return patch;
+    // Per-key, not wholesale: an apply carries only the option it changed, so
+    // replacing the record would drop the others until the pod reports back.
+    const stored = await deps.snapshotRepo.read(agentId);
+    const configOptions = { ...(stored?.configOptions ?? {}) };
+    for (const [id, value] of Object.entries(change.configOptions ?? {})) {
+      configOptions[id] = value;
+    }
+    for (const id of unset) delete configOptions[id];
+    return { ...patch, configOptions };
+  }
 }
 
 // Unknown capabilities (agent never booted) count as supported so the UI doesn't flicker off on first start.

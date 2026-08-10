@@ -88,6 +88,7 @@ export {
   harnessConfigChoice,
   harnessConfigOptionGroup,
   harnessConfigCatalog,
+  harnessConfigCurrent,
   mergeMode,
   fileFormat,
   envContribution,
