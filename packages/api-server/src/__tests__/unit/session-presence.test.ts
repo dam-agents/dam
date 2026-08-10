@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Redis } from "ioredis";
-import { createSessionPresence } from "../../apps/api-server/session-presence.js";
+import { createSessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
 

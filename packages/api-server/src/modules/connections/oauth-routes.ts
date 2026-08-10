@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import type { Db } from "db";
-import type { OAuthEngine } from "../../modules/connections/infrastructure/oauth-engine.js";
-import type { ConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
-import type { SecretStore } from "../../modules/secret-store/index.js";
+import type { OAuthEngine } from "./infrastructure/oauth-engine.js";
+import type { ConnectionTemplateRegistry } from "./domain/connection-template.js";
+import type { SecretStore } from "../secret-store/index.js";
 import {
   createOAuthFlowService,
   type OAuthFlowPendingCtx,
-} from "../../modules/connections/services/oauth-flow.js";
-import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
-import { sanitizeReturnTo } from "../../modules/connections/domain/oauth-callback-url.js";
-import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+} from "./services/oauth-flow.js";
+import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import { sanitizeReturnTo } from "./domain/oauth-callback-url.js";
+import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export interface OAuthCallbackDeps {
   db: Db;
@@ -25,7 +25,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
 
   const targetOrigin = new URL(deps.uiBaseUrl).origin;
 
-  oauth.get("/api/oauth/callback", async (c) => {
+  oauth.get("/callback", async (c) => {
     const code = c.req.query("code");
     const state = c.req.query("state");
     const providerError = c.req.query("error");

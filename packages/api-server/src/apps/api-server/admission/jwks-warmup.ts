@@ -1,5 +1,5 @@
-import { getLogger } from "../../core/logger.js";
-import { pollUntilReady } from "../../modules/agents/infrastructure/poll-until-ready.js";
+import { getLogger } from "../../../core/logger.js";
+import { pollUntilReady } from "../../../modules/agents/infrastructure/poll-until-ready.js";
 
 export const JWKS_WARM_INITIAL_MS = 1_000;
 export const JWKS_WARM_MAX_MS = 10_000;
