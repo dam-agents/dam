@@ -47,12 +47,24 @@
 // posture (license consent, all permission groups approved, wildcard command
 // allowlist, model/mode/cost from the BOB_* env). The trust boundary is the
 // platform's Envoy gateway + K8s isolation, not Bob's approval layer.
+// ensureRules() re-asserts the platform instructions link on every start, which
+// image seeding alone can't do for an agent that predates the 2.0 layout.
 //
 // Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
 // ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import readline from "node:readline";
 import { DatabaseSync } from "node:sqlite";
@@ -64,6 +76,9 @@ const BOB_DB_PATH = join(BOB_HOME, ".bob", "db", "bob.db");
 const SETTINGS_PATH = join(BOB_HOME, ".bob", "settings", "settings.json");
 const SESSION_MAP_PATH = join(BOB_HOME, ".bob", "platform-shim-sessions.json");
 const UPLOADS_ROOT = resolve(BOB_HOME, ".uploads");
+const RULES_DIR = join(BOB_HOME, ".bob", "rules");
+const PLATFORM_RULE_PATH = join(RULES_DIR, "platform.md");
+const PLATFORM_INSTRUCTIONS = "/etc/AGENTS.md";
 
 const AVAILABLE_MODES = [
   { id: "agent", name: "Agent" },
@@ -119,6 +134,35 @@ export function ensureSettings() {
   };
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+}
+
+// The image seeds ~/.bob/rules/platform.md, but $HOME is seeded from the image
+// only on first boot (the init script's `.initialized` guard), so an agent
+// created before this layout keeps a 1.x `.bob/AGENTS.md` that 2.0 never reads
+// — it would run with no platform instructions at all. Re-assert the link on
+// every start. Never fatal: no rules is a degraded agent, not a dead one.
+export function ensureRules() {
+  try {
+    if (!existsSync(PLATFORM_INSTRUCTIONS)) return;
+    mkdirSync(RULES_DIR, { recursive: true });
+    if (
+      lstatSync(PLATFORM_RULE_PATH, { throwIfNoEntry: false })?.isSymbolicLink() &&
+      readlinkSync(PLATFORM_RULE_PATH) === PLATFORM_INSTRUCTIONS
+    ) {
+      return;
+    }
+    rmSync(PLATFORM_RULE_PATH, { force: true });
+    try {
+      symlinkSync(PLATFORM_INSTRUCTIONS, PLATFORM_RULE_PATH);
+    } catch {
+      // $HOME on the VM backend is unprivileged virtiofs, where a non-root
+      // symlink() EPERMs (same constraint the platform-base entrypoint hits on
+      // ~/.cache). A copy goes stale on image update; rules beat no rules.
+      copyFileSync(PLATFORM_INSTRUCTIONS, PLATFORM_RULE_PATH);
+    }
+  } catch (err) {
+    process.stderr.write(`[bob-acp-shim] rules bootstrap failed: ${err.message}\n`);
+  }
 }
 
 // ── sessionId ↔ taskId mapping ──────────────────────────────────────────────
@@ -621,6 +665,7 @@ function handleClientLine(line) {
 
 const settingsOnly = process.argv.includes("--settings-only");
 ensureSettings();
+ensureRules();
 if (!settingsOnly) {
   const clientStdin = readline.createInterface({ input: process.stdin });
   clientStdin.on("line", (line) => {

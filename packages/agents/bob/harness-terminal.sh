@@ -1,6 +1,7 @@
 #!/bin/sh
 # Write the platform settings posture (license consent, approval config,
-# model) before handing over to Bob's TUI.
+# model) and re-assert the platform instructions link before handing over to
+# Bob's TUI.
 node /app/bob-acp-shim.mjs --settings-only
 
 # 2.0 merged the code/advanced chat modes into agent; BOB_CHAT_MODE may still
