@@ -1,4 +1,4 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
+import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ interface Props {
 
 export function SandboxHomeHeader({ agent, display }: Props) {
   const setView = useStore((s) => s.setView);
+  const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
@@ -86,45 +87,54 @@ export function SandboxHomeHeader({ agent, display }: Props) {
         </>
       }
       actions={
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" aria-label="Sandbox actions">
-              <OverflowMenuVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {display.powerAction === "start" ? (
-              <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
-                Wake
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                disabled={display.powerAction === null}
-                onSelect={() => restart(agent.id)}
+        <>
+          <Button onClick={() => selectAgent(agent.id)}>
+            <Chat /> Open in chat
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Sandbox actions"
               >
-                Restart
+                <OverflowMenuVertical />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {display.powerAction === "start" ? (
+                <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
+                  Wake
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  disabled={display.powerAction === null}
+                  onSelect={() => restart(agent.id)}
+                >
+                  Restart
+                </DropdownMenuItem>
+              )}
+              {display.state === "running" && (
+                <>
+                  <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
+                    Pause — wakes on next use
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void onStop()}>
+                    Stop — until started again
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                disabled={deleteAgent.isPending}
+                onSelect={() => void onDelete()}
+              >
+                Delete Sandbox
               </DropdownMenuItem>
-            )}
-            {display.state === "running" && (
-              <>
-                <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
-                  Pause — wakes on next use
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void onStop()}>
-                  Stop — until started again
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              disabled={deleteAgent.isPending}
-              onSelect={() => void onDelete()}
-            >
-              Delete Sandbox
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
       }
     />
   );
