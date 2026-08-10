@@ -82,6 +82,12 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
  * gets replaced with wording that at least says where to look next.
  */
 export function describeSendError(raw: string): SendErrorDescription {
+  if (/prompt queue full/i.test(raw)) {
+    return {
+      message: "This conversation already has too many messages waiting.",
+      hint: "The agent works through one message at a time. Wait for it to catch up, then send this again.",
+    };
+  }
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     // agent-runtime already prefixes authentication_error frames with its own
@@ -102,6 +108,15 @@ export function describeSendError(raw: string): SendErrorDescription {
 
 export type ResumeErrorKind = "not-found" | "connection" | "other";
 
+/** Whether the agent says it has no such session: ACP's own `-32002`, or the
+ *  api-server's `NOT_FOUND`. Structured only — the wording changes, the codes
+ *  do not. A send hits this as readily as a resume does. */
+export function isMissingSessionError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const anyE = e as { code?: unknown; data?: { code?: unknown } };
+  return anyE.code === -32002 || anyE.data?.code === "NOT_FOUND";
+}
+
 /**
  * Classify a resume-time failure so the inline error card can render the
  * right message and action. Prefers structured error fields (ACP JSON-RPC
@@ -109,12 +124,8 @@ export type ResumeErrorKind = "not-found" | "connection" | "other";
  * latter breaks the moment server wording changes.
  */
 export function classifyResumeError(e: unknown): ResumeErrorKind {
-  if (e && typeof e === "object") {
-    const anyE = e as { code?: unknown; data?: { code?: unknown } };
-    if (anyE.code === -32002) return "not-found";
-    if (anyE.data?.code === "NOT_FOUND") return "not-found";
-    if (e instanceof DOMException) return "connection";
-  }
+  if (isMissingSessionError(e)) return "not-found";
+  if (e instanceof DOMException) return "connection";
   const msg = extractErrorMessage(e);
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";

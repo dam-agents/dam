@@ -153,6 +153,11 @@ export async function openConnection(
   const { stream, ws } = await wsStream(
     await wsUrl(agentId, opts?.passive ?? false),
   );
+  // addEventListener, not onclose: wsStream owns that slot for the stream.
+  let closeReason: string | null = null;
+  ws.addEventListener("close", (e) => {
+    closeReason = e.reason || null;
+  });
   const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {
@@ -221,5 +226,5 @@ export async function openConnection(
     }),
     stream,
   );
-  return { connection: withCloseRace(raw), ws };
+  return { connection: withCloseRace(raw, () => closeReason), ws };
 }
