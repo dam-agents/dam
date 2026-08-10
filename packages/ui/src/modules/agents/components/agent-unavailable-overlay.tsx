@@ -77,7 +77,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
-        <StartupTip />
+        <StartupTip sandbox={name} />
       </OverlayFrame>
     );
   }
@@ -95,7 +95,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
-        <StartupTip />
+        <StartupTip sandbox={agent.name} />
       </OverlayFrame>
     );
   }
@@ -119,11 +119,8 @@ export function AgentUnavailableOverlay({
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
-      {/* Tied to the spinner, not to a state list: a spinner means the wait is
-          the platform's to finish, which is exactly when a tip fills the time.
-          The icon states want an action from the user, and a tip would sit
-          between them and it. */}
-      {!Icon && <StartupTip />}
+      {/* Tied to the spinner: the icon states want an action, not a tip. */}
+      {!Icon && <StartupTip sandbox={agent.name} />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />

@@ -1,31 +1,46 @@
 import { getBrand } from "../../brand.js";
 
 /**
- * One-liners shown while a sandbox starts. Read at render, not at import: the
- * brand arrives from `/api/brand` after this module is first evaluated, so a
- * module-level array would freeze the bundled fallback name.
+ * The tip list from #3211, with the brand and the open sandbox filled in.
+ * Backticks mark a command; `StartupTip` renders those spans as code.
  *
- * Two rules for adding one:
- *
- * - **Keep it under ~100 characters.** That is what fits the tip card in two
- *   lines; a longer one wraps to three and shifts the centered column while
- *   the user is watching it.
- * - **Describe something the product does today.** A tip is read at the moment
- *   someone is deciding what this thing is for, so a stale one costs more than
- *   no tip at all.
+ * Called at render rather than evaluated at import: the brand arrives from
+ * `/api/brand` after this module is first read.
  */
-export function startupTips(): readonly string[] {
+export function startupTips(sandbox: string): readonly string[] {
   const { name, short } = getBrand();
   return [
-    "Sandboxes sleep when idle and wake when you open a chat. Files, sessions, and skills survive the nap.",
-    "Add a GitHub repo as a skill source, or drop a .md file on the Skills page to write one in place.",
-    `Publish a skill you wrote back to its source repo as a pull request, without leaving ${name}.`,
-    "Model, mode, and effort live on the sandbox's configuration page. Changes apply to your next session.",
-    "Link a Slack or Telegram channel to a sandbox and you can talk to the same agent from there.",
-    `There's a command line too — \`${short} chat\` opens a session straight from your terminal.`,
-    "Agents publish artifacts — pages, markdown, code, files — to your library, shareable by link.",
-    "A running sandbox holds compute against your budget. Stop an idle one to free room for another.",
+    "Idle sandboxes hibernate to save resources, then wake the instant you or a schedule ping them.",
+    "Your workspace survives between runs. Pick up exactly where the sandbox left off.",
+    `Open a local terminal with the ${name} CLI: \`${short} chat ${sandbox}\``,
     "Approvals are enforced outside the sandbox, so a compromised agent cannot approve itself.",
-    "Credentials are injected on the wire by the gateway. The agent never holds your tokens.",
+    "Connect a sandbox to Slack or Telegram, then talk to it there. Config › Channels.",
+    `Open this sandbox in VS Code: \`${short} ssh connect -x code ${sandbox}\``,
+    "Run a sandbox on a schedule to handle routine tasks. Config › Schedules.",
+    "Choose the trusted defaults network preset to stop a sandbox reaching untrusted domains.",
+    "Bring your local CLAUDE.md, .claude/, and skills straight into a cloud sandbox.",
+    "You do not have to wait your turn. Type while the sandbox works and your message queues.",
+    "File paths the sandbox writes in chat are clickable. They open the file beside the conversation.",
+    "Set the hibernation timeout to 0 to stop a sandbox sleeping, for background work with no open session.",
+    "Drop a .md file on the Skills page to turn it into a skill.",
+    "Drop a whole folder into Files to upload it. node_modules and .venv are skipped for you.",
+    "Publish a skill you wrote here as a pull request, then track it to get later updates back.",
+    "Artifacts outlive the sandbox. Share a public link, browse versions, or set an expiry.",
+    "Allow a blocked request once, always, or for the whole host. Each choice writes a real rule.",
+    `Add an MCP server by URL and ${name} works out its authorization for you. Config › Connections.`,
+    "Schedules take quiet hours and a timezone, so a nightly run stays quiet overnight.",
+    "Turn on ambient mode and a sandbox reads along in a Slack channel without an @-mention.",
+    "You can attach connections to inject API keys without baking secrets into the image.",
+    "Scheduled runs wake the sandbox automatically — no need to keep it running between jobs.",
+    "Template updates roll out new images without losing your sandbox's persistent state.",
+    "Network egress is deny-by-default. Connections allowlist only the hosts your agent needs.",
+    "Run one goal across several variants at once and watch them chart live with Experiments.",
+    "Point a knowledge base at your docs and ask it questions in chat.",
+    "Artifact previews open beside the chat, so you can read the result and keep talking.",
+    "Give an artifact an expiry and it deletes itself later. Useful for a one-off share.",
+    "Ask a sandbox to publish its work as an artifact, then share the link with colleagues.",
+    "An artifact keeps every version. Step back through its history in the preview.",
+    "See what a sandbox costs. Settings › Usage breaks spend down by model and by day.",
+    `Create an API key in Settings › API keys to use the ${name} CLI without a browser.`,
   ];
 }
