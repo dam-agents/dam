@@ -238,15 +238,6 @@ export const harnessConfigChoice = z.object({
 });
 export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
 
-/** The harness's own config file as the pod reads it back. `null` means the key
- *  is unset, so the harness's built-in default applies. */
-export const harnessConfigValues = z.object({
-  model: z.string().nullable(),
-  mode: z.string().nullable(),
-  configOptions: z.record(z.string().min(1), z.string()),
-});
-export type HarnessConfigValues = z.infer<typeof harnessConfigValues>;
-
 export const harnessConfigOptionGroup = z.object({
   // "model", "mode", or a configOption id (e.g. "effort").
   id: z.string().min(1),
@@ -268,22 +259,24 @@ export const harnessConfigCatalog = z.object({
 });
 export type HarnessConfigCatalog = z.infer<typeof harnessConfigCatalog>;
 
-/** What the pod reports about its harness config after an apply: the file's
- *  values plus what the provider offers. Discovery resolves its base URL from
- *  materialized env, so only the apply path can fill the list — `hello` runs
- *  before env exists and carries the values alone.
+/** The harness's own config, as the pod reads it back from the harness's file
+ *  plus (when asked) the provider. A `null` model/mode means the key is unset,
+ *  so the harness's built-in default applies.
  *
  *  `availableModels` is three-valued on purpose, because the platform stores it
  *  durably and must not lose a good list to a blip:
- *  - **absent** — this attempt could not resolve the list (no base URL yet, a
- *    non-2xx, a timeout). Says nothing about the provider, so the receiver keeps
- *    whatever it already holds.
+ *  - **absent** — not resolved on this read. Either the caller didn't ask, or
+ *    the attempt failed (no base URL yet, a non-2xx, a timeout). Says nothing
+ *    about the provider, so the receiver keeps whatever it already holds.
  *  - **null** — this harness declares no discovery source at all.
  *  - **array** — the provider answered; empty means it offers no chat models. */
-export const harnessConfigReport = harnessConfigValues.extend({
+export const harnessConfigCurrent = z.object({
+  model: z.string().nullable(),
+  mode: z.string().nullable(),
+  configOptions: z.record(z.string().min(1), z.string()),
   availableModels: z.array(harnessConfigChoice).nullable().optional(),
 });
-export type HarnessConfigReport = z.infer<typeof harnessConfigReport>;
+export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 
 export const capabilities = z.object({
   contributions: z.array(contributionKind),
@@ -326,14 +319,14 @@ export const applyStateResult = z.discriminatedUnion("status", [
     settledEvents: z.array(z.string()).default([]),
     // Absent from a pod predating this, or one whose manifest declares no
     // harness-config driver — the server then keeps whatever it holds.
-    harnessConfigCurrent: harnessConfigReport.optional(),
+    harnessConfigCurrent: harnessConfigCurrent.optional(),
   }),
   // Contributions already at ≥ the requested version; worker reconciles. Events still apply (own version) — settledEvents reports which.
   z.object({
     status: z.literal("stale"),
     appliedVersion: z.number().int().nonnegative(),
     settledEvents: z.array(z.string()).default([]),
-    harnessConfigCurrent: harnessConfigReport.optional(),
+    harnessConfigCurrent: harnessConfigCurrent.optional(),
   }),
 ]);
 export type ApplyStateResult = z.infer<typeof applyStateResult>;
@@ -344,9 +337,11 @@ export const helloInput = z.object({
   protocolVersion: z.literal("v1"),
   agentRuntimeVersion: z.string(),
   capabilities,
-  // The config file as it stands at boot. No discovered model list here: `hello`
-  // must not wait on a network call, and env hasn't materialized yet anyway.
-  harnessConfigCurrent: harnessConfigValues.optional(),
+  // The config file as it stands at boot, with no discovered model list: `hello`
+  // is what delivers capabilities, and the worker won't dispatch an apply until
+  // they land, so waiting on the provider here delays the first apply after
+  // every boot and wake. The apply reply carries the list instead.
+  harnessConfigCurrent: harnessConfigCurrent.optional(),
 });
 export type HelloInput = z.infer<typeof helloInput>;
 

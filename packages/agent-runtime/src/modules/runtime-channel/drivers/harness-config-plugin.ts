@@ -4,8 +4,6 @@ import type {
   EventHandler,
   HarnessConfigCurrent,
   HarnessConfigEventPayload,
-  HarnessConfigReport,
-  HarnessConfigValues,
   Plugin,
 } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
@@ -34,16 +32,16 @@ export type ApplyHarnessConfigFn = (
 export interface HarnessConfigPlugin extends Plugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
-  /** The config file alone — no discovery, so no network call. This is what
-   *  `hello` reports: it must not block boot on the provider. */
-  readValues(): HarnessConfigValues;
-  /** For the live UI read: an unresolvable model list collapses to null so the
-   *  panel falls back to the static catalog. */
-  readCurrent(): Promise<HarnessConfigCurrent>;
-  /** For the durable snapshot: distinguishes a list the provider actually
-   *  answered with from one this attempt simply couldn't resolve. `availableModels`
-   *  is absent in the latter case, so the recorded list survives. */
-  readReport(): Promise<HarnessConfigReport>;
+  /**
+   * The harness's config as it stands. The file is always read; the model list
+   * costs a provider round-trip, so the caller says whether it wants one.
+   *
+   * `hello` doesn't: it is what delivers capabilities, and the worker won't
+   * dispatch an apply until they land, so waiting on the provider there delays
+   * the first apply after every boot and wake. The apply path asks for it —
+   * that reply is where the list belongs.
+   */
+  readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   apply: ApplyHarnessConfigFn;
 }
 
@@ -115,28 +113,18 @@ export function createHarnessConfigPlugin(deps: {
     });
   };
 
-  const readValues = (): HarnessConfigValues =>
-    binding
+  const readCurrent = async (opts?: {
+    discover?: boolean;
+  }): Promise<HarnessConfigCurrent> => {
+    const values = binding
       ? readCurrentValues(binding, agentHome, log)
       : { model: null, mode: null, configOptions: {} };
+    if (opts?.discover === false) return values;
 
-  // Discover even when the file is missing, so a fresh agent still lists models.
-  const discover = async (): Promise<ModelDiscoveryOutcome> =>
-    binding
+    // Discover even when the file is missing, so a fresh agent still lists models.
+    const outcome: ModelDiscoveryOutcome = binding
       ? await discoverModels(binding.modelDiscovery, envReader.current())
       : { status: "not-configured" };
-
-  const readCurrent = async (): Promise<HarnessConfigCurrent> => {
-    const outcome = await discover();
-    return {
-      ...readValues(),
-      availableModels: outcome.status === "observed" ? outcome.models : null,
-    };
-  };
-
-  const readReport = async (): Promise<HarnessConfigReport> => {
-    const values = readValues();
-    const outcome = await discover();
     switch (outcome.status) {
       case "observed":
         return { ...values, availableModels: outcome.models };
@@ -144,7 +132,9 @@ export function createHarnessConfigPlugin(deps: {
         // A permanent property of this harness, so worth recording as "none".
         return { ...values, availableModels: null };
       case "unavailable":
-        // Omitted, not null: the server keeps whatever it already holds.
+        // Omitted, not null: the receiver keeps whatever it already holds. The
+        // live UI read treats absent and null alike — both fall back to the
+        // static catalog — so one shape serves both callers.
         return values;
     }
   };
@@ -153,9 +143,7 @@ export function createHarnessConfigPlugin(deps: {
     name: IMPL_NAME,
     supported: binding !== undefined,
     catalog: binding?.catalog,
-    readValues,
     readCurrent,
-    readReport,
     apply,
     // Binding already captured above; the registry routes the event here.
     bindEvent(_kind: string, _binding: DriverBinding): EventHandler {
@@ -168,8 +156,8 @@ function readCurrentValues(
   binding: HarnessConfigBinding,
   agentHome: string,
   log: (msg: string) => void,
-): HarnessConfigValues {
-  const empty: HarnessConfigValues = {
+): Omit<HarnessConfigCurrent, "availableModels"> {
+  const empty: Omit<HarnessConfigCurrent, "availableModels"> = {
     model: null,
     mode: null,
     configOptions: {},

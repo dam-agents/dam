@@ -2,7 +2,7 @@ import type {
   ApplyStateInput,
   ApplyStateResult,
   DriverFailure,
-  HarnessConfigReport,
+  HarnessConfigCurrent,
   RuntimeChannelService,
 } from "agent-runtime-api";
 import type { Dispatcher } from "./dispatcher.js";
@@ -17,7 +17,7 @@ export interface ApplyStateDeps {
   /** The harness config the server should record, or undefined when this agent
    *  has no harness-config driver. Read after the drivers run — the env driver
    *  has just materialized the base URL model discovery needs. */
-  readHarnessConfig: () => Promise<HarnessConfigReport | undefined>;
+  readHarnessConfig: () => Promise<HarnessConfigCurrent | undefined>;
   log: (msg: string) => void;
 }
 

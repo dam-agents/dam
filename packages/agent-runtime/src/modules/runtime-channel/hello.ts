@@ -1,4 +1,4 @@
-import type { Capabilities, HarnessConfigValues } from "agent-runtime-api";
+import type { Capabilities, HarnessConfigCurrent } from "agent-runtime-api";
 import type { HarnessClient } from "./harness-client.js";
 import type { StateStore } from "./state-store.js";
 
@@ -9,9 +9,10 @@ export async function runHello(opts: {
   capabilities: Capabilities;
   agentRuntimeVersion: string;
   /** The harness config file as it stands, so the server's snapshot follows a
-   *  hand-edit even on a boot with nothing to apply. Undefined when the
-   *  manifest declares no harness-config driver. */
-  harnessConfigCurrent: HarnessConfigValues | undefined;
+   *  hand-edit even on a boot with nothing to apply. Carries no model list —
+   *  see `readCurrent`. Undefined when the manifest declares no harness-config
+   *  driver. */
+  harnessConfigCurrent: HarnessConfigCurrent | undefined;
   log: (msg: string) => void;
 }): Promise<boolean> {
   const local = opts.stateStore.read();

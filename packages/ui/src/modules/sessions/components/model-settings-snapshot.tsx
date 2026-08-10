@@ -44,7 +44,9 @@ export function StaleModelCallout({ model }: { model: string }) {
  *  never ran, which is not evidence of anything. */
 export function unavailableModel(values: {
   model: string | null;
-  availableModels: { value: string }[] | null;
+  /** Absent when the read couldn't resolve a list, null when the harness has no
+   *  discovery — neither is evidence, so both withhold the verdict. */
+  availableModels?: { value: string }[] | null;
 }): string | null {
   const { model, availableModels } = values;
   if (!model || !availableModels) return null;

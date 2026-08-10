@@ -28,8 +28,9 @@ export function createHelloHandler(deps: {
       });
 
       // The pod read its own file, so this confirms what an apply only declared.
-      // No `availableModels`: discovery can't run this early, and merging leaves
-      // a list an earlier apply established intact.
+      // `hello` deliberately carries no model list — it would cost a provider
+      // round-trip on the path that delivers capabilities — and an absent one
+      // leaves whatever an earlier apply established intact.
       if (input.harnessConfigCurrent) {
         try {
           await deps.snapshotWriter.merge(agentId, input.harnessConfigCurrent, {

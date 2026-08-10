@@ -6,7 +6,7 @@ import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.
 import type { StateBuilder } from "./state-builder.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 import type { DriverFailure } from "api-server-api";
-import type { HarnessConfigReport } from "agent-runtime-api";
+import type { HarnessConfigCurrent } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
 
 export interface IsAgentRunning {
@@ -87,7 +87,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     };
     // Present on both outcomes; absent from a pod predating it or one with no
     // harness-config driver.
-    const reported: HarnessConfigReport | undefined =
+    const reported: HarnessConfigCurrent | undefined =
       outcome.harnessConfigCurrent;
     switch (outcome.status) {
       case "stale":
