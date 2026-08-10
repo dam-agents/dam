@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { resourceNameSchema } from "../connections/schemas.js";
+
 /** A repo-relative subdirectory to scan for skills: relative, no `..`
  *  traversal, surrounding slashes trimmed so `/foo/` and `foo` are equal. */
 export const skillSourcePathSchema = z
@@ -221,6 +223,57 @@ export const skillUninstallInputSchema = z.object({
   agentId: z.string().min(1),
   source: z.string().url(),
   name: z.string().min(1),
+});
+
+/** One skill inside a set. `source` is the source's **git URL**, not its id —
+ *  the same identity `agent_skills` installs on, so a set survives its source
+ *  row being deleted and re-added, and two sources carrying an `xlsx` stay
+ *  distinguishable. */
+export const skillSetEntrySchema = z.object({
+  source: z.string().url(),
+  name: z.string().min(1),
+});
+
+/** Same rule as every other user-named resource, from the one shared
+ *  definition — so client and server can't drift on what is legal — with a
+ *  skill-set example rather than a Connection's. */
+export const skillSetNameSchema = resourceNameSchema("my-skill-set");
+
+export const skillSetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  skills: z.array(skillSetEntrySchema),
+  createdAt: z.string(),
+});
+
+export const skillSetCreateInputSchema = z.object({
+  name: skillSetNameSchema,
+  skills: z.array(skillSetEntrySchema).min(1).max(500),
+});
+
+export const skillSetDeleteInputSchema = z.object({ id: z.string().min(1) });
+
+export const skillSetApplyInputSchema = z.object({
+  agentId: z.string().min(1),
+  setIds: z.array(z.string().min(1)).min(1).max(50),
+});
+
+/** Why an entry could not be applied. A closed set of verdicts rather than a
+ *  message: the client renders its own copy, so a server-authored sentence
+ *  would be a string the UI has to trust. Mirrors how `ScanFailure` carries a
+ *  code instead of prose. */
+export const skillSetSkipReasonSchema = z.enum([
+  "source-not-connected",
+  "not-in-source",
+]);
+
+export const skillSetApplyResultSchema = z.object({
+  /** Full installed list after the apply — authoritative, like every other
+   *  install path's return. */
+  installed: z.array(skillRefSchema),
+  skipped: z.array(
+    skillSetEntrySchema.extend({ reason: skillSetSkipReasonSchema }),
+  ),
 });
 
 /** Many installs and uninstalls applied under a single outbox bump, so a bulk

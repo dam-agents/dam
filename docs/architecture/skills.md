@@ -102,6 +102,16 @@ A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a su
 
 **Resolving that state.** A publish record also carries `prState`, the last attempt's timestamp, and an ETag, filled in by a periodic job rather than by the `state` query — so GitHub cost tracks the number of unresolved pull requests, not how many users have the Skills page open. The pass is deliberately flat — no backoff, no failure accounting, no per-record state machine: each unresolved record is attempted at most hourly (ten per ten-minute tick, oldest attempt first, never-attempted before that). An attempt is one **anonymous** read from the api-server — which preserves the invariant below: anonymous is not "with credentials", so no credential moves — escalating on a `404` (private as much as gone) to the publishing agents' own pods, where the paired gateway injects the owner's token; only pods that are **already warm** answer, because a badge is never worth waking a hibernated agent, and whatever the attempt learned, the record is stamped and waits its hour. That rule is about background work, not the subsystem: the in-product preview escalates to the pod the same way but deliberately **does** wake, because it serves a request a user made (see [api-server skills service](#api-server-skills-service)). That is acceptable because `merged` and `closed` are terminal: once observed they are persisted and never re-read, so the badge only ever gets more accurate. The working set shrinks by resolution (terminal states are excluded from the candidate query) and by agent deletion (the skills cleanup saga removes an agent's records), and the hourly cadence holds the anonymous 60-requests/hour-per-IP ceiling until roughly fifty concurrently unresolved records — far above any observed population; scheduling sophistication is deliberately deferred until reality demands it. Conditional requests are **not** part of that budget: an anonymous `304` is charged exactly like a `200`, so the ETag saves bandwidth only.
 
+### Skill Set
+
+A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique per owner) — so configuring a sandbox's skills is not manual work repeated from memory on each new one.
+
+A set stores **`(gitUrl, name)` pairs only**. The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct. No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today. Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
+
+**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. Entries it cannot apply are reported as closed-set verdicts — the source isn't connected, or it is but no longer serves that name — while a scan *failure* propagates as its own verdict instead, so a credential problem is never reported as a missing skill.
+
+Names reuse the Connection name rule from one shared definition. Renaming is absent: there is no set-management surface yet, so a typo means delete and recreate.
+
 ### Skill Path
 
 An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits the default path declared in platform-base's [`runtime-manifest.yaml`](../../packages/platform-base/runtime-manifest.yaml).
@@ -267,6 +277,7 @@ Skills are entirely an **Application State** subsystem ([persistence](persistenc
 | Table | Key | Owner |
 |---|---|---|
 | `skill_sources` | `(id)`, unique on `(owner, gitUrl)` | per-user |
+| `skill_sets` | `(id)`, unique on `(owner, name)` | per-user |
 | `agent_skills` | `(agentId, source, name)` | per-agent |
 | `agent_skill_publishes` | `(id)`, indexed by `agentId` | per-agent |
 

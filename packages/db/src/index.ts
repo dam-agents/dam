@@ -5,6 +5,7 @@ export {
   identityLinks,
   telegramConversations,
   skillSources,
+  skillSets,
   agentSkills,
   agentSkillPublishes,
   agentEnv,

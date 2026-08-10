@@ -28,6 +28,11 @@ import {
   skillRefSchema,
   skillRefreshSourceInputSchema,
   skillSchema,
+  skillSetApplyInputSchema,
+  skillSetApplyResultSchema,
+  skillSetCreateInputSchema,
+  skillSetDeleteInputSchema,
+  skillSetSchema,
   skillSourceSchema,
   skillStateInputSchema,
   skillStateOutputSchema,
@@ -118,6 +123,34 @@ export const skillsRouter = t.router({
     .input(skillApplyBatchInputSchema)
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.applyBatch(input)),
+
+  // A skill set belongs to the user, not to a sandbox, so list/create/delete
+  // take no agentId and need no agent binding check. Only `apply` targets one.
+  sets: t.router({
+    list: readAgentProcedure
+      .output(z.array(skillSetSchema))
+      .query(({ ctx }) => ctx.skills.listSets()),
+
+    create: manageAgentsProcedure
+      .input(skillSetCreateInputSchema)
+      .output(skillSetSchema)
+      .mutation(({ ctx, input }) => ctx.skills.createSet(input)),
+
+    delete: manageAgentsProcedure
+      .input(skillSetDeleteInputSchema)
+      .mutation(({ ctx, input }) => ctx.skills.deleteSet(input.id)),
+
+    // Not `apply`: tRPC reserves it as a router key (Function.prototype.apply),
+    // and the collision only surfaces when the router is constructed at boot —
+    // tsc and the unit tests both pass.
+    applyToAgent: manageAgentsProcedure
+      .input(skillSetApplyInputSchema)
+      .output(skillSetApplyResultSchema)
+      .mutation(({ ctx, input }) => {
+        checkAgentBinding(ctx, input.agentId);
+        return ctx.skills.applySets(input.agentId, input.setIds);
+      }),
+  }),
 
   // Ownership is enforced inside the service via ensureAgentReachable →
   // owner-scoped agentsRepo.get, same as install.

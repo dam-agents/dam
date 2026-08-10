@@ -16,6 +16,9 @@ import type {
   SkillsService,
   SkillsState,
   SkillUninstallInput,
+  SkillApplyBatchInput,
+  SkillSetEntry,
+  SkillSetSkipReason,
 } from "api-server-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
@@ -25,6 +28,7 @@ import {
   type SkillsRepository,
 } from "../infrastructure/skills-repository.js";
 import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
+import type { SkillSetsRepository } from "../infrastructure/skill-sets-repository.js";
 import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -65,6 +69,7 @@ export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
+  skillSetsRepo: SkillSetsRepository;
   agentSkillsRepo: AgentSkillsRepository;
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
@@ -792,6 +797,151 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       return deps.agentSkillsRepo.listSkills(agentId);
+    },
+
+    async listSets() {
+      return deps.skillSetsRepo.list(deps.owner);
+    },
+
+    async createSet(input) {
+      const seen = new Set<string>();
+      for (const entry of input.skills) {
+        const key = `${entry.source} ${entry.name}`;
+        if (seen.has(key)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `skill listed twice: ${entry.name}`,
+          });
+        }
+        seen.add(key);
+      }
+      let set;
+      try {
+        set = await deps.skillSetsRepo.create(input, deps.owner);
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `A skill set named "${input.name}" already exists.`,
+          });
+        }
+        throw err;
+      }
+      // A set is a reusable instruction to fetch code from named repositories,
+      // so its creation deserves the same answerability as an install.
+      securityLog("info", "skill.set.create", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        target: set.id,
+        result: "success",
+        detail: { name: set.name, skills: set.skills.length },
+      });
+      return set;
+    },
+
+    async deleteSet(id) {
+      const existing = await deps.skillSetsRepo.get(id, deps.owner);
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "skill set not found",
+        });
+      }
+      await deps.skillSetsRepo.delete(id, deps.owner);
+      securityLog("info", "skill.set.delete", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        target: id,
+        result: "success",
+        detail: { name: existing.name },
+      });
+    },
+
+    async applySets(agentId, setIds) {
+      const sets = await Promise.all(
+        setIds.map((id) => deps.skillSetsRepo.get(id, deps.owner)),
+      );
+      const missing = setIds.filter((_, i) => sets[i] === null);
+      if (missing.length > 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `skill set not found: ${missing.join(", ")}`,
+        });
+      }
+
+      // Union across the chosen sets: two sets sharing a skill install it once.
+      const wanted = new Map<string, SkillSetEntry>();
+      for (const set of sets) {
+        for (const entry of set!.skills) {
+          wanted.set(`${entry.source} ${entry.name}`, entry);
+        }
+      }
+
+      // The merged source list, so system and template sources count too — not
+      // just the user's own rows.
+      const sources = await this.listSources(agentId);
+      const connected = new Map(sources.map((s) => [s.gitUrl, s]));
+
+      const skipped: (SkillSetEntry & { reason: SkillSetSkipReason })[] = [];
+      const byGitUrl = new Map<string, SkillSetEntry[]>();
+      for (const entry of wanted.values()) {
+        const source = connected.get(entry.source);
+        if (!source) {
+          skipped.push({ ...entry, reason: "source-not-connected" });
+          continue;
+        }
+        const list = byGitUrl.get(entry.source) ?? [];
+        list.push(entry);
+        byGitUrl.set(entry.source, list);
+      }
+
+      // One scan per distinct source, through the same cached dispatch `list`
+      // uses. A scan failure is left to propagate as its own verdict rather than
+      // being reported as `not-in-source`, which would blame the set for what is
+      // really a transport or credential problem.
+      const installed = await deps.agentSkillsRepo.listSkills(agentId);
+      const alreadyOn = new Set(installed.map((r) => `${r.source} ${r.name}`));
+      const toInstall: SkillApplyBatchInput["install"] = [];
+      for (const [gitUrl, entries] of byGitUrl) {
+        const source = connected.get(gitUrl)!;
+        const { skills } = await this.list(source.id, agentId);
+        const scanned = new Map(skills.map((s) => [s.name, s]));
+        for (const entry of entries) {
+          const match = scanned.get(entry.name);
+          if (!match) {
+            skipped.push({ ...entry, reason: "not-in-source" });
+            continue;
+          }
+          // Already on at the same content: nothing to do. Re-installing would
+          // be a wasted write and a misleading security-log line.
+          const ref = installed.find(
+            (r) => r.source === entry.source && r.name === entry.name,
+          );
+          if (
+            alreadyOn.has(`${entry.source} ${entry.name}`) &&
+            ref?.contentHash === match.contentHash
+          ) {
+            continue;
+          }
+          toInstall.push({
+            source: match.source,
+            name: match.name,
+            version: match.version,
+            contentHash: match.contentHash,
+          });
+        }
+      }
+
+      // Empty uninstall list is the additive guarantee, enforced here rather
+      // than trusted to callers: a set adds skills, it never turns one off.
+      const after = await this.applyBatch({
+        agentId,
+        install: toInstall,
+        uninstall: [],
+      });
+      return { installed: after, skipped };
     },
 
     async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {

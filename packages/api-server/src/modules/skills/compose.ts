@@ -16,6 +16,7 @@ import {
 } from "./infrastructure/public-archive-scanner.js";
 import { createScanCache } from "./infrastructure/scan-cache.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
+import { createSkillSetsRepository } from "./infrastructure/skill-sets-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
 import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
 import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
@@ -69,6 +70,7 @@ export function composeSkillsModule(
   const k8s = createK8sClient(api, namespace);
   return createSkillsService({
     repo: createSkillsRepository(db, seedSources),
+    skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
     agentsRepo: createAgentsRepository(k8s),
     templatesRepo,
