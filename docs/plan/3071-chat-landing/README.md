@@ -60,7 +60,7 @@ second resolves the conflict.
 | #  | Title | Scope | Depends on | Done |
 |----|-------|-------|------------|------|
 | 01 | [Sandbox rows open chat and start a sleeping sandbox](./01-rows-open-chat.md) | Home row click → chat; auto-wake on chat entry; e2e helper | — | ✅ |
-| 02 | [Launch options in the new-session state](./02-launch-options.md) | extract the Open-in dialogs; launcher row in the empty chat; drop the menu from the config header | 01 | |
+| 02 | [Launch options in the new-session state](./02-launch-options.md) | extract the Open-in dialogs; launcher row in the empty chat; drop the menu from the config header | 01 | ✅ |
 | 03 | [`+ New` opens a chat session directly](./03-new-opens-chat.md) | sessions sidebar dropdown → plain button | 02 | |
 | 04 | [Configuration is visible in chat and reachable from the list](./04-configuration-discoverable.md) | #3070: always-visible chat ⋮; "Configure sandbox" on the row menu | 01 | |
 

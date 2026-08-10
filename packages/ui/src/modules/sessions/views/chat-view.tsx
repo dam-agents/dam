@@ -76,6 +76,7 @@ import {
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
+import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
@@ -399,13 +400,19 @@ export function ChatView() {
         configure: "Configure knowledge base",
         delete: "Delete Knowledge Base",
         modelTitle: "Open knowledge base configuration",
+        newSessionHint: "Send a message to begin a new session",
       }
     : {
         actionsAria: "Sandbox actions",
         configure: "Configure sandbox",
         delete: "Delete Sandbox",
         modelTitle: "Model — change in sandbox configuration",
+        newSessionHint: "Send a message to begin or open a new session in:",
       };
+  // The launcher offers terminal and editor access to a *sandbox*; the
+  // knowledge-base surface keeps its own vocabulary, so its hint ends the
+  // sentence instead of introducing the row.
+  const showLauncher = Boolean(selectedAgent) && !isKnowledgeBaseView;
 
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
@@ -624,7 +631,9 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
+                  {/* min-h-full lets the new-session state centre itself in the
+                      pane; with a transcript the content outgrows it anyway. */}
+                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -663,14 +672,20 @@ export function ChatView() {
                           </p>
                         </div>
                       ) : (
-                        <div className="py-24 text-center">
+                        <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
-                            Start a conversation
+                            Start a new session
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Send a message to begin a new session with this
-                            agent
+                            {surfaceCopy.newSessionHint}
                           </p>
+                          {showLauncher && selectedAgent && (
+                            <NewSessionLauncher
+                              agentId={selectedAgent}
+                              agentName={selectedAgentName ?? ""}
+                              onNewTerminal={handleNewTerminal}
+                            />
+                          )}
                         </div>
                       ))}
                     {messages.map((m, mi) => (

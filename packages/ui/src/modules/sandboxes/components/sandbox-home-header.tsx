@@ -20,7 +20,6 @@ import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
-import { OpenInMenu } from "./open-in-menu.js";
 
 interface Props {
   agent: AgentView;
@@ -87,52 +86,45 @@ export function SandboxHomeHeader({ agent, display }: Props) {
         </>
       }
       actions={
-        <>
-          <OpenInMenu agent={agent} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Sandbox actions"
-              >
-                <OverflowMenuVertical />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {display.powerAction === "start" ? (
-                <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
-                  Wake
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  disabled={display.powerAction === null}
-                  onSelect={() => restart(agent.id)}
-                >
-                  Restart
-                </DropdownMenuItem>
-              )}
-              {display.state === "running" && (
-                <>
-                  <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
-                    Pause — wakes on next use
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void onStop()}>
-                    Stop — until started again
-                  </DropdownMenuItem>
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                tone="danger"
-                disabled={deleteAgent.isPending}
-                onSelect={() => void onDelete()}
-              >
-                Delete Sandbox
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" aria-label="Sandbox actions">
+              <OverflowMenuVertical />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {display.powerAction === "start" ? (
+              <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
+                Wake
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </>
+            ) : (
+              <DropdownMenuItem
+                disabled={display.powerAction === null}
+                onSelect={() => restart(agent.id)}
+              >
+                Restart
+              </DropdownMenuItem>
+            )}
+            {display.state === "running" && (
+              <>
+                <DropdownMenuItem onSelect={() => suspend.pause(agent.id)}>
+                  Pause — wakes on next use
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void onStop()}>
+                  Stop — until started again
+                </DropdownMenuItem>
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              tone="danger"
+              disabled={deleteAgent.isPending}
+              onSelect={() => void onDelete()}
+            >
+              Delete Sandbox
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       }
     />
   );
