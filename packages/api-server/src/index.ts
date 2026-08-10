@@ -495,7 +495,6 @@ const slackWorker = slackGatewayFactory
       { name: config.brand.name, short: config.brand.short },
       isTermsAccepted,
       config.uiBaseUrl,
-      undefined, // emit — keep the default in-process event bus
       turnAttendance,
     )
   : undefined;

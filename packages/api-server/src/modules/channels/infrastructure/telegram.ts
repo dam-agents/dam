@@ -375,22 +375,19 @@ export function createTelegramWorker(deps: {
    *  surface; from the brand config, matching the Slack worker. */
   brandShort: string;
   /** Display brand name, used where the agent is told where its owner acts
-   *  (network-access guidance). Falls back to `brandShort` when unset. */
-  brandName?: string;
+   *  (network-access guidance). */
+  brandName: string;
   emit?: (event: DomainEvent) => void;
   /** Marks the agent as channel-driven for the length of each turn, so the
    *  egress gate can refuse a request no Telegram participant could approve.
-   *  Defaults to a no-op for tests that don't exercise it. */
-  attendance?: ChannelTurnAttendance;
+   *  Required: a missing wiring here would silently restore the stall this
+   *  exists to prevent. */
+  attendance: ChannelTurnAttendance;
   /** Test seam; defaults to the Bot API getChatMember check. */
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
-  const attendance: ChannelTurnAttendance = deps.attendance ?? {
-    openChannelTurn: () => () => {},
-  };
-  const brandName = deps.brandName ?? deps.brandShort;
-  const { botToken, makeAcpClient, agents } = deps;
+  const { botToken, makeAcpClient, agents, attendance, brandName } = deps;
 
   // One bot for the install. The poller and the in-memory turn state below
   // are single-holder: the Bot API admits one getUpdates consumer per token,

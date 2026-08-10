@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import type { DomainEvent } from "../../events.js";
 import { EventType } from "../../events.js";
@@ -53,6 +54,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
+    stubTurnAttendance(),
     (e) => events.push(e),
   );
 

@@ -19,6 +19,7 @@ import {
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 
 const OWNER = "kc|owner-1";
 
@@ -80,8 +81,8 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
+    opts.attendance ?? stubTurnAttendance(),
     (e) => events.push(e),
-    opts.attendance,
   );
 
   return {
