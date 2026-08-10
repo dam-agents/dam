@@ -266,7 +266,10 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         const turn = connection.prompt({
           sessionId,
           prompt: promptBlocks,
-          _meta: { platform: { promptId } },
+          // `surface` tells the runtime a person is typing here rather than a
+          // messenger relaying a thread — a session continued from a channel
+          // is otherwise answered under that channel's reply contract.
+          _meta: { platform: { promptId, surface: "ui" } },
         });
         // A browser discards a send on a closing socket without telling anyone,
         // so an open socket is as close to delivery as the client can observe.

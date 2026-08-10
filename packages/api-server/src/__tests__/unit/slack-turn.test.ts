@@ -912,6 +912,30 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain("don't retry the same host in a loop");
   });
 
+  it("scopes the reply contract to the message it arrives with", async () => {
+    // The same session can be continued from the UI, where "only tool calls
+    // reach the channel" would send the answer to Slack instead of to the
+    // person typing. The contract has to say it speaks for this message only.
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain(
+      "apply to the message they arrive with, not to this conversation",
+    );
+    expect(prompt).toContain("a later message carries its own");
+    // Names what to do with an unframed message, since a turn from the CLI or a
+    // schedule arrives carrying no block of its own.
+    expect(prompt).toContain("didn't come from Slack");
+    expect(prompt).toContain("post to Slack for it only if you're asked to");
+  });
+
   it("marks the agent channel-driven for the turn and releases it after", async () => {
     const rec = recordingAttendance();
     let openDuringTurn = false;

@@ -2863,3 +2863,179 @@ describe("createAcpRuntime — prompt delivery notifications", () => {
     expect(promoted.params._meta).toBeUndefined();
   });
 });
+
+const directPromptRequest = (
+  id: number,
+  sessionId = SID,
+  // `null` for a prompt that names no surface — an explicit `undefined` would
+  // fall back to the default below.
+  surface: string | null = "ui",
+) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/prompt",
+    params: {
+      sessionId,
+      prompt: [{ type: "text", text: "what did we decide?" }],
+      _meta: {
+        platform: { promptId: "p1", ...(surface ? { surface } : {}) },
+      },
+    },
+  });
+
+const promptTexts = (frame: unknown): string[] =>
+  (
+    (frame as { params: { prompt: { text: string }[] } }).params.prompt ?? []
+  ).map((b) => b.text);
+
+describe("createAcpRuntime — direct-turn framing", () => {
+  const channelSession = () => {
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { mode: "chat", type: "channel_slack", threadTs: "C123:170.1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    return store;
+  };
+
+  it("frames a prompt typed here when the session also lives in a channel thread", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+
+    // The contract leads, the person's own text follows it unchanged.
+    const texts = promptTexts(fa.sent[0]);
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toContain("didn't arrive from a messenger");
+    expect(texts[0]).toContain("Don't call reply, react or no_reply_needed");
+    expect(texts[1]).toBe("what did we decide?");
+  });
+
+  it("leaves an ordinary session's prompt alone — no channel contract to contradict", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { mode: "chat", type: "regular" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+
+    expect(promptTexts(fa.sent[0])).toEqual(["what did we decide?"]);
+  });
+
+  it("leaves an unmarked prompt alone — a channel worker relaying its own thread", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1, SID, null));
+
+    expect(promptTexts(fa.sent[0])).toEqual(["what did we decide?"]);
+  });
+
+  it("frames a queued prompt too", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+    c.pushMessage(directPromptRequest(2));
+    fa.pushLine(agentPromptResponse(outboundId(fa.sent[0])));
+
+    expect(promptTexts(fa.sent[1])[0]).toContain(
+      "didn't arrive from a messenger",
+    );
+  });
+
+  it("keeps the framing out of the message other viewers see", () => {
+    // The framing belongs to the agent, not to the transcript: it goes on the
+    // forwarded copy only, so a reader replaying the log sees what was typed.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: outboundId(fa.sent[0]),
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
+    a.pushMessage(directPromptRequest(2));
+    a.remoteClose();
+
+    const a2 = makeFakeChannel();
+    runtime.attach(a2.channel);
+    a2.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
+
+    const chunks = a2.sent
+      .map((f) => JSON.parse(f))
+      .filter((p) => p.params?.update?.sessionUpdate === "user_message_chunk")
+      .map((p) => p.params.update.content.text);
+    expect(chunks).toContain("what did we decide?");
+    expect(
+      chunks.some((t: string) => t.includes("didn't arrive from a messenger")),
+    ).toBe(false);
+  });
+
+  it("strips surface from the forwarded frame along with the rest of platform meta", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+
+    expect((fa.sent[0] as any).params._meta).toBeUndefined();
+  });
+});
