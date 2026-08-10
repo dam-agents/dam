@@ -49,7 +49,7 @@ buttons hovered), `DAM-4.png` (terminal dialog), `DAM-3.png` (editor dialog).
 4. **Replace the menu on the configuration header** —
    `packages/ui/src/modules/sandboxes/components/sandbox-home-header.tsx`: remove the
    `<OpenInMenu agent={agent} />` element and its import (issue scope item 3), and put a single
-   primary `Open in chat` button in its place, calling `selectAgent(agent.id)`. The four-item
+   primary `Open chat` button in its place, calling `selectAgent(agent.id)`. The four-item
    menu no longer earns its keep — its chat item is the one route anybody wants from here, and
    the other three now live in the new-session state that button lands on. This matches the
    knowledge-base config page, which already carries one "Open knowledge base" button.
@@ -68,7 +68,7 @@ buttons hovered), `DAM-4.png` (terminal dialog), `DAM-3.png` (editor dialog).
 - [ ] Both dialogs name the open sandbox in their subtitle and link the CLI quickstart.
 - [ ] The knowledge-base chat's empty state shows no launcher row.
 - [ ] The pending-launch ("Starting the run…") empty state is unchanged.
-- [ ] The sandbox configuration page header has no "Open in" menu; it carries an "Open in chat" button that lands in chat, and its ⋮ menu still works.
+- [ ] The sandbox configuration page header has no "Open in" menu; it carries an "Open chat" button that lands in chat, and its ⋮ menu still works.
 - [ ] `open-in-menu.tsx` is gone and nothing imports it.
 - [ ] `mise run --force ui:check` and `mise run --force ui:test` pass.
 

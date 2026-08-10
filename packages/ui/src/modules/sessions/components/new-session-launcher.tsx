@@ -10,9 +10,6 @@ import {
 
 type LocalTarget = "terminal" | "ide";
 
-/** The other ways into a sandbox, offered beside the message box: chat is the
- *  default now, so these sit where a new session starts rather than behind a
- *  menu on a page the user no longer passes through. */
 export function NewSessionLauncher({
   agentId,
   agentName,

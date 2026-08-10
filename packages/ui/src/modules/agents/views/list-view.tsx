@@ -24,6 +24,7 @@ export function ListView() {
   );
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
 
@@ -102,6 +103,8 @@ export function ListView() {
               {...rowProps(agent)}
               temporaryDraw={drawByDriver.get(agent.id)}
               onSelect={() => selectAgent(agent.id)}
+              onConfigure={() => navigateToSandboxHome(agent.id)}
+              configureLabel="Configure sandbox"
               onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}
             />

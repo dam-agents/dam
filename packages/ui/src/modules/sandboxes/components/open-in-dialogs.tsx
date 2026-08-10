@@ -6,8 +6,6 @@ import { externalLinkProps } from "@/lib/external-link";
 
 import { CLI_REFERENCE_URL } from "../../../constants.js";
 
-/** The two local ways into a sandbox, each a copyable CLI command keyed on the
- *  agent id — stable and shell-quote-free, unlike the name. */
 interface Props {
   agentId: string;
   agentName: string;
@@ -47,7 +45,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
         <span className="text-sm font-medium text-foreground">
           Attach to the sandbox
         </span>
-        <CopyableCommand command={`dam chat ${agentId}`} />
+        <CopyableCommand command={`dam chat ${agentId}`} size="compact" />
         <CliQuickstartNote />
       </DialogBody>
     </Modal>
@@ -73,11 +71,17 @@ export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
         <span className="text-sm font-medium text-foreground">
           Open in VS Code
         </span>
-        <CopyableCommand command={`dam ssh connect -x code ${agentId}`} />
+        <CopyableCommand
+          command={`dam ssh connect -x code ${agentId}`}
+          size="compact"
+        />
         <span className="mt-1 text-sm font-medium text-foreground">
           Open in Zed
         </span>
-        <CopyableCommand command={`dam ssh connect -x zed ${agentId}`} />
+        <CopyableCommand
+          command={`dam ssh connect -x zed ${agentId}`}
+          size="compact"
+        />
         <CliQuickstartNote />
       </DialogBody>
     </Modal>

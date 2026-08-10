@@ -62,7 +62,7 @@ second resolves the conflict.
 | 01 | [Sandbox rows open chat and start a sleeping sandbox](./01-rows-open-chat.md) | Home row click → chat; auto-wake on chat entry; e2e helper | — | ✅ |
 | 02 | [Launch options in the new-session state](./02-launch-options.md) | extract the Open-in dialogs; launcher row in the empty chat; drop the menu from the config header | 01 | ✅ |
 | 03 | [`+ New` opens a chat session directly](./03-new-opens-chat.md) | sessions sidebar dropdown → plain button | 02 | ✅ |
-| 04 | [Configuration is visible in chat and reachable from the list](./04-configuration-discoverable.md) | #3070: always-visible chat ⋮; "Configure sandbox" on the row menu | 01 | |
+| 04 | [Configuration is visible in chat and reachable from the list](./04-configuration-discoverable.md) | #3070: always-visible chat ⋮; "Configure sandbox" on the row menu | 01 | ✅ |
 
 Order between 02 and 03 is load-bearing: 02 lands the "Terminal (browser)" button before 03
 removes the menu item that is currently the only route to a browser terminal. 04 only needs
@@ -119,7 +119,7 @@ Against the Vite dev server (`localhost:5173`) — never a cluster deploy:
    commands; the browser one opens a terminal in the chat pane.
 3. `+ New` in the sessions sidebar opens a blank chat immediately — no menu.
 4. The chat header ⋮ is visible without hovering, and "Configure sandbox" reaches the config
-   page, whose header offers a single "Open in chat" button in place of the old menu.
+   page, whose header offers a single "Open chat" button in place of the old menu.
 5. A Home row's ⋮ also offers "Configure sandbox"; a knowledge-base row's says
    "Configure knowledge base".
 6. An **over-budget** sandbox still shows the parked overlay with its Start button — it does

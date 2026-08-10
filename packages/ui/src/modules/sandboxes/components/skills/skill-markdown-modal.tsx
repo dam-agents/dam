@@ -32,7 +32,6 @@ export function SkillMarkdownModal({
   return (
     <Modal widthClass="w-[720px]">
       <DialogHeader
-        className="border-b border-border"
         title={title}
         truncateTitle
         titleAccessory={

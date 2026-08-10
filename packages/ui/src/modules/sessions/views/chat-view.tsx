@@ -26,7 +26,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -359,8 +358,6 @@ export function ChatView() {
     resetSession();
     const id = crypto.randomUUID();
     terminalFreshRef.current = true;
-    // Mode before the id: the URL carries the open session, and an ephemeral
-    // PTY id is not one — seeing it first would put it in the address bar.
     setSessionMode(SessionMode.Terminal);
     setSessionId(id);
     setMobileScreen("chat");
@@ -387,9 +384,6 @@ export function ChatView() {
         modelTitle: "Model — change in sandbox configuration",
         newSessionHint: "Send a message to begin or open a new session in:",
       };
-  // The launcher offers terminal and editor access to a *sandbox*; the
-  // knowledge-base surface keeps its own vocabulary, so its hint ends the
-  // sentence instead of introducing the row.
   const showLauncher = Boolean(selectedAgent) && !isKnowledgeBaseView;
 
   const handleConfigureSandbox = useCallback(() => {
@@ -480,7 +474,6 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-sm"
                 aria-label={surfaceCopy.actionsAria}
-                className={HOVER_ACTION}
               >
                 <OverflowMenuVertical size={16} />
               </Button>
@@ -608,8 +601,6 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  {/* min-h-full lets the new-session state centre itself in the
-                      pane; with a transcript the content outgrows it anyway. */}
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">

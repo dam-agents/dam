@@ -192,8 +192,6 @@ export function SessionsSidebar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* Chat is the answer nearly every time, and the new-session state it
-          opens carries the terminal and editor targets. */}
       <Button
         variant="outline"
         size="xs"

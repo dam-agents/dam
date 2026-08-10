@@ -89,7 +89,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
       actions={
         <>
           <Button onClick={() => selectAgent(agent.id)}>
-            <Chat /> Open in chat
+            <Chat /> Open chat
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

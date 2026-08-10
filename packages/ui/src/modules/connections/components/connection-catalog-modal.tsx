@@ -124,7 +124,6 @@ export function ConnectionCatalogModal({
   return (
     <Modal widthClass="w-[860px] max-w-full h-[85vh]">
       <DialogHeader
-        className="border-b border-border"
         title="Connection catalogue"
         subtitle="Manage and create new connections your sandboxes can use"
         onClose={onClose}

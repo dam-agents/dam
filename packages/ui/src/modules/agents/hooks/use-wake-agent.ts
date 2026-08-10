@@ -15,7 +15,6 @@ export function useWakeAgent() {
   const clearRestarting = useStore((s) => s.clearRestartingAgent);
   const { mutate, isPending } = useWakeAgentMutation();
 
-  // Stable so callers can hold it in an effect's deps.
   const wake = useCallback(
     (id: string) => {
       setRestarting(id, { seenNonRunning: false, clickedAt: Date.now() });

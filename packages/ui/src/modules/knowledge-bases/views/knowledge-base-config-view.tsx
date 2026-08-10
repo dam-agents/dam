@@ -1,3 +1,5 @@
+import { Chat } from "@carbon/icons-react";
+
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,8 +64,8 @@ export function KnowledgeBaseConfigView() {
         description="Configure this knowledge base. Feed it sources and ask questions in chat."
         adornment={<StatusBadge state={display.state} />}
         actions={
-          <Button variant="outline" onClick={() => openKnowledgeBase(agent.id)}>
-            Open chat
+          <Button onClick={() => openKnowledgeBase(agent.id)}>
+            <Chat /> Open chat
           </Button>
         }
       />
