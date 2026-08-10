@@ -180,7 +180,7 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const allEnabled = list.length > 0 && enabled.length >= list.length;
+  const allEnabled = list.length > 0 && enabled.length === list.length;
   const filtering = filteredNames != null;
   const visible = filtering
     ? sorted.filter((s) => filteredNames.has(s.name))

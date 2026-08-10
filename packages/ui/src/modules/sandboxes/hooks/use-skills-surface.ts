@@ -20,7 +20,12 @@ import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
 
-/** Row identity shared by the surface and its child components. */
+/**
+ * The identity a skill is installed and stored under. One definition for the
+ * whole surface: the set-preview compares keys built in one file against keys
+ * built in another, so a second spelling would silently report every entry as
+ * missing rather than fail loudly.
+ */
 export const skillKey = (source: string, name: string) => `${source}::${name}`;
 
 /** Turn the server's closed skip verdicts into one readable clause. The reason
@@ -88,6 +93,10 @@ export interface SkillsSurface {
   /** The user's saved skill sets. Owner-scoped and sandbox-independent, so this
    *  is loaded once rather than folded into the 5s state poll. */
   sets: SkillSet[];
+  /** The one load of `sets` failed. Distinct from an empty list: telling a user
+   *  they have no saved sets when the request merely failed is a lie about
+   *  their own data, and there is no retry short of remounting. */
+  setsFailed: boolean;
   /** Save a named set. Returns whether it was created. */
   createSet: (input: {
     name: string;
@@ -179,6 +188,7 @@ export function useSkillsSurface(
   const [busySourceId, setBusySourceId] = useState<string | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [sets, setSets] = useState<SkillSet[]>([]);
+  const [setsFailed, setSetsFailed] = useState(false);
   const [applyingSets, setApplyingSets] = useState(false);
 
   useEffect(() => {
@@ -411,10 +421,14 @@ export function useSkillsSurface(
     api.skills.sets.list
       .query()
       .then((s) => {
-        if (!cancelled) setSets(s);
+        if (cancelled) return;
+        setSets(s);
+        setSetsFailed(false);
       })
       .catch(() => {
-        if (!cancelled) setSets([]);
+        // Not `setSets([])`: an empty list is a claim about the user's data,
+        // and a failed read is not evidence for it.
+        if (!cancelled) setSetsFailed(true);
       });
     return () => {
       cancelled = true;
@@ -434,6 +448,9 @@ export function useSkillsSurface(
       setSets((prev) =>
         [...prev, result].sort((a, b) => a.name.localeCompare(b.name)),
       );
+      // A successful write proves the surface is reachable, so the stale
+      // "couldn't load" notice must not outlive it.
+      setSetsFailed(false);
       emitToast({ kind: "success", message: `Saved skill set ${result.name}` });
       return true;
     },
@@ -696,6 +713,7 @@ export function useSkillsSurface(
     toggleSource,
     updateAll,
     sets,
+    setsFailed,
     createSet,
     applySets,
     applyingSets,

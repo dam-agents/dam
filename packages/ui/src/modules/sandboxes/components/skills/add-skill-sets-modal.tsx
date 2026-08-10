@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
-const entryKey = (source: string, name: string) => `${source} ${name}`;
+import { skillKey } from "../../hooks/use-skills-surface.js";
 
 /** What one set would do to this sandbox right now. Derived in the browser from
  *  lists the surface already holds, so ticking a box is instant; the server
@@ -99,6 +99,7 @@ function SetRow({
  */
 export function AddSkillSetsModal({
   sets,
+  loadFailed,
   available,
   installedKeys,
   unreadableSources,
@@ -108,9 +109,12 @@ export function AddSkillSetsModal({
   onClose,
 }: {
   sets: SkillSet[];
-  /** `${gitUrl} ${name}` for every skill a connected source can serve here. */
+  /** The sets request failed, so `sets` being empty says nothing about whether
+   *  the user has any. Worded apart from the empty state for that reason. */
+  loadFailed: boolean;
+  /** `skillKey` for every skill a connected source can serve here. */
   available: ReadonlySet<string>;
-  /** `${gitUrl} ${name}` for every skill currently installed. */
+  /** `skillKey` for every skill currently installed. */
   installedKeys: ReadonlySet<string>;
   /** Git URLs of connected sources whose scan failed here. */
   unreadableSources: ReadonlySet<string>;
@@ -131,7 +135,7 @@ export function AddSkillSetsModal({
         let unavailable = 0;
         let unreadable = 0;
         for (const entry of set.skills) {
-          const key = entryKey(entry.source, entry.name);
+          const key = skillKey(entry.source, entry.name);
           if (available.has(key)) {
             if (!installedKeys.has(key)) adds.push(entry.name);
           } else if (unreadableSources.has(entry.source)) {
@@ -176,7 +180,12 @@ export function AddSkillSetsModal({
           — overlap is fine, and nothing gets turned off.
         </p>
 
-        {sets.length === 0 ? (
+        {loadFailed ? (
+          <p className="text-sm text-danger">
+            Couldn't load your saved skill sets. Reopen the Skills page to try
+            again.
+          </p>
+        ) : sets.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No saved skill sets yet — save one from this sandbox first.
           </p>

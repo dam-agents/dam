@@ -4,11 +4,19 @@ import type { Skill } from "api-server-api";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
-/** "a", "a and b", "a, b and c" — the design names the drifted skills in the
- *  sentence, so the list has to read as prose rather than a comma dump. */
+/** How many names the sentence spells out before it starts counting. Drift is
+ *  computed across every source, so an upstream sweep can strand dozens at
+ *  once; naming them all would swamp the banner and shove its button around. */
+const MAX_NAMED = 3;
+
+/** "a", "a and b", "a, b and 4 more" — the design names the drifted skills in
+ *  the sentence, so the list has to read as prose rather than a comma dump. */
 function nameList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  if (names.length <= MAX_NAMED) {
+    return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  }
+  return `${names.slice(0, MAX_NAMED).join(", ")} and ${names.length - MAX_NAMED} more`;
 }
 
 /**

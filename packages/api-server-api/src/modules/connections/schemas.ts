@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { resourceNameSchema } from "../shared.js";
+
 export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
@@ -44,23 +46,6 @@ export const connectionSetAgentConnectionsInputSchema = z.object({
   agentId: z.string().min(1),
   connectionIds: z.array(z.string().min(1)),
 });
-
-/** One rule for every user-named resource: lowercase, digits, single hyphens,
- *  1–63 chars. Shared so two surfaces can never drift on what is legal; each
- *  supplies its own example, since a message naming the wrong kind of thing is
- *  worse than a slightly duplicated sentence. */
-export const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-
-export function resourceNameSchema(example: string) {
-  return z
-    .string()
-    .min(1, "name is required")
-    .max(63, "name must be 63 characters or fewer")
-    .regex(
-      RESOURCE_NAME_PATTERN,
-      `name must be lowercase letters, digits, and single hyphens (e.g. ${example})`,
-    );
-}
 
 export const connectionNameSchema = resourceNameSchema("my-mcp-server");
 

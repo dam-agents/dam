@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
-import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
+import { skillKey, useSkillsSurface } from "../../hooks/use-skills-surface.js";
 import { AddSkillSetsModal } from "./add-skill-sets-modal.js";
 import { AddSkillSourceModal } from "./add-skill-source-modal.js";
 import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
@@ -103,6 +103,7 @@ export function SkillsSurface({
     toggleSource,
     updateAll,
     sets,
+    setsFailed,
     createSet,
     applySets,
     applyingSets,
@@ -130,7 +131,12 @@ export function SkillsSurface({
     [standalone, publishes, skillsBySource],
   );
 
-  const q = query.trim().toLowerCase();
+  // Gated on `!readOnly` at the source, not at each use: the search box only
+  // renders while the sandbox is operable, and `readOnly` is poll-driven, so a
+  // sandbox stopping mid-search would otherwise leave a filtered surface with
+  // no control to clear it — hiding the read-only placeholder, dropping whole
+  // sections, and stranding a "No skills match" line the user cannot dismiss.
+  const q = readOnly ? "" : query.trim().toLowerCase();
   const searching = q.length > 0;
 
   // Each source's list minus its suppressed entries — the same list the card
@@ -215,17 +221,19 @@ export function SkillsSurface({
     () => new Set(sets.map((s) => s.name)),
     [sets],
   );
-  // Keyed on `${gitUrl} ${name}` — the identity a set stores, so the modal's
-  // preview matches what the server will resolve.
+  // Built with `skillKey`, the one identity helper, because the modal looks
+  // these up with the same function — two hand-written spellings would have to
+  // stay byte-identical forever, and a divergence fails silently by reporting
+  // every entry as missing from a connected source.
   const availableKeys = useMemo(() => {
     const out = new Set<string>();
     for (const list of listBySource.values()) {
-      for (const skill of list) out.add(`${skill.source} ${skill.name}`);
+      for (const skill of list) out.add(skillKey(skill.source, skill.name));
     }
     return out;
   }, [listBySource]);
   const installedKeys = useMemo(
-    () => new Set(installed.map((r) => `${r.source} ${r.name}`)),
+    () => new Set(installed.map((r) => skillKey(r.source, r.name))),
     [installed],
   );
   // Connected but unreadable — a failed scan, not a missing source. The set
@@ -499,12 +507,6 @@ export function SkillsSurface({
             />
           )}
 
-          {searching && matchCount === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No skills match “{query}”.
-            </p>
-          )}
-
           {shownCreatedHere.length > 0 ? (
             <StandaloneSkillsGroup
               skills={shownCreatedHere}
@@ -612,6 +614,7 @@ export function SkillsSurface({
       {addSetsOpen && (
         <AddSkillSetsModal
           sets={sets}
+          loadFailed={setsFailed}
           available={availableKeys}
           installedKeys={installedKeys}
           unreadableSources={unreadableSources}

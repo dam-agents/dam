@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { resourceNameSchema } from "../connections/schemas.js";
+import { resourceNameSchema } from "../shared.js";
 
 /** A repo-relative subdirectory to scan for skills: relative, no `..`
  *  traversal, surrounding slashes trimmed so `/foo/` and `foo` are equal. */

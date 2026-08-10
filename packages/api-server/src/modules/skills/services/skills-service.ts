@@ -70,6 +70,12 @@ export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 /** Upper bound on one batch, mirroring the contract schema's per-list cap. */
 const MAX_BATCH_ENTRIES = 500;
 
+/** The identity a skill is installed and stored under: its source's git URL
+ *  plus its name. One definition, because every place that compares two of
+ *  these relies on them being byte-identical and nothing else enforces it. */
+const entryKey = (e: { source: string; name: string }) =>
+  `${e.source}::${e.name}`;
+
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
   skillSetsRepo: SkillSetsRepository;
@@ -462,6 +468,106 @@ function removeSkillRef(
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
+  /**
+   * The batch apply. Not a service method, because `sourcePaths` is a
+   * server-internal shortcut — a caller that already resolved the merged source
+   * list (gitUrl → subdir) hands it over instead of making this re-derive it.
+   * A `ReadonlyMap` cannot cross the wire, so the published contract exposes
+   * only the one-argument form and this stays in-process.
+   */
+  const applyBatchWith = async (
+    input: SkillApplyBatchInput,
+    sourcePaths?: ReadonlyMap<string, string | undefined>,
+  ): Promise<SkillRef[]> => {
+    const { agentId, install, uninstall } = input;
+
+    // Nothing to do: no wake, no bump, no log. The set-apply path leans on
+    // this — adding a set whose skills are all already on must cost nothing.
+    // Ownership is still enforced, so an unowned agent can't be probed.
+    if (install.length === 0 && uninstall.length === 0) {
+      if (!(await deps.agentsRepo.get(agentId, deps.owner))) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+      }
+      return deps.agentSkillsRepo.listSkills(agentId);
+    }
+
+    // Reject a self-contradicting batch before writing anything: picking a
+    // winner would silently do something the caller didn't ask for.
+    const removing = new Set(uninstall.map(entryKey));
+    const contradiction = install.find((e) => removing.has(entryKey(e)));
+    if (contradiction) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `skill is in both install and uninstall: ${contradiction.name}`,
+      });
+    }
+
+    // The schema caps each list, but that only runs at the tRPC boundary —
+    // an in-process caller (the set-apply path) would otherwise be unbounded.
+    // Enforce it here too, where the one-bump contract actually lives.
+    if (install.length + uninstall.length > MAX_BATCH_ENTRIES) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `too many skills in one batch (${install.length + uninstall.length}; limit ${MAX_BATCH_ENTRIES})`,
+      });
+    }
+
+    await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
+    const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
+
+    // Rows first, then one bump for the whole batch — the point of this path.
+    // A failure part-way leaves rows the pod hasn't been told about; the next
+    // `state` read reaps them as ghosts, so a partial batch self-heals.
+    for (const entry of install) {
+      const path = paths.get(entry.source);
+      await deps.agentSkillsRepo.upsertSkill(agentId, {
+        source: entry.source,
+        name: entry.name,
+        version: entry.version,
+        ...(entry.contentHash !== undefined
+          ? { contentHash: entry.contentHash }
+          : {}),
+        ...(path !== undefined ? { path } : {}),
+      });
+    }
+    for (const entry of uninstall) {
+      await deps.agentSkillsRepo.removeSkill(agentId, {
+        source: entry.source,
+        name: entry.name,
+      });
+    }
+
+    await deps.runtimeMutator.bump(agentId, []);
+    await deps.runtimeMutator.enqueueAfterCommit(agentId);
+
+    // Per skill, not per batch: "what did this agent install, from where" has
+    // to stay answerable after an incident, and one aggregate line loses that.
+    for (const entry of install) {
+      securityLog("info", "skill.install", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId,
+        target: entry.source,
+        result: "success",
+        detail: { name: entry.name, version: entry.version, batch: true },
+      });
+    }
+    for (const entry of uninstall) {
+      securityLog("info", "skill.uninstall", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId,
+        target: entry.source,
+        result: "success",
+        detail: { name: entry.name, batch: true },
+      });
+    }
+
+    return deps.agentSkillsRepo.listSkills(agentId);
+  };
+
   // Named rather than returned anonymously so the few methods that compose
   // siblings can call them through `service` instead of `this` — a detached or
   // wrapped method reference then still works.
@@ -720,99 +826,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     },
 
-    async applyBatch(input, sourcePaths) {
-      const { agentId, install, uninstall } = input;
-
-      // Nothing to do: no wake, no bump, no log. The set-apply path leans on
-      // this — adding a set whose skills are all already on must cost nothing.
-      // Ownership is still enforced, so an unowned agent can't be probed.
-      if (install.length === 0 && uninstall.length === 0) {
-        if (!(await deps.agentsRepo.get(agentId, deps.owner))) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "agent not found",
-          });
-        }
-        return deps.agentSkillsRepo.listSkills(agentId);
-      }
-
-      // Reject a self-contradicting batch before writing anything: picking a
-      // winner would silently do something the caller didn't ask for.
-      const key = (e: { source: string; name: string }) =>
-        `${e.source} ${e.name}`;
-      const removing = new Set(uninstall.map(key));
-      const contradiction = install.find((e) => removing.has(key(e)));
-      if (contradiction) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `skill is in both install and uninstall: ${contradiction.name}`,
-        });
-      }
-
-      // The schema caps each list, but that only runs at the tRPC boundary —
-      // an in-process caller (the set-apply path) would otherwise be unbounded.
-      // Enforce it here too, where the one-bump contract actually lives.
-      if (install.length + uninstall.length > MAX_BATCH_ENTRIES) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `too many skills in one batch (${install.length + uninstall.length}; limit ${MAX_BATCH_ENTRIES})`,
-        });
-      }
-
-      await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
-      const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
-
-      // Rows first, then one bump for the whole batch — the point of this path.
-      // A failure part-way leaves rows the pod hasn't been told about; the next
-      // `state` read reaps them as ghosts, so a partial batch self-heals.
-      for (const entry of install) {
-        const path = paths.get(entry.source);
-        await deps.agentSkillsRepo.upsertSkill(agentId, {
-          source: entry.source,
-          name: entry.name,
-          version: entry.version,
-          ...(entry.contentHash !== undefined
-            ? { contentHash: entry.contentHash }
-            : {}),
-          ...(path !== undefined ? { path } : {}),
-        });
-      }
-      for (const entry of uninstall) {
-        await deps.agentSkillsRepo.removeSkill(agentId, {
-          source: entry.source,
-          name: entry.name,
-        });
-      }
-
-      await deps.runtimeMutator.bump(agentId, []);
-      await deps.runtimeMutator.enqueueAfterCommit(agentId);
-
-      // Per skill, not per batch: "what did this agent install, from where" has
-      // to stay answerable after an incident, and one aggregate line loses that.
-      for (const entry of install) {
-        securityLog("info", "skill.install", {
-          category: "privileged",
-          actor: deps.owner,
-          actorKind: "user",
-          agentId,
-          target: entry.source,
-          result: "success",
-          detail: { name: entry.name, version: entry.version, batch: true },
-        });
-      }
-      for (const entry of uninstall) {
-        securityLog("info", "skill.uninstall", {
-          category: "privileged",
-          actor: deps.owner,
-          actorKind: "user",
-          agentId,
-          target: entry.source,
-          result: "success",
-          detail: { name: entry.name, batch: true },
-        });
-      }
-
-      return deps.agentSkillsRepo.listSkills(agentId);
+    applyBatch(input) {
+      return applyBatchWith(input);
     },
 
     async listSets() {
@@ -822,7 +837,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async createSet(input) {
       const seen = new Set<string>();
       for (const entry of input.skills) {
-        const key = `${entry.source} ${entry.name}`;
+        const key = entryKey(entry);
         if (seen.has(key)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -895,7 +910,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const wanted = new Map<string, SkillSetEntry>();
       for (const set of sets) {
         for (const entry of set!.skills) {
-          wanted.set(`${entry.source} ${entry.name}`, entry);
+          wanted.set(entryKey(entry), entry);
         }
       }
 
@@ -928,7 +943,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // aren't — so the verdict is narrowed to a skip rather than propagated.
       // It is still a distinct reason from "not connected", because the fix
       // differs, and the underlying failure is logged rather than dropped.
-      const installed = await deps.agentSkillsRepo.listSkills(agentId);
+      const installedKeys = new Set(
+        (await deps.agentSkillsRepo.listSkills(agentId)).map(entryKey),
+      );
       const toInstall: SkillApplyBatchInput["install"] = [];
       for (const [gitUrl, entries] of byGitUrl) {
         const source = connected.get(gitUrl)!;
@@ -952,12 +969,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             skipped.push({ ...entry, reason: "not-in-source" });
             continue;
           }
-          // Already on at the same content: nothing to do. Re-installing would
-          // be a wasted write and a misleading security-log line.
-          const ref = installed.find(
-            (r) => r.source === entry.source && r.name === entry.name,
-          );
-          if (ref && ref.contentHash === match.contentHash) continue;
+          // Already on: nothing to do, whatever version it sits at. Adding a
+          // set turns skills on; it does not adopt a newer revision of one the
+          // user already has. Updating is its own explicit action — the row's
+          // Update pill and the drift banner — and doing it as a side effect
+          // here would overwrite a skill the "already all on" preview just
+          // promised to leave alone.
+          if (installedKeys.has(entryKey(entry))) continue;
           toInstall.push({
             source: match.source,
             name: match.name,
@@ -969,7 +987,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       // Empty uninstall list is the additive guarantee, enforced here rather
       // than trusted to callers: a set adds skills, it never turns one off.
-      const after = await service.applyBatch(
+      const after = await applyBatchWith(
         { agentId, install: toInstall, uninstall: [] },
         sourcePaths,
       );

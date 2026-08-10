@@ -108,7 +108,7 @@ A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique 
 
 A set stores **`(gitUrl, name)` pairs only**. The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct. No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today. Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
 
-**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
+**Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. A skill already on is left at whatever revision it sits on — adopting a newer one is the drift path's own explicit action, never a side effect of adding a set. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
 
 Names reuse the Connection name rule from one shared definition. Renaming is absent: there is no set-management surface yet, so a typo means delete and recreate.
 
@@ -272,7 +272,7 @@ Two things qualify that. **The local list is not durable** — installed refs co
 
 ## Persistence touchpoints
 
-Skills are entirely an **Application State** subsystem ([persistence](persistence.md)). Three Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
+Skills are entirely an **Application State** subsystem ([persistence](persistence.md)). Four Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
 
 | Table | Key | Owner |
 |---|---|---|
@@ -283,7 +283,7 @@ Skills are entirely an **Application State** subsystem ([persistence](persistenc
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`. Both are computed at request time.
 
-The snapshot of the local list is not a fourth table: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup saga has nothing extra to do.
+The snapshot of the local list is not a table of its own: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup saga has nothing extra to do.
 
 The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup saga handles the row-side. User-owned `skill_sources` survive agent deletion — they are catalog connections, not agent state.
 

@@ -143,13 +143,16 @@ export const skillsRouter = t.router({
     // Not `apply`: tRPC reserves it as a router key (Function.prototype.apply),
     // and the collision only surfaces when the router is constructed at boot —
     // tsc and the unit tests both pass.
+    //
+    // No `checkAgentBinding`: `manageAgentsProcedure` is wildcard-only, so the
+    // check can never fire. Ownership is enforced in the service, same as
+    // install/uninstall/applyBatch.
     applyToAgent: manageAgentsProcedure
       .input(skillSetApplyInputSchema)
       .output(skillSetApplyResultSchema)
-      .mutation(({ ctx, input }) => {
-        checkAgentBinding(ctx, input.agentId);
-        return ctx.skills.applySets(input.agentId, input.setIds);
-      }),
+      .mutation(({ ctx, input }) =>
+        ctx.skills.applySets(input.agentId, input.setIds),
+      ),
   }),
 
   // Ownership is enforced inside the service via ensureAgentReachable →
