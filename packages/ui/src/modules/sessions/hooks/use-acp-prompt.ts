@@ -76,8 +76,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     textareaRef,
   } = opts;
   const setMessages = useStore((s) => s.setMessages);
-  // Leaving the chat empties `sessionId` just like a blank chat does, so that
-  // alone can't tell whether there is still a chat to hand a connection to.
   // Assigned on mount, not only cleared: StrictMode runs setup → cleanup → setup
   // on one fiber, so a cleared-only ref stays false for the whole life in dev.
   const mountedRef = useRef(true);
@@ -87,15 +85,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       mountedRef.current = false;
     };
   }, []);
-  // A first prompt's channel isn't the chat's connection yet, so Stop has nothing
-  // to cancel on until it is kept. Held here so the button works meanwhile;
-  // cleared the moment the channel is given up, since a turn the user walked away
-  // from isn't theirs to cancel from another chat.
+  // What Stop cancels on while a first prompt's channel is still private. Cleared
+  // once the channel is given up — a turn the user walked away from isn't theirs
+  // to cancel from another chat.
   const startedRef = useRef<StartedSession | null>(null);
 
-  /** Whether the chat that dispatched this send is still the one on screen. Its
-   *  own bubble surviving in the projection is the marker — leaving the chat,
-   *  opening another agent, and pressing New session all wipe it. */
+  /** Whether the chat that dispatched this send is still the one on screen — its
+   *  own bubble surviving in the projection is the marker. */
   const viewerStillHere = useCallback(
     (agentId: string, bubbleId: string): boolean => {
       if (!mountedRef.current) return false;
@@ -157,8 +153,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             m.id === aId ? { ...m, streaming: false, queued: false } : m,
           ),
         );
-      // True once the prompt has reached the socket. Not an acknowledgement —
-      // none exists — but past this point only a dying connection can lose it.
+      // True once the prompt reached an open socket — as close to an
+      // acknowledgement as the protocol offers.
       let delivered = false;
 
       // If a prior turn is still streaming, this bubble starts `queued: true`
@@ -255,14 +251,10 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         delivered = isOpen();
 
         if (started) {
-          // Only for a prompt that actually left: an unprompted session is never
-          // listed, so the row would be a ghost the next poll reconciles away.
+          // An unprompted session is never listed, so a row for one is a ghost.
           if (delivered) {
             optimisticInsertSession(selectedAgent, sessionId, SessionMode.Chat);
           }
-          // The channel's own answer, not this send's guess: a send sharing the
-          // channel didn't make the decision, and `settle` refuses to keep a
-          // socket that died on the way here.
           detached = !started.settle(canKeepConnection(selectedAgent, aId));
           if (detached) startedRef.current = null;
         }
@@ -312,13 +304,11 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       } finally {
         clearTimeout(watchdog);
         if (startedRef.current === started) startedRef.current = null;
-        // Closes the private channel unless the chat kept it or another send is
-        // still using it. Safe only here: the turn has settled, so nothing of
-        // ours is left queued on that socket.
+        // Only here: the turn has settled, so nothing of ours is still queued on
+        // that socket.
         started?.finish();
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-        // Checked now, not captured earlier: a turn can end long after the user
-        // moved on, and focus belongs to whoever is reading the chat then.
+        // Checked now, not earlier: a turn can end long after the user moved on.
         if (viewerStillHere(selectedAgent, aId)) textareaRef.current?.focus();
       }
     },

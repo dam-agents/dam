@@ -65,10 +65,9 @@ export interface StartedSession {
   sessionId: string;
   /** Whether the socket is still open — the nearest thing to a delivery check. */
   isOpen: () => boolean;
-  /** Once the prompt is away: `true` keeps the channel as the chat's live
-   *  connection, `false` gives it up — muted at once, closed by `finish`. The
-   *  first caller decides; a send sharing this channel gets that decision back
-   *  rather than its own guess. Returns whether the chat now owns the channel. */
+  /** Once the prompt is away: keep the channel as the chat's live connection, or
+   *  give it up — muted at once, closed by `finish`. The first caller decides;
+   *  returns whether the chat owns the channel. */
   settle: (keep: boolean) => boolean;
   /** Once the turn has settled. Closes the channel unless it was kept or another
    *  send is still using it. */
@@ -196,17 +195,15 @@ export function useAcpConnection(
     [clearEngagement, setMessages],
   );
 
-  /** Stop offering a started session for sharing. Called from every path that
-   *  ends its usefulness, so a later send can never join a dead channel. */
+  /** Stop offering a started session for sharing, so no send can join it later. */
   const releaseStartSlot = useCallback((holders: { count: number }) => {
     if (startInFlightRef.current?.holders === holders) {
       startInFlightRef.current = null;
     }
   }, []);
 
-  /** Precondition: `ws` is open. Installing a closed socket would leave the chat
-   *  with a connection whose close event has already fired, so nothing clears the
-   *  engagement and the reconnect path can't recover. */
+  /** Precondition: `ws` is open — a closed socket's close event has already
+   *  fired, so nothing would ever clear the engagement it leaves behind. */
   const keepAsLive = useCallback(
     (
       connection: ClientSideConnection,
@@ -245,8 +242,8 @@ export function useAcpConnection(
           if (listening) handler(update, updateSessionId);
         },
       );
-      // Whatever kills this socket — a send abandoning it, the pod going away —
-      // also ends its shareability. Registered before anyone can join.
+      // Registered before anyone can join: whatever kills the socket also ends
+      // its shareability.
       ws.addEventListener("close", () => releaseStartSlot(holders));
 
       let startedSessionId: string;
@@ -274,12 +271,9 @@ export function useAcpConnection(
         settle: (keep) => {
           if (settled) return kept;
           settled = true;
-          // Later sends belong to a session that now exists, so they take the
-          // ordinary path; this channel stops being shareable.
           releaseStartSlot(holders);
-          // A socket that died between issuing the prompt and here is no use to
-          // the chat, and its session was never prompted — give it up instead,
-          // so the send reports honestly rather than committing an orphan.
+          // A dead socket is no use to the chat, and its session was never
+          // prompted — give it up rather than commit an orphan.
           kept = keep && ws.readyState === WebSocket.OPEN;
           if (!kept) {
             listening = false;
@@ -294,8 +288,6 @@ export function useAcpConnection(
           // have the runtime discard its prompt.
           if (holders.count > 0 || kept) return;
           listening = false;
-          // Reached without `settle` when a send threw on its way to the prompt
-          // (a failed attachment upload): the slot must go with the socket.
           releaseStartSlot(holders);
           try {
             ws.close();
@@ -315,7 +307,7 @@ export function useAcpConnection(
     const holders = { count: 1 };
     const promise = startSession(holders);
     startInFlightRef.current = { holders, promise };
-    // Failing before there is a socket to carry the eviction (the connect itself).
+    // No socket to carry the eviction when the connect itself fails.
     promise.catch(() => releaseStartSlot(holders));
     return promise;
   }, [startSession, releaseStartSlot]);
@@ -468,10 +460,8 @@ export function useAcpConnection(
     pendingReloadRef.current = false;
     generationRef.current += 1;
     ensureInFlightRef.current = null;
-    // Stop offering any started session for sharing — but don't close it: the
-    // chat this belonged to is gone, while its turn is still the agent's to
-    // finish. The blank chat that replaces it is a different conversation and
-    // must not land in the abandoned one's session.
+    // Unshared but not closed: the chat is gone, its turn is the agent's to
+    // finish, and the blank chat replacing it is a different conversation.
     startInFlightRef.current = null;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
