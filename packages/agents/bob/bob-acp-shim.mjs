@@ -11,9 +11,8 @@
 // ──────────────────────────────────────────────────────────────────────────
 // Translation table (bob run stream-json → ACP session/update)
 //
-//   message role=user                  → DROP. Echo of the submitted prompt
-//                                        (and, on --resume, a replay of the
-//                                        task's history — see replay gate).
+//   message role=user                  → DROP. Echo of the submitted prompt;
+//                                        the client renders its own.
 //   message role=assistant isReasoning → agent_thought_chunk
 //   message role=assistant             → agent_message_chunk
 //   tool_use                           → tool_call (in_progress, kind mapped
@@ -25,9 +24,13 @@
 //   error                              → surfaced as agent_message_chunk
 //                                        (budget/turn caps land here).
 //
-// Replay gate: on --resume bob re-emits the task's stored messages before the
-// new turn. Everything is dropped until the user-message echo matching the
-// submitted prompt (first assistant stream chunk as fallback).
+// `bob run --resume` does NOT re-emit the task's stored messages: the stream
+// starts at the new prompt's echo. Verified against tasks carrying several
+// assistant turns and tool messages. So every event of a turn is live and the
+// translation above needs no gating — if a future release starts replaying, the
+// fix is to bound the replay by the stored message count, not to guess at the
+// first live chunk (any "wait for the first assistant message" heuristic opens
+// mid-replay, since replayed history contains assistant turns of its own).
 //
 // ──────────────────────────────────────────────────────────────────────────
 // Session history (list / load / resume)
@@ -413,9 +416,6 @@ function runTurn(sessionId, requestId, promptText) {
     });
     state.child = child;
 
-    // Replay gate: drop history bob re-emits on --resume until the echo of
-    // this turn's prompt (or the first live stream chunk).
-    let replayDone = !taskId;
     let sawResult = false;
     let lastError = null;
     let buf = "";
@@ -423,18 +423,13 @@ function runTurn(sessionId, requestId, promptText) {
     const handleEvent = (ev) => {
       switch (ev.type) {
         case "message": {
-          if (ev.role === "user") {
-            if (!replayDone && ev.content === promptText) replayDone = true;
-            return; // echo — the client already renders its own prompt
-          }
+          if (ev.role === "user") return; // echo — the client renders its own
           if (ev.role !== "assistant" || typeof ev.content !== "string") return;
-          replayDone = true;
           if (ev.isReasoning) emitThoughtChunk(sessionId, ev.content);
           else emitAgentMessage(sessionId, ev.content);
           return;
         }
         case "tool_use": {
-          if (!replayDone) return;
           update(sessionId, {
             sessionUpdate: "tool_call",
             toolCallId: String(ev.tool_id ?? randomUUID()),
@@ -448,7 +443,6 @@ function runTurn(sessionId, requestId, promptText) {
           return;
         }
         case "tool_result": {
-          if (!replayDone) return;
           const failed = ev.status === "error";
           const text = failed ? ev.error?.message : ev.output;
           update(sessionId, {
@@ -470,7 +464,7 @@ function runTurn(sessionId, requestId, promptText) {
         }
         case "error": {
           lastError = String(ev.message ?? "unknown error");
-          if (replayDone) emitAgentMessage(sessionId, `\n${lastError}\n`);
+          emitAgentMessage(sessionId, `\n${lastError}\n`);
           return;
         }
         default:
@@ -536,7 +530,10 @@ function handleSessionNew(f) {
 function handleSessionList(f) {
   const sessions = listTasks().map((t) => ({
     sessionId: sessionIdFor(t.id),
-    cwd: t.directory,
+    // `tasks.directory` is always "" — 2.0 binds a task to its workspace via
+    // project_id and inserts an empty string here — so report the workspace the
+    // harness actually runs in rather than a blank.
+    cwd: process.cwd(),
     title: taskTitle(t),
     updatedAt: Number.isFinite(t.updated_at) ? new Date(t.updated_at).toISOString() : null,
     // Tag as chat so agent-runtime's list enrichment doesn't decode a
@@ -555,11 +552,10 @@ function handleSessionLoad(f) {
     return;
   }
   bindTask(sid, taskId);
-  const state = sessionState(sid);
-  const dir = withDb((db) =>
-    db.prepare(`SELECT directory FROM tasks WHERE id = ?`).get(taskId),
-  );
-  if (typeof dir?.directory === "string" && dir.directory) state.cwd = dir.directory;
+  // Deliberately no cwd restore from the task: `tasks.directory` is always "".
+  // The turn keeps the client-supplied cwd (the platform sends "."), which
+  // resolves to the harness's workspace — the one the task belongs to. Running a
+  // --resume from any other directory makes bob reject the task outright.
   for (const row of rows) {
     const role = row.role || messageRole(row.data);
     const text = messageText(row.data);
