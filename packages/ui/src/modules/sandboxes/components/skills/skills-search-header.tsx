@@ -1,4 +1,5 @@
 import { Search } from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
 import { Input } from "@/components/ui/input";
 
@@ -24,11 +25,16 @@ export function SkillsSearchHeader({
   totals,
   /** Number of matches, or null when no query is active. */
   matchCount,
+  /** Page-level notice (today: the drift banner). Sits between the box and the
+   *  counts line, per the design — an alert about the whole sandbox belongs
+   *  above the per-source cards, not inside one. */
+  notice,
 }: {
   query: string;
   onQueryChange: (query: string) => void;
   totals: SkillTotals;
   matchCount: number | null;
+  notice?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
@@ -45,6 +51,7 @@ export function SkillsSearchHeader({
           className="pl-9"
         />
       </div>
+      {notice}
       <p className="text-sm text-muted-foreground">
         {matchCount === null ? (
           <>

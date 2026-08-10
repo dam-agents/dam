@@ -44,11 +44,26 @@ export interface SkillsSurface {
   publishes: SkillPublishRecord[];
   /** Row currently mid-install/uninstall, so its toggle can show a spinner. */
   busyKey: string | null;
+  /** Source with a bulk enable/disable in flight — card-wide, where `busyKey`
+   *  is one row. */
+  busySourceId: string | null;
+  /** A cross-source "update all drifted" is in flight. */
+  updatingAll: boolean;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
   /** Re-install a drifted skill at the latest scanned version, clearing drift
    *  once the installed contentHash matches the scan again. */
   update: (skill: Skill) => Promise<void>;
+  /** Turn a whole source on or off in one apply cycle. Sends only the
+   *  difference, so already-installed skills aren't rewritten. */
+  toggleSource: (
+    sourceId: string,
+    skills: Skill[],
+    on: boolean,
+  ) => Promise<void>;
+  /** Re-install every drifted skill at its latest scanned version, in one
+   *  apply cycle. */
+  updateAll: (drifted: Skill[]) => Promise<void>;
   /** Publish a standalone skill upstream as a PR. Toasts the PR link on
    *  success (or a CTA on a structured upstream error). Returns success. */
   publish: (input: {
@@ -127,6 +142,8 @@ export function useSkillsSurface(
     useState<SkillsState["standaloneSnapshot"]>(undefined);
   const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [busySourceId, setBusySourceId] = useState<string | null>(null);
+  const [updatingAll, setUpdatingAll] = useState(false);
 
   useEffect(() => {
     // Gate on stateLoaded: before the first `skills.state` resolves all three
@@ -287,6 +304,66 @@ export function useSkillsSurface(
       );
       if (result !== ACTION_FAILED) setInstalled(result);
       setBusyKey(null);
+    },
+    [agentId, isError, readOnly],
+  );
+
+  const toggleSource = useCallback(
+    async (sourceId: string, skills: Skill[], on: boolean) => {
+      if (!agentId || isError || readOnly) return;
+      // Only the difference: installing an already-installed skill is a wasted
+      // row write and a misleading second entry in the security log.
+      const changing = skills.filter(
+        (s) => !!installedRef(s.source, s.name) !== on,
+      );
+      if (changing.length === 0) return;
+      setBusySourceId(sourceId);
+      const result = await runAction(
+        () =>
+          api.skills.applyBatch.mutate({
+            agentId,
+            install: on
+              ? changing.map((s) => ({
+                  source: s.source,
+                  name: s.name,
+                  version: s.version,
+                  contentHash: s.contentHash,
+                }))
+              : [],
+            uninstall: on
+              ? []
+              : changing.map((s) => ({ source: s.source, name: s.name })),
+          }),
+        `Failed to ${on ? "enable" : "disable"} all skills`,
+      );
+      if (result !== ACTION_FAILED) setInstalled(result);
+      setBusySourceId(null);
+    },
+    [agentId, isError, readOnly, installedRef],
+  );
+
+  const updateAll = useCallback(
+    async (drifted: Skill[]) => {
+      if (!agentId || isError || readOnly || drifted.length === 0) return;
+      setUpdatingAll(true);
+      // Re-install at the scanned version+hash — the "adopt latest" path, same
+      // as the per-row Update, so nothing is uninstalled.
+      const result = await runAction(
+        () =>
+          api.skills.applyBatch.mutate({
+            agentId,
+            install: drifted.map((s) => ({
+              source: s.source,
+              name: s.name,
+              version: s.version,
+              contentHash: s.contentHash,
+            })),
+            uninstall: [],
+          }),
+        "Failed to update all skills",
+      );
+      if (result !== ACTION_FAILED) setInstalled(result);
+      setUpdatingAll(false);
     },
     [agentId, isError, readOnly],
   );
@@ -501,9 +578,13 @@ export function useSkillsSurface(
     standalone,
     publishes,
     busyKey,
+    busySourceId,
+    updatingAll,
     installedRef,
     toggle,
     update,
+    toggleSource,
+    updateAll,
     createSource,
     createLocalSkills,
     deleteStandalone,

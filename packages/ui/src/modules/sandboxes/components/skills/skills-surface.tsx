@@ -24,6 +24,8 @@ import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
 import { LocalSkillRenderModal } from "./local-skill-render-modal.js";
 import { PublishSkillModal } from "./publish-skill-modal.js";
 import { publishedDuplicatesBySource } from "./published-duplicates.js";
+import { isDrifted } from "./skill-drift.js";
+import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
 import { filterByQuery } from "./skill-search.js";
 import { SkillSourceCard } from "./skill-source-card.js";
@@ -88,9 +90,13 @@ export function SkillsSurface({
     standalone,
     publishes,
     busyKey,
+    busySourceId,
+    updatingAll,
     installedRef,
     toggle,
     update,
+    toggleSource,
+    updateAll,
     createSource,
     createLocalSkills,
     deleteStandalone,
@@ -183,6 +189,20 @@ export function SkillsSurface({
       [...filteredBySource.values()].reduce((n, names) => n + names.size, 0)
     : null;
 
+  // Drift across every source, not per card: the banner's whole point is that
+  // you don't have to find the stale ones yourself.
+  const drifted = useMemo(() => {
+    const out: Skill[] = [];
+    for (const list of listBySource.values()) {
+      for (const skill of list) {
+        if (isDrifted(installedRef(skill.source, skill.name), skill)) {
+          out.push(skill);
+        }
+      }
+    }
+    return out;
+  }, [listBySource, installedRef]);
+
   // Tracking stays gated on `merged`, unlike the suppression above: it *writes*
   // — install overwrites the local copy — so waiting until the pull request is
   // known to have landed is worth it, where hiding a redundant row is not.
@@ -272,6 +292,25 @@ export function SkillsSurface({
       kind: "success",
       message: `Tracking ${skill.name} from ${pub.sourceName}`,
     });
+  };
+
+  /** Enabling adds; disabling removes many skills at once, so only that
+   *  direction asks. Mirrors how a standalone delete and a source removal are
+   *  already gated. */
+  const toggleAllWithConfirm = async (src: SkillSource, on: boolean) => {
+    const list = listBySource.get(src.id) ?? [];
+    if (!on) {
+      const removing = list.filter(
+        (s) => installedRef(s.source, s.name) !== undefined,
+      ).length;
+      const ok = await showConfirm(
+        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn them back on at any time.`,
+        `Disable all skills from ${src.name}?`,
+        { kind: "destructive", confirmLabel: "Disable all" },
+      );
+      if (!ok) return;
+    }
+    await toggleSource(src.id, list, on);
   };
 
   const removeWithConfirm = async (src: SkillSource) => {
@@ -366,6 +405,15 @@ export function SkillsSurface({
               onQueryChange={setQuery}
               totals={totals}
               matchCount={matchCount}
+              notice={
+                drifted.length > 0 ? (
+                  <SkillDriftBanner
+                    drifted={drifted}
+                    busy={updatingAll}
+                    onUpdateAll={() => void updateAll(drifted)}
+                  />
+                ) : undefined
+              }
             />
           )}
 
@@ -440,6 +488,8 @@ export function SkillsSurface({
                         setRenderFor({ source: src, skill })
                       }
                       suppressedNames={suppressedBySource.get(src.id)}
+                      onToggleAll={(on) => void toggleAllWithConfirm(src, on)}
+                      bulkBusy={busySourceId === src.id}
                       onManageConnections={
                         agentId
                           ? () => navigateToSandboxHome(agentId, "connections")
