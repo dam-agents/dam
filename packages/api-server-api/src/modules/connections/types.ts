@@ -159,6 +159,17 @@ export const connectionView = z.object({
   // Only for an OAuth connection storing its own client secret — an
   // operator-supplied one is deploy config, not replaceable per connection.
   hasClientSecret: z.boolean().optional(),
+  // The narrowing a github-app connection currently mints against, so it can
+  // be shown and edited rather than only set once at create. Absent means the
+  // installation's full authority. Carries no secret — names, ids, and levels
+  // are all things the user chose.
+  githubAppScope: z
+    .object({
+      repositories: z.array(z.string()).optional(),
+      repositoryIds: z.array(z.number().int()).optional(),
+      permissions: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
 
@@ -280,6 +291,25 @@ export interface ConnectionsService {
     host?: string;
     templateId: string;
   }): Promise<GitHubAppInstallationProbe>;
+
+  // The same read for a connection that already exists, which knows its own
+  // app and holds its own key — so editing a scope never asks for the private
+  // key a second time.
+  probeGitHubAppInstallationForConnection(input: {
+    connectionId: string;
+  }): Promise<GitHubAppInstallationProbe>;
+
+  // Replaces which repositories and permissions the connection mints against,
+  // preserving identity, credential, and every agent grant. The new scope is
+  // proven by minting against it before it is stored, and the fresh token
+  // replaces the live one — so the change takes effect at once rather than at
+  // the next renewal. An omitted field clears that half of the narrowing.
+  updateGitHubAppScope(input: {
+    id: string;
+    repositories?: string;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<void>;
 
   startOAuth(
     connectionId: string,

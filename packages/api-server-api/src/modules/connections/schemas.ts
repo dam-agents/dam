@@ -150,6 +150,22 @@ export const connectionProbeGitHubAppInputSchema = z.object({
   host: z.string().min(1).optional(),
 });
 
+// The same read for an existing connection, which supplies its own app
+// identity and key — so editing never asks for the private key again.
+export const connectionProbeGitHubAppForConnectionInputSchema = z.object({
+  connectionId: z.string().min(1),
+});
+
+// Replaces a github-app connection's narrowing. Same all-string shape as
+// create; an omitted or blank field clears that half rather than leaving the
+// previous value in place, so the form always states the whole scope.
+export const connectionUpdateGitHubAppScopeInputSchema = z.object({
+  id: z.string().min(1),
+  repositories: z.string().optional(),
+  repositoryIds: z.string().optional(),
+  permissions: z.string().optional(),
+});
+
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),

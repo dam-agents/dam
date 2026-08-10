@@ -300,6 +300,19 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   working Connection into a rejected renewal. The read needs the app's private
   key and is authenticated the same way minting is; it stores nothing.
 
+  The subset is **editable in place**, which is the one part of a Connection's
+  configuration that is: what an agent should be allowed to do changes as its
+  work does, and rebuilding the Connection to add a repository would mean
+  re-pasting the key and re-granting it to every agent. Editing re-reads the
+  installation using the Connection's own stored key — never asking for it a
+  second time — and re-mints immediately, so the narrower token replaces the
+  live one rather than waiting out the current one's hour. The new subset is
+  proven by that mint before it is stored, so one the installation cannot
+  cover fails the edit instead of parking the Connection at its next renewal.
+  Nothing else moves: the credential, the contributions, and every agent grant
+  are untouched, and because the token is read gateway-side the change lands
+  without an Agent-spec patch or a pod roll.
+
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
 host**, all from one K8s Secret. The Secret carries a JSON
