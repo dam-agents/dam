@@ -1,4 +1,6 @@
 import type { TtlStore } from "../../../core/ttl-store.js";
+import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
+import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import { match, P } from "ts-pattern";
 import {
   ambientThreadKey,
@@ -151,6 +153,7 @@ function slackTurnContract(ctx: {
         ".",
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
+    channelNetworkAccessGuidance(ctx.brand.name),
   ].join("\n");
 }
 
@@ -683,6 +686,13 @@ export function createSlackWorker(
   brand: { name: string; short: string },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
+  /** Marks the agent as driven from a channel for the length of each turn, so
+   *  the egress gate can refuse a request that would otherwise hold for a
+   *  verdict nobody in a Slack conversation can give. Required: a missing
+   *  wiring here would silently restore the stall this exists to prevent, so
+   *  whether the marker does anything is the store's own business, decided
+   *  where it is built. */
+  attendance: ChannelTurnAttendance,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   const brandShort = brand.short;
@@ -698,6 +708,10 @@ export function createSlackWorker(
     threadTs: string;
     eventTs: string;
     sessionId?: string;
+    /** Releases this turn's channel-turn attendance marker; set by
+     *  {@link beginTurn} and paired in {@link endTurn}, so concurrent turns on
+     *  one agent each hold their own and the marker outlives all of them. */
+    releaseAttendance?: () => void;
   };
 
   /** Turns currently driving the harness per agent. A single agent pod
@@ -743,6 +757,7 @@ export function createSlackWorker(
       inFlightTurns.set(instanceName, live);
     }
     live.add(ref);
+    ref.releaseAttendance ??= attendance.openChannelTurn(instanceName);
   }
 
   /** `harnessMayStillRun`: the turn settled on a path that says nothing about
@@ -760,6 +775,11 @@ export function createSlackWorker(
       live.delete(ref);
       if (live.size === 0) inFlightTurns.delete(instanceName);
     }
+    // Released even when the harness may still be running: a late request from
+    // a turn whose relay dropped falls back to the ordinary hold rather than
+    // being refused on the strength of a marker nothing is refreshing.
+    ref.releaseAttendance?.();
+    ref.releaseAttendance = undefined;
     if (opts?.harnessMayStillRun) {
       let lingering = lingeringTurns.get(instanceName);
       if (!lingering) {

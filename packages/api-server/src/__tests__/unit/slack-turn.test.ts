@@ -18,6 +18,8 @@ import {
 } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
+import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 
 const OWNER = "kc|owner-1";
 
@@ -44,6 +46,7 @@ function harness(opts: {
   ensureReady?: AgentsService["ensureReady"];
   /** Currently-bound channel; a function so a test can rebind mid-turn. */
   boundChannel?: () => string;
+  attendance?: ChannelTurnAttendance;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -78,6 +81,7 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
+    opts.attendance ?? stubTurnAttendance(),
     (e) => events.push(e),
   );
 
@@ -860,5 +864,93 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
 
     for (const g of gates) g();
     await tick();
+  });
+});
+
+describe("slack turn — network-access framing and attendance", () => {
+  /** Records the open/release calls and whether the marker is held right now,
+   *  so a test can assert the window rather than just the call order. */
+  function recordingAttendance() {
+    const calls: string[] = [];
+    let open = 0;
+    return {
+      calls,
+      isOpen: () => open > 0,
+      attendance: {
+        openChannelTurn(agentId: string) {
+          calls.push(`open:${agentId}`);
+          open++;
+          let released = false;
+          return () => {
+            if (released) return;
+            released = true;
+            calls.push(`release:${agentId}`);
+            open--;
+          };
+        },
+      } satisfies ChannelTurnAttendance,
+    };
+  }
+
+  it("tells the agent an unallowed host can't be approved from the conversation", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain("<network-access>");
+    // The three things the turn can't work out for itself: that the refusal is
+    // a permission rather than a broken host, that this conversation isn't
+    // where it's granted, and that looping on the host is not the answer.
+    expect(prompt).toContain("cannot be approved from this conversation");
+    expect(prompt).toContain("only your owner can allow a host, in DAM");
+    expect(prompt).toContain("don't retry the same host in a loop");
+  });
+
+  it("marks the agent channel-driven for the turn and releases it after", async () => {
+    const rec = recordingAttendance();
+    let openDuringTurn = false;
+    const h = harness({
+      attendance: rec.attendance,
+      sendPrompt: async () => {
+        openDuringTurn = rec.isOpen();
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    // The window that matters is the one the harness runs in — that is when its
+    // egress reaches the gate.
+    expect(openDuringTurn).toBe(true);
+    expect(rec.calls).toEqual(["open:agent-1", "release:agent-1"]);
+    expect(rec.isOpen()).toBe(false);
+  });
+
+  it("releases the marker when the turn fails to wake the agent", async () => {
+    const rec = recordingAttendance();
+    const h = harness({
+      attendance: rec.attendance,
+      ensureReady: async () => {
+        throw new AgentWakeTimeoutError({
+          agentId: "agent-1",
+          timeoutMs: 120_000,
+          durationMs: 120_100,
+          failure: { kind: "agent-pod-not-ready" },
+        });
+      },
+    });
+    await h.mention();
+    await tick();
+
+    // A stranded marker would keep denying this agent's egress fast long after
+    // the turn is gone.
+    expect(rec.isOpen()).toBe(false);
+    expect(rec.calls).toContain("release:agent-1");
   });
 });

@@ -4,6 +4,7 @@ import type { AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -61,6 +62,7 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
+    stubTurnAttendance(),
     (e) => events.push(e),
   );
 

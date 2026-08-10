@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
 import { ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { SESSION_PRESENCE_KEY_PREFIX } from "../../core/turn-attendance.js";
 
-const KEY_PREFIX = "presence:agent:";
+// Shared with the egress gate, which reads these keys to tell whether anyone
+// is attached to answer an approval hold.
+const KEY_PREFIX = SESSION_PRESENCE_KEY_PREFIX;
 // A replica key vanishes this long after the replica stops refreshing it —
 // crash, OOM, network partition — so a dead replica's sessions stop pinning
 // the agent awake within ~2 minutes (reconcile tick + TTL).
