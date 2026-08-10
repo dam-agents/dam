@@ -187,7 +187,6 @@ export function ChatView() {
   // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
   // synchronously — zustand re-renders before useState commits.
   const terminalFreshRef = useRef(false);
-  const ephemeralTerminalIdRef = useRef<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -304,27 +303,6 @@ export function ChatView() {
     resumeSession,
   ]);
 
-  const pendingTerminal = useStore((s) => s.pendingTerminal);
-  const setPendingTerminal = useStore((s) => s.setPendingTerminal);
-  useEffect(() => {
-    if (!selectedAgent || !pendingTerminal) return;
-    setPendingTerminal(false);
-    // Same fresh-terminal spawn as the blank chat → terminal toggle: a
-    // client-side ephemeral PTY session, no server registration. Mode first:
-    // the URL carries the open session, and an ephemeral PTY id is not one —
-    // seeing it before the mode would put it in the address bar for a frame.
-    const id = crypto.randomUUID();
-    ephemeralTerminalIdRef.current = id;
-    setSessionMode(SessionMode.Terminal);
-    setSessionId(id);
-  }, [
-    selectedAgent,
-    pendingTerminal,
-    setPendingTerminal,
-    setSessionId,
-    setSessionMode,
-  ]);
-
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       // Deliberate navigation releases the pending-launch chat takeover.
@@ -380,9 +358,9 @@ export function ChatView() {
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
-    ephemeralTerminalIdRef.current = id;
     terminalFreshRef.current = true;
-    // Mode before id — see the pending-terminal effect above.
+    // Mode before the id: the URL carries the open session, and an ephemeral
+    // PTY id is not one — seeing it first would put it in the address bar.
     setSessionMode(SessionMode.Terminal);
     setSessionId(id);
     setMobileScreen("chat");
