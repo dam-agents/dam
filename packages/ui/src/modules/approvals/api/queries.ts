@@ -1,4 +1,5 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { api } from "../../../api.js";
 
@@ -11,7 +12,7 @@ export const approvalsKeys = {
     [...approvalsKeys.all, "agent", agentId] as const,
 };
 
-/** Owner-wide pending approvals. Polled — Redis pub/sub fans the synth
+/** Owner-wide approvals (all statuses). Polled — Redis pub/sub fans the synth
  *  frame to the live WS; the inbox itself is a DB read and refetches
  *  enough to surface a new pending without a hard reload. */
 export function useApprovalsForOwner() {
@@ -22,6 +23,33 @@ export function useApprovalsForOwner() {
     staleTime: REFETCH_INTERVAL_MS,
     meta: { errorToast: "Couldn't load approvals" },
   });
+}
+
+/** Pending approvals only — derived from the owner-wide query. */
+export function usePendingApprovals() {
+  const { data, ...rest } = useApprovalsForOwner();
+  const pending = useMemo(
+    () => (data ?? []).filter((r) => r.status === "pending"),
+    [data],
+  );
+  return { data: pending, ...rest };
+}
+
+/** Resolved + expired approvals — the history view. */
+export function useApprovalHistory() {
+  const { data, ...rest } = useApprovalsForOwner();
+  const history = useMemo(
+    () =>
+      (data ?? [])
+        .filter((r) => r.status === "resolved" || r.status === "expired")
+        .sort(
+          (a, b) =>
+            Date.parse(b.resolvedAt ?? b.createdAt) -
+            Date.parse(a.resolvedAt ?? a.createdAt),
+        ),
+    [data],
+  );
+  return { data: history, ...rest };
 }
 
 export function useApprovalsForAgent(agentId: string | null) {

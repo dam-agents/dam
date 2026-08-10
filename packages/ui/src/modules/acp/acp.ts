@@ -99,6 +99,17 @@ export async function openConnection(
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean },
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+  if (import.meta.env.VITE_MOCK) {
+    const noop = new EventTarget() as unknown as WebSocket;
+    Object.assign(noop, {
+      close() {},
+      send() {},
+      readyState: WebSocket.OPEN,
+    });
+    const handler = { get: (_: object, prop: string) => prop === "then" ? undefined : async () => ({}) };
+    const conn = new Proxy({}, handler) as unknown as ClientSideConnection;
+    return { connection: conn, ws: noop };
+  }
   const { stream, ws } = await wsStream(
     await wsUrl(agentId, opts?.passive ?? false),
   );

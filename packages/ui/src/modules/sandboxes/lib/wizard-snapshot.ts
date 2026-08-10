@@ -4,8 +4,6 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
-import { DEFAULT_KB_TEMPLATE_ID } from "../../knowledge-bases/lib/kb-templates.js";
-
 const SNAPSHOT_KEY = "platform-sandbox-wizard";
 
 export const egressPresetSchema = z.enum(["none", "trusted", "all"]);
@@ -34,6 +32,8 @@ export const wizardSnapshotSchema = z.object({
   templateId: z.string().nullable(),
   /** The installation procedure; set only on the `knowledge-base` path. */
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
+  /** The preconfigured experiment template (nous, openevolve, etc.); null = from scratch. */
+  experimentTemplateId: z.string().nullable().default(null),
   customImage: z.string(),
   name: z.string(),
   // The selected provider Connection (the single credential model). A snapshot
@@ -63,6 +63,7 @@ export const EMPTY_SNAPSHOT: WizardSnapshot = {
   startingPoint: null,
   templateId: null,
   kbTemplateId: null,
+  experimentTemplateId: null,
   customImage: "",
   name: "",
   providerRef: null,
@@ -102,6 +103,7 @@ export function startingPointDefaults(
     startingPoint,
     templateId: null,
     kbTemplateId: null,
+    experimentTemplateId: null,
     customImage: "",
     providerRef: null,
   };
@@ -109,11 +111,7 @@ export function startingPointDefaults(
     case "experiment":
       return { ...cleared, templateId: KINDED_HARNESS_TEMPLATE_ID };
     case "knowledge-base":
-      return {
-        ...cleared,
-        templateId: KINDED_HARNESS_TEMPLATE_ID,
-        kbTemplateId: DEFAULT_KB_TEMPLATE_ID,
-      };
+      return { ...cleared, templateId: KINDED_HARNESS_TEMPLATE_ID };
     default:
       return cleared;
   }
@@ -123,9 +121,11 @@ export function startingPointDefaults(
 export function startingPointComplete(snapshot: WizardSnapshot): boolean {
   switch (snapshot.startingPoint) {
     case "experiment":
-      return snapshot.templateId !== null;
+      // "from scratch" sets experimentTemplateId to "scratch"; a preconfigured
+      // one stores the template id. Either satisfies step 1.
+      return snapshot.experimentTemplateId !== null;
     case "knowledge-base":
-      return snapshot.templateId !== null && snapshot.kbTemplateId !== null;
+      return snapshot.kbTemplateId !== null;
     case "specialized":
     case "general-purpose":
       return snapshot.templateId !== null;

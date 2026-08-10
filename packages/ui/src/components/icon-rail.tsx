@@ -2,21 +2,46 @@ import {
   Book,
   type CarbonIconType,
   Chemistry,
+  Close,
+  ContainerSoftware,
   Email as Inbox,
   Folders,
   Home,
+  Meter,
   Settings,
+  SidePanelOpen,
 } from "@carbon/icons-react";
+import { useEffect, useState } from "react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
+import { BudgetMeterCompact } from "../modules/budgets/components/budget-meter-compact.js";
 import { useStore } from "../store.js";
 
 const EMPTY: never[] = [];
+const STORAGE_KEY = "sidebar-expanded";
+
+function useExpanded() {
+  const [expanded, setExpanded] = useState(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === null ? true : stored === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, String(expanded));
+  }, [expanded]);
+
+  return [expanded, setExpanded] as const;
+}
 
 interface Destination {
   label: string;
@@ -30,7 +55,9 @@ export function IconRail({
   hideMobileBar = false,
 }: {
   hideMobileBar?: boolean;
+  showBudget?: boolean;
 } = {}) {
+  const [expanded, setExpanded] = useExpanded();
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
@@ -40,9 +67,16 @@ export function IconRail({
   const { data: approvals = EMPTY } = useApprovalsForOwner();
   const pendingCount = approvals.filter((r) => r.status === "pending").length;
 
-  const sandboxes: Destination = {
+  const home: Destination = {
     label: "Home",
     icon: Home,
+    active: view === "home",
+    badge: 0,
+    navigate: () => setView("home"),
+  };
+  const sandboxes: Destination = {
+    label: "Sandboxes",
+    icon: ContainerSoftware,
     active: view === "list",
     badge: 0,
     navigate: () => setView("list"),
@@ -72,7 +106,7 @@ export function IconRail({
     navigate: () => setView("artifacts"),
   };
   const inbox: Destination = {
-    label: "Inbox",
+    label: "Approvals",
     icon: Inbox,
     active: view === "inbox",
     badge: pendingCount,
@@ -89,32 +123,94 @@ export function IconRail({
   return (
     <>
       <nav
-        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card border-r border-border shrink-0"
+        className={cn(
+          "hidden md:flex flex-col h-full bg-card border-r border-border shrink-0 transition-[width] duration-200 overflow-hidden",
+          expanded ? "w-[240px]" : "w-[56px]",
+        )}
         data-testid="app-sidebar"
       >
-        <div className="flex items-center justify-center pt-2">
-          <button
-            type="button"
-            onClick={sandboxes.navigate}
-            title={getBrand().name}
-            aria-label={getBrand().name}
-            className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <BrandLogo />
-          </button>
+        {/* Brand logo + collapse toggle */}
+        <div
+          className={cn(
+            "flex items-center pt-2 pb-1",
+            expanded ? "px-3 justify-between" : "justify-center",
+          )}
+        >
+          {expanded ? (
+            <>
+              <button
+                type="button"
+                onClick={home.navigate}
+                title={getBrand().name}
+                aria-label={getBrand().name}
+                className="rounded-lg p-1 text-foreground/80 cursor-pointer"
+              >
+                <BrandLogo />
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                title="Collapse sidebar"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-muted"
+              >
+                <Close size={16} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              title="Expand sidebar"
+              className="group rounded-lg p-1 text-foreground/80 cursor-pointer"
+            >
+              <span className="block group-hover:hidden">
+                <BrandLogo />
+              </span>
+              <span className="hidden group-hover:flex h-[32px] w-[32px] items-center justify-center">
+                <SidePanelOpen size={20} />
+              </span>
+            </button>
+          )}
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <RailItem {...sandboxes} />
-          <RailItem {...experiments} />
-          <RailItem {...knowledgeBases} />
-          <RailItem {...artifacts} />
+
+        {/* Main nav items */}
+        <div
+          className={cn(
+            "flex flex-col gap-0.5",
+            expanded ? "px-2" : "items-center",
+          )}
+        >
+          <NavItem dest={home} expanded={expanded} />
+          <NavItem dest={sandboxes} expanded={expanded} />
+          <NavItem dest={experiments} expanded={expanded} />
+          <NavItem dest={knowledgeBases} expanded={expanded} />
         </div>
-        <div className="flex-1" />
-        {/* Inbox is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
-        <div className="flex flex-col items-center gap-1 mb-2">
-          <RailItem {...inbox} />
-          <RailItem {...settings} />
+
+        <div
+          className={cn("flex-1", !expanded && "cursor-pointer")}
+          onClick={!expanded ? () => setExpanded(true) : undefined}
+        />
+
+        {/* Bottom items: artifacts, inbox, settings */}
+        <div
+          className={cn(
+            "flex flex-col gap-0.5",
+            expanded ? "px-2" : "items-center",
+          )}
+        >
+          <NavItem dest={artifacts} expanded={expanded} />
+          <NavItem dest={inbox} expanded={expanded} />
+          <NavItem dest={settings} expanded={expanded} />
         </div>
+
+        {/* Budget meter */}
+        {expanded ? (
+          <div className="mt-3 mb-2 px-2">
+            <BudgetMeterCompact />
+          </div>
+        ) : (
+          <BudgetIconCollapsed />
+        )}
       </nav>
 
       {!hideMobileBar && (
@@ -125,7 +221,6 @@ export function IconRail({
             knowledgeBases,
             artifacts,
             inbox,
-            settings,
           ].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
@@ -135,24 +230,84 @@ export function IconRail({
   );
 }
 
-function RailItem({ label, icon: Icon, active, badge, navigate }: Destination) {
+/* ─── Nav item (expanded / collapsed) ─── */
+
+function NavItem({ dest, expanded }: { dest: Destination; expanded: boolean }) {
+  const { label, icon: Icon, active, badge, navigate } = dest;
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={navigate}
+        title={label}
+        aria-label={label}
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+          active
+            ? "text-primary bg-muted"
+            : "text-foreground/80 hover:text-foreground hover:bg-muted",
+        )}
+      >
+        <IconWithBadge icon={Icon} badge={badge} />
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={navigate}
-      title={label}
-      aria-label={label}
       className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
+        "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors",
         active
           ? "text-primary bg-muted"
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
-      <IconWithBadge icon={Icon} badge={badge} />
+      <Icon size={18} className="shrink-0" />
+      <span className="flex-1 truncate text-[14px] font-medium">{label}</span>
+      {badge > 0 && (
+        <Badge
+          variant="default"
+          className="min-w-[20px] h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center border-0 bg-accent text-white hover:bg-accent"
+        >
+          {badge > 9 ? "9+" : badge}
+        </Badge>
+      )}
     </button>
   );
 }
+
+/* ─── Budget icon (collapsed state) — click to reveal popover ─── */
+
+function BudgetIconCollapsed() {
+  return (
+    <div className="flex items-center justify-center mb-1">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            title="Budget usage"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-foreground/80 transition-colors hover:text-foreground hover:bg-muted"
+          >
+            <Meter size={20} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="right"
+          align="end"
+          sideOffset={8}
+          className="w-[220px] p-3"
+        >
+          <BudgetMeterCompact />
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+/* ─── Mobile bottom bar ─── */
 
 function BottomBarItem({
   label,

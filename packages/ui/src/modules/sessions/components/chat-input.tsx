@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DiscoveryTooltip } from "@/components/discovery-tooltip";
 import { Textarea } from "@/components/ui/textarea";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
@@ -31,6 +32,14 @@ export interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  discoveryTooltip?: {
+    title: string;
+    message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+    open: boolean;
+    onDismiss: () => void;
+  };
 }
 
 export function ChatInput({
@@ -39,6 +48,7 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  discoveryTooltip,
 }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -184,16 +194,25 @@ export function ChatInput({
             </div>
           )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 mb-[9px] h-[40px] w-[40px] text-muted-foreground hover:text-primary disabled:opacity-40"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loadingSession}
-              title="Attach file"
+            <DiscoveryTooltip
+              title={discoveryTooltip?.title ?? ""}
+              message={discoveryTooltip?.message ?? ""}
+              actionLabel={discoveryTooltip?.actionLabel}
+              onAction={discoveryTooltip?.onAction}
+              open={discoveryTooltip?.open ?? false}
+              onDismiss={discoveryTooltip?.onDismiss ?? (() => {})}
             >
-              <Add size={16} />
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 mb-[9px] h-[40px] w-[40px] text-muted-foreground hover:text-primary disabled:opacity-40"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loadingSession}
+                title="Attach file"
+              >
+                <Add size={16} />
+              </Button>
+            </DiscoveryTooltip>
             <Textarea
               ref={textareaRef}
               className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-[14px] leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:text-muted-foreground disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"

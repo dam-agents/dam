@@ -16,6 +16,26 @@ import { queryClient } from "./query-client.js";
 import { useStore } from "./store.js";
 
 async function main() {
+  if (import.meta.env.VITE_MOCK) {
+    const { worker } = await import("./mock/browser.js");
+    await worker.start({ onUnhandledRequest: "warn" });
+    await loadBrand().then(applyBrand);
+    const { default: App } = await import("./app.js");
+    const { MockToggle } = await import("./mock/mock-toggle.js");
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <App />
+            <MockToggle />
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    return;
+  }
+
   // Brand fetch is unauthenticated and runs in parallel with auth init so the
   // post-login render starts with the right title + theme colors. A failed
   // fetch falls back to the bundled defaults — login still works.

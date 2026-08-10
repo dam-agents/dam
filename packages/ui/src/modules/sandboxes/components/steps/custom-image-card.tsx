@@ -40,7 +40,7 @@ export function CustomImageCard({
         <Badge variant="accent">Advanced</Badge>
       </div>
       <p className="mt-1 text-[14px] text-muted-foreground">
-        Bring your own ACP-compatible image{" "}
+        Any ACP-compatible container image.{" "}
         <a
           href={CUSTOM_IMAGE_DOCS_URL}
           target="_blank"

@@ -94,6 +94,7 @@ export function useIsAgentOperable(agentId: string | null): boolean {
   const unreachable = useStore((s) =>
     agentId ? s.unreachableAgents.has(agentId) : false,
   );
+  if (import.meta.env.VITE_MOCK) return true;
   return runState === "running" && !restarting && !pausing && !unreachable;
 }
 

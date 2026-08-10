@@ -1,3 +1,9 @@
+["ui:mock"]
+description = "Run UI in mock mode (no backend required)"
+dir = "{{config_root}}"
+env = { VITE_MOCK = "1" }
+run = "pnpm --filter platform-ui exec vite"
+
 ["ui:setup"]
 dir = "{{config_root}}"
 depends = ["common:setup:pnpm"]

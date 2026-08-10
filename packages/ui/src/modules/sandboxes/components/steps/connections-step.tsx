@@ -12,11 +12,12 @@ import { StepHeader } from "../step-header.js";
 interface Props {
   snapshot: WizardSnapshot;
   update: (patch: Partial<WizardSnapshot>) => void;
+  startingPoint?: WizardSnapshot["startingPoint"];
 }
 
 /** Grants stage into the wizard draft — the sandbox doesn't exist yet, the
  *  create call applies them. */
-export function ConnectionsStep({ snapshot, update }: Props) {
+export function ConnectionsStep({ snapshot, update, startingPoint }: Props) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
 
@@ -45,7 +46,7 @@ export function ConnectionsStep({ snapshot, update }: Props) {
       <StepHeader
         step={3}
         title="Grant connections"
-        subtitle="Choose which app connections and credentials this sandbox can access."
+        subtitle={`Choose which app connections and credentials this ${startingPoint === "experiment" ? "experiment" : startingPoint === "knowledge-base" ? "knowledge base" : "sandbox"} can access.`}
       />
       <GrantedConnectionsPanel
         groups={groups}

@@ -18,6 +18,7 @@ export function useFirstRunRedirect(): void {
     sessionStorage.setItem(FIRST_RUN_FLAG, "1");
 
     const noSandboxes = (agentsData?.list.length ?? 0) === 0;
-    if (noSandboxes && view === "list") navigateToCreateSandbox();
+    if (noSandboxes && (view === "home" || view === "list"))
+      navigateToCreateSandbox();
   }, [agentsLoaded, agentsData, view, navigateToCreateSandbox]);
 }

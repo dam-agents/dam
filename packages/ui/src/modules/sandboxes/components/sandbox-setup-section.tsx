@@ -14,7 +14,6 @@ import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
-import { TemplateUpdateNotice } from "./template-update-notice.js";
 
 /** Disabled-input look for create-only values (image, harness) shown as text.
  *  Shared with the KB config page so the read-only field style can't drift. */
@@ -84,7 +83,6 @@ export function SandboxSetupSection({ f }: Props) {
             </span>
           </div>
         </FormField>
-        <TemplateUpdateNotice agent={agent} />
       </section>
 
       <section className="mb-8">

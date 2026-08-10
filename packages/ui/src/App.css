@@ -492,6 +492,91 @@
   padding: 0.1em 0.36em;
   color: var(--c-accent-hover);
 }
+
+/* ─── Inline code style variants (toggled via data-code-style on <html>) ─── */
+[data-code-style="muted-bg"] .prose code {
+  background: color-mix(in srgb, var(--c-surface-raised) 40%, transparent);
+  border: 1px solid var(--c-border-light);
+  border-radius: 6px;
+  color: var(--c-text);
+}
+[data-code-style="pill"] .prose code {
+  background: color-mix(in srgb, var(--c-surface-raised) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-border-light) 60%, transparent);
+  border-radius: 999px;
+  padding: 0.1em 0.5em;
+  color: var(--c-text);
+}
+[data-code-style="underline"] .prose code {
+  background: none;
+  border: none;
+  border-bottom: 2px solid color-mix(in srgb, var(--c-accent) 40%, transparent);
+  border-radius: 0;
+  padding: 0 0 1px;
+  color: var(--c-text);
+}
+[data-code-style="left-bar"] .prose code {
+  background: none;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--c-accent) 50%, transparent);
+  border-radius: 0;
+  padding: 0 0 0 0.4em;
+  color: var(--c-text);
+}
+[data-code-style="weight-only"] .prose code {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  font-weight: 600;
+  color: var(--c-text);
+}
+[data-code-style="color-accent"] .prose code {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--c-accent);
+}
+[data-code-style="subtle-border"] .prose code {
+  background: none;
+  border: 1px solid var(--c-border-light);
+  border-radius: 6px;
+  padding: 0.1em 0.36em;
+  color: var(--c-text);
+}
+[data-code-style="highlight"] .prose code {
+  background: color-mix(in srgb, #facc15 18%, transparent);
+  border: none;
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  color: var(--c-text);
+}
+[data-code-style="minimal"] .prose code {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--c-text);
+  opacity: 0.6;
+}
+[data-code-style="soft-fill"] .prose code {
+  background: color-mix(in srgb, var(--c-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-accent) 20%, transparent);
+  border-radius: 6px;
+  padding: 0.1em 0.36em;
+  color: var(--c-accent-hover);
+}
+/* Keep pre code unstyled regardless of variant */
+[data-code-style] .prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-weight: normal;
+  color: var(--c-text);
+  opacity: 1;
+}
 .prose pre {
   background: var(--c-surface-raised) !important;
   border: 1px solid var(--border-ui);

@@ -98,7 +98,7 @@ function CliQuickstartNote() {
   );
 }
 
-function OpenInTerminalDialog({
+export function OpenInTerminalDialog({
   agent,
   onClose,
 }: {
@@ -126,7 +126,7 @@ function OpenInTerminalDialog({
   );
 }
 
-function OpenInIdeDialog({
+export function OpenInIdeDialog({
   agent,
   onClose,
 }: {

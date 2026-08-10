@@ -102,15 +102,11 @@ export function ArtifactsView() {
 
   return (
     <div className="anim-in">
-      <PageHeader
-        title="Artifacts"
-        description={
-          hasContent
-            ? "Pages and files created by you and your agents. Share with a link, set an expiry."
-            : undefined
-        }
-        actions={
-          hasContent ? (
+      {hasContent && (
+        <PageHeader
+          title="Artifacts"
+          description="Pages and files created by you and your agents. Share with a link, set an expiry."
+          actions={
             <>
               <Button
                 variant="outline"
@@ -122,9 +118,9 @@ export function ArtifactsView() {
                 Upload artifact
               </Button>
             </>
-          ) : undefined
-        }
-      />
+          }
+        />
+      )}
 
       {hasContent && (
         <div className="relative mt-7">

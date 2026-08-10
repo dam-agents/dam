@@ -2,7 +2,6 @@ import { Box } from "lucide-react";
 
 import type { ProviderPresetType, TemplateView } from "../../../../types.js";
 import { CardIcon } from "../../../providers/components/card-icon.js";
-import { CardContent } from "./card-content.js";
 import { SelectableCard } from "./selectable-card.js";
 
 const HARNESS_PRESET: Record<string, ProviderPresetType> = {
@@ -33,7 +32,7 @@ function HarnessIcon({ templateId }: { templateId: string }) {
     return <CardIcon provider={preset} size="md" />;
   }
   return (
-    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-background/80">
       <Box className="size-5 text-muted-foreground" />
     </div>
   );
@@ -55,10 +54,24 @@ export function HarnessCard({
       ariaLabel={template.name}
       testId={`template-card-${template.id}`}
     >
-      <div className="flex items-start gap-3">
-        <HarnessIcon templateId={template.id} />
-        <div className="min-w-0 flex-1">
-          <CardContent template={template} />
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <HarnessIcon templateId={template.id} />
+          {template.tags && template.tags.length > 0 && (
+            <span className="shrink-0 text-[14px] text-muted-foreground">
+              {template.tags.join(" · ")}
+            </span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-[16px] font-semibold text-foreground">
+            {template.name}
+          </p>
+          {template.description && (
+            <p className="mt-1 text-[14px] leading-snug text-muted-foreground">
+              {template.description}
+            </p>
+          )}
         </div>
       </div>
     </SelectableCard>

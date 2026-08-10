@@ -22,6 +22,7 @@ export const sandboxSectionSchema = z.enum([
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
+  | { view: "home" }
   | { view: "list" }
   | { view: "chat"; agent: string }
   | { view: "settings"; settingsTab: SettingsTab }
@@ -46,6 +47,8 @@ const sandboxHomeRe = new RegExp(
 );
 
 export function parseRoute(path: string): Route {
+  if (path === "/") return { view: "home" };
+  if (path === "/sandboxes") return { view: "list" };
   if (path.startsWith("/chat/"))
     return { view: "chat", agent: decodeURIComponent(path.slice(6)) };
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
@@ -94,13 +97,15 @@ export function parseRoute(path: string): Route {
       view: "knowledge-base-chat",
       agent: decodeURIComponent(knowledgeBaseChatMatch[1]!),
     };
-  return { view: "list" };
+  return { view: "home" };
 }
 
 export function routeToPath(route: Route): string {
   switch (route.view) {
-    case "list":
+    case "home":
       return "/";
+    case "list":
+      return "/sandboxes";
     case "chat":
       return `/chat/${encodeURIComponent(route.agent)}`;
     case "settings":

@@ -1,3 +1,4 @@
+import type { KnowledgeBaseTemplateId } from "api-server-api";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
@@ -10,7 +11,10 @@ import { useCreateAgent } from "../../agents/api/mutations.js";
 import { useCreateExperimentSandbox } from "../../experiments/api/mutations.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useCreateKnowledgeBase } from "../../knowledge-bases/api/mutations.js";
-import { DEFAULT_KB_TEMPLATE_ID } from "../../knowledge-bases/lib/kb-templates.js";
+import {
+  DEFAULT_KB_TEMPLATE_ID,
+  KB_TEMPLATES,
+} from "../../knowledge-bases/lib/kb-templates.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import {
@@ -30,7 +34,6 @@ import {
   providerPolicy,
   type StartingPoint,
   startingPointComplete,
-  startingPointDefaults,
   type WizardStep,
 } from "../lib/wizard-snapshot.js";
 
@@ -113,6 +116,7 @@ export function SandboxWizardView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot.step]);
 
+
   const goToStep = (step: WizardStep) => update({ step });
 
   const registryFilled = registryFilledCount(registryCredential);
@@ -156,13 +160,17 @@ export function SandboxWizardView() {
       }
 
       if (snapshot.startingPoint === "experiment") {
+        const effectiveTemplate =
+          snapshot.experimentTemplateId &&
+          snapshot.experimentTemplateId !== "scratch"
+            ? snapshot.experimentTemplateId
+            : KINDED_HARNESS_TEMPLATE_ID;
         const agent = await createExperimentSandbox.mutateAsync({
           ...shared,
-          templateId: snapshot.templateId ?? KINDED_HARNESS_TEMPLATE_ID,
+          templateId: effectiveTemplate,
           ...(connectionIds.length ? { connectionIds } : {}),
         });
         reset();
-        // The chat is where a fresh one greets the user.
         selectAgent(agent.id);
         return;
       }
@@ -240,15 +248,22 @@ export function SandboxWizardView() {
               : undefined
           }
           vmFeatureEnabled={flags?.["vm-sandboxes"] ?? false}
-          onPickStartingPoint={(startingPoint) =>
-            update(startingPointDefaults(startingPoint))
-          }
+          kbTemplates={KB_TEMPLATES}
           onPickTemplate={(templateId) =>
-            update({ templateId, customImage: "" })
+            update({
+              templateId,
+              customImage: "",
+              startingPoint: "general-purpose",
+            })
           }
-          onPickKbTemplate={(kbTemplateId) => update({ kbTemplateId })}
+          onPickExperimentTemplate={(id) =>
+            update({ experimentTemplateId: id })
+          }
+          onPickKbTemplate={(id) =>
+            update({ kbTemplateId: id as KnowledgeBaseTemplateId })
+          }
           onCustomImageChange={(customImage) =>
-            update({ customImage, templateId: null })
+            update({ customImage, templateId: null, startingPoint: "custom" })
           }
           onContinue={() => {
             if (step1CanAdvance) update({ step: 2 });
@@ -271,11 +286,16 @@ export function SandboxWizardView() {
           sizeCpuMilli={snapshot.sizeCpuMilli}
           sizeMemoryMi={snapshot.sizeMemoryMi}
           providers={providerPolicy(snapshot.startingPoint)}
+          startingPoint={snapshot.startingPoint}
         />
       )}
 
       {snapshot.step === 3 && (
-        <ConnectionsStep snapshot={snapshot} update={update} />
+        <ConnectionsStep
+          snapshot={snapshot}
+          update={update}
+          startingPoint={snapshot.startingPoint}
+        />
       )}
     </SandboxWizardShell>
   );

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Platform — Wizard Step 1 Prototype</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'IBM Plex Sans', sans-serif; background: #fafaf9; color: #121619; height: 100vh; overflow: hidden; }
+
+    /* Layout */
+    .shell { display: flex; height: 100vh; }
+    .sidebar { width: 240px; border-right: 1px solid #dde1e6; background: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .content { flex: 1; overflow-y: auto; display: flex; justify-content: center; }
+    .footer { border-top: 1px solid #dde1e6; background: #fff; display: flex; justify-content: center; }
+    .footer-inner { width: 920px; max-width: 100%; padding: 0 30px; height: 70px; display: flex; align-items: center; justify-content: flex-end; }
+
+    /* Sidebar */
+    .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 7.5px 11px; }
+    .brand { width: 32px; height: 32px; background: #121619; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
+    .nav-section { padding: 0 7.5px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-item { display: flex; align-items: center; gap: 9px; padding: 0 9px; height: 34px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; color: rgba(18,22,25,0.8); }
+    .nav-item:hover { background: #f2f4f8; }
+    .nav-item.active { background: #f2f4f8; color: #121619; }
+    .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .sidebar-spacer { flex: 1; }
+    .sidebar-bottom { padding: 0 7.5px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 2px; }
+    .badge { background: #1d6be1; color: #fff; font-size: 10px; font-weight: 700; min-width: 20px; height: 18px; border-radius: 999px; display: flex; align-items: center; justify-content: center; padding: 0 6px; margin-left: auto; }
+
+    /* Budget meter */
+    .budget { padding: 11px 7.5px 7.5px; }
+    .budget-card { border: 1px solid rgba(221,225,230,0.6); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 13px; }
+    .budget-row { display: flex; flex-direction: column; gap: 6px; }
+    .budget-label { display: flex; justify-content: space-between; font-size: 11px; color: #4d5358; text-transform: uppercase; font-weight: 500; letter-spacing: 0.3px; }
+    .budget-label span:last-child { text-transform: none; font-weight: 400; }
+    .budget-bar { height: 6px; background: #f2f4f8; border-radius: 999px; overflow: hidden; }
+    .budget-fill { height: 100%; background: #121619; border-radius: 999px; }
+
+    /* Wizard layout */
+    .wizard { width: 920px; max-width: 100%; padding: 45px 30px 30px; display: flex; gap: 38px; }
+    .step-indicator { width: 200px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
+    .step-item { padding: 8px 11px; border-radius: 6px; font-size: 15px; color: #a8a29e; }
+    .step-item.active { background: #f2f4f8; color: #121619; font-weight: 500; }
+    .step-item .suffix { color: #a8a29e; font-weight: 400; }
+    .wizard-body { flex: 1; max-width: 666px; }
+
+    /* Step header */
+    .step-label { font-size: 11px; font-weight: 500; color: #4d5358; text-transform: uppercase; letter-spacing: 1.3px; }
+    .step-title { font-size: 24px; font-weight: 600; color: #121619; margin-top: 8px; letter-spacing: -0.5px; }
+    .step-subtitle { font-size: 14px; color: #4d5358; margin-top: 4px; line-height: 1.55; }
+
+    /* Cards grid */
+    .cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 30px; }
+    .card { border: 1px solid #dde1e6; border-radius: 15px; padding: 15px; cursor: pointer; background: linear-gradient(157deg, rgba(242,244,248,0.6) 0%, rgba(250,251,252,0.8) 50%, #fff 100%); transition: box-shadow 0.15s, border-color 0.15s; }
+    .card:hover { border-color: #a2a9b0; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .card.selected { border-color: #121619; box-shadow: 0 0 0 1px #121619; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
+    .card-icon { width: 38px; height: 38px; border: 1px solid #dde1e6; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .card-icon svg { width: 20px; height: 20px; color: #4d5358; }
+    .card-tag { font-size: 14px; color: #4d5358; }
+    .card-title { font-size: 16px; font-weight: 600; color: #121619; }
+    .card-desc { font-size: 14px; color: #4d5358; margin-top: 4px; line-height: 1.4; }
+
+    /* Continue button */
+    .btn-continue { background: #121619; color: #fff; border: none; padding: 8px 15px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; }
+    .btn-continue:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-continue svg { width: 16px; height: 16px; }
+
+    /* View toggle */
+    .view-toggle { position: fixed; bottom: 20px; right: 20px; display: flex; gap: 0; border-radius: 999px; border: 1px solid #dde1e6; background: #fff; box-shadow: 0 10px 8px rgba(0,0,0,0.1), 0 4px 3px rgba(0,0,0,0.1); overflow: hidden; z-index: 100; }
+    .toggle-btn { padding: 8px 16px; font-size: 14px; font-weight: 500; border: none; background: none; cursor: pointer; font-family: inherit; color: #4d5358; }
+    .toggle-btn.active { background: #121619; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">D</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-item"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M28 12h-6V6a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2h2v6a2 2 0 002 2h6v4l5-4h7a2 2 0 002-2V14a2 2 0 00-2-2zM4 16V6h16v10H4zm24 8h-7l-3 2.4V24H8v-6h12a2 2 0 002-2v-2h6v10z"/></svg> Sandboxes</div>
+        <div class="nav-item active" id="nav-experiments"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-2V2h-8v4h-2V2H8v6h2v2.17A10.95 10.95 0 006 19a11 11 0 0022 0 10.95 10.95 0 00-4-8.83V8h2V2zm-6 28a9 9 0 119-9 9.01 9.01 0 01-9 9z"/></svg> Experiments</div>
+        <div class="nav-item" id="nav-kb"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M19 10h7v2h-7zm0 5h7v2h-7zm0 5h7v2h-7zM6 10h7v2H6zm0 5h7v2H6zm0 5h7v2H6z"/><path d="M28 5H4a2 2 0 00-2 2v18a2 2 0 002 2h24a2 2 0 002-2V7a2 2 0 00-2-2zM4 7h11v18H4zm13 18V7h11v18z"/></svg> Knowledge bases</div>
+        <div class="nav-item"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M4 20v2h4.586L2 28.586 3.414 30 10 23.414V28h2v-8H4zM30 14H20v2h10v-2zM30 8H20v2h10V8zM30 20H20v2h10v-2zM14 4H4v10h10V4zM12 12H6V6h6v6z"/></svg> Artifacts</div>
+      </div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-bottom">
+        <div class="nav-item"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M28.07 21l-4-7a1 1 0 00-1.76 0L22 14.29l-1.68-3A1 1 0 0019.45 11h0a1 1 0 00-.87.52l-5 9A1 1 0 0014.45 22H28a1 1 0 00.93-.64 1 1 0 00-.86-1.36zm-12.7-.96L19.45 13l1.68 3a1 1 0 00.87.52 1 1 0 00.87-.5L23.13 16l3.45 6H15.37zM12 4a4 4 0 114 4 4 4 0 01-4-4zm2 0a2 2 0 102-2 2 2 0 00-2 2z"/></svg> Approvals <span class="badge">3</span></div>
+        <div class="nav-item"><svg viewBox="0 0 32 32" fill="currentColor"><path d="M27 16.76v-1.53l1.92-1.68A1 1 0 0029.3 12l-1.25-2.17a1 1 0 00-1.18-.49l-2.41.84a8.28 8.28 0 00-1.32-.77l-.55-2.49a1 1 0 00-1-.82h-2.5a1 1 0 00-1 .82l-.55 2.49a8.28 8.28 0 00-1.32.77l-2.41-.84a1 1 0 00-1.18.49L11.6 12a1 1 0 00.27 1.55l1.92 1.68v1.53l-1.92 1.68a1 1 0 00-.27 1.55l1.25 2.17a1 1 0 001.18.49l2.41-.84a8.28 8.28 0 001.32.77l.55 2.49a1 1 0 001 .82h2.5a1 1 0 001-.82l.55-2.49a8.28 8.28 0 001.32-.77l2.41.84a1 1 0 001.18-.49l1.25-2.17a1 1 0 00-.27-1.55zM20.5 19a3 3 0 113-3 3 3 0 01-3 3z"/></svg> Settings</div>
+      </div>
+      <div class="budget">
+        <div class="budget-card">
+          <div class="budget-row">
+            <div class="budget-label"><span>CPU</span><span>1.75 / 4 cores</span></div>
+            <div class="budget-bar"><div class="budget-fill" style="width: 44%"></div></div>
+          </div>
+          <div class="budget-row">
+            <div class="budget-label"><span>Memory</span><span>3 / 8 Gi</span></div>
+            <div class="budget-bar"><div class="budget-fill" style="width: 38%"></div></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <div class="main">
+      <div class="content">
+        <!-- Experiment Wizard Step 1 -->
+        <div class="wizard" id="experiment-wizard">
+          <div class="step-indicator">
+            <div class="step-item active">Image <span class="suffix">(Experiment)</span></div>
+            <div class="step-item">Setup</div>
+            <div class="step-item">Connections</div>
+          </div>
+          <div class="wizard-body">
+            <div class="step-label">Step 1 of 3</div>
+            <h1 class="step-title">Choose your framework</h1>
+            <p class="step-subtitle">Pick an experiment framework, or start from scratch with a general-purpose sandbox.</p>
+
+            <div class="cards-grid">
+              <!-- Start from scratch -->
+              <div class="card" data-id="scratch">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.527a2 2 0 01-.211.896L4.72 20.55a1 1 0 00.9 1.45h12.76a1 1 0 00.9-1.45l-5.069-10.127A2 2 0 0114 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>
+                  </div>
+                </div>
+                <div class="card-title">Start from scratch</div>
+                <p class="card-desc">General-purpose experiment sandbox</p>
+              </div>
+
+              <!-- NOUS -->
+              <div class="card" data-id="nous">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-2V2h-8v4h-2V2H8v6h2v2.17A10.95 10.95 0 006 19a11 11 0 0022 0 10.95 10.95 0 00-4-8.83V8h2V2zm-6 28a9 9 0 119-9 9.01 9.01 0 01-9 9z"/></svg>
+                  </div>
+                  <span class="card-tag">Any provider</span>
+                </div>
+                <div class="card-title">NOUS</div>
+                <p class="card-desc">Hypothesis-driven experimentation agent</p>
+              </div>
+
+              <!-- OpenEvolve -->
+              <div class="card" data-id="openevolve">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-2V2h-8v4h-2V2H8v6h2v2.17A10.95 10.95 0 006 19a11 11 0 0022 0 10.95 10.95 0 00-4-8.83V8h2V2zm-6 28a9 9 0 119-9 9.01 9.01 0 01-9 9z"/></svg>
+                  </div>
+                  <span class="card-tag">OpenAI-compatible</span>
+                </div>
+                <div class="card-title">OpenEvolve</div>
+                <p class="card-desc">Evolutionary code-optimization agent</p>
+              </div>
+
+              <!-- ShinkaEvolve -->
+              <div class="card" data-id="shinkaevolve">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-2V2h-8v4h-2V2H8v6h2v2.17A10.95 10.95 0 006 19a11 11 0 0022 0 10.95 10.95 0 00-4-8.83V8h2V2zm-6 28a9 9 0 119-9 9.01 9.01 0 01-9 9z"/></svg>
+                  </div>
+                  <span class="card-tag">OpenAI-compatible</span>
+                </div>
+                <div class="card-title">ShinkaEvolve</div>
+                <p class="card-desc">Sample-efficient evolutionary program-optimization agent</p>
+              </div>
+
+              <!-- GEPA -->
+              <div class="card" data-id="gepa">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-2V2h-8v4h-2V2H8v6h2v2.17A10.95 10.95 0 006 19a11 11 0 0022 0 10.95 10.95 0 00-4-8.83V8h2V2zm-6 28a9 9 0 119-9 9.01 9.01 0 01-9 9z"/></svg>
+                  </div>
+                  <span class="card-tag">Any provider</span>
+                </div>
+                <div class="card-title">GEPA</div>
+                <p class="card-desc">Reflective prompt &amp; text-optimization agent</p>
+              </div>
+
+              <!-- K-Search -->
+              <div class="card" data-id="ksearch">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M22 2v4h-2V2h-8v4h-2V2H8v6h2v2.17A10.95 10.95 0 006 19a11 11 0 0022 0 10.95 10.95 0 00-4-8.83V8h2V2zm-6 28a9 9 0 119-9 9.01 9.01 0 01-9 9z"/></svg>
+                  </div>
+                </div>
+                <div class="card-title">K-Search</div>
+                <p class="card-desc">LLM-driven GPU kernel optimization</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Knowledge Base Wizard Step 1 -->
+        <div class="wizard" id="kb-wizard" style="display: none;">
+          <div class="step-indicator">
+            <div class="step-item active">Wiki style <span class="suffix">(Knowledge base)</span></div>
+            <div class="step-item">Setup</div>
+            <div class="step-item">Connections</div>
+          </div>
+          <div class="wizard-body">
+            <div class="step-label">Step 1 of 3</div>
+            <h1 class="step-title">Choose your wiki style</h1>
+            <p class="step-subtitle">Pick how your knowledge base organizes information.</p>
+
+            <div class="cards-grid">
+              <!-- LLM Wiki -->
+              <div class="card" data-id="llm-wiki">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M19 10h7v2h-7zm0 5h7v2h-7zm0 5h7v2h-7zM6 10h7v2H6zm0 5h7v2H6zm0 5h7v2H6z"/><path d="M28 5H4a2 2 0 00-2 2v18a2 2 0 002 2h24a2 2 0 002-2V7a2 2 0 00-2-2zM4 7h11v18H4zm13 18V7h11v18z"/></svg>
+                  </div>
+                </div>
+                <div class="card-title">LLM Wiki</div>
+                <p class="card-desc">Agent-curated knowledge base with automatic summarization, linking, and semantic search.</p>
+              </div>
+
+              <!-- Plain Wiki -->
+              <div class="card" data-id="plain-wiki">
+                <div class="card-header">
+                  <div class="card-icon">
+                    <svg viewBox="0 0 32 32" fill="currentColor"><path d="M19 10h7v2h-7zm0 5h7v2h-7zm0 5h7v2h-7zM6 10h7v2H6zm0 5h7v2H6zm0 5h7v2H6z"/><path d="M28 5H4a2 2 0 00-2 2v18a2 2 0 002 2h24a2 2 0 002-2V7a2 2 0 00-2-2zM4 7h11v18H4zm13 18V7h11v18z"/></svg>
+                  </div>
+                </div>
+                <div class="card-title">Plain Wiki</div>
+                <p class="card-desc">Simple Markdown-based wiki with manual organization. No LLM processing — just files and folders.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer with Continue button -->
+      <div class="footer">
+        <div class="footer-inner">
+          <button class="btn-continue" disabled id="continue-btn">
+            Continue
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- View toggle -->
+  <div class="view-toggle">
+    <button class="toggle-btn active" id="toggle-experiment">Experiment</button>
+    <button class="toggle-btn" id="toggle-kb">Knowledge base</button>
+  </div>
+
+  <script>
+    // View switching
+    const expWizard = document.getElementById('experiment-wizard');
+    const kbWizard = document.getElementById('kb-wizard');
+    const toggleExp = document.getElementById('toggle-experiment');
+    const toggleKb = document.getElementById('toggle-kb');
+    const navExp = document.getElementById('nav-experiments');
+    const navKb = document.getElementById('nav-kb');
+    const continueBtn = document.getElementById('continue-btn');
+
+    function showExperiment() {
+      expWizard.style.display = 'flex';
+      kbWizard.style.display = 'none';
+      toggleExp.classList.add('active');
+      toggleKb.classList.remove('active');
+      navExp.classList.add('active');
+      navKb.classList.remove('active');
+      updateContinueState();
+    }
+
+    function showKb() {
+      expWizard.style.display = 'none';
+      kbWizard.style.display = 'flex';
+      toggleKb.classList.add('active');
+      toggleExp.classList.remove('active');
+      navKb.classList.add('active');
+      navExp.classList.remove('active');
+      updateContinueState();
+    }
+
+    toggleExp.addEventListener('click', showExperiment);
+    toggleKb.addEventListener('click', showKb);
+
+    // Card selection
+    document.querySelectorAll('.card').forEach(card => {
+      card.addEventListener('click', () => {
+        const parent = card.closest('.wizard');
+        parent.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        updateContinueState();
+      });
+    });
+
+    function updateContinueState() {
+      const activeWizard = expWizard.style.display !== 'none' ? expWizard : kbWizard;
+      const hasSelection = activeWizard.querySelector('.card.selected') !== null;
+      continueBtn.disabled = !hasSelection;
+    }
+  </script>
+</body>
+</html>

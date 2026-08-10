@@ -1,4 +1,8 @@
-import { ArrowDown, Settings } from "@carbon/icons-react";
+import {
+  ArrowDown,
+  Code as CodeIcon,
+  Terminal as TerminalIcon,
+} from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import {
   AlertCircle,
@@ -28,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
@@ -50,6 +55,10 @@ import {
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
+import {
+  OpenInIdeDialog,
+  OpenInTerminalDialog,
+} from "../../sandboxes/components/open-in-menu.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
@@ -105,9 +114,44 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const setMessages = useStore((s) => s.setMessages);
+
+  // Seed rich mock messages so formatting options are visible immediately
+  useEffect(() => {
+    if (!import.meta.env.VITE_MOCK) return;
+    if (!selectedAgent || messages.length > 0) return;
+    setMessages([
+      {
+        id: "mock-user-1",
+        role: "user",
+        streaming: false,
+        parts: [
+          {
+            kind: "text",
+            text: "How do I change the model for this sandbox?",
+          },
+        ],
+      },
+      {
+        id: "mock-assistant-1",
+        role: "assistant",
+        streaming: false,
+        parts: [
+          {
+            kind: "text",
+            text: `Open the configure panel and update the \`model\` field under **Runtime Settings**. You can set it to any value from \`harnessConfig.status.catalog.options\`, like \`claude-sonnet-4-20250514\` or \`claude-opus-4-20250514\`.
+
+After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true }\`. If the sandbox is \`running\`, the change applies immediately — no restart needed.`,
+          },
+        ],
+      },
+    ]);
+  }, [selectedAgent, messages.length, setMessages]);
+
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
   const deleteSession = useStore((s) => s.deleteSession);
+  const openAgentTerminal = useStore((s) => s.openAgentTerminal);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
@@ -215,6 +259,33 @@ export function ChatView() {
     sendPrompt,
   });
 
+  // Feature-discovery tooltip for connections
+  const [connectionsTipDismissed, setConnectionsTipDismissed] = useState(false);
+  const isKbChat = view === "knowledge-base-chat";
+  const isExperimentChat =
+    agentView !== null && isExperimentSandbox(agentView);
+  const showConnectionsTip =
+    !connectionsTipDismissed &&
+    (isKbChat || isExperimentChat) &&
+    messages.length > 0 &&
+    !busy;
+  const discoveryTooltip = showConnectionsTip
+    ? {
+        title: "Add connections",
+        message: isKbChat
+          ? "Give your knowledge base access to GitHub repos, Slack archives, and APIs so it can pull source material automatically."
+          : "Give your experiment access to APIs, code repos, and compute platforms like GitHub and Modal.",
+        actionLabel: "Configure connections",
+        onAction: () => {
+          if (!selectedAgent) return;
+          if (isKbChat) navigateToKnowledgeBaseConfig(selectedAgent);
+          else navigateToSandboxHome(selectedAgent);
+        },
+        open: true,
+        onDismiss: () => setConnectionsTipDismissed(true),
+      }
+    : undefined;
+
   // Pending-launch chat takeover: while a just-started run's session is
   // being opened (pod wake), blank the pane and show the launch loader.
   // Safe against the real session: openLaunchSession clears the pending
@@ -233,6 +304,9 @@ export function ChatView() {
   // tokens) by re-pinning — it never toggles stick itself.
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const [openInDialog, setOpenInDialog] = useState<
+    "terminal" | "ide" | null
+  >(null);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -387,13 +461,11 @@ export function ChatView() {
         actionsAria: "Knowledge base actions",
         configure: "Configure knowledge base",
         delete: "Delete Knowledge Base",
-        modelTitle: "Open knowledge base configuration",
       }
     : {
         actionsAria: "Sandbox actions",
         configure: "Configure sandbox",
         delete: "Delete Sandbox",
-        modelTitle: "Model — change in sandbox configuration",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -660,6 +732,36 @@ export function ChatView() {
                             Send a message to begin a new session with this
                             agent
                           </p>
+                          {selectedAgent && (
+                            <div className="mt-5 flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openAgentTerminal(selectedAgent)
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[14px] font-medium text-foreground hover:bg-muted/40"
+                              >
+                                <TerminalIcon size={16} />
+                                Terminal (browser)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setOpenInDialog("terminal")}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[14px] font-medium text-foreground hover:bg-muted/40"
+                              >
+                                <TerminalIcon size={16} />
+                                Terminal (local)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setOpenInDialog("ide")}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[14px] font-medium text-foreground hover:bg-muted/40"
+                              >
+                                <CodeIcon size={16} />
+                                VS Code / Zed (local)
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     {messages.map((m, mi) =>
@@ -811,19 +913,47 @@ export function ChatView() {
                   loadingSession={loadingSession}
                   onSend={sendPrompt}
                   onStop={stopAgent}
+                  discoveryTooltip={discoveryTooltip}
                 />
                 {!hasPendingPermission && harnessCurrent?.model && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        title={surfaceCopy.modelTitle}
-                        className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-text transition-colors"
+                      <Tooltip
+                        side="top"
+                        className="w-[280px] rounded-xl border border-border bg-popover p-4 shadow-xl"
+                        content={
+                          <div className="flex items-start gap-3">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+                              <CodeIcon size={16} className="text-accent" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[14px] font-semibold text-foreground">
+                                Default model
+                              </p>
+                              <p className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
+                                This model is used for all new messages in this
+                                sandbox.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleConfigureSandbox}
+                                className="mt-2.5 inline-flex items-center gap-1 text-[14px] font-medium text-accent transition-colors hover:text-accent/80"
+                              >
+                                Configure default model
+                                <span aria-hidden>&rarr;</span>
+                              </button>
+                            </div>
+                          </div>
+                        }
                       >
-                        {harnessCurrent.model}
-                        <Settings size={12} />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={handleConfigureSandbox}
+                          className="flex items-center gap-1 pl-3 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {harnessCurrent.model}
+                        </button>
+                      </Tooltip>
                     </ChatColumn>
                   </div>
                 )}
@@ -890,6 +1020,19 @@ export function ChatView() {
       </div>
 
       <EgressApprovalToasts agentId={selectedAgent} />
+
+      {openInDialog === "terminal" && agentView && (
+        <OpenInTerminalDialog
+          agent={agentView}
+          onClose={() => setOpenInDialog(null)}
+        />
+      )}
+      {openInDialog === "ide" && agentView && (
+        <OpenInIdeDialog
+          agent={agentView}
+          onClose={() => setOpenInDialog(null)}
+        />
+      )}
 
       {selectedAgent && !agentOperable && (
         <AgentUnavailableOverlay

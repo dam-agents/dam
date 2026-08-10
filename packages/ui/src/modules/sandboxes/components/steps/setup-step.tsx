@@ -49,6 +49,34 @@ interface Props {
   sizeMemoryMi: number | null;
   /** Which providers this starting point offers, and which it steers toward. */
   providers: ReturnType<typeof providerPolicy>;
+  startingPoint?: WizardSnapshot["startingPoint"];
+}
+
+function setupHeader(
+  startingPoint: WizardSnapshot["startingPoint"] | undefined,
+): {
+  title: string;
+  subtitle: string;
+} {
+  if (startingPoint === "experiment") {
+    return {
+      title: "Setup your experiment",
+      subtitle:
+        "Name your experiment, choose a provider, and set network permissions.",
+    };
+  }
+  if (startingPoint === "knowledge-base") {
+    return {
+      title: "Setup your knowledge base",
+      subtitle:
+        "Name your knowledge base, choose a provider, and set network permissions.",
+    };
+  }
+  return {
+    title: "Setup your sandbox",
+    subtitle:
+      "Name your sandbox, choose a provider, and set network permissions.",
+  };
 }
 
 export function SetupStep({
@@ -61,14 +89,12 @@ export function SetupStep({
   sizeCpuMilli,
   sizeMemoryMi,
   providers,
+  startingPoint,
 }: Props) {
+  const header = setupHeader(startingPoint);
   return (
     <div>
-      <StepHeader
-        step={2}
-        title="Setup your sandbox"
-        subtitle="Name your sandbox, choose a provider, and set network permissions."
-      />
+      <StepHeader step={2} title={header.title} subtitle={header.subtitle} />
 
       <section className="mb-8">
         <FormField label="Name">
@@ -76,7 +102,13 @@ export function SetupStep({
             autoFocus
             value={name}
             onChange={(event) => update({ name: event.target.value })}
-            placeholder="my-sandbox"
+            placeholder={
+              startingPoint === "experiment"
+                ? "my-experiment"
+                : startingPoint === "knowledge-base"
+                  ? "my-knowledge-base"
+                  : "my-sandbox"
+            }
           />
         </FormField>
       </section>

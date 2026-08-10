@@ -41,7 +41,17 @@ export function useHarnessConfigCurrent(agentId: string | null) {
     queryKey: agentId ? harnessConfigCurrentKey(agentId) : ["hcc-disabled"],
     queryFn:
       agentId && operable
-        ? () => agentTrpcFor(agentId).harnessConfig.current.query()
+        ? () => {
+            if (import.meta.env.VITE_MOCK) {
+              return Promise.resolve({
+                model: "claude-sonnet-4-20250514",
+                mode: null,
+                configOptions: {},
+                availableModels: null,
+              });
+            }
+            return agentTrpcFor(agentId).harnessConfig.current.query();
+          }
         : skipToken,
     retry: false,
   });

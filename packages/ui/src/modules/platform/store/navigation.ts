@@ -19,6 +19,7 @@ import {
 
 /** Views whose route carries no parameters — the only ones `setView` can reach. */
 type ParameterlessView =
+  | "home"
   | "list"
   | "inbox"
   | "terms"

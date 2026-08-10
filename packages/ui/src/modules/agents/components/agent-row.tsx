@@ -1,8 +1,9 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
+import { OverflowMenuVertical, Renew } from "@carbon/icons-react";
 import { FlaskConical } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -29,12 +30,15 @@ interface Props {
   /** Live compute of this sandbox's temporary spawns, when it has any. */
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
+  /** Hide the kind badge (e.g. "Knowledge base") when the context already makes it obvious. */
+  hideKindBadge?: boolean;
   onSelect: () => void;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
   onStop: () => void;
   onDelete: () => void;
+  onUpdate?: () => void;
 }
 
 export function AgentRow({
@@ -43,14 +47,16 @@ export function AgentRow({
   subtitle,
   temporaryDraw,
   deletePending,
+  hideKindBadge,
   onSelect,
   onWake,
   onRestart,
   onPause,
   onStop,
   onDelete,
+  onUpdate,
 }: Props) {
-  const kindBadge = agentKindBadge(agent);
+  const kindBadge = hideKindBadge ? null : agentKindBadge(agent);
   return (
     <Card
       data-testid="agent-row"
@@ -90,6 +96,43 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {agent.templateUpdate && (
+          <Tooltip
+            side="bottom"
+            className="w-[300px] rounded-xl border border-border bg-popover p-4 shadow-xl"
+            content={
+              <div className="flex items-start gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+                  <Renew size={16} className="text-accent" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[14px] font-semibold text-foreground">
+                    Update available
+                  </p>
+                  <p className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
+                    Latest:{" "}
+                    <span className="font-mono text-[12px] text-foreground">
+                      {agent.templateUpdate.toImage}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            }
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdate?.();
+              }}
+              className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+            >
+              <Renew size={14} className="shrink-0" />
+              Update
+            </Button>
+          </Tooltip>
+        )}
         <ContributionFailuresBadge failures={agent.contributionFailures} />
         {/* A parked sandbox explains itself: the controller's figures ride
             the badge tooltip — focusable and labelled, so keyboard and
