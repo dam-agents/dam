@@ -93,23 +93,33 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
   // from isn't theirs to cancel from another chat.
   const startedRef = useRef<StartedSession | null>(null);
 
-  /** Whether the chat on screen is still the blank one this send started in, and
-   *  so whether it should take over the session's connection. `sessionId === null`
-   *  alone can't tell that: leaving the chat, opening another agent, and pressing
-   *  New session all produce a session-less store too. The send's own bubble
-   *  surviving in the projection is what identifies the original chat. */
-  const canKeepConnection = useCallback(
+  /** Whether the chat that dispatched this send is still the one on screen. Its
+   *  own bubble surviving in the projection is the marker — leaving the chat,
+   *  opening another agent, and pressing New session all wipe it. */
+  const viewerStillHere = useCallback(
     (agentId: string, bubbleId: string): boolean => {
       if (!mountedRef.current) return false;
       const state = useStore.getState();
       return (
         state.selectedAgent === agentId &&
-        state.sessionId === null &&
-        state.sessionMode !== SessionMode.Terminal &&
         state.messages.some((m) => m.id === bubbleId)
       );
     },
     [],
+  );
+
+  /** Whether that chat can also take over the session's connection: it has to
+   *  still be the blank chat, and not showing a terminal. */
+  const canKeepConnection = useCallback(
+    (agentId: string, bubbleId: string): boolean => {
+      const state = useStore.getState();
+      return (
+        viewerStillHere(agentId, bubbleId) &&
+        state.sessionId === null &&
+        state.sessionMode !== SessionMode.Terminal
+      );
+    },
+    [viewerStillHere],
   );
 
   const sendPrompt = useCallback(
@@ -250,8 +260,10 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           if (delivered) {
             optimisticInsertSession(selectedAgent, sessionId, SessionMode.Chat);
           }
-          detached = !canKeepConnection(selectedAgent, aId);
-          started.settle(!detached);
+          // The channel's own answer, not this send's guess: a send sharing the
+          // channel didn't make the decision, and `settle` refuses to keep a
+          // socket that died on the way here.
+          detached = !started.settle(canKeepConnection(selectedAgent, aId));
           if (detached) startedRef.current = null;
         }
         await turn;
@@ -305,8 +317,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         // ours is left queued on that socket.
         started?.finish();
         queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-        // A detached turn can end long after the user moved on; don't grab focus.
-        if (!detached) textareaRef.current?.focus();
+        // Checked now, not captured earlier: a turn can end long after the user
+        // moved on, and focus belongs to whoever is reading the chat then.
+        if (viewerStillHere(selectedAgent, aId)) textareaRef.current?.focus();
       }
     },
     [
@@ -314,6 +327,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       ensureConnection,
       beginSession,
       canKeepConnection,
+      viewerStillHere,
       setMessages,
       textareaRef,
     ],

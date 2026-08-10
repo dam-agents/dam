@@ -67,8 +67,9 @@ export interface StartedSession {
   isOpen: () => boolean;
   /** Once the prompt is away: `true` keeps the channel as the chat's live
    *  connection, `false` gives it up — muted at once, closed by `finish`. The
-   *  first caller decides; sends sharing this channel are no-ops. */
-  settle: (keep: boolean) => void;
+   *  first caller decides; a send sharing this channel gets that decision back
+   *  rather than its own guess. Returns whether the chat now owns the channel. */
+  settle: (keep: boolean) => boolean;
   /** Once the turn has settled. Closes the channel unless it was kept or another
    *  send is still using it. */
   finish: () => void;
@@ -271,7 +272,7 @@ export function useAcpConnection(
         sessionId: startedSessionId,
         isOpen: () => ws.readyState === WebSocket.OPEN,
         settle: (keep) => {
-          if (settled) return;
+          if (settled) return kept;
           settled = true;
           // Later sends belong to a session that now exists, so they take the
           // ordinary path; this channel stops being shareable.
@@ -282,9 +283,10 @@ export function useAcpConnection(
           kept = keep && ws.readyState === WebSocket.OPEN;
           if (!kept) {
             listening = false;
-            return;
+            return false;
           }
           keepAsLive(connection, ws, startedSessionId);
+          return true;
         },
         finish: () => {
           holders.count -= 1;
@@ -466,6 +468,11 @@ export function useAcpConnection(
     pendingReloadRef.current = false;
     generationRef.current += 1;
     ensureInFlightRef.current = null;
+    // Stop offering any started session for sharing — but don't close it: the
+    // chat this belonged to is gone, while its turn is still the agent's to
+    // finish. The blank chat that replaces it is a different conversation and
+    // must not land in the abandoned one's session.
+    startInFlightRef.current = null;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
