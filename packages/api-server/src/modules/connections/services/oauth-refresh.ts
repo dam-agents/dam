@@ -378,26 +378,66 @@ export async function remintGitHubAppOne(
     throw new Error(`private key missing at ${auth.privateKeyRef.path}`);
   }
 
-  const next = await mintGitHubAppToken(deps.githubAppEngine, {
-    connectionRef: `connection:${conn.id}:${conn.templateId}`,
-    auth,
-    privateKeyPem,
-  });
+  // A github-app connection's scope is editable in place, so the copy this
+  // tick read can go stale between reading it and minting from it. Minting
+  // against a stale scope is not a metadata problem — the *token* written below
+  // would carry authority the user has just removed, for as long as it lives.
+  //
+  // So the write is guarded on the horizon this pass minted against: an edit
+  // moves it, the guard matches nothing, and the second pass re-mints from what
+  // the edit stored. Two passes are enough — a third would mean two edits
+  // landing inside one mint.
+  let current = auth;
+  for (let pass = 0; pass < 2; pass++) {
+    const next = await mintGitHubAppToken(deps.githubAppEngine, {
+      connectionRef: `connection:${conn.id}:${conn.templateId}`,
+      auth: current,
+      privateKeyPem,
+    });
 
-  await deps.secretStore.putFields(auth.accessTokenRef, {
-    access_token: next.accessToken,
-    ...buildConnectionSdsFields(conn.contributions, next.accessToken),
-  });
-  // Merge the two keys this tick owns rather than writing back the whole `auth`
-  // it read at the start. A github-app connection's scope is editable in place,
-  // so a re-scope that landed while this mint was in flight would otherwise be
-  // overwritten by the pre-edit copy — quietly restoring authority the user had
-  // just taken away. Same shape as the failure-marker write above.
-  await deps.db
-    .update(connectionsTable)
-    .set({
-      auth: sql`jsonb_set(${connectionsTable.auth}, '{expiresAt}', to_jsonb(${next.expiresAt}::bigint)) - 'refreshFailedAt'`,
-      updatedAt: new Date(),
-    })
-    .where(eq(connectionsTable.id, conn.id));
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      access_token: next.accessToken,
+      ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+    });
+
+    // Merge the two keys this tick owns rather than writing back the whole
+    // `auth` it read: the keys it does not name cannot be clobbered, so a
+    // concurrent edit keeps its scope. Same shape as the failure-marker write.
+    const result = await deps.db
+      .update(connectionsTable)
+      .set({
+        auth: sql`jsonb_set(${connectionsTable.auth}, '{expiresAt}', to_jsonb(${next.expiresAt}::bigint)) - 'refreshFailedAt'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(connectionsTable.id, conn.id),
+          sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${current.expiresAt === undefined ? null : String(current.expiresAt)}`,
+        ),
+      );
+    if (((result as unknown as { rowCount?: number }).rowCount ?? 0) > 0)
+      return;
+
+    // The guard matched nothing: something re-minted this connection while we
+    // were in flight, and the token we just wrote may be the wider one. Re-read
+    // and go again so the stored token ends up matching the stored scope.
+    const fresh = await readGitHubAppAuth(deps.db, conn.id);
+    if (!fresh) return;
+    current = fresh;
+  }
+}
+
+/** The connection's current github-app auth, or null if it is gone or is no
+ *  longer a github-app connection. */
+async function readGitHubAppAuth(
+  db: Db,
+  id: string,
+): Promise<Extract<ConnectionAuthConfig, { kind: "github-app" }> | null> {
+  const rows = (await db
+    .select()
+    .from(connectionsTable)
+    .where(eq(connectionsTable.id, id))) as { auth: unknown }[];
+  const parsed = authConfigSchema.safeParse(rows[0]?.auth);
+  if (!parsed.success || parsed.data.kind !== "github-app") return null;
+  return parsed.data;
 }

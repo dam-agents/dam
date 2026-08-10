@@ -117,10 +117,19 @@ export function ConnectionEditGithubAppScopeDialog({
         ? save.error.message
         : "Couldn't update the scope. Please try again.";
 
-  // Without a repository list there is nothing to choose from, so the
-  // repository half is passed through exactly as stored rather than rewritten
-  // from an empty selection — which would silently widen the connection.
-  const repositoriesLocked = Boolean(installation?.repositoriesUnavailable);
+  // Editing repositories needs a complete picture of the installation. Without
+  // one, the repository half is passed through exactly as stored rather than
+  // rewritten from a selection built against a partial list — which would
+  // silently drop whatever the list did not cover.
+  //
+  // Truncation only matters when the connection narrows by *name*: an id the
+  // list omits is still carried through the selection, but a name can only be
+  // matched against what came back, so beyond the cap it is indistinguishable
+  // from one the installation has genuinely dropped.
+  const namesToResolve = (connection.githubAppScope?.repositories ?? []).length;
+  const repositoriesLocked =
+    Boolean(installation?.repositoriesUnavailable) ||
+    Boolean(installation?.repositoriesTruncated && namesToResolve > 0);
 
   const repositoryPayload = repositoriesLocked
     ? {
@@ -182,10 +191,11 @@ export function ConnectionEditGithubAppScopeDialog({
           <>
             {repositoriesLocked ? (
               <Callout tone="muted" size="sm">
-                Couldn&rsquo;t list this installation&rsquo;s repositories, so
-                they can&rsquo;t be changed here — saving keeps the ones this
-                connection already uses. Permissions below are still the
-                installation&rsquo;s own.
+                {installation.repositoriesUnavailable
+                  ? "Couldn’t list this installation’s repositories, so they can’t be changed here"
+                  : "This installation has more repositories than can be listed here, and this connection names them individually, so they can’t be changed here"}
+                {" — saving keeps the ones this connection already uses. "}
+                Permissions below are still the installation&rsquo;s own.
               </Callout>
             ) : (
               <>
@@ -212,7 +222,10 @@ export function ConnectionEditGithubAppScopeDialog({
               selection={permissions}
               onChange={setPermission}
             />
-            {unresolvedNames.length > 0 && (
+            {/* Only meaningful against a complete list: when the listing was
+                partial, an unmatched name is preserved rather than dropped, so
+                the locked callout above already covers it. */}
+            {!repositoriesLocked && unresolvedNames.length > 0 && (
               <Callout tone="danger" size="sm">
                 This connection also names {unresolvedNames.join(", ")}, which
                 the installation no longer lists. Saving will drop{" "}

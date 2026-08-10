@@ -48,7 +48,16 @@ const CONN: Connection = {
   ],
 };
 
-function makeDeps(opts: { privateKey: string | null }) {
+function makeDeps(opts: {
+  privateKey: string | null;
+  /** 0 models a concurrent edit landing mid-mint, which makes the guarded
+   *  write match nothing and sends the re-mint round again. */
+  updateRowCount?: number;
+  /** What the re-read returns on that second pass. */
+  reReadAuth?: ConnectionAuthConfig;
+}) {
+  const updateRowCount = opts.updateRowCount ?? 1;
+  const reReadAuth = opts.reReadAuth ?? AUTH;
   const putCalls: { path: string; fields: Record<string, string> }[] = [];
   const secretStore = {
     getField: async () => opts.privateKey,
@@ -66,10 +75,16 @@ function makeDeps(opts: { privateKey: string | null }) {
   const dbUpdates: { auth: unknown }[] = [];
   const db = {
     update: () => ({
-      set: (row: { auth: ConnectionAuthConfig }) => {
+      set: (row: { auth: unknown }) => {
         dbUpdates.push(row);
-        return { where: async () => {} };
+        // The guarded write reports how many rows it matched; one means no
+        // concurrent edit overtook this pass.
+        return { where: async () => ({ rowCount: updateRowCount }) };
       },
+    }),
+    // Only read when a guarded write matched nothing.
+    select: () => ({
+      from: () => ({ where: async () => [{ auth: reReadAuth }] }),
     }),
   } as unknown as Db;
 
@@ -233,6 +248,47 @@ describe("github-app re-mint with picked repository ids", () => {
     const deps = makeDeps({ privateKey: PRIVATE_KEY_PEM });
     await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
     expect(authWrite(deps.dbUpdates[0].auth)).not.toContain("repositoryIds");
+  });
+
+  // Protecting the stored scope is not enough on its own: the token this tick
+  // writes must match it too, or the connection carries authority the edit just
+  // removed until the next renewal.
+  it("re-mints against the edited scope when an edit lands mid-mint", async () => {
+    const EDITED: ConnectionAuthConfig = {
+      ...ID_AUTH,
+      repositoryIds: [99],
+      permissions: { contents: "read" },
+    };
+    const deps = makeDeps({
+      privateKey: PRIVATE_KEY_PEM,
+      // The guarded write matches nothing — the edit moved the horizon.
+      updateRowCount: 0,
+      reReadAuth: EDITED,
+    });
+
+    await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
+
+    // First pass used the pre-edit scope; the second re-mints against what the
+    // edit stored, so the token left in the Secret is the narrower one.
+    expect(deps.tokenBodies).toHaveLength(2);
+    expect(JSON.parse(deps.tokenBodies[0]!)).toMatchObject({
+      repository_ids: [12, 34],
+    });
+    expect(JSON.parse(deps.tokenBodies[1]!)).toEqual({
+      repository_ids: [99],
+      permissions: { contents: "read" },
+    });
+    expect(deps.putCalls).toHaveLength(2);
+  });
+
+  it("gives up rather than looping when the connection keeps changing", async () => {
+    const deps = makeDeps({
+      privateKey: PRIVATE_KEY_PEM,
+      updateRowCount: 0,
+      reReadAuth: ID_AUTH,
+    });
+    await remintGitHubAppOne(ID_CONN, ID_AUTH, deps);
+    expect(deps.tokenBodies).toHaveLength(2);
   });
 
   it("id-scoped auth round-trips through the wire schema", () => {
