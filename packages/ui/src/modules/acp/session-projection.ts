@@ -21,11 +21,15 @@ import type { AcpUpdate } from "./types.js";
  *
  * Routing model: updates flow into the "active" assistant bubble — the last
  * streaming, non-queued assistant after the last user. `sendPrompt` appends
- * an assistant bubble with `queued: true` while a prior turn is in flight;
- * the first agent content arriving for that prompt promotes the queued
- * bubble to active. Turn boundaries (`platform_turn_ended`, or a fresh
- * `user_message_chunk`) close the active bubble, so the next agent content
- * picks the earliest remaining queued bubble (or opens one on demand).
+ * an assistant bubble carrying its `promptId`; the runtime's
+ * `platform_prompt_accepted { queued: true }` marks it queued behind a prior
+ * in-flight turn and `platform_prompt_started` promotes it, so the sender's
+ * "Waiting for previous prompt…" indicator is server truth rather than a local
+ * guess. Bubbles with no `promptId` (another viewer's prompt, replayed history)
+ * are still promoted by the first agent content arriving for them. Turn
+ * boundaries (`platform_turn_ended`, or a fresh `user_message_chunk`) close the
+ * active bubble, so the next agent content picks the earliest remaining queued
+ * bubble (or opens one on demand).
  *
  * Queued background prompts: a `user_message_chunk` carrying
  * `_meta.queued === true` is a prompt the runtime parked behind the active
@@ -117,6 +121,16 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     case "platform_turn_ended":
       return closeActiveAssistant(messages);
 
+    case "platform_prompt_accepted":
+      // `queued: false` means the runtime handed the prompt straight on, which
+      // is the bubble's existing (non-queued) shape — nothing to render.
+      return update.queued
+        ? setQueuedByPromptId(messages, update.promptId, true)
+        : messages;
+
+    case "platform_prompt_started":
+      return setQueuedByPromptId(messages, update.promptId, false);
+
     case "platform_clipped_replay":
       return appendNotice(messages, "Older conversation not loaded");
 
@@ -140,6 +154,26 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
   }
 }
 
+/**
+ * Flip the `queued` flag on the bubble the runtime is reporting about. Only the
+ * sender's own optimistic bubble carries a `promptId`, so an unknown id (a
+ * notification arriving after the bubble was finalized, or on a reconnected
+ * client that rebuilt its list from the log) is a no-op. A bubble that already
+ * has content is left alone: content is stronger evidence of "active" than a
+ * late `accepted` frame.
+ */
+function setQueuedByPromptId(
+  messages: Message[],
+  promptId: string,
+  queued: boolean,
+): Message[] {
+  return messages.map((m) =>
+    m.promptId === promptId && m.streaming && m.parts.length === 0
+      ? { ...m, queued }
+      : m,
+  );
+}
+
 function appendNotice(messages: Message[], text: string): Message[] {
   return [
     ...messages,
@@ -154,17 +188,82 @@ function appendNotice(messages: Message[], text: string): Message[] {
 }
 
 /**
- * Mark every streaming assistant bubble as no-longer-streaming. Call this on
- * WebSocket disconnect or at the end of history replay to flush bubbles that
- * won't receive any further updates. Queued bubbles are finalized too — they
- * have no content, so the UI just shows an empty closed bubble.
+ * Mark every streaming assistant bubble as no-longer-streaming. Call this at
+ * the end of history replay, or when the user stops the agent, to flush bubbles
+ * that won't receive any further updates. Queued bubbles are finalized too —
+ * they have no content, so the UI just shows an empty closed bubble.
+ *
+ * Losing the connection is *not* this case: a queued prompt is genuinely lost
+ * then, so that path uses `failQueuedOnDisconnect` instead.
  */
 export function finalizeAllStreaming(messages: Message[]): Message[] {
-  return messages.map((m) =>
-    m.role === "assistant" && m.streaming
-      ? { ...m, streaming: false, queued: false }
-      : m,
+  return messages.map(finalizeStreaming);
+}
+
+function finalizeStreaming(m: Message): Message {
+  return m.role === "assistant" && m.streaming
+    ? { ...m, streaming: false, queued: false }
+    : m;
+}
+
+/** Shown on a prompt the platform dropped because our channel went away. The
+ *  only delivery failure the runtime cannot report — by the time it happens
+ *  there is no channel left to report it on. */
+export const QUEUED_LOST_MESSAGE =
+  "Couldn't deliver — the connection dropped while this prompt was still waiting in the queue.";
+
+/**
+ * Finalize on connection loss, failing the prompts the loss actually destroyed.
+ * The runtime drops a channel's queued prompts when it detaches, so a bubble of
+ * ours still parked behind an earlier turn will never be answered: it flips to
+ * the error card with Retry rather than closing quietly, which is how this loss
+ * used to pass unnoticed. Hidden sends fail silently as everywhere else, so
+ * theirs is dropped instead.
+ *
+ * Only bubbles carrying a `promptId` are ours to fail. Another viewer's queued
+ * prompt (or a replayed one) belongs to a channel that is still attached, so it
+ * merely finalizes — as does any bubble that already holds content, since
+ * content is proof the turn started and content already streamed is not
+ * something to retract (the same rule the `queued` flag follows elsewhere here).
+ */
+export function failQueuedOnDisconnect(messages: Message[]): Message[] {
+  return messages.flatMap<Message>((m) => {
+    const lost =
+      m.role === "assistant" &&
+      m.streaming &&
+      m.queued &&
+      m.promptId !== undefined &&
+      m.parts.length === 0;
+    if (!lost) return [finalizeStreaming(m)];
+    // Hidden sends stash no payload and never surface a failure.
+    if (!m.retryWith) return [];
+    return [
+      {
+        ...m,
+        streaming: false,
+        queued: false,
+        error: { message: QUEUED_LOST_MESSAGE, retryWith: m.retryWith },
+      },
+    ];
+  });
+}
+
+/**
+ * Rebuild the message list from replayed history while keeping failures the
+ * client raised on its own. The runtime's log is authoritative about what the
+ * agent did, but it cannot describe a prompt that never ran: it holds the
+ * dropped prompt's user-message echo and no reply, so replacing the list
+ * wholesale would erase the failure and its Retry and leave the user staring at
+ * a question the agent will never answer.
+ */
+export function mergeLocalFailures(
+  rebuilt: Message[],
+  previous: Message[],
+): Message[] {
+  const carried = previous.filter(
+    (m) => m.error?.retryWith && !rebuilt.some((r) => r.id === m.id),
   );
+  return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }
 
 /** True if any assistant bubble is still streaming (either active or queued). */
@@ -359,6 +458,15 @@ function closeActiveAssistant(messages: Message[]): Message[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued) {
+      // Never close an empty sender placeholder. At promotion the runtime
+      // sends `promptStarted` (stripping the bubble's queued protection)
+      // BEFORE it fans out the previous turn's `platform_turn_ended`, and the
+      // sender's own bubble for that turn is already closed by its prompt
+      // response — so this boundary would land on the just-promoted, still
+      // empty bubble, orphaning it: the reply would then open a fresh bubble.
+      // The placeholder's own lifecycle closes it instead: content arriving,
+      // its own prompt response, or the delivery deadline.
+      if (m.promptId !== undefined && m.parts.length === 0) continue;
       return messages.map((x, j) => (j === i ? { ...x, streaming: false } : x));
     }
   }

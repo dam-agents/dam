@@ -8,7 +8,12 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import { platformTurnEndedParamsSchema } from "api-server-api";
+import {
+  platformPromptAcceptedParamsSchema,
+  platformPromptStartedParamsSchema,
+  platformTurnEndedParamsSchema,
+} from "api-server-api";
+import type { z } from "zod";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
@@ -121,6 +126,25 @@ export async function openInitializedConnection(
   return { connection, ws };
 }
 
+/**
+ * Validate a `platform/*` ext-notification's params, warning and returning
+ * `null` on a mismatch. A server running a variant without our extensions (or
+ * a newer contract) must degrade to "no delivery feedback", never to a thrown
+ * handler that tears down the whole notification stream.
+ */
+function parseExtParams<T>(
+  method: string,
+  schema: z.ZodType<T>,
+  params: Record<string, unknown>,
+): T | null {
+  const parsed = schema.safeParse(params);
+  if (!parsed.success) {
+    console.warn(`[acp] ${method} schema mismatch:`, parsed.error.issues);
+    return null;
+  }
+  return parsed.data;
+}
+
 export async function openConnection(
   agentId: string,
   onUpdate: UpdateHandler,
@@ -143,24 +167,55 @@ export async function openConnection(
       async readTextFile() {
         return { content: "" };
       },
-      // Our runtime emits a custom `platform/turnEnded` notification on the last
-      // response of each prompt so viewers that didn't originate the prompt
-      // can close their in-progress assistant bubble. Surface it through the
-      // same `onUpdate` channel as a synthetic `sessionUpdate`.
+      // Our runtime emits custom `platform/*` notifications next to the ACP
+      // session updates: `platform/turnEnded` on the last response of each
+      // prompt, so viewers that didn't originate the prompt can close their
+      // in-progress assistant bubble, and `platform/promptAccepted` /
+      // `platform/promptStarted` to tell a prompt's *sender* what the runtime
+      // did with it (queued behind a running turn, or handed to the agent).
+      // All three surface through the same `onUpdate` channel as synthetic
+      // `sessionUpdate`s.
       async extNotification(method: string, params: Record<string, unknown>) {
-        if (method === "platform/turnEnded") {
-          const parsed = platformTurnEndedParamsSchema.safeParse(params);
-          if (!parsed.success) {
-            console.warn(
-              "[acp] platform/turnEnded schema mismatch:",
-              parsed.error.issues,
+        switch (method) {
+          case "platform/turnEnded": {
+            const p = parseExtParams(
+              method,
+              platformTurnEndedParamsSchema,
+              params,
             );
+            if (p)
+              onUpdate(
+                { sessionUpdate: "platform_turn_ended", ...p },
+                p.sessionId,
+              );
             return;
           }
-          onUpdate(
-            { sessionUpdate: "platform_turn_ended", ...parsed.data },
-            parsed.data.sessionId,
-          );
+          case "platform/promptAccepted": {
+            const p = parseExtParams(
+              method,
+              platformPromptAcceptedParamsSchema,
+              params,
+            );
+            if (p)
+              onUpdate(
+                { sessionUpdate: "platform_prompt_accepted", ...p },
+                p.sessionId,
+              );
+            return;
+          }
+          case "platform/promptStarted": {
+            const p = parseExtParams(
+              method,
+              platformPromptStartedParamsSchema,
+              params,
+            );
+            if (p)
+              onUpdate(
+                { sessionUpdate: "platform_prompt_started", ...p },
+                p.sessionId,
+              );
+            return;
+          }
         }
       },
     }),

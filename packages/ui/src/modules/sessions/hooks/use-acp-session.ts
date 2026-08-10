@@ -16,6 +16,7 @@ import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+import { usePromptDelivery } from "./use-prompt-delivery.js";
 
 /**
  * Thin orchestrator: composes the connection, engagement, history, prompt,
@@ -66,7 +67,14 @@ export function useAcpSession(
     clear: clearEngagement,
   } = useAcpSessionEngagement(selectedAgent);
 
-  const makeUpdateHandler = useAcpUpdateHandler();
+  // Per-prompt delivery deadlines, driven by the runtime's promptAccepted /
+  // promptStarted frames. Sits between the update handler (which feeds it),
+  // sendPrompt (which arms it and supplies the failure callback) and the
+  // connection (whose close stands every deadline down), so it's owned here
+  // rather than by any of them.
+  const delivery = usePromptDelivery();
+
+  const makeUpdateHandler = useAcpUpdateHandler(delivery);
 
   const {
     ensureLive,
@@ -92,6 +100,7 @@ export function useAcpSession(
     clearEngagement,
     loadHistory,
     setMessages,
+    delivery,
   });
 
   const resetSession = useCallback(() => {
@@ -158,6 +167,7 @@ export function useAcpSession(
     engagedSessionIdRef,
     connectionRef,
     textareaRef,
+    delivery,
   });
 
   return {

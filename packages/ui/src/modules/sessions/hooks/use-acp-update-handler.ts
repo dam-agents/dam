@@ -3,17 +3,22 @@ import { useCallback } from "react";
 import { useStore } from "../../../store.js";
 import { applyUpdate } from "../../acp/session-projection.js";
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
+import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 /**
  * Build the streaming-update callback fed to `openConnection`. The handler:
  *   - drops any pending permission dialog whose tool call has moved past
- *     `pending` (another client answered, or the agent proceeded without one), and
+ *     `pending` (another client answered, or the agent proceeded without one),
+ *   - hands the runtime's prompt-delivery frames to the delivery state machine,
+ *     which owns the send/content deadlines, and
  *   - feeds every notification through the pure projection to update messages.
  *
  * Returns a *factory* — `openConnection` wants a fresh handler per WS, so the
  * orchestrator calls `make()` at the connect site.
  */
-export function useAcpUpdateHandler(): () => UpdateHandler {
+export function useAcpUpdateHandler(
+  delivery: PromptDelivery,
+): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
 
   const dismissStalePermission = useCallback(
@@ -45,7 +50,8 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
         dismissStalePermission(update.toolCallId);
       }
 
+      delivery.handleUpdate(update);
       setMessages((prev) => applyUpdate(prev, update));
     };
-  }, [dismissStalePermission, setMessages]);
+  }, [delivery, dismissStalePermission, setMessages]);
 }
