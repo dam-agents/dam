@@ -20,7 +20,7 @@ const bobCredentialSchema = z
     model: z.string(),
     agentId: z.string(),
     teamId: z.string(),
-    maxCoins: z.string(),
+    maxCost: z.string(),
     chatMode: z.string(),
   })
   .superRefine((data, ctx) => {
@@ -31,13 +31,10 @@ const bobCredentialSchema = z
         message: "Required",
       });
     }
-    if (
-      data.maxCoins.trim() !== "" &&
-      !/^[1-9]\d*$/.test(data.maxCoins.trim())
-    ) {
+    if (data.maxCost.trim() !== "" && !/^[1-9]\d*$/.test(data.maxCost.trim())) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["maxCoins"],
+        path: ["maxCost"],
         message: "Must be a positive integer",
       });
     }
@@ -68,7 +65,7 @@ export function BobForm({
   onCancel?: () => void;
 }) {
   const pins = initialPins ?? {};
-  const { register, handleSubmit, watch, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(bobCredentialSchema),
     mode: "onChange",
     defaultValues: {
@@ -76,7 +73,7 @@ export function BobForm({
       model: pins.model ?? "",
       agentId: pins.agentId ?? "",
       teamId: pins.teamId ?? "",
-      maxCoins: pins.maxCoins ?? "",
+      maxCost: pins.maxCost ?? "",
       chatMode: pins.chatMode ?? "",
     },
   });
@@ -87,8 +84,10 @@ export function BobForm({
   );
 
   const isEdit = variant === "edit";
+  // The empty-credential case is conveyed by the disabled submit, so the schema's
+  // one issue on `value` needs no message rendered under the field. Add rendering
+  // here if a value check ever fails for a reason the button can't express.
   const submitDisabled = isSubmitting || !isValid;
-  const value = watch("value");
 
   const onSubmit = handleSubmit(async (values) => {
     await onSave({
@@ -97,7 +96,7 @@ export function BobForm({
         model: values.model.trim() || undefined,
         agentId: values.agentId.trim() || undefined,
         teamId: values.teamId.trim() || undefined,
-        maxCoins: values.maxCoins.trim() || undefined,
+        maxCost: values.maxCost.trim() || undefined,
         chatMode: values.chatMode.trim() || undefined,
       },
     });
@@ -139,14 +138,6 @@ export function BobForm({
         </Button>
       </div>
 
-      {errors.value &&
-        value.length > 0 &&
-        errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-destructive">
-            {errors.value.message}
-          </div>
-        )}
-
       <DisclosureToggle
         open={advancedOpen}
         onToggle={() => setAdvancedOpen((o) => !o)}
@@ -181,8 +172,8 @@ export function BobForm({
             label="Max cost"
             hint="BOB_MAX_COINS → --max-cost. Per-task cost cap; Bob stops the task when exceeded."
             placeholder="(no cap)"
-            error={errors.maxCoins?.message}
-            register={register("maxCoins")}
+            error={errors.maxCost?.message}
+            register={register("maxCost")}
           />
           <PinField
             label="Mode"

@@ -33,7 +33,7 @@ export function bobPinsFromConnection(conn: ConnectionView): BobModelPins {
     model: env.get("BOB_SHELL_MODEL"),
     agentId: env.get("BOB_INSTANCE_ID"),
     teamId: env.get("BOB_TEAM_ID"),
-    maxCoins: env.get("BOB_MAX_COINS"),
+    maxCost: env.get("BOB_MAX_COINS"),
     chatMode: chatMode ? normalizeBobChatMode(chatMode) : chatMode,
   };
 }

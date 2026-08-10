@@ -218,7 +218,7 @@ const BOB: HeaderConnectionTemplate = {
       hint: "Sets the x-team-id header.",
     },
     {
-      inputName: "maxCoins",
+      inputName: "maxCost",
       envName: "BOB_MAX_COINS",
       label: "Max cost",
       hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
