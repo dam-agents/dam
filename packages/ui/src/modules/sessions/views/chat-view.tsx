@@ -375,16 +375,13 @@ export function ChatView() {
         configure: "Configure knowledge base",
         delete: "Delete Knowledge Base",
         modelTitle: "Open knowledge base configuration",
-        newSessionHint: "Send a message to begin a new session",
       }
     : {
         actionsAria: "Sandbox actions",
         configure: "Configure sandbox",
         delete: "Delete Sandbox",
         modelTitle: "Model — change in sandbox configuration",
-        newSessionHint: "Send a message to begin or open a new session in:",
       };
-  const showLauncher = Boolean(selectedAgent) && !isKnowledgeBaseView;
 
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
@@ -460,7 +457,7 @@ export function ChatView() {
         >
           <ArrowLeft size={14} />
         </Button>
-        <div className="group flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <span
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
@@ -645,9 +642,9 @@ export function ChatView() {
                             Start a new session
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {surfaceCopy.newSessionHint}
+                            Send a message to begin or open a new session in:
                           </p>
-                          {showLauncher && selectedAgent && (
+                          {selectedAgent && (
                             <NewSessionLauncher
                               agentId={selectedAgent}
                               agentName={selectedAgentName ?? ""}

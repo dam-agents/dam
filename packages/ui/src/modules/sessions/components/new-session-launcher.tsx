@@ -31,7 +31,7 @@ export function NewSessionLauncher({
           <Terminal size={14} /> Terminal (local)
         </Button>
         <Button variant="outline" onClick={() => setDialog("ide")}>
-          <Code size={14} /> Vs Code / Zed (local)
+          <Code size={14} /> VS Code / Zed (local)
         </Button>
       </div>
 
