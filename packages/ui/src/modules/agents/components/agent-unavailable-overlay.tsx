@@ -13,6 +13,7 @@ import type {
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
 import { OverlayFrame } from "./overlay-frame.js";
+import { StartupTip } from "./startup-tip.js";
 
 interface OverlayCopy {
   /** Omitted for transient states, where a `Spinner` stands in for the icon. */
@@ -76,6 +77,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
+        <StartupTip />
       </OverlayFrame>
     );
   }
@@ -93,6 +95,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
+        <StartupTip />
       </OverlayFrame>
     );
   }
@@ -116,6 +119,11 @@ export function AgentUnavailableOverlay({
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      {/* Tied to the spinner, not to a state list: a spinner means the wait is
+          the platform's to finish, which is exactly when a tip fills the time.
+          The icon states want an action from the user, and a tip would sit
+          between them and it. */}
+      {!Icon && <StartupTip />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
