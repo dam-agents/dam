@@ -29,7 +29,8 @@ import { securityLog } from "../../../core/security-log.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { refreshOAuthAccessToken } from "./oauth-token.js";
-import { mintGitHubAppToken } from "./github-app.js";
+import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
+import { createXactLock, type XactLock } from "../../../core/xact-lock.js";
 
 export interface OAuthRefreshLoop {
   /** One idempotent refresh pass — scheduled via the shared periodic-jobs
@@ -371,24 +372,28 @@ export async function remintGitHubAppOne(
     githubAppEngine: GitHubAppEngine;
     secretStore: SecretStore;
     db: Db;
+    /** Defaults to the Postgres advisory lock; injectable for tests. */
+    connectionLock?: XactLock;
   },
 ): Promise<void> {
   const privateKeyPem = await deps.secretStore.getField(auth.privateKeyRef);
   if (!privateKeyPem) {
     throw new Error(`private key missing at ${auth.privateKeyRef.path}`);
   }
+  const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
-  // A github-app connection's scope is editable in place, so the copy this
-  // tick read can go stale between reading it and minting from it. Minting
-  // against a stale scope is not a metadata problem — the *token* written below
-  // would carry authority the user has just removed, for as long as it lives.
-  //
-  // So the write is guarded on the horizon this pass minted against: an edit
-  // moves it, the guard matches nothing, and the second pass re-mints from what
-  // the edit stored. Two passes are enough — a third would mean two edits
-  // landing inside one mint.
-  let current = auth;
-  for (let pass = 0; pass < 2; pass++) {
+  // A github-app connection's scope is editable in place, so this sequence
+  // races an edit doing the same thing to the same connection. Guarding the row
+  // alone cannot settle it: the token lives in a store no database transaction
+  // binds, so the two writes can still land in an order that leaves the stored
+  // scope and the live token describing different authority. Both sides take
+  // the same lock instead, so one finishes before the other starts.
+  await withLock(gitHubAppMintLockKey(conn.id), async () => {
+    // Re-read inside the section: the copy this tick carried in may predate an
+    // edit that has since completed, and minting from it would hand back the
+    // authority that edit removed.
+    const current = (await readGitHubAppAuth(deps.db, conn.id)) ?? auth;
+
     const next = await mintGitHubAppToken(deps.githubAppEngine, {
       connectionRef: `connection:${conn.id}:${conn.templateId}`,
       auth: current,
@@ -401,30 +406,15 @@ export async function remintGitHubAppOne(
     });
 
     // Merge the two keys this tick owns rather than writing back the whole
-    // `auth` it read: the keys it does not name cannot be clobbered, so a
-    // concurrent edit keeps its scope. Same shape as the failure-marker write.
-    const result = await deps.db
+    // `auth` it read: the keys it does not name cannot be clobbered.
+    await deps.db
       .update(connectionsTable)
       .set({
         auth: sql`jsonb_set(${connectionsTable.auth}, '{expiresAt}', to_jsonb(${next.expiresAt}::bigint)) - 'refreshFailedAt'`,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(connectionsTable.id, conn.id),
-          sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${current.expiresAt === undefined ? null : String(current.expiresAt)}`,
-        ),
-      );
-    if (((result as unknown as { rowCount?: number }).rowCount ?? 0) > 0)
-      return;
-
-    // The guard matched nothing: something re-minted this connection while we
-    // were in flight, and the token we just wrote may be the wider one. Re-read
-    // and go again so the stored token ends up matching the stored scope.
-    const fresh = await readGitHubAppAuth(deps.db, conn.id);
-    if (!fresh) return;
-    current = fresh;
-  }
+      .where(eq(connectionsTable.id, conn.id));
+  });
 }
 
 /** The connection's current github-app auth, or null if it is gone or is no

@@ -42,7 +42,8 @@ import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
-import { mintGitHubAppToken } from "./github-app.js";
+import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
+import type { XactLock } from "../../../core/xact-lock.js";
 import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -59,6 +60,9 @@ export function createConnectionsService(deps: {
   githubAppEngine: GitHubAppEngine;
   oauthCallbackUrl: string;
   brandName: string;
+  /** Serializes a connection's mint → token write → auth write against the
+   *  refresh loop doing the same for the same connection. */
+  connectionLock: XactLock;
 }): ConnectionsService {
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
@@ -783,27 +787,38 @@ export function createConnectionsService(deps: {
         ...(scope.permissions ? { permissions: scope.permissions } : {}),
       };
 
-      // Proven before it is stored, exactly as create does: a subset the
-      // installation does not cover fails the edit instead of parking the
-      // connection at its next renewal.
-      const minted = await rejectIfInvalid(() =>
-        mintGitHubAppToken(deps.githubAppEngine, {
-          connectionRef: `connection:${conn.id}:${conn.templateId}`,
-          auth: nextAuth as Extract<Connection["auth"], { kind: "github-app" }>,
-          privateKeyPem,
-        }),
-      );
+      // Mint, token write, and auth write are one critical section against the
+      // refresh loop, which runs the same sequence for the same connection. The
+      // token lives in a store no database transaction can bind, so ordering
+      // the two by hand is what keeps the stored scope and the live token
+      // describing the same authority.
+      await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
+        // Proven before it is stored, exactly as create does: a subset the
+        // installation does not cover fails the edit instead of parking the
+        // connection at its next renewal.
+        const token = await rejectIfInvalid(() =>
+          mintGitHubAppToken(deps.githubAppEngine, {
+            connectionRef: `connection:${conn.id}:${conn.templateId}`,
+            auth: nextAuth as Extract<
+              Connection["auth"],
+              { kind: "github-app" }
+            >,
+            privateKeyPem,
+          }),
+        );
 
-      // The new token replaces the live one, so the narrowing takes effect now
-      // rather than at the next renewal. Contributions are unchanged — same
-      // hosts, same injections — so no Agent spec moves and no pod rolls.
-      await deps.secretStore.putFields(auth.accessTokenRef, {
-        access_token: minted.accessToken,
-        ...buildConnectionSdsFields(conn.contributions, minted.accessToken),
-      });
-      await deps.repo.updateAuth(conn.id, {
-        ...nextAuth,
-        expiresAt: minted.expiresAt,
+        // The new token replaces the live one, so the narrowing takes effect
+        // now rather than at the next renewal. Contributions are unchanged —
+        // same hosts, same injections — so no Agent spec moves, no pod rolls.
+        await deps.secretStore.putFields(auth.accessTokenRef, {
+          access_token: token.accessToken,
+          ...buildConnectionSdsFields(conn.contributions, token.accessToken),
+        });
+        await deps.repo.updateAuth(conn.id, {
+          ...nextAuth,
+          expiresAt: token.expiresAt,
+        });
+        return token;
       });
 
       securityLog("info", "connection.scope_update", {

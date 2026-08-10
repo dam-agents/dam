@@ -122,6 +122,9 @@ function makeService(
     githubAppEngine: createGitHubAppEngine(),
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
+    // The advisory lock is Postgres-side; the section itself is what these
+    // tests exercise, so run it straight through.
+    connectionLock: (_key, fn) => fn(),
   });
   return { svc, rows, stored, deleted, tokenCalls };
 }

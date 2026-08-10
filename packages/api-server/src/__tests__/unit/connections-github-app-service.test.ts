@@ -8,6 +8,7 @@ import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { createOAuthEngine } from "../../modules/connections/infrastructure/oauth-engine.js";
 import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
 import { sdsFileKeyForHost } from "../../modules/connections/domain/connection-sds.js";
+import { gitHubAppMintLockKey } from "../../modules/connections/services/github-app.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { OAuthFlowService } from "../../modules/connections/services/oauth-flow.js";
@@ -103,6 +104,7 @@ function makeService(
       return respond(String(url));
     }) as typeof fetch,
   });
+  const lockKeys: string[] = [];
   const oauthFlow: OAuthFlowService = {
     startOAuth: async () => {
       throw new Error("startOAuth must not be called for github-app");
@@ -125,8 +127,14 @@ function makeService(
     githubAppEngine,
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
+    // The advisory lock is Postgres-side; the section itself is what these
+    // tests exercise, so run it straight through and record the key.
+    connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+      lockKeys.push(key);
+      return fn();
+    },
   });
-  return { svc, rows, stored, deleted, tokenCalls, tokenBodies };
+  return { svc, rows, stored, deleted, tokenCalls, tokenBodies, lockKeys };
 }
 
 function createInput(overrides: Record<string, string> = {}) {
@@ -406,6 +414,18 @@ describe("github-app scope editing", () => {
     if (auth.kind !== "github-app") throw new Error("kind");
     expect(auth.refreshFailedAt).toBeUndefined();
     expect((await svc.getConnection(id))?.status).toBe("active");
+  });
+
+  // The refresh loop names the same key for the same connection; if these two
+  // ever diverge the section stops being mutual and the race is back.
+  it("runs the edit under the connection's mint lock", async () => {
+    const { svc, lockKeys } = makeService(okToken);
+    const id = await svc.createFromTemplate(createInput());
+    lockKeys.length = 0;
+
+    await svc.updateGitHubAppScope({ id, repositoryIds: "12" });
+
+    expect(lockKeys).toEqual([gitHubAppMintLockKey(id)]);
   });
 
   it("rejects an id that is not a whole number before reaching GitHub", async () => {
