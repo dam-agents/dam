@@ -11,14 +11,18 @@ import { expandHome } from "../../../core/expand-home.js";
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 
-// MCP config is a JSON object merged under `keyPath`. `urlKey` covers harness
-// dialects: default entry is `{type:"http",url}`, but some harnesses key the
-// transport off the property name (Bob puts streamable-HTTP under `httpUrl`).
+// MCP config is a JSON object merged under `keyPath`. Two knobs cover harness
+// dialects: `urlKey` for harnesses that key the transport off the property name
+// (Bob 1.x put streamable-HTTP under `httpUrl`), and `extraFields`, merged over
+// the entry, for those naming the transport in a sibling field (Bob 2.0 wants
+// `transportType:"http"` — without it it treats the server as SSE, which the
+// platform's streamable endpoint rejects).
 const bindingSchema = z.object({
   impl: z.literal(IMPL_NAME),
   path: z.string().min(1),
   keyPath: z.string().optional(),
   urlKey: z.string().min(1).optional(),
+  extraFields: z.record(z.string(), z.unknown()).optional(),
 });
 
 export function createMcpEntryPlugin(): Plugin {
@@ -39,7 +43,7 @@ export function createMcpEntryPlugin(): Plugin {
           `plugin "${IMPL_NAME}" invalid binding: ${parsed.error.message}`,
         );
       }
-      const { path, keyPath, urlKey } = parsed.data;
+      const { path, keyPath, urlKey, extraFields } = parsed.data;
       const effectiveKey = keyPath ?? DEFAULT_KEY_PATH;
       let stateStore: McpEntryStateStore | undefined;
 
@@ -50,13 +54,11 @@ export function createMcpEntryPlugin(): Plugin {
         const entries: Record<string, unknown> = {};
         for (const c of contributions) {
           if (c.kind !== "mcp-entry") continue;
-          entries[c.name] = urlKey
-            ? { [urlKey]: c.url, ...(c.headers ? { headers: c.headers } : {}) }
-            : {
-                type: "http",
-                url: c.url,
-                ...(c.headers ? { headers: c.headers } : {}),
-              };
+          entries[c.name] = {
+            ...(urlKey ? { [urlKey]: c.url } : { type: "http", url: c.url }),
+            ...(c.headers ? { headers: c.headers } : {}),
+            ...extraFields,
+          };
         }
         const names = Object.keys(entries);
         const targetPath = expandHome(path, ctx.agentHome);

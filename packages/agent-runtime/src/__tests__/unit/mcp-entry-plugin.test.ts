@@ -49,13 +49,27 @@ describe("mcp-entry plugin", () => {
     });
   });
 
-  it("keys the URL under `urlKey` when set (Bob's httpUrl dialect)", async () => {
+  it("keys the URL under `urlKey` when set (Bob 1.x's httpUrl dialect)", async () => {
     await bind({ urlKey: "httpUrl" })(
       [entry("outbound", "http://hs/mcp")],
       ctx,
     );
     expect(readConfig(".bob/settings/mcp.json").mcpServers).toEqual({
       outbound: { httpUrl: "http://hs/mcp" },
+    });
+  });
+
+  it("merges `extraFields` into every entry (Bob 2.0's transportType)", async () => {
+    await bind({ extraFields: { transportType: "http" } })(
+      [entry("outbound", "http://hs/mcp")],
+      ctx,
+    );
+    expect(readConfig(".bob/settings/mcp.json").mcpServers).toEqual({
+      outbound: {
+        type: "http",
+        url: "http://hs/mcp",
+        transportType: "http",
+      },
     });
   });
 
