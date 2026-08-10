@@ -6,19 +6,16 @@ import { cn } from "@/lib/utils";
 
 import { startupTips } from "../startup-tips.js";
 
-const ROTATE_MS = 8_000;
+const ROTATE_MS = 6_000;
 const FADE_OUT_MS = 300;
 const FADE_IN_MS = 600;
-/** Lets the spinner and sandbox name land before the tip arrives. */
 const ENTER_DELAY_MS = 1_000;
 
-/** A tip other than `current`, so a swap never lands on the same text. */
 function pickNext(current: number, count: number): number {
   if (count < 2) return current;
   return (current + 1 + Math.floor(Math.random() * (count - 1))) % count;
 }
 
-/** Backtick spans render as code, matching the command tips in the list. */
 function render(tip: string) {
   return tip.split(/`([^`]+)`/g).map((part, i) =>
     i % 2 === 1 ? (
@@ -31,25 +28,18 @@ function render(tip: string) {
   );
 }
 
-/**
- * Rotating tips for every wait that shows a spinner (#3211). The movement
- * doubles as the evidence that the wait has not stalled.
- */
 export function StartupTip({ sandbox }: { sandbox: string }) {
   const tips = useMemo(() => startupTips(sandbox), [sandbox]);
   const [index, setIndex] = useState(() =>
     Math.floor(Math.random() * tips.length),
   );
   const [shown, setShown] = useState(false);
-  // Read by the interval without entering its deps, so a swap never restarts
-  // the countdown.
   const indexRef = useRef(index);
   const swapRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const enter = setTimeout(() => setShown(true), ENTER_DELAY_MS);
     let rotate: ReturnType<typeof setInterval> | undefined;
-    // Clocked from the end of the entrance so the first tip gets a full dwell.
     const start = setTimeout(() => {
       if (tips.length < 2) return;
       rotate = setInterval(() => {

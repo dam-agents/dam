@@ -1,12 +1,5 @@
 import { getBrand } from "../../brand.js";
 
-/**
- * The tip list from #3211, with the brand and the open sandbox filled in.
- * Backticks mark a command; `StartupTip` renders those spans as code.
- *
- * Called at render rather than evaluated at import: the brand arrives from
- * `/api/brand` after this module is first read.
- */
 export function startupTips(sandbox: string): readonly string[] {
   const { name, short } = getBrand();
   return [
