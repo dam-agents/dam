@@ -78,6 +78,11 @@ export interface SkillsServiceDeps {
    *  the connection simply wasn't granted. Read only on the failure path. */
   githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
+  /** Whether the pod has applied everything the outbox has asked of it. The
+   *  `state` reconcile is only sound once it has: until then a tracked skill's
+   *  directory is legitimately absent, because the apply that writes it hasn't
+   *  run yet. */
+  isRuntimeSettled: (agentId: string) => Promise<boolean>;
   owner: string;
   /** Scan via the provided scanner with a TTL cache, keyed by `(gitUrl, path)`
    *  — the catalogue depends on both, and the same repo may be pointed at
@@ -226,22 +231,32 @@ function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
   return out;
 }
 
-/** Recover a source's subdir from its gitUrl using the same merge + dedupe
- *  precedence as listSources (user → system → template). Install carries the
- *  gitUrl, not the source id, so this is how the path is found to denormalize
- *  onto the installed ref. */
-async function resolveSourcePathByGitUrl(
+/** gitUrl → the source's subdir, for every source visible to this agent, using
+ *  the same merge + dedupe precedence as listSources (user → system → template).
+ *  Built once per call: a batch resolves many entries against one listing rather
+ *  than re-listing sources per entry. */
+async function sourcePathsByGitUrl(
   deps: SkillsServiceDeps,
   agentId: string,
-  gitUrl: string,
-): Promise<string | undefined> {
+): Promise<Map<string, string | undefined>> {
   const [owned, template] = await Promise.all([
     deps.repo.list(deps.owner),
     loadTemplateSources(deps, agentId),
   ]);
   const seeds = deps.seedSources.map(seedToSkillSource);
   const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
-  return merged.find((s) => s.gitUrl === gitUrl)?.path;
+  return new Map(merged.map((s) => [s.gitUrl, s.path]));
+}
+
+/** Recover one source's subdir from its gitUrl. Install carries the gitUrl, not
+ *  the source id, so this is how the path is found to denormalize onto the
+ *  installed ref. */
+async function resolveSourcePathByGitUrl(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  gitUrl: string,
+): Promise<string | undefined> {
+  return (await sourcePathsByGitUrl(deps, agentId)).get(gitUrl);
 }
 
 /** Re-throw a pod client-error verdict with its own code and message, so a
@@ -694,6 +709,91 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     },
 
+    async applyBatch(input) {
+      const { agentId, install, uninstall } = input;
+
+      // Nothing to do: no wake, no bump, no log. The set-apply path leans on
+      // this — adding a set whose skills are all already on must cost nothing.
+      // Ownership is still enforced, so an unowned agent can't be probed.
+      if (install.length === 0 && uninstall.length === 0) {
+        if (!(await deps.agentsRepo.get(agentId, deps.owner))) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "agent not found",
+          });
+        }
+        return deps.agentSkillsRepo.listSkills(agentId);
+      }
+
+      // Reject a self-contradicting batch before writing anything: picking a
+      // winner would silently do something the caller didn't ask for.
+      const key = (e: { source: string; name: string }) =>
+        `${e.source} ${e.name}`;
+      const removing = new Set(uninstall.map(key));
+      const contradiction = install.find((e) => removing.has(key(e)));
+      if (contradiction) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `skill is in both install and uninstall: ${contradiction.name}`,
+        });
+      }
+
+      await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
+      const paths = await sourcePathsByGitUrl(deps, agentId);
+
+      // Rows first, then one bump for the whole batch — the point of this path.
+      // A failure part-way leaves rows the pod hasn't been told about; the next
+      // `state` read reaps them as ghosts, so a partial batch self-heals.
+      for (const entry of install) {
+        const path = paths.get(entry.source);
+        await deps.agentSkillsRepo.upsertSkill(agentId, {
+          source: entry.source,
+          name: entry.name,
+          version: entry.version,
+          ...(entry.contentHash !== undefined
+            ? { contentHash: entry.contentHash }
+            : {}),
+          ...(path !== undefined ? { path } : {}),
+        });
+      }
+      for (const entry of uninstall) {
+        await deps.agentSkillsRepo.removeSkill(agentId, {
+          source: entry.source,
+          name: entry.name,
+        });
+      }
+
+      await deps.runtimeMutator.bump(agentId, []);
+      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+
+      // Per skill, not per batch: "what did this agent install, from where" has
+      // to stay answerable after an incident, and one aggregate line loses that.
+      for (const entry of install) {
+        securityLog("info", "skill.install", {
+          category: "privileged",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId,
+          target: entry.source,
+          result: "success",
+          detail: { name: entry.name, version: entry.version, batch: true },
+        });
+      }
+      for (const entry of uninstall) {
+        securityLog("info", "skill.uninstall", {
+          category: "privileged",
+          actor: deps.owner,
+          actorKind: "user",
+          agentId,
+          target: entry.source,
+          result: "success",
+          detail: { name: entry.name, batch: true },
+        });
+      }
+
+      return deps.agentSkillsRepo.listSkills(agentId);
+    },
+
     async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {
       // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
@@ -868,9 +968,17 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       const onDisk = new Set(local.map((s) => s.name));
 
-      // Drop ghost rows whose directories no longer exist. Reconcile only
-      // performs a write when something needs evicting.
-      await deps.agentSkillsRepo.reconcile(agentId, onDisk);
+      // Drop ghost rows whose directories no longer exist — but only once the
+      // pod has caught up with the outbox. Install is declarative: the row is
+      // written first and the apply worker fetches the files after, so between
+      // those two moments every freshly-installed skill looks like a ghost.
+      // Reaping then doesn't just lose the install — the files still land, and
+      // the skill resurfaces as a Standalone one the user supposedly authored.
+      // One install's window is a single fetch wide; a batch's is N, which is
+      // what makes the guard necessary rather than merely tidy.
+      if (await deps.isRuntimeSettled(agentId)) {
+        await deps.agentSkillsRepo.reconcile(agentId, onDisk);
+      }
 
       const installed = await deps.agentSkillsRepo.listSkills(agentId);
 

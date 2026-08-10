@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type {
   localSkillSchema,
   skillCreateLocalInputSchema,
+  skillApplyBatchInputSchema,
   skillCreateSourceInputSchema,
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,
@@ -44,6 +45,8 @@ export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 
 export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 
+export type SkillApplyBatchInput = z.infer<typeof skillApplyBatchInputSchema>;
+
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
 
 export type SkillPublishResult = z.infer<typeof skillPublishResultSchema>;
@@ -68,6 +71,9 @@ export interface SkillsService {
   ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
+  /** Many changes, one apply cycle. Returns the full installed list, like the
+   *  single-skill paths, so a caller renders from an authoritative result. */
+  applyBatch: (input: SkillApplyBatchInput) => Promise<SkillRef[]>;
   createLocal: (input: SkillCreateLocalInput) => Promise<LocalSkill[]>;
   /** Returns the remaining standalone list, so the UI renders from an
    *  authoritative result rather than guessing (mirrors `uninstall`). */

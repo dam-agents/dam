@@ -923,6 +923,8 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   agentsServiceFor: harnessAgentsServiceFor,
   connectionsServiceFor,
   wakeAgent: wakeAgentFor,
+  isRuntimeSettled: (agentId) =>
+    contributionsSettledPort.status(agentId).then((s) => s.settled),
 });
 
 // Instance identity for ext-authz now flows from the per-instance

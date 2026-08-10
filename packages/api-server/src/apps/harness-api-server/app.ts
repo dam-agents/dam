@@ -42,6 +42,9 @@ export interface HarnessApiServerAppDeps {
   connectionsServiceFor: (owner: string) => ConnectionsService;
   /** Scale a hibernated agent back up so it drains its outbox (prompt delivery). */
   wakeAgent: (agentId: string) => Promise<void>;
+  /** Whether the pod has applied everything the outbox holds — gates the skills
+   *  `state` reconcile, which would otherwise reap rows mid-apply. */
+  isRuntimeSettled: (agentId: string) => Promise<boolean>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -58,6 +61,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     wakeAgent,
+    isRuntimeSettled,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -107,6 +111,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         config.brand.name,
         runtimeMutator,
         templatesRepo,
+        isRuntimeSettled,
       ),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,

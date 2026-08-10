@@ -64,6 +64,7 @@ export function composeSkillsModule(
   brandName: string,
   runtimeMutator: RuntimeMutator,
   templatesRepo: TemplatesRepository,
+  isRuntimeSettled: (agentId: string) => Promise<boolean>,
 ): SkillsService {
   const k8s = createK8sClient(api, namespace);
   return createSkillsService({
@@ -77,6 +78,7 @@ export function composeSkillsModule(
       createConnectionsRepository(db),
     ),
     runtimeMutator,
+    isRuntimeSettled,
     owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,

@@ -9,6 +9,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   localSkillSchema,
+  skillApplyBatchInputSchema,
   skillContentSchema,
   skillCreateLocalInputSchema,
   skillCreateSourceInputSchema,
@@ -111,6 +112,12 @@ export const skillsRouter = t.router({
     .input(skillUninstallInputSchema)
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.uninstall(input)),
+
+  // Ownership enforced in the service, same as install/uninstall.
+  applyBatch: manageAgentsProcedure
+    .input(skillApplyBatchInputSchema)
+    .output(z.array(skillRefSchema))
+    .mutation(({ ctx, input }) => ctx.skills.applyBatch(input)),
 
   // Ownership is enforced inside the service via ensureAgentReachable →
   // owner-scoped agentsRepo.get, same as install.

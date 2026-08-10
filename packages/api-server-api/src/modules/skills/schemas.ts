@@ -223,6 +223,33 @@ export const skillUninstallInputSchema = z.object({
   name: z.string().min(1),
 });
 
+/** Many installs and uninstalls applied under a single outbox bump, so a bulk
+ *  action costs one apply cycle instead of one per skill. The caps bound the
+ *  work a single call can ask for; a real source sits far below them. */
+export const skillApplyBatchInputSchema = z.object({
+  agentId: z.string().min(1),
+  install: z
+    .array(
+      z.object({
+        source: z.string().url(),
+        name: z.string().min(1),
+        version: z.string().min(1),
+        contentHash: z.string().optional(),
+      }),
+    )
+    .max(500)
+    .default([]),
+  uninstall: z
+    .array(
+      z.object({
+        source: z.string().url(),
+        name: z.string().min(1),
+      }),
+    )
+    .max(500)
+    .default([]),
+});
+
 export const skillListLocalInputSchema = z.object({
   agentId: z.string().min(1),
 });
