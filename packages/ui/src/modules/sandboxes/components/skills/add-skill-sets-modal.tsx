@@ -1,5 +1,6 @@
 import { TrashCan } from "@carbon/icons-react";
 import type { SkillSet } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
@@ -11,8 +12,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToggleSet } from "@/hooks/use-toggle-set";
-
-import { skillKey } from "../../hooks/use-skills-surface.js";
 
 /** What one set would do to this sandbox right now. Derived in the browser from
  *  lists the surface already holds, so ticking a box is instant; the server
@@ -180,7 +179,7 @@ export function AddSkillSetsModal({
   onDelete: (id: string) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const { selected: picked, toggle } = useToggleSet<string>();
+  const { selected: picked, toggle, remove } = useToggleSet<string>();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const previews = useMemo<SetPreview[]>(
@@ -190,7 +189,7 @@ export function AddSkillSetsModal({
         let unavailable = 0;
         let unreadable = 0;
         for (const entry of set.skills) {
-          const key = skillKey(entry.source, entry.name);
+          const key = skillKey(entry);
           if (available.has(key)) {
             if (!installedKeys.has(key)) adds.push(entry.name);
           } else if (unreadableSources.has(entry.source)) {
@@ -217,13 +216,15 @@ export function AddSkillSetsModal({
     if (await onApply([...picked])) onClose();
   };
 
-  const remove = async (id: string) => {
+  const removeSet = async (id: string) => {
     setDeletingId(id);
     const gone = await onDelete(id);
     setDeletingId(null);
     // A deleted set must leave the selection with it, or Add would send an id
-    // the server no longer has and the whole apply would fail.
-    if (gone && picked.has(id)) toggle(id);
+    // the server no longer has and the whole apply would fail. `remove` rather
+    // than `toggle`: the checkbox stays live across the await, so a presence
+    // check made before it can go stale and flip the set back on.
+    if (gone) remove(id);
   };
 
   return (
@@ -255,7 +256,7 @@ export function AddSkillSetsModal({
                 checked={picked.has(preview.set.id)}
                 deleting={deletingId === preview.set.id}
                 onToggle={() => toggle(preview.set.id)}
-                onDelete={() => void remove(preview.set.id)}
+                onDelete={() => void removeSet(preview.set.id)}
               />
             ))}
           </div>

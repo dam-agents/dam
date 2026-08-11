@@ -950,7 +950,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       brandName: config.brand.name,
       runtimeMutator,
       templatesRepo,
-      isRuntimeSettled: contributionsSettled.isSettled,
+      runtimeSettled: contributionsSettled,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

@@ -6,6 +6,7 @@ import {
   Warning,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { isConnectionFailure } from "@/lib/scan-failure";
 import { cn } from "@/lib/utils";
 
-import { skillKey } from "../../hooks/use-skills-surface.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
@@ -291,10 +291,10 @@ export function SkillSourceCard({
           const hasDrift = isDrifted(ref, skill);
           return (
             <SkillRow
-              key={skillKey(skill.source, skill.name)}
+              key={skillKey(skill)}
               skill={skill}
               installed={ref !== undefined}
-              busy={busyKey === skillKey(skill.source, skill.name)}
+              busy={busyKey === skillKey(skill)}
               disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={

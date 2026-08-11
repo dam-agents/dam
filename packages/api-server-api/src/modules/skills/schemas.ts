@@ -234,6 +234,13 @@ export const skillSetEntrySchema = z.object({
   name: z.string().min(1),
 });
 
+/** The identity a skill is installed and stored under: its source's git URL
+ *  plus its name. One definition on the contract, because the client's set
+ *  previews are compared against the server's install and skip decisions, and
+ *  a second spelling of this key fails silently rather than loudly. */
+export const skillKey = (e: { source: string; name: string }) =>
+  `${e.source}::${e.name}`;
+
 /** Same rule as every other user-named resource, from the one shared
  *  definition — so client and server can't drift on what is legal — with a
  *  skill-set example rather than a Connection's. */
@@ -283,32 +290,45 @@ export const skillSetApplyResultSchema = z.object({
   ),
 });
 
+/** Upper bound on the skills one batch may carry, install and uninstall
+ *  combined. Exported so the service can enforce the same number on
+ *  in-process callers that never cross the tRPC boundary (the set-apply
+ *  path). */
+export const MAX_SKILL_BATCH_ENTRIES = 500;
+
 /** Many installs and uninstalls applied under a single outbox bump, so a bulk
- *  action costs one apply cycle instead of one per skill. The caps bound the
- *  work a single call can ask for; a real source sits far below them. */
-export const skillApplyBatchInputSchema = z.object({
-  agentId: z.string().min(1),
-  install: z
-    .array(
-      z.object({
-        source: z.string().url(),
-        name: z.string().min(1),
-        version: z.string().min(1),
-        contentHash: z.string().optional(),
-      }),
-    )
-    .max(500)
-    .default([]),
-  uninstall: z
-    .array(
-      z.object({
-        source: z.string().url(),
-        name: z.string().min(1),
-      }),
-    )
-    .max(500)
-    .default([]),
-});
+ *  action costs one apply cycle instead of one per skill. The cap bounds the
+ *  work a single call can ask for; a real source sits far below it. */
+export const skillApplyBatchInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    install: z
+      .array(
+        z.object({
+          source: z.string().url(),
+          name: z.string().min(1),
+          version: z.string().min(1),
+          contentHash: z.string().optional(),
+        }),
+      )
+      .max(MAX_SKILL_BATCH_ENTRIES)
+      .default([]),
+    uninstall: z
+      .array(
+        z.object({
+          source: z.string().url(),
+          name: z.string().min(1),
+        }),
+      )
+      .max(MAX_SKILL_BATCH_ENTRIES)
+      .default([]),
+  })
+  .refine(
+    (v) => v.install.length + v.uninstall.length <= MAX_SKILL_BATCH_ENTRIES,
+    {
+      message: `one batch carries at most ${MAX_SKILL_BATCH_ENTRIES} skills, install and uninstall combined`,
+    },
+  );
 
 export const skillListLocalInputSchema = z.object({
   agentId: z.string().min(1),

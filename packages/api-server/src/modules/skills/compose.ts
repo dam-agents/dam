@@ -1,6 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillsService } from "api-server-api";
+import type { RuntimeSettledPort } from "../agents/index.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
@@ -67,7 +68,7 @@ export function composeSkillsModule(deps: {
   templatesRepo: TemplatesRepository;
   /** Whether the pod has applied everything the outbox holds — gates the
    *  `state` reconcile, which would otherwise reap rows mid-apply. */
-  isRuntimeSettled: (agentId: string) => Promise<boolean>;
+  runtimeSettled: RuntimeSettledPort;
 }): SkillsService {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
@@ -83,7 +84,7 @@ export function composeSkillsModule(deps: {
       createConnectionsRepository(db),
     ),
     runtimeMutator: deps.runtimeMutator,
-    isRuntimeSettled: deps.isRuntimeSettled,
+    runtimeSettled: deps.runtimeSettled,
     owner: deps.owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,

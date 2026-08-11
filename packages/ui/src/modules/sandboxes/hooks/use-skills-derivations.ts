@@ -1,11 +1,12 @@
 import type { LocalSkill, Skill, SkillSource } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useMemo } from "react";
 
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
 import { filterByQuery } from "../components/skills/skill-search.js";
-import { skillKey, type SkillsSurface } from "./use-skills-surface.js";
+import type { SkillsSurface } from "./use-skills-surface.js";
 
 export interface SkillsDerivations {
   /** The live filter: the trimmed, lowercased query, or "" while read-only. */
@@ -29,6 +30,10 @@ export interface SkillsDerivations {
   availableKeys: ReadonlySet<string>;
   installedKeys: ReadonlySet<string>;
   unreadableSources: ReadonlySet<string>;
+  /** Unreadable sources that still have skills installed here, with how many.
+   *  The Save dialog offers only scanned skills, so these are the ones it must
+   *  name rather than silently drop from "what's on here". */
+  saveOmitted: { source: SkillSource; count: number }[];
   previewReady: boolean;
   anyInstalled: boolean;
   drifted: Skill[];
@@ -183,12 +188,12 @@ export function useSkillsDerivations(
   const availableKeys = useMemo(() => {
     const out = new Set<string>();
     for (const list of listBySource.values()) {
-      for (const skill of list) out.add(skillKey(skill.source, skill.name));
+      for (const skill of list) out.add(skillKey(skill));
     }
     return out;
   }, [listBySource]);
   const installedKeys = useMemo(
-    () => new Set(installed.map((r) => skillKey(r.source, r.name))),
+    () => new Set(installed.map((r) => skillKey(r))),
     [installed],
   );
   // Connected but unreadable — a failed scan, not a missing source. The set
@@ -198,8 +203,19 @@ export function useSkillsDerivations(
       new Set(sources.filter((s) => errorBySource[s.id]).map((s) => s.gitUrl)),
     [sources, errorBySource],
   );
+  const saveOmitted = useMemo(() => {
+    const out: { source: SkillSource; count: number }[] = [];
+    for (const src of sources) {
+      if (!errorBySource[src.id]) continue;
+      const count = installed.filter((r) => r.source === src.gitUrl).length;
+      if (count > 0) out.push({ source: src, count });
+    }
+    return out;
+  }, [sources, errorBySource, installed]);
   // A source that hasn't reported yet is indistinguishable from one that can't
   // serve a skill, so the set previews stay silent until every source has.
+  // An errored source counts as reported: blocking on it would freeze both set
+  // dialogs for as long as it stays broken, when they can name it instead.
   const previewReady =
     sourcesLoaded && sources.every((s) => listBySource.has(s.id));
 
@@ -253,6 +269,7 @@ export function useSkillsDerivations(
     availableKeys,
     installedKeys,
     unreadableSources,
+    saveOmitted,
     previewReady,
     anyInstalled: totals.on > 0,
     drifted,

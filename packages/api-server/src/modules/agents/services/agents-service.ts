@@ -38,6 +38,10 @@ export interface ContributionsSettledPort {
    *  with the status shape instead of being re-derived at each call site. */
   isSettled(agentId: string): Promise<boolean>;
 }
+
+/** The settled bit alone, for modules that gate on it — one named dependency
+ *  instead of a bare function type re-spelled at every wiring hop. */
+export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
 import {
   assembleAgent,
   type InfraAgent,

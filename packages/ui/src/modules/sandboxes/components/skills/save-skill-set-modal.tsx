@@ -1,5 +1,5 @@
 import type { Skill, SkillSource } from "api-server-api";
-import { skillSetNameSchema } from "api-server-api";
+import { skillKey, skillSetNameSchema } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
@@ -13,8 +13,6 @@ import { CheckboxItem } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useToggleSet } from "@/hooks/use-toggle-set";
-
-import { skillKey } from "../../hooks/use-skills-surface.js";
 
 export interface SaveSetGroup {
   source: SkillSource;
@@ -31,6 +29,7 @@ export interface SaveSetGroup {
  */
 export function SaveSkillSetModal({
   groups,
+  omitted,
   isOn,
   existingNames,
   onCreate,
@@ -39,6 +38,11 @@ export function SaveSkillSetModal({
   /** Source-backed skills, grouped by source — a set reads as "these skills,
    *  from these repos" rather than a flat bag of names. */
   groups: SaveSetGroup[];
+  /** Connected sources whose scan failed while skills from them stay on, with
+   *  how many. Those skills can't be offered below, and the dialog promises to
+   *  start from what's on — so it names what it dropped instead of implying
+   *  the list is complete. */
+  omitted: { source: SkillSource; count: number }[];
   /** Whether a skill is currently installed. Read once, at mount, to seed the
    *  snapshot below. */
   isOn: (skill: Skill) => boolean;
@@ -61,10 +65,10 @@ export function SaveSkillSetModal({
     const on = new Set<string>();
     for (const group of groups) {
       for (const skill of group.skills) {
-        if (isOn(skill)) on.add(skillKey(skill.source, skill.name));
+        if (isOn(skill)) on.add(skillKey(skill));
       }
     }
-    return { groups, on };
+    return { groups, on, omitted };
   });
   const {
     selected: marked,
@@ -87,12 +91,11 @@ export function SaveSkillSetModal({
   }, [trimmed, existingNames]);
 
   const allKeys = useMemo(
-    () =>
-      snapshot.groups.flatMap((g) =>
-        g.skills.map((s) => skillKey(s.source, s.name)),
-      ),
+    () => snapshot.groups.flatMap((g) => g.skills.map((s) => skillKey(s))),
     [snapshot],
   );
+
+  const omittedCount = snapshot.omitted.reduce((n, o) => n + o.count, 0);
 
   const canCreate = !!trimmed && !nameError && marked.size > 0 && !submitting;
 
@@ -100,7 +103,7 @@ export function SaveSkillSetModal({
     setSubmitting(true);
     const skills = snapshot.groups.flatMap((g) =>
       g.skills
-        .filter((s) => marked.has(skillKey(s.source, s.name)))
+        .filter((s) => marked.has(skillKey(s)))
         .map((s) => ({ source: s.source, name: s.name })),
     );
     const ok = await onCreate({ name: trimmed, skills });
@@ -124,6 +127,15 @@ export function SaveSkillSetModal({
             set.
           </p>
 
+          {omittedCount > 0 && (
+            <p className="text-sm text-warning-fg">
+              {omittedCount} skill{omittedCount === 1 ? "" : "s"} that{" "}
+              {omittedCount === 1 ? "is" : "are"} on can't be included —{" "}
+              {snapshot.omitted.map((o) => o.source.name).join(", ")} can't be
+              read right now.
+            </p>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <SectionLabel>Set name</SectionLabel>
             <Input
@@ -133,9 +145,15 @@ export function SaveSkillSetModal({
               placeholder="my-skill-set"
               variant={nameError ? "invalid" : "standard"}
               aria-label="Set name"
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "set-name-error" : undefined}
               autoFocus
             />
-            {nameError && <p className="text-sm text-danger">{nameError}</p>}
+            {nameError && (
+              <p id="set-name-error" className="text-sm text-danger">
+                {nameError}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -162,7 +180,7 @@ export function SaveSkillSetModal({
               <div key={group.source.id} className="flex flex-col gap-2">
                 <SectionLabel>{group.source.name}</SectionLabel>
                 {group.skills.map((skill) => {
-                  const key = skillKey(skill.source, skill.name);
+                  const key = skillKey(skill);
                   return (
                     <div key={key} className="flex items-start gap-2">
                       <CheckboxItem

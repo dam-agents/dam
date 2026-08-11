@@ -70,6 +70,7 @@ export function SkillsModals({
       return (
         <SaveSkillSetModal
           groups={derived.setGroups}
+          omitted={derived.saveOmitted}
           isOn={(skill) =>
             surface.installedRef(skill.source, skill.name) !== undefined
           }
@@ -109,5 +110,9 @@ export function SkillsModals({
           onClose={onClose}
         />
       );
+    default: {
+      const unhandled: never = open;
+      return unhandled;
+    }
   }
 }

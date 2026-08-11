@@ -362,8 +362,10 @@ export type {
   SkillRef,
   SkillApplyBatchInput,
   SkillSet,
+  SkillSetApplyInput,
   SkillSetApplyResult,
   SkillSetCreateInput,
+  SkillSetDeleteInput,
   SkillSetEntry,
   SkillSetSkipReason,
   SkillSource,
@@ -373,10 +375,12 @@ export type {
 } from "./modules/skills/types.js";
 export {
   localSkillSchema,
+  MAX_SKILL_BATCH_ENTRIES,
   scanFailureSchema,
   skillCreateSourceInputSchema,
   skillDeleteSourceInputSchema,
   skillInstallInputSchema,
+  skillKey,
   skillListInputSchema,
   skillListLocalInputSchema,
   skillListResultSchema,

@@ -9,6 +9,7 @@ import type {
   SkillSource,
   SkillsState,
 } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
@@ -19,14 +20,6 @@ import { parsePlatformCta } from "../../../lib/platform-cta.js";
 import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
-
-/**
- * The identity a skill is installed and stored under. One definition for the
- * whole surface: the set-preview compares keys built in one file against keys
- * built in another, so a second spelling would silently report every entry as
- * missing rather than fail loudly.
- */
-export const skillKey = (source: string, name: string) => `${source}::${name}`;
 
 /** Turn the server's closed skip verdicts into one readable clause. The reason
  *  codes never reach the user — the client owns the wording. */
@@ -308,7 +301,7 @@ export function useSkillsSurface(
   const toggle = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return;
-      const key = skillKey(skill.source, skill.name);
+      const key = skillKey(skill);
       setBusyKey(key);
       const currentlyInstalled = !!installedRef(skill.source, skill.name);
       const result = await runAction(
@@ -337,7 +330,7 @@ export function useSkillsSurface(
   const update = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return;
-      const key = skillKey(skill.source, skill.name);
+      const key = skillKey(skill);
       setBusyKey(key);
       // Re-install at the scanned version+hash: an already-installed skill, so
       // this is the "adopt latest" path, not a toggle (which would uninstall).

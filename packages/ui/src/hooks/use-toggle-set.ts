@@ -10,8 +10,11 @@ import { useCallback, useState } from "react";
  */
 export function useToggleSet<T>(initial?: () => Iterable<T>): {
   selected: ReadonlySet<T>;
-  has: (value: T) => boolean;
   toggle: (value: T) => void;
+  /** Idempotent removal, decided inside the updater. Use it over `toggle` when
+   *  presence was checked before an `await` — a stale read there turns
+   *  "remove" into "re-add". */
+  remove: (value: T) => void;
   setAll: (values: Iterable<T>) => void;
   clear: () => void;
 } {
@@ -28,6 +31,15 @@ export function useToggleSet<T>(initial?: () => Iterable<T>): {
     });
   }, []);
 
+  const remove = useCallback((value: T) => {
+    setSelected((prev) => {
+      if (!prev.has(value)) return prev;
+      const next = new Set(prev);
+      next.delete(value);
+      return next;
+    });
+  }, []);
+
   const setAll = useCallback((values: Iterable<T>) => {
     setSelected(new Set(values));
   }, []);
@@ -36,8 +48,8 @@ export function useToggleSet<T>(initial?: () => Iterable<T>): {
 
   return {
     selected,
-    has: (value: T) => selected.has(value),
     toggle,
+    remove,
     setAll,
     clear,
   };

@@ -138,7 +138,7 @@ export const skillsRouter = t.router({
 
     delete: manageAgentsProcedure
       .input(skillSetDeleteInputSchema)
-      .mutation(({ ctx, input }) => ctx.skills.deleteSet(input.id)),
+      .mutation(({ ctx, input }) => ctx.skills.deleteSet(input)),
 
     // Not `apply`: tRPC reserves it as a router key (Function.prototype.apply),
     // and the collision only surfaces when the router is constructed at boot —
@@ -150,9 +150,7 @@ export const skillsRouter = t.router({
     applyToAgent: manageAgentsProcedure
       .input(skillSetApplyInputSchema)
       .output(skillSetApplyResultSchema)
-      .mutation(({ ctx, input }) =>
-        ctx.skills.applySets(input.agentId, input.setIds),
-      ),
+      .mutation(({ ctx, input }) => ctx.skills.applySets(input)),
   }),
 
   // Ownership is enforced inside the service via ensureAgentReachable →

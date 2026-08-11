@@ -20,6 +20,8 @@ import type {
   SkillSetEntry,
   SkillSetSkipReason,
 } from "api-server-api";
+import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
+import type { RuntimeSettledPort } from "../../agents/index.js";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
@@ -67,15 +69,6 @@ export function templateSourceId(templateId: string, gitUrl: string): string {
 
 export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
-/** Upper bound on one batch, mirroring the contract schema's per-list cap. */
-const MAX_BATCH_ENTRIES = 500;
-
-/** The identity a skill is installed and stored under: its source's git URL
- *  plus its name. One definition, because every place that compares two of
- *  these relies on them being byte-identical and nothing else enforces it. */
-const entryKey = (e: { source: string; name: string }) =>
-  `${e.source}::${e.name}`;
-
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
   skillSetsRepo: SkillSetsRepository;
@@ -96,7 +89,7 @@ export interface SkillsServiceDeps {
    *  `state` reconcile is only sound once it has: until then a tracked skill's
    *  directory is legitimately absent, because the apply that writes it hasn't
    *  run yet. */
-  isRuntimeSettled: (agentId: string) => Promise<boolean>;
+  runtimeSettled: RuntimeSettledPort;
   owner: string;
   /** Scan via the provided scanner with a TTL cache, keyed by `(gitUrl, path)`
    *  — the catalogue depends on both, and the same repo may be pointed at
@@ -493,8 +486,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
     // Reject a self-contradicting batch before writing anything: picking a
     // winner would silently do something the caller didn't ask for.
-    const removing = new Set(uninstall.map(entryKey));
-    const contradiction = install.find((e) => removing.has(entryKey(e)));
+    const removing = new Set(uninstall.map(skillKey));
+    const contradiction = install.find((e) => removing.has(skillKey(e)));
     if (contradiction) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -502,13 +495,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     }
 
-    // The schema caps each list, but that only runs at the tRPC boundary —
-    // an in-process caller (the set-apply path) would otherwise be unbounded.
-    // Enforce it here too, where the one-bump contract actually lives.
-    if (install.length + uninstall.length > MAX_BATCH_ENTRIES) {
+    // The schema enforces the same cap, but only at the tRPC boundary — an
+    // in-process caller (the set-apply path) would otherwise be unbounded.
+    if (install.length + uninstall.length > MAX_SKILL_BATCH_ENTRIES) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: `too many skills in one batch (${install.length + uninstall.length}; limit ${MAX_BATCH_ENTRIES})`,
+        message: `too many skills in one batch (${install.length + uninstall.length}; limit ${MAX_SKILL_BATCH_ENTRIES})`,
       });
     }
 
@@ -837,7 +829,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async createSet(input) {
       const seen = new Set<string>();
       for (const entry of input.skills) {
-        const key = entryKey(entry);
+        const key = skillKey(entry);
         if (seen.has(key)) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -875,7 +867,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       return set;
     },
 
-    async deleteSet(id) {
+    async deleteSet({ id }) {
       const existing = await deps.skillSetsRepo.get(id, deps.owner);
       if (!existing) {
         throw new TRPCError({
@@ -894,7 +886,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     },
 
-    async applySets(agentId, setIds) {
+    async applySets({ agentId, setIds }) {
       const sets = await Promise.all(
         setIds.map((id) => deps.skillSetsRepo.get(id, deps.owner)),
       );
@@ -910,7 +902,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const wanted = new Map<string, SkillSetEntry>();
       for (const set of sets) {
         for (const entry of set!.skills) {
-          wanted.set(entryKey(entry), entry);
+          wanted.set(skillKey(entry), entry);
         }
       }
 
@@ -920,10 +912,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // would only catch it after the scans, and would name a batch the caller
       // never assembled. A union this large fails even when most of it is
       // already installed — the bound is on what one apply may ask for.
-      if (wanted.size > MAX_BATCH_ENTRIES) {
+      if (wanted.size > MAX_SKILL_BATCH_ENTRIES) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `these sets cover ${wanted.size} skills; one apply carries at most ${MAX_BATCH_ENTRIES}`,
+          message: `these sets cover ${wanted.size} skills; one apply carries at most ${MAX_SKILL_BATCH_ENTRIES}`,
         });
       }
 
@@ -957,7 +949,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // It is still a distinct reason from "not connected", because the fix
       // differs, and the underlying failure is logged rather than dropped.
       const installedKeys = new Set(
-        (await deps.agentSkillsRepo.listSkills(agentId)).map(entryKey),
+        (await deps.agentSkillsRepo.listSkills(agentId)).map(skillKey),
       );
       const toInstall: SkillApplyBatchInput["install"] = [];
       for (const [gitUrl, entries] of byGitUrl) {
@@ -988,7 +980,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           // Update pill and the drift banner — and doing it as a side effect
           // here would overwrite a skill the "already all on" preview just
           // promised to leave alone.
-          if (installedKeys.has(entryKey(entry))) continue;
+          if (installedKeys.has(skillKey(entry))) continue;
           toInstall.push({
             source: match.source,
             name: match.name,
@@ -1196,7 +1188,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // state read: this is the one query the Skills page cannot do without.
       let settled = false;
       try {
-        settled = await deps.isRuntimeSettled(agentId);
+        settled = await deps.runtimeSettled.isSettled(agentId);
       } catch (err) {
         getLogger().warn(
           { err, agentId },
