@@ -1,3 +1,21 @@
+/**
+ * @deprecated Being replaced by the feature-oriented suite in
+ * `modules/acp/services/acp-runtime/__tests__/`. Do not add tests here.
+ *
+ * Two problems this file has, neither of which is that it reaches into
+ * internals (it can't — the module exports only the factory):
+ *
+ *   1. Cases are named in the implementation's vocabulary ("cold path",
+ *      "waiters", "cursors"), so nobody can find the behaviour they care
+ *      about without reading the module first.
+ *   2. Cases resolve frames by array position (`fa.sent[0]`), so adding or
+ *      reordering a single frame in the runtime breaks dozens of them for
+ *      reasons that have nothing to do with behaviour changing.
+ *
+ * It stays green as the safety net for the session-lifecycle refactor
+ * (#3108). Each case is deleted once the new suite covers the same
+ * behaviour, and the file goes with the last one.
+ */
 import { describe, it, expect, vi } from "vitest";
 import { createAcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runtime.js";
 import type { AgentProcess } from "../../modules/acp/infrastructure/agent-process.js";

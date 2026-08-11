@@ -2,9 +2,9 @@ import {
   createAcpRuntime,
   type AcpRuntime,
   type AcpRuntimeDeps,
-} from "./acp-runtime.js";
-import type { AgentProcess } from "../../infrastructure/agent-process.js";
-import type { ClientChannel } from "../../infrastructure/client-channel.js";
+} from "../acp-runtime.js";
+import type { AgentProcess } from "../../../infrastructure/agent-process.js";
+import type { ClientChannel } from "../../../infrastructure/client-channel.js";
 
 /**
  * Test doubles for the two ports the ACP runtime talks through, plus a world
