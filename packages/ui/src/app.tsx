@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { DocsLauncher } from "./components/docs-launcher.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
@@ -97,6 +98,7 @@ function MainApp() {
         </div>
         <DialogOverlay />
         <ConnectionBanner />
+        <DocsLauncher />
       </>
     );
 
@@ -133,6 +135,7 @@ function MainApp() {
       </div>
       <DialogOverlay />
       <ConnectionBanner />
+      <DocsLauncher />
     </div>
   );
 }
