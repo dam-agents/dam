@@ -17,6 +17,15 @@ const ALICE_SESSION = "sess-alice";
 const BOB_SESSION = "sess-bob";
 
 describe("acp-runtime: session isolation", () => {
+  /**
+   * Two people in one sandbox, each in their own conversation. Neither should
+   * ever see a line of the other's.
+   *
+   * The harness cannot do this for us. It writes every session's output to one
+   * stdout and never learns that two people are attached, so as far as it is
+   * concerned there is a single reader. Splitting that stream by who is
+   * allowed to see what is the runtime's job.
+   */
   it("should keep two clients in different sessions from seeing each other's messages", () => {
     const world = createWorld();
 
@@ -42,6 +51,15 @@ describe("acp-runtime: session isolation", () => {
     expect(transcriptOf(bob)).toEqual([`${BOB_SESSION}: a k8s platform`]);
   });
 
+  /**
+   * A client and a session are many-to-many. One socket serves a sandbox, not
+   * a conversation, and it outlives whatever is on screen, so clicking through
+   * the session list leaves a client watching everything it has visited.
+   *
+   * This is the scenario that pins that down. Every other one here still
+   * passes if a connection could only ever watch a single session. This one
+   * does not.
+   */
   it("should give a client watching two sessions both conversations, without mixing them into the others'", () => {
     const world = createWorld();
 
@@ -53,9 +71,7 @@ describe("acp-runtime: session isolation", () => {
     bob.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: BOB_SESSION });
 
-    // A third person opens both conversations. One sandbox is one socket, and
-    // it outlives the conversation on screen: clicking through the session
-    // list leaves a client watching everything it has visited.
+    // A third person clicks through both conversations on one socket.
     const carol = world.connect();
     carol.send(frames.loadSession(1, ALICE_SESSION));
     carol.send(frames.loadSession(2, BOB_SESSION));
@@ -79,6 +95,16 @@ describe("acp-runtime: session isolation", () => {
     expect(transcriptOf(bob)).toEqual([`${BOB_SESSION}: a k8s platform`]);
   });
 
+  /**
+   * The sidebar is a real client with no conversation open. It opens a
+   * connection, asks what sessions exist, and closes it, on a poll, while
+   * other people's turns are running. It never names a session.
+   *
+   * So being connected must not mean being subscribed. If it did, every poll
+   * would pick up live traffic for conversations nobody has open: permission
+   * dialogs would pop, sessions would be marked read behind the user's back,
+   * and each one would be held off the reap.
+   */
   it("should give a client that only lists sessions its answer and nothing else", () => {
     const world = createWorld();
 
@@ -88,10 +114,7 @@ describe("acp-runtime: session isolation", () => {
     world.harness().replyTo("session/new", { sessionId: ALICE_SESSION });
     alice.send(frames.prompt(2, ALICE_SESSION, "delete the stale branches"));
 
-    // The session list is its own connection: the sidebar opens one, reads
-    // across sessions, and closes it, on a poll, while other people's turns
-    // are running. It names no session, so it is connected without watching
-    // anything.
+    // The sidebar polls, on its own connection, naming no session.
     const sidebar = world.connect();
     sidebar.send(frames.listSessions(1));
     world.harness().replyTo("session/list", {
