@@ -204,7 +204,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       setMessages((p) => [
         ...p.map((m) =>
           m.error?.retryWith
-            ? { ...m, error: { message: m.error.message } }
+            ? {
+                ...m,
+                error: {
+                  message: m.error.message,
+                  ...(m.error.local ? { local: true as const } : {}),
+                },
+              }
             : m,
         ),
         ...(hidden ? [] : [uMsg]),
@@ -232,6 +238,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                   error: {
                     message:
                       "Couldn't deliver — the agent never confirmed it received this message.",
+                    local: true,
                     retryWith: m.retryWith,
                   },
                 }
@@ -340,6 +347,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                       ? undefined
                       : {
                           message: outcome.message,
+                          local: true,
                           ...(outcome.retry ? { retryWith: m.retryWith } : {}),
                         },
                   }

@@ -622,7 +622,11 @@ describe("failQueuedOnDisconnect", () => {
 describe("mergeLocalFailures", () => {
   const failed: Message = {
     ...assistantMsg("a1", "", false),
-    error: { message: "Couldn't deliver", retryWith: { text: "dropped" } },
+    error: {
+      message: "Couldn't deliver",
+      local: true,
+      retryWith: { text: "dropped" },
+    },
   };
 
   test("carries a locally-failed bubble across the reconnect rebuild", () => {
@@ -638,8 +642,8 @@ describe("mergeLocalFailures", () => {
     const rebuilt = [userMsg("u1", "hi"), assistantMsg("a1", "reply")];
     const previous = [
       ...rebuilt,
-      // A failure with no retry payload is history, not a live failure —
-      // a later send already stripped its Retry.
+      // Not locally raised: a failure read from the replayed log needs no
+      // carrying — the rebuild already holds it.
       { ...assistantMsg("a2", "", false), error: { message: "old" } },
     ];
     expect(mergeLocalFailures(rebuilt, previous)).toBe(rebuilt);

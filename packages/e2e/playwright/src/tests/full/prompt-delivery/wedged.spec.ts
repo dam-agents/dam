@@ -4,13 +4,17 @@ import { setMockLongTurnReply } from "../../../lib/agents.js";
 import { createApiClient } from "../../../lib/api-client.js";
 import { getAccessToken } from "../../../lib/auth.js";
 import {
-  DELIVERY_TIMEOUT_MS,
   expectMilestoneBeforeFailure,
   LONG_TURN_MS,
   openMockAgentChat,
   restoreMockDefaultReply,
   sendPrompt,
 } from "./delivery.js";
+
+/** The deleted started→content deadline, kept here as the boundary this spec
+ *  proves is gone. Not `DELIVERY_TIMEOUT_MS` — that now names the surviving
+ *  sending→accepted check, which this spec does not exercise. */
+const REMOVED_SILENCE_DEADLINE_MS = 60_000;
 
 // Full-suite-only spec (see playwright.config.ts): waits out the UI's former
 // 60s content deadline on purpose.
@@ -29,7 +33,7 @@ import {
 const prompt = "wedged-agent-no-content";
 const lateReply = "A slow first word is not a failure.";
 
-test(`a prompt handed to an agent that stays silent past ${DELIVERY_TIMEOUT_MS / 1000}s reports no failure (#3058)`, async ({
+test(`a prompt handed to an agent that stays silent past ${REMOVED_SILENCE_DEADLINE_MS / 1000}s reports no failure (#3058)`, async ({
   page,
 }) => {
   // Boot + login, then the mock's full hold, then the reply. Sized above the sum.

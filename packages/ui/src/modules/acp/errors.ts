@@ -1,3 +1,5 @@
+import { PROMPT_QUEUE_FULL_MESSAGE } from "api-server-api";
+
 /**
  * Error extraction and presentation for the ACP session surface. Kept free of
  * imports with browser side effects so node-environment unit tests (and any
@@ -53,6 +55,14 @@ function jsonRpcErrorDetails(e: object): string | null {
   return null;
 }
 
+/** The runtime's queue-full rejection, in words that say what to do. Keyed off
+ *  the shared message stem, so a reword on the producer is a compile error
+ *  there rather than a silent fallback to its internal text here. */
+export const QUEUE_FULL_DESCRIPTION: SendErrorDescription = {
+  message: "This conversation already has too many messages waiting.",
+  hint: "The agent works through one message at a time. Wait for it to catch up, then send this again.",
+};
+
 export interface SendErrorDescription {
   /** What to render as the failure reason. */
   message: string;
@@ -82,12 +92,7 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
  * gets replaced with wording that at least says where to look next.
  */
 export function describeSendError(raw: string): SendErrorDescription {
-  if (/prompt queue full/i.test(raw)) {
-    return {
-      message: "This conversation already has too many messages waiting.",
-      hint: "The agent works through one message at a time. Wait for it to catch up, then send this again.",
-    };
-  }
+  if (raw.includes(PROMPT_QUEUE_FULL_MESSAGE)) return QUEUE_FULL_DESCRIPTION;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     // agent-runtime already prefixes authentication_error frames with its own

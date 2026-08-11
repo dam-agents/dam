@@ -459,6 +459,8 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  PROMPT_QUEUE_FULL_CODE,
+  PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,

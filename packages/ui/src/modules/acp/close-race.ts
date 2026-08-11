@@ -5,7 +5,7 @@ export class ConnectionClosedError extends Error {
   /** What the socket said on the way out, when it said anything. The relay
    *  reports the cause here ("agent not ready: …", "upstream closed"). */
   readonly closeReason: string | null;
-  constructor(closeReason: string | null = null) {
+  constructor(closeReason: string | null) {
     super(
       closeReason
         ? `Connection closed while request was in flight: ${closeReason}`
@@ -40,10 +40,10 @@ export function isConnectionClosed(e: unknown): boolean {
  */
 export function withCloseRace(
   conn: ClientSideConnection,
-  closeReason?: () => string | null,
+  closeReason: () => string | null,
 ): ClientSideConnection {
   const closedThrows = conn.closed.then(() => {
-    throw new ConnectionClosedError(closeReason?.() ?? null);
+    throw new ConnectionClosedError(closeReason());
   });
   return new Proxy(conn, {
     get(target, prop, receiver) {

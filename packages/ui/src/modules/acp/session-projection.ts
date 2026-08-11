@@ -242,7 +242,11 @@ export function failQueuedOnDisconnect(messages: Message[]): Message[] {
         ...m,
         streaming: false,
         queued: false,
-        error: { message: QUEUED_LOST_MESSAGE, retryWith: m.retryWith },
+        error: {
+          message: QUEUED_LOST_MESSAGE,
+          local: true,
+          retryWith: m.retryWith,
+        },
       },
     ];
   });
@@ -261,7 +265,7 @@ export function mergeLocalFailures(
   previous: Message[],
 ): Message[] {
   const carried = previous.filter(
-    (m) => m.error?.retryWith && !rebuilt.some((r) => r.id === m.id),
+    (m) => m.error?.local && !rebuilt.some((r) => r.id === m.id),
   );
   return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }
