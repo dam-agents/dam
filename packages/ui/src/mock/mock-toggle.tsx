@@ -41,9 +41,6 @@ export function MockToggle() {
     }
   };
 
-  const isFormatting = window.location.pathname === "/explore/inline-formatting";
-  const isStartup = window.location.pathname === "/explore/startup-states";
-
   return (
     <>
       <div className="fixed top-4 right-4 z-[9999] flex flex-wrap items-center justify-end gap-2">
@@ -61,18 +58,6 @@ export function MockToggle() {
         >
           Welcome Modal
         </button>
-        <a
-          href={isFormatting ? "/" : "/explore/inline-formatting"}
-          className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-[14px] font-medium text-foreground shadow-lg transition-colors hover:bg-muted"
-        >
-          {isFormatting ? "← Back" : "Formatting"}
-        </a>
-        <a
-          href={isStartup ? "/" : "/explore/startup-states"}
-          className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-[14px] font-medium text-foreground shadow-lg transition-colors hover:bg-muted"
-        >
-          {isStartup ? "← Back" : "Startup"}
-        </a>
         <button
           type="button"
           onClick={toggle}

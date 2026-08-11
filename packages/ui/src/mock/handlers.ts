@@ -39,7 +39,9 @@ function getFixtures(): Record<string, unknown> {
     "features.flags": featureFlags,
     "connections.listTemplates": connectionTemplates,
     "connections.list": connections,
-    "connections.getAgentConnections": { connections: agentConnections.map(c => ({ ...c, connectionId: c.id })) },
+    "connections.getAgentConnections": {
+      connections: agentConnections.map((c) => ({ ...c, connectionId: c.id })),
+    },
     "templates.list": templates,
     "budgets.reserved": budgetsReserved,
     "experiments.list": empty ? [] : experiments,
@@ -121,7 +123,12 @@ function getFixtures(): Record<string, unknown> {
         ],
       },
     },
-    "harnessConfig.current": { model: "claude-sonnet-4-20250514", mode: null, configOptions: {}, availableModels: null },
+    "harnessConfig.current": {
+      model: "claude-sonnet-4-20250514",
+      mode: null,
+      configOptions: {},
+      availableModels: null,
+    },
   };
 }
 
@@ -184,11 +191,19 @@ export const handlers = [
       }
       if (proc === "experiments.createSandbox") {
         mockEmpty = false;
-        return { result: { data: agents.find((a) => a.kind === "experiment") ?? agents[0] } };
+        return {
+          result: {
+            data: agents.find((a) => a.kind === "experiment") ?? agents[0],
+          },
+        };
       }
       if (proc === "knowledgeBases.create") {
         mockEmpty = false;
-        return { result: { data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0] } };
+        return {
+          result: {
+            data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
+          },
+        };
       }
       return { result: { data: null } };
     });
@@ -237,5 +252,4 @@ export const handlers = [
   http.get("/api/brand/icon-180.png", () => {
     return new HttpResponse(null, { status: 204 });
   }),
-
 ];

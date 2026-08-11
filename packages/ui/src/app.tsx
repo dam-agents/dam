@@ -4,8 +4,6 @@ import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLinkHelpIcon } from "./components/docs-link.js";
 import { IconRail } from "./components/icon-rail.js";
-import { InlineFormattingShowcase } from "./components/inline-formatting-showcase.js";
-import { StartupStatesShowcase } from "./components/startup-states-showcase.js";
 import { emitToast } from "./lib/toast.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
@@ -127,34 +125,6 @@ function MainApp() {
     );
   }
 
-  if (
-    import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/explore/inline-formatting"
-  ) {
-    return (
-      <div className="flex h-dvh bg-background overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex-1 overflow-y-auto">
-          <InlineFormattingShowcase />
-        </main>
-      </div>
-    );
-  }
-
-  if (
-    import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/explore/startup-states"
-  ) {
-    return (
-      <div className="flex h-dvh bg-background overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex-1 overflow-y-auto">
-          <StartupStatesShowcase />
-        </main>
-      </div>
-    );
-  }
-
   // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar
   // here. A knowledge base's standalone page is the same chat surface under
   // its own route, so it shares the shell.
@@ -189,11 +159,13 @@ function MainApp() {
             </DevErrorBoundary>
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />
+          ) : view === "home" ? (
+            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+              <HomeView />
+            </div>
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-              {view === "home" ? (
-                <HomeView />
-              ) : view === "settings" ? (
+              {view === "settings" ? (
                 <SettingsView />
               ) : view === "inbox" ? (
                 <InboxView />

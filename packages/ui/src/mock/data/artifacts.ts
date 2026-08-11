@@ -20,6 +20,14 @@ export const artifactFolders = [
 ];
 
 const AGENT_ID = "a1b2c3d4-0001-4000-8000-000000000001";
+const AGENT_ID_2 = "a1b2c3d4-0002-4000-8000-000000000002";
+const AGENT_ID_3 = "a1b2c3d4-0003-4000-8000-000000000003";
+const AGENT_ID_KB = "a1b2c3d4-0004-4000-8000-000000000004";
+const AGENT_ID_EXP = "a1b2c3d4-0005-4000-8000-000000000005";
+
+// Recent timestamps (relative to "now" so they always appear as new)
+const now = Date.now();
+const hoursAgo = (h: number) => new Date(now - h * 3600_000).toISOString();
 
 export const artifacts = [
   {
@@ -37,8 +45,8 @@ export const artifacts = [
     expiresAt: null,
     viewCount: 8,
     shareUrl: null,
-    createdAt: "2024-03-14T10:00:00.000Z",
-    updatedAt: "2024-03-14T10:00:00.000Z",
+    createdAt: hoursAgo(2),
+    updatedAt: hoursAgo(2),
   },
   {
     id: "art-2",
@@ -50,13 +58,13 @@ export const artifacts = [
     sizeBytes: 8100,
     version: 2,
     folderId: null,
-    agentId: AGENT_ID,
+    agentId: AGENT_ID_3,
     visibility: "public",
     expiresAt: null,
     viewCount: 12,
     shareUrl: "https://share.example.com/abc",
-    createdAt: "2024-03-12T08:00:00.000Z",
-    updatedAt: "2024-03-13T09:00:00.000Z",
+    createdAt: hoursAgo(1),
+    updatedAt: hoursAgo(1),
   },
   {
     id: "art-3",
@@ -68,13 +76,13 @@ export const artifacts = [
     sizeBytes: 24600,
     version: 5,
     folderId: null,
-    agentId: AGENT_ID,
+    agentId: AGENT_ID_KB,
     visibility: "public",
-    expiresAt: "2024-04-15T00:00:00.000Z",
+    expiresAt: null,
     viewCount: 47,
     shareUrl: "https://share.example.com/dash",
-    createdAt: "2024-03-08T14:00:00.000Z",
-    updatedAt: "2024-03-14T16:00:00.000Z",
+    createdAt: hoursAgo(3),
+    updatedAt: hoursAgo(3),
   },
   {
     id: "art-4",
@@ -212,13 +220,13 @@ export const artifacts = [
     sizeBytes: 9800,
     version: 1,
     folderId: "folder-exp-1",
-    agentId: AGENT_ID,
+    agentId: AGENT_ID_EXP,
     visibility: "private",
     expiresAt: null,
     viewCount: 6,
     shareUrl: null,
-    createdAt: "2024-03-13T18:00:00.000Z",
-    updatedAt: "2024-03-13T18:00:00.000Z",
+    createdAt: hoursAgo(4),
+    updatedAt: hoursAgo(4),
   },
   {
     id: "art-12",
@@ -230,12 +238,12 @@ export const artifacts = [
     sizeBytes: 6400,
     version: 2,
     folderId: "folder-exp-1",
-    agentId: AGENT_ID,
+    agentId: AGENT_ID_EXP,
     visibility: "private",
     expiresAt: null,
     viewCount: 3,
     shareUrl: null,
-    createdAt: "2024-03-12T20:00:00.000Z",
-    updatedAt: "2024-03-13T10:00:00.000Z",
+    createdAt: hoursAgo(5),
+    updatedAt: hoursAgo(5),
   },
 ];

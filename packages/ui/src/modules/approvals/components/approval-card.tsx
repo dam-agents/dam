@@ -88,14 +88,14 @@ export function ApprovalCard({ row }: { row: ApprovalView }) {
 
   return (
     <div
-      className="rounded-lg border border-border bg-surface p-4 flex flex-col gap-3 anim-in"
+      className="rounded-lg border border-border bg-surface p-5 anim-in"
       data-testid="approval-card"
     >
       {/* Header: agent + type badge + timestamp */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 mb-4">
         <button
           type="button"
-          className="text-sm font-medium text-foreground hover:text-accent transition-colors truncate"
+          className="text-[14px] font-medium text-foreground hover:text-accent transition-colors truncate"
           onClick={() => navigateToSandboxHome(row.agentId)}
           title={`Open ${agentName}`}
         >
@@ -104,35 +104,37 @@ export function ApprovalCard({ row }: { row: ApprovalView }) {
         <Badge variant={isNetwork ? "info" : "muted"} size="sm">
           {isNetwork ? "Network" : "Tool"}
         </Badge>
-        <span className="ml-auto text-sm text-muted-foreground shrink-0">
+        <span className="ml-auto text-[14px] text-muted-foreground shrink-0">
           {formatRelativeTime(row.createdAt)}
         </span>
       </div>
 
       {/* Request detail */}
-      {isNetwork ? (
-        <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-sm font-semibold text-foreground">
-            {method} {host}
-          </span>
-          <span className="font-mono text-sm text-muted-foreground truncate">
-            {path}
-          </span>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-sm font-semibold text-foreground">
-            {toolName}
-          </span>
-          {toolArgs != null && (
-            <pre className="font-mono text-sm text-muted-foreground bg-muted rounded-md px-2 py-1 overflow-x-auto max-h-[80px]">
-              {typeof toolArgs === "string"
-                ? toolArgs
-                : JSON.stringify(toolArgs as object, null, 2)}
-            </pre>
-          )}
-        </div>
-      )}
+      <div className="rounded-md bg-muted/50 px-4 py-3 mb-4">
+        {isNetwork ? (
+          <div className="space-y-0.5">
+            <p className="font-mono text-[14px] font-semibold text-foreground">
+              {method} {host}
+            </p>
+            <p className="font-mono text-[14px] text-muted-foreground truncate">
+              {path}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <p className="font-mono text-[14px] font-semibold text-foreground">
+              {toolName}
+            </p>
+            {toolArgs != null && (
+              <pre className="font-mono text-[14px] text-muted-foreground overflow-x-auto max-h-[80px]">
+                {typeof toolArgs === "string"
+                  ? toolArgs
+                  : JSON.stringify(toolArgs as object, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Decision actions */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -234,13 +236,13 @@ export function ApprovalCard({ row }: { row: ApprovalView }) {
 
       {/* Expiry countdown */}
       {countdown !== null && countdown <= 30 && (
-        <div className="flex items-center gap-1 text-sm text-warning">
+        <div className="flex items-center gap-1 text-[14px] text-warning mt-3">
           <WarningAlt size={14} />
           <span>Expires in {countdown}s</span>
         </div>
       )}
       {countdown === null && row.status === "pending" && isNetwork && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-[14px] text-muted-foreground mt-3">
           Original request timed out. Permanent rules still apply to future
           attempts.
         </p>
