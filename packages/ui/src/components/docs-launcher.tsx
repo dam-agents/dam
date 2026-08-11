@@ -16,8 +16,6 @@ import { getApiHealthSnapshot, subscribeApiHealth } from "../lib/api-health.js";
 
 export function DocsLauncher() {
   const titleId = useId();
-  // The connection banner is a 44px bar in this same corner and outranks this
-  // button, so step over it while it is up.
   const banner =
     useSyncExternalStore(subscribeApiHealth, getApiHealthSnapshot) !==
     "connected";
@@ -30,8 +28,10 @@ export function DocsLauncher() {
           size="icon-sm"
           aria-label="Help"
           className={cn(
-            "fixed right-4 z-nav hidden h-[34px] w-[34px] md:inline-flex",
-            banner ? "bottom-[60px]" : "bottom-4",
+            "fixed right-4 z-nav h-[34px] w-[34px]",
+            banner
+              ? "bottom-[116px] md:bottom-[60px]"
+              : "bottom-[72px] md:bottom-4",
           )}
         >
           <Help size={16} />
