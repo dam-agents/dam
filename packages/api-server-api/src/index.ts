@@ -461,6 +461,13 @@ export {
   buildPlatformPromptStartedNotification,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  jsonRpcIdSchema,
+  promptQueueFullDataSchema,
+  promptQueueFullErrorSchema,
+  buildPromptQueueFullError,
+  isPromptQueueFullData,
+  AGENT_STOP_CLOSE_REASONS,
+  isAgentStopCloseReason,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,
@@ -469,6 +476,9 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  JsonRpcId,
+  PromptQueueFullData,
+  PromptQueueFullError,
 } from "./modules/acp/types.js";
 
 // Brand

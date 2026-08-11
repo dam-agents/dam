@@ -1,3 +1,5 @@
+import { isAgentStopCloseReason } from "api-server-api";
+
 import { QUEUE_FULL_DESCRIPTION } from "../../acp/errors.js";
 import { QUEUED_LOST_MESSAGE } from "../../acp/session-projection.js";
 
@@ -45,9 +47,11 @@ function agentStopped(closeReason: string): string {
  *  prompt has been forwarded the runtime keeps the turn running without its
  *  channel, so a drop after that point usually costs nothing but the live view
  *  and reporting it would teach the user to distrust a working system — unless
- *  the socket said why it went: the runtime closes an engaged channel with a
- *  reason when the agent exits, is recycled, or was never running, and none of
- *  those turns survives to be replayed. A drop before delivery is a real loss
+ *  the reason names an agent-side stop: the runtime closes an engaged channel
+ *  that way when the agent exits, is recycled, or was never running, and none
+ *  of those turns survives to be replayed. Any other reason, including the text
+ *  a relay substitutes when the upstream gave none, stands for a reasonless
+ *  close. A drop before delivery is a real loss
  *  either way, though the SDK's wording for it describes our plumbing rather
  *  than their situation, so the socket's own reason is carried through. A queued
  *  prompt is the exception: the runtime discards a detaching channel's queue, so
@@ -78,7 +82,7 @@ export function classifySendOutcome(facts: SendFailureFacts): SendOutcome {
   if (facts.queued) {
     return { report: true, message: QUEUED_LOST_MESSAGE, retry: true };
   }
-  if (facts.closeReason) {
+  if (isAgentStopCloseReason(facts.closeReason)) {
     return {
       report: true,
       message: agentStopped(facts.closeReason),

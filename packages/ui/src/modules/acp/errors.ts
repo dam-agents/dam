@@ -1,5 +1,5 @@
 import {
-  PROMPT_QUEUE_FULL_CODE,
+  isPromptQueueFullData,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
@@ -69,8 +69,7 @@ export const QUEUE_FULL_DESCRIPTION: SendErrorDescription = {
  *  runtime older than that field. */
 export function isQueueFullError(e: unknown): boolean {
   if (e && typeof e === "object") {
-    const data = (e as { data?: { code?: unknown } }).data;
-    if (data?.code === PROMPT_QUEUE_FULL_CODE) return true;
+    if (isPromptQueueFullData((e as { data?: unknown }).data)) return true;
   }
   return extractErrorMessage(e).includes(PROMPT_QUEUE_FULL_MESSAGE);
 }
