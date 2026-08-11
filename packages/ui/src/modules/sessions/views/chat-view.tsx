@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowLeft,
   OverflowMenuVertical,
+  Renew,
   Settings,
   TrashCan,
   Warning,
@@ -351,7 +352,9 @@ export function ChatView() {
         setSessionId(sid);
         return;
       }
-      if (sid === sessionId) {
+      // A session showing its failure card has nothing to scroll to — picking
+      // its row again is a retry.
+      if (sid === sessionId && !sessionError) {
         scrollToBottom();
         return;
       }
@@ -359,6 +362,7 @@ export function ChatView() {
     },
     [
       sessionId,
+      sessionError,
       setMobileScreen,
       setSessionMode,
       setSessionId,
@@ -655,6 +659,7 @@ export function ChatView() {
                     {!loadingSession && sessionError && (
                       <SessionErrorCard
                         error={sessionError}
+                        onRetry={() => resumeSession(sessionError.sessionId)}
                         onDelete={async () => {
                           // Hold the card until the delete lands: clearing
                           // first would drop the reader into an empty chat
@@ -882,9 +887,11 @@ const RESUME_FAILURE_COPY: Record<
 
 function SessionErrorCard({
   error,
+  onRetry,
   onDelete,
 }: {
   error: SessionError;
+  onRetry: () => void;
   onDelete: () => void;
 }) {
   const { title, body } = RESUME_FAILURE_COPY[error.kind];
@@ -899,13 +906,21 @@ function SessionErrorCard({
           <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>
-      {/* Deleting needs something to delete: only a session the agent still
-          lists has a row here, and the session list is what confirms it. */}
-      {error.kind === "orphaned" && (
+      {/* One action per kind, and only where it can do something: a retry
+          where the agent may yet answer, and a delete where the agent still
+          lists the session — the list is what confirms there is a row to
+          remove. */}
+      {(error.kind === "connection" || error.kind === "orphaned") && (
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="destructive" size="sm" onClick={onDelete}>
-            <TrashCan size={12} /> Delete this session
-          </Button>
+          {error.kind === "connection" ? (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <Renew size={12} /> Try again
+            </Button>
+          ) : (
+            <Button variant="destructive" size="sm" onClick={onDelete}>
+              <TrashCan size={12} /> Delete this session
+            </Button>
+          )}
         </div>
       )}
     </Callout>

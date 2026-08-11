@@ -112,10 +112,14 @@ export function useAcpSession(
     setMessages,
   });
 
+  /** Leaves whatever session is open. The failure card belongs to that
+   *  session, so it goes with it — otherwise it stays on screen above the
+   *  blank chat the user just asked for. */
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
     setMessages([]);
+    useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages]);
 
   const resumeSession = useCallback(
