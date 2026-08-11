@@ -157,6 +157,7 @@ export interface AgentView {
   grantedConnectionIds: string[];
   state: AgentState;
   error?: string;
+  stopRequested: boolean;
   /** Parked (#1900): starting would breach the owner's compute budget; the
    *  sandbox stays parked until you free room and start it. */
   overBudget: boolean;

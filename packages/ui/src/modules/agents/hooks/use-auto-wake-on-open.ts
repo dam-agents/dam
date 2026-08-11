@@ -15,6 +15,11 @@ export function useAutoWakeOnOpen(agentId: string | null): void {
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) return;
     decided.current.add(agentId);
-    if (agent.state === "hibernated" && !agent.overBudget) wake(agentId);
+    if (
+      agent.state === "hibernated" &&
+      !agent.overBudget &&
+      !agent.stopRequested
+    )
+      wake(agentId);
   }, [agentId, agents, wake]);
 }

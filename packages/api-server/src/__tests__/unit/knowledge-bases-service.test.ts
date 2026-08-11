@@ -10,6 +10,7 @@ function fakeAgent(id: string): Agent {
     spec: { name: "my-kb", image: "quay.io/example/claude-code:latest" },
     state: "starting",
     effectiveHibernationTimeoutMin: 30,
+    stopRequested: false,
     overBudget: false,
     contributionFailures: [],
     channels: [],

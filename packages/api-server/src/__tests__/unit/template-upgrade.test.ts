@@ -20,6 +20,7 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
     lifetimeMs: 0,
     ready: false,
     hibernated: true,
+    stopRequested: false,
     overBudget: false,
     ...overrides,
   };

@@ -22,6 +22,7 @@ import {
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
+  STOP_REQUESTED_KEY,
   VERSION,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
@@ -77,6 +78,7 @@ export interface InfraAgent {
   /** Intentionally scaled to zero — Ready=False with the Hibernated reason.
    *  Distinguishes a hibernated agent from one still starting. */
   hibernated: boolean;
+  stopRequested: boolean;
   /** Parked (#1900) — Ready=False with the OverBudget reason: the agent
    *  wants to run but starting it would breach its owner's Ceiling. */
   overBudget: boolean;
@@ -204,6 +206,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
     hibernated,
+    stopRequested: !!annotations[STOP_REQUESTED_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
     overBudgetMessage:
@@ -243,6 +246,7 @@ export function assembleAgent(
       globalIdleTimeoutMin,
     ),
     error: infra.error,
+    stopRequested: infra.stopRequested,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     podTerminationReason: infra.podTerminationReason,
