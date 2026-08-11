@@ -2,9 +2,9 @@ import { performance } from "node:perf_hooks";
 import {
   buildPlatformPromptAcceptedNotification,
   buildPlatformPromptStartedNotification,
-  AGENT_STOP_CLOSE_REASONS,
   buildPlatformTurnEndedNotification,
-  buildPromptQueueFullError,
+  PROMPT_QUEUE_FULL_CODE,
+  PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
 import { frameDirectTurn, isDirectSurface } from "../domain/direct-turn.js";
@@ -623,7 +623,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (agent !== a) return;
       agentExited = true;
       for (const channel of engagedSessions.keys()) {
-        channel.close(1011, AGENT_STOP_CLOSE_REASONS[0]);
+        channel.close(1011, "agent exited");
       }
       engagedSessions.clear();
       channelCursors.clear();
@@ -674,7 +674,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.log?.("recycling harness to apply env change");
     // Close code 1011 matches a real agent exit; clients reconnect and resume.
     for (const channel of engagedSessions.keys())
-      channel.close(1011, AGENT_STOP_CLOSE_REASONS[1]);
+      channel.close(1011, "agent recycled for env change");
     engagedSessions.clear();
     channelCursors.clear();
     sessionLogs.clear();
@@ -868,6 +868,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     idleReapTimers.set(
       sessionId,
       setTimeout(() => reapIdleSessionNow(sessionId), idleReapDelayMs),
+    );
+  }
+
+  function sendErrorResponse(
+    channel: ClientChannel,
+    id: JsonRpcId,
+    message: string,
+    data?: { code: string },
+  ): void {
+    sendToChannel(
+      channel,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message, ...(data ? { data } : {}) },
+      }),
     );
   }
 
@@ -1423,11 +1439,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const queue = promptQueueBySession.get(promptSessionId) ?? [];
           if (queue.length >= PROMPT_QUEUE_CAP) {
             outboundIdToClient.delete(outboundId);
-            sendToChannel(
+            sendErrorResponse(
               channel,
-              JSON.stringify(
-                buildPromptQueueFullError(frame.id, promptSessionId),
-              ),
+              frame.id,
+              `${PROMPT_QUEUE_FULL_MESSAGE} for session ${promptSessionId}`,
+              { code: PROMPT_QUEUE_FULL_CODE },
             );
             return;
           }
@@ -1480,7 +1496,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (live) return;
         const a = ensureAgent();
         if (!a) {
-          channel.close(1011, AGENT_STOP_CLOSE_REASONS[2]);
+          channel.close(1011, "agent process is not running");
           return;
         }
         live = a;

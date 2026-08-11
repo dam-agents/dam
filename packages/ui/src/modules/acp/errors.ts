@@ -1,5 +1,5 @@
 import {
-  isPromptQueueFullData,
+  PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
@@ -69,7 +69,8 @@ export const QUEUE_FULL_DESCRIPTION: SendErrorDescription = {
  *  runtime older than that field. */
 export function isQueueFullError(e: unknown): boolean {
   if (e && typeof e === "object") {
-    if (isPromptQueueFullData((e as { data?: unknown }).data)) return true;
+    const data = (e as { data?: { code?: unknown } }).data;
+    if (data?.code === PROMPT_QUEUE_FULL_CODE) return true;
   }
   return extractErrorMessage(e).includes(PROMPT_QUEUE_FULL_MESSAGE);
 }
@@ -128,15 +129,6 @@ export function describeSendError(raw: string): SendErrorDescription {
 
 export type ResumeErrorKind = "not-found" | "connection" | "other";
 
-/** Whether the agent says it has no such session: ACP's own `-32002`, or the
- *  api-server's `NOT_FOUND`. Structured only — the wording changes, the codes
- *  do not. A send hits this as readily as a resume does. */
-export function isMissingSessionError(e: unknown): boolean {
-  if (!e || typeof e !== "object") return false;
-  const anyE = e as { code?: unknown; data?: { code?: unknown } };
-  return anyE.code === -32002 || anyE.data?.code === "NOT_FOUND";
-}
-
 /**
  * Classify a resume-time failure so the inline error card can render the
  * right message and action. Prefers structured error fields (ACP JSON-RPC
@@ -144,8 +136,12 @@ export function isMissingSessionError(e: unknown): boolean {
  * latter breaks the moment server wording changes.
  */
 export function classifyResumeError(e: unknown): ResumeErrorKind {
-  if (isMissingSessionError(e)) return "not-found";
-  if (e instanceof DOMException) return "connection";
+  if (e && typeof e === "object") {
+    const anyE = e as { code?: unknown; data?: { code?: unknown } };
+    if (anyE.code === -32002) return "not-found";
+    if (anyE.data?.code === "NOT_FOUND") return "not-found";
+    if (e instanceof DOMException) return "connection";
+  }
   const msg = extractErrorMessage(e);
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";

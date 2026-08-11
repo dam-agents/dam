@@ -10,11 +10,7 @@ import {
   connectionCloseReason,
   isConnectionClosed,
 } from "../../acp/close-race.js";
-import {
-  extractErrorMessage,
-  isMissingSessionError,
-  isQueueFullError,
-} from "../../acp/errors.js";
+import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
   finalizeAllStreaming,
   hasAgentContent,
@@ -205,13 +201,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       setMessages((p) => [
         ...p.map((m) =>
           m.error?.retryWith
-            ? {
-                ...m,
-                error: {
-                  message: m.error.message,
-                  ...(m.error.local ? { local: true as const } : {}),
-                },
-              }
+            ? { ...m, error: { message: m.error.message } }
             : m,
         ),
         ...(hidden ? [] : [uMsg]),
@@ -239,7 +229,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                   error: {
                     message:
                       "Couldn't deliver — the agent never confirmed it received this message.",
-                    local: true,
                     retryWith: m.retryWith,
                   },
                 }
@@ -310,7 +299,6 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           connectionClosed: isConnectionClosed(err),
           delivered,
           queued: bubble?.queued ?? startingQueued,
-          sessionMissing: isMissingSessionError(err),
           queueFull: isQueueFullError(err),
           closeReason: connectionCloseReason(err),
           errorMessage: extractErrorMessage(err),
@@ -347,11 +335,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                     queued: false,
                     error: hidden
                       ? undefined
-                      : {
-                          message: outcome.message,
-                          local: true,
-                          ...(outcome.retry ? { retryWith: m.retryWith } : {}),
-                        },
+                      : { message: outcome.message, retryWith: m.retryWith },
                   }
                 : m,
             ),

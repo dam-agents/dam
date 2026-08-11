@@ -103,13 +103,10 @@ export interface Message {
    *  keeps whatever streamed and renders the notice underneath it. */
   error?: {
     message: string;
-    /** Raised by this client, not read from the replayed log — the reconnect
-     *  rebuild carries these over, since the log has no record of a prompt the
-     *  platform dropped. Separate from `retryWith`: a failure can be worth
-     *  keeping without being worth retrying. */
-    local?: true;
     /** Cleared once any subsequent send starts, so the Retry button only lives
-     *  on the most recent failure. */
+     *  on the most recent failure. Its presence also marks a bubble as failed
+     *  *locally* — the reconnect rebuild carries those over, since the replayed
+     *  log has no record of a prompt the platform dropped. */
     retryWith?: RetryPayload;
   };
 }

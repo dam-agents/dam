@@ -10,67 +10,6 @@ export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
  *  older runtimes are recognised by this text, not by the code above. */
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
-export const jsonRpcIdSchema = z.union([z.string(), z.number()]);
-export type JsonRpcId = z.infer<typeof jsonRpcIdSchema>;
-
-export const promptQueueFullDataSchema = z.object({
-  code: z.literal(PROMPT_QUEUE_FULL_CODE),
-});
-export type PromptQueueFullData = z.infer<typeof promptQueueFullDataSchema>;
-
-export const promptQueueFullErrorSchema = z.object({
-  jsonrpc: z.literal("2.0"),
-  id: jsonRpcIdSchema,
-  error: z.object({
-    code: z.literal(-32000),
-    message: z.string().min(1),
-    data: promptQueueFullDataSchema,
-  }),
-});
-export type PromptQueueFullError = z.infer<typeof promptQueueFullErrorSchema>;
-
-export function buildPromptQueueFullError(
-  id: JsonRpcId,
-  sessionId: string,
-): PromptQueueFullError {
-  return promptQueueFullErrorSchema.parse({
-    jsonrpc: "2.0",
-    id,
-    error: {
-      code: -32000,
-      message: `${PROMPT_QUEUE_FULL_MESSAGE} for session ${sessionId}`,
-      data: { code: PROMPT_QUEUE_FULL_CODE },
-    },
-  });
-}
-
-/** Whether a JSON-RPC error's `data` slot names the queue-full cause. */
-export function isPromptQueueFullData(data: unknown): boolean {
-  return promptQueueFullDataSchema.safeParse(data).success;
-}
-
-// --- channel close reasons -------------------------------------------------
-
-/** The reasons the runtime closes an engaged channel because the agent itself
- *  went away. A turn closed for one of these does not survive to be replayed,
- *  which is what lets a sender tell a lost turn from a lost view. Relays
- *  substitute their own text when the upstream gave none, so presence of a
- *  reason proves nothing — only membership here does. */
-export const AGENT_STOP_CLOSE_REASONS = [
-  "agent exited",
-  "agent recycled for env change",
-  "agent process is not running",
-] as const;
-
-export function isAgentStopCloseReason(
-  reason: string | null,
-): reason is string {
-  return (
-    reason !== null &&
-    (AGENT_STOP_CLOSE_REASONS as readonly string[]).includes(reason)
-  );
-}
-
 // --- platform/turnEnded ----------------------------------------------------
 
 export const platformTurnEndedParamsSchema = z.object({

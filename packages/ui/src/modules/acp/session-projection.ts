@@ -242,38 +242,28 @@ export function failQueuedOnDisconnect(messages: Message[]): Message[] {
         ...m,
         streaming: false,
         queued: false,
-        error: {
-          message: QUEUED_LOST_MESSAGE,
-          local: true,
-          retryWith: m.retryWith,
-        },
+        error: { message: QUEUED_LOST_MESSAGE, retryWith: m.retryWith },
       },
     ];
   });
 }
 
 /**
- * Rebuild the message list from replayed history while keeping the failure the
+ * Rebuild the message list from replayed history while keeping failures the
  * client raised on its own. The runtime's log is authoritative about what the
  * agent did, but it cannot describe a prompt that never ran: it holds the
  * dropped prompt's user-message echo and no reply, so replacing the list
  * wholesale would erase the failure and its Retry and leave the user staring at
  * a question the agent will never answer.
- *
- * Only the newest such failure is carried, and it lands at the end. Older ones
- * cannot be put back where they belong — a carried bubble's id is client-minted
- * and the replayed log has no counterpart to anchor it to — so appending them
- * would float stale failures below newer replies.
  */
 export function mergeLocalFailures(
   rebuilt: Message[],
   previous: Message[],
 ): Message[] {
   const carried = previous.filter(
-    (m) => m.error?.local && !rebuilt.some((r) => r.id === m.id),
+    (m) => m.error?.retryWith && !rebuilt.some((r) => r.id === m.id),
   );
-  const newest = carried[carried.length - 1];
-  return newest ? [...rebuilt, newest] : rebuilt;
+  return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }
 
 /** True if any assistant bubble is still streaming (either active or queued). */
