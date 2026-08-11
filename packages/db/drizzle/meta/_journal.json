@@ -162,6 +162,13 @@
       "when": 1786199278978,
       "tag": "0022_dear_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786368430365,
+      "tag": "0023_keen_imperial_guard",
+      "breakpoints": true
     }
   ]
 }

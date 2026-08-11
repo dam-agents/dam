@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { resourceNameSchema } from "../shared.js";
+
 export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
@@ -45,14 +47,7 @@ export const connectionSetAgentConnectionsInputSchema = z.object({
   connectionIds: z.array(z.string().min(1)),
 });
 
-export const connectionNameSchema = z
-  .string()
-  .min(1, "name is required")
-  .max(63, "name must be 63 characters or fewer")
-  .regex(
-    /^[a-z0-9]+(-[a-z0-9]+)*$/,
-    "name must be lowercase letters, digits, and single hyphens (e.g. my-mcp-server)",
-  );
+export const connectionNameSchema = resourceNameSchema("my-mcp-server");
 
 const commonFields = {
   templateId: z.string().min(1),

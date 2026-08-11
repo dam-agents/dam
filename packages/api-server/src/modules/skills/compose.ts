@@ -1,6 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillsService } from "api-server-api";
+import type { RuntimeSettledPort } from "../agents/index.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
@@ -16,6 +17,7 @@ import {
 } from "./infrastructure/public-archive-scanner.js";
 import { createScanCache } from "./infrastructure/scan-cache.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
+import { createSkillSetsRepository } from "./infrastructure/skill-sets-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
 import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
 import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
@@ -55,33 +57,39 @@ export function composePrStateResolver(deps: {
   });
 }
 
-export function composeSkillsModule(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  owner: string,
-  db: Db,
-  seedSources: SkillSourceSeed[],
-  brandName: string,
-  runtimeMutator: RuntimeMutator,
-  templatesRepo: TemplatesRepository,
-): SkillsService {
-  const k8s = createK8sClient(api, namespace);
+export function composeSkillsModule(deps: {
+  api: k8s.CoreV1Api;
+  namespace: string;
+  owner: string;
+  db: Db;
+  seedSources: SkillSourceSeed[];
+  brandName: string;
+  runtimeMutator: RuntimeMutator;
+  templatesRepo: TemplatesRepository;
+  /** Whether the pod has applied everything the outbox holds — gates the
+   *  `state` reconcile, which would otherwise reap rows mid-apply. */
+  runtimeSettled: RuntimeSettledPort;
+}): SkillsService {
+  const { db, namespace, seedSources } = deps;
+  const k8sClient = createK8sClient(deps.api, namespace);
   return createSkillsService({
     repo: createSkillsRepository(db, seedSources),
+    skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8s),
-    templatesRepo,
+    agentsRepo: createAgentsRepository(k8sClient),
+    templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     githubCredential: createGithubCredentialPort(
       createConnectionsRepository(db),
     ),
-    runtimeMutator,
-    owner,
+    runtimeMutator: deps.runtimeMutator,
+    runtimeSettled: deps.runtimeSettled,
+    owner: deps.owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,
     scanPublic: scanPublicGithubArchive,
     readPublicSkillFile: readPublicGithubSkillFile,
-    brandName,
+    brandName: deps.brandName,
   });
 }
