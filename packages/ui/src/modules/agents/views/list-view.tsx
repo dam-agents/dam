@@ -26,9 +26,6 @@ export function ListView() {
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const navigateToKnowledgeBaseConfig = useStore(
-    (s) => s.navigateToKnowledgeBaseConfig,
-  );
   const selectAgent = useStore((s) => s.selectAgent);
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -103,8 +100,6 @@ export function ListView() {
       <div className="flex flex-col gap-3">
         {initialLoaded &&
           agents.map((agent) => {
-            // Home carries every Kind, so a knowledge base opens and configures
-            // on its own surface rather than the sandbox one.
             const kb = isKnowledgeBase(agent);
             return (
               <AgentRow
@@ -114,14 +109,8 @@ export function ListView() {
                 onSelect={() =>
                   kb ? openKnowledgeBase(agent.id) : selectAgent(agent.id)
                 }
-                onConfigure={() =>
-                  kb
-                    ? navigateToKnowledgeBaseConfig(agent.id)
-                    : navigateToSandboxHome(agent.id)
-                }
-                configureLabel={
-                  kb ? "Configure knowledge base" : "Configure sandbox"
-                }
+                onConfigure={() => navigateToSandboxHome(agent.id)}
+                configureLabel="Configure sandbox"
                 onStop={() => void stopSandbox(agent)}
                 onDelete={() => void deleteSandbox(agent)}
               />
