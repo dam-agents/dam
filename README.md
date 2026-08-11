@@ -7,7 +7,7 @@
 </p>
 
 <h3 align="center">
-The platform for AI-powered research.   <a href="https://ibm.biz/dam-docs"><strong>Read the docs.</strong></a>.
+The platform for AI-powered research.   <a href="https://ibm.biz/dam-docs"><strong>Read the docs</strong></a>.
 </h3>
 
 ---
