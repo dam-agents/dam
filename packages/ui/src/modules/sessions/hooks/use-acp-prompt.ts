@@ -13,6 +13,7 @@ import {
 import {
   extractErrorMessage,
   isMissingSessionError,
+  isQueueFullError,
 } from "../../acp/errors.js";
 import {
   finalizeAllStreaming,
@@ -310,6 +311,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           delivered,
           queued: bubble?.queued ?? startingQueued,
           sessionMissing: isMissingSessionError(err),
+          queueFull: isQueueFullError(err),
           closeReason: connectionCloseReason(err),
           errorMessage: extractErrorMessage(err),
         });

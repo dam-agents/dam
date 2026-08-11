@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-10
+Last verified: 2026-08-11
 
 ## Overview
 
@@ -120,7 +120,7 @@ Each session is an append-only in-memory log (≤2 MB soft cap, with a truncatio
 
 #### Prompt delivery
 
-A session runs one turn at a time. A prompt arriving while a turn is in flight is **queued** rather than refused or forwarded, then promoted when the turn ahead of it ends; a queue already at capacity rejects further prompts as an error on the send. So a prompt has three fates its sender cares about — **accepted** (the runtime has it), **queued** (parked behind an earlier turn), and **started** (handed to the agent, where delivery becomes real) — and only the runtime can tell them apart.
+A session runs one turn at a time. A prompt arriving while a turn is in flight is **queued** rather than refused or forwarded, then promoted when the turn ahead of it ends; a queue already at capacity rejects further prompts as an error on the send that names its cause structurally, so a sender can tell a full queue from any other refusal and say so in the user's own terms rather than the runtime's. So a prompt has three fates its sender cares about — **accepted** (the runtime has it), **queued** (parked behind an earlier turn), and **started** (handed to the agent, where delivery becomes real) — and only the runtime can tell them apart.
 
 The runtime therefore reports them, over the same channel extension as the end-of-turn signal: one notification announcing acceptance and whether the prompt was queued, one announcing that it has started. Both carry a sender-minted prompt identifier, so a sender knows which of its prompts is meant; the identifier rides as platform metadata on the prompt and is stripped before the agent sees it, leaving the agent's view unchanged. A sender that mints none — the CLI, channel workers, an older client — gets no notifications and behaves as it always did. Both notifications are **sender-only and ephemeral**: addressed to the originating channel, never logged and never replayed, because they describe the fate of one send rather than anything that happened in the conversation. Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
