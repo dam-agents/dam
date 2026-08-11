@@ -184,6 +184,18 @@ export default defineConfig({
             testMatch: /full\/schedule-.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
+          {
+            // Prompt delivery feedback (#829): most of the specs wait
+            // out the UI's 60s delivery deadline on purpose, so this is the
+            // slowest project in the suite (~5 minutes) and never belongs in
+            // the always-on smoke tier. Each spec drives the shared mock agent
+            // through the chat UI and restores its default script afterwards,
+            // so they are safe in any order but must not overlap — `workers:
+            // 1` above already guarantees that.
+            name: "prompt-delivery-full",
+            testMatch: /full\/prompt-delivery\/.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
         ]
       : []),
   ],

@@ -1,4 +1,9 @@
-import { TrashCan, Warning, WarningAlt } from "@carbon/icons-react";
+import {
+  Information,
+  TrashCan,
+  Warning,
+  WarningAlt,
+} from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import {
@@ -14,7 +19,13 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type ConfirmDialogKind = "default" | "destructive";
+export type ConfirmDialogKind = "default" | "destructive" | "info";
+
+const KIND_ICON = {
+  default: Warning,
+  destructive: WarningAlt,
+  info: Information,
+} as const satisfies Record<ConfirmDialogKind, typeof Warning>;
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -46,6 +57,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const destructive = kind === "destructive";
+  const Icon = KIND_ICON[kind];
   const resolvedConfirmLabel =
     confirmLabel ?? (showCancel ? (destructive ? "Remove" : "Confirm") : "OK");
 
@@ -66,11 +78,12 @@ export function ConfirmDialog({
                 destructive ? "bg-destructive/10" : "bg-primary/10",
               )}
             >
-              {destructive ? (
-                <WarningAlt className="h-4 w-4 text-destructive" />
-              ) : (
-                <Warning className="h-4 w-4 text-primary" />
-              )}
+              <Icon
+                className={cn(
+                  "h-4 w-4",
+                  destructive ? "text-destructive" : "text-primary",
+                )}
+              />
             </div>
             <AlertDialogTitle>{title}</AlertDialogTitle>
           </div>

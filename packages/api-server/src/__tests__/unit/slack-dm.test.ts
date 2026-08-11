@@ -7,6 +7,7 @@ import {
   type SlackOAuthPending,
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -68,6 +69,7 @@ function harness(opts: { binding: Binding }) {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
+    stubTurnAttendance(),
     (e) => events.push(e),
   );
 

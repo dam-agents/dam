@@ -44,10 +44,14 @@ export type {
   HarnessConfigChange,
   HarnessConfigStatus,
   HarnessConfigService,
+  HarnessConfigSnapshot,
+  HarnessConfigSnapshotPatch,
+  HarnessConfigSnapshotResult,
 } from "./modules/harness-config/types.js";
 export {
   agentConfigOptionsSchema,
   harnessConfigApplyInputSchema,
+  harnessConfigSnapshotSchema,
 } from "./modules/harness-config/schemas.js";
 
 export type {
@@ -237,6 +241,7 @@ export {
   bobEnvMappings,
   bobPinsFromEnvMappings,
   BOB_CHAT_MODES,
+  normalizeBobChatMode,
   IBM_LITELLM_HOST,
   BOB_HOST,
   PROVIDER_TEMPLATE_IDS,
@@ -448,10 +453,20 @@ export {
   platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
   buildPlatformTurnEndedNotification,
+  platformPromptAcceptedNotificationSchema,
+  platformPromptAcceptedParamsSchema,
+  buildPlatformPromptAcceptedNotification,
+  platformPromptStartedNotificationSchema,
+  platformPromptStartedParamsSchema,
+  buildPlatformPromptStartedNotification,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedNotification,
   PlatformTurnEndedParams,
+  PlatformPromptAcceptedNotification,
+  PlatformPromptAcceptedParams,
+  PlatformPromptStartedNotification,
+  PlatformPromptStartedParams,
 } from "./modules/acp/types.js";
 
 // Brand

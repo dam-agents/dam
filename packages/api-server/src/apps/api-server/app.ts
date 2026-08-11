@@ -975,6 +975,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
     const files = composeFilesModule(api, config.namespace, user.sub);
     const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
     const { service: harnessConfig } = composeHarnessConfigModule({
+      db,
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,

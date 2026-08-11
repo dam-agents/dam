@@ -12,7 +12,10 @@ import {
   getNested,
   type FileDesired,
 } from "../infrastructure/file-ops.js";
-import type { ModelDiscovery } from "../infrastructure/model-discovery.js";
+import type {
+  ModelDiscovery,
+  ModelDiscoveryOutcome,
+} from "../infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../manifest.js";
 import { expandHome } from "../../../core/expand-home.js";
 import type { RuntimeEnvReader } from "../../../core/runtime-env.js";
@@ -29,7 +32,16 @@ export type ApplyHarnessConfigFn = (
 export interface HarnessConfigPlugin extends Plugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
-  readCurrent(): Promise<HarnessConfigCurrent>;
+  /**
+   * The harness's config as it stands. The file is always read; the model list
+   * costs a provider round-trip, so the caller says whether it wants one.
+   *
+   * `hello` doesn't: it is what delivers capabilities, and the worker won't
+   * dispatch an apply until they land, so waiting on the provider there delays
+   * the first apply after every boot and wake. The apply path asks for it —
+   * that reply is where the list belongs.
+   */
+  readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   apply: ApplyHarnessConfigFn;
 }
 
@@ -101,22 +113,30 @@ export function createHarnessConfigPlugin(deps: {
     });
   };
 
-  const readCurrent = async (): Promise<HarnessConfigCurrent> => {
-    if (!binding) {
-      return {
-        model: null,
-        mode: null,
-        configOptions: {},
-        availableModels: null,
-      };
-    }
+  const readCurrent = async (opts?: {
+    discover?: boolean;
+  }): Promise<HarnessConfigCurrent> => {
+    const values = binding
+      ? readCurrentValues(binding, agentHome, log)
+      : { model: null, mode: null, configOptions: {} };
+    if (opts?.discover === false) return values;
+
     // Discover even when the file is missing, so a fresh agent still lists models.
-    const current = readCurrentValues(binding, agentHome, log);
-    const availableModels = await discoverModels(
-      binding.modelDiscovery,
-      envReader.current(),
-    );
-    return { ...current, availableModels };
+    const outcome: ModelDiscoveryOutcome = binding
+      ? await discoverModels(binding.modelDiscovery, envReader.current())
+      : { status: "not-configured" };
+    switch (outcome.status) {
+      case "observed":
+        return { ...values, availableModels: outcome.models };
+      case "not-configured":
+        // A permanent property of this harness, so worth recording as "none".
+        return { ...values, availableModels: null };
+      case "unavailable":
+        // Omitted, not null: the receiver keeps whatever it already holds. The
+        // live UI read treats absent and null alike — both fall back to the
+        // static catalog — so one shape serves both callers.
+        return values;
+    }
   };
 
   return {
@@ -132,14 +152,16 @@ export function createHarnessConfigPlugin(deps: {
   };
 }
 
-type CurrentValues = Omit<HarnessConfigCurrent, "availableModels">;
-
 function readCurrentValues(
   binding: HarnessConfigBinding,
   agentHome: string,
   log: (msg: string) => void,
-): CurrentValues {
-  const empty: CurrentValues = { model: null, mode: null, configOptions: {} };
+): Omit<HarnessConfigCurrent, "availableModels"> {
+  const empty: Omit<HarnessConfigCurrent, "availableModels"> = {
+    model: null,
+    mode: null,
+    configOptions: {},
+  };
   const path = expandHome(binding.file, agentHome);
   if (!existsSync(path)) return empty;
   let obj: Record<string, unknown>;

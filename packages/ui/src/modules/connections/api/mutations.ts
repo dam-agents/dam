@@ -70,6 +70,30 @@ export function useProbeGitHubAppInstallation() {
   });
 }
 
+// The same read for a connection that already exists — it supplies its own app
+// identity and key, so the editor never asks for the private key again.
+export function useProbeGitHubAppInstallationForConnection() {
+  return useMutation({
+    ...trpc.connections.probeGitHubAppInstallationForConnection.mutationOptions(),
+    meta: { suppressErrorToast: true },
+  });
+}
+
+// The dialog renders a rejected scope on the form, so no global toast here
+// either; the list refreshes because the stored scope is part of the view.
+export function useUpdateGitHubAppScope() {
+  return useMutation({
+    ...trpc.connections.updateGitHubAppScope.mutationOptions(),
+    meta: {
+      invalidates: [
+        trpc.connections.list.queryKey(),
+        trpc.connections.getAgentConnections.queryKey(),
+      ],
+      suppressErrorToast: true,
+    },
+  });
+}
+
 /**
  * Verifies an Anthropic credential against Anthropic before save. Returns
  * `{ ok: true } | { ok: false; message }` rather than throwing — callers

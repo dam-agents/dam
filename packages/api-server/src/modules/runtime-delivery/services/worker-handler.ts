@@ -4,7 +4,9 @@ import type {
 } from "../infrastructure/outbox-repo.js";
 import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.js";
 import type { StateBuilder } from "./state-builder.js";
+import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 import type { DriverFailure } from "api-server-api";
+import type { HarnessConfigCurrent } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
 
 export interface IsAgentRunning {
@@ -17,6 +19,7 @@ export interface WorkerHandlerDeps {
   agentsRuntimeRepo: AgentsRuntimeRepo;
   stateBuilder: StateBuilder;
   agentRunningPort: IsAgentRunning;
+  snapshotWriter: HarnessConfigSnapshotWriter;
   clientFor(agentId: string): AgentRuntimeClient;
   log: (msg: string) => void;
 }
@@ -82,6 +85,10 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       failures: DriverFailure[];
       settledEventIds: string[];
     };
+    // Present on both outcomes; absent from a pod predating it or one with no
+    // harness-config driver.
+    const reported: HarnessConfigCurrent | undefined =
+      outcome.harnessConfigCurrent;
     switch (outcome.status) {
       case "stale":
         // Contributions already at ≥ this version; reconcile the cursor. Events carry their own version, so settle only the ones the agent reports it actually ran.
@@ -114,6 +121,19 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     // recordOutcome diffs under a row lock and returns the transitions; emit post-commit.
     const { newlyFailed, recovered, gaveUp } =
       await deps.outboxRepo.recordOutcome(agentId, row.version, settle);
+
+    // The pod just read its own config file and resolved the provider's model
+    // list. Display state only — never the reason an apply cycle fails.
+    if (reported) {
+      try {
+        await deps.snapshotWriter.merge(agentId, reported, { confirmed: true });
+      } catch (err) {
+        deps.log(
+          `[runtime-worker] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
     for (const f of newlyFailed) {
       emit({
         type: EventType.ContributionApplyFailed,

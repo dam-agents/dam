@@ -18,6 +18,9 @@ export function KnowledgeBasesListView() {
   const knowledgeBases = (agentsData?.list ?? []).filter(isKnowledgeBase);
 
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
+  const navigateToKnowledgeBaseConfig = useStore(
+    (s) => s.navigateToKnowledgeBaseConfig,
+  );
   // Created in the shared wizard, entered with the KB starting point picked.
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const createKnowledgeBase = () => navigateToCreateSandbox("knowledge-base");
@@ -63,6 +66,8 @@ export function KnowledgeBasesListView() {
                 key={agent.id}
                 {...rowProps(agent)}
                 onSelect={() => openKnowledgeBase(agent.id)}
+                onConfigure={() => navigateToKnowledgeBaseConfig(agent.id)}
+                configureLabel="Configure knowledge base"
                 onDelete={() => void deleteKnowledgeBase(agent)}
               />
             );

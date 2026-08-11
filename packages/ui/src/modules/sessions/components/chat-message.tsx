@@ -76,7 +76,10 @@ export function ChatMessage({
             />
           ))}
           {streaming && queued && parts.length === 0 && (
-            <span className="text-xs text-muted-foreground italic">
+            <span
+              data-testid="prompt-queued-indicator"
+              className="text-xs text-muted-foreground italic"
+            >
               Waiting for previous prompt…
             </span>
           )}

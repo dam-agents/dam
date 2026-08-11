@@ -75,6 +75,7 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   /** Latest controller-reported error, if any. */
   error?: string;
+  stopRequested: boolean;
   /** Parked (#1900): starting this agent would breach its owner's compute
    *  Ceiling; pods stay down; free room and start it again (never-hibernate agents restart by themselves). */
   overBudget: boolean;

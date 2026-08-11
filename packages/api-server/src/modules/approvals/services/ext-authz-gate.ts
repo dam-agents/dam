@@ -53,11 +53,20 @@ export interface EgressRuleMatcher {
   ): Promise<{ verdict: ExtAuthzVerdict } | null>;
 }
 
+/** Whether anyone is positioned to answer a hold on this agent. Both facts are
+ *  cross-replica reads and must fail toward "attended" so an infrastructure
+ *  blip degrades to the ordinary hold — see `core/turn-attendance.ts`. */
+export interface EgressAttendance {
+  hasOpenChannelTurn(agentId: string): Promise<boolean>;
+  hasInteractiveSession(agentId: string): Promise<boolean>;
+}
+
 export interface CreateExtAuthzGateDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
+  attendance: EgressAttendance;
   /** Bounded synchronous hold; the durable pending row outlives this. */
   holdSeconds: number;
   /** Bare hostnames of platform-provided upstreams (the object store) that
@@ -133,6 +142,18 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         return matched.verdict;
       }
 
+      // Holding is only worth anything if a human can answer it. A turn driven
+      // from Slack or Telegram can't produce a verdict — the messenger offers
+      // the owner no safe way to decide, and the conversation's other members
+      // aren't the owner — so such a turn would stall for the whole window and
+      // be denied anyway. Refuse it now instead, and leave the row below for
+      // the inbox: a permanent approval there is what the agent's next attempt
+      // consumes. An attached browser or CLI session means someone *can*
+      // decide, so the hold stands even while a channel turn runs alongside.
+      const unattended =
+        (await deps.attendance.hasOpenChannelTurn(identity.agentId)) &&
+        !(await deps.attendance.hasInteractiveSession(identity.agentId));
+
       // Dedupe retried holds: when the agent's CLI retries (Envoy timeout,
       // network blip, api-server restart mid-hold) we want one inbox row
       // per logical decision, not one per retry. Reuse any active pending
@@ -147,6 +168,10 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       });
       const pendingId = existing?.id ?? randomUUID();
       if (!existing) {
+        // Recorded pending, not expired, on both paths: the row is what the
+        // owner acts on later, and keeping it active is also what makes the
+        // agent's retries reuse one inbox entry instead of filing a new one
+        // each time.
         await deps.repo.insertPending({
           id: pendingId,
           type: "ext_authz",
@@ -156,29 +181,53 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           payload: { kind: "ext_authz", host, method, path, viaAgentId: via },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
-        const frame = buildExtAuthzSynthFrame({
-          approvalId: pendingId,
-          host,
-          method,
-          path,
-        });
-        // The prompt surfaces on the policy-bearing agent's channel — under
-        // aliasing that is the driver, whose inbox tray owns the decision.
-        void deps.bus.publish(injectChannelOf(identity.agentId), frame);
-        // Agent egress blocked awaiting a human verdict. correlationId ties
-        // this to the verdict line written when the hold settles (and to the
-        // approval.verdict line in approvals-service).
-        securityLog("warn", "egress.hold", {
+        if (!unattended) {
+          const frame = buildExtAuthzSynthFrame({
+            approvalId: pendingId,
+            host,
+            method,
+            path,
+          });
+          // The prompt surfaces on the policy-bearing agent's channel — under
+          // aliasing that is the driver, whose inbox tray owns the decision.
+          void deps.bus.publish(injectChannelOf(identity.agentId), frame);
+          // Agent egress blocked awaiting a human verdict. correlationId ties
+          // this to the verdict line written when the hold settles (and to the
+          // approval.verdict line in approvals-service).
+          securityLog("warn", "egress.hold", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "hold",
+            correlationId: pendingId,
+            detail: { method, path, via },
+          });
+        }
+        // Unattended: no in-session prompt is published. The only subscribers
+        // are the relay clients whose absence defines this path, and an
+        // unconsumed frame would leave the inbox row looking answerable
+        // in-session when the request has already been refused.
+      }
+
+      if (unattended) {
+        // correlationId points at the row an owner can still approve, which is
+        // what makes this deny distinguishable from a rule-based one.
+        securityLog("warn", "egress.decision", {
           category: "egress",
           actor: identity.ownerSub,
           actorKind: "agent",
           surface: "ext-authz",
           agentId: identity.agentId,
           target: host,
-          decision: "hold",
+          decision: "deny",
           correlationId: pendingId,
-          detail: { method, path, via },
+          reason: "unattended-channel-turn",
+          detail: { method, path, basis: "unattended", via },
         });
+        return "deny";
       }
 
       const { verdict, reason } = await waitForVerdict(deps, pendingId);

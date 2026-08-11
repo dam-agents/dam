@@ -258,6 +258,8 @@ The cache is invalidated on `sources.refresh` and after every successful publish
 
 Then it drops "ghost" rows (`agent_skills` rows whose directory has been deleted out-of-band, e.g. via the file panel) and persists the cleanup. The Postgres rows stop drifting from the filesystem without requiring a separate reconciler — every read is the reconciler.
 
+Installed refs come from Postgres, so they survive the pod going away; the **local** list does not, because those skills exist only on the PVC. So while the sandbox runs, `state` records the local list it computed, and while the pod is unreachable it serves that recording instead, dated and marked as a snapshot so a reader can tell it from live truth. Nothing recorded means the sandbox has never run — distinct from a sandbox that genuinely has no local skills. A snapshot never drives reconciliation: it is not evidence about the current disk, and reconciling from it would evict rows whose directories are in fact still there.
+
 ## Persistence touchpoints
 
 Skills are entirely an **Application State** subsystem ([persistence](persistence.md)). Three Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
@@ -270,12 +272,14 @@ Skills are entirely an **Application State** subsystem ([persistence](persistenc
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`. Both are computed at request time.
 
+The snapshot of the local list is not a fourth table: it hangs off the agent's own registry row, so agent deletion reaps it and the cleanup saga has nothing extra to do.
+
 The on-pod state lives on the per-agent PVC under the configured Skill Paths. PVC reclamation on agent deletion ([persistence § Lifetime](persistence.md#lifetime)) takes care of the file-side cleanup; the Skills cleanup saga handles the row-side. User-owned `skill_sources` survive agent deletion — they are catalog connections, not agent state.
 
 ## Invariants
 
 - **Filesystem is authoritative for installed state.** `agent_skills` is a declarative record that self-heals on every `state` read. A skill removed via the Files panel disappears from the UI without any explicit uninstall.
-- **Origin is judged at read time against the image, never recorded.** Nothing on the PVC or in Postgres marks a skill as system — the pristine image copy is the only reference, so provenance works retroactively on every existing agent and survives the PVC being adversarial ([persistence § threat model](persistence.md)).
+- **Origin is judged at read time against the image, never recorded as authority.** Nothing on the PVC or in Postgres is ever *consulted* to decide provenance — the pristine image copy is the only reference, so it works retroactively on every existing agent and survives the PVC being adversarial ([persistence § threat model](persistence.md)). The dated snapshot a stopped sandbox serves carries the verdict from the last live read purely so the panel can group what it shows; the next read re-judges from the image and replaces it.
 - **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the agent pod's NetworkPolicy admits ingress only from the api-server pod, so no in-process auth is needed on that hop.
 - **agent-runtime never holds a GitHub credential.** Every authenticated GitHub call leaves the agent unauthenticated; Envoy in the paired gateway pod injects `Authorization: Bearer <user OAuth token>` from the owner's K8s Secret on the wire. A compromised agent pod cannot exfiltrate the user's GitHub token because the token is never mounted into the agent pod — only the gateway pod, and the agent pod's NetworkPolicy admits no route to GitHub other than through that gateway.
 - **Publish is REST-only.** No `git push` on the publish path. `git` is used only for cloning non-GitHub sources during install/scan, and that path also routes through the gateway pod's credential injector via `gh auth setup-git`.

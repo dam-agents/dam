@@ -832,11 +832,22 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       if (!infra)
         return { installed: [], standalone: [], instancePublishes: [] };
       if (computeAgentState(infra) !== "running") {
-        const [installed, instancePublishes] = await Promise.all([
+        const [installed, instancePublishes, recorded] = await Promise.all([
           deps.agentSkillsRepo.listSkills(agentId),
           deps.agentSkillsRepo.listPublishes(agentId),
+          deps.agentSkillsRepo.readStandaloneSnapshot(agentId),
         ]);
-        return { installed, standalone: [], instancePublishes };
+        // No snapshot means nothing was ever recorded, so the list stays empty
+        // and unmarked — a never-run sandbox must not read as "has no skills".
+        // Deliberately no reconciliation here: a snapshot is not evidence about
+        // the current disk, and dropping tracked rows from it would be wrong.
+        if (!recorded) return { installed, standalone: [], instancePublishes };
+        return {
+          installed,
+          standalone: recorded.skills,
+          instancePublishes,
+          standaloneSnapshot: { capturedAt: recorded.capturedAt },
+        };
       }
 
       // Publishes are read before the listing, not alongside it, because they
@@ -865,6 +876,21 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       const trackedNames = new Set(installed.map((s) => s.name));
       const standalone = local.filter((s) => !trackedNames.has(s.name));
+
+      // Record the computed list, not the raw local one: this is what the
+      // stopped branch has to return, already reconciled against tracked names.
+      try {
+        await deps.agentSkillsRepo.recordStandaloneSnapshot(
+          agentId,
+          standalone,
+        );
+      } catch (err) {
+        getLogger().warn(
+          { err, agentId },
+          "skills: recording the standalone snapshot failed",
+        );
+      }
+
       return { installed, standalone, instancePublishes };
     },
   };

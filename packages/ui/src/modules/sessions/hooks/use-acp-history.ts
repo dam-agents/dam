@@ -1,8 +1,7 @@
-import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk/dist/acp.js";
 import { useCallback } from "react";
 
 import type { Message } from "../../../types.js";
-import { openConnection } from "../../acp/acp.js";
+import { openInitializedConnection } from "../../acp/acp.js";
 import {
   applyUpdate,
   finalizeAllStreaming,
@@ -37,16 +36,16 @@ export function useAcpHistory(selectedAgent: string | null): {
       let replayed: Message[] = [];
       let ws: WebSocket | null = null;
       try {
-        const conn = await openConnection(selectedAgent, (update) => {
-          replayed = applyUpdate(replayed, update);
-        });
-        ws = conn.ws;
-        await conn.connection.initialize({
-          protocolVersion: PROTOCOL_VERSION,
-          clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
+        // Deliberately unfiltered: this socket is engaged to `sid` alone, and
+        // filtering against the store would break a replay the user has already
+        // navigated past.
+        const conn = await openInitializedConnection(
+          selectedAgent,
+          (update) => {
+            replayed = applyUpdate(replayed, update);
           },
-        });
+        );
+        ws = conn.ws;
         await conn.connection.loadSession({
           sessionId: sid,
           cwd: ".",

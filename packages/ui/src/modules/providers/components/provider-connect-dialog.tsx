@@ -146,7 +146,7 @@ function bobConfigInputs(pins: BobModelPins): Record<string, string> {
   if (pins.model) out.model = pins.model;
   if (pins.agentId) out.instanceId = pins.agentId;
   if (pins.teamId) out.teamId = pins.teamId;
-  if (pins.maxCoins) out.maxCoins = pins.maxCoins;
+  if (pins.maxCost) out.maxCost = pins.maxCost;
   if (pins.chatMode) out.chatMode = pins.chatMode;
   return out;
 }

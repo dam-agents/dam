@@ -209,7 +209,7 @@ const BOB: HeaderConnectionTemplate = {
       inputName: "instanceId",
       envName: "BOB_INSTANCE_ID",
       label: "Instance ID",
-      hint: "Sets the x-instance-id header (IBM tenant scoping).",
+      hint: "IBM tenant scoping. Applies to terminal (TUI) sessions; chat sessions ignore it.",
     },
     {
       inputName: "teamId",
@@ -218,18 +218,20 @@ const BOB: HeaderConnectionTemplate = {
       hint: "Sets the x-team-id header.",
     },
     {
-      inputName: "maxCoins",
+      inputName: "maxCost",
       envName: "BOB_MAX_COINS",
-      label: "Max coins",
-      hint: "Budget cap; Bob exits when exceeded.",
-      pattern: "^[1-9]\\d*$",
-      patternHint: "a positive integer",
+      label: "Max cost",
+      hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
+      // A cost, not a coin count: a task can settle well under a unit (observed
+      // ~0.10), so an integer-only cap could not express anything below 1.
+      pattern: "^(?:[1-9]\\d*(?:\\.\\d+)?|0?\\.\\d*[1-9]\\d*)$",
+      patternHint: "a positive amount, e.g. 0.50 or 5",
     },
     {
       inputName: "chatMode",
       envName: "BOB_CHAT_MODE",
-      label: "Chat mode",
-      hint: `Default chat persona. One of: ${BOB_CHAT_MODES.join(", ")}.`,
+      label: "Mode",
+      hint: `Default mode for new sessions. One of: ${BOB_CHAT_MODES.join(", ")}.`,
       enumValues: BOB_CHAT_MODES,
     },
   ],

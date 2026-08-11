@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-06
+Last verified: 2026-08-07
 
 ## Overview
 
@@ -117,6 +117,23 @@ The harness child process runs for the pod's lifetime, not per-connection. Multi
 Each session is an append-only in-memory log (≤2 MB soft cap, with a truncation sentinel for older history). Every channel keeps a per-session cursor; new events are appended to the log and fanned out to engaged channels at or behind the new sequence number. `session/load` is served from the log on cache hit and falls through to the agent's on-disk store on cold start.
 
 `session/resume` is mediated entirely by the runtime — the frame never reaches the harness. On the hot path (cached metadata) the runtime engages the channel, advances its cursor to the log tail, and returns a synthetic response with no replay. On the cold path (no metadata, e.g. after the pod restarts) the runtime parks the request as a waiter and issues its own `session/load` to rehydrate the harness; replay events populate the log without reaching any client, and on completion every parked resume waiter is served from memory. This shields the UI from per-harness capability differences (some harnesses, like `pi-agent`, don't implement `unstable_resumeSession` at all) and from the cold-subprocess problem on which even resume-capable harnesses would fail.
+
+#### Prompt delivery
+
+A session runs one turn at a time. A prompt arriving while a turn is in flight is **queued** rather than refused or forwarded, then promoted when the turn ahead of it ends; a queue already at capacity rejects further prompts as an error on the send. So a prompt has three fates its sender cares about — **accepted** (the runtime has it), **queued** (parked behind an earlier turn), and **started** (handed to the agent, where delivery becomes real) — and only the runtime can tell them apart.
+
+The runtime therefore reports them, over the same channel extension as the end-of-turn signal: one notification announcing acceptance and whether the prompt was queued, one announcing that it has started. Both carry a sender-minted prompt identifier, so a sender knows which of its prompts is meant; the identifier rides as platform metadata on the prompt and is stripped before the agent sees it, leaving the agent's view unchanged. A sender that mints none — the CLI, channel workers, an older client — gets no notifications and behaves as it always did. Both notifications are **sender-only and ephemeral**: addressed to the originating channel, never logged and never replayed, because they describe the fate of one send rather than anything that happened in the conversation. Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
+
+This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived", since a legitimately queued prompt produces nothing for as long as the turn ahead of it runs. Inferring failure from silence is what made the delivery indicator claim a prompt was lost when it was only waiting. A client fails a prompt on evidence instead:
+
+- **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds. Unacknowledged this long means it never arrived.
+- **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs. The user is told it is waiting, which is true.
+- **No content within a bounded wait after starting** — the agent took the prompt and produced nothing, making the failure the agent's, not delivery's.
+- **The sender's connection drops while its prompt is still queued.** The one loss the runtime cannot report, since reporting it needs the channel that just went away — so the sender raises it locally and keeps it raised across the reconnect that follows. That reconnect replays the log, which misleads here: the dropped prompt's echo is in it, and no reply ever will be.
+
+That last rule covers ordinary loss, not a corner case, because **the queue is lossy by design**: queued prompts belong to the channel that sent them and are discarded when it detaches, and go with the session when the pod recycles or the agent exits. It is a scheduling convenience, not a durable buffer — nothing survives to re-deliver, which is why the loss is surfaced to the person who can act on it. Recovery is always a fresh send the user initiates: an automatic resend cannot know whether the prompt was dropped before or after the agent saw it, so it risks running the prompt twice. A prompt already *handed to the harness* is the other side of that split: losing the channel then costs the sender its live view and nothing else — the turn runs to completion and its output is appended to the log, so any later viewer replays it in full. Every client that reports delivery honestly depends on this split ([channels](channels.md) states it for its own surface).
+
+One failure is deliberately **not** detected: an agent alive but permanently stuck emits nothing and is indistinguishable from one thinking hard, so a prompt queued behind a stuck turn waits indefinitely. It waits *honestly* — the indicator still says waiting, which stays true — and telling wedged from slow is a separate problem from delivery.
 
 When a session goes idle — no engaged channel, no active or queued prompt, no agent-initiated request still pending — the runtime sends `session/close` to the harness. The per-session subprocess is reaped, freeing memory; the next attach respawns it. Permission requests with no engaged channel time out after ten minutes and the runtime responds to the agent with an error so the tool call aborts cleanly.
 

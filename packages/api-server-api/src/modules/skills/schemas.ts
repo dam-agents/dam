@@ -158,6 +158,13 @@ export const skillStateOutputSchema = z.object({
   installed: z.array(skillRefSchema),
   standalone: z.array(localSkillSchema),
   instancePublishes: z.array(skillPublishRecordSchema),
+  /** Present only when `standalone` came from a recorded snapshot rather than a
+   *  live pod read — the sandbox is stopped. Absent while running, which is what
+   *  lets a reader tell live truth from a snapshot without a second field for
+   *  the running case. */
+  standaloneSnapshot: z
+    .object({ capturedAt: z.string().datetime() })
+    .optional(),
 });
 
 // --- Input schemas ---

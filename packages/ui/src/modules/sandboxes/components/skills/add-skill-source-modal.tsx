@@ -61,7 +61,11 @@ export function AddSkillSourceModal({
 
   return (
     <Modal>
-      <DialogHeader title="Add skill source" onClose={onClose} />
+      <DialogHeader
+        title="Add skill source"
+        onClose={onClose}
+        divided={false}
+      />
 
       <Tabs
         ariaLabel="Skill source"

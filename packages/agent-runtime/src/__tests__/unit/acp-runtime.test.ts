@@ -2627,3 +2627,418 @@ describe("createAcpRuntime — env recycle", () => {
     }
   });
 });
+
+// ── Prompt delivery notifications ──
+
+const promptRequestWithId = (
+  id: number,
+  promptId: string,
+  sessionId = SID,
+  extraMeta: object = {},
+) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/prompt",
+    params: {
+      sessionId,
+      prompt: [{ type: "text", text: "hi" }],
+      _meta: { platform: { promptId }, ...extraMeta },
+    },
+  });
+
+const loadSessionRequest = (id: number, sessionId = SID) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/load",
+    params: { sessionId, cwd: ".", mcpServers: [] },
+  });
+
+/** The `platform/*` delivery notifications a channel received, in order. */
+function deliveryFrames(c: { sent: string[] }): {
+  method: string;
+  params: { sessionId: string; promptId: string; queued?: boolean };
+}[] {
+  const out = [];
+  for (const line of c.sent) {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      parsed?.method === "platform/promptAccepted" ||
+      parsed?.method === "platform/promptStarted"
+    ) {
+      out.push(parsed);
+    }
+  }
+  return out;
+}
+
+describe("createAcpRuntime — prompt delivery notifications", () => {
+  it("sends accepted{queued:false} then started for a direct prompt", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(promptRequestWithId(1, "p1"));
+
+    expect(deliveryFrames(c)).toEqual([
+      {
+        jsonrpc: "2.0",
+        method: "platform/promptAccepted",
+        params: { sessionId: SID, promptId: "p1", queued: false },
+      },
+      {
+        jsonrpc: "2.0",
+        method: "platform/promptStarted",
+        params: { sessionId: SID, promptId: "p1" },
+      },
+    ]);
+  });
+
+  it("sends accepted{queued:true} at once and started only when the prior turn ends", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(promptRequestWithId(1, "p1"));
+    c.pushMessage(promptRequestWithId(2, "p2"));
+
+    // p2 is parked: accepted as queued, and no started until p1's turn ends.
+    const queuedAck = deliveryFrames(c).filter(
+      (f) => f.params.promptId === "p2",
+    );
+    expect(queuedAck).toEqual([
+      {
+        jsonrpc: "2.0",
+        method: "platform/promptAccepted",
+        params: { sessionId: SID, promptId: "p2", queued: true },
+      },
+    ]);
+
+    fa.pushLine(agentPromptResponse(outboundId(fa.sent[0])));
+
+    expect(
+      deliveryFrames(c).filter((f) => f.params.promptId === "p2"),
+    ).toHaveLength(2);
+    expect(deliveryFrames(c).at(-1)).toEqual({
+      jsonrpc: "2.0",
+      method: "platform/promptStarted",
+      params: { sessionId: SID, promptId: "p2" },
+    });
+  });
+
+  it("sends nothing for a prompt without a promptId", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(promptRequest(1));
+    c.pushMessage(promptRequest(2)); // queued
+    fa.pushLine(agentPromptResponse(outboundId(fa.sent[0])));
+
+    expect(deliveryFrames(c)).toEqual([]);
+    // ...and the prompts themselves are unaffected: both reached the agent.
+    expect(fa.sent).toHaveLength(2);
+  });
+
+  it("emits no accepted for a prompt rejected by the queue cap", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    // 1 active + 32 queued fills the queue; the 34th is rejected.
+    for (let i = 1; i <= 33; i++)
+      c.pushMessage(promptRequestWithId(i, `p${i}`));
+    c.pushMessage(promptRequestWithId(34, "p34"));
+
+    expect(
+      deliveryFrames(c).filter((f) => f.params.promptId === "p34"),
+    ).toEqual([]);
+    const last = JSON.parse(c.sent.at(-1)!) as { error: { message: string } };
+    expect(last.error.message).toMatch(/queue full/);
+  });
+
+  it("sends only to the originating channel", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const sender = makeFakeChannel();
+    const viewer = makeFakeChannel();
+    runtime.attach(sender.channel);
+    runtime.attach(viewer.channel);
+
+    // The viewer is engaged with the same session, so it sees the echoed
+    // user_message_chunk — but never the sender's delivery frames.
+    viewer.pushMessage(resumeSessionRequest(1));
+    completeResumeBootstrap(fa);
+    sender.pushMessage(promptRequestWithId(2, "p1"));
+
+    expect(deliveryFrames(sender)).toHaveLength(2);
+    expect(deliveryFrames(viewer)).toEqual([]);
+    expect(viewer.sent.some((l) => l.includes("user_message_chunk"))).toBe(
+      true,
+    );
+  });
+
+  it("keeps the notifications out of the session log and its replays", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const sender = makeFakeChannel();
+    runtime.attach(sender.channel);
+
+    // session/new caches log metadata, so a later session/load is served
+    // from the log rather than forwarded to the agent.
+    sender.pushMessage(newSessionRequest(1));
+    fa.pushLine(newSessionResponse(outboundId(fa.sent[0])));
+    sender.pushMessage(promptRequestWithId(2, "p1"));
+    expect(deliveryFrames(sender)).toHaveLength(2);
+
+    const reloaded = makeFakeChannel();
+    runtime.attach(reloaded.channel);
+    reloaded.pushMessage(loadSessionRequest(3));
+
+    expect(deliveryFrames(reloaded)).toEqual([]);
+    // The replay is real — the logged user chunk did come back.
+    expect(reloaded.sent.some((l) => l.includes("user_message_chunk"))).toBe(
+      true,
+    );
+  });
+
+  it("strips _meta.platform from the frame forwarded to the agent", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(promptRequestWithId(1, "p1", SID, { keepMe: true }));
+
+    const forwarded = fa.sent[0] as any;
+    expect(forwarded.method).toBe("session/prompt");
+    expect(forwarded.params._meta).toEqual({ keepMe: true });
+  });
+
+  it("strips _meta.platform from a queued frame too", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(promptRequestWithId(1, "p1"));
+    c.pushMessage(promptRequestWithId(2, "p2"));
+    fa.pushLine(agentPromptResponse(outboundId(fa.sent[0])));
+
+    const promoted = fa.sent[1] as any;
+    expect(promoted.params._meta).toBeUndefined();
+  });
+});
+
+const directPromptRequest = (
+  id: number,
+  sessionId = SID,
+  // `null` for a prompt that names no surface — an explicit `undefined` would
+  // fall back to the default below.
+  surface: string | null = "ui",
+) =>
+  JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method: "session/prompt",
+    params: {
+      sessionId,
+      prompt: [{ type: "text", text: "what did we decide?" }],
+      _meta: {
+        platform: { promptId: "p1", ...(surface ? { surface } : {}) },
+      },
+    },
+  });
+
+const promptTexts = (frame: unknown): string[] =>
+  (
+    (frame as { params: { prompt: { text: string }[] } }).params.prompt ?? []
+  ).map((b) => b.text);
+
+describe("createAcpRuntime — direct-turn framing", () => {
+  const channelSession = () => {
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { mode: "chat", type: "channel_slack", threadTs: "C123:170.1" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    return store;
+  };
+
+  it("frames a prompt typed here when the session also lives in a channel thread", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+
+    // The contract leads, the person's own text follows it unchanged.
+    const texts = promptTexts(fa.sent[0]);
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toContain("didn't arrive from a messenger");
+    // Stated as a rule over messenger tools rather than a list of one
+    // messenger's, so a Telegram-born session is covered by the same sentence.
+    expect(texts[0]).toContain("Don't answer it with a messenger tool");
+    expect(texts[0]).toContain("send_channel_message");
+    expect(texts[1]).toBe("what did we decide?");
+  });
+
+  it("leaves an ordinary session's prompt alone — no channel contract to contradict", () => {
+    const fa = makeFakeAgent();
+    const { store, sessions } = makeFakeStore();
+    sessions.set(SID, {
+      meta: { mode: "chat", type: "regular" },
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: store,
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+
+    expect(promptTexts(fa.sent[0])).toEqual(["what did we decide?"]);
+  });
+
+  it("leaves an unmarked prompt alone — a channel worker relaying its own thread", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1, SID, null));
+
+    expect(promptTexts(fa.sent[0])).toEqual(["what did we decide?"]);
+  });
+
+  it("frames a queued prompt too", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+    c.pushMessage(directPromptRequest(2));
+    fa.pushLine(agentPromptResponse(outboundId(fa.sent[0])));
+
+    expect(promptTexts(fa.sent[1])[0]).toContain(
+      "didn't arrive from a messenger",
+    );
+  });
+
+  it("keeps the framing out of the message other viewers see", () => {
+    // The framing belongs to the agent, not to the transcript: it goes on the
+    // forwarded copy only, so a reader replaying the log sees what was typed.
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+
+    const a = makeFakeChannel();
+    runtime.attach(a.channel);
+    a.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
+    fa.pushLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: outboundId(fa.sent[0]),
+        result: { sessionId: SID, modes: {}, models: {}, configOptions: [] },
+      }),
+    );
+    a.pushMessage(directPromptRequest(2));
+    a.remoteClose();
+
+    const a2 = makeFakeChannel();
+    runtime.attach(a2.channel);
+    a2.pushMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/load",
+        params: { sessionId: SID, cwd: "." },
+      }),
+    );
+
+    const chunks = a2.sent
+      .map((f) => JSON.parse(f))
+      .filter((p) => p.params?.update?.sessionUpdate === "user_message_chunk")
+      .map((p) => p.params.update.content.text);
+    expect(chunks).toContain("what did we decide?");
+    expect(
+      chunks.some((t: string) => t.includes("didn't arrive from a messenger")),
+    ).toBe(false);
+  });
+
+  it("strips surface from the forwarded frame along with the rest of platform meta", () => {
+    const fa = makeFakeAgent();
+    const runtime = createAcpRuntime({
+      spawnAgent: () => fa.agent,
+      workingDir: "/tmp",
+      sessionMetadata: channelSession(),
+    });
+    const c = makeFakeChannel();
+    runtime.attach(c.channel);
+
+    c.pushMessage(directPromptRequest(1));
+
+    expect((fa.sent[0] as any).params._meta).toBeUndefined();
+  });
+});

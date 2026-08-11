@@ -11,6 +11,9 @@ export interface ConfirmOptions {
   cancelLabel?: string;
 }
 
+/** An alert has one button, so it takes everything but the cancel label. */
+export type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
+
 export interface DialogState {
   type: "alert" | "confirm";
   title: string;
@@ -23,7 +26,11 @@ export interface DialogState {
 
 export interface DialogSlice {
   dialog: DialogState | null;
-  showAlert: (message: ReactNode, title?: string) => Promise<void>;
+  showAlert: (
+    message: ReactNode,
+    title?: string,
+    options?: AlertOptions,
+  ) => Promise<void>;
   showConfirm: (
     message: ReactNode,
     title?: string,
@@ -39,14 +46,15 @@ export const createDialogSlice: StateCreator<
   DialogSlice
 > = (set, get) => ({
   dialog: null,
-  showAlert: (message, title = "Error") =>
+  showAlert: (message, title = "Error", options) =>
     new Promise<void>((resolve) => {
       set({
         dialog: {
           type: "alert",
           title,
           message,
-          kind: "default",
+          kind: options?.kind ?? "default",
+          confirmLabel: options?.confirmLabel,
           resolve: () => resolve(),
         },
       });

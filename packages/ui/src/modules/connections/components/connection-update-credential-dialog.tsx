@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useUpdateConnection } from "../api/mutations.js";
 import { credentialCopyFor } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
+import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
 
 /** The dialog half of `useConnectionMaintenance`: owns the `updating` guard so
  *  a surface wiring the row actions can't forget the mount. Render it either
@@ -24,8 +25,18 @@ export function ConnectionMaintenanceDialog({
   maintenance: {
     updating: ConnectionView | null;
     closeUpdate: () => void;
+    editingScope?: ConnectionView | null;
+    closeEditScope?: () => void;
   };
 }) {
+  if (maintenance.editingScope && maintenance.closeEditScope) {
+    return (
+      <ConnectionEditGithubAppScopeDialog
+        connection={maintenance.editingScope}
+        onClose={maintenance.closeEditScope}
+      />
+    );
+  }
   if (!maintenance.updating) return null;
   return (
     <ConnectionUpdateCredentialDialog

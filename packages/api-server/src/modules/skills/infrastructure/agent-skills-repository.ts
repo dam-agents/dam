@@ -3,6 +3,7 @@ import type { Db } from "db";
 import {
   agentSkills,
   agentSkillPublishes,
+  agents as agentsTable,
   eq,
   and,
   inArray,
@@ -11,7 +12,13 @@ import {
   or,
   sql,
 } from "db";
-import type { SkillRef, SkillPublishRecord } from "api-server-api";
+import { z } from "zod";
+import {
+  localSkillSchema,
+  type LocalSkill,
+  type SkillRef,
+  type SkillPublishRecord,
+} from "api-server-api";
 
 export interface AgentSkillsRepository {
   listSkills(agentId: string): Promise<SkillRef[]>;
@@ -43,8 +50,26 @@ export interface AgentSkillsRepository {
    *  erase a resolved `merged`. */
   touchPrState(prUrl: string, checkedAt: Date): Promise<void>;
 
+  /** The last recorded standalone list, or null when nothing was ever recorded
+   *  — which is a never-run sandbox, not one with no standalone skills. */
+  readStandaloneSnapshot(
+    agentId: string,
+  ): Promise<{ skills: LocalSkill[]; capturedAt: string } | null>;
+  /** Records the list, skipping the write when it matches what's stored. The
+   *  Skills surface polls `state` every few seconds while open, so an
+   *  unconditional write would be one row update per open page per poll. */
+  recordStandaloneSnapshot(
+    agentId: string,
+    skills: LocalSkill[],
+  ): Promise<void>;
+
   deleteByAgent(agentId: string): Promise<void>;
 }
+
+const standaloneSnapshotSchema = z.object({
+  skills: z.array(localSkillSchema),
+  capturedAt: z.string().datetime(),
+});
 
 type PrState = NonNullable<SkillPublishRecord["prState"]>;
 
@@ -252,6 +277,36 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         .where(eq(agentSkillPublishes.prUrl, prUrl));
     },
 
+    async readStandaloneSnapshot(agentId) {
+      const rows = await db
+        .select({ snapshot: agentsTable.skillsSnapshot })
+        .from(agentsTable)
+        .where(eq(agentsTable.id, agentId));
+      const raw = rows[0]?.snapshot;
+      if (raw == null) return null;
+      // A shape written by an older build reads as "nothing recorded" rather
+      // than breaking the panel this feeds.
+      const parsed = standaloneSnapshotSchema.safeParse(raw);
+      return parsed.success ? parsed.data : null;
+    },
+
+    async recordStandaloneSnapshot(agentId, skills) {
+      const stored = await db
+        .select({ snapshot: agentsTable.skillsSnapshot })
+        .from(agentsTable)
+        .where(eq(agentsTable.id, agentId));
+      const previous = standaloneSnapshotSchema.safeParse(
+        stored[0]?.snapshot ?? null,
+      );
+      if (previous.success && sameSkills(previous.data.skills, skills)) return;
+      await db
+        .update(agentsTable)
+        .set({
+          skillsSnapshot: { skills, capturedAt: new Date().toISOString() },
+        })
+        .where(eq(agentsTable.id, agentId));
+    },
+
     async deleteByAgent(agentId) {
       await Promise.all([
         db.delete(agentSkills).where(eq(agentSkills.agentId, agentId)),
@@ -261,4 +316,21 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
       ]);
     },
   };
+}
+
+/** Compared on the fields that decide what renders, by name rather than by
+ *  position — the pod's ordering is not a promise. */
+function sameSkills(a: LocalSkill[], b: LocalSkill[]): boolean {
+  if (a.length !== b.length) return false;
+  const byName = new Map(a.map((s) => [s.name, s]));
+  return b.every((s) => {
+    const other = byName.get(s.name);
+    return (
+      other !== undefined &&
+      other.description === s.description &&
+      other.skillPath === s.skillPath &&
+      other.origin === s.origin &&
+      other.contentHash === s.contentHash
+    );
+  });
 }

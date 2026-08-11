@@ -1,4 +1,7 @@
+import { expect, type Page } from "@playwright/test";
+
 import {
+  baseUrl,
   keycloakClientId,
   keycloakRealm,
   keycloakUrl,
@@ -42,4 +45,35 @@ export async function getAccessToken(
 export async function acceptTerms(api: ApiClient): Promise<void> {
   const current = await api.terms.current.query();
   await api.terms.accept.mutate({ version: current.version });
+}
+
+/** Log the browser in through Keycloak and land on the app. Full-tier specs
+ *  carry no `storageState` (they are self-contained by convention), so a spec
+ *  that needs a *browser* session — not just an API token — establishes it
+ *  itself. Idempotent: an already-authenticated context skips straight past
+ *  the Keycloak form, and the Terms gate is only clicked when it shows. */
+export async function loginViaUi(page: Page): Promise<void> {
+  await page.goto(baseUrl);
+
+  const usernameField = page.locator("#username");
+  const termsButton = page.getByRole("button", {
+    name: /I accept the Terms of Use/,
+  });
+  const appSidebar = page.getByTestId("app-sidebar");
+
+  await expect(usernameField.or(termsButton).or(appSidebar)).toBeVisible();
+
+  if (await usernameField.isVisible()) {
+    await usernameField.fill(testUser.username);
+    await page.locator("#password").fill(testUser.password);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.waitForURL(
+      (url) =>
+        url.origin === baseUrl && !url.pathname.startsWith("/auth/callback"),
+    );
+    await expect(termsButton.or(appSidebar)).toBeVisible();
+  }
+
+  if (await termsButton.isVisible()) await termsButton.click();
+  await expect(appSidebar).toBeVisible();
 }

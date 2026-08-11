@@ -30,6 +30,8 @@ interface Props {
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   onSelect: () => void;
+  onConfigure: () => void;
+  configureLabel: string;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -44,6 +46,8 @@ export function AgentRow({
   temporaryDraw,
   deletePending,
   onSelect,
+  onConfigure,
+  configureLabel,
   onWake,
   onRestart,
   onPause,
@@ -118,6 +122,10 @@ export function AgentRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <DropdownMenuItem onSelect={onConfigure}>
+                {configureLabel}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={onWake}>
                   {/* A parked sandbox was never asleep — it's waiting for

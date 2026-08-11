@@ -4,7 +4,7 @@ import { baseUrl } from "../../config.js";
 import {
   agentCardStatus,
   chatInput,
-  gotoAgentDetail,
+  gotoAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
   waitForAgentRunning,
@@ -32,7 +32,7 @@ test("deleting the active session clears it and lets a fresh session start (#108
     await page.goto(baseUrl);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
-    await gotoAgentDetail(page, agentName, agentId);
+    await gotoAgentChat(page, agentName, agentId);
     await expect(chatInput(page)).toBeVisible();
 
     await sendMessageToAgent(page, firstPrompt);
