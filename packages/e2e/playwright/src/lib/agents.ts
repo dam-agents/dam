@@ -62,19 +62,13 @@ export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message\.\.\./i);
 }
 
-/** Selecting an agent lands on its sandbox home; chat is behind the
- *  "Open in" launch menu. */
-export async function gotoAgentDetail(
+/** Selecting an agent lands in its chat. */
+export async function gotoAgentChat(
   page: Page,
   agentName: string,
   agentId: string,
 ): Promise<void> {
   await page.getByRole("heading", { name: agentName }).click();
-  await expect(page).toHaveURL(
-    new RegExp(`/sandboxes/${encodeURIComponent(agentId)}`),
-  );
-  await page.getByRole("button", { name: /open in/i }).click();
-  await page.getByRole("menuitem", { name: /chat \(browser\)/i }).click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );

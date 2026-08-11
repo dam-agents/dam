@@ -51,8 +51,6 @@ export interface AgentsSlice {
    *  rail highlights Knowledge bases and goBack returns to the KB list. */
   openKnowledgeBase: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
-  /** Enter chat and open a fresh web terminal for the agent. */
-  openAgentTerminal: (agentId: string) => void;
   goBack: () => void;
 }
 
@@ -146,19 +144,6 @@ export const createAgentsSlice: StateCreator<
       view: "chat",
       mobileScreen: "chat",
       pendingResumeSessionId: sessionId,
-    });
-  },
-
-  openAgentTerminal: (agentId) => {
-    history.pushState(null, "", routeToPath({ view: "chat", agent: agentId }));
-    // Set the pending flag after the reset (which clears it), mirroring the
-    // resume handoff; chat-view consumes it on entry to spawn a terminal.
-    get().resetChatContext();
-    set({
-      selectedAgent: agentId,
-      view: "chat",
-      mobileScreen: "chat",
-      pendingTerminal: true,
     });
   },
 

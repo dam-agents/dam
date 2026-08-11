@@ -1,8 +1,11 @@
+import { Chat } from "@carbon/icons-react";
+
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
@@ -62,9 +65,16 @@ export function KnowledgeBaseConfigView() {
         description="Configure this knowledge base. Feed it sources and ask questions in chat."
         adornment={<StatusBadge state={display.state} />}
         actions={
-          <Button variant="outline" onClick={() => openKnowledgeBase(agent.id)}>
-            Open chat
-          </Button>
+          <Tooltip content="Open chat">
+            <Button
+              size="icon"
+              aria-label="Open chat"
+              variant="outline"
+              onClick={() => openKnowledgeBase(agent.id)}
+            >
+              <Chat />
+            </Button>
+          </Tooltip>
         }
       />
 

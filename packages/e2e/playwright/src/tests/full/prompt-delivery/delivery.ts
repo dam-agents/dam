@@ -5,7 +5,7 @@ import {
   agentCardStatus,
   chatInput,
   ensureAgentExists,
-  gotoAgentDetail,
+  gotoAgentChat,
   setMockAgentReply,
   waitForAgentRunning,
 } from "../../../lib/agents.js";
@@ -73,7 +73,7 @@ export async function openMockAgentChat(
   const agentId = await waitForAgentRunning(api, agentName);
   await loginViaUi(page);
   await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
-  await gotoAgentDetail(page, agentName, agentId);
+  await gotoAgentChat(page, agentName, agentId);
   await expect(chatInput(page)).toBeVisible();
   return agentId;
 }

@@ -4,7 +4,7 @@ import { baseUrl } from "../../config.js";
 import {
   agentCardStatus,
   chatInput,
-  gotoAgentDetail,
+  gotoAgentChat,
   readChatMessages,
   sendMessageToAgent,
   setMockAgentReply,
@@ -36,7 +36,7 @@ test("exchange messages with the agent", async ({ page }) => {
 
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
 
-    await gotoAgentDetail(page, agentName, agentId);
+    await gotoAgentChat(page, agentName, agentId);
 
     await expect(chatInput(page)).toBeVisible();
   });
@@ -76,7 +76,7 @@ test("background prompt mid-turn keeps the reply paired with the user message (#
     await page.goto(baseUrl);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
-    await gotoAgentDetail(page, agentName, agentId);
+    await gotoAgentChat(page, agentName, agentId);
     await expect(chatInput(page)).toBeVisible();
   });
 

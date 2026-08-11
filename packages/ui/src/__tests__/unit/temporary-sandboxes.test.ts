@@ -16,6 +16,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],
   grantedConnectionIds: [],
+  stopRequested: false,
   overBudget: false,
   size: { cpu: "1", memory: "2Gi" },
   state: "running",

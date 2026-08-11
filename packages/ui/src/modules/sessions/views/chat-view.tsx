@@ -26,7 +26,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -48,6 +47,7 @@ import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccess
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
@@ -75,6 +75,7 @@ import {
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
+import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
@@ -96,6 +97,7 @@ export function ChatView() {
 
   useSyncRestartingAgents();
   useAgentReachabilityProbe(selectedAgent);
+  useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -184,7 +186,6 @@ export function ChatView() {
   // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
   // synchronously — zustand re-renders before useState commits.
   const terminalFreshRef = useRef(false);
-  const ephemeralTerminalIdRef = useRef<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -301,27 +302,6 @@ export function ChatView() {
     resumeSession,
   ]);
 
-  const pendingTerminal = useStore((s) => s.pendingTerminal);
-  const setPendingTerminal = useStore((s) => s.setPendingTerminal);
-  useEffect(() => {
-    if (!selectedAgent || !pendingTerminal) return;
-    setPendingTerminal(false);
-    // Same fresh-terminal spawn as the blank chat → terminal toggle: a
-    // client-side ephemeral PTY session, no server registration. Mode first:
-    // the URL carries the open session, and an ephemeral PTY id is not one —
-    // seeing it before the mode would put it in the address bar for a frame.
-    const id = crypto.randomUUID();
-    ephemeralTerminalIdRef.current = id;
-    setSessionMode(SessionMode.Terminal);
-    setSessionId(id);
-  }, [
-    selectedAgent,
-    pendingTerminal,
-    setPendingTerminal,
-    setSessionId,
-    setSessionMode,
-  ]);
-
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       // Deliberate navigation releases the pending-launch chat takeover.
@@ -377,9 +357,7 @@ export function ChatView() {
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
-    ephemeralTerminalIdRef.current = id;
     terminalFreshRef.current = true;
-    // Mode before id — see the pending-terminal effect above.
     setSessionMode(SessionMode.Terminal);
     setSessionId(id);
     setMobileScreen("chat");
@@ -479,7 +457,7 @@ export function ChatView() {
         >
           <ArrowLeft size={14} />
         </Button>
-        <div className="group flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <span
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
@@ -493,7 +471,6 @@ export function ChatView() {
                 variant="ghost"
                 size="icon-sm"
                 aria-label={surfaceCopy.actionsAria}
-                className={HOVER_ACTION}
               >
                 <OverflowMenuVertical size={16} />
               </Button>
@@ -543,7 +520,6 @@ export function ChatView() {
             )}
             onResumeSession={mobileResumeSession}
             onNewSession={handleNewSession}
-            onNewTerminal={handleNewTerminal}
           />
           {sessionsOpen && filesSectionOpen && (
             <ResizeHandle
@@ -622,7 +598,7 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
+                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -661,14 +637,20 @@ export function ChatView() {
                           </p>
                         </div>
                       ) : (
-                        <div className="py-24 text-center">
+                        <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
-                            Start a conversation
+                            Start a new session
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Send a message to begin a new session with this
-                            agent
+                            Send a message to begin or open a new session in:
                           </p>
+                          {selectedAgent && (
+                            <NewSessionLauncher
+                              agentId={selectedAgent}
+                              agentName={selectedAgentName ?? ""}
+                              onNewTerminal={handleNewTerminal}
+                            />
+                          )}
                         </div>
                       ))}
                     {messages.map((m, mi) => (

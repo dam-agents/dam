@@ -31,12 +31,9 @@ export interface SessionsSlice {
   busy: boolean;
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
-  /** Set before entering chat to open a fresh web terminal on arrival. */
-  pendingTerminal: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (id: string | null) => void;
-  setPendingTerminal: (v: boolean) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
@@ -75,11 +72,9 @@ export const createSessionsSlice: StateCreator<
   busy: false,
   terminalPaused: false,
   pendingResumeSessionId: null,
-  pendingTerminal: false,
 
   setSessionId: (id) => set({ sessionId: id }),
   setPendingResumeSessionId: (id) => set({ pendingResumeSessionId: id }),
-  setPendingTerminal: (v) => set({ pendingTerminal: v }),
   setSessionMode: (mode) => set({ sessionMode: mode }),
   setTerminalPaused: (paused) => set({ terminalPaused: paused }),
   setMessages: (updater) =>
@@ -117,7 +112,6 @@ export const createSessionsSlice: StateCreator<
       pendingPermissions: [],
       queuedMessage: null,
       pendingResumeSessionId: null,
-      pendingTerminal: false,
     }),
 
   deleteSession: async (sessionId) => {
