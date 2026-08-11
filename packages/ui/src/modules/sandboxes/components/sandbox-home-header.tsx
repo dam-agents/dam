@@ -93,6 +93,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
             <Button
               size="icon"
               aria-label="Open chat"
+              variant="outline"
               onClick={() => selectAgent(agent.id)}
             >
               <Chat />

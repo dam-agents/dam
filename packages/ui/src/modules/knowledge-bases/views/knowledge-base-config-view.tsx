@@ -69,6 +69,7 @@ export function KnowledgeBaseConfigView() {
             <Button
               size="icon"
               aria-label="Open chat"
+              variant="outline"
               onClick={() => openKnowledgeBase(agent.id)}
             >
               <Chat />
