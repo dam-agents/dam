@@ -160,9 +160,11 @@ function MainApp() {
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />
           ) : view === "home" ? (
-            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-              <HomeView />
-            </div>
+            <DevErrorBoundary>
+              <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+                <HomeView />
+              </div>
+            </DevErrorBoundary>
           ) : (
             <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
               {view === "settings" ? (

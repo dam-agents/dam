@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Settings, WarningAlt } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { useAgentDisplayName, useAgentsList } from "../../agents/api/queries.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -78,9 +78,22 @@ type UnifiedItem =
   | { source: "approval"; data: ApprovalView }
   | { source: "error"; data: BlockedItem };
 
+type BlockedFilter = "all" | "network" | "tool" | "error";
+
+const BLOCKED_FILTER_TABS: { value: BlockedFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "network", label: "Network" },
+  { value: "tool", label: "Tool" },
+  { value: "error", label: "Errors" },
+];
+
 export function BlockedSection() {
+  const setView = useStore((s) => s.setView);
+  const agents = useAgentsList();
   const { data: blockedItems } = useBlockedItems();
   const { data: pendingApprovals } = usePendingApprovals();
+  const [filter, setFilter] = useState<BlockedFilter>("all");
+  const [agentFilter, setAgentFilter] = useState("all");
   useTick();
 
   const nonApprovalItems = rankBlockedItems(
@@ -93,6 +106,31 @@ export function BlockedSection() {
   ];
 
   const totalCount = unified.length;
+
+  const filtered = useMemo(() => {
+    let items = unified;
+
+    if (agentFilter !== "all") {
+      items = items.filter((i) =>
+        i.source === "approval" ? i.data.agentId === agentFilter : i.data.agentId === agentFilter,
+      );
+    }
+
+    if (filter === "network") {
+      items = items.filter((i) => i.source === "approval" && i.data.payload.kind === "ext_authz");
+    } else if (filter === "tool") {
+      items = items.filter((i) => i.source === "approval" && i.data.payload.kind === "acp_native");
+    } else if (filter === "error") {
+      items = items.filter((i) => i.source === "error");
+    }
+
+    return items;
+  }, [unified, filter, agentFilter]);
+
+  const agentIds = useMemo(() => {
+    const ids = new Set(unified.map((i) => i.source === "approval" ? i.data.agentId : i.data.agentId));
+    return [...ids];
+  }, [unified]);
 
   const highestSeverity: SeverityLevel =
     nonApprovalItems.length === 0
@@ -126,22 +164,89 @@ export function BlockedSection() {
             </span>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => setView("inbox")}
+          className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          See past decisions
+        </button>
       </div>
 
       {totalCount === 0 && (
-        <div className="rounded-lg border border-border bg-card px-6 py-8">
+        <div className="rounded-lg border border-border bg-card px-6 py-6">
           <p className="text-[14px] text-muted-foreground text-center">
             Nothing blocked. All agents are running clean.
           </p>
         </div>
       )}
 
-      {totalCount > 0 && <StackedCardsLayout items={unified} />}
+      {totalCount > 0 && (
+        <>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex gap-1 border-b border-border">
+              {BLOCKED_FILTER_TABS.map((tab) => {
+                const count =
+                  tab.value === "all" ? unified.length
+                  : tab.value === "network" ? unified.filter((i) => i.source === "approval" && i.data.payload.kind === "ext_authz").length
+                  : tab.value === "tool" ? unified.filter((i) => i.source === "approval" && i.data.payload.kind === "acp_native").length
+                  : unified.filter((i) => i.source === "error").length;
+                if (tab.value !== "all" && count === 0) return null;
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => setFilter(tab.value)}
+                    className={cn(
+                      "px-3 py-2 text-[14px] font-medium border-b-2 -mb-px transition-colors",
+                      filter === tab.value
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {tab.label}
+                    {count > 0 && (
+                      <span className="ml-1.5 text-muted-foreground">{count}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {agentIds.length > 1 && (
+              <select
+                value={agentFilter}
+                onChange={(e) => setAgentFilter(e.target.value)}
+                className="text-[14px] bg-transparent border border-border rounded-md px-2 py-1 text-foreground"
+                aria-label="Filter by agent"
+              >
+                <option value="all">All agents</option>
+                {agentIds.map((id) => (
+                  <option key={id} value={id}>
+                    {agents.find((a) => a.id === id)?.name ?? id}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {filtered.length === 0 ? (
+            <p className="text-[14px] text-muted-foreground py-4">
+              No items match this filter.
+            </p>
+          ) : (
+            <StackedBlockedCards items={filtered} />
+          )}
+        </>
+      )}
     </section>
   );
 }
 
-function StackedCardsLayout({ items }: { items: UnifiedItem[] }) {
+/* ═══════════════════════════════════════════════════════════════════════════
+   Stacked cards layout
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function StackedBlockedCards({ items }: { items: UnifiedItem[] }) {
   const [expanded, setExpanded] = useState(false);
   const current = items[0];
   if (!current) return null;
@@ -191,6 +296,10 @@ function StackedCardsLayout({ items }: { items: UnifiedItem[] }) {
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Card components
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 function useCountdown(expiresAt: string): number | null {
   const [remaining, setRemaining] = useState<number | null>(() => {

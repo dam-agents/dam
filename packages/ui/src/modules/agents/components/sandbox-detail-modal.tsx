@@ -437,7 +437,6 @@ function InfoChip({
   );
 }
 
-
 function CliQuickstartNote() {
   return (
     <p className="text-[14px] text-muted-foreground">

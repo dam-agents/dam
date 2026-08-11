@@ -39,11 +39,24 @@ export function StartingPointStep({
   onContinue,
 }: Props) {
   if (snapshot.startingPoint === "experiment") {
-    return <ExperimentPicker snapshot={snapshot} templates={templates} vmFeatureEnabled={vmFeatureEnabled} onPick={onPickExperimentTemplate!} />;
+    return (
+      <ExperimentPicker
+        snapshot={snapshot}
+        templates={templates}
+        vmFeatureEnabled={vmFeatureEnabled}
+        onPick={onPickExperimentTemplate!}
+      />
+    );
   }
 
   if (snapshot.startingPoint === "knowledge-base") {
-    return <KbPicker snapshot={snapshot} kbTemplates={kbTemplates ?? []} onPick={onPickKbTemplate!} />;
+    return (
+      <KbPicker
+        snapshot={snapshot}
+        kbTemplates={kbTemplates ?? []}
+        onPick={onPickKbTemplate!}
+      />
+    );
   }
 
   const catalogue = imageCatalogue(templates, { vmFeatureEnabled });

@@ -108,7 +108,13 @@ function CpuBar({ value = 34 }: { value?: number }) {
   );
 }
 
-function MemBar({ used = 2.1, total = 4.0 }: { used?: number; total?: number }) {
+function MemBar({
+  used = 2.1,
+  total = 4.0,
+}: {
+  used?: number;
+  total?: number;
+}) {
   const pct = (used / total) * 100;
   return (
     <div className="flex items-center gap-2">
@@ -144,8 +150,8 @@ function StatusBarPreview() {
         </div>
         <div className="flex items-center gap-4 text-[12px] text-muted-foreground">
           <span className="flex items-center gap-1">
-            <span className="size-2 rounded-full bg-emerald-500" />
-            3 sandboxes running
+            <span className="size-2 rounded-full bg-emerald-500" />3 sandboxes
+            running
           </span>
           <span>Budget: 72% remaining</span>
         </div>
@@ -182,7 +188,9 @@ function SidebarFooterPreview() {
                 <span className="text-[14px] text-foreground">CPU</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-medium text-foreground">34%</span>
+                <span className="text-[14px] font-medium text-foreground">
+                  34%
+                </span>
                 <div className="h-[6px] w-[56px] rounded-full bg-muted overflow-hidden">
                   <div className="h-full w-[34%] rounded-full bg-accent" />
                 </div>
@@ -194,7 +202,9 @@ function SidebarFooterPreview() {
                 <span className="text-[14px] text-foreground">Memory</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[14px] font-medium text-foreground">2.1 GB</span>
+                <span className="text-[14px] font-medium text-foreground">
+                  2.1 GB
+                </span>
                 <div className="h-[6px] w-[56px] rounded-full bg-muted overflow-hidden">
                   <div className="h-full w-[52%] rounded-full bg-emerald-500" />
                 </div>
@@ -224,7 +234,9 @@ function TopStripPreview() {
             <ContainerSoftware size={14} />
             <span>Sandboxes</span>
             <span className="text-border">/</span>
-            <span className="text-foreground font-medium">claude-code-main</span>
+            <span className="text-foreground font-medium">
+              claude-code-main
+            </span>
           </div>
           <div className="flex items-center gap-5">
             <CpuBar value={34} />
@@ -256,10 +268,14 @@ function FloatingPreview() {
               className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 shadow-lg transition-all hover:shadow-xl"
             >
               <Chip size={14} className="text-accent" />
-              <span className="text-[14px] font-medium text-foreground">34%</span>
+              <span className="text-[14px] font-medium text-foreground">
+                34%
+              </span>
               <span className="mx-1 h-3 w-px bg-border" />
               <Activity size={14} className="text-emerald-500" />
-              <span className="text-[14px] font-medium text-foreground">2.1 GB</span>
+              <span className="text-[14px] font-medium text-foreground">
+                2.1 GB
+              </span>
               <ChevronUp size={14} className="text-muted-foreground ml-1" />
             </button>
           ) : (
@@ -289,9 +305,13 @@ function FloatingPreview() {
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <Chip size={14} className="text-muted-foreground" />
-                      <span className="text-[14px] text-muted-foreground">CPU</span>
+                      <span className="text-[14px] text-muted-foreground">
+                        CPU
+                      </span>
                     </div>
-                    <span className="text-[14px] font-medium text-foreground">34%</span>
+                    <span className="text-[14px] font-medium text-foreground">
+                      34%
+                    </span>
                   </div>
                   <div className="h-[6px] w-full rounded-full bg-muted overflow-hidden">
                     <div className="h-full w-[34%] rounded-full bg-accent" />
@@ -301,7 +321,9 @@ function FloatingPreview() {
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <Activity size={14} className="text-muted-foreground" />
-                      <span className="text-[14px] text-muted-foreground">Memory</span>
+                      <span className="text-[14px] text-muted-foreground">
+                        Memory
+                      </span>
                     </div>
                     <span className="text-[14px] font-medium text-foreground">
                       2.1 / 4 GB
@@ -347,14 +369,18 @@ function FakeSidebar() {
   );
 }
 
-function FakeNavItem({ label, active = false }: { label: string; active?: boolean }) {
+function FakeNavItem({
+  label,
+  active = false,
+}: {
+  label: string;
+  active?: boolean;
+}) {
   return (
     <div
       className={cn(
         "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[14px]",
-        active
-          ? "bg-muted text-primary font-medium"
-          : "text-foreground/70",
+        active ? "bg-muted text-primary font-medium" : "text-foreground/70",
       )}
     >
       <div className="size-[18px] rounded bg-current opacity-30" />

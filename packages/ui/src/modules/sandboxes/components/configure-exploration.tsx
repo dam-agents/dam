@@ -1,7 +1,7 @@
 import {
   Chip,
-  Network_3,
   MachineLearningModel,
+  Network_3,
   Terminal,
 } from "@carbon/icons-react";
 
@@ -32,10 +32,7 @@ export function ConfigureExploration() {
         {/* Model settings */}
         <CollapsibleSection
           icon={
-            <MachineLearningModel
-              size={16}
-              className="text-muted-foreground"
-            />
+            <MachineLearningModel size={16} className="text-muted-foreground" />
           }
           title="Model settings"
           summary="Claude Sonnet 4"
@@ -203,7 +200,11 @@ function EnvironmentSectionContent() {
             </tr>
           </thead>
           <tbody>
-            <EnvRow name="ANTHROPIC_API_KEY" value="••••••••" source="Provider" />
+            <EnvRow
+              name="ANTHROPIC_API_KEY"
+              value="••••••••"
+              source="Provider"
+            />
             <EnvRow name="GITHUB_TOKEN" value="••••••••" source="Connection" />
             <EnvRow name="NODE_ENV" value="production" source="Custom" />
           </tbody>

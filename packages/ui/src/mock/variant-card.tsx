@@ -34,13 +34,23 @@ export function StartingOptions({
       : options;
 
   return (
-    <div className={cn("mx-auto w-full", columns === 2 ? "max-w-[560px]" : "max-w-[720px]")}>
+    <div
+      className={cn(
+        "mx-auto w-full",
+        columns === 2 ? "max-w-[560px]" : "max-w-[720px]",
+      )}
+    >
       {heading && (
         <p className="mb-3 text-[14px] font-medium text-muted-foreground">
           {heading}
         </p>
       )}
-      <div className={cn("grid gap-3", columns === 2 ? "grid-cols-2" : "grid-cols-3")}>
+      <div
+        className={cn(
+          "grid gap-3",
+          columns === 2 ? "grid-cols-2" : "grid-cols-3",
+        )}
+      >
         {allOptions.map((opt) => (
           <button
             key={opt.id}

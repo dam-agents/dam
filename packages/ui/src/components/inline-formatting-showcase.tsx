@@ -127,13 +127,7 @@ export function InlineFormattingShowcase() {
 
 /* ─── Styled inline code component ─── */
 
-function Code({
-  children,
-  style,
-}: {
-  children: string;
-  style: StyleOption;
-}) {
+function Code({ children, style }: { children: string; style: StyleOption }) {
   const base = "font-mono text-[13px]";
 
   const classMap: Record<StyleOption, string> = {
@@ -152,8 +146,7 @@ function Code({
       "rounded-md border border-border px-1.5 py-0.5 text-[13px] font-mono text-foreground",
     highlight:
       "rounded-sm bg-yellow-100 dark:bg-yellow-900/30 px-1 py-0.5 text-[13px] font-mono text-foreground",
-    minimal:
-      "text-[13px] font-mono text-foreground/60",
+    minimal: "text-[13px] font-mono text-foreground/60",
   };
 
   return <code className={cn(base, classMap[style])}>{children}</code>;
@@ -161,13 +154,7 @@ function Code({
 
 /* ─── Bold component ─── */
 
-function Bold({
-  children,
-  style,
-}: {
-  children: string;
-  style: StyleOption;
-}) {
+function Bold({ children, style }: { children: string; style: StyleOption }) {
   const classMap: Record<StyleOption, string> = {
     current: "font-semibold text-foreground",
     "muted-bg": "font-semibold text-foreground",
@@ -192,8 +179,8 @@ function FakeChatMessage({ style }: { style: StyleOption }) {
       {/* User message */}
       <div className="flex justify-end">
         <div className="max-w-[85%] rounded-2xl bg-primary px-4 py-2.5 text-[14px] text-primary-foreground">
-          How do I set up the agent runtime with a custom model and connect it to
-          my existing sandbox?
+          How do I set up the agent runtime with a custom model and connect it
+          to my existing sandbox?
         </div>
       </div>
 
@@ -201,10 +188,9 @@ function FakeChatMessage({ style }: { style: StyleOption }) {
       <div className="space-y-4 text-[14px] leading-relaxed text-foreground/90">
         <p>
           To configure a custom model in your agent runtime, you'll need to
-          modify the{" "}
-          <Code style={style}>harnessConfig.current</Code> object via the{" "}
-          <Code style={style}>useApplyHarnessConfig</Code> mutation hook. Here's
-          the full setup:
+          modify the <Code style={style}>harnessConfig.current</Code> object via
+          the <Code style={style}>useApplyHarnessConfig</Code> mutation hook.
+          Here's the full setup:
         </p>
 
         <p>
@@ -224,9 +210,8 @@ function FakeChatMessage({ style }: { style: StyleOption }) {
           needs the <Code style={style}>conn-anthropic</Code> connection
           attached. Check that{" "}
           <Code style={style}>connections.getAgentConnections</Code> returns an
-          entry with{" "}
-          <Code style={style}>templateId: "anthropic-api"</Code>. If it's
-          missing, add it through the{" "}
+          entry with <Code style={style}>templateId: "anthropic-api"</Code>. If
+          it's missing, add it through the{" "}
           <Bold style={style}>Connections step</Bold> in the wizard or via the{" "}
           <Code style={style}>connections.attach</Code> mutation.
         </p>
@@ -251,9 +236,8 @@ function FakeChatMessage({ style }: { style: StyleOption }) {
         <ul className="list-disc pl-5 space-y-1.5">
           <li>
             The <Code style={style}>configOptions</Code> record supports
-            arbitrary key-value pairs — use{" "}
-            <Code style={style}>maxTokens</Code>,{" "}
-            <Code style={style}>temperature</Code>, or{" "}
+            arbitrary key-value pairs — use <Code style={style}>maxTokens</Code>
+            , <Code style={style}>temperature</Code>, or{" "}
             <Code style={style}>systemPrompt</Code> to fine-tune behavior.
           </li>
           <li>
@@ -269,18 +253,17 @@ function FakeChatMessage({ style }: { style: StyleOption }) {
             <Code style={style}>claude-opus-4-20250514</Code>.
           </li>
           <li>
-            The <Code style={style}>mode</Code> field controls agentic
-            behavior: set it to <Code style={style}>"autonomous"</Code> for
-            hands-off execution or{" "}
-            <Code style={style}>"interactive"</Code> for approval-gated tool
-            use.
+            The <Code style={style}>mode</Code> field controls agentic behavior:
+            set it to <Code style={style}>"autonomous"</Code> for hands-off
+            execution or <Code style={style}>"interactive"</Code> for
+            approval-gated tool use.
           </li>
         </ul>
 
         <p>
           You can verify everything is working by checking the{" "}
-          <Code style={style}>useHarnessConfigCurrent</Code> hook's return
-          value — it should reflect your changes within a few seconds. The{" "}
+          <Code style={style}>useHarnessConfigCurrent</Code> hook's return value
+          — it should reflect your changes within a few seconds. The{" "}
           <Bold style={style}>model name</Bold> will also update below the chat
           input automatically.
         </p>

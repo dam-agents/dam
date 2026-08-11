@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DAM Home Page — Interactive Reference</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg-card: #1a1d27;
+    --bg-muted: #252830;
+    --bg-surface: #1e2028;
+    --border: #2e313a;
+    --foreground: #e8eaed;
+    --muted-foreground: #8b8f9a;
+    --accent: #6366f1;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--foreground);
+    padding: 40px;
+    max-width: 1200px;
+    margin: 0 auto;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  .space-y-10 > * + * { margin-top: 2.5rem; }
+  .space-y-6 > * + * { margin-top: 1.5rem; }
+  .space-y-3 > * + * { margin-top: 0.75rem; }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    padding: 2px 8px;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 24px;
+    white-space: nowrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+    font-family: inherit;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #5558e6; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--foreground); }
+  .btn-outline:hover { background: var(--bg-muted); }
+  .btn-danger-outline { background: transparent; border: 1px solid rgba(239,68,68,0.4); color: var(--danger); }
+  .btn-danger-outline:hover { background: rgba(239,68,68,0.1); }
+
+  .link-btn {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: inherit;
+    transition: color 0.15s;
+  }
+  .link-btn:hover { color: #8183f4; }
+  .link-btn-muted { color: var(--muted-foreground); }
+  .link-btn-muted:hover { color: var(--foreground); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-2-lg { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+
+  .period-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-muted);
+    border-radius: 8px;
+    padding: 2px;
+  }
+  .period-btn {
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .period-btn:hover { color: var(--foreground); }
+  .period-btn.active {
+    background: var(--bg-card);
+    color: var(--foreground);
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+
+  .progress-bar {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
+
+  .range-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    padding: 6px 12px;
+    font-size: 14px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .range-btn:hover { color: var(--foreground); border-color: rgba(255,255,255,0.2); }
+
+  .dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 180px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 100;
+    display: none;
+  }
+  .dropdown.open { display: block; }
+  .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: var(--muted-foreground);
+    font-size: 14px;
+    text-align: left;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.1s;
+  }
+  .dropdown-item:hover { background: var(--bg-muted); color: var(--foreground); }
+  .dropdown-item.active { color: var(--accent); font-weight: 500; }
+
+  .slot-bar { display: flex; gap: 6px; margin-bottom: 1.25rem; }
+  .slot { height: 16px; flex: 1; border-radius: 3px; transition: background 0.3s; }
+
+  .border-l-4 { border-left: 4px solid transparent; }
+
+  .detail-block {
+    background: rgba(37, 40, 48, 0.5);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+
+  .running-list {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+  .running-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .running-row:last-child { border-bottom: none; }
+  .running-row:hover { background: rgba(37, 40, 48, 0.6); }
+
+  .pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+  .warning-box {
+    margin-top: 1rem;
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    padding: 8px 12px;
+  }
+
+  .hibernate-btn {
+    margin-top: 1rem;
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: rgba(37, 40, 48, 0.5);
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--foreground);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  .hibernate-btn:hover { background: var(--bg-muted); }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 14px;
+    color: var(--foreground);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+  }
+  .toast.visible { transform: translateX(-50%) translateY(0); }
+
+  .scenario-bar {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 999;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .scenario-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 9999px;
+    border: 1px solid rgba(99,102,241,0.3);
+    background: var(--bg-card);
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    transition: all 0.15s;
+  }
+  .scenario-btn:hover { background: rgba(99,102,241,0.05); }
+
+  .hidden { display: none !important; }
+
+  .fade-in { animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  @media (max-width: 768px) {
+    .grid-2, .grid-2-lg { grid-template-columns: 1fr; }
+    body { padding: 20px; }
+    .scenario-bar { top: auto; bottom: 16px; right: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Scenario toggle (floating) -->
+<div class="scenario-bar">
+  <button class="scenario-btn" id="scenarioBtn" onclick="cycleScenario()">
+    Scenario: <span id="scenarioLabel">Morning return</span>
+  </button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Main content -->
+<div class="space-y-10" id="app"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SCENARIOS = [
+  { value: 'morning-return', label: 'Morning return' },
+  { value: 'all-clear', label: 'All clear' },
+  { value: 'first-run', label: 'First run (empty)' },
+  { value: 'single-blocked', label: 'Single blocked' },
+  { value: 'heavy-load', label: 'Heavy load' },
+  { value: 'experiments-only', label: 'Experiments only' },
+  { value: 'kb-only', label: 'KB only' },
+  { value: 'everything-broken', label: 'Everything broken' },
+];
+
+const RANGES = [
+  { value: 'auto', label: 'Since last visit' },
+  { value: '1h', label: 'Last hour' },
+  { value: '4h', label: 'Last 4 hours' },
+  { value: '12h', label: 'Last 12 hours' },
+  { value: '24h', label: 'Last 24 hours' },
+  { value: '3d', label: 'Last 3 days' },
+  { value: '7d', label: 'Last 7 days' },
+];
+
+const RANGE_MS = { '1h': 3600000, '4h': 14400000, '12h': 43200000, '24h': 86400000, '3d': 259200000, '7d': 604800000 };
+
+const state = {
+  scenario: 'morning-return',
+  range: 'auto',
+  spendPeriod: 'month',
+  blockedExpanded: false,
+  readyExpanded: false,
+  resultsExpanded: false,
+  learningsExpanded: false,
+  runningExpanded: false,
+  rangeDropdownOpen: false,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIXTURE DATA
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NOW = Date.now();
+const hoursAgo = (h) => new Date(NOW - h * 3600000).toISOString();
+const minsAgo = (m) => new Date(NOW - m * 60000).toISOString();
+
+const BLOCKED_ALL = [
+  {
+    id: 'blk-001', type: 'approval', agentName: 'codex-research',
+    blockedAt: hoursAgo(11.67), intent: 'Reading repo contents during "Daily morning research sync"',
+    detail: { primary: 'GET api.github.com', secondary: '/repos/acme-org/my-repo/contents/README.md' },
+    holdsComputeSlot: true, host: 'api.github.com',
+  },
+  {
+    id: 'blk-002', type: 'approval', agentName: 'claude-code-main',
+    blockedAt: minsAgo(4), intent: 'Publishing package during "Nightly release prep"',
+    detail: { primary: 'POST registry.npmjs.org', secondary: '/v2/@acme/shared-lib' },
+    holdsComputeSlot: true, host: 'registry.npmjs.org',
+  },
+  {
+    id: 'blk-003', type: 'budget_stop', agentName: 'rag-chunking-eval',
+    blockedAt: hoursAgo(6), intent: 'Stopped at $50 daily limit — $51.20 spent on "rag-chunking-256-vs-512"',
+    detail: { primary: '$51.20 of $50.00 daily limit', secondary: 'Limit reached at 11:42 PM yesterday' },
+    holdsComputeSlot: true,
+  },
+  {
+    id: 'blk-004', type: 'run_failure', agentName: 'claude-code-main',
+    blockedAt: hoursAgo(8), intent: '"Nightly test suite" failed after 42m',
+    detail: { primary: '3 tests failed in auth module', secondary: 'FAIL src/auth/session.test.ts — Expected token refresh to succeed' },
+    holdsComputeSlot: false,
+  },
+  {
+    id: 'blk-005', type: 'connection_error', agentName: 'incident-postmortems',
+    blockedAt: hoursAgo(6), intent: "incident-postmortems can't be reached — SSH key expired",
+    detail: { primary: 'git-clone: Failed to clone: SSH key expired', secondary: 'Last successful sync 2d ago' },
+    holdsComputeSlot: false,
+  },
+  {
+    id: 'blk-006', type: 'agent_error', agentName: 'gemini-data-pipeline',
+    blockedAt: hoursAgo(3), intent: 'gemini-data-pipeline stopped unexpectedly during "Data pipeline refresh"',
+    detail: { primary: 'Container exited with code 137 (OOMKilled)', secondary: 'Exceeded 512Mi memory limit' },
+    holdsComputeSlot: false,
+  },
+];
+
+const READY_ALL = [
+  { id: 'rdy-001', type: 'pr_ready', agentName: 'claude-code-main', title: 'PR #142: Refactor auth middleware', subtitle: '3 files changed, all tests passing', completedAt: hoursAgo(2), actionLabel: 'Review PR' },
+  { id: 'rdy-002', type: 'artifact_ready', agentName: 'codex-research', title: 'Weekly research digest', subtitle: '12 papers summarized, 3 flagged as high-relevance', completedAt: hoursAgo(3), actionLabel: 'View artifact' },
+  { id: 'rdy-003', type: 'suggestion', agentName: 'claude-code-main', title: 'Suggested: Enable streaming in /api/chat', subtitle: 'Would reduce TTFB from 2.1s to 340ms based on profiling', completedAt: hoursAgo(5), actionLabel: 'Review' },
+  { id: 'rdy-004', type: 'run_complete', agentName: 'gemini-data-pipeline', title: 'Data pipeline refresh completed', subtitle: 'Processed 2,847 records in 18m', completedAt: hoursAgo(7), actionLabel: 'View output' },
+];
+
+const RESULTS_ALL = [
+  { id: 'res-001', agentName: 'prompt-tuning-sweep', experimentName: 'GPT-4o vs Claude Sonnet on summarization', completedAt: hoursAgo(4), metric: 'ROUGE-L', baseline: 0.72, result: 0.81, unit: '', isSignificant: true },
+  { id: 'res-002', agentName: 'rag-chunking-eval', experimentName: '256 vs 512 token chunks', completedAt: hoursAgo(6), metric: 'Recall@10', baseline: 0.68, result: 0.73, unit: '', isSignificant: true },
+  { id: 'res-003', agentName: 'latency-benchmark', experimentName: 'Streaming vs batch inference', completedAt: hoursAgo(9), metric: 'P95 latency', baseline: 2100, result: 340, unit: 'ms', isSignificant: true },
+];
+
+const LEARNINGS_ALL = [
+  { id: 'lrn-001', agentName: 'product-docs', title: '3 new API deprecation notices', summary: 'Stripe API v2023-10 deprecated three endpoints we use in billing.ts. Migration guide available.', sourceCount: 3, indexedAt: hoursAgo(2) },
+  { id: 'lrn-002', agentName: 'incident-postmortems', title: 'New postmortem: Redis cluster failover', summary: 'Production Redis cluster failed over at 02:14 UTC. Root cause: memory fragmentation exceeding 80% threshold. Auto-remediation fired but was delayed by 4m.', sourceCount: 1, indexedAt: hoursAgo(5) },
+  { id: 'lrn-003', agentName: 'competitor-intel', title: 'Competitor launched new pricing tier', summary: 'Competitor X announced a "Teams" plan at $49/seat, undercutting our starter tier by 30%.', sourceCount: 2, indexedAt: hoursAgo(8) },
+];
+
+const RUNNING_ALL = [
+  { id: 'run-001', agentName: 'codex-research', task: 'Running daily morning research sync', startedAt: minsAgo(12), kind: 'Sandbox' },
+  { id: 'run-002', agentName: 'claude-code-main', task: 'Executing nightly release prep', startedAt: minsAgo(4), kind: 'Sandbox' },
+  { id: 'run-003', agentName: 'prompt-tuning-sweep', task: 'Evaluating run 14/20 — Claude Sonnet w/ CoT', startedAt: minsAgo(45), kind: 'Experiment' },
+  { id: 'run-004', agentName: 'product-docs', task: 'Indexing 3 new pages from Stripe docs', startedAt: minsAgo(2), kind: 'Knowledge Base' },
+];
+
+const SPEND_DATA = {
+  today: { total: 28.40, agents: [{ name: 'claude-code-main', usd: 12.50 }, { name: 'codex-research', usd: 8.20 }, { name: 'prompt-tuning-sweep', usd: 4.80 }, { name: 'rag-chunking-eval', usd: 2.10 }, { name: 'gemini-data-pipeline', usd: 0.80 }] },
+  week: { total: 198.60, agents: [{ name: 'claude-code-main', usd: 72.30 }, { name: 'codex-research', usd: 51.40 }, { name: 'prompt-tuning-sweep', usd: 38.90 }, { name: 'rag-chunking-eval', usd: 24.00 }, { name: 'gemini-data-pipeline', usd: 12.00 }] },
+  month: { total: 847.20, agents: [{ name: 'claude-code-main', usd: 312.50 }, { name: 'codex-research', usd: 218.40 }, { name: 'prompt-tuning-sweep', usd: 156.30 }, { name: 'rag-chunking-eval', usd: 98.00 }, { name: 'gemini-data-pipeline', usd: 62.00 }] },
+  year: { total: 9840.00, agents: [{ name: 'claude-code-main', usd: 3620.00 }, { name: 'codex-research', usd: 2540.00 }, { name: 'prompt-tuning-sweep', usd: 1820.00 }, { name: 'rag-chunking-eval', usd: 1140.00 }, { name: 'gemini-data-pipeline', usd: 720.00 }] },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCENARIO FILTERING
+// ═══════════════════════════════════════════════════════════════════════════
+
+function getBlocked() {
+  switch (state.scenario) {
+    case 'all-clear': case 'first-run': case 'experiments-only': case 'kb-only': return [];
+    case 'single-blocked': return [BLOCKED_ALL[0]];
+    case 'everything-broken': return BLOCKED_ALL;
+    case 'heavy-load': return BLOCKED_ALL.slice(0, 3);
+    default: return BLOCKED_ALL;
+  }
+}
+
+function getDigestSince() {
+  if (state.range !== 'auto') return new Date(Date.now() - RANGE_MS[state.range]).toISOString();
+  return new Date(Date.now() - 14400000).toISOString(); // default 4h
+}
+
+function getReady() {
+  const since = Date.parse(getDigestSince());
+  switch (state.scenario) {
+    case 'first-run': case 'everything-broken': case 'experiments-only': case 'kb-only': return [];
+    case 'single-blocked': return READY_ALL.slice(0, 1).filter(r => Date.parse(r.completedAt) >= since);
+    default: return READY_ALL.filter(r => Date.parse(r.completedAt) >= since);
+  }
+}
+
+function getResults() {
+  const since = Date.parse(getDigestSince());
+  switch (state.scenario) {
+    case 'first-run': case 'kb-only': case 'everything-broken': return [];
+    case 'single-blocked': case 'all-clear': return RESULTS_ALL.slice(0, 1).filter(r => Date.parse(r.completedAt) >= since);
+    default: return RESULTS_ALL.filter(r => Date.parse(r.completedAt) >= since);
+  }
+}
+
+function getLearnings() {
+  const since = Date.parse(getDigestSince());
+  switch (state.scenario) {
+    case 'first-run': case 'experiments-only': case 'everything-broken': return [];
+    case 'single-blocked': case 'all-clear': return LEARNINGS_ALL.slice(0, 1).filter(l => Date.parse(l.indexedAt) >= since);
+    default: return LEARNINGS_ALL.filter(l => Date.parse(l.indexedAt) >= since);
+  }
+}
+
+function getRunning() {
+  switch (state.scenario) {
+    case 'first-run': case 'everything-broken': return [];
+    case 'all-clear': return RUNNING_ALL.slice(0, 2);
+    case 'single-blocked': return RUNNING_ALL.slice(0, 1);
+    case 'experiments-only': return RUNNING_ALL.filter(r => r.kind === 'Experiment');
+    case 'kb-only': return RUNNING_ALL.filter(r => r.kind === 'Knowledge Base');
+    default: return RUNNING_ALL;
+  }
+}
+
+function getSummary() {
+  const blocked = getBlocked().length;
+  const ready = getReady().length;
+  const results = getResults().length;
+  const learnings = getLearnings().length;
+  const running = getRunning().length;
+  return { blocked, completed: ready, newArtifacts: results, newLearnings: learnings, running };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FORMATTERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function formatCost(usd) {
+  if (usd >= 1000) return '$' + usd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  if (usd >= 100) return '$' + usd.toFixed(0);
+  return '$' + usd.toFixed(2);
+}
+
+function formatDuration(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  if (h < 24) return rm > 0 ? h + 'h ' + rm + 'm' : h + 'h';
+  const d = Math.floor(h / 24);
+  const rh = h % 24;
+  return rh > 0 ? d + 'd ' + rh + 'h' : d + 'd';
+}
+
+function formatRelative(iso) {
+  const ms = Date.now() - Date.parse(iso);
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+function formatDigestSince(iso) {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffDays = Math.floor(diffMs / 86400000);
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (diffDays === 0 && date.getDate() === now.getDate()) return 'Since ' + time + ' today';
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+  if (date.getDate() === yesterday.getDate() && diffDays <= 1) return 'Since ' + time + ' yesterday';
+  if (diffDays < 7) {
+    const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
+    return 'Since ' + weekday + ' ' + time;
+  }
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  return 'Since ' + date.getDate() + ' ' + month;
+}
+
+function formatDelta(baseline, result, unit) {
+  if (baseline === 0) return result + unit;
+  const diff = result - baseline;
+  const pct = ((diff / baseline) * 100).toFixed(0);
+  const sign = diff > 0 ? '+' : '';
+  if (unit) return result + unit + ' (' + sign + pct + '%)';
+  return result.toFixed(2) + ' (' + sign + pct + '%)';
+}
+
+function getSeverity(blockedAt) {
+  const ms = Date.now() - Date.parse(blockedAt);
+  if (ms >= 28800000) return 'critical';
+  if (ms >= 14400000) return 'high';
+  if (ms >= 3600000) return 'elevated';
+  return 'normal';
+}
+
+const TYPE_LABELS = { approval: 'Approval', run_failure: 'Failed', connection_error: 'Connection', budget_stop: 'Budget', agent_error: 'Error' };
+const READY_TYPE_LABELS = { pr_ready: 'PR', artifact_ready: 'Artifact', suggestion: 'Suggestion', run_complete: 'Completed' };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  setTimeout(() => el.classList.remove('visible'), 2500);
+}
+
+function cycleScenario() {
+  const idx = SCENARIOS.findIndex(s => s.value === state.scenario);
+  const next = SCENARIOS[(idx + 1) % SCENARIOS.length];
+  state.scenario = next.value;
+  state.blockedExpanded = false;
+  state.readyExpanded = false;
+  state.resultsExpanded = false;
+  state.learningsExpanded = false;
+  state.runningExpanded = false;
+  document.getElementById('scenarioLabel').textContent = next.label;
+  render();
+}
+
+function setRange(r) {
+  state.range = r;
+  state.rangeDropdownOpen = false;
+  render();
+}
+
+function setSpendPeriod(p) {
+  state.spendPeriod = p;
+  render();
+}
+
+function toggleRangeDropdown(e) {
+  e.stopPropagation();
+  state.rangeDropdownOpen = !state.rangeDropdownOpen;
+  render();
+}
+
+function toggleBlocked() { state.blockedExpanded = !state.blockedExpanded; render(); }
+function toggleReady() { state.readyExpanded = !state.readyExpanded; render(); }
+function toggleResults() { state.resultsExpanded = !state.resultsExpanded; render(); }
+function toggleLearnings() { state.learningsExpanded = !state.learningsExpanded; render(); }
+function toggleRunning() { state.runningExpanded = !state.runningExpanded; render(); }
+
+// Close dropdown on outside click
+document.addEventListener('click', () => {
+  if (state.rangeDropdownOpen) { state.rangeDropdownOpen = false; render(); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════════════════
+
+function render() {
+  const digestSince = getDigestSince();
+  const blocked = getBlocked();
+  const ready = getReady();
+  const results = getResults();
+  const learnings = getLearnings();
+  const running = getRunning();
+  const summary = getSummary();
+  const spend = SPEND_DATA[state.spendPeriod];
+  const rangeLabel = RANGES.find(r => r.value === state.range)?.label || 'Since last visit';
+
+  // Summary line
+  const parts = [];
+  if (summary.blocked > 0) parts.push(summary.blocked + ' blocked');
+  if (summary.completed > 0) parts.push(summary.completed + ' completed');
+  if (summary.newArtifacts > 0) parts.push(summary.newArtifacts + ' result' + (summary.newArtifacts > 1 ? 's' : ''));
+  if (summary.newLearnings > 0) parts.push(summary.newLearnings + ' learning' + (summary.newLearnings > 1 ? 's' : ''));
+  if (summary.running > 0) parts.push(summary.running + ' running');
+  const summaryLine = parts.length > 0 ? parts.join(', ') : 'Nothing new';
+
+  // Spend
+  const dailyRate = state.spendPeriod === 'today' ? spend.total : state.spendPeriod === 'week' ? spend.total / 7 : state.spendPeriod === 'month' ? spend.total / 30 : spend.total / 365;
+  const maxSpend = spend.agents[0]?.usd || 1;
+
+  // Compute
+  const runningCount = running.length;
+  const blockedSlots = blocked.filter(b => b.holdsComputeSlot).length;
+  const totalSlots = Math.max(runningCount + 2 + 1, 6); // running + hibernating + errored
+  const maxSlots = 8;
+  const hibernating = 2;
+  const errored = state.scenario === 'everything-broken' ? 3 : 1;
+
+  // Blocked severity
+  const highestSeverity = blocked.length === 0 ? 'normal' : blocked.reduce((worst, item) => {
+    const s = getSeverity(item.blockedAt);
+    const order = ['normal', 'elevated', 'high', 'critical'];
+    return order.indexOf(s) > order.indexOf(worst) ? s : worst;
+  }, 'normal');
+  const badgeColor = (highestSeverity === 'high' || highestSeverity === 'critical') ? 'background:var(--danger);color:white' : highestSeverity === 'elevated' ? 'background:var(--warning);color:white' : 'background:var(--accent);color:white';
+
+  let html = '';
+
+  // ─── HEADER ───
+  html += `<header>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h1 style="font-size:28px;font-weight:600;letter-spacing:-0.65px;">Home</h1>
+      <div style="position:relative;">
+        <button class="range-btn" onclick="toggleRangeDropdown(event)">
+          ${rangeLabel}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <div class="dropdown ${state.rangeDropdownOpen ? 'open' : ''}">
+          ${RANGES.map(r => `<button class="dropdown-item ${state.range === r.value ? 'active' : ''}" onclick="event.stopPropagation();setRange('${r.value}')">${r.label}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+      <p style="font-size:14px;color:var(--muted-foreground);">${formatDigestSince(digestSince)}</p>
+      <span style="font-size:14px;color:var(--muted-foreground);">—</span>
+      <p style="font-size:14px;color:var(--foreground);">${summaryLine}</p>
+    </div>
+  </header>`;
+
+  // ─── SPEND + COMPUTE ───
+  html += `<div class="grid-2">`;
+
+  // Spend card
+  html += `<div class="card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.25rem;">
+      <div>
+        <p style="font-size:14px;color:var(--muted-foreground);margin-bottom:4px;">Spend</p>
+        <p style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-0.5px;">${formatCost(spend.total)}</p>
+        <p style="font-size:14px;color:var(--muted-foreground);margin-top:4px;">~${formatCost(dailyRate)}/day</p>
+      </div>
+      <div class="period-toggle">
+        ${['today','week','month','year'].map(p => `<button class="period-btn ${state.spendPeriod === p ? 'active' : ''}" onclick="setSpendPeriod('${p}')">${p === 'today' ? '1D' : p === 'week' ? '1W' : p === 'month' ? '1M' : '1Y'}</button>`).join('')}
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${spend.agents.map(a => {
+        const pct = (a.usd / maxSpend) * 100;
+        return `<div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:14px;">${a.name}</span>
+            <span style="font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;margin-left:8px;flex-shrink:0;">${formatCost(a.usd)}</span>
+          </div>
+          <div class="progress-bar" style="width:${pct}%;"></div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  // Compute card
+  html += `<div class="card" style="display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px;">
+      <p style="font-size:14px;color:var(--muted-foreground);">Compute resources</p>
+      <button class="link-btn" onclick="showToast('Request more slots — coming soon')">Request more</button>
+    </div>
+    <p style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-0.5px;margin-bottom:1.25rem;">${runningCount + hibernating + errored}/${maxSlots} slots</p>
+    <div class="slot-bar">
+      ${Array.from({length: maxSlots}, (_, i) => {
+        let color = 'var(--bg-muted)';
+        if (i < runningCount) color = 'var(--success)';
+        else if (i < runningCount + hibernating) color = 'var(--muted-foreground)';
+        else if (i < runningCount + hibernating + errored) color = 'var(--danger)';
+        return `<div class="slot" style="background:${color};"></div>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;flex:1;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted-foreground);"><span class="dot" style="background:var(--success);"></span> Running</span>
+        <span style="font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;">${runningCount}</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted-foreground);"><span class="dot" style="background:var(--muted-foreground);"></span> Hibernating</span>
+        <span style="font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;">${hibernating}</span>
+      </div>
+      ${errored > 0 ? `<div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted-foreground);"><span class="dot" style="background:var(--danger);"></span> Error</span>
+        <span style="font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;">${errored}</span>
+      </div>` : ''}
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted-foreground);"><span class="dot" style="background:var(--bg-muted);border:1px solid var(--border);"></span> Available</span>
+        <span style="font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;">${maxSlots - (runningCount + hibernating + errored)}</span>
+      </div>
+    </div>
+    ${blockedSlots > 0 ? `<div class="warning-box"><p style="font-size:14px;color:var(--warning);font-weight:500;">${blockedSlots} slot${blockedSlots > 1 ? 's' : ''} held by blocked agents</p></div>` : ''}
+    ${runningCount > 0 ? `<button class="hibernate-btn" onclick="showToast('Hibernating all unused agents...')">Hibernate all unused</button>` : ''}
+  </div>`;
+
+  html += `</div>`; // end grid-2
+
+  // ─── BLOCKED ───
+  html += `<div class="space-y-6"><section class="space-y-3">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <h2 style="font-size:18px;font-weight:600;">Blocked</h2>
+        ${blocked.length > 0 ? `<span class="badge" style="${badgeColor}">${blocked.length}</span>` : ''}
+      </div>
+      ${blocked.length > 0 ? `<button class="link-btn-muted link-btn" onclick="showToast('Marked all as seen')">Mark all seen</button>` : ''}
+    </div>`;
+
+  if (blocked.length === 0) {
+    html += `<div class="card" style="padding:2rem;text-align:center;"><p style="font-size:14px;color:var(--muted-foreground);">Nothing blocked. All agents are running clean.</p></div>`;
+  } else {
+    const visibleBlocked = state.blockedExpanded ? blocked : blocked.slice(0, 5);
+    visibleBlocked.forEach(item => {
+      const severity = getSeverity(item.blockedAt);
+      const blockedMs = Date.now() - Date.parse(item.blockedAt);
+      const borderColor = (severity === 'critical' || severity === 'high') ? 'var(--danger)' : severity === 'elevated' ? 'var(--warning)' : 'transparent';
+      const durColor = (severity === 'critical' || severity === 'high') ? 'color:var(--danger);font-weight:600' : severity === 'elevated' ? 'color:var(--warning);font-weight:500' : 'color:var(--muted-foreground);font-weight:500';
+      const overnightLabel = severity === 'critical' ? 'Blocked overnight — ' : '';
+
+      html += `<div class="card border-l-4" style="border-left-color:${borderColor};">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <button class="link-btn" style="color:var(--foreground);font-weight:500;" onclick="showToast('Navigate to ${item.agentName}')">${item.agentName}</button>
+          <span class="badge" style="background:var(--bg-muted);color:var(--muted-foreground);">${TYPE_LABELS[item.type]}</span>
+          <span style="margin-left:auto;font-size:14px;font-variant-numeric:tabular-nums;flex-shrink:0;${durColor}">${overnightLabel}Blocked ${formatDuration(blockedMs)}</span>
+        </div>
+        <p style="font-size:14px;margin-bottom:12px;">${item.intent}</p>
+        <div class="detail-block" style="margin-bottom:16px;">
+          <p>${item.detail.primary}</p>
+          ${item.detail.secondary ? `<p style="color:var(--muted-foreground);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.detail.secondary}</p>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${renderActions(item)}
+        </div>
+      </div>`;
+    });
+
+    if (blocked.length > 5) {
+      if (!state.blockedExpanded) {
+        html += `<button class="link-btn" onclick="toggleBlocked()">Show all ${blocked.length} blocked</button>`;
+      } else {
+        html += `<button class="link-btn" onclick="toggleBlocked()">Show fewer</button>`;
+      }
+    }
+  }
+  html += `</section>`;
+
+  // ─── READY ───
+  if (ready.length > 0) {
+    html += `<section class="space-y-3">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <h2 style="font-size:18px;font-weight:600;">Ready for you</h2>
+        <span class="badge" style="background:var(--accent);color:white;">${ready.length}</span>
+      </div>`;
+
+    const visibleReady = state.readyExpanded ? ready : ready.slice(0, 5);
+    visibleReady.forEach(item => {
+      html += `<div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <button class="link-btn" style="color:var(--foreground);font-weight:500;" onclick="showToast('Navigate to ${item.agentName}')">${item.agentName}</button>
+          <span class="badge" style="background:var(--bg-muted);color:var(--muted-foreground);">${READY_TYPE_LABELS[item.type]}</span>
+          <span style="margin-left:auto;font-size:14px;color:var(--muted-foreground);flex-shrink:0;">${formatRelative(item.completedAt)}</span>
+        </div>
+        <p style="font-size:14px;font-weight:500;margin-bottom:4px;">${item.title}</p>
+        ${item.subtitle ? `<p style="font-size:14px;color:var(--muted-foreground);margin-bottom:12px;">${item.subtitle}</p>` : ''}
+        <button class="btn btn-outline" onclick="showToast('${item.actionLabel}: ${item.title}')">${item.actionLabel}</button>
+      </div>`;
+    });
+
+    if (ready.length > 5) {
+      html += state.readyExpanded
+        ? `<button class="link-btn" onclick="toggleReady()">Show fewer</button>`
+        : `<button class="link-btn" onclick="toggleReady()">Show all ${ready.length}</button>`;
+    }
+    html += `</section>`;
+  }
+
+  html += `</div>`; // end space-y-6
+
+  // ─── RESULTS + LEARNINGS ───
+  if (results.length > 0 || learnings.length > 0) {
+    html += `<div class="grid-2-lg">`;
+
+    // Results
+    if (results.length > 0) {
+      html += `<section class="space-y-3">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <h2 style="font-size:18px;font-weight:600;">Results</h2>
+          <span class="badge" style="background:var(--accent);color:white;">${results.length}</span>
+        </div>`;
+
+      const visibleResults = state.resultsExpanded ? results : results.slice(0, 4);
+      visibleResults.forEach(item => {
+        const diff = item.result - item.baseline;
+        const improved = diff > 0;
+        html += `<div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <button class="link-btn" style="color:var(--foreground);font-weight:500;" onclick="showToast('Navigate to ${item.agentName}')">${item.agentName}</button>
+            ${item.isSignificant ? `<span class="badge" style="background:rgba(34,197,94,0.1);color:var(--success);">Significant</span>` : ''}
+            <span style="margin-left:auto;font-size:14px;color:var(--muted-foreground);flex-shrink:0;">${formatRelative(item.completedAt)}</span>
+          </div>
+          <p style="font-size:14px;font-weight:500;margin-bottom:4px;">${item.experimentName}</p>
+          <div style="display:flex;align-items:baseline;gap:12px;margin-top:8px;">
+            <span style="font-size:14px;color:var(--muted-foreground);">${item.metric}:</span>
+            <span style="font-size:14px;font-weight:500;font-variant-numeric:tabular-nums;color:${improved ? 'var(--success)' : 'var(--danger)'};">${formatDelta(item.baseline, item.result, item.unit)}</span>
+            <span style="font-size:14px;color:var(--muted-foreground);">from ${item.baseline}${item.unit}</span>
+          </div>
+        </div>`;
+      });
+
+      if (results.length > 4) {
+        html += state.resultsExpanded
+          ? `<button class="link-btn" onclick="toggleResults()">Show fewer</button>`
+          : `<button class="link-btn" onclick="toggleResults()">Show all ${results.length}</button>`;
+      }
+      html += `</section>`;
+    } else {
+      html += `<div></div>`;
+    }
+
+    // Learnings
+    if (learnings.length > 0) {
+      html += `<section class="space-y-3">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <h2 style="font-size:18px;font-weight:600;">Learnings</h2>
+          <span class="badge" style="background:var(--accent);color:white;">${learnings.length}</span>
+        </div>`;
+
+      const visibleLearnings = state.learningsExpanded ? learnings : learnings.slice(0, 4);
+      visibleLearnings.forEach(item => {
+        html += `<div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <button class="link-btn" style="color:var(--foreground);font-weight:500;" onclick="showToast('Navigate to ${item.agentName}')">${item.agentName}</button>
+            <span class="badge" style="background:var(--bg-muted);color:var(--muted-foreground);">${item.sourceCount} source${item.sourceCount !== 1 ? 's' : ''}</span>
+            <span style="margin-left:auto;font-size:14px;color:var(--muted-foreground);flex-shrink:0;">${formatRelative(item.indexedAt)}</span>
+          </div>
+          <p style="font-size:14px;font-weight:500;margin-bottom:4px;">${item.title}</p>
+          <p style="font-size:14px;color:var(--muted-foreground);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${item.summary}</p>
+        </div>`;
+      });
+
+      if (learnings.length > 4) {
+        html += state.learningsExpanded
+          ? `<button class="link-btn" onclick="toggleLearnings()">Show fewer</button>`
+          : `<button class="link-btn" onclick="toggleLearnings()">Show all ${learnings.length}</button>`;
+      }
+      html += `</section>`;
+    } else {
+      html += `<div></div>`;
+    }
+
+    html += `</div>`; // end grid-2-lg
+  }
+
+  // ─── RUNNING ───
+  if (running.length > 0) {
+    html += `<section class="space-y-3">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <h2 style="font-size:18px;font-weight:600;">Running now</h2>
+        <span class="badge" style="background:var(--success);color:white;">${running.length}</span>
+      </div>
+      <div class="running-list">`;
+
+    const visibleRunning = state.runningExpanded ? running : running.slice(0, 5);
+    visibleRunning.forEach(item => {
+      const elapsed = Date.now() - Date.parse(item.startedAt);
+      html += `<div class="running-row" onclick="showToast('Navigate to ${item.agentName}')">
+        <span class="dot dot pulse" style="background:var(--success);margin-top:6px;width:8px;height:8px;flex-shrink:0;"></span>
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.agentName}</span>
+            <span class="badge" style="background:var(--bg-muted);color:var(--muted-foreground);">${item.kind}</span>
+          </div>
+          <p style="font-size:14px;color:var(--muted-foreground);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.task}</p>
+        </div>
+        <span style="font-size:14px;font-variant-numeric:tabular-nums;color:var(--muted-foreground);flex-shrink:0;margin-top:2px;">${formatDuration(elapsed)}</span>
+      </div>`;
+    });
+
+    html += `</div>`;
+
+    if (running.length > 5) {
+      html += state.runningExpanded
+        ? `<button class="link-btn" onclick="toggleRunning()">Show fewer</button>`
+        : `<button class="link-btn" onclick="toggleRunning()">Show all ${running.length} running</button>`;
+    }
+    html += `</section>`;
+  }
+
+  document.getElementById('app').innerHTML = html;
+}
+
+function renderActions(item) {
+  switch (item.type) {
+    case 'approval':
+      return `
+        <button class="btn btn-primary" onclick="showToast('Allowed: ${item.detail.primary}')">Allow</button>
+        <button class="btn btn-danger-outline" onclick="showToast('Denied: ${item.detail.primary}')">Deny</button>
+        ${item.host ? `<span style="font-size:14px;color:var(--muted-foreground);margin-left:4px;">Always allow ${item.host} for this agent</span>` : ''}`;
+    case 'run_failure':
+      return `
+        <button class="btn btn-primary" onclick="showToast('Retrying run...')">Retry run</button>
+        <button class="btn btn-outline" onclick="showToast('Opening logs...')">View logs</button>
+        <button class="link-btn link-btn-muted" style="margin-left:4px;" onclick="showToast('Dismissed')">Dismiss</button>`;
+    case 'connection_error':
+      return `
+        <button class="btn btn-primary" onclick="showToast('Reconnecting...')">Reconnect</button>
+        <button class="btn btn-outline" onclick="showToast('Opening logs...')">View logs</button>
+        <button class="link-btn link-btn-muted" style="margin-left:4px;" onclick="showToast('Dismissed')">Dismiss</button>`;
+    case 'budget_stop':
+      return `
+        <button class="btn btn-primary" onclick="showToast('Raising limit and resuming...')">Raise limit and resume</button>
+        <button class="btn btn-outline" onclick="showToast('Left stopped')">Leave stopped</button>
+        <button class="link-btn link-btn-muted" style="margin-left:4px;" onclick="showToast('Opening spend view...')">View spend</button>`;
+    case 'agent_error':
+      return `
+        <button class="btn btn-primary" onclick="showToast('Restarting agent...')">Restart agent</button>
+        <button class="btn btn-outline" onclick="showToast('Opening logs...')">View logs</button>
+        <button class="link-btn link-btn-muted" style="margin-left:4px;" onclick="showToast('Dismissed')">Dismiss</button>`;
+    default: return '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE TICK (update durations every 30s)
+// ═══════════════════════════════════════════════════════════════════════════
+setInterval(render, 30000);
+
+// Initial render
+render();
+</script>
+</body>
+</html>

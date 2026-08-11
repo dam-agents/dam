@@ -1,26 +1,10 @@
-import {
-  Idea,
-  Play,
-  Renew,
-  Security,
-  Time,
-} from "@carbon/icons-react";
-import { useState, useEffect } from "react";
+import { Idea, Play, Renew, Security, Time } from "@carbon/icons-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type LayoutOption =
-  | "A"
-  | "B"
-  | "C"
-  | "D"
-  | "E"
-  | "F"
-  | "G"
-  | "H"
-  | "I"
-  | "J";
+type LayoutOption = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J";
 
 const OPTIONS: { id: LayoutOption; label: string; description: string }[] = [
   {
@@ -354,10 +338,7 @@ function OptionF() {
   const [visibleCount, setVisibleCount] = useState(1);
   useEffect(() => {
     if (visibleCount >= TIPS.length) return;
-    const timer = setTimeout(
-      () => setVisibleCount((c) => c + 1),
-      2500,
-    );
+    const timer = setTimeout(() => setVisibleCount((c) => c + 1), 2500);
     return () => clearTimeout(timer);
   }, [visibleCount]);
 

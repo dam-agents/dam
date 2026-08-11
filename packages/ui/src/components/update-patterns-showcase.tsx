@@ -1,5 +1,5 @@
-import { GitCompare, RefreshCw, WifiOff } from "lucide-react";
 import { Renew } from "@carbon/icons-react";
+import { GitCompare, RefreshCw, WifiOff } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,8 +34,8 @@ export function UpdatePatternsShowcase() {
             <strong className="font-semibold text-foreground">
               2 sandboxes are out of date.
             </strong>{" "}
-            claude-code-main and gemini-data-pipeline changed upstream since they
-            were installed.
+            claude-code-main and gemini-data-pipeline changed upstream since
+            they were installed.
           </p>
           <Button
             variant="ghost"
@@ -167,7 +167,10 @@ export function UpdatePatternsShowcase() {
               Data pipeline automation with Gemini CLI
             </p>
           </div>
-          <Badge variant="warning" title="skills: failed to install 'lint-rules'">
+          <Badge
+            variant="warning"
+            title="skills: failed to install 'lint-rules'"
+          >
             1 install failed
           </Badge>
         </div>

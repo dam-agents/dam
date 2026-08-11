@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { ListSkeleton } from "@/components/list-skeleton";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,6 +12,28 @@ import { HomeHeader } from "../components/home-header.js";
 import { ReadySection } from "../components/ready-section.js";
 import { ResultsSection } from "../components/results-section.js";
 import { RunningSection } from "../components/running-section.js";
+
+class SectionBoundary extends Component<
+  { name: string; children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error)
+      return (
+        <div style={{ padding: 16, border: "1px solid red", borderRadius: 8, margin: "8px 0" }}>
+          <strong style={{ color: "red" }}>[{this.props.name}] crashed:</strong>
+          <pre style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>
+            {this.state.error.message}
+          </pre>
+        </div>
+      );
+    return this.props.children;
+  }
+}
 import {
   formatCost,
   type SpendPeriod,
@@ -51,26 +73,34 @@ export function HomeView() {
     <div className="space-y-10">
       <HomeHeader />
 
-      {/* Usage — always visible at top */}
+      {/* Blocked — most urgent, shown first */}
+      <SectionBoundary name="BlockedSection">
+        <BlockedSection />
+      </SectionBoundary>
+
+      {/* Usage */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SpendChart agents={agents} />
         <ComputeResources agents={agents} />
       </div>
 
-      {/* Needs you */}
-      <div className="space-y-6">
-        <BlockedSection />
+      {/* Running now — filterable dashboard */}
+      <SectionBoundary name="RunningSection">
+        <RunningSection />
+      </SectionBoundary>
+
+      {/* Outputs ready for review */}
+      <SectionBoundary name="ReadySection">
         <ReadySection />
-      </div>
+      </SectionBoundary>
 
       {/* What happened */}
       <ResultsSection />
 
-      {/* Running now */}
-      <RunningSection />
-
-      {/* Recent decisions */}
-      <ApprovalHistorySection />
+      {/* Recent approval decisions */}
+      <SectionBoundary name="ApprovalHistorySection">
+        <ApprovalHistorySection />
+      </SectionBoundary>
     </div>
   );
 }

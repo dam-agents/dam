@@ -106,7 +106,10 @@ export async function openConnection(
       send() {},
       readyState: WebSocket.OPEN,
     });
-    const handler = { get: (_: object, prop: string) => prop === "then" ? undefined : async () => ({}) };
+    const handler = {
+      get: (_: object, prop: string) =>
+        prop === "then" ? undefined : async () => ({}),
+    };
     const conn = new Proxy({}, handler) as unknown as ClientSideConnection;
     return { connection: conn, ws: noop };
   }

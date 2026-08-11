@@ -1,10 +1,7 @@
 import { Close } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  StartingOptions,
-  type StartingOption,
-} from "@/mock/variant-card";
+import { type StartingOption, StartingOptions } from "@/mock/variant-card";
 
 import { DialogBody, DialogFooter, DialogHeader, Modal } from "./modal.js";
 

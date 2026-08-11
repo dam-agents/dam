@@ -213,7 +213,6 @@ export function SettingsView() {
                 Version {appVersion}
               </div>
             )}
-
           </div>
         )}
 

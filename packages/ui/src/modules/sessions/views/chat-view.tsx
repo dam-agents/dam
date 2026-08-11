@@ -55,10 +55,6 @@ import {
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
-import {
-  OpenInIdeDialog,
-  OpenInTerminalDialog,
-} from "../../sandboxes/components/open-in-menu.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
@@ -71,6 +67,10 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import {
+  OpenInIdeDialog,
+  OpenInTerminalDialog,
+} from "../../sandboxes/components/open-in-menu.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
@@ -262,8 +262,7 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
   // Feature-discovery tooltip for connections
   const [connectionsTipDismissed, setConnectionsTipDismissed] = useState(false);
   const isKbChat = view === "knowledge-base-chat";
-  const isExperimentChat =
-    agentView !== null && isExperimentSandbox(agentView);
+  const isExperimentChat = agentView !== null && isExperimentSandbox(agentView);
   const showConnectionsTip =
     !connectionsTipDismissed &&
     (isKbChat || isExperimentChat) &&
@@ -304,9 +303,9 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
   // tokens) by re-pinning — it never toggles stick itself.
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  const [openInDialog, setOpenInDialog] = useState<
-    "terminal" | "ide" | null
-  >(null);
+  const [openInDialog, setOpenInDialog] = useState<"terminal" | "ide" | null>(
+    null,
+  );
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -736,9 +735,7 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
                             <div className="mt-5 flex items-center justify-center gap-2">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  openAgentTerminal(selectedAgent)
-                                }
+                                onClick={() => openAgentTerminal(selectedAgent)}
                                 className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[14px] font-medium text-foreground hover:bg-muted/40"
                               >
                                 <TerminalIcon size={16} />

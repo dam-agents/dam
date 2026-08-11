@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Book, Chemistry, ContainerSoftware } from "@carbon/icons-react";
 
@@ -24,20 +24,31 @@ function useTick() {
   }, []);
 }
 
+type RunningFilter = "all" | "sandbox" | "experiment" | "knowledge-base";
+
+const FILTER_TABS: { value: RunningFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "sandbox", label: "Coding Agents" },
+  { value: "experiment", label: "Experiments" },
+  { value: "knowledge-base", label: "Knowledge Bases" },
+];
+
 export function RunningSection() {
   const { data: items } = useRunningItems();
-  const [expanded, setExpanded] = useState(false);
+  const [filter, setFilter] = useState<RunningFilter>("all");
   useTick();
 
   const list = items ?? [];
+
+  const filtered = useMemo(
+    () => filter === "all" ? list : list.filter((i) => i.kind === filter),
+    [list, filter],
+  );
+
   if (list.length === 0) return null;
 
-  const current = list[0];
-  if (!current) return null;
-  const remaining = list.length - 1;
-
   return (
-    <section className="space-y-3" aria-label="Running now">
+    <section className="space-y-4" aria-label="Running now">
       <div className="flex items-center gap-2">
         <h2 className="text-[18px] font-semibold text-foreground">Running now</h2>
         <Badge variant="default" className="bg-success text-white hover:bg-success">
@@ -45,34 +56,42 @@ export function RunningSection() {
         </Badge>
       </div>
 
-      {expanded ? (
+      <div className="flex gap-1 border-b border-border">
+        {FILTER_TABS.map((tab) => {
+          const count = tab.value === "all"
+            ? list.length
+            : list.filter((i) => i.kind === tab.value).length;
+          if (tab.value !== "all" && count === 0) return null;
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setFilter(tab.value)}
+              className={cn(
+                "px-3 py-2 text-[14px] font-medium border-b-2 -mb-px transition-colors",
+                filter === tab.value
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {tab.label}
+              {count > 0 && (
+                <span className="ml-1.5 text-muted-foreground">{count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-[14px] text-muted-foreground py-4">
+          No {FILTER_TABS.find((t) => t.value === filter)?.label.toLowerCase()} running.
+        </p>
+      ) : (
         <div className="space-y-2">
-          {list.map((item) => (
+          {filtered.map((item) => (
             <RunningCard key={item.id} item={item} />
           ))}
-        </div>
-      ) : (
-        <div>
-          <div className={cn("relative", remaining > 0 && "mb-5")}>
-            {remaining >= 2 && (
-              <div className="absolute -bottom-3 left-3 right-3 h-3 rounded-b-lg border border-t-0 border-border bg-card/40" />
-            )}
-            {remaining >= 1 && (
-              <div className="absolute -bottom-1.5 left-1.5 right-1.5 h-3 rounded-b-lg border border-t-0 border-border bg-card/70" />
-            )}
-            <div className="relative z-10">
-              <RunningCard item={current} />
-            </div>
-          </div>
-          {remaining > 0 && (
-            <button
-              type="button"
-              onClick={() => setExpanded(true)}
-              className="text-[14px] text-muted-foreground hover:text-foreground transition-colors pt-1"
-            >
-              +{remaining} more running
-            </button>
-          )}
         </div>
       )}
     </section>

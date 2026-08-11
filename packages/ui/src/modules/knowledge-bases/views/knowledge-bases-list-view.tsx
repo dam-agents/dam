@@ -29,9 +29,7 @@ export function KnowledgeBasesListView() {
           title="Knowledge bases"
           description="A knowledge base builds and maintains a wiki in its workspace. Open one to chat — ask questions, add context, and let it grow."
           actions={
-            <Button
-              onClick={() => navigateToCreateSandbox("knowledge-base")}
-            >
+            <Button onClick={() => navigateToCreateSandbox("knowledge-base")}>
               Create knowledge base
             </Button>
           }

@@ -3,7 +3,6 @@ import { FlaskConical } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -12,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";

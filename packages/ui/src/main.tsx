@@ -60,4 +60,6 @@ async function main() {
   );
 }
 
-main();
+main().catch((err) => {
+  document.getElementById("root")!.innerHTML = `<pre style="padding:32px;color:red;font-size:14px">Boot crash:\n${err?.message}\n${err?.stack}</pre>`;
+});

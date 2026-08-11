@@ -1,4 +1,4 @@
-import { Book, Chemistry, ContainerSoftware, Close } from "@carbon/icons-react";
+import { Book, Chemistry, Close, ContainerSoftware } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";

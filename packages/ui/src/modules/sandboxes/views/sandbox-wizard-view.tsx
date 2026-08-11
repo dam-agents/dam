@@ -116,7 +116,6 @@ export function SandboxWizardView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot.step]);
 
-
   const goToStep = (step: WizardStep) => update({ step });
 
   const registryFilled = registryFilledCount(registryCredential);
