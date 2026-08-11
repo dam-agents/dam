@@ -22,9 +22,14 @@ import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
 
-function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
+function wsStream(url: string): Promise<{
+  stream: Stream;
+  ws: WebSocket;
+  closeReason: () => string | null;
+}> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
+    let closeReason: string | null = null;
     const timer = setTimeout(() => {
       ws.close();
       reject(new Error("WebSocket connect timeout"));
@@ -34,7 +39,11 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
           ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));
-          ws.onclose = () => {
+          ws.onclose = (e) => {
+            // Before `controller.close()`: closing the stream can settle the
+            // connection's `closed` promise, and whoever reads the reason off
+            // that must not find it unset.
+            closeReason = e.reason || null;
             try {
               controller.close();
             } catch {}
@@ -54,7 +63,11 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
           ws.close();
         },
       });
-      resolve({ stream: { readable, writable }, ws });
+      resolve({
+        stream: { readable, writable },
+        ws,
+        closeReason: () => closeReason,
+      });
     };
     ws.onerror = reject;
   });
@@ -150,14 +163,9 @@ export async function openConnection(
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean },
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(
+  const { stream, ws, closeReason } = await wsStream(
     await wsUrl(agentId, opts?.passive ?? false),
   );
-  // addEventListener, not onclose: wsStream owns that slot for the stream.
-  let closeReason: string | null = null;
-  ws.addEventListener("close", (e) => {
-    closeReason = e.reason || null;
-  });
   const raw = new ClientSideConnection(
     () => ({
       async requestPermission(params: RequestPermissionRequest) {
@@ -226,5 +234,5 @@ export async function openConnection(
     }),
     stream,
   );
-  return { connection: withCloseRace(raw, () => closeReason), ws };
+  return { connection: withCloseRace(raw, closeReason), ws };
 }
