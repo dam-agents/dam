@@ -78,4 +78,42 @@ describe("acp-runtime: session isolation", () => {
     expect(transcriptOf(alice)).toEqual([`${ALICE_SESSION}: all green`]);
     expect(transcriptOf(bob)).toEqual([`${BOB_SESSION}: a k8s platform`]);
   });
+
+  it("should give a client that only lists sessions its answer and nothing else", () => {
+    const world = createWorld();
+
+    // Alice is mid-turn and the agent has stopped to ask her something.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: ALICE_SESSION });
+    alice.send(frames.prompt(2, ALICE_SESSION, "delete the stale branches"));
+
+    // The session list is its own connection: the sidebar opens one, reads
+    // across sessions, and closes it, on a poll, while other people's turns
+    // are running. It names no session, so it is connected without watching
+    // anything.
+    const sidebar = world.connect();
+    sidebar.send(frames.listSessions(1));
+    world.harness().replyTo("session/list", {
+      sessions: [{ sessionId: ALICE_SESSION }, { sessionId: BOB_SESSION }],
+    });
+
+    world.harness().emit(frames.requestPermission(77, ALICE_SESSION));
+    world.harness().emit(frames.agentMessage(ALICE_SESSION, "deleted 3"));
+
+    // Knowing a conversation's name is not the same as being in it. The
+    // sidebar gets the list it asked for and no session traffic at all, so a
+    // background poll can never pop a dialog for a conversation nobody has
+    // open, or mark one as read on the way past.
+    expect(sidebar.reply(1)?.result).toEqual({
+      sessions: [{ sessionId: ALICE_SESSION }, { sessionId: BOB_SESSION }],
+    });
+    expect(sidebar.saw("session/request_permission")).toEqual([]);
+    expect(transcriptOf(sidebar)).toEqual([]);
+
+    // And the prompt did reach the person whose turn it interrupted, so the
+    // assertions above are not green just because it went nowhere.
+    expect(alice.saw("session/request_permission")).toHaveLength(1);
+    expect(transcriptOf(alice)).toEqual([`${ALICE_SESSION}: deleted 3`]);
+  });
 });

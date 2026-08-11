@@ -96,6 +96,8 @@ export interface Client {
   send(frame: object): void;
   /** Frames this client received, filtered by method. */
   saw(method: string): Frame[];
+  /** The response to one of this client's own requests, by the id it used. */
+  reply(id: number): Frame | undefined;
   /** Close code and reason, in the order they arrived. */
   closes: { code?: number; reason?: string }[];
   isOpen(): boolean;
@@ -140,6 +142,11 @@ function createClient(): { client: Client; channel: ClientChannel } {
       return sent
         .map((line) => JSON.parse(line) as Frame)
         .filter((frame) => frame.method === method);
+    },
+    reply(id) {
+      return sent
+        .map((line) => JSON.parse(line) as Frame)
+        .find((frame) => frame.method === undefined && frame.id === id);
     },
     closes,
     isOpen: () => open,
@@ -226,6 +233,20 @@ export const frames = {
     id,
     method: "session/prompt",
     params: { sessionId, prompt: [{ type: "text", text }] },
+  }),
+  /** The agent stopping to ask before it does something. Harness → client. */
+  requestPermission: (id: number, sessionId: string, tool = "bash") => ({
+    jsonrpc: "2.0",
+    id,
+    method: "session/request_permission",
+    params: {
+      sessionId,
+      toolCall: { toolCallId: `tc-${id}`, title: tool },
+      options: [
+        { optionId: "allow", name: "Allow", kind: "allow_once" },
+        { optionId: "reject", name: "Reject", kind: "reject_once" },
+      ],
+    },
   }),
   /** What the harness streams back as the agent talks. */
   agentMessage: (sessionId: string, text: string) => ({
