@@ -26,9 +26,12 @@ export interface TokenSpendByModel {
 }
 
 /** Spend rolled up per agent over the window. Grouped on the trusted,
- *  gateway-stamped agent id; `agentName` is the latest `platform.agent.name`
- *  the telemetry carried in range, so a since-deleted agent keeps a readable
- *  name. The name is display-only — the id stays the key. */
+ *  gateway-stamped agent id; `agentName` comes from the platform agent registry
+ *  for an agent that still exists, and falls back to the latest
+ *  `platform.agent.name` the telemetry carried in range so a since-deleted agent
+ *  keeps a readable name. The name is display-only — the id stays the key.
+ *  Rows that resolve to an Invocation target rather than an agent are left out
+ *  entirely; their spend still counts in the other rollups. */
 export interface SpendByAgent {
   agentId: string;
   agentName: string;
