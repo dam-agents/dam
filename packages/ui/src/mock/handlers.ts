@@ -2,7 +2,12 @@ import { http, HttpResponse } from "msw";
 
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
-import { artifactFolders, artifacts } from "./data/artifacts.js";
+import {
+  artifactContents,
+  artifactFolders,
+  artifactPreviews,
+  artifacts,
+} from "./data/artifacts.js";
 import { brand } from "./data/brand.js";
 import { budgetsReserved } from "./data/budgets.js";
 import { channelsAvailable } from "./data/channels.js";
@@ -144,7 +149,51 @@ export const handlers = [
     const procedures = pathAfterTrpc.split(",");
     const fixtures = getFixtures();
 
-    const results = procedures.map((proc) => {
+    const getAgentInput = (idx: number): Record<string, unknown> | undefined => {
+      try {
+        const raw = url.searchParams.get("input");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed[String(idx)]?.json) return parsed[String(idx)].json;
+          if (parsed.json && procedures.length === 1) return parsed.json;
+          if (parsed[String(idx)] && !parsed[String(idx)].json) return parsed[String(idx)];
+          if (parsed.id && procedures.length === 1) return parsed;
+        }
+      } catch { /* ignore */ }
+      return undefined;
+    };
+
+    const results = procedures.map((proc, idx) => {
+      const inputObj = getAgentInput(idx);
+
+      if (proc === "artifactLibrary.get") {
+        const id = inputObj?.id as string | undefined;
+        const art = id ? artifacts.find((a) => a.id === id) : artifacts[0];
+        return { result: { data: art ?? null } };
+      }
+      if (proc === "artifactLibrary.getContent") {
+        const id = inputObj?.id as string | undefined;
+        const content = id ? (artifactContents[id] ?? null) : null;
+        return { result: { data: content } };
+      }
+      if (proc === "artifactLibrary.preview") {
+        const id = inputObj?.id as string | undefined;
+        const html = id ? (artifactPreviews[id] ?? null) : null;
+        return { result: { data: html } };
+      }
+      if (proc === "artifactLibrary.listVersions") {
+        const id = inputObj?.id as string | undefined;
+        const art = id ? artifacts.find((a) => a.id === id) : artifacts[0];
+        if (art) {
+          const versions = Array.from({ length: art.version }, (_, i) => ({
+            version: i + 1,
+            createdAt: art.createdAt,
+          }));
+          return { result: { data: versions } };
+        }
+        return { result: { data: [] } };
+      }
+
       const data = fixtures[proc];
       if (data !== undefined) {
         return { result: { data } };
@@ -162,7 +211,57 @@ export const handlers = [
     const procedures = procedurePath.split(",");
     const fixtures = getFixtures();
 
-    const results = procedures.map((proc) => {
+    // tRPC batch input: ?input={"0":{"json":{...}}} or per-index ?input[0]=...
+    const getInputForIndex = (idx: number): Record<string, unknown> | undefined => {
+      try {
+        const raw = url.searchParams.get("input");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          // Batch format: {"0": {"json": {...}}}
+          if (parsed[String(idx)]?.json) return parsed[String(idx)].json;
+          // Single non-batch: {"json": {...}}
+          if (parsed.json && procedures.length === 1) return parsed.json;
+          // Direct object (no json wrapper): {"0": {"id": "..."}}
+          if (parsed[String(idx)] && !parsed[String(idx)].json) return parsed[String(idx)];
+          // Direct single: {"id": "..."}
+          if (parsed.id && procedures.length === 1) return parsed;
+        }
+      } catch { /* ignore */ }
+      return undefined;
+    };
+
+    const results = procedures.map((proc, idx) => {
+      const inputObj = getInputForIndex(idx);
+
+      // Dynamic artifact lookups
+      if (proc === "artifactLibrary.get") {
+        const id = inputObj?.id as string | undefined;
+        const art = id ? artifacts.find((a) => a.id === id) : artifacts[0];
+        return { result: { data: art ?? null } };
+      }
+      if (proc === "artifactLibrary.getContent") {
+        const id = inputObj?.id as string | undefined;
+        const content = id ? (artifactContents[id] ?? null) : null;
+        return { result: { data: content } };
+      }
+      if (proc === "artifactLibrary.preview") {
+        const id = inputObj?.id as string | undefined;
+        const html = id ? (artifactPreviews[id] ?? null) : null;
+        return { result: { data: html } };
+      }
+      if (proc === "artifactLibrary.listVersions") {
+        const id = inputObj?.id as string | undefined;
+        const art = id ? artifacts.find((a) => a.id === id) : artifacts[0];
+        if (art) {
+          const versions = Array.from({ length: art.version }, (_, i) => ({
+            version: i + 1,
+            createdAt: art.createdAt,
+          }));
+          return { result: { data: versions } };
+        }
+        return { result: { data: [] } };
+      }
+
       const data = fixtures[proc];
       if (data !== undefined) {
         return { result: { data } };

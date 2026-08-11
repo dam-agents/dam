@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { WelcomeModal } from "../components/welcome-modal.js";
+import {
+  getActiveScenario,
+  SCENARIO_OPTIONS,
+  setActiveScenario,
+  subscribeScenario,
+} from "../modules/home/home-scenarios.js";
 import { queryClient } from "../query-client.js";
 import { mockEmpty, setMockEmpty } from "./handlers.js";
 
@@ -22,11 +28,22 @@ export function MockToggle() {
   const [empty, setEmpty] = useState(mockEmpty);
   const [showWelcome, setShowWelcome] = useState(false);
   const [codeStyleIdx, setCodeStyleIdx] = useState(0);
-
+  const scenario = useSyncExternalStore(
+    subscribeScenario,
+    getActiveScenario,
+    getActiveScenario,
+  );
   const toggle = () => {
     const next = !empty;
     setEmpty(next);
     setMockEmpty(next);
+    queryClient.invalidateQueries();
+  };
+
+  const cycleScenario = () => {
+    const idx = SCENARIO_OPTIONS.findIndex((o) => o.value === scenario);
+    const next = SCENARIO_OPTIONS[(idx + 1) % SCENARIO_OPTIONS.length]!;
+    setActiveScenario(next.value);
     queryClient.invalidateQueries();
   };
 
@@ -44,6 +61,13 @@ export function MockToggle() {
   return (
     <>
       <div className="fixed top-4 right-4 z-[9999] flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={cycleScenario}
+          className="flex items-center gap-2 rounded-full border border-accent/30 bg-card px-4 py-2 text-[14px] font-medium text-accent shadow-lg transition-colors hover:bg-accent/5"
+        >
+          Scenario: {SCENARIO_OPTIONS.find((o) => o.value === scenario)?.label}
+        </button>
         <button
           type="button"
           onClick={cycleCodeStyle}

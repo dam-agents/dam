@@ -75,7 +75,7 @@ export function IconRail({
     navigate: () => setView("home"),
   };
   const sandboxes: Destination = {
-    label: "Sandboxes",
+    label: "Coding agents",
     icon: ContainerSoftware,
     active: view === "list",
     badge: 0,
@@ -215,15 +215,11 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[
-            sandboxes,
-            experiments,
-            knowledgeBases,
-            artifacts,
-            inbox,
-          ].map((destination) => (
-            <BottomBarItem key={destination.label} {...destination} />
-          ))}
+          {[sandboxes, experiments, knowledgeBases, artifacts, inbox].map(
+            (destination) => (
+              <BottomBarItem key={destination.label} {...destination} />
+            ),
+          )}
         </nav>
       )}
     </>
