@@ -28,12 +28,20 @@ describe("acp-runtime: connecting", () => {
     // A sandbox with nobody connected runs no harness at all.
     expect(world.harnessCount()).toBe(0);
 
-    world.connect();
+    const first = world.connect();
+    first.send(frames.initialize(1));
     expect(world.harnessCount()).toBe(1);
 
-    // A colleague opening the same sandbox joins the running one. A second
-    // harness would mean a second ~300MB subprocess and a split conversation.
-    world.connect();
+    // A colleague opens the same sandbox. Their traffic lands on the harness
+    // that is already running: a second one would mean a second ~300MB
+    // subprocess and a conversation split across two of them.
+    const second = world.connect();
+    second.send(frames.listSessions(2));
+
+    expect(world.harness().receivedMethods()).toEqual([
+      "initialize",
+      "session/list",
+    ]);
     expect(world.harnessCount()).toBe(1);
   });
 
@@ -47,6 +55,7 @@ describe("acp-runtime: connecting", () => {
 
     // Someone opens a new tab against a sandbox whose harness is gone. They
     // get a closed socket with a reason, not a connection that hangs.
+    const harnessesBeforeReconnect = world.harnessCount();
     const late = world.connect();
 
     expect(late.isOpen()).toBe(false);
@@ -54,8 +63,10 @@ describe("acp-runtime: connecting", () => {
       code: 1011,
       reason: "agent process is not running",
     });
-    // The pod does not resurrect itself; that is the controller's job.
-    expect(world.harnessCount()).toBe(1);
+    // Death is a one-way latch, so connecting does not spawn a replacement
+    // the way it spawned the first one. Recovering the pod is the
+    // controller's job, not the next client's.
+    expect(world.harnessCount()).toBe(harnessesBeforeReconnect);
   });
 
   it("should hold a client's messages until its config arrives, then replay them in order", () => {
