@@ -13,6 +13,7 @@ import type {
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
 import { OverlayFrame } from "./overlay-frame.js";
+import { StartupTip } from "./startup-tip.js";
 
 interface OverlayCopy {
   /** Omitted for transient states, where a `Spinner` stands in for the icon. */
@@ -78,6 +79,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
+        <StartupTip sandbox={name} />
       </OverlayFrame>
     );
   }
@@ -95,6 +97,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
+        <StartupTip sandbox={agent.name} />
       </OverlayFrame>
     );
   }
@@ -118,6 +121,7 @@ export function AgentUnavailableOverlay({
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      {!Icon && <StartupTip sandbox={agent.name} />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
