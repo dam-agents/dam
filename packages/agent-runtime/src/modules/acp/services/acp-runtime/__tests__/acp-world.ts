@@ -31,6 +31,12 @@ export interface Harness {
   receivedMethods(): string[];
   /** Answer the most recent request of this method, matching its id. */
   replyTo(method: string, result?: unknown): void;
+  /**
+   * Answer the request of this method that carries this session id. Picking
+   * the request by what it says lets a scenario answer two of them out of
+   * order, which `replyTo` (newest wins) cannot.
+   */
+  replyToSession(method: string, sessionId: string, result?: unknown): void;
   /** Write a frame to stdout, as the harness would. */
   emit(frame: object): void;
   /** Push a raw line as if the harness wrote it to stdout. */
@@ -77,6 +83,19 @@ function createHarness(): { harness: Harness; process: AgentProcess } {
         throw new Error(`no ${method} was ever forwarded to the harness`);
       }
       harness.emit({ jsonrpc: "2.0", id: last.id, result });
+    },
+    replyToSession(method, sessionId, result = {}) {
+      const match = received(method).find(
+        (f) =>
+          (f.params as { sessionId?: string } | undefined)?.sessionId ===
+          sessionId,
+      );
+      if (match === undefined) {
+        throw new Error(
+          `no ${method} for ${sessionId} was ever forwarded to the harness`,
+        );
+      }
+      harness.emit({ jsonrpc: "2.0", id: match.id, result });
     },
     emit(frame) {
       harness.pushLine(JSON.stringify(frame));

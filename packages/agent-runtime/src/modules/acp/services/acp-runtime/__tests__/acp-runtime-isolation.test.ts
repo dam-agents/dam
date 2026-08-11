@@ -116,4 +116,54 @@ describe("acp-runtime: session isolation", () => {
     expect(alice.saw("session/request_permission")).toHaveLength(1);
     expect(transcriptOf(alice)).toEqual([`${ALICE_SESSION}: deleted 3`]);
   });
+
+  /**
+   * A request id is only unique within one connection. Every client numbers
+   * its own requests from 1 and cannot see anyone else's, so two clients using
+   * the same number is normal, not a mistake.
+   *
+   * Only the runtime can sort that out. The clients do not know each other
+   * exists, and the harness reads one stdin, so two requests numbered 7 look
+   * to it like one request asked twice. So the runtime gives each forwarded
+   * request an id of its own and puts the sender's number back on the answer.
+   */
+  it("should keep two clients' identically-numbered requests apart, and answer each under its own number", () => {
+    const world = createWorld();
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: ALICE_SESSION });
+
+    const bob = world.connect();
+    bob.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: BOB_SESSION });
+
+    // Both ask under id 7, and both questions are in flight at once.
+    alice.send(frames.prompt(7, ALICE_SESSION, "did the tests passi rea?"));
+    bob.send(frames.prompt(7, BOB_SESSION, "what is in this repo?"));
+
+    // Both arrived at the harness carrying different numbers. Had they both
+    // said 7, the harness would have no way to say which answer belonged to
+    // which.
+    const forwardedIds = world
+      .harness()
+      .received("session/prompt")
+      .map((frame) => frame.id);
+    expect(new Set(forwardedIds).size).toBe(2);
+
+    // Answering Bob answers Bob, and leaves Alice still waiting.
+    world.harness().replyToSession("session/prompt", BOB_SESSION, {
+      stopReason: "end_turn",
+    });
+    expect(bob.reply(7)?.result).toEqual({ stopReason: "end_turn" });
+    expect(alice.reply(7)).toBeUndefined();
+
+    // Alice's own answer reaches her afterwards, and it is hers rather than a
+    // copy of Bob's. It comes back under the number she chose, which is the
+    // only one she can match it against.
+    world.harness().replyToSession("session/prompt", ALICE_SESSION, {
+      stopReason: "refusal",
+    });
+    expect(alice.reply(7)?.result).toEqual({ stopReason: "refusal" });
+  });
 });
