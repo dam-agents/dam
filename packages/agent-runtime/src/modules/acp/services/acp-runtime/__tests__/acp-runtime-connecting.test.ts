@@ -69,8 +69,11 @@ describe("acp-runtime: connecting", () => {
     expect(world.harnessCount()).toBe(harnessesBeforeReconnect);
   });
 
-  it("should hold a client's messages until its config arrives, then replay them in order", () => {
-    // Cold boot: the pod is up but the agent's env has not been delivered yet.
+  it("should wait for env before starting the harness, then replay the client's messages in order", () => {
+    // A first boot serves clients before its env exists: the pod answers
+    // /healthz (so api-server starts relaying) before the runtime channel has
+    // delivered anything. Env is read once per spawn, so starting the harness
+    // in that window would leave it without credentials until a recycle.
     const world = createWorld({ envReadyAtBoot: false });
     const client = world.connect();
 
@@ -78,12 +81,11 @@ describe("acp-runtime: connecting", () => {
     client.send(frames.newSession(2));
     client.send(frames.listSessions(3));
 
-    // Nothing has started, so nothing can have been answered with stale env.
-    expect(world.harnessCount()).toBe(0);
+    expect(world.harnessStarted()).toBe(false);
 
     world.runtime.refreshEnv({ force: false });
 
-    expect(world.harnessCount()).toBe(1);
+    expect(world.harnessStarted()).toBe(true);
     expect(world.harness().receivedMethods()).toEqual([
       "initialize",
       "session/new",
@@ -91,7 +93,7 @@ describe("acp-runtime: connecting", () => {
     ]);
   });
 
-  it("should let a client through when its config never arrives", () => {
+  it("should stop waiting for env rather than leave the client hanging forever", () => {
     vi.useFakeTimers();
 
     const world = createWorld({
@@ -101,13 +103,16 @@ describe("acp-runtime: connecting", () => {
     const client = world.connect();
     client.send(frames.initialize(1));
 
-    expect(world.harnessCount()).toBe(0);
+    expect(world.harnessStarted()).toBe(false);
 
-    // Config delivery has failed. The client must not wait forever, so the
-    // gate opens on its own and the sandbox starts with whatever env it has.
+    // The wait above is bounded, because env can fail to arrive at all: a
+    // failed `hello` is logged and swallowed, leaving the pod up and Ready
+    // with nothing left to open the gate. Starting without credentials is a
+    // degraded sandbox, but the client gets an answer, and the harness is
+    // recycled onto real env if it turns up later.
     vi.advanceTimersByTime(15_000);
 
-    expect(world.harnessCount()).toBe(1);
+    expect(world.harnessStarted()).toBe(true);
     expect(world.harness().receivedMethods()).toEqual(["initialize"]);
     expect(client.isOpen()).toBe(true);
   });

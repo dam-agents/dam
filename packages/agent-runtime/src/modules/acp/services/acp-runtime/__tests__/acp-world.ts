@@ -150,6 +150,8 @@ export interface World {
   connect(opts?: { viewer?: boolean }): Client;
   /** The harness currently serving this pod. Throws if none has started. */
   harness(): Harness;
+  /** Whether the subprocess has been started at all. */
+  harnessStarted(): boolean;
   /** How many harnesses have been spawned over this world's life. */
   harnessCount(): number;
 }
@@ -183,6 +185,7 @@ export function createWorld(
       }
       return current;
     },
+    harnessStarted: () => harnesses.length > 0,
     harnessCount: () => harnesses.length,
   };
 }
