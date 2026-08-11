@@ -1,4 +1,5 @@
 import { ArrowRight, Close, Help } from "@carbon/icons-react";
+import { useId, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -8,10 +9,19 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { externalLinkProps } from "@/lib/external-link";
+import { cn } from "@/lib/utils";
 
 import { DOCS_URL } from "../constants.js";
+import { getApiHealthSnapshot, subscribeApiHealth } from "../lib/api-health.js";
 
 export function DocsLauncher() {
+  const titleId = useId();
+  // The connection banner is a 44px bar in this same corner and outranks this
+  // button, so step over it while it is up.
+  const banner =
+    useSyncExternalStore(subscribeApiHealth, getApiHealthSnapshot) !==
+    "connected";
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -19,7 +29,10 @@ export function DocsLauncher() {
           variant="outline"
           size="icon-sm"
           aria-label="Help"
-          className="fixed bottom-4 right-4 z-nav hidden h-[34px] w-[34px] md:inline-flex"
+          className={cn(
+            "fixed right-4 z-nav hidden h-[34px] w-[34px] md:inline-flex",
+            banner ? "bottom-[60px]" : "bottom-4",
+          )}
         >
           <Help size={16} />
         </Button>
@@ -27,10 +40,13 @@ export function DocsLauncher() {
       <PopoverContent
         side="top"
         align="end"
+        aria-labelledby={titleId}
         className="flex w-[300px] flex-col gap-2 text-sm"
       >
         <div className="flex items-start justify-between gap-3">
-          <h2 className="font-bold text-foreground">Need help?</h2>
+          <h2 id={titleId} className="font-bold text-foreground">
+            Need help?
+          </h2>
           <PopoverClose asChild>
             <Button
               variant="ghost"
