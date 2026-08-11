@@ -45,7 +45,10 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import { composeInvocationsQueryForOwner } from "../../modules/invocations/index.js";
+import {
+  composeInvocationsQueryForOwner,
+  isInvocationTargetName,
+} from "../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../modules/knowledge-bases/index.js";
 import {
   composeArtifactLibraryForOwner,
@@ -982,23 +985,29 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       getCapabilities: getAgentCapabilities,
       isSettled: contributionsSettled.isSettled,
     });
-    // Owner-scoped metrics: resolve this user's agent IDs (narrowed to the
-    // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.
-    // Live CRs are unioned with the Postgres agent registry so spend history
-    // survives agent deletion instead of shrinking retroactively.
+    // Owner-scoped metrics: resolve this user's agents (narrowed to the
+    // key's binding, mirroring agentsRouter.list) and filter ClickHouse on
+    // them. Live CRs are unioned with the Postgres agent registry so spend
+    // history survives agent deletion instead of shrinking retroactively;
+    // live agents carry their current display name so spend labels come from
+    // the platform, not from self-reported telemetry.
     const metrics = metricsReader
       ? createMetricsService({
           reader: metricsReader,
-          listOwnedAgentIds: async () => {
+          listOwnedAgents: async () => {
             const [live, registered] = await Promise.all([
               agents.list(),
               listRegisteredAgentIds(user.sub),
             ]);
-            const ids = [...new Set([...live.map((a) => a.id), ...registered])];
-            return user.agentIds === "*"
-              ? ids
-              : ids.filter((id) => user.agentIds.includes(id));
+            const names = new Map(live.map((a) => [a.id, a.name]));
+            const ids = [...new Set([...names.keys(), ...registered])];
+            const scoped =
+              user.agentIds === "*"
+                ? ids
+                : ids.filter((id) => user.agentIds.includes(id));
+            return scoped.map((id) => ({ id, name: names.get(id) ?? null }));
           },
+          isInvocationTargetName,
         })
       : createDisabledMetricsService();
 
