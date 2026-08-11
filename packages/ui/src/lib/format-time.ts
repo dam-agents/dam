@@ -25,6 +25,31 @@ export function largestUnit(ms: number): string {
   return "moments";
 }
 
+/** Wall-clock elapsed time at two-unit precision — "42s", "4m 12s", "1h 5m",
+ *  "2d 5h"; "—" for a negative or non-finite input. Distinct from the metrics
+ *  module's `formatDurationMs`, which measures summed API latency and so tops
+ *  out at hours and keeps sub-second precision. */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+/** The span between two timestamps, formatted by {@link formatDuration}; null
+ *  when either end is missing or unparseable, so callers can drop the line
+ *  rather than render a placeholder. */
+export function durationBetween(from: DateInput, to: DateInput): string | null {
+  const start = toDate(from);
+  const end = toDate(to);
+  if (!start || !end) return null;
+  return formatDuration(end.getTime() - start.getTime());
+}
+
 /** Past-facing relative time: "just now", "5m ago", "2h ago", "3d ago";
  *  "—" for an unparseable date. */
 export function timeAgo(value: DateInput): string {

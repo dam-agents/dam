@@ -21,8 +21,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { HintTooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
-import { formatTimestamp } from "@/lib/format-time";
+import { durationBetween, formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
@@ -38,6 +39,11 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   cost?: SessionRuntime;
+  /** Whether the scheduled indicator may report how long the run took. Only a
+   *  fresh-session schedule gets one session per fire; on a continuous one the
+   *  session's span covers every run, which is not the number the hover asks
+   *  for. */
+  showRunTime?: boolean;
   onResume: () => void;
   onDelete: () => void;
 }
@@ -49,6 +55,7 @@ export function SessionRow({
   needsApproval,
   unread = false,
   cost,
+  showRunTime = false,
   onResume,
   onDelete,
 }: Props) {
@@ -144,6 +151,8 @@ export function SessionRow({
             ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
+            session={s}
+            showRunTime={showRunTime}
           />
         </div>
         <span className="text-[11px] text-muted-foreground">
@@ -218,6 +227,8 @@ function SessionIndicators({
   ambient,
   needsApproval,
   working,
+  session,
+  showRunTime,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -225,6 +236,8 @@ function SessionIndicators({
   ambient: boolean;
   needsApproval: boolean;
   working: boolean;
+  session: SessionView;
+  showRunTime: boolean;
 }) {
   if (!scheduled && !terminal && !channel && !needsApproval && !working)
     return null;
@@ -256,9 +269,17 @@ function SessionIndicators({
             aria-label="Channel session"
           />
         ))}
-      {scheduled && (
-        <Time size={16} className="text-foreground" aria-label="Scheduled" />
-      )}
+      {scheduled &&
+        (showRunTime ? (
+          <HintTooltip
+            label="Scheduled"
+            content={<ScheduledRunTime session={session} running={working} />}
+          >
+            <Time size={16} className="text-foreground" />
+          </HintTooltip>
+        ) : (
+          <Time size={16} className="text-foreground" aria-label="Scheduled" />
+        ))}
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"
@@ -269,6 +290,29 @@ function SessionIndicators({
       ) : working ? (
         <WorkingDots className="text-accent" title="Working" />
       ) : null}
+    </span>
+  );
+}
+
+/** How long the scheduled run took: session start to last activity, or elapsed
+ *  so far while a turn is still in flight. Rendered only for a fresh-session
+ *  schedule, where the session is exactly one run. */
+function ScheduledRunTime({
+  session: s,
+  running,
+}: {
+  session: SessionView;
+  running: boolean;
+}) {
+  const last = s.updatedAt ?? s.createdAt;
+  const span = durationBetween(s.createdAt, running ? new Date() : last);
+  return (
+    <span className="block" data-testid="session-run-time">
+      {running ? "Running for" : "Ran"} {span ?? "—"}
+      <span className="block text-muted-foreground">
+        {formatTimestamp(s.createdAt)} →{" "}
+        {running ? "now" : formatTimestamp(last)}
+      </span>
     </span>
   );
 }
