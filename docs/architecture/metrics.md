@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-08-04
+Last verified: 2026-08-11
 
 ## Overview
 
@@ -40,6 +40,8 @@ The Overview session filter is **trace-aware**, not a literal session-id match: 
 Every read is scoped to the agents the caller owns; the scope is resolved **in the service layer**, above the store. The service resolves the caller's owned agent IDs into an allowlist and hands only that allowlist to the reader, which does no scoping of its own — it filters unconditionally on the trusted owner attribute. A caller can never widen the scope through input: naming an agent they do not own resolves to an empty allowlist, and an empty allowlist yields no rows rather than an error. When a specific agent is requested, the same API-key binding check the rest of the agent-read surface applies is layered on top.
 
 The owned set is the **union of the caller's live agents and the historical agent registry**, deliberately including deleted agents. Spend history is a bill: it must not shrink retroactively when an agent is deleted. Scoping only to live agents would erase a deleted agent's past spend from every window that overlaps its lifetime, so the registry keeps deleted agents in scope and their telemetry keeps counting for as long as the store retains it.
+
+Which side of that union an agent came from is not discarded once the set is formed. Resolution carries each agent's **live-or-registry-only** status forward — and, for a live agent, its current display name — past the allowlist and into the read, where the per-agent rollup depends on it twice: to label live agents from the platform rather than from telemetry, and to exclude a still-target-named bucket only when no live agent backs it (both above). The reader itself still receives ids alone; liveness never reaches the store and never widens or narrows the scope, so it is purely a service-layer property of an already-resolved set.
 
 ## Telemetry reader
 
