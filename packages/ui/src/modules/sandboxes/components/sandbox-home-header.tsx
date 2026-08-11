@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
@@ -88,9 +89,15 @@ export function SandboxHomeHeader({ agent, display }: Props) {
       }
       actions={
         <>
-          <Button onClick={() => selectAgent(agent.id)}>
-            <Chat /> Open chat
-          </Button>
+          <Tooltip content="Open chat">
+            <Button
+              size="icon"
+              aria-label="Open chat"
+              onClick={() => selectAgent(agent.id)}
+            >
+              <Chat />
+            </Button>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
