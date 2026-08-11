@@ -28,10 +28,10 @@ export function DocsLauncher() {
           size="icon-sm"
           aria-label="Help"
           className={cn(
-            "fixed right-4 z-nav h-[34px] w-[34px]",
+            "fixed right-3 z-nav h-[34px] w-[34px] md:right-4",
             banner
-              ? "bottom-[116px] md:bottom-[60px]"
-              : "bottom-[72px] md:bottom-4",
+              ? "bottom-[124px] md:bottom-[60px]"
+              : "bottom-[80px] md:bottom-4",
           )}
         >
           <Help size={16} />
