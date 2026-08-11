@@ -146,7 +146,7 @@ export function SkillsSurface({
     <div
       {...surfaceDropProps}
       className={cn(
-        "flex flex-col gap-8",
+        "flex flex-col",
         // Stopped / starting: a dimmed, non-interactive read-only snapshot.
         // Per Figma: rows at 40% opacity when stopped, 60% while starting.
         readOnly && "pointer-events-none",
@@ -174,89 +174,97 @@ export function SkillsSurface({
               per-skill toggles need a running sandbox, so a live control on a
               dead surface is worse than no control. */}
           {!readOnly && (
-            <SkillsSearchHeader
-              query={query}
-              onQueryChange={setQuery}
-              totals={totals}
-              matchCount={matchCount}
-              notice={
-                drifted.length > 0 ? (
-                  <SkillDriftBanner
-                    drifted={drifted}
-                    busy={updatingAll}
-                    onUpdateAll={() => void updateAll(drifted)}
+            // Sits closer to the first group than the groups sit to each
+            // other: it describes them, so a full group gap would read as a
+            // fourth section rather than as this page's header.
+            <div className="mb-5">
+              <SkillsSearchHeader
+                query={query}
+                onQueryChange={setQuery}
+                totals={totals}
+                matchCount={matchCount}
+                notice={
+                  drifted.length > 0 ? (
+                    <SkillDriftBanner
+                      drifted={drifted}
+                      busy={updatingAll}
+                      onUpdateAll={() => void updateAll(drifted)}
+                    />
+                  ) : undefined
+                }
+                actions={
+                  <SkillSetActions
+                    canSave={anyInstalled}
+                    previewReady={previewReady}
+                    onAddSets={() => setOpenModal({ kind: "add-sets" })}
+                    onSaveSet={() => setOpenModal({ kind: "save-set" })}
                   />
-                ) : undefined
-              }
-              actions={
-                <SkillSetActions
-                  canSave={anyInstalled}
-                  previewReady={previewReady}
-                  onAddSets={() => setOpenModal({ kind: "add-sets" })}
-                  onSaveSet={() => setOpenModal({ kind: "save-set" })}
-                />
-              }
-            />
+                }
+              />
+            </div>
           )}
 
-          {shownCreatedHere.length > 0 ? (
-            <StandaloneSkillsGroup
-              skills={shownCreatedHere}
+          <div className="flex flex-col gap-8">
+            {shownCreatedHere.length > 0 ? (
+              <StandaloneSkillsGroup
+                skills={shownCreatedHere}
+                readOnly={readOnly}
+                publishes={publishes}
+                canPublish={publishableSources.length > 0}
+                onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
+                onDownload={(skill) => void downloadStandalone(skill)}
+                onDelete={(skill, pub) =>
+                  void deleteStandaloneWithConfirm(skill, pub)
+                }
+                onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+                trackUnavailableNames={trackUnavailableNames}
+              />
+            ) : searching ? null : readOnly ? (
+              // Stopped/starting: the list is on the offline pod, so show the
+              // section with a placeholder instead of dropping it.
+              <StandaloneSkillsPlaceholder />
+            ) : (
+              <StandaloneSkillsEmptyState action={addSourceButton} />
+            )}
+
+            <SkillSourcesSection
+              agentId={agentId}
               readOnly={readOnly}
-              publishes={publishes}
-              canPublish={publishableSources.length > 0}
-              onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
-              onDownload={(skill) => void downloadStandalone(skill)}
-              onDelete={(skill, pub) =>
-                void deleteStandaloneWithConfirm(skill, pub)
-              }
-              onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
-              onOpenSkill={
-                agentId
-                  ? (skill) => setOpenModal({ kind: "render-local", skill })
-                  : undefined
-              }
-              trackUnavailableNames={trackUnavailableNames}
+              isError={isError}
+              surface={surface}
+              derived={derived}
               action={addSourceButton}
-            />
-          ) : searching ? null : readOnly ? (
-            // Stopped/starting: the list is on the offline pod, so show the
-            // section with a placeholder instead of dropping it.
-            <StandaloneSkillsPlaceholder />
-          ) : (
-            <StandaloneSkillsEmptyState action={addSourceButton} />
-          )}
-
-          {shownBuiltIn.length > 0 && (
-            <BuiltInSkillsGroup
-              skills={shownBuiltIn}
-              onOpenSkill={
+              onOpenSkill={(source, skill) =>
+                setOpenModal({ kind: "render", source, skill })
+              }
+              onAddSets={() => setOpenModal({ kind: "add-sets" })}
+              onToggleAll={(src, on) => void toggleAllWithConfirm(src, on)}
+              onRemove={(src) => void removeSourceWithConfirm(src)}
+              onManageConnections={
                 agentId
-                  ? (skill) => setOpenModal({ kind: "render-local", skill })
+                  ? () => navigateToSandboxHome(agentId, "connections")
                   : undefined
               }
             />
-          )}
 
-          <SkillSourcesSection
-            agentId={agentId}
-            readOnly={readOnly}
-            isError={isError}
-            surface={surface}
-            derived={derived}
-            action={addSourceButton}
-            onOpenSkill={(source, skill) =>
-              setOpenModal({ kind: "render", source, skill })
-            }
-            onAddSets={() => setOpenModal({ kind: "add-sets" })}
-            onToggleAll={(src, on) => void toggleAllWithConfirm(src, on)}
-            onRemove={(src) => void removeSourceWithConfirm(src)}
-            onManageConnections={
-              agentId
-                ? () => navigateToSandboxHome(agentId, "connections")
-                : undefined
-            }
-          />
+            {/* Last, per the design: the image group is the least actionable of
+              the three — nothing in it can be turned off or removed. */}
+            {shownBuiltIn.length > 0 && (
+              <BuiltInSkillsGroup
+                skills={shownBuiltIn}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+              />
+            )}
+          </div>
         </>
       )}
 

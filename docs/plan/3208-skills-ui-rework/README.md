@@ -108,8 +108,16 @@ description before the plan folder is deleted. Seeded entries:
 | D6 | No source error state | Live `SourceError` verdict + Manage connections, restyled | Real states must survive the redesign |
 | D7 | Running · empty hides the image group | Image group renders when the image ships skills | Real images bake skills in; hiding them hides active truth |
 | D8 | — (prototype assumes visibility is known) | `visibility` field added to scan-meta contract | Only way to render the Private badge/chip honestly |
+| D9 | Bulk button hidden while a search is active (#3243) | Button stays, scoped to the visible matches and labelled with the count (`Enable 4 matching`) | #3243 hid it because `Enable all` beside 4 of 22 visible rows misreports what it does; naming the count fixes the label rather than removing the affordance. `applyBatch` already takes arbitrary subsets. Settled with Petr 2026-08-11 — a deliberate scope widening, and it narrows follow-up Draft D to the checkbox multi-select alone |
 
 Add rows as new deviations surface. Never silently diverge.
+
+**Not deviations — prototype bugs.** The prototype's `doSearch` toggles rows,
+show-more hints and groups, and never inspects source cards. A card matching
+nothing therefore keeps its header, while a query matching nothing *anywhere*
+hides the whole group and its cards with it — the two cases contradict each
+other. We hide zero-match cards (already #3243's behaviour). Settled with Petr
+2026-08-11: a prototype bug is not a design to match.
 
 ## Follow-up issue drafts (file only on Petr's approval, attach to epic #3022)
 
@@ -160,7 +168,7 @@ the only durable record besides memory. File only if you want them tracked.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Page shell and grouping | Group order, section headers, counts line, search row, drift banner placement | — |
+| 01 ✅ | Page shell and grouping | Group order, section headers, counts line, search row, drift banner placement | — |
 | 02 | Created-here rows | Name-only rows, badge restyle, publish → kebab, Track from | 01 |
 | 03 | Source cards | Header layout, scanning state, row density, expand control, error restyle, `visibility` field | 01 |
 | 04 | Set modals restyle | Save-as-set + Add-sets visuals per prototype | 01 |

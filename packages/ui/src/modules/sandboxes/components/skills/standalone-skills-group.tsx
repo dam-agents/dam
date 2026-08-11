@@ -88,7 +88,6 @@ export function StandaloneSkillsGroup({
   onTrack,
   onOpenSkill,
   trackUnavailableNames,
-  action,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
@@ -107,16 +106,13 @@ export function StandaloneSkillsGroup({
   onOpenSkill?: (skill: LocalSkill) => void;
   /** Names whose source hasn't been scanned, so tracking can't be offered yet. */
   trackUnavailableNames: ReadonlySet<string>;
-  /** Header-right slot (e.g. the "+ Add source" button). */
-  action?: ReactNode;
 }) {
   const published = latestPublishByName(publishes);
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3">
         <SectionLabel>Created in this sandbox</SectionLabel>
-        {action}
       </div>
       <Card className={cn(readOnly && "bg-muted")}>
         {skills.map((skill, i) => {
