@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CheckboxItem } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
+import { useToggleSet } from "@/hooks/use-toggle-set";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
 
@@ -38,8 +39,8 @@ export function SaveSkillSetModal({
   /** Source-backed skills, grouped by source — a set reads as "these skills,
    *  from these repos" rather than a flat bag of names. */
   groups: SaveSetGroup[];
-  /** Whether a skill is currently installed: drives the initial marks and the
-   *  "on here" hint. */
+  /** Whether a skill is currently installed. Read once, at mount, to seed the
+   *  snapshot below. */
   isOn: (skill: Skill) => boolean;
   /** Existing set names, so a clash is caught before submitting. The server
    *  still answers CONFLICT — another session may take the name meanwhile. */
@@ -51,15 +52,26 @@ export function SaveSkillSetModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  const [marked, setMarked] = useState<ReadonlySet<string>>(() => {
-    const out = new Set<string>();
+  // One snapshot — rows and marks together — for the dialog's whole lifetime.
+  // Both inputs move underneath it: the 5s poll folds in agent-initiated
+  // installs, and a re-scan re-lists a source. Reading either live would put an
+  // "on here" badge beside an unchecked box under copy promising the marks start
+  // from what's on, and the created set would omit the skill it named.
+  const [snapshot] = useState(() => {
+    const on = new Set<string>();
     for (const group of groups) {
       for (const skill of group.skills) {
-        if (isOn(skill)) out.add(skillKey(skill.source, skill.name));
+        if (isOn(skill)) on.add(skillKey(skill.source, skill.name));
       }
     }
-    return out;
+    return { groups, on };
   });
+  const {
+    selected: marked,
+    toggle,
+    setAll,
+    clear,
+  } = useToggleSet<string>(() => snapshot.on);
   const [submitting, setSubmitting] = useState(false);
 
   const trimmed = name.trim();
@@ -76,23 +88,17 @@ export function SaveSkillSetModal({
 
   const allKeys = useMemo(
     () =>
-      groups.flatMap((g) => g.skills.map((s) => skillKey(s.source, s.name))),
-    [groups],
+      snapshot.groups.flatMap((g) =>
+        g.skills.map((s) => skillKey(s.source, s.name)),
+      ),
+    [snapshot],
   );
-
-  const toggle = (key: string) =>
-    setMarked((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
 
   const canCreate = !!trimmed && !nameError && marked.size > 0 && !submitting;
 
   const submit = async () => {
     setSubmitting(true);
-    const skills = groups.flatMap((g) =>
+    const skills = snapshot.groups.flatMap((g) =>
       g.skills
         .filter((s) => marked.has(skillKey(s.source, s.name)))
         .map((s) => ({ source: s.source, name: s.name })),
@@ -106,90 +112,93 @@ export function SaveSkillSetModal({
     <Modal widthClass="w-[640px]">
       <DialogHeader title="Save as skill set" onClose={onClose} />
 
-      <DialogBody className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          Starts from what's on here — unmark anything you don't want in the
-          set.
-        </p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canCreate) void submit();
+        }}
+      >
+        <DialogBody className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">
+            Starts from what's on here — unmark anything you don't want in the
+            set.
+          </p>
 
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Set name</SectionLabel>
-          <Input
-            size="sm"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="my-skill-set"
-            variant={nameError ? "invalid" : "standard"}
-            aria-label="Set name"
-            autoFocus
-          />
-          {nameError && <p className="text-sm text-danger">{nameError}</p>}
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <SectionLabel>Set name</SectionLabel>
+            <Input
+              size="sm"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="my-skill-set"
+              variant={nameError ? "invalid" : "standard"}
+              aria-label="Set name"
+              autoFocus
+            />
+            {nameError && <p className="text-sm text-danger">{nameError}</p>}
+          </div>
 
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>
-            {marked.size} skill{marked.size === 1 ? "" : "s"} selected
-          </span>
-          <span className="flex-1" />
-          <Button
-            variant="link"
-            size="inline"
-            onClick={() => setMarked(new Set(allKeys))}
-          >
-            Select all
-          </Button>
-          <span aria-hidden>·</span>
-          <Button
-            variant="link"
-            size="inline"
-            onClick={() => setMarked(new Set())}
-          >
-            Clear
-          </Button>
-        </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              {marked.size} skill{marked.size === 1 ? "" : "s"} selected
+            </span>
+            <span className="flex-1" />
+            <Button
+              type="button"
+              variant="link"
+              size="inline"
+              onClick={() => setAll(allKeys)}
+            >
+              Select all
+            </Button>
+            <span aria-hidden>·</span>
+            <Button type="button" variant="link" size="inline" onClick={clear}>
+              Clear
+            </Button>
+          </div>
 
-        <div className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto">
-          {groups.map((group) => (
-            <div key={group.source.id} className="flex flex-col gap-2">
-              <SectionLabel>{group.source.name}</SectionLabel>
-              {group.skills.map((skill) => {
-                const key = skillKey(skill.source, skill.name);
-                return (
-                  <div key={key} className="flex items-start gap-2">
-                    <CheckboxItem
-                      label={skill.name}
-                      description={skill.description}
-                      checked={marked.has(key)}
-                      onCheckedChange={() => toggle(key)}
-                    />
-                    {isOn(skill) && (
-                      <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
-                        on here
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+          <div className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto">
+            {snapshot.groups.map((group) => (
+              <div key={group.source.id} className="flex flex-col gap-2">
+                <SectionLabel>{group.source.name}</SectionLabel>
+                {group.skills.map((skill) => {
+                  const key = skillKey(skill.source, skill.name);
+                  return (
+                    <div key={key} className="flex items-start gap-2">
+                      <CheckboxItem
+                        label={skill.name}
+                        description={skill.description}
+                        checked={marked.has(key)}
+                        onCheckedChange={() => toggle(key)}
+                      />
+                      {snapshot.on.has(key) && (
+                        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+                          on here
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
 
-        <p className="text-sm text-muted-foreground">
-          Only skills from a connected source can go in a set — a set installs
-          by name, and skills authored here or shipped with the image have
-          nowhere to install from.
-        </p>
-      </DialogBody>
+          <p className="text-sm text-muted-foreground">
+            Only skills from a connected source can go in a set — a set installs
+            by name, and skills authored here or shipped with the image have
+            nowhere to install from.
+          </p>
+        </DialogBody>
 
-      <DialogActions
-        className="border-t border-border"
-        onCancel={onClose}
-        label="Create"
-        pendingLabel="Creating…"
-        pending={submitting}
-        disabled={!canCreate}
-        onSubmit={() => void submit()}
-      />
+        <DialogActions
+          className="border-t border-border"
+          onCancel={onClose}
+          label="Create"
+          pendingLabel="Creating…"
+          pending={submitting}
+          disabled={!canCreate}
+        />
+      </form>
     </Modal>
   );
 }

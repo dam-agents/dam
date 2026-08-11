@@ -102,17 +102,17 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentHome: config.agentHome,
     runtimeHello,
     composeSkills: (owner) =>
-      composeSkillsModule(
+      composeSkillsModule({
         api,
-        config.namespace,
+        namespace: config.namespace,
         owner,
         db,
         seedSources,
-        config.brand.name,
+        brandName: config.brand.name,
         runtimeMutator,
         templatesRepo,
         isRuntimeSettled,
-      ),
+      }),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
     experimentsServiceFor: (owner) =>

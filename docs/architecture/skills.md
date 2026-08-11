@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-08-10
+Last verified: 2026-08-11
 
 ## Overview
 
@@ -31,6 +31,7 @@ flowchart LR
     src[(skill_sources)]
     inst[(agent_skills)]
     pubs[(agent_skill_publishes)]
+    sets[(skill_sets)]
   end
 
   subgraph pod[agent pod]
@@ -47,6 +48,7 @@ flowchart LR
 
   skills-svc <--> src
   skills-svc <--> inst
+  skills-svc <--> sets
   pub-svc --> pubs
 
   scanner -->|HTTPS| github
@@ -110,7 +112,7 @@ A set stores **`(gitUrl, name)` pairs only**. The git URL, not the source id, be
 
 **Applying a set is additive by construction**: it installs what is missing and never uninstalls, enforced where the apply is assembled rather than trusted to callers. So applying one twice is a no-op, and two sets sharing a skill install it once. A skill already on is left at whatever revision it sits on — adopting a newer one is the drift path's own explicit action, never a side effect of adding a set. Entries it cannot apply are reported as closed-set verdicts rather than dropped: the source isn't connected here, is connected but unreadable, or no longer serves that name. An unreadable source blocks only its own entries — everything reachable still applies.
 
-Names reuse the Connection name rule from one shared definition. Renaming is absent: there is no set-management surface yet, so a typo means delete and recreate.
+Names reuse the Connection name rule from one shared definition. Renaming is absent: a typo means deleting the set and saving it again, from the same dialog that adds one. An apply is bounded by the union it resolves, so a selection larger than one batch is refused before any source is read rather than part-way through.
 
 ### Skill Path
 
@@ -268,7 +270,7 @@ The cache is invalidated on `sources.refresh` and after every successful publish
 
 Then it drops "ghost" rows (`agent_skills` rows whose directory has been deleted out-of-band, e.g. via the file panel) and persists the cleanup. The Postgres rows stop drifting from the filesystem without requiring a separate reconciler — every read is the reconciler.
 
-Two things qualify that. **The local list is not durable** — installed refs come from Postgres and survive the pod going away, but local skills exist only on the PVC. So while the sandbox runs, `state` records the local list it computed, and while the pod is unreachable it serves that recording, dated and marked as a snapshot. Nothing recorded means the sandbox has never run, which is distinct from having no local skills. **And reaping waits for the pod to catch up** — install is declarative, so between the row landing and the apply fetching the files a freshly-installed skill's directory is legitimately absent; the reconcile is gated on the outbox being **settled**. Reaping mid-apply would not merely lose the install: the files still land, so the skill reappears as a Standalone one the user supposedly authored. A snapshot never drives reconciliation either — it is not evidence about the current disk. The cost of both is that a genuine out-of-band deletion is noticed one read later.
+Two things qualify that. **The local list is not durable** — installed refs come from Postgres and survive the pod going away, but local skills exist only on the PVC. So while the sandbox runs, `state` records the local list it computed, and while the pod is unreachable it serves that recording, dated and marked as a snapshot. Nothing recorded means the sandbox has never run, which is distinct from having no local skills. **And reaping waits for the pod to catch up** — install is declarative, so between the row landing and the apply fetching the files a freshly-installed skill's directory is legitimately absent; the reconcile is gated on the outbox being **settled** ([runtime channel](connections.md#the-runtime-channel)). Reaping mid-apply would not merely lose the install: the files still land, so the skill reappears as a Standalone one the user supposedly authored. A snapshot never drives reconciliation either — it is not evidence about the current disk. The cost of both is that a genuine out-of-band deletion is noticed one read later.
 
 ## Persistence touchpoints
 

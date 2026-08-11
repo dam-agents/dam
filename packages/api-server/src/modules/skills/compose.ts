@@ -56,36 +56,39 @@ export function composePrStateResolver(deps: {
   });
 }
 
-export function composeSkillsModule(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  owner: string,
-  db: Db,
-  seedSources: SkillSourceSeed[],
-  brandName: string,
-  runtimeMutator: RuntimeMutator,
-  templatesRepo: TemplatesRepository,
-  isRuntimeSettled: (agentId: string) => Promise<boolean>,
-): SkillsService {
-  const k8s = createK8sClient(api, namespace);
+export function composeSkillsModule(deps: {
+  api: k8s.CoreV1Api;
+  namespace: string;
+  owner: string;
+  db: Db;
+  seedSources: SkillSourceSeed[];
+  brandName: string;
+  runtimeMutator: RuntimeMutator;
+  templatesRepo: TemplatesRepository;
+  /** Whether the pod has applied everything the outbox holds — gates the
+   *  `state` reconcile, which would otherwise reap rows mid-apply. */
+  isRuntimeSettled: (agentId: string) => Promise<boolean>;
+}): SkillsService {
+  const { db, namespace, seedSources } = deps;
+  const k8sClient = createK8sClient(deps.api, namespace);
   return createSkillsService({
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8s),
-    templatesRepo,
+    agentsRepo: createAgentsRepository(k8sClient),
+    templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
     githubCredential: createGithubCredentialPort(
       createConnectionsRepository(db),
     ),
-    runtimeMutator,
-    isRuntimeSettled,
-    owner,
+    runtimeMutator: deps.runtimeMutator,
+    isRuntimeSettled: deps.isRuntimeSettled,
+    owner: deps.owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,
     scanPublic: scanPublicGithubArchive,
     readPublicSkillFile: readPublicGithubSkillFile,
-    brandName,
+    brandName: deps.brandName,
   });
 }

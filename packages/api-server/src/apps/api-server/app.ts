@@ -941,17 +941,17 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       },
     });
     const { features } = composeFeaturesForOwner({ db, owner: user.sub });
-    const skills = composeSkillsModule(
+    const skills = composeSkillsModule({
       api,
-      config.namespace,
-      user.sub,
+      namespace: config.namespace,
+      owner: user.sub,
       db,
       seedSources,
-      config.brand.name,
+      brandName: config.brand.name,
       runtimeMutator,
       templatesRepo,
-      (agentId) => contributionsSettled.status(agentId).then((s) => s.settled),
-    );
+      isRuntimeSettled: contributionsSettled.isSettled,
+    });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
     const l7Hosts = createAgentL7HostsPort(k8sClient);
@@ -980,8 +980,7 @@ export function startApiServerApp(deps: ApiServerAppDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
-      isSettled: (agentId) =>
-        contributionsSettled.status(agentId).then((s) => s.settled),
+      isSettled: contributionsSettled.isSettled,
     });
     // Owner-scoped metrics: resolve this user's agent IDs (narrowed to the
     // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.

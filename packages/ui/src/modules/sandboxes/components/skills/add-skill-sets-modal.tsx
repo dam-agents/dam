@@ -1,3 +1,4 @@
+import { TrashCan } from "@carbon/icons-react";
 import type { SkillSet } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -9,6 +10,7 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useToggleSet } from "@/hooks/use-toggle-set";
 
 import { skillKey } from "../../hooks/use-skills-surface.js";
 
@@ -32,7 +34,9 @@ function SetRow({
   preview,
   ready,
   checked,
+  deleting,
   onToggle,
+  onDelete,
 }: {
   preview: SetPreview;
   /** Every source has reported. Until then there is no honest verdict: an
@@ -41,9 +45,15 @@ function SetRow({
    *  saying nothing. */
   ready: boolean;
   checked: boolean;
+  deleting: boolean;
   onToggle: () => void;
+  onDelete: () => void;
 }) {
   const { set, adds, unavailable, unreadable } = preview;
+  // Confirmed in the row, not through the global confirm dialog: this row lives
+  // inside a modal, and a second layered dialog would fight this one's focus
+  // trap. Two clicks still stand between a saved set and losing it.
+  const [confirming, setConfirming] = useState(false);
   const sample = set.skills.slice(0, 3).map((s) => s.name);
   const rest = set.skills.length - sample.length;
   // 0 adds means "already on" only when everything is actually available;
@@ -57,35 +67,73 @@ function SetRow({
         ? "already all on"
         : null;
   return (
-    <label className="flex w-full cursor-pointer items-start gap-2.5 text-left">
-      <Checkbox
-        checked={checked}
-        onCheckedChange={onToggle}
-        aria-label={set.name}
-        className="mt-0.5"
-      />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{set.name}</span>
-        <span className="text-sm text-muted-foreground">
-          {set.skills.length} skill{set.skills.length === 1 ? "" : "s"} ·{" "}
-          {sample.join(", ")}
-          {rest > 0 && `, +${rest}`}
-          {verdict && ` · ${verdict}`}
-          {ready && unavailable > 0 && (
-            <span className="text-amber-700 dark:text-warning">
-              {" "}
-              · {unavailable} not in a connected source
-            </span>
-          )}
-          {ready && unreadable > 0 && (
-            <span className="text-amber-700 dark:text-warning">
-              {" "}
-              · {unreadable} from a source that can't be read here
-            </span>
-          )}
+    <div className="flex w-full items-start gap-2">
+      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 text-left">
+        <Checkbox
+          checked={checked}
+          onCheckedChange={onToggle}
+          aria-label={set.name}
+          className="mt-0.5"
+        />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-sm font-medium text-foreground">
+            {set.name}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            {set.skills.length} skill{set.skills.length === 1 ? "" : "s"} ·{" "}
+            {sample.join(", ")}
+            {rest > 0 && `, +${rest}`}
+            {verdict && ` · ${verdict}`}
+            {ready && unavailable > 0 && (
+              <span className="text-warning-fg">
+                {" "}
+                · {unavailable} not in a connected source
+              </span>
+            )}
+            {ready && unreadable > 0 && (
+              <span className="text-warning-fg">
+                {" "}
+                · {unreadable} from a source that can't be read here
+              </span>
+            )}
+          </span>
         </span>
-      </span>
-    </label>
+      </label>
+
+      {confirming ? (
+        <span className="flex shrink-0 items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Delete this set?</span>
+          <Button
+            variant="link"
+            size="inline"
+            className="text-danger"
+            disabled={deleting}
+            onClick={onDelete}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </Button>
+          <Button
+            variant="link"
+            size="inline"
+            disabled={deleting}
+            onClick={() => setConfirming(false)}
+          >
+            Keep
+          </Button>
+        </span>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Delete ${set.name}`}
+          tooltip="Delete set"
+          className="shrink-0 text-muted-foreground"
+          onClick={() => setConfirming(true)}
+        >
+          <TrashCan size={16} />
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -96,6 +144,9 @@ function SetRow({
  * just the union of their skills. Each row says what it would *add* on top of
  * what's already on, because picking shouldn't be a guess, and the footer counts
  * the union — two sets sharing a skill add it once.
+ *
+ * Deleting lives here too: sets have no rename, so correcting a typo means
+ * deleting one, and this is the only surface that lists them.
  */
 export function AddSkillSetsModal({
   sets,
@@ -106,6 +157,7 @@ export function AddSkillSetsModal({
   ready,
   applying,
   onApply,
+  onDelete,
   onClose,
 }: {
   sets: SkillSet[];
@@ -124,9 +176,12 @@ export function AddSkillSetsModal({
   applying: boolean;
   /** Returns false when nothing could be applied, so the modal stays open. */
   onApply: (setIds: string[]) => Promise<boolean>;
+  /** Delete a set for good. Returns whether it went. */
+  onDelete: (id: string) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const { selected: picked, toggle } = useToggleSet<string>();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const previews = useMemo<SetPreview[]>(
     () =>
@@ -158,16 +213,17 @@ export function AddSkillSetsModal({
     return names.size;
   }, [previews, picked]);
 
-  const toggle = (id: string) =>
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   const submit = async () => {
     if (await onApply([...picked])) onClose();
+  };
+
+  const remove = async (id: string) => {
+    setDeletingId(id);
+    const gone = await onDelete(id);
+    setDeletingId(null);
+    // A deleted set must leave the selection with it, or Add would send an id
+    // the server no longer has and the whole apply would fail.
+    if (gone && picked.has(id)) toggle(id);
   };
 
   return (
@@ -197,7 +253,9 @@ export function AddSkillSetsModal({
                 preview={preview}
                 ready={ready}
                 checked={picked.has(preview.set.id)}
+                deleting={deletingId === preview.set.id}
                 onToggle={() => toggle(preview.set.id)}
+                onDelete={() => void remove(preview.set.id)}
               />
             ))}
           </div>

@@ -260,6 +260,8 @@ await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
 const contributionsSettledPort = {
   status: runtimeDelivery.contributionsStatus,
   statusMany: runtimeDelivery.contributionsStatusMany,
+  isSettled: async (agentId: string) =>
+    (await runtimeDelivery.contributionsStatus(agentId)).settled,
 };
 const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
@@ -923,8 +925,7 @@ const { server: harnessApiServer } = startHarnessApiServerApp({
   agentsServiceFor: harnessAgentsServiceFor,
   connectionsServiceFor,
   wakeAgent: wakeAgentFor,
-  isRuntimeSettled: (agentId) =>
-    contributionsSettledPort.status(agentId).then((s) => s.settled),
+  isRuntimeSettled: contributionsSettledPort.isSettled,
 });
 
 // Instance identity for ext-authz now flows from the per-instance

@@ -35,7 +35,13 @@ export function SkillDriftBanner({
 }) {
   const count = drifted.length;
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-border bg-muted px-4 py-3 text-sm">
+    // `status`, not `alert`: drift appears and disappears from polled data while
+    // the user reads the page, and an interrupting role would fire on a fact
+    // that is informational.
+    <div
+      role="status"
+      className="flex items-start gap-2 rounded-lg border border-border bg-muted px-4 py-3 text-sm"
+    >
       <Renew size={16} className="mt-px shrink-0 text-muted-foreground" />
       <p className="min-w-0 flex-1">
         <span className="font-semibold">

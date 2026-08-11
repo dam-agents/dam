@@ -56,7 +56,14 @@ export function SkillsSearchHeader({
       </div>
       {notice}
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
+        {/* Announced, because this line is the only report a search produces:
+            sections silently vanishing from the page tell a screen-reader user
+            nothing about whether the query matched 40 skills or none. */}
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-sm text-muted-foreground"
+        >
           {matchCount === null ? (
             <>
               {plural(totals.skills, "skill")} ·{" "}

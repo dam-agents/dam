@@ -102,6 +102,10 @@ export interface SkillsSurface {
     name: string;
     skills: { source: string; name: string }[];
   }) => Promise<boolean>;
+  /** Delete a saved set. Returns whether it was removed. Sets have no rename, so
+   *  this is how a typo'd name is corrected. Skills already installed from it
+   *  stay installed — a set is a selection, not an owner. */
+  deleteSet: (id: string) => Promise<boolean>;
   /** Add the chosen sets' skills alongside what's already on. Returns false when
    *  nothing could be applied, so the caller can keep its modal open. */
   applySets: (setIds: string[]) => Promise<boolean>;
@@ -457,6 +461,16 @@ export function useSkillsSurface(
     [],
   );
 
+  const deleteSet = useCallback(async (id: string) => {
+    const result = await runAction(
+      () => api.skills.sets.delete.mutate({ id }),
+      "Failed to delete skill set",
+    );
+    if (result === ACTION_FAILED) return false;
+    setSets((prev) => prev.filter((s) => s.id !== id));
+    return true;
+  }, []);
+
   const applySets = useCallback(
     async (setIds: string[]) => {
       if (!agentId || isError || readOnly || setIds.length === 0) return false;
@@ -715,6 +729,7 @@ export function useSkillsSurface(
     sets,
     setsFailed,
     createSet,
+    deleteSet,
     applySets,
     applyingSets,
     createSource,

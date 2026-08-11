@@ -914,6 +914,19 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
       }
 
+      // Bound the apply by what the caller actually asked for, before spending a
+      // scan per source resolving it. The schema caps 50 sets of 500 entries
+      // each, so the union can far exceed one batch; `applyBatchWith`'s own cap
+      // would only catch it after the scans, and would name a batch the caller
+      // never assembled. A union this large fails even when most of it is
+      // already installed — the bound is on what one apply may ask for.
+      if (wanted.size > MAX_BATCH_ENTRIES) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `these sets cover ${wanted.size} skills; one apply carries at most ${MAX_BATCH_ENTRIES}`,
+        });
+      }
+
       // The merged source list, so system and template sources count too — not
       // just the user's own rows.
       const sources = await service.listSources(agentId);

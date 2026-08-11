@@ -20,6 +20,10 @@
   --color-success-light: var(--c-success-light);
   --color-warning: var(--c-warning);
   --color-warning-light: var(--c-warning-light);
+  /* Warning as *text*: the light-theme warning is an orange that fails contrast
+     on a light background, so a readable foreground is its own token rather
+     than a palette value repeated at each call site. */
+  --color-warning-fg: var(--c-warning-fg);
   --color-danger: var(--c-danger);
   --color-danger-light: var(--c-danger-light);
   --color-info: var(--c-info);
@@ -125,6 +129,7 @@
   --c-success-light: #defbe6;
   --c-warning: #ff832b;
   --c-warning-light: #fffbeb;
+  --c-warning-fg: #b45309;
   --c-danger: #dc2626;
   --c-danger-light: #fef2f2;
   --c-info: #000000;
@@ -166,6 +171,7 @@
   --c-success-light: #0f2a1f;
   --c-warning: #fbbf24;
   --c-warning-light: #3a2a10;
+  --c-warning-fg: #fbbf24;
   --c-danger: #f87171;
   --c-danger-light: #3a1515;
   --c-info: #60a5fa;

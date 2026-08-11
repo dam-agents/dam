@@ -33,6 +33,10 @@ export interface ContributionsStatus {
 export interface ContributionsSettledPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+  /** Just the settled bit, for consumers that gate on it rather than report it.
+   *  Carried by the port so the projection out of `ContributionsStatus` lives
+   *  with the status shape instead of being re-derived at each call site. */
+  isSettled(agentId: string): Promise<boolean>;
 }
 import {
   assembleAgent,
