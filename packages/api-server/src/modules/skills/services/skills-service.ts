@@ -898,6 +898,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
+      // A set whose stored entries failed to parse reads as empty; applying it
+      // would install nothing and report "already on". Refuse it by name.
+      const unreadable = sets.filter((s) => s?.entriesUnreadable);
+      if (unreadable.length > 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `skill set can't be read: ${unreadable
+            .map((s) => s!.name)
+            .join(", ")} — delete it and save it again`,
+        });
+      }
+
       // Union across the chosen sets: two sets sharing a skill install it once.
       const wanted = new Map<string, SkillSetEntry>();
       for (const set of sets) {

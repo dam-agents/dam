@@ -71,8 +71,9 @@ export interface SkillsSurface {
   installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
   /** Re-install a drifted skill at the latest scanned version, clearing drift
-   *  once the installed contentHash matches the scan again. */
-  update: (skill: Skill) => Promise<void>;
+   *  once the installed contentHash matches the scan again. Returns success,
+   *  so a caller with its own follow-up (the track toast) can gate on it. */
+  update: (skill: Skill) => Promise<boolean>;
   /** Turn a whole source on or off in one apply cycle. Sends only the
    *  difference, so already-installed skills aren't rewritten. */
   toggleSource: (
@@ -329,7 +330,7 @@ export function useSkillsSurface(
 
   const update = useCallback(
     async (skill: Skill) => {
-      if (!agentId || isError || readOnly) return;
+      if (!agentId || isError || readOnly) return false;
       const key = skillKey(skill);
       setBusyKey(key);
       // Re-install at the scanned version+hash: an already-installed skill, so
@@ -347,6 +348,7 @@ export function useSkillsSurface(
       );
       if (result !== ACTION_FAILED) setInstalled(result);
       setBusyKey(null);
+      return result !== ACTION_FAILED;
     },
     [agentId, isError, readOnly],
   );

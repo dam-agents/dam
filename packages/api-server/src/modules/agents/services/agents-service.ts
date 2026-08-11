@@ -21,27 +21,6 @@ import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
 import { minutesToDuration } from "../../../duration.js";
-
-/** Outbox-derived contribution status, supplied by runtime-delivery. */
-export interface ContributionsStatus {
-  settled: boolean;
-  failures: DriverFailure[];
-  preparingWorkspace: boolean;
-}
-
-/** Port: the failed contributions surfaced on an agent (the degraded badge). */
-export interface ContributionsSettledPort {
-  status(agentId: string): Promise<ContributionsStatus>;
-  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  /** Just the settled bit, for consumers that gate on it rather than report it.
-   *  Carried by the port so the projection out of `ContributionsStatus` lives
-   *  with the status shape instead of being re-derived at each call site. */
-  isSettled(agentId: string): Promise<boolean>;
-}
-
-/** The settled bit alone, for modules that gate on it — one named dependency
- *  instead of a bare function type re-spelled at every wiring hop. */
-export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
 import {
   assembleAgent,
   type InfraAgent,
@@ -71,6 +50,27 @@ import { ok, err } from "../../../core/result.js";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
+
+/** Outbox-derived contribution status, supplied by runtime-delivery. */
+export interface ContributionsStatus {
+  settled: boolean;
+  failures: DriverFailure[];
+  preparingWorkspace: boolean;
+}
+
+/** Port: the failed contributions surfaced on an agent (the degraded badge). */
+export interface ContributionsSettledPort {
+  status(agentId: string): Promise<ContributionsStatus>;
+  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+  /** Just the settled bit, for consumers that gate on it rather than report it.
+   *  Carried by the port so the projection out of `ContributionsStatus` lives
+   *  with the status shape instead of being re-derived at each call site. */
+  isSettled(agentId: string): Promise<boolean>;
+}
+
+/** The settled bit alone, for modules that gate on it — one named dependency
+ *  instead of a bare function type re-spelled at every wiring hop. */
+export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
 
 /**
  * Port consumed by `create()` to seed `egress_rules` for a brand-new agent.

@@ -18,7 +18,8 @@ import { useToggleSet } from "@/hooks/use-toggle-set";
  *  recomputes the same thing and stays authoritative. */
 interface SetPreview {
   set: SkillSet;
-  /** Skill names this set would turn on that aren't on already. */
+  /** `skillKey` of every entry this set would turn on that isn't on already —
+   *  keys, not names, so two sources carrying the same name count apart. */
   adds: string[];
   /** Entries whose source this sandbox has no connection to at all. */
   unavailable: number;
@@ -62,7 +63,7 @@ function SetRow({
     ? null
     : adds.length > 0
       ? `adds ${adds.length}`
-      : blocked < set.skills.length
+      : blocked === 0
         ? "already all on"
         : null;
   return (
@@ -191,7 +192,7 @@ export function AddSkillSetsModal({
         for (const entry of set.skills) {
           const key = skillKey(entry);
           if (available.has(key)) {
-            if (!installedKeys.has(key)) adds.push(entry.name);
+            if (!installedKeys.has(key)) adds.push(key);
           } else if (unreadableSources.has(entry.source)) {
             unreadable += 1;
           } else {
@@ -205,11 +206,11 @@ export function AddSkillSetsModal({
 
   // The union, not the sum: two picked sets sharing a skill add it once.
   const unionAdds = useMemo(() => {
-    const names = new Set<string>();
+    const keys = new Set<string>();
     for (const p of previews) {
-      if (picked.has(p.set.id)) for (const n of p.adds) names.add(n);
+      if (picked.has(p.set.id)) for (const k of p.adds) keys.add(k);
     }
-    return names.size;
+    return keys.size;
   }, [previews, picked]);
 
   const submit = async () => {

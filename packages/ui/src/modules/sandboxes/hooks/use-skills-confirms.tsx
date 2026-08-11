@@ -100,11 +100,12 @@ export function useSkillsConfirms(
     // The existing install path is the migration: it fetches the skill at a
     // version, writes it into every Skill Path, and upserts the agent_skills
     // row — so no second writer of that row is introduced.
-    await surface.update(scanned);
-    emitToast({
-      kind: "success",
-      message: `Tracking ${skill.name} from ${pub.sourceName}`,
-    });
+    if (await surface.update(scanned)) {
+      emitToast({
+        kind: "success",
+        message: `Tracking ${skill.name} from ${pub.sourceName}`,
+      });
+    }
   };
 
   /** Enabling adds; disabling removes many skills at once, so only that
