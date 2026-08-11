@@ -31,6 +31,8 @@ export interface Harness {
   receivedMethods(): string[];
   /** Answer the most recent request of this method, matching its id. */
   replyTo(method: string, result?: unknown): void;
+  /** Write a frame to stdout, as the harness would. */
+  emit(frame: object): void;
   /** Push a raw line as if the harness wrote it to stdout. */
   pushLine(line: string): void;
   /** The subprocess died on its own. */
@@ -74,7 +76,10 @@ function createHarness(): { harness: Harness; process: AgentProcess } {
       if (last === undefined) {
         throw new Error(`no ${method} was ever forwarded to the harness`);
       }
-      harness.pushLine(JSON.stringify({ jsonrpc: "2.0", id: last.id, result }));
+      harness.emit({ jsonrpc: "2.0", id: last.id, result });
+    },
+    emit(frame) {
+      harness.pushLine(JSON.stringify(frame));
     },
     pushLine(line) {
       for (const handler of lineHandlers) handler(line);
@@ -190,7 +195,7 @@ export function createWorld(
   };
 }
 
-/** The frames the connecting scenarios need. Grows as features are added. */
+/** The frames the scenarios need. Grows as features are added. */
 export const frames = {
   initialize: (id: number) => ({
     jsonrpc: "2.0",
@@ -210,4 +215,46 @@ export const frames = {
     method: "session/list",
     params: {},
   }),
+  loadSession: (id: number, sessionId: string) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "session/load",
+    params: { sessionId, cwd: "." },
+  }),
+  prompt: (id: number, sessionId: string, text: string) => ({
+    jsonrpc: "2.0",
+    id,
+    method: "session/prompt",
+    params: { sessionId, prompt: [{ type: "text", text }] },
+  }),
+  /** What the harness streams back as the agent talks. */
+  agentMessage: (sessionId: string, text: string) => ({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text },
+      },
+    },
+  }),
 };
+
+/**
+ * The conversation a client actually saw, as `"<sessionId>: <text>"` lines in
+ * arrival order — covering both what the agent said and what other people
+ * typed, since both reach a client as `session/update`.
+ *
+ * Reading the transcript rather than counting frames is what lets a scenario
+ * say "Alice never saw Bob's message" in one assertion.
+ */
+export function transcriptOf(client: Client): string[] {
+  return client.saw("session/update").map((frame) => {
+    const params = frame.params as {
+      sessionId?: string;
+      update?: { content?: { text?: string } };
+    };
+    return `${params.sessionId}: ${params.update?.content?.text}`;
+  });
+}
