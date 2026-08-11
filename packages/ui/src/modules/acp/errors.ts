@@ -100,15 +100,15 @@ export function describeSendError(raw: string): SendErrorDescription {
   return { message: raw };
 }
 
+export type ResumeErrorKind = "not-found" | "connection" | "other";
+
 /**
  * Classify a resume-time failure so the inline error card can render the
  * right message and action. Prefers structured error fields (ACP JSON-RPC
  * `code`, tRPC `data.code`) over regexing the human-readable message — the
  * latter breaks the moment server wording changes.
  */
-export function classifyResumeError(
-  e: unknown,
-): "not-found" | "connection" | "other" {
+export function classifyResumeError(e: unknown): ResumeErrorKind {
   if (e && typeof e === "object") {
     const anyE = e as { code?: unknown; data?: { code?: unknown } };
     if (anyE.code === -32002) return "not-found";
@@ -119,4 +119,32 @@ export function classifyResumeError(
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
   return "other";
+}
+
+/** What the session error card renders. `orphaned` is the only kind carrying a
+ *  row the user can act on; `unavailable` names a session the agent doesn't
+ *  advertise at all — deleted, never there, or not theirs to open. */
+export type SessionFailureKind =
+  | "unavailable"
+  | "orphaned"
+  | "connection"
+  | "other";
+
+/** Whether the agent's session list claims the session, when it can be read. */
+export type SessionListing = "listed" | "absent" | "unknown";
+
+/**
+ * The verdict on a resume failure, with the agent's own session list — not the
+ * harness's error prose — deciding whether a session exists. Deleting is
+ * offered on one condition: the list still advertises a session that won't
+ * reopen, so there is a stale row to clear. A session the list doesn't have,
+ * and one it couldn't be asked about, both leave nothing to delete.
+ */
+export function resumeFailureKind(
+  kind: ResumeErrorKind,
+  listing: SessionListing,
+): SessionFailureKind {
+  if (listing === "absent") return "unavailable";
+  if (kind !== "not-found") return kind;
+  return listing === "listed" ? "orphaned" : "unavailable";
 }

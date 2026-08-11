@@ -1,17 +1,43 @@
+import type { SessionMode } from "api-server-api";
 import { useEffect } from "react";
 
 import { useStore } from "../../../store.js";
-import { sessionPath } from "../lib/session-path.js";
+import { nextChatUrl, sessionPath } from "../lib/session-path.js";
+
+function writeSessionPath(path: string, mode: "push" | "replace"): void {
+  const url = nextChatUrl(window.location, path);
+  if (url === null) return;
+  if (mode === "push") history.pushState(null, "", url);
+  else history.replaceState(null, "", url);
+}
+
+/**
+ * Records a deliberate move to another session as its own history entry, so
+ * back and forward walk the conversations the user opened. Call it before the
+ * store changes — the sync effect below then finds the address bar already
+ * right and leaves the new entry alone.
+ *
+ * Terminal sessions collapse onto the agent's own path — `sessionPath` drops an
+ * id no reload could re-open — so switching between two of them writes nothing.
+ */
+export function pushSessionPath(
+  agentId: string,
+  sessionId: string | null,
+  sessionMode: SessionMode | null,
+): void {
+  writeSessionPath(sessionPath(agentId, sessionId, sessionMode), "push");
+}
 
 /**
  * Keeps the address bar on the session the user has open, so the URL is always
  * a link to this conversation — copyable, reloadable, and the same shape a
- * channel reply points back at.
+ * channel reply points back at. It also covers the arrival of a session id the
+ * user never navigated to: a fresh chat becomes linkable the moment the first
+ * prompt creates its session.
  *
- * `replaceState`, not `pushState`: switching sessions inside one agent's chat is
- * changing what you look at, not a navigation step, and back should still leave
- * chat rather than walk every session visited on the way. Deliberate entries
- * (`openAgentSession`, `selectAgent`) push their own.
+ * `replaceState`, not `pushState`: this reflects state the user did not
+ * navigate to. The deliberate moves push their own entry — `openAgentSession`,
+ * `selectAgent`, and `pushSessionPath` from the session list.
  */
 export function useSessionUrlSync(agentId: string | null): void {
   const view = useStore((s) => s.view);
@@ -28,12 +54,6 @@ export function useSessionUrlSync(agentId: string | null): void {
     // opened it yet. Writing the not-yet-replaced session over that would erase
     // the very session about to open.
     if (pendingResumeSessionId) return;
-    const path = sessionPath(agentId, sessionId, sessionMode);
-    if (window.location.pathname === path) return;
-    history.replaceState(
-      null,
-      "",
-      path + window.location.search + window.location.hash,
-    );
+    writeSessionPath(sessionPath(agentId, sessionId, sessionMode), "replace");
   }, [view, agentId, sessionId, sessionMode, pendingResumeSessionId]);
 }
