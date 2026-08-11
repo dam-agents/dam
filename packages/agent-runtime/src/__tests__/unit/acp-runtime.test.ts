@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createAcpRuntime } from "../../modules/acp/services/acp-runtime.js";
+import { createAcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runtime.js";
 import type { AgentProcess } from "../../modules/acp/infrastructure/agent-process.js";
 import type { ClientChannel } from "../../modules/acp/infrastructure/client-channel.js";
 import type {

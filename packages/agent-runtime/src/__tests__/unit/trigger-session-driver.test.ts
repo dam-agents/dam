@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClientChannel } from "../../modules/acp/infrastructure/client-channel.js";
-import type { AcpRuntime } from "../../modules/acp/services/acp-runtime.js";
+import type { AcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runtime.js";
 import { createTriggerSessionDriver } from "../../modules/acp/services/trigger-session-driver.js";
 
 function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {

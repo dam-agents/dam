@@ -1,6 +1,6 @@
 import { createInMemoryChannel } from "../infrastructure/in-memory-channel.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
-import type { AcpRuntime } from "./acp-runtime.js";
+import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
 
 export interface TriggerSessionDriver {
   start(opts: {
