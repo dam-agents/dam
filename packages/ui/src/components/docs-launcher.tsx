@@ -13,9 +13,12 @@ import { cn } from "@/lib/utils";
 
 import { DOCS_URL } from "../constants.js";
 import { getApiHealthSnapshot, subscribeApiHealth } from "../lib/api-health.js";
+import { useStore } from "../store.js";
 
 export function DocsLauncher() {
   const titleId = useId();
+  const view = useStore((s) => s.view);
+  const chatSurface = view === "chat" || view === "knowledge-base-chat";
   const banner =
     useSyncExternalStore(subscribeApiHealth, getApiHealthSnapshot) !==
     "connected";
@@ -29,6 +32,7 @@ export function DocsLauncher() {
           aria-label="Help"
           className={cn(
             "fixed right-3 z-nav h-[34px] w-[34px] md:right-4",
+            chatSurface && "hidden md:inline-flex",
             banner
               ? "bottom-[124px] md:bottom-[60px]"
               : "bottom-[80px] md:bottom-4",
