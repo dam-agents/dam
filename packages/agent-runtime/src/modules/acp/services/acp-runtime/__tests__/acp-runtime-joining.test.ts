@@ -64,4 +64,73 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: and a Go module`,
     ]);
   });
+
+  /**
+   * A whole turn has come and gone before Bob opens the conversation. He must
+   * be given everything he missed, and given it once — including when he asks
+   * again, which real clients do every time the user clicks away to the
+   * session list and back.
+   *
+   * The harness said each of these lines exactly once, to whoever was
+   * listening at the time, and it is never told who heard what. Only the
+   * runtime knows where each client's copy of the conversation ends, so
+   * handing a joiner precisely the gap — and handing a repeat request
+   * nothing at all while still answering it — is bookkeeping only the
+   * runtime can do.
+   */
+  it("should deliver the history a joiner missed exactly once, even when it asks again", () => {
+    const world = createWorld();
+
+    // A full turn happens before Bob shows up.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "what is this repo"));
+    world.harness().emit(frames.agentMessage(SESSION, "an agent platform"));
+    world.harness().emit(frames.agentMessage(SESSION, "running on k8s"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // Bob opens the conversation and receives the turn he missed, question
+    // included, in the order it happened.
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+    expect(transcriptOf(bob)).toEqual([
+      `${SESSION}: what is this repo`,
+      `${SESSION}: an agent platform`,
+      `${SESSION}: running on k8s`,
+    ]);
+
+    // The conversation moves on with Bob now live.
+    alice.send(frames.prompt(3, SESSION, "how do I run it"));
+    world.harness().emit(frames.agentMessage(SESSION, "use mise"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // Bob opens the same conversation again, as the UI does when the user
+    // wanders off to the list and comes back.
+    bob.send(frames.loadSession(2, SESSION));
+
+    // Both of his requests were answered — dropping the second on the floor
+    // would also avoid duplicates, but it would leave a client hanging.
+    expect(bob.reply(1)).toBeDefined();
+    expect(bob.reply(2)).toBeDefined();
+
+    // And his transcript holds one copy of everything: the history he was
+    // handed at the join, the turn he then watched live, and nothing said
+    // twice — the second load found he already had it all.
+    expect(transcriptOf(bob)).toEqual([
+      `${SESSION}: what is this repo`,
+      `${SESSION}: an agent platform`,
+      `${SESSION}: running on k8s`,
+      `${SESSION}: how do I run it`,
+      `${SESSION}: use mise`,
+    ]);
+
+    // Bob's catch-ups were his alone. Alice has one copy of each answer and,
+    // as ever, not her own questions — she rendered those as she typed them.
+    expect(transcriptOf(alice)).toEqual([
+      `${SESSION}: an agent platform`,
+      `${SESSION}: running on k8s`,
+      `${SESSION}: use mise`,
+    ]);
+  });
 });
