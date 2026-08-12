@@ -267,6 +267,12 @@ export const frames = {
       ],
     },
   }),
+  /** A client answering a permission prompt, by the prompt's id. */
+  permissionAnswer: (id: number, optionId = "allow") => ({
+    jsonrpc: "2.0",
+    id,
+    result: { outcome: { outcome: "selected", optionId } },
+  }),
   /** What the harness streams back as the agent talks. */
   agentMessage: (sessionId: string, text: string) => ({
     jsonrpc: "2.0",

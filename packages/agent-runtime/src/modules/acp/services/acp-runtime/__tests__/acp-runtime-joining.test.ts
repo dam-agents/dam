@@ -179,4 +179,50 @@ describe("acp-runtime: joining mid-conversation", () => {
       frames.requestPermission(77, SESSION),
     ]);
   });
+
+  /**
+   * The flip side of the scenario above: the question was answered before Bob
+   * arrived. Showing it to him would ask him to decide something already
+   * decided — at best a dead dialog to dismiss, at worst a second "allow" for
+   * an action that already ran.
+   *
+   * The tempting way to satisfy the scenario above is to treat prompts as
+   * history and replay them to joiners. This scenario is what rules that out:
+   * history never forgets, so every future joiner would be re-asked forever.
+   * A prompt has a lifetime — opened by the harness, closed by whichever
+   * client answers — and the runtime is the only party that sees both ends,
+   * so it alone can tell an open question from a settled one.
+   */
+  it("should not show a joiner a prompt that was answered before it arrived", () => {
+    const world = createWorld();
+
+    // Alice asks, the agent stops to check, and Alice allows it.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "delete the stale branches"));
+    world.harness().emit(frames.requestPermission(77, SESSION));
+    alice.send(frames.permissionAnswer(77));
+
+    // The agent carries on — the question is settled, the turn is not over.
+    world.harness().emit(frames.agentMessage(SESSION, "deleting them now"));
+
+    // Bob opens the conversation after the dialog closed.
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+
+    // No dialog for Bob: the question was asked, answered, and withdrawn
+    // before he arrived.
+    expect(bob.saw("session/request_permission")).toEqual([]);
+
+    // And its absence is not a broken join. His load was answered, he got the
+    // conversation so far, and the rest of the turn reaches him live.
+    expect(bob.reply(1)).toBeDefined();
+    world.harness().emit(frames.agentMessage(SESSION, "done, three removed"));
+    expect(transcriptOf(bob)).toEqual([
+      `${SESSION}: delete the stale branches`,
+      `${SESSION}: deleting them now`,
+      `${SESSION}: done, three removed`,
+    ]);
+  });
 });
