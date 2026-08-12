@@ -1,4 +1,5 @@
 import type { SlackOutboundRecord } from "api-server-api";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackChannelMessageEvent,
   SlackGateway,
@@ -185,7 +186,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       // Refuses over-budget bytes like the real gateway, so a test can seed a
       // file bigger than its own declared size.
       if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
-        throw new Error(`file is larger than ${maxBytes} bytes`);
+        throw new FileTooLargeError(maxBytes);
       }
       return bytes.buffer.slice(
         bytes.byteOffset,

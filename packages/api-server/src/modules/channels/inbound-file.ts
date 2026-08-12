@@ -77,34 +77,52 @@ export function mayContainMarkup(f: InboundFileDescriptor): boolean {
 export const MAX_FILE_BYTES = 20 * 1_000_000;
 export const TOTAL_FILE_BYTES_CAP = 20 * 1_000_000;
 
-/** Markers that identify the page on their own: the messenger names itself, or
- *  the body says outright that it is refusing. */
-const REFUSAL_MARKERS =
-  /<title>[^<]*slack[^<]*<\/title>|slack\.com|sign in to slack|not authori[sz]ed|access denied|permission denied/;
+/** A page's own heading — where a served page says what it is. What a document
+ *  merely *mentions* in its body says nothing (a runbook quoting "permission
+ *  denied", a saved page linking to a workspace), so markers are read here
+ *  rather than anywhere in the bytes. */
+const HEADING =
+  /<title[^>]*>([\s\S]{0,300}?)<\/title>|<h1[^>]*>([\s\S]{0,300}?)<\/h1>/g;
 
-/** A sign-in phrase means little by itself — a saved page can have "Sign in" in
- *  its nav — so it counts only alongside the field that makes a page a login
- *  form. Word-bounded, or "blog index" reads as "log in". */
-const SIGN_IN_PHRASE = /\bsign[\s-]?in\b|\blog[\s-]?in\b/;
+/** Said in a heading, each of these is the page refusing. */
+const REFUSAL_HEADING =
+  /\bsign[\s-]?in\b|\blog[\s-]?in\b|not authori[sz]ed|access denied|permission denied|forbidden|^\s*slack\s*$/;
+
+/** A sign-in URL, as opposed to a bare mention of the messenger: a saved Slack
+ *  page or a "join our workspace" link carries the domain, so the domain alone
+ *  cannot mean the download failed. */
+const SIGN_IN_URL = /slack\.com\/(signin|workspace-signin|get-started)/;
+
+/** The field that makes a page a login form, whoever served it. */
 const PASSWORD_FIELD = /(type|name|id)\s*=\s*["']?password/;
 
-/** Slack's own API error codes. A JSON refusal body carries one of these, which
- *  a sample response someone actually meant to upload would not. */
-const SLACK_AUTH_ERROR =
-  /"(not_allowed_token_type|invalid_auth|not_authed|missing_scope|no_permission|token_revoked|account_inactive|invalid_permissions)"/;
+/** Auth-shaped API error codes. A JSON refusal carries one of these; a sample
+ *  response someone meant to upload would not. */
+const AUTH_ERROR_CODE =
+  /"(not_allowed_token_type|invalid_auth|not_authed|missing_scope|no_permission|token_revoked|account_inactive|invalid_permissions|access_denied|unauthorized|forbidden)"/;
 
 /** Whether these bytes are the messenger refusing rather than the file. Checked
  *  even for formats whose contents may legitimately be markup: a `.csv` that is
  *  really a login screen would otherwise be written into the workspace and
- *  summarised as the sender's spreadsheet. Deliberately conservative — a
- *  genuine `.html` upload that merely mentions signing in must still arrive, so
- *  a generic phrase never decides this on its own. */
+ *  summarised as the sender's spreadsheet.
+ *
+ *  Deliberately conservative about *where* it reads. A genuine upload can say
+ *  anything in its body — the two directions of this call are "the agent answers
+ *  from a login screen" and "a real document is refused, blaming a permission
+ *  that is granted" — so only a heading, a sign-in URL, or an actual password
+ *  field counts. */
 export function looksLikeSignInPage(head: string): boolean {
   const lower = head.toLowerCase().trimStart();
-  if (lower.startsWith("{")) return SLACK_AUTH_ERROR.test(lower);
-  if (!/^<(!doctype|html|head|body|meta|!--)/.test(lower)) return false;
-  if (REFUSAL_MARKERS.test(lower)) return true;
-  return SIGN_IN_PHRASE.test(lower) && PASSWORD_FIELD.test(lower);
+  if (lower.startsWith("{")) return AUTH_ERROR_CODE.test(lower);
+  if (!/^<(!doctype|html|head|body|meta|\?xml|!--)/.test(lower)) return false;
+  if (SIGN_IN_URL.test(lower)) return true;
+  for (const match of lower.matchAll(HEADING)) {
+    const heading = (match[1] ?? match[2] ?? "").trim();
+    if (REFUSAL_HEADING.test(heading)) return true;
+  }
+  return (
+    /\bsign[\s-]?in\b|\blog[\s-]?in\b/.test(lower) && PASSWORD_FIELD.test(lower)
+  );
 }
 
 /** Workspace directory inbound attachments land under. Shared with the web

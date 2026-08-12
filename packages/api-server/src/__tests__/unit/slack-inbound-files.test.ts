@@ -525,6 +525,23 @@ describe("slack inbound documents", () => {
     expect(name).not.toContain(">");
   });
 
+  it("refuses a document whose real size exceeds what Slack declared", async () => {
+    // The declared size is the uploading client's claim; when it understates the
+    // file, the transfer's own ceiling is what refuses it. The sender must still
+    // be told the limit rather than a byte count and a pointless "try again".
+    const h = harness();
+    await h.mentionWithFile({
+      bytes: Buffer.alloc(25_000_000, 0x41),
+      size: 1000,
+    });
+
+    expect(h.written).toHaveLength(0);
+    const notices = h.notices();
+    expect(notices).toContain("20.0 MB limit");
+    expect(notices).not.toContain("bytes");
+    expect(notices).not.toContain("Try resending");
+  });
+
   it("delivers several documents on one message", async () => {
     const h = harness();
     await h.mentionWithFiles([

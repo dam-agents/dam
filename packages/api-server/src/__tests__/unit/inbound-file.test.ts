@@ -79,13 +79,26 @@ describe("looksLikeSignInPage", () => {
         '<!DOCTYPE html><html><a href="https://slack.com/signin">Sign in</a>',
       ),
     ).toBe(true);
-    expect(looksLikeSignInPage("<html>You are not authorized</html>")).toBe(
-      true,
-    );
+    expect(
+      looksLikeSignInPage("<html><h1>You are not authorized</h1></html>"),
+    ).toBe(true);
     // Or it is unmistakably a login form, whoever serves it.
     expect(
       looksLikeSignInPage(
         '<html><form>Sign in<input type="password" name="p"></form>',
+      ),
+    ).toBe(true);
+    // A title that sits behind a stylesheet is still the title — the head is
+    // scanned far enough to reach it.
+    expect(
+      looksLikeSignInPage(
+        `<!DOCTYPE html><html><head><style>${"a{color:red}".repeat(120)}</style><title>Sign in to Slack</title></head>`,
+      ),
+    ).toBe(true);
+    // An XML prologue is the shape the byte classifier already calls a page.
+    expect(
+      looksLikeSignInPage(
+        '<?xml version="1.0"?><html><title>Sign in to Slack</title>',
       ),
     ).toBe(true);
   });
@@ -117,6 +130,18 @@ describe("looksLikeSignInPage", () => {
     ).toBe(false);
     expect(
       looksLikeSignInPage("<html><p>How permissions work in Kubernetes</p>"),
+    ).toBe(false);
+    // A runbook quoting an error, and a saved page that merely links to a
+    // workspace: both say these words in the body, where they mean nothing.
+    expect(
+      looksLikeSignInPage(
+        "<html><h1>Runbook</h1><p>If the logs say permission denied, ask an admin.</p>",
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeSignInPage(
+        '<html><head><meta property="og:url" content="https://acme.slack.com/archives/C1/p1"></head><h1>Standup</h1>',
+      ),
     ).toBe(false);
     // Not markup at all.
     expect(looksLikeSignInPage("%PDF-1.7")).toBe(false);

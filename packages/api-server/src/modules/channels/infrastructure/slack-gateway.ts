@@ -6,6 +6,17 @@ export interface SlackImageFile {
   size: number;
 }
 
+/** A download refused for its size rather than failed. Distinct from a transport
+ *  error because it is the sender's answer: the size is named and there is no
+ *  point resending the same file, which is the opposite of what a dropped
+ *  connection warrants. */
+export class FileTooLargeError extends Error {
+  constructor(public readonly maxBytes: number) {
+    super(`file is larger than ${maxBytes} bytes`);
+    this.name = "FileTooLargeError";
+  }
+}
+
 export interface SlackMentionEvent {
   user?: string;
   channel: string;
@@ -181,7 +192,8 @@ export interface SlackGateway {
   /** `maxBytes` is a hard ceiling on what is read into memory, not a check
    *  afterwards: the file object's declared size is the uploading client's claim
    *  and is sometimes absent, so the transfer itself has to be the thing that is
-   *  bounded. Over the ceiling it throws rather than returning a truncated file. */
+   *  bounded. Over the ceiling it throws {@link FileTooLargeError} rather than
+   *  returning a truncated file. */
   downloadFile(urlPrivate: string, maxBytes?: number): Promise<ArrayBuffer>;
   /** Channels (public + private) the bot is a member of. */
   listBotChannels(): Promise<SlackChannelInfo[]>;

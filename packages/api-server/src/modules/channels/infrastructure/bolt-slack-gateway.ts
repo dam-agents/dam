@@ -1,5 +1,6 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackChannelInfo,
   SlackGateway,
@@ -274,7 +275,12 @@ export function createBoltSlackGateway(
       const res = await fetch(urlPrivate, {
         headers: { Authorization: `Bearer ${deps.botToken}` },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // An unread body holds its socket until GC, so every path that abandons
+      // the response cancels it first.
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw new Error(`HTTP ${res.status}`);
+      }
       if (maxBytes === undefined) return res.arrayBuffer();
 
       // Read against a budget instead of buffering whatever arrives: this
@@ -282,7 +288,8 @@ export function createBoltSlackGateway(
       // neither the declared size nor Content-Length has to be honest.
       const declared = Number(res.headers.get("content-length"));
       if (Number.isFinite(declared) && declared > maxBytes) {
-        throw new Error(`file is larger than ${maxBytes} bytes`);
+        await res.body?.cancel().catch(() => {});
+        throw new FileTooLargeError(maxBytes);
       }
       const body = res.body;
       if (!body) return res.arrayBuffer();
@@ -297,7 +304,7 @@ export function createBoltSlackGateway(
           total += value.byteLength;
           if (total > maxBytes) {
             overBudget = true;
-            throw new Error(`file is larger than ${maxBytes} bytes`);
+            throw new FileTooLargeError(maxBytes);
           }
           chunks.push(value);
         }
