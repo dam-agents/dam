@@ -74,10 +74,14 @@ describe("looksLikeSignInPage", () => {
   it("recognises the page a messenger serves instead of a file", () => {
     // The real thing names Slack, in its title or its asset URLs.
     expect(looksLikeSignInPage("<html><title>Slack</title>")).toBe(true);
+    // A redirect stub, which is what a refused download often is.
     expect(
       looksLikeSignInPage(
-        '<!DOCTYPE html><html><a href="https://slack.com/signin">Sign in</a>',
+        '<html><head><meta http-equiv="refresh" content="0;url=https://acme.slack.com/signin"></head>',
       ),
+    ).toBe(true);
+    expect(
+      looksLikeSignInPage('<html><form action="https://slack.com/signin">'),
     ).toBe(true);
     expect(
       looksLikeSignInPage("<html><h1>You are not authorized</h1></html>"),
@@ -141,6 +145,18 @@ describe("looksLikeSignInPage", () => {
     expect(
       looksLikeSignInPage(
         '<html><head><meta property="og:url" content="https://acme.slack.com/archives/C1/p1"></head><h1>Standup</h1>',
+      ),
+    ).toBe(false);
+    // A document that merely links to a sign-in page is still the document.
+    expect(
+      looksLikeSignInPage(
+        '<html><h1>Onboarding</h1><a href="https://slack.com/signin">sign in here</a>',
+      ),
+    ).toBe(false);
+    // And a lookalike host cannot stand in for the real one.
+    expect(
+      looksLikeSignInPage(
+        '<html><form action="https://notslack.com/signin"><input type="text">',
       ),
     ).toBe(false);
     // Not markup at all.

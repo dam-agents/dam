@@ -267,7 +267,7 @@ export function createBoltSlackGateway(
 
     async downloadFile(
       urlPrivate: string,
-      maxBytes?: number,
+      maxBytes: number,
     ): Promise<ArrayBuffer> {
       // A 2xx here does not mean the bytes are the file: Slack answers a
       // request it won't serve with a 200 and a sign-in page. The caller
@@ -281,8 +281,6 @@ export function createBoltSlackGateway(
         await res.body?.cancel().catch(() => {});
         throw new Error(`HTTP ${res.status}`);
       }
-      if (maxBytes === undefined) return res.arrayBuffer();
-
       // Read against a budget instead of buffering whatever arrives: this
       // process holds the bytes and serves every channel in the install, and
       // neither the declared size nor Content-Length has to be honest.
@@ -292,7 +290,8 @@ export function createBoltSlackGateway(
         throw new FileTooLargeError(maxBytes);
       }
       const body = res.body;
-      if (!body) return res.arrayBuffer();
+      // A bodyless response (204, HEAD) has nothing to read and nothing to bound.
+      if (!body) return new ArrayBuffer(0);
       const chunks: Uint8Array[] = [];
       let total = 0;
       const reader = body.getReader();

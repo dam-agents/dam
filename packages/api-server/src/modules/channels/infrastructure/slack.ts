@@ -319,10 +319,21 @@ type FetchedFailure = {
   reason: string;
 };
 
+/** The worker's attachment-memory budget, as the download loop sees it. Bytes
+ *  are charged as they arrive and released when the turn that holds them
+ *  settles, so what is refused is refused before it is ever read. */
+interface HeldBudget {
+  fits(bytes: number): boolean;
+  charge(bytes: number): () => void;
+}
+
 type FetchAttachmentsResult = {
   images: FetchedImage[];
   files: FetchedFile[];
   failures: FetchedFailure[];
+  /** Releases every byte this fetch charged. The turn carrying the files owns
+   *  it, and must call it on every settlement path. */
+  release: () => void;
 };
 
 const TOTAL_IMAGE_BYTES_CAP = 30 * 1_000_000;
@@ -411,6 +422,7 @@ async function fetchSlackAttachments(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
   uploader: string,
+  budget: HeldBudget,
 ): Promise<FetchAttachmentsResult> {
   const attachments = files ?? [];
   const pictures = attachments.filter((f) =>
@@ -425,6 +437,7 @@ async function fetchSlackAttachments(
     const images: FetchedImage[] = [];
     const staged: FetchedFile[] = [];
     const failures: FetchedFailure[] = [];
+    const charges: Array<() => void> = [];
 
     // The picture cap is about what one prompt may carry, so it withholds the
     // pictures and nothing else: a file on the same message is written to disk,
@@ -491,10 +504,13 @@ async function fetchSlackAttachments(
         failures.push({
           name: attachmentName(f),
           kind: "image",
+          // The ceiling handed to the download is what is *left* of the budget,
+          // so the sender hears the budget itself — a residual would be a
+          // number they cannot act on, and it would move with attachment order.
           reason:
             err instanceof FileTooLargeError
-              ? `it is over the ${megabytes(err.maxBytes)} MB of images a ` +
-                "single message can carry."
+              ? `it is over the ${megabytes(TOTAL_IMAGE_BYTES_CAP)} MB of ` +
+                "images a single message can carry."
               : `${formatError(err)}. Try resending.`,
         });
       }
@@ -526,6 +542,19 @@ async function fetchSlackAttachments(
       const declaredTooBig = overCap(f.size ?? 0);
       if (declaredTooBig) {
         failures.push({ name, kind: "file", reason: declaredTooBig });
+        continue;
+      }
+      // Asked before the download, so bytes the worker has no room for are never
+      // read. Concurrent turns see each other's charges, which a per-message cap
+      // cannot: nothing limits how many messages arrive at once.
+      if (!budget.fits(f.size || MAX_FILE_BYTES)) {
+        failures.push({
+          name,
+          kind: "file",
+          reason:
+            "the agent is already holding as many attachments as it can at " +
+            "once. Send it again in a moment.",
+        });
         continue;
       }
       try {
@@ -580,6 +609,7 @@ async function fetchSlackAttachments(
           continue;
         }
         stagedBytes += bytes.length;
+        charges.push(budget.charge(bytes.length));
         staged.push({
           name,
           bytes,
@@ -594,15 +624,24 @@ async function fetchSlackAttachments(
           // resending the same file gets the same answer. Reached when Slack
           // understated the size or omitted it, so the transfer caught what the
           // declared size did not.
+          // Same rule as the picture path: the copy names the cap, never
+          // whatever ceiling this particular call was given.
           reason:
             err instanceof FileTooLargeError
-              ? `it is over the ${megabytes(err.maxBytes)} MB limit for a file ` +
-                "the agent can be handed."
+              ? `it is over the ${megabytes(MAX_FILE_BYTES)} MB limit for a ` +
+                "file the agent can be handed."
               : `${formatError(err)}. Try resending.`,
         });
       }
     }
-    return { images, files: staged, failures };
+    return {
+      images,
+      files: staged,
+      failures,
+      release: () => {
+        for (const undo of charges) undo();
+      },
+    };
   } finally {
     release();
   }
@@ -617,6 +656,8 @@ type TurnAttachments = {
   images: FetchedImage[];
   files: FetchedFile[];
   withheldNote: string;
+  /** Frees the worker's budget for these bytes. The turn owns it. */
+  release: () => void;
 };
 
 function renderWithheldNote(failures: FetchedFailure[]): string {
@@ -1863,10 +1904,11 @@ export function createSlackWorker(
     slackUserId: string,
   ): Promise<TurnAttachments | null> {
     if (!gateway) return null;
-    const { images, files, failures } = await fetchSlackAttachments(
+    const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
       event.files,
       slackUserId,
+      heldBudget,
     );
     for (const f of failures) {
       await ephemeral(
@@ -1876,7 +1918,12 @@ export function createSlackWorker(
         `Couldn't use attached ${f.plural ? `${f.kind}s` : f.kind} '${f.name}': ${f.reason}`,
       );
     }
-    return { images, files, withheldNote: renderWithheldNote(failures) };
+    return {
+      images,
+      files,
+      withheldNote: renderWithheldNote(failures),
+      release,
+    };
   }
 
   /** Hand a turn's files to the agent: written into its workspace under the
@@ -2007,22 +2054,28 @@ export function createSlackWorker(
 
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
-    await relaySharedTurn({
-      channel: event.channel,
-      threadTs,
-      eventTs: event.ts,
-      text: event.text + fetched.withheldNote,
-      hasThread: !!event.threadTs,
-      slackUserId,
-      instanceName: binding.instanceName,
-      owner: binding.owner,
-      teamId: event.teamId,
-      images: fetched.images,
-      files: fetched.files,
-      // A 1:1 DM has exactly one human speaker, so labelling the prompt with
-      // their Slack mention is redundant — keep the private DM prompt clean.
-      speakerLabel: !opts.directMessage,
-    });
+    try {
+      await relaySharedTurn({
+        channel: event.channel,
+        threadTs,
+        eventTs: event.ts,
+        text: event.text + fetched.withheldNote,
+        hasThread: !!event.threadTs,
+        slackUserId,
+        instanceName: binding.instanceName,
+        owner: binding.owner,
+        teamId: event.teamId,
+        images: fetched.images,
+        files: fetched.files,
+        // A 1:1 DM has exactly one human speaker, so labelling the prompt with
+        // their Slack mention is redundant — keep the private DM prompt clean.
+        speakerLabel: !opts.directMessage,
+      });
+    } finally {
+      // The turn is awaited to settlement, wake included, so this is where these
+      // bytes stop being held — every exit from the relay included.
+      fetched.release();
+    }
   }
 
   // A channel or group-DM `@mention` (`app_mention`). A 1:1 DM's messages
@@ -2304,9 +2357,9 @@ export function createSlackWorker(
     slackUserId: string;
     images: FetchedImage[];
     files: FetchedFile[];
-    /** Names of attachments dropped at intake because the worker was already
-     *  holding its budget. Told to the agent, never delivered. */
-    strippedFiles?: string[];
+    /** Frees the worker's budget for this message's bytes; called when the batch
+     *  carrying it settles. */
+    release: () => void;
   };
 
   /** The files of a coalesced batch, up to what one turn may carry, plus the
@@ -2336,34 +2389,43 @@ export function createSlackWorker(
     return { kept, dropped };
   }
 
-  /** What this worker may hold in read-along attachment bytes at once. One
-   *  budget for the process, not one per queue: a queue exists per channel *and*
-   *  per thread with no bound on how many, and this process runs the channel
-   *  workers for the whole install, so the total is what matters. Past it a
-   *  message still relays; only its attachments are dropped — and the agent is
-   *  told, since a file it can see in the channel and was never handed is what
-   *  this path exists to prevent. */
-  const AMBIENT_HELD_BYTES_CAP = 3 * TOTAL_FILE_BYTES_CAP;
+  /** What this worker may hold in inbound attachment bytes at once, across every
+   *  path. A per-message cap says nothing about how many messages are in flight,
+   *  and the expensive stretch is the wait for a cold pod: bytes are downloaded
+   *  before the turn and held until it settles, so a mention and a read-along
+   *  message cost the same memory for the same duration. Nothing gates how many
+   *  arrive at once — Bolt delivers each event as it comes — and this process runs
+   *  the channel workers for the whole install, so the budget belongs to the
+   *  worker rather than to any one queue or turn. Past it an attachment is
+   *  withheld and said so; the message itself still relays. */
+  const HELD_BYTES_CAP = 3 * TOTAL_FILE_BYTES_CAP;
 
-  /** Bytes held by batches currently running. Paired with the release in the
-   *  drain's own `finally`, so the two cannot come apart. */
-  let ambientBatchBytes = 0;
+  /** Bytes charged to attachments this worker is holding: from the moment one is
+   *  downloaded until the turn carrying it settles, whichever path it arrived on.
+   *  Every charge is paired with a release in a `finally`, so the two cannot come
+   *  apart, and a charge that outlives its turn would mean bytes that are still
+   *  resident anyway. */
+  let heldBytes = 0;
 
   function fileBytes(files: FetchedFile[]): number {
     return files.reduce((n, f) => n + f.bytes.length, 0);
   }
 
-  /** What is held right now: queued messages read from the queues themselves
-   *  rather than tracked by a counter, so a drain that gives up on a batch
-   *  cannot strand bytes and shrink the budget for every channel for the life of
-   *  the process. What the total says is resident always is. */
-  function ambientHeldBytes(): number {
-    let held = ambientBatchBytes;
-    for (const queue of ambientQueues.values()) {
-      for (const msg of queue.pending) held += fileBytes(msg.files);
-    }
-    return held;
-  }
+  /** The budget as the download loop asks about it: whether these bytes fit, and
+   *  a charge that hands back its own release. Passed in rather than reached for,
+   *  so the loop stays a function of what it is given. */
+  const heldBudget: HeldBudget = {
+    fits: (bytes) => bytes === 0 || heldBytes + bytes <= HELD_BYTES_CAP,
+    charge: (bytes) => {
+      heldBytes += bytes;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        heldBytes = Math.max(0, heldBytes - bytes);
+      };
+    },
+  };
 
   // Ambient traffic is serialized per session and coalesced: messages that
   // arrive while a turn is in flight flush as one multi-message prompt, so a
@@ -2404,16 +2466,6 @@ export function createSlackWorker(
       queue = { channelId, threadTs, pending: [], draining: false };
       ambientQueues.set(key, queue);
     }
-    const bytes = fileBytes(msg.files);
-    if (bytes > 0 && ambientHeldBytes() + bytes > AMBIENT_HELD_BYTES_CAP) {
-      getLogger().warn(
-        { channelId, files: msg.files.length, bytes, held: ambientHeldBytes() },
-        "slack.ambient_file.over_held_cap",
-      );
-      // The bytes go, the names stay: the turn tells the agent what it was not
-      // handed rather than leaving it to answer as though it had the file.
-      msg = { ...msg, files: [], strippedFiles: msg.files.map((f) => f.name) };
-    }
     queue.pending.push(msg);
     if (!queue.draining) void drainAmbientQueue(key, queue);
   }
@@ -2423,10 +2475,6 @@ export function createSlackWorker(
     try {
       while (queue.pending.length > 0) {
         const batch = queue.pending.splice(0);
-        // Released once this batch's turn settles: its buffers live in `batch`
-        // until then, which is the expensive part of the wait, not the queueing.
-        const held = fileBytes(batch.flatMap((m) => m.files));
-        ambientBatchBytes += held;
         try {
           const last = batch.at(-1);
           if (!last) continue;
@@ -2466,14 +2514,12 @@ export function createSlackWorker(
             messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
             images: batch.flatMap((m) => m.images),
             files: kept,
-            droppedFiles: [
-              ...dropped.map((f) => f.name),
-              ...batch.flatMap((m) => m.strippedFiles ?? []),
-            ],
+            droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
           });
         } finally {
-          ambientBatchBytes = Math.max(0, ambientBatchBytes - held);
+          // The batch's buffers die with this iteration, so its charge does too.
+          for (const msg of batch) msg.release();
         }
       }
     } catch (err) {
@@ -2520,10 +2566,11 @@ export function createSlackWorker(
     // Attachments ride along when they fit; ambient turns never post error
     // ephemerals, so oversized or unfetchable ones just drop — but the agent is
     // still told, in the prompt, that one was withheld.
-    const { images, files, failures } = await fetchSlackAttachments(
+    const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
       event.files,
       slackUserId,
+      heldBudget,
     );
     const withheldNote = renderWithheldNote(failures);
 
@@ -2554,6 +2601,7 @@ export function createSlackWorker(
       slackUserId,
       images,
       files,
+      release,
     });
   }
 

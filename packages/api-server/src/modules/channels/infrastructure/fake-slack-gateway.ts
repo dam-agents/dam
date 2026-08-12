@@ -185,7 +185,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       if (!bytes) throw new Error(`HTTP 404`);
       // Refuses over-budget bytes like the real gateway, so a test can seed a
       // file bigger than its own declared size.
-      if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+      if (bytes.byteLength > maxBytes) {
         throw new FileTooLargeError(maxBytes);
       }
       return bytes.buffer.slice(

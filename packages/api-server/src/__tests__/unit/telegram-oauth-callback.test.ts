@@ -1,6 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Hono } from "hono";
 import { createTelegramOAuthRoutes } from "../../modules/channels/infrastructure/telegram-oauth.js";
 import {
   createTelegramBindFlowStore,
@@ -40,12 +41,15 @@ function makeHarness(opts?: { pendingCreatedAt?: number }) {
   const bindFlows = createTelegramBindFlowStore({
     store: createMemoryTtlStore(600_000),
   });
-  const routes = createTelegramOAuthRoutes({
-    pendingFlows,
-    bindFlows,
-    oauthConfig,
-    uiBaseUrl: UI,
-  });
+  const routes = new Hono().route(
+    "/api/telegram",
+    createTelegramOAuthRoutes({
+      pendingFlows,
+      bindFlows,
+      oauthConfig,
+      uiBaseUrl: UI,
+    }),
+  );
 
   return { routes, pendingFlows, pendingFlowsMap, bindFlows };
 }

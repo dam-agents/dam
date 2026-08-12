@@ -88,10 +88,15 @@ const HEADING =
 const REFUSAL_HEADING =
   /\bsign[\s-]?in\b|\blog[\s-]?in\b|not authori[sz]ed|access denied|permission denied|forbidden|^\s*slack\s*$/;
 
-/** A sign-in URL, as opposed to a bare mention of the messenger: a saved Slack
- *  page or a "join our workspace" link carries the domain, so the domain alone
- *  cannot mean the download failed. */
-const SIGN_IN_URL = /slack\.com\/(signin|workspace-signin|get-started)/;
+/** A sign-in page the bytes are *pointed at* rather than one they merely link
+ *  to: the target of a form or a meta refresh, which is what a redirect stub
+ *  refusing a download looks like. A document may contain the same URL in its
+ *  prose — a saved page, a runbook, a `.md` linking to a workspace — and that
+ *  says nothing about what these bytes are. The host is matched whole (a
+ *  subdomain, then `slack.com`) rather than as a substring, so neither an
+ *  arbitrary prefix nor a lookalike host can stand in for it. */
+const SIGN_IN_TARGET =
+  /(?:action|content)\s*=\s*["'][^"']*https?:\/\/(?:[a-z0-9-]+\.)*slack\.com\/(?:signin|workspace-signin)/;
 
 /** The field that makes a page a login form, whoever served it. */
 const PASSWORD_FIELD = /(type|name|id)\s*=\s*["']?password/;
@@ -115,7 +120,7 @@ export function looksLikeSignInPage(head: string): boolean {
   const lower = head.toLowerCase().trimStart();
   if (lower.startsWith("{")) return AUTH_ERROR_CODE.test(lower);
   if (!/^<(!doctype|html|head|body|meta|\?xml|!--)/.test(lower)) return false;
-  if (SIGN_IN_URL.test(lower)) return true;
+  if (SIGN_IN_TARGET.test(lower)) return true;
   for (const match of lower.matchAll(HEADING)) {
     const heading = (match[1] ?? match[2] ?? "").trim();
     if (REFUSAL_HEADING.test(heading)) return true;

@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-08-11
+Last verified: 2026-08-12
 
 ## Overview
 
@@ -41,7 +41,7 @@ Two disjoint mechanisms feed the one logger:
 | Approvals | `approval.verdict` (approve/deny once/permanent/host), `approval.verdict_conflict` (permanent verdict refused because an equivalent rule with the opposite verdict exists — the approval stays unresolved, so no `approval.verdict` line follows) |
 | Authorization lists | `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |
 | Credentials | `secret.create|update|delete`, `oauth.token_mint`, `connection.create|delete`, `secret.orphan_cleanup_failed` |
-| Channels | `channel.authz` / `channel.authz_deny` (in-chat command authorization; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; messenger-native driver id in detail), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
+| Channels | `channel.authz` / `channel.authz_deny` (in-chat command authorization; Telegram group-admin gate), `channel.inbound.unauthorized` (unbound Telegram chat probing), `channel.turn` (inbound relay turn, prompt omitted; messenger-native driver id in detail), `channel.file.delivered` (an inbound attachment written into the workspace, by name and byte count — the trail's answer to who put a file there), `identity.link`, `channel.outbound` (agent post, incl. resolved attachment path and whether a threaded reply was broadcast to the whole channel), `channel.chat_bound` / `channel.chat_unbound` (binding grants; each has a `.notify_failed` warn sibling when the in-chat confirmation can't be delivered) |
 | Privileged | `skill.install` / `skill.uninstall` / `skill.publish`, `skill.set.create` / `skill.set.delete` (a set is a reusable instruction to fetch code from named repositories), `schedule.create|toggle|delete` (incl. agent-driven), `usage.inspect` / `usage.inspect.deny`, `agent.create|update|delete|restart|wake` |
 
 ## Invariants

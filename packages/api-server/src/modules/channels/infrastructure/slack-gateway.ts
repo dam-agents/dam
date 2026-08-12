@@ -193,8 +193,9 @@ export interface SlackGateway {
    *  afterwards: the file object's declared size is the uploading client's claim
    *  and is sometimes absent, so the transfer itself has to be the thing that is
    *  bounded. Over the ceiling it throws {@link FileTooLargeError} rather than
-   *  returning a truncated file. */
-  downloadFile(urlPrivate: string, maxBytes?: number): Promise<ArrayBuffer>;
+   *  returning a truncated file. Required, not optional — an omitted ceiling
+   *  would silently restore the unbounded read this exists to prevent. */
+  downloadFile(urlPrivate: string, maxBytes: number): Promise<ArrayBuffer>;
   /** Channels (public + private) the bot is a member of. */
   listBotChannels(): Promise<SlackChannelInfo[]>;
   /** Membership lookup for one conversation; null when Slack can't resolve it. */

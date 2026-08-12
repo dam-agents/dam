@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-08-10
+Last verified: 2026-08-12
 
 ## Overview
 
@@ -40,7 +40,7 @@ A stateless Go reconciler built on client-go. It watches the `Agent` custom reso
 
 A TypeScript server that hosts the user-facing surface and the ACP relay. It runs two listeners:
 
-- **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket. The `version` endpoint is unauthenticated and powers the CLI's compatibility-floor check ([cli.md](cli.md)).
+- **Public port** — user-authenticated tRPC, REST (OAuth callbacks, health, version), and the ACP relay WebSocket. The tRPC surface is reachable over two transports on the same router: HTTP (the transport every client uses today) and a WebSocket endpoint (`/api/trpc-ws`) that authenticates on its first frame rather than a URL token — a 1:1 alternative laid down for pushed live updates, not yet consumed by any client. The `version` endpoint is unauthenticated and powers the CLI's compatibility-floor check ([cli.md](cli.md)).
 - **Harness port** — an internal-only endpoint consumed by agent pods for trigger handoff and MCP tool calls. Not exposed outside the cluster and carries no user authentication.
 
 The api-server proxies all ACP traffic to agent pods; clients never dial pods directly. It also wakes hibernated agents on demand before forwarding the first message of a session. Both the ACP relay and the tRPC proxy verify the caller — either a Keycloak JWT or an API key, dispatched by token prefix in the same `Authorization: Bearer` slot — and check ownership at the public port, then rewrite `Authorization` to the per-agent runtime token before forwarding. Agent-runtime never sees user identity directly. See [security-and-credentials](security-and-credentials.md) and [`packages/api-server/`](../../packages/api-server/).
@@ -87,7 +87,7 @@ Continuing such a conversation here makes a session outlive the surface it start
 | cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
-| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
+| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations: surfaced to the UI, and used by a channel worker to place an inbound attachment in the workspace — which makes a woken pod a precondition for building that turn's prompt |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |

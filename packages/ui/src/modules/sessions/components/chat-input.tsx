@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Textarea } from "@/components/ui/textarea";
+import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
@@ -52,7 +53,7 @@ export function ChatInput({
       if (file.size > MAX_UPLOAD_BYTES) {
         emitToast({
           kind: "error",
-          message: `${file.name} exceeds ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB — skipped`,
+          message: `${file.name} exceeds ${formatBytes(MAX_UPLOAD_BYTES)} — skipped`,
         });
         continue;
       }

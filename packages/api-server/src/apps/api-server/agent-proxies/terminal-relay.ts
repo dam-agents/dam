@@ -2,12 +2,12 @@ import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { isAgentWakeTimeoutError } from "../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
+import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
+import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
+import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 import type { SessionPresence } from "./session-presence.js";
-import type { RedisBus } from "../../core/redis-bus.js";
+import type { RedisBus } from "../../../core/redis-bus.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;

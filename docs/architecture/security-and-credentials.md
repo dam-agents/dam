@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-10
+Last verified: 2026-08-12
 
 ## Overview
 
@@ -456,10 +456,11 @@ excluded — their host is already TLS-terminated by the connection's own
 credential chain. Because each entry is interpolated into the gateway's
 Envoy bootstrap and cert SANs, the CRD constrains list items to DNS
 hostnames, so a rule host cannot inject config into the owner's gateway.
-A one-shot api-server startup migration projects promotions previously
-materialized as owner-scoped credential-less marker Secrets onto the
-Agent resources and retires the markers; the controller consumes both
-signals, so rules stay enforced mid-migration.
+That projection is a second write to the Agent CR that cannot share a
+transaction with the rule write, so a per-agent periodic reconcile
+re-derives it from the rules — converging a host whose patch failed, or
+whose api-server died between the rule commit and the patch, without
+operator action.
 
 A referenced SDS file missing from the mounted Secret is a fatal Envoy
 boot error, so the controller verifies each credential's SDS key against
@@ -586,10 +587,13 @@ chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
 relays to the main agent pod and runs under the Agent's own
 credential set, gated by the owner's egress rules exactly like any
-other turn; no per-speaker credential selection happens. What such a
-turn cannot do is raise a *hold* — the decision has nowhere to be made
-from a messenger, so an unmatched request is refused rather than
-waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
+other turn; no per-speaker credential selection happens. Such a turn can also place a file in the
+Agent's workspace: an attachment sent in the conversation is written
+there for the agent to open, so a speaker with no platform
+identity is a writer to persistent state ([persistence](persistence.md)).
+What such a turn cannot do is raise a *hold* — the decision has nowhere
+to be made from a messenger, so an unmatched request is refused rather
+than waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
 — the terms bind the party whose credentials run it — and the
 security log attributes the allow to the messenger-native sender id
 with basis *place*.
