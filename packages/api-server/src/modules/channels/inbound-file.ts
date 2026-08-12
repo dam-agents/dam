@@ -63,16 +63,31 @@ export function mayContainMarkup(f: InboundFileDescriptor): boolean {
   return MARKUP_EXTENSIONS.test(f.name ?? "");
 }
 
-/** Ceiling for one delivered file. The agent's own write surface refuses more
- *  than this, so a larger attachment cannot be delivered at all — it is
- *  refused here instead, where the sender can be told why. Matches the cap the
- *  web UI enforces on its uploads. */
-export const MAX_FILE_BYTES = 50 * 1_000_000;
+/** Ceiling for one delivered file, and for one message's files together.
+ *
+ *  Deliberately far below the 50 MB a *web-UI* upload may be: those bytes go
+ *  from the browser straight to the pod, while a messenger's go through the
+ *  api-server, which holds the file in memory and then hands the pod a
+ *  base64 JSON body — several times the file's size, live at once, in a
+ *  process whose default limit is 512Mi and which runs the channel workers for
+ *  the whole install as a single replica. The cap that matters here is that
+ *  budget, not what the pod would accept. */
+export const MAX_FILE_BYTES = 8 * 1_000_000;
+export const TOTAL_FILE_BYTES_CAP = 8 * 1_000_000;
 
-/** Ceiling for one message's files together. They are downloaded into the
- *  api-server's memory before they are written to the pod, and a messenger
- *  will happily attach ten of them. */
-export const TOTAL_FILE_BYTES_CAP = 50 * 1_000_000;
+/** Whether markup is the sign-in page a messenger serves in place of a file it
+ *  won't release. Checked even for formats whose contents may legitimately be
+ *  markup: a `.csv` that is really a login screen would otherwise be written
+ *  into the workspace and summarised as the sender's spreadsheet. */
+export function looksLikeSignInPage(head: string): boolean {
+  const lower = head.toLowerCase();
+  if (!/^<(!doctype|html|head|body)\b/.test(lower.trimStart())) return false;
+  return (
+    /sign\s?in|signin|log\s?in|<title>\s*slack\s*<\/title>|slack\.com/.test(
+      lower,
+    ) || /not authorized|permission|forbidden/.test(lower)
+  );
+}
 
 /** Workspace directory inbound attachments land under. Shared with the web
  *  UI's uploads, so a session that spans both surfaces keeps one place for
@@ -91,7 +106,12 @@ function sanitizeSegment(s: string): string {
  *  something: in a shared channel anyone the messenger admits can attach a
  *  file, and a `CLAUDE.md` or an `.env` landing where the harness reads one
  *  would let a passer-by rewrite what the agent believes. They also let two
- *  files of the same name coexist in one thread. */
+ *  files of the same name coexist in one thread.
+ *
+ *  What the per-conversation directory does *not* do is scope reading: one
+ *  workspace serves every conversation an Agent is bound to, so a file sent in
+ *  a private DM is on disk for a turn driven from a public channel to find.
+ *  That is the workspace model, not a property of this path. */
 export function inboundFilePath(opts: {
   /** The turn's conversation, as its own directory — a thread key, not a
    *  display name. Sanitized here; callers pass it raw. */

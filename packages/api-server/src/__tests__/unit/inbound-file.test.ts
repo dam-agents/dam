@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   inboundFilePath,
+  looksLikeSignInPage,
   mayContainMarkup,
   wasSentAsImage,
 } from "../../modules/channels/inbound-file.js";
@@ -66,6 +67,31 @@ describe("mayContainMarkup", () => {
       }),
     ).toBe(false);
     expect(mayContainMarkup({})).toBe(false);
+  });
+});
+
+describe("looksLikeSignInPage", () => {
+  it("recognises the page a messenger serves instead of a file", () => {
+    expect(
+      looksLikeSignInPage("<!DOCTYPE html><html>Sign in to your workspace"),
+    ).toBe(true);
+    expect(looksLikeSignInPage("<html><title>Slack</title>")).toBe(true);
+    expect(looksLikeSignInPage("<html>You are not authorized</html>")).toBe(
+      true,
+    );
+  });
+
+  it("leaves a genuine HTML document alone", () => {
+    // A saved page is a real upload; only the login screen is a failed
+    // download, so the two must not be confused.
+    expect(
+      looksLikeSignInPage(
+        "<!DOCTYPE html><html><h1>Quarterly report</h1><table>",
+      ),
+    ).toBe(false);
+    // Not markup at all.
+    expect(looksLikeSignInPage("%PDF-1.7")).toBe(false);
+    expect(looksLikeSignInPage("name,total\nsign in,3\n")).toBe(false);
   });
 });
 

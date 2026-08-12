@@ -321,7 +321,7 @@ describe("slack inbound images", () => {
       .find((l) => String(l.msg).startsWith("slack.permissions.missing"));
     expect(report).toBeDefined();
     expect(String(report!.msg)).toContain("files:read");
-    expect(String(report!.msg)).toContain("reading images people attach");
+    expect(String(report!.msg)).toContain("reading the files people attach");
     expect(String(report!.msg)).toContain("Reinstall the app");
     // Granted ones are not named, and neither is a capability that works.
     expect(String(report!.msg)).not.toContain("chat:write");
