@@ -290,8 +290,7 @@ export async function bootstrap() {
   const contributionsSettledPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
-    isSettled: async (agentId: string) =>
-      (await runtimeDelivery.contributionsStatus(agentId)).settled,
+    isSettled: runtimeDelivery.contributionsSettled,
     isApplied: runtimeDelivery.contributionsApplied,
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);

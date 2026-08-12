@@ -49,6 +49,8 @@ export interface RuntimeDeliveryComposition {
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
+  /** The agent answered for the current version — cheaper than the full status. */
+  contributionsSettled(agentId: string): Promise<boolean>;
   /** The agent answered *cleanly*: `lastAppliedVersion >= version`. A driver
    *  failure advances the settled cursor but not this one, so anything gating
    *  on "the pod's disk now reflects the spec" asks here. */
@@ -143,9 +145,15 @@ export function composeRuntimeDelivery(
       };
     },
 
-    // Reads the outbox row alone: the full status also probes for a pending
-    // workspace-seed, which a caller gating on one boolean discards. No row
-    // means nothing was ever asked of the agent.
+    // Both bits read the outbox row alone. The full status also probes for a
+    // pending workspace-seed, which a caller gating on one boolean discards —
+    // and the harness-config poller asks every 800ms while a change is in
+    // flight. No row means nothing was ever asked of the agent.
+    async contributionsSettled(agentId): Promise<boolean> {
+      const row = await outboxRepo.getRow(agentId);
+      return row === null || row.lastSettledVersion >= row.version;
+    },
+
     async contributionsApplied(agentId): Promise<boolean> {
       const row = await outboxRepo.getRow(agentId);
       return row === null || row.lastAppliedVersion >= row.version;
