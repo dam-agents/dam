@@ -113,4 +113,48 @@ describe("acp-runtime: leaving", () => {
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(bob.reply(2)?.result).toEqual({ stopReason: "end_turn" });
   });
+
+  /**
+   * A queued message has not reached the harness yet; it exists only inside
+   * the runtime. If its sender leaves before its turn comes, running it
+   * anyway would start work whose asker can never see it, answer its
+   * permission prompts, or read its result — so it goes with them. But only
+   * theirs: the queue is the conversation's, not the leaver's, and the
+   * neighbour behind them in line did nothing wrong.
+   *
+   * Only the runtime can make that cut. The harness has never seen either
+   * message, and each client knows only its own — the runtime alone knows
+   * whose message is whose.
+   */
+  it("should drop a leaver's queued messages but nobody else's", () => {
+    const world = createWorld();
+
+    // Alice's turn is running, and two questions wait behind it: first
+    // Bob's, then Carol's.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "keep the build green"));
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+    bob.send(frames.prompt(2, SESSION, "also update the deps"));
+    const carol = world.connect();
+    carol.send(frames.loadSession(1, SESSION));
+    carol.send(frames.prompt(2, SESSION, "and tag a release"));
+
+    // Bob leaves before his question ever reached the agent.
+    bob.disconnect();
+
+    // The running turn ends, and the queue drains past the hole he left.
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // The agent was asked exactly two things, and Bob's was never one of
+    // them. Carol's survived his departure untouched and got its answer.
+    expect(promptTextsOf(world.harness())).toEqual([
+      "keep the build green",
+      "and tag a release",
+    ]);
+    expect(carol.reply(2)?.result).toEqual({ stopReason: "end_turn" });
+  });
 });
