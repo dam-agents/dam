@@ -292,6 +292,19 @@ export const frames = {
 };
 
 /**
+ * The prompt texts the harness was asked to run, in the order they were
+ * forwarded. What reached the harness is the ground truth for the prompt
+ * queue: a message dropped before its turn is proven dropped by its absence
+ * here, not by anything a client saw.
+ */
+export function promptTextsOf(harness: Harness): string[] {
+  return harness.received("session/prompt").map((frame) => {
+    const params = frame.params as { prompt?: { text?: string }[] };
+    return (params.prompt ?? []).map((block) => block.text ?? "").join("");
+  });
+}
+
+/**
  * The conversation a client actually saw, as `"<sessionId>: <text>"` lines in
  * arrival order — covering both what the agent said and what other people
  * typed, since both reach a client as `session/update`.
