@@ -275,6 +275,10 @@ export function SkillsSurface({
         agentId={agentId}
         surface={surface}
         derived={derived}
+        onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
+        onDeleteLocal={(skill, pub) =>
+          void deleteStandaloneWithConfirm(skill, pub)
+        }
         onClose={() => setOpenModal(null)}
       />
     </div>

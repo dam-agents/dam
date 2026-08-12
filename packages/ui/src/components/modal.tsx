@@ -70,6 +70,10 @@ interface DialogHeaderProps {
   /** Sits beside the title, outside the `<h2>` so it stays out of the dialog's
    *  accessible name. */
   titleAccessory?: ReactNode;
+  /** Right-aligned controls on the title row, immediately left of the ✕ — for
+   *  a control that belongs at eye level with the name rather than in the
+   *  footer, like a preview dialog's on/off state. */
+  actions?: ReactNode;
   subtitle?: ReactNode;
   /** Draws the ✕. Omit only where the dialog exists to force a choice. */
   onClose?: () => void;
@@ -87,6 +91,7 @@ interface DialogHeaderProps {
 export function DialogHeader({
   title,
   titleAccessory,
+  actions,
   subtitle,
   onClose,
   closeDisabled,
@@ -106,7 +111,7 @@ export function DialogHeader({
         className,
       )}
     >
-      {(title || subtitle || onClose) && (
+      {(title || subtitle || onClose || actions) && (
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {title && (
@@ -127,23 +132,28 @@ export function DialogHeader({
               <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
             )}
           </div>
-          {onClose && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={onClose}
-              disabled={closeDisabled}
-              aria-label="Close"
-              data-dialog-close
-              data-testid={closeTestId}
-              /* Pulled out of the header's padding so it sits 16px off the
-                 panel corner at both breakpoints, rather than lining up with
-                 the title. */
-              className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
-            >
-              <Close size={16} />
-            </Button>
+          {(actions || onClose) && (
+            <div className="flex shrink-0 items-center gap-3">
+              {actions}
+              {onClose && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={onClose}
+                  disabled={closeDisabled}
+                  aria-label="Close"
+                  data-dialog-close
+                  data-testid={closeTestId}
+                  /* Pulled out of the header's padding so it sits 16px off the
+                     panel corner at both breakpoints, rather than lining up
+                     with the title. */
+                  className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
+                >
+                  <Close size={16} />
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}

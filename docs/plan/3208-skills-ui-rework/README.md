@@ -110,6 +110,9 @@ description before the plan folder is deleted. Seeded entries:
 | D8 | — (prototype assumes visibility is known) | `visibility` field added to scan-meta contract | Only way to render the Private badge/chip honestly |
 | D9 | Bulk button hidden while a search is active (#3243) | Button stays, scoped to the visible matches and labelled with the count (`Enable 4 matching`) | #3243 hid it because `Enable all` beside 4 of 22 visible rows misreports what it does; naming the count fixes the label rather than removing the affordance. `applyBatch` already takes arbitrary subsets. Settled with Petr 2026-08-11 — a deliberate scope widening, and it narrows follow-up Draft D to the checkbox multi-select alone |
 
+| D10 | Drawer shows a static `Not installed` label for a source skill that is off | `Off` + a live switch, same as an installed one | The switch is the drawer's whole point — installing from the preview you just read is the flow, and a dead label makes the reader go back to the list to act. Costs nothing: it is the row's own mutation |
+| D11 | Drawer offers Download for a source-backed skill | Download only on Local Skills; source-backed keeps the GitHub link | No download path exists for a source-backed skill — `readLocal` reads the pod's copy, and an uninstalled skill has none. Building one is new capability |
+
 Add rows as new deviations surface. Never silently diverge.
 
 **Plan corrections.** Slice 03's plan said the scan dispatch maps
@@ -181,7 +184,7 @@ the only durable record besides memory. File only if you want them tracked.
 | 02 ✅ | Created-here rows | Name-only rows, badge restyle, publish → kebab, Track from | 01 |
 | 03 ✅ | Source cards | Header layout, scanning state, row density, expand control, error restyle, `visibility` field | 01 |
 | 04 | Set modals restyle | Save-as-set + Add-sets visuals per prototype | 01 |
-| 05 | Skill detail drawer | Unified drawer: header toggle, chips, file strip, footer gating | 02 |
+| 05 ✅ | Skill detail drawer | Unified drawer: header toggle, chips, file strip, footer gating | 02 |
 | 06 | Stopped state | Snapshot notice, Skills-at-last-run chips, live sources list | 03 |
 | 07 | Never-run and Running · empty | Scoped-down never panel; empty panels with image group | 06 |
 | 08 | Stale-model callout | Stopped banner + nav dot + Start & fix | 01 |

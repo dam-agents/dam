@@ -131,7 +131,7 @@ export function useSkillsConfirms(
         (s) => installedRef(s.source, s.name) !== undefined,
       ).length;
       const ok = await showConfirm(
-        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn them back on at any time.`,
+        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn ${removing === 1 ? "it" : "them"} back on at any time.`,
         scope
           ? `Disable the ${removing} matching skill${removing === 1 ? "" : "s"} from ${src.name}?`
           : `Disable all skills from ${src.name}?`,
