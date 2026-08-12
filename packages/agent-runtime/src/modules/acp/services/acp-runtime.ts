@@ -875,7 +875,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     channel: ClientChannel,
     id: JsonRpcId,
     message: string,
-    data?: { code: string },
+    data?: { code: typeof PROMPT_QUEUE_FULL_CODE },
   ): void {
     sendToChannel(
       channel,

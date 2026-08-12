@@ -126,7 +126,7 @@ The runtime therefore reports them, over the same channel extension as the end-o
 
 This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived", since a legitimately queued prompt produces nothing for as long as the turn ahead of it runs. Inferring failure from silence is what made the delivery indicator claim a prompt was lost when it was only waiting. A client fails a prompt on evidence instead:
 
-- **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds. Unacknowledged this long means it never arrived.
+- **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds. Unacknowledged this long means it never arrived. A drop before acceptance carries the socket's stated cause when it gave one, unattributed: the relay writes that text as often as the runtime does.
 - **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs. The user is told it is waiting, which is true.
 - **The sender's connection drops while its prompt is still queued.** The one loss the runtime cannot report, since reporting it needs the channel that just went away — so the sender raises it locally and keeps it raised across the reconnect that follows. That reconnect replays the log, which misleads here: the dropped prompt's echo is in it, and no reply ever will be.
 

@@ -72,7 +72,9 @@ export function isQueueFullError(e: unknown): boolean {
     const data = (e as { data?: { code?: unknown } }).data;
     if (data?.code === PROMPT_QUEUE_FULL_CODE) return true;
   }
-  return extractErrorMessage(e).includes(PROMPT_QUEUE_FULL_MESSAGE);
+  // Anchored: a message that merely quotes the stem — a relayed close reason,
+  // a harness error echoing it — is not this rejection.
+  return extractErrorMessage(e).startsWith(PROMPT_QUEUE_FULL_MESSAGE);
 }
 
 export interface SendErrorDescription {
@@ -106,7 +108,7 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
 export function describeSendError(raw: string): SendErrorDescription {
   if (
     raw === QUEUE_FULL_DESCRIPTION.message ||
-    raw.includes(PROMPT_QUEUE_FULL_MESSAGE)
+    raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {

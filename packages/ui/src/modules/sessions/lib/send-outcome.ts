@@ -24,7 +24,7 @@ const UNDELIVERED_CLOSE_MESSAGE =
 
 function undelivered(closeReason: string | null): string {
   return closeReason
-    ? `${UNDELIVERED_CLOSE_MESSAGE} The agent reported: ${closeReason}.`
+    ? `${UNDELIVERED_CLOSE_MESSAGE} Reason: ${closeReason}.`
     : UNDELIVERED_CLOSE_MESSAGE;
 }
 
@@ -34,7 +34,8 @@ function undelivered(closeReason: string | null): string {
  *  reporting it would teach the user to distrust a working system. A drop before
  *  delivery is a real loss, though the SDK's wording for it describes our
  *  plumbing rather than their situation, so the socket's own reason is carried
- *  through when it gave one. A queued prompt is the exception: the runtime
+ *  through when it gave one — unattributed, because the relay writes it as
+ *  often as the runtime does. A queued prompt is the exception: the runtime
  *  discards a detaching channel's queue, so that one never runs — it fails in
  *  the WS close handler's exact words (`QUEUED_LOST_MESSAGE`), because this
  *  rejection and that handler race in either order and must agree. */
