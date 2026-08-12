@@ -30,7 +30,7 @@ export function createSlackOAuthRoutes(deps: {
   const routes = new Hono();
   const bindPage = `${deps.uiBaseUrl}/slack/bind`;
 
-  routes.get("/api/slack/oauth/callback", async (c) => {
+  routes.get("/oauth/callback", async (c) => {
     const code = c.req.query("code");
     const state = c.req.query("state");
     const error = c.req.query("error");

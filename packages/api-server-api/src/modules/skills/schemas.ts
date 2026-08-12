@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { resourceNameSchema } from "../shared.js";
+
 /** A repo-relative subdirectory to scan for skills: relative, no `..`
  *  traversal, surrounding slashes trimmed so `/foo/` and `foo` are equal. */
 export const skillSourcePathSchema = z
@@ -222,6 +224,111 @@ export const skillUninstallInputSchema = z.object({
   source: z.string().url(),
   name: z.string().min(1),
 });
+
+/** One skill inside a set. `source` is the source's **git URL**, not its id —
+ *  the same identity `agent_skills` installs on, so a set survives its source
+ *  row being deleted and re-added, and two sources carrying an `xlsx` stay
+ *  distinguishable. */
+export const skillSetEntrySchema = z.object({
+  source: z.string().url(),
+  name: z.string().min(1),
+});
+
+/** The identity a skill is installed and stored under: its source's git URL
+ *  plus its name. One definition on the contract, because the client's set
+ *  previews are compared against the server's install and skip decisions, and
+ *  a second spelling of this key fails silently rather than loudly. */
+export const skillKey = (e: { source: string; name: string }) =>
+  `${e.source}::${e.name}`;
+
+/** Same rule as every other user-named resource, from the one shared
+ *  definition — so client and server can't drift on what is legal — with a
+ *  skill-set example rather than a Connection's. */
+export const skillSetNameSchema = resourceNameSchema("my-skill-set");
+
+export const skillSetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  skills: z.array(skillSetEntrySchema),
+  createdAt: z.string(),
+});
+
+export const skillSetCreateInputSchema = z.object({
+  name: skillSetNameSchema,
+  skills: z.array(skillSetEntrySchema).min(1).max(500),
+});
+
+export const skillSetDeleteInputSchema = z.object({ id: z.string().min(1) });
+
+export const skillSetApplyInputSchema = z.object({
+  agentId: z.string().min(1),
+  setIds: z.array(z.string().min(1)).min(1).max(50),
+});
+
+/** Why an entry could not be applied. A closed set of verdicts rather than a
+ *  message: the client renders its own copy, so a server-authored sentence
+ *  would be a string the UI has to trust. Mirrors how `ScanFailure` carries a
+ *  code instead of prose. */
+export const skillSetSkipReasonSchema = z.enum([
+  "source-not-connected",
+  /** The source is connected here but could not be read — a credential or
+   *  transport problem. Distinct from the two above because the fix differs:
+   *  connect the source, make it readable, or accept the skill is gone. */
+  "source-unreadable",
+  "not-in-source",
+]);
+
+export const skillSetApplyResultSchema = z.object({
+  /** Full installed list after the apply — authoritative, like every other
+   *  install path's return. */
+  installed: z.array(skillRefSchema),
+  /** How many skills this call actually turned on. Reported rather than left to
+   *  the client, which can only diff its own possibly-stale view. */
+  added: z.number().int().nonnegative(),
+  skipped: z.array(
+    skillSetEntrySchema.extend({ reason: skillSetSkipReasonSchema }),
+  ),
+});
+
+/** Upper bound on the skills one batch may carry, install and uninstall
+ *  combined. Exported so the service can enforce the same number on
+ *  in-process callers that never cross the tRPC boundary (the set-apply
+ *  path). */
+export const MAX_SKILL_BATCH_ENTRIES = 500;
+
+/** Many installs and uninstalls applied under a single outbox bump, so a bulk
+ *  action costs one apply cycle instead of one per skill. The cap bounds the
+ *  work a single call can ask for; a real source sits far below it. */
+export const skillApplyBatchInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    install: z
+      .array(
+        z.object({
+          source: z.string().url(),
+          name: z.string().min(1),
+          version: z.string().min(1),
+          contentHash: z.string().optional(),
+        }),
+      )
+      .max(MAX_SKILL_BATCH_ENTRIES)
+      .default([]),
+    uninstall: z
+      .array(
+        z.object({
+          source: z.string().url(),
+          name: z.string().min(1),
+        }),
+      )
+      .max(MAX_SKILL_BATCH_ENTRIES)
+      .default([]),
+  })
+  .refine(
+    (v) => v.install.length + v.uninstall.length <= MAX_SKILL_BATCH_ENTRIES,
+    {
+      message: `one batch carries at most ${MAX_SKILL_BATCH_ENTRIES} skills, install and uninstall combined`,
+    },
+  );
 
 export const skillListLocalInputSchema = z.object({
   agentId: z.string().min(1),

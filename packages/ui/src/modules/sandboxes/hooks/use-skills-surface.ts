@@ -4,9 +4,12 @@ import type {
   Skill,
   SkillPublishRecord,
   SkillRef,
+  SkillSet,
+  SkillSetApplyResult,
   SkillSource,
   SkillsState,
 } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useCallback, useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
@@ -18,8 +21,24 @@ import { ACTION_FAILED, runAction } from "../../../lib/query-helpers.js";
 import { emitToast } from "../../../lib/toast.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
 
-/** Row identity shared by the surface and its child components. */
-export const skillKey = (source: string, name: string) => `${source}::${name}`;
+/** Turn the server's closed skip verdicts into one readable clause. The reason
+ *  codes never reach the user — the client owns the wording. */
+function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
+  const count = (reason: SkillSetApplyResult["skipped"][number]["reason"]) =>
+    skipped.filter((s) => s.reason === reason).length;
+  const clauses: [number, string][] = [
+    [
+      count("source-not-connected"),
+      "from a source this sandbox isn't connected to",
+    ],
+    [count("source-unreadable"), "from a source that couldn't be read"],
+    [count("not-in-source"), "no longer in its source"],
+  ];
+  return clauses
+    .filter(([n]) => n > 0)
+    .map(([n, text]) => `${n} ${text}`)
+    .join(", ");
+}
 
 export interface SkillsSurface {
   sources: SkillSource[];
@@ -44,11 +63,48 @@ export interface SkillsSurface {
   publishes: SkillPublishRecord[];
   /** Row currently mid-install/uninstall, so its toggle can show a spinner. */
   busyKey: string | null;
+  /** Source with a bulk enable/disable in flight — card-wide, where `busyKey`
+   *  is one row. */
+  busySourceId: string | null;
+  /** A cross-source "update all drifted" is in flight. */
+  updatingAll: boolean;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   toggle: (skill: Skill) => Promise<void>;
   /** Re-install a drifted skill at the latest scanned version, clearing drift
-   *  once the installed contentHash matches the scan again. */
-  update: (skill: Skill) => Promise<void>;
+   *  once the installed contentHash matches the scan again. Returns success,
+   *  so a caller with its own follow-up (the track toast) can gate on it. */
+  update: (skill: Skill) => Promise<boolean>;
+  /** Turn a whole source on or off in one apply cycle. Sends only the
+   *  difference, so already-installed skills aren't rewritten. */
+  toggleSource: (
+    sourceId: string,
+    skills: Skill[],
+    on: boolean,
+  ) => Promise<void>;
+  /** Re-install every drifted skill at its latest scanned version, in one
+   *  apply cycle. */
+  updateAll: (drifted: Skill[]) => Promise<void>;
+  /** The user's saved skill sets. Owner-scoped and sandbox-independent, so this
+   *  is loaded once rather than folded into the 5s state poll. */
+  sets: SkillSet[];
+  /** The one load of `sets` failed. Distinct from an empty list: telling a user
+   *  they have no saved sets when the request merely failed is a lie about
+   *  their own data, and there is no retry short of remounting. */
+  setsFailed: boolean;
+  /** Save a named set. Returns whether it was created. */
+  createSet: (input: {
+    name: string;
+    skills: { source: string; name: string }[];
+  }) => Promise<boolean>;
+  /** Delete a saved set. Returns whether it was removed. Sets have no rename, so
+   *  this is how a typo'd name is corrected. Skills already installed from it
+   *  stay installed — a set is a selection, not an owner. */
+  deleteSet: (id: string) => Promise<boolean>;
+  /** Add the chosen sets' skills alongside what's already on. Returns false when
+   *  nothing could be applied, so the caller can keep its modal open. */
+  applySets: (setIds: string[]) => Promise<boolean>;
+  /** A set apply is in flight. */
+  applyingSets: boolean;
   /** Publish a standalone skill upstream as a PR. Toasts the PR link on
    *  success (or a CTA on a structured upstream error). Returns success. */
   publish: (input: {
@@ -127,6 +183,11 @@ export function useSkillsSurface(
     useState<SkillsState["standaloneSnapshot"]>(undefined);
   const [publishes, setPublishes] = useState<SkillPublishRecord[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [busySourceId, setBusySourceId] = useState<string | null>(null);
+  const [updatingAll, setUpdatingAll] = useState(false);
+  const [sets, setSets] = useState<SkillSet[]>([]);
+  const [setsFailed, setSetsFailed] = useState(false);
+  const [applyingSets, setApplyingSets] = useState(false);
 
   useEffect(() => {
     // Gate on stateLoaded: before the first `skills.state` resolves all three
@@ -241,7 +302,7 @@ export function useSkillsSurface(
   const toggle = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return;
-      const key = skillKey(skill.source, skill.name);
+      const key = skillKey(skill);
       setBusyKey(key);
       const currentlyInstalled = !!installedRef(skill.source, skill.name);
       const result = await runAction(
@@ -269,8 +330,8 @@ export function useSkillsSurface(
 
   const update = useCallback(
     async (skill: Skill) => {
-      if (!agentId || isError || readOnly) return;
-      const key = skillKey(skill.source, skill.name);
+      if (!agentId || isError || readOnly) return false;
+      const key = skillKey(skill);
       setBusyKey(key);
       // Re-install at the scanned version+hash: an already-installed skill, so
       // this is the "adopt latest" path, not a toggle (which would uninstall).
@@ -287,6 +348,158 @@ export function useSkillsSurface(
       );
       if (result !== ACTION_FAILED) setInstalled(result);
       setBusyKey(null);
+      return result !== ACTION_FAILED;
+    },
+    [agentId, isError, readOnly],
+  );
+
+  const toggleSource = useCallback(
+    async (sourceId: string, skills: Skill[], on: boolean) => {
+      if (!agentId || isError || readOnly) return;
+      // Only the difference: installing an already-installed skill is a wasted
+      // row write and a misleading second entry in the security log.
+      const changing = skills.filter(
+        (s) => !!installedRef(s.source, s.name) !== on,
+      );
+      if (changing.length === 0) return;
+      setBusySourceId(sourceId);
+      const result = await runAction(
+        () =>
+          api.skills.applyBatch.mutate({
+            agentId,
+            install: on
+              ? changing.map((s) => ({
+                  source: s.source,
+                  name: s.name,
+                  version: s.version,
+                  contentHash: s.contentHash,
+                }))
+              : [],
+            uninstall: on
+              ? []
+              : changing.map((s) => ({ source: s.source, name: s.name })),
+          }),
+        `Failed to ${on ? "enable" : "disable"} all skills`,
+      );
+      if (result !== ACTION_FAILED) setInstalled(result);
+      setBusySourceId(null);
+    },
+    [agentId, isError, readOnly, installedRef],
+  );
+
+  const updateAll = useCallback(
+    async (drifted: Skill[]) => {
+      if (!agentId || isError || readOnly || drifted.length === 0) return;
+      setUpdatingAll(true);
+      // Re-install at the scanned version+hash — the "adopt latest" path, same
+      // as the per-row Update, so nothing is uninstalled.
+      const result = await runAction(
+        () =>
+          api.skills.applyBatch.mutate({
+            agentId,
+            install: drifted.map((s) => ({
+              source: s.source,
+              name: s.name,
+              version: s.version,
+              contentHash: s.contentHash,
+            })),
+            uninstall: [],
+          }),
+        "Failed to update all skills",
+      );
+      if (result !== ACTION_FAILED) setInstalled(result);
+      setUpdatingAll(false);
+    },
+    [agentId, isError, readOnly],
+  );
+
+  // Sets belong to the user, not the sandbox, so one load rather than a place
+  // in the 5s poll. Refreshed by createSet from its own result.
+  useEffect(() => {
+    let cancelled = false;
+    api.skills.sets.list
+      .query()
+      .then((s) => {
+        if (cancelled) return;
+        setSets(s);
+        setSetsFailed(false);
+      })
+      .catch(() => {
+        // Not `setSets([])`: an empty list is a claim about the user's data,
+        // and a failed read is not evidence for it.
+        if (!cancelled) setSetsFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const createSet = useCallback(
+    async (input: {
+      name: string;
+      skills: { source: string; name: string }[];
+    }) => {
+      const result = await runAction(
+        () => api.skills.sets.create.mutate(input),
+        `Failed to save ${input.name}`,
+      );
+      if (result === ACTION_FAILED) return false;
+      setSets((prev) =>
+        [...prev, result].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      // A successful write proves the surface is reachable, so the stale
+      // "couldn't load" notice must not outlive it.
+      setSetsFailed(false);
+      emitToast({ kind: "success", message: `Saved skill set ${result.name}` });
+      return true;
+    },
+    [],
+  );
+
+  const deleteSet = useCallback(async (id: string) => {
+    const result = await runAction(
+      () => api.skills.sets.delete.mutate({ id }),
+      "Failed to delete skill set",
+    );
+    if (result === ACTION_FAILED) return false;
+    setSets((prev) => prev.filter((s) => s.id !== id));
+    return true;
+  }, []);
+
+  const applySets = useCallback(
+    async (setIds: string[]) => {
+      if (!agentId || isError || readOnly || setIds.length === 0) return false;
+      setApplyingSets(true);
+      const result = await runAction(
+        () => api.skills.sets.applyToAgent.mutate({ agentId, setIds }),
+        "Failed to add skill sets",
+      );
+      setApplyingSets(false);
+      if (result === ACTION_FAILED) return false;
+      setInstalled(result.installed);
+
+      const { added } = result;
+      const skipped = result.skipped.length;
+      // Nothing landed *and* something was refused: a plain failure, so the
+      // modal stays open rather than closing on a silent no-result.
+      if (added === 0 && skipped > 0) {
+        emitToast({
+          kind: "error",
+          message: `Nothing to add — ${skippedSummary(result.skipped)}.`,
+        });
+        return false;
+      }
+      emitToast({
+        kind: added === 0 ? "info" : "success",
+        message:
+          added === 0
+            ? "Those skills are already on."
+            : `Turned on ${added} skill${added === 1 ? "" : "s"}` +
+              (skipped > 0
+                ? `. Skipped ${skippedSummary(result.skipped)}.`
+                : ""),
+      });
+      return true;
     },
     [agentId, isError, readOnly],
   );
@@ -501,9 +714,19 @@ export function useSkillsSurface(
     standalone,
     publishes,
     busyKey,
+    busySourceId,
+    updatingAll,
     installedRef,
     toggle,
     update,
+    toggleSource,
+    updateAll,
+    sets,
+    setsFailed,
+    createSet,
+    deleteSet,
+    applySets,
+    applyingSets,
     createSource,
     createLocalSkills,
     deleteStandalone,

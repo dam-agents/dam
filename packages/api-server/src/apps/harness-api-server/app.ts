@@ -6,6 +6,7 @@ import type {
   RuntimeDeliveryService,
 } from "api-server-api";
 import type { Db } from "db";
+import type { RuntimeSettledPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
@@ -42,6 +43,9 @@ export interface HarnessApiServerAppDeps {
   connectionsServiceFor: (owner: string) => ConnectionsService;
   /** Scale a hibernated agent back up so it drains its outbox (prompt delivery). */
   wakeAgent: (agentId: string) => Promise<void>;
+  /** Whether the pod has applied everything the outbox holds — gates the skills
+   *  `state` reconcile, which would otherwise reap rows mid-apply. */
+  runtimeSettled: RuntimeSettledPort;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -58,6 +62,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     wakeAgent,
+    runtimeSettled,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -98,16 +103,17 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentHome: config.agentHome,
     runtimeHello,
     composeSkills: (owner) =>
-      composeSkillsModule(
+      composeSkillsModule({
         api,
-        config.namespace,
+        namespace: config.namespace,
         owner,
         db,
         seedSources,
-        config.brand.name,
+        brandName: config.brand.name,
         runtimeMutator,
         templatesRepo,
-      ),
+        runtimeSettled,
+      }),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
     experimentsServiceFor: (owner) =>

@@ -1,6 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Hono } from "hono";
 import { createSlackOAuthRoutes } from "../../modules/channels/infrastructure/slack-oauth.js";
 import { createSlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
 import type { SlackOAuthPending } from "../../modules/channels/infrastructure/slack.js";
@@ -48,14 +49,17 @@ function makeHarness(opts: {
   const link = vi.fn(async () => {});
   const identityLinks = { link } as unknown as IdentityLinkService;
 
-  const routes = createSlackOAuthRoutes({
-    pendingFlows,
-    bindFlows,
-    identityLinks,
-    oauthConfig,
-    uiBaseUrl: UI,
-    brandShort: "dam",
-  });
+  const routes = new Hono().route(
+    "/api/slack",
+    createSlackOAuthRoutes({
+      pendingFlows,
+      bindFlows,
+      identityLinks,
+      oauthConfig,
+      uiBaseUrl: UI,
+      brandShort: "dam",
+    }),
+  );
 
   return { routes, pendingFlows, pendingFlowsMap, bindFlows, link };
 }

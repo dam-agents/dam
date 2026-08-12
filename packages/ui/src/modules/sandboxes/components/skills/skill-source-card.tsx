@@ -6,6 +6,7 @@ import {
   Warning,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 import { isConnectionFailure } from "@/lib/scan-failure";
 import { cn } from "@/lib/utils";
 
-import { skillKey } from "../../hooks/use-skills-surface.js";
+import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
@@ -94,6 +95,9 @@ export function SkillSourceCard({
   onOpenSkill,
   onManageConnections,
   suppressedNames,
+  filteredNames,
+  onToggleAll,
+  bulkBusy,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -131,6 +135,19 @@ export function SkillSourceCard({
   /** Navigate to the sandbox's Connections tab — shown as a "Manage
    *  connections" affordance on a scan error with no server CTA. */
   onManageConnections?: () => void;
+  /** Names to show, when a search filter is active — null when it isn't. Rows
+   *  outside the set are dropped and the collapse control goes away, so a match
+   *  can't hide behind "Expand all"; the user's own collapse choice is left
+   *  untouched and returns when the query clears. The header's `N of M on`
+   *  deliberately keeps counting the whole source: it states a fact about the
+   *  source, not about the filter. */
+  filteredNames?: ReadonlySet<string> | null;
+  /** Turn every skill in this source on or off in one action. `on` is what the
+   *  control will do, so the caller never has to re-derive it. */
+  onToggleAll?: (on: boolean) => void;
+  /** A bulk action is in flight for this source — the whole card is working,
+   *  which the per-row `busyKey` cannot express. */
+  bulkBusy?: boolean;
 }) {
   const loaded = skills !== undefined;
   // Suppressed entries drop out before anything else derives from the list, so
@@ -163,7 +180,13 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const visible = collapsible && !expanded ? enabled : sorted;
+  const allEnabled = list.length > 0 && enabled.length === list.length;
+  const filtering = filteredNames != null;
+  const visible = filtering
+    ? sorted.filter((s) => filteredNames.has(s.name))
+    : collapsible && !expanded
+      ? enabled
+      : sorted;
 
   // Non-user sources (Seed List / template) are protected from deletion.
   const canRemove = !source.system && !source.fromTemplate;
@@ -187,6 +210,21 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* Names what it will do, never the current state. Hidden while a
+              search filter is active: a control that says "all" beside four
+              visible rows out of twenty-two is a trap, and narrowing it to the
+              matches would be a different, unasked-for action. */}
+          {onToggleAll && !readOnly && !filtering && loaded && !error && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disabled || bulkBusy || list.length === 0}
+              onClick={() => onToggleAll(!allEnabled)}
+            >
+              {bulkBusy && <Spinner size={13} />}
+              {allEnabled ? "Disable all" : "Enable all"}
+            </Button>
+          )}
           {/* This label re-renders only because the surface's 5s installed-state
               poll hands back a fresh array identity. Memoizing this card, or
               moving that poll to react-query with structural sharing, freezes
@@ -250,18 +288,13 @@ export function SkillSourceCard({
         !error &&
         visible.map((skill) => {
           const ref = installedRef(skill.source, skill.name);
-          // Drift = installed content differs from the latest scan. contentHash
-          // is absent only for skills installed before it was recorded — skip
-          // drift for those until the next install fills it in.
-          const hasDrift =
-            ref?.contentHash !== undefined &&
-            ref.contentHash !== skill.contentHash;
+          const hasDrift = isDrifted(ref, skill);
           return (
             <SkillRow
-              key={skillKey(skill.source, skill.name)}
+              key={skillKey(skill)}
               skill={skill}
               installed={ref !== undefined}
-              busy={busyKey === skillKey(skill.source, skill.name)}
+              busy={busyKey === skillKey(skill)}
               disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={
@@ -278,7 +311,7 @@ export function SkillSourceCard({
           );
         })}
 
-      {loaded && !error && collapsible && (
+      {loaded && !error && collapsible && !filtering && (
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}

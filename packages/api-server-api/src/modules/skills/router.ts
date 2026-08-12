@@ -9,6 +9,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   localSkillSchema,
+  skillApplyBatchInputSchema,
   skillContentSchema,
   skillCreateLocalInputSchema,
   skillCreateSourceInputSchema,
@@ -27,6 +28,11 @@ import {
   skillRefSchema,
   skillRefreshSourceInputSchema,
   skillSchema,
+  skillSetApplyInputSchema,
+  skillSetApplyResultSchema,
+  skillSetCreateInputSchema,
+  skillSetDeleteInputSchema,
+  skillSetSchema,
   skillSourceSchema,
   skillStateInputSchema,
   skillStateOutputSchema,
@@ -111,6 +117,41 @@ export const skillsRouter = t.router({
     .input(skillUninstallInputSchema)
     .output(z.array(skillRefSchema))
     .mutation(({ ctx, input }) => ctx.skills.uninstall(input)),
+
+  // Ownership enforced in the service, same as install/uninstall.
+  applyBatch: manageAgentsProcedure
+    .input(skillApplyBatchInputSchema)
+    .output(z.array(skillRefSchema))
+    .mutation(({ ctx, input }) => ctx.skills.applyBatch(input)),
+
+  // A skill set belongs to the user, not to a sandbox, so list/create/delete
+  // take no agentId and need no agent binding check. Only `apply` targets one.
+  sets: t.router({
+    list: readAgentProcedure
+      .output(z.array(skillSetSchema))
+      .query(({ ctx }) => ctx.skills.listSets()),
+
+    create: manageAgentsProcedure
+      .input(skillSetCreateInputSchema)
+      .output(skillSetSchema)
+      .mutation(({ ctx, input }) => ctx.skills.createSet(input)),
+
+    delete: manageAgentsProcedure
+      .input(skillSetDeleteInputSchema)
+      .mutation(({ ctx, input }) => ctx.skills.deleteSet(input)),
+
+    // Not `apply`: tRPC reserves it as a router key (Function.prototype.apply),
+    // and the collision only surfaces when the router is constructed at boot —
+    // tsc and the unit tests both pass.
+    //
+    // No `checkAgentBinding`: `manageAgentsProcedure` is wildcard-only, so the
+    // check can never fire. Ownership is enforced in the service, same as
+    // install/uninstall/applyBatch.
+    applyToAgent: manageAgentsProcedure
+      .input(skillSetApplyInputSchema)
+      .output(skillSetApplyResultSchema)
+      .mutation(({ ctx, input }) => ctx.skills.applySets(input)),
+  }),
 
   // Ownership is enforced inside the service via ensureAgentReachable →
   // owner-scoped agentsRepo.get, same as install.
