@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
-  HoverCardTappableTrigger,
+  HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { externalLinkProps } from "@/lib/external-link";
 
@@ -33,7 +33,7 @@ export function UpdateAvailableAction({ agent, onUpdate, pending }: Props) {
     // target, so their clicks must not also open the sandbox.
     <span onClick={(e) => e.stopPropagation()}>
       <HoverCard>
-        <HoverCardTappableTrigger>
+        <HoverCardTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
@@ -44,7 +44,7 @@ export function UpdateAvailableAction({ agent, onUpdate, pending }: Props) {
             <Renew size={16} />
             {pending ? "Updating…" : "Update"}
           </Button>
-        </HoverCardTappableTrigger>
+        </HoverCardTrigger>
         <HoverCardContent
           side="top"
           align="end"
