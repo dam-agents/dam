@@ -277,4 +277,43 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: deleting them now`,
     ]);
   });
+
+  /**
+   * A turn ends. Alice, who asked, learns this the natural JSON-RPC way: her
+   * request completes. Bob is watching the same conversation with nothing in
+   * flight, and ACP has no "turn ended" on the wire — left to the protocol
+   * alone, he would watch the reply trail off with nothing to say it is done,
+   * and his composer would stay locked on a turn that ended.
+   *
+   * The harness cannot tell him: completing Alice's request is the only end-
+   * of-turn signal it emits, and only she holds that request. Turning one
+   * party's response into everyone's boundary takes knowing who else is
+   * watching, and only the runtime knows that.
+   */
+  it("should tell both clients the turn ended, not just the one who asked", () => {
+    const world = createWorld();
+
+    // Alice asks, Bob joins mid-answer, and the turn runs to its end.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "summarize this repo"));
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+    world.harness().emit(frames.agentMessage(SESSION, "it is a monorepo"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // Alice's own request completed — that is her answer.
+    expect(alice.reply(2)?.result).toEqual({ stopReason: "end_turn" });
+
+    // And both of them — Bob especially, who had nothing in flight — were
+    // told the turn is over, once each, naming the conversation it closed.
+    const ended = {
+      jsonrpc: "2.0",
+      method: "platform/turnEnded",
+      params: { sessionId: SESSION },
+    };
+    expect(alice.saw("platform/turnEnded")).toEqual([ended]);
+    expect(bob.saw("platform/turnEnded")).toEqual([ended]);
+  });
 });
