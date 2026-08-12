@@ -1,4 +1,4 @@
-import { ArrowRight, Renew } from "@carbon/icons-react";
+import { Renew } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -6,10 +6,10 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { externalLinkProps } from "@/lib/external-link";
 
 import type { AgentView } from "../../../types.js";
 import { useReleaseNotesUrl } from "../hooks/use-release-notes-url.js";
+import { ReleaseNotesLink } from "./release-notes-link.js";
 
 interface Props {
   agent: AgentView;
@@ -57,15 +57,7 @@ export function UpdateAvailableAction({ agent, onUpdate, pending }: Props) {
               {update.toImage}
             </span>
           </p>
-          {whatsNew && (
-            <a
-              href={whatsNew}
-              {...externalLinkProps}
-              className="inline-flex items-center gap-1.5 self-start font-medium text-accent hover:underline"
-            >
-              See what changed <ArrowRight size={16} />
-            </a>
-          )}
+          <ReleaseNotesLink href={whatsNew} className="self-start" />
         </HoverCardContent>
       </HoverCard>
     </span>

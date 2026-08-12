@@ -1,13 +1,13 @@
 import { useCallback } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
-import { externalLinkProps } from "@/lib/external-link";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useUpgradeAgentMutation } from "../api/mutations.js";
+import { ReleaseNotesLink } from "../components/release-notes-link.js";
 import { releaseNotesUrl } from "./use-release-notes-url.js";
 
 /** What one sandbox's update moves, narrowed off `templateUpdate` so the apply
@@ -57,25 +57,6 @@ function byTargetImage(
   return [...counts].map(([image, count]) => ({ image, count }));
 }
 
-/** The release notes, repeated here because the hover card's copy is reachable
- *  by pointer only — Radix takes its content out of the tab order. */
-function whatsNewLink(href: string | null) {
-  if (!href) return null;
-  return (
-    <>
-      {" "}
-      <a
-        href={href}
-        {...externalLinkProps}
-        className="font-medium text-accent hover:underline"
-      >
-        See what changed
-      </a>
-      .
-    </>
-  );
-}
-
 /** When a batch takes effect — the same two facts the single-sandbox
  *  confirmation gives, worded per case so each sentence has a subject. Naming
  *  the groups beats "the rest", which refers to nothing when none is running. */
@@ -113,7 +94,10 @@ export function useUpdateSandbox() {
           {restartsToApply(agent)
             ? "The sandbox restarts to apply it — in-flight work is interrupted."
             : "It applies when the sandbox next starts."}
-          {whatsNewLink(releaseNotesUrl(templates, agent.templateId))}
+          <ReleaseNotesLink
+            href={releaseNotesUrl(templates, agent.templateId)}
+            className="mt-2 flex w-fit"
+          />
         </>
       );
       if (!(await showConfirm(msg, "Update Sandbox"))) return;
