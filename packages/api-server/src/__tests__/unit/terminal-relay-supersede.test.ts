@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket } from "ws";
-import { createTerminalRelay } from "../../apps/api-server/terminal-relay.js";
+import { createTerminalRelay } from "../../apps/api-server/agent-proxies/terminal-relay.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import type { SessionPresence } from "../../apps/api-server/session-presence.js";
+import type { SessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 
 /** In-process stand-in for Redis pub/sub, shared by both "replicas". */

@@ -1,18 +1,21 @@
 import sharp from "sharp";
 import { createHash } from "node:crypto";
-import type { Hono, Env } from "hono";
+import { Hono } from "hono";
+import type { Brand } from "api-server-api";
 import {
   DEFAULT_BRAND_ICON_RASTER_SVG,
   DEFAULT_BRAND_ICON_SVG,
 } from "./default-brand-icon.js";
 
 /**
- * Brand icon serving — single SVG source of truth, rasterized on demand.
+ * Everything brand under one roof: the brand document the UI bootstraps
+ * from, the PWA manifest, and the icon — a single SVG source of truth,
+ * rasterized on demand.
  *
  *   - `BRAND_ICON_SVG` env var (set by Helm when `brand.icon` is overridden)
  *     is the override. Empty / unset → bundled default.
- *   - `/api/brand/icon.svg`        → raw SVG (image/svg+xml)
- *   - `/api/brand/icon-{size}.png` → square PNG raster at `{size}` px,
+ *   - `icon.svg`        → raw SVG (image/svg+xml)
+ *   - `icon-{size}.png` → square PNG raster at `{size}` px,
  *     produced by sharp. Allowed sizes whitelisted to keep the cache
  *     bounded; the manifest + html links only need 180/192/512.
  *
@@ -30,10 +33,56 @@ interface IconCache {
   rasters: Map<number, Buffer>;
 }
 
-export function mountBrandIconRoutes<E extends Env>(
-  app: Hono<E>,
+/** Sub-router with relative paths — mounted at `/api/brand` by
+ *  routes/index.ts, so this file cannot register outside its prefix. All
+ *  routes here are public (see PUBLIC_PATHS in app.ts): the UI reads them
+ *  on bootstrap, before any login. */
+export function createBrandRoutes(
+  brand: Brand,
   getEnv?: () => string | undefined,
-): void {
+) {
+  const routes = new Hono();
+
+  // Sole source of brand truth — the UI sets page title, theme-color meta,
+  // and CSS accent custom properties from this, never from build-time
+  // constants.
+  routes.get("/", (c) => c.json(brand satisfies Brand));
+
+  // PWA manifest (replaces the build-time bundled one). Served dynamically
+  // so the installed-PWA name follows brand without a UI rebuild.
+  routes.get("/manifest.webmanifest", (c) => {
+    c.header("Content-Type", "application/manifest+json");
+    return c.body(
+      JSON.stringify({
+        name: brand.name,
+        short_name: brand.name,
+        description: "AI agent platform",
+        theme_color: brand.theme.light.accent,
+        background_color: "#fafaf9",
+        display: "standalone",
+        start_url: "/",
+        icons: [
+          {
+            src: "/api/brand/icon-192.png",
+            sizes: "192x192",
+            type: "image/png",
+          },
+          {
+            src: "/api/brand/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+          },
+          {
+            src: "/api/brand/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+        ],
+      }),
+    );
+  });
+
   // Resolved once per route call so test overrides (env mutated mid-test)
   // pick up the new value without re-mounting the routes. The Helm override
   // (`BRAND_ICON_SVG`) wins for both the favicon and the rasters; absent an
@@ -49,7 +98,7 @@ export function mountBrandIconRoutes<E extends Env>(
 
   let cache: IconCache | null = null;
 
-  app.get("/api/brand/icon.svg", (c) => {
+  routes.get("/icon.svg", (c) => {
     const { svg, hash } = resolveSvg();
     if (c.req.header("if-none-match") === `"${hash}"`) {
       return c.body(null, 304);
@@ -60,7 +109,7 @@ export function mountBrandIconRoutes<E extends Env>(
     return c.body(svg);
   });
 
-  app.get("/api/brand/:file{icon-\\d+\\.png$}", async (c) => {
+  routes.get("/:file{icon-\\d+\\.png$}", async (c) => {
     const file = c.req.param("file");
     const size = Number(file.replace("icon-", "").replace(".png", ""));
     if (!ALLOWED_SIZES.has(size)) {
@@ -90,4 +139,6 @@ export function mountBrandIconRoutes<E extends Env>(
     c.header("ETag", `"${hash}-${size}"`);
     return c.body(new Uint8Array(png));
   });
+
+  return routes;
 }
