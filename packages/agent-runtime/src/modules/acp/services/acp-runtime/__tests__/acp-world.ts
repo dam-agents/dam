@@ -29,6 +29,8 @@ export interface Harness {
   received(method?: string): Frame[];
   /** Methods in forward order. Responses (which carry no method) read as `<response>`. */
   receivedMethods(): string[];
+  /** Answers forwarded for one of the harness's own requests, by its id. */
+  answersTo(id: number): Frame[];
   /** Answer the most recent request of this method, matching its id. */
   replyTo(method: string, result?: unknown): void;
   /**
@@ -76,6 +78,8 @@ function createHarness(): { harness: Harness; process: AgentProcess } {
     received,
     receivedMethods: () =>
       sent.map((f) => (typeof f.method === "string" ? f.method : "<response>")),
+    answersTo: (id) =>
+      sent.filter((f) => f.method === undefined && f.id === id),
     replyTo(method, result = {}) {
       const matching = received(method);
       const last = matching[matching.length - 1];

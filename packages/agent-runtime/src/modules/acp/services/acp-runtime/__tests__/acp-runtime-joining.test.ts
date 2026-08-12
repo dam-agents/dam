@@ -225,4 +225,56 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: done, three removed`,
     ]);
   });
+
+  /**
+   * An open question has more than one possible answerer: everyone looking at
+   * the conversation sees the same dialog, and the inbox can answer it too —
+   * an egress approval comes home on a one-shot connection that never opens
+   * any session. Sooner or later, two of them answer.
+   *
+   * The harness asked once and expects one reply. It reads one stdin, so a
+   * second response to the same id is a conversation it never started —
+   * at best noise, at worst an SDK error. Only the runtime sees every
+   * answerer, so electing the first answer and swallowing the rest is its
+   * job. And "whoever sent it" is load-bearing: requiring the answerer to
+   * have opened the session would silence the inbox, which by construction
+   * never has.
+   */
+  it("should honor only the first answer to a permission prompt, whoever sends it", () => {
+    const world = createWorld();
+
+    // Alice asks, the agent stops to check, and Bob joins while the dialog
+    // is up — two people are now looking at the same question.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "delete the stale branches"));
+    world.harness().emit(frames.requestPermission(77, SESSION));
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+
+    // A third answerer gets there first: the inbox, on a connection that
+    // never opened the session — it only knows the question's id.
+    const inbox = world.connect();
+    inbox.send(frames.permissionAnswer(77, "allow"));
+
+    // Bob answers the same question a moment later, the other way.
+    bob.send(frames.permissionAnswer(77, "reject"));
+
+    // The harness heard exactly one answer: the first one. Bob's reject was
+    // never forwarded — not turned into a second reply, not merged, gone.
+    expect(world.harness().answersTo(77)).toEqual([
+      frames.permissionAnswer(77, "allow"),
+    ]);
+
+    // And the turn proceeds on that answer alone, undisturbed by the loser:
+    // the agent does the thing it was allowed to do, and everyone sees it.
+    world.harness().emit(frames.agentMessage(SESSION, "deleting them now"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    expect(transcriptOf(alice)).toEqual([`${SESSION}: deleting them now`]);
+    expect(transcriptOf(bob)).toEqual([
+      `${SESSION}: delete the stale branches`,
+      `${SESSION}: deleting them now`,
+    ]);
+  });
 });
