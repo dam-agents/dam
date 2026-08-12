@@ -199,13 +199,16 @@ export function useRestartAgentMutation() {
 }
 
 // Updating rolls a running pod onto the new image — refresh the budget
-// meter alongside, like the other lifecycle mutations.
-export function useUpgradeAgentMutation() {
+// meter alongside, like the other lifecycle mutations. `silent` is for the
+// bulk path, which reports every sandbox's outcome in one toast of its own.
+export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to update sandbox",
+      ...(opts?.silent
+        ? { suppressErrorToast: true }
+        : { errorToast: "Failed to update sandbox" }),
     },
   });
 }

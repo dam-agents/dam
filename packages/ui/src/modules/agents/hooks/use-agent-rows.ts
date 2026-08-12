@@ -88,7 +88,7 @@ export function useAgentRows() {
     }),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
-    updatePending: update.updatingId === agent.id,
+    updatePending: update.updatingId === agent.id || update.updatingAll,
     onUpdate: () => void update.updateOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
@@ -104,5 +104,6 @@ export function useAgentRows() {
     rowProps,
     deleteAgent,
     suspend,
+    update,
   };
 }
