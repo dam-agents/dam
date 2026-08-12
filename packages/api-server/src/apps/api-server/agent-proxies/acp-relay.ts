@@ -1,13 +1,13 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
-import { isAgentWakeTimeoutError } from "../../modules/agents/index.js";
-import { LAST_ACTIVITY_KEY } from "../../modules/agents/infrastructure/labels.js";
-import type { ApprovalsRelayService } from "../../modules/approvals/compose.js";
+import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
+import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
+import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
+import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import type { SessionPresence } from "./session-presence.js";
-import { acpNativeRowId } from "../../modules/approvals/domain/ids.js";
+import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
 
 const DEBOUNCE_MS = 30_000;
 
@@ -92,22 +92,19 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
-/** Resolves an instance to its `(ownerSub, agentId)`. Injected by the
- *  composition root so the relay doesn't reach into the agents module's
- *  infrastructure for this lookup. */
-export interface AgentIdentityLookup {
-  resolve(
-    agentId: string,
-  ): Promise<{ ownerSub: string; agentId: string } | null>;
-}
-
 export function createAcpRelay(
   namespace: string,
   repo: AgentsRepository,
   approvals: ApprovalsRelayService,
-  identityLookup: AgentIdentityLookup,
   presence: SessionPresence,
 ) {
+  const resolveIdentity = (
+    agentId: string,
+  ): Promise<{ ownerSub: string; agentId: string } | null> =>
+    repo
+      .resolveIdentity(agentId)
+      .then((r) => (r ? { ownerSub: r.owner, agentId: r.agentId } : null));
+
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   function handleUpgrade(
@@ -204,8 +201,7 @@ export function createAcpRelay(
 
       const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp`;
 
-      identityLookup
-        .resolve(agentId)
+      resolveIdentity(agentId)
         .then((resolved) => {
           if (!resolved) {
             client.close(1011, "instance not found");
@@ -281,10 +277,9 @@ export function createAcpRelay(
           upstream.on("close", (code, reason) => {
             if (client.readyState !== WebSocket.OPEN) return;
             try {
-              client.close(
-                sanitizeCloseCode(code),
-                reason.toString() || "upstream closed",
-              );
+              // Passed through as-is: a substituted default would reach the
+              // sender as a stated cause for a close that stated none.
+              client.close(sanitizeCloseCode(code), reason.toString());
             } catch {
               client.terminate();
             }

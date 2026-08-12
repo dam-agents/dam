@@ -59,9 +59,10 @@ export function createEgressRulesService(
   // throws (conflict retries exhausted, pruned write), the rule row stays
   // committed and the caller sees the error — fail-loud, never
   // silently-unpromoted (#2322). The gap self-heals: the projection is
-  // recomputed from the table on the agent's next rule mutation, and a
-  // missed promotion also heals on api-server boot (the startup backfill
-  // re-projects every agent with active narrow rules).
+  // recomputed from the table on the agent's next rule mutation, and the
+  // periodic l7-promotion-reconcile re-projects every agent with active
+  // narrow rules — covering the case where the process died between the
+  // rule commit and the patch, which no in-request retry can.
   async function reconvergePromotions(agentId: string): Promise<void> {
     if (!deps.l7Hosts) return;
     const rows = await deps.repo.listForAgent(agentId);

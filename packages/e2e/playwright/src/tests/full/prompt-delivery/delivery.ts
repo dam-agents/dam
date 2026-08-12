@@ -135,9 +135,9 @@ export async function expectMilestoneBeforeFailure(
   const first = await Promise.race([failed, reached]);
   expect(
     first,
-    "expected the prior turn to finish with no delivery failure raised while " +
-      "the prompt waited (#829). 'failure' = a 'Send failed' card appeared " +
-      "first, which is the bug; 'never-arrived' / 'no-failure' = the turn " +
-      "itself never completed in time, so the scenario never ran",
+    "expected the turn to finish with no delivery failure raised on the way " +
+      "(#829, #3058). 'failure' = a 'Send failed' card appeared first, which " +
+      "is the bug; 'never-arrived' / 'no-failure' = the turn itself never " +
+      "completed in time, so the scenario never ran",
   ).toBe("milestone");
 }

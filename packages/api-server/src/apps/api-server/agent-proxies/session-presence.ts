@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
-import { ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
-import { SESSION_PRESENCE_KEY_PREFIX } from "../../core/turn-attendance.js";
+import { ACTIVE_SESSION_KEY } from "../../../modules/agents/infrastructure/labels.js";
+import { SESSION_PRESENCE_KEY_PREFIX } from "../../../core/turn-attendance.js";
 
 // Shared with the egress gate, which reads these keys to tell whether anyone
 // is attached to answer an approval hold.

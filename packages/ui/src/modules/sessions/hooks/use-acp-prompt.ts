@@ -6,8 +6,11 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, Message } from "../../../types.js";
-import { isConnectionClosed } from "../../acp/close-race.js";
-import { extractErrorMessage } from "../../acp/errors.js";
+import {
+  connectionCloseReason,
+  isConnectionClosed,
+} from "../../acp/close-race.js";
+import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
   finalizeAllStreaming,
   hasAgentContent,
@@ -224,7 +227,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                   streaming: false,
                   queued: false,
                   error: {
-                    message: "Couldn't deliver — the agent didn't respond.",
+                    message:
+                      "Couldn't deliver — the agent never confirmed it received this message.",
                     retryWith: m.retryWith,
                   },
                 }
@@ -295,6 +299,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           connectionClosed: isConnectionClosed(err),
           delivered,
           queued: bubble?.queued ?? startingQueued,
+          queueFull: isQueueFullError(err),
+          closeReason: connectionCloseReason(err),
           errorMessage: extractErrorMessage(err),
         });
         if (hidden && !streamed) {
