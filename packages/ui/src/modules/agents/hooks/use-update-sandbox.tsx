@@ -45,7 +45,6 @@ function batchApplyNote(restarting: number, total: number): string {
   return "Running sandboxes restart to apply it — in-flight work is interrupted. Stopped ones apply it the next time they start.";
 }
 
-
 /**
  * The one way a template update is applied (#3137): confirm what moves, then
  * apply. Shared by the sandbox list, the row, and the sandbox header so the
