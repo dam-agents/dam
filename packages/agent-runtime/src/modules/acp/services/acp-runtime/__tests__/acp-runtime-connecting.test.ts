@@ -8,9 +8,6 @@ import { createWorld, frames } from "./acp-world.js";
  * did and what they should observe; the harness, the spawn gate, and the
  * buffering that make it work are implementation detail and are never named
  * in an assertion.
- *
- * See `acp-runtime.test.ts` for the older mechanism-oriented suite. The two
- * overlap on purpose until the session-lifecycle refactor (#3108) lands.
  */
 
 /** Let the runtime's `exited` promise handler run. */
