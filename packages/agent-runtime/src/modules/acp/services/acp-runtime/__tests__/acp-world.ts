@@ -3,8 +3,13 @@ import {
   type AcpRuntime,
   type AcpRuntimeDeps,
 } from "../acp-runtime.js";
+import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import type { AgentProcess } from "../../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../../infrastructure/client-channel.js";
+import {
+  createSessionMetadataStore,
+  type SessionMetadataStore,
+} from "../../../infrastructure/session-metadata-store.js";
 
 /**
  * Test doubles for the two ports the ACP runtime talks through, plus a world
@@ -302,6 +307,54 @@ export function promptTextsOf(harness: Harness): string[] {
     const params = frame.params as { prompt?: { text?: string }[] };
     return (params.prompt ?? []).map((block) => block.text ?? "").join("");
   });
+}
+
+/**
+ * The session bookkeeping a scenario can look at afterwards. `store` goes
+ * into `createWorld({ sessionMetadata: meta.store })`; the queries answer
+ * what the sidebar would show.
+ */
+export interface SessionMetadata {
+  store: SessionMetadataStore;
+  /** Unread as the sidebar computes it: activity after the last time a
+   * viewer saw the session. */
+  unread(sessionId: string): boolean;
+}
+
+/**
+ * The real metadata store over an in-memory backend and a logical clock.
+ * The double sits at the storage layer, not the port: faking the store
+ * itself would mean re-implementing the seen/activity arithmetic that
+ * "unread" is made of, and the copy would drift from the real one.
+ */
+export function createSessionMetadata(): SessionMetadata {
+  let tick = 0;
+  const backend: DocumentStoreBackend = {
+    open(_name, opts) {
+      let state = opts.initial();
+      return {
+        read: () => state,
+        write(next) {
+          state = next;
+        },
+      };
+    },
+  };
+  const store = createSessionMetadataStore(
+    backend,
+    // Zero-padded so the strings compare in tick order, as ISO dates do.
+    () => `t${String(++tick).padStart(6, "0")}`,
+  );
+  return {
+    store,
+    unread(sessionId) {
+      const entry = store.get(sessionId);
+      if (entry?.lastActivityAt === undefined || entry.seenAt === undefined) {
+        return false;
+      }
+      return entry.lastActivityAt > entry.seenAt;
+    },
+  };
 }
 
 /**

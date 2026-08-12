@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { createWorld, frames, promptTextsOf } from "./acp-world.js";
+import {
+  createSessionMetadata,
+  createWorld,
+  frames,
+  promptTextsOf,
+} from "./acp-world.js";
 
 /**
  * Feature: the machine client.
@@ -53,5 +58,36 @@ describe("acp-runtime: the machine client", () => {
     expect(world.harness().received("session/cancel")).toEqual([]);
     expect(world.harness().killed()).toBe(false);
     expect(world.runtime.status().idle).toBe(true);
+  });
+
+  /**
+   * Unread is a promise to a person: something happened here that nobody has
+   * looked at. The machine client sends the very frames a person would, and
+   * the runtime is the only party that knows which channels are eyes and
+   * which are cron. If machine activity counted as seen, every scheduled run
+   * would mark its own work read at birth, and the badge would stay dark on
+   * exactly the conversations nobody has opened.
+   */
+  it("should not mark a scheduled turn's conversation as read", () => {
+    const meta = createSessionMetadata();
+    const world = createWorld({ sessionMetadata: meta.store });
+
+    // A scheduled run, start to finish, with no human anywhere.
+    const machine = world.connect({ viewer: false });
+    machine.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    machine.send(frames.prompt(2, SESSION, "triage the new issues"));
+    machine.disconnect();
+    world.harness().emit(frames.agentMessage(SESSION, "labelled three"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // The finished turn is activity nobody has seen.
+    expect(meta.unread(SESSION)).toBe(true);
+
+    // And it is a person opening the conversation that reads it — the badge
+    // answers to eyes, not to traffic.
+    const human = world.connect();
+    human.send(frames.loadSession(1, SESSION));
+    expect(meta.unread(SESSION)).toBe(false);
   });
 });
