@@ -316,4 +316,48 @@ describe("acp-runtime: joining mid-conversation", () => {
     expect(alice.saw("platform/turnEnded")).toEqual([ended]);
     expect(bob.saw("platform/turnEnded")).toEqual([ended]);
   });
+
+  /**
+   * Alice's own message must not come back at her: her UI rendered it the
+   * moment she hit send, and an echo would double it on screen. But the
+   * suppression has to be per-connection, not per-person — when her tab
+   * reloads, the optimistic copy died with the old page, and the reconnect
+   * is the one place her own words must come back.
+   *
+   * The runtime is what makes both true at once. It keeps her message in the
+   * conversation's history for everyone — that is how Bob sees it at all —
+   * while remembering, per connection, that hers already has it. Forget the
+   * first half and every send echoes; forget the second and every reload
+   * loses what she said.
+   */
+  it("should not echo a message back to its sender, who still sees it after a reconnect", () => {
+    const world = createWorld();
+
+    // Alice asks, and the agent starts answering.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "did the tests pass?"));
+    world.harness().emit(frames.agentMessage(SESSION, "running them"));
+
+    // No echo: her own question never came back down her connection. Only
+    // what the agent said did.
+    expect(transcriptOf(alice)).toEqual([`${SESSION}: running them`]);
+
+    // Her tab reloads mid-turn: the connection drops, taking the optimistic
+    // copy of her question with it, and a fresh one opens the conversation.
+    alice.disconnect();
+    const aliceAgain = world.connect();
+    aliceAgain.send(frames.loadSession(1, SESSION));
+
+    // Now the history is all she has, so her own question is in it — along
+    // with the answer so far, and the rest of the turn arrives live.
+    expect(aliceAgain.reply(1)).toBeDefined();
+    world.harness().emit(frames.agentMessage(SESSION, "all green"));
+    expect(transcriptOf(aliceAgain)).toEqual([
+      `${SESSION}: did the tests pass?`,
+      `${SESSION}: running them`,
+      `${SESSION}: all green`,
+    ]);
+  });
 });
