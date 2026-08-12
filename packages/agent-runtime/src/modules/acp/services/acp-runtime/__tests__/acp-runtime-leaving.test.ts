@@ -157,4 +157,46 @@ describe("acp-runtime: leaving", () => {
     ]);
     expect(carol.reply(2)?.result).toEqual({ stopReason: "end_turn" });
   });
+
+  /**
+   * The last person closes the tab on a finished conversation. Every open
+   * session pins a CLI subprocess of roughly 300MB inside the harness, so a
+   * sandbox that kept every visited conversation live would bloat until the
+   * pod died — and the harness will not save itself, because it has no idea
+   * whether anyone is reading. Counting readers is the runtime's job, and
+   * zero readers with nothing running means letting the session go.
+   *
+   * "Released" is proven by what the harness received, and deliberately says
+   * nothing about how the runtime decided — a scenario that mentioned timers
+   * would break during the #3108 refactor and lose the safety net it exists
+   * to provide.
+   */
+  it("should release the session's resources when the last client leaves and nothing is running", () => {
+    const world = createWorld();
+
+    // Alice has a complete conversation: asked, answered, turn over.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "tidy the README"));
+    world.harness().emit(frames.agentMessage(SESSION, "done"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // While she is looking at it, the session is hers and stays live.
+    expect(world.harness().received("session/close")).toEqual([]);
+
+    // She closes the tab, leaving the sandbox empty with nothing running.
+    alice.disconnect();
+
+    // The harness is told to let the conversation go — that is the
+    // subprocess behind it being freed. The harness itself stays up for the
+    // next visitor: releasing a conversation is not stopping the sandbox.
+    expect(
+      world
+        .harness()
+        .received("session/close")
+        .map((frame) => frame.params),
+    ).toEqual([{ sessionId: SESSION }]);
+    expect(world.harness().killed()).toBe(false);
+  });
 });
