@@ -90,13 +90,21 @@ const REFUSAL_HEADING =
 
 /** A sign-in page the bytes are *pointed at* rather than one they merely link
  *  to: the target of a form or a meta refresh, which is what a redirect stub
- *  refusing a download looks like. A document may contain the same URL in its
- *  prose — a saved page, a runbook, a `.md` linking to a workspace — and that
- *  says nothing about what these bytes are. The host is matched whole (a
- *  subdomain, then `slack.com`) rather than as a substring, so neither an
- *  arbitrary prefix nor a lookalike host can stand in for it. */
-const SIGN_IN_TARGET =
-  /(?:action|content)\s*=\s*["'][^"']*https?:\/\/(?:[a-z0-9-]+\.)*slack\.com\/(?:signin|workspace-signin)/;
+ *  refusing a download looks like. A document may name the same URL in its
+ *  prose, its `og:url` or its description — a saved page, a runbook, a `.md`
+ *  linking to a workspace — and none of that says what these bytes are, so the
+ *  marker is bound to the element that makes it a target rather than to the
+ *  attribute alone. The host is matched whole (a subdomain, then `slack.com`)
+ *  rather than as a substring, so neither an arbitrary prefix nor a lookalike
+ *  host can stand in for it. */
+const SIGN_IN_HOST = String.raw`https?:\/\/(?:[a-z0-9-]+\.)*slack\.com\/(?:signin|workspace-signin)`;
+const SIGN_IN_TARGET = new RegExp(
+  // A form that submits there…
+  `<form[^>]*\\saction\\s*=\\s*["'][^"']*${SIGN_IN_HOST}` +
+    // …or a refresh that navigates there. `content` on any other tag is prose:
+    // an og:url or a description may name a sign-in page and still be a document.
+    `|<meta[^>]*\\shttp-equiv\\s*=\\s*["']?refresh["']?[^>]*content\\s*=\\s*["'][^"']*${SIGN_IN_HOST}`,
+);
 
 /** The field that makes a page a login form, whoever served it. */
 const PASSWORD_FIELD = /(type|name|id)\s*=\s*["']?password/;

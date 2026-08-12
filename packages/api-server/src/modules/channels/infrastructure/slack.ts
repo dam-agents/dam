@@ -319,12 +319,23 @@ type FetchedFailure = {
   reason: string;
 };
 
-/** The worker's attachment-memory budget, as the download loop sees it. Bytes
- *  are charged as they arrive and released when the turn that holds them
- *  settles, so what is refused is refused before it is ever read. */
+/** The worker's attachment-memory budget, as the download loop sees it.
+ *
+ *  Admission and charge are one call, deliberately: a `fits()` a caller acts on
+ *  later is read across the download's `await`, so every concurrent fetch would
+ *  pass the same snapshot and only then charge — bounding settled bytes while the
+ *  bytes actually in flight go uncounted. Reserving up front means an admitted
+ *  fetch is already paid for. */
 interface HeldBudget {
-  fits(bytes: number): boolean;
-  charge(bytes: number): () => void;
+  /** Reserve `bytes` before reading them, or refuse. */
+  reserve(bytes: number): HeldClaim | null;
+}
+
+interface HeldClaim {
+  /** Lower the reservation to what actually arrived. Only ever lowers, so it
+   *  cannot fail and cannot exceed what admission already granted. */
+  settle(bytes: number): void;
+  release(): void;
 }
 
 type FetchAttachmentsResult = {
@@ -403,6 +414,13 @@ function attachmentName(f: SlackImageFile): string {
   return promptSafeName(f.name || "file");
 }
 
+/** Said to the sender when the worker is already holding all the attachment
+ *  bytes it will hold at once. Not about this file's size — about how much is in
+ *  flight — so it asks for a retry rather than a smaller file. */
+const OVER_HELD_BUDGET =
+  "the agent is already holding as many attachments as it can at once. " +
+  "Send it again in a moment.";
+
 function megabytes(bytes: number): string {
   return (bytes / 1_000_000).toFixed(1);
 }
@@ -437,7 +455,7 @@ async function fetchSlackAttachments(
     const images: FetchedImage[] = [];
     const staged: FetchedFile[] = [];
     const failures: FetchedFailure[] = [];
-    const charges: Array<() => void> = [];
+    const claims: HeldClaim[] = [];
 
     // The picture cap is about what one prompt may carry, so it withholds the
     // pictures and nothing else: a file on the same message is written to disk,
@@ -465,8 +483,21 @@ async function fetchSlackAttachments(
     // any other unusable attachment rather than swelling one prompt.
     let pictureBytesTaken = 0;
     for (const f of picturesOverCap ? [] : pictures) {
+      const remaining = TOTAL_IMAGE_BYTES_CAP - pictureBytesTaken;
+      // A picture costs the worker more than a file, not less: it is held to the
+      // same turn settlement and base64 inflates it by a third on the way into
+      // the prompt. Reserved on the declared size, or on the whole remaining
+      // share when the sender's client did not say.
+      const claim = budget.reserve(f.size || remaining);
+      if (!claim) {
+        failures.push({
+          name: attachmentName(f),
+          kind: "image",
+          reason: OVER_HELD_BUDGET,
+        });
+        continue;
+      }
       try {
-        const remaining = TOTAL_IMAGE_BYTES_CAP - pictureBytesTaken;
         const bytes = Buffer.from(
           await gateway.downloadFile(f.url_private, remaining),
         );
@@ -485,6 +516,7 @@ async function fetchSlackAttachments(
             },
             "slack.image.unreadable",
           );
+          claim.release();
           failures.push({
             name: attachmentName(f),
             kind: "image",
@@ -492,15 +524,16 @@ async function fetchSlackAttachments(
           });
           continue;
         }
+        const data = bytes.toString("base64");
+        // What is retained is the encoded block, not the buffer it came from.
+        claim.settle(data.length);
+        claims.push(claim);
         images.push({
-          block: {
-            type: "image",
-            data: bytes.toString("base64"),
-            mimeType: attachment.mimeType,
-          },
+          block: { type: "image", data, mimeType: attachment.mimeType },
           meta: { name: attachmentName(f), size: f.size ?? bytes.length },
         });
       } catch (err) {
+        claim.release();
         failures.push({
           name: attachmentName(f),
           kind: "image",
@@ -544,17 +577,13 @@ async function fetchSlackAttachments(
         failures.push({ name, kind: "file", reason: declaredTooBig });
         continue;
       }
-      // Asked before the download, so bytes the worker has no room for are never
-      // read. Concurrent turns see each other's charges, which a per-message cap
-      // cannot: nothing limits how many messages arrive at once.
-      if (!budget.fits(f.size || MAX_FILE_BYTES)) {
-        failures.push({
-          name,
-          kind: "file",
-          reason:
-            "the agent is already holding as many attachments as it can at " +
-            "once. Send it again in a moment.",
-        });
+      // Reserved before the download, so bytes the worker has no room for are
+      // never read, and a fetch already on the wire counts against the next one —
+      // which a per-message cap cannot do, nothing limiting how many messages
+      // arrive at once.
+      const claim = budget.reserve(f.size || MAX_FILE_BYTES);
+      if (!claim) {
+        failures.push({ name, kind: "file", reason: OVER_HELD_BUDGET });
         continue;
       }
       try {
@@ -565,6 +594,7 @@ async function fetchSlackAttachments(
         );
         const tooBig = overCap(bytes.length);
         if (tooBig) {
+          claim.release();
           failures.push({ name, kind: "file", reason: tooBig });
           continue;
         }
@@ -598,6 +628,7 @@ async function fetchSlackAttachments(
             },
             "slack.file.unreadable",
           );
+          claim.release();
           failures.push({
             name,
             kind: "file",
@@ -609,7 +640,8 @@ async function fetchSlackAttachments(
           continue;
         }
         stagedBytes += bytes.length;
-        charges.push(budget.charge(bytes.length));
+        claim.settle(bytes.length);
+        claims.push(claim);
         staged.push({
           name,
           bytes,
@@ -617,6 +649,7 @@ async function fetchSlackAttachments(
           ...(f.mimetype ? { contentType: f.mimetype } : {}),
         });
       } catch (err) {
+        claim.release();
         failures.push({
           name,
           kind: "file",
@@ -639,7 +672,7 @@ async function fetchSlackAttachments(
       files: staged,
       failures,
       release: () => {
-        for (const undo of charges) undo();
+        for (const claim of claims) claim.release();
       },
     };
   } finally {
@@ -2407,22 +2440,25 @@ export function createSlackWorker(
    *  resident anyway. */
   let heldBytes = 0;
 
-  function fileBytes(files: FetchedFile[]): number {
-    return files.reduce((n, f) => n + f.bytes.length, 0);
-  }
-
-  /** The budget as the download loop asks about it: whether these bytes fit, and
-   *  a charge that hands back its own release. Passed in rather than reached for,
-   *  so the loop stays a function of what it is given. */
+  /** The budget the download loops reserve against. Passed in rather than reached
+   *  for, so a loop stays a function of what it is given. */
   const heldBudget: HeldBudget = {
-    fits: (bytes) => bytes === 0 || heldBytes + bytes <= HELD_BYTES_CAP,
-    charge: (bytes) => {
-      heldBytes += bytes;
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        heldBytes = Math.max(0, heldBytes - bytes);
+    reserve: (bytes) => {
+      if (bytes > 0 && heldBytes + bytes > HELD_BYTES_CAP) return null;
+      // Reserved on admission, so a fetch that is admitted is already counted
+      // for the whole time it holds the bytes — including the download itself.
+      let held = bytes;
+      heldBytes += held;
+      return {
+        settle: (actual) => {
+          if (actual >= held) return;
+          heldBytes -= held - actual;
+          held = actual;
+        },
+        release: () => {
+          heldBytes = Math.max(0, heldBytes - held);
+          held = 0;
+        },
       };
     },
   };

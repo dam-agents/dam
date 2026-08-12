@@ -147,10 +147,21 @@ describe("looksLikeSignInPage", () => {
         '<html><head><meta property="og:url" content="https://acme.slack.com/archives/C1/p1"></head><h1>Standup</h1>',
       ),
     ).toBe(false);
-    // A document that merely links to a sign-in page is still the document.
+    // A document that merely links to a sign-in page is still the document —
+    // whether the link is prose, an og:url, or a description.
     expect(
       looksLikeSignInPage(
         '<html><h1>Onboarding</h1><a href="https://slack.com/signin">sign in here</a>',
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeSignInPage(
+        '<html><head><meta name="description" content="How to sign in: https://slack.com/signin"><title>Onboarding notes</title></head>',
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeSignInPage(
+        '<html><head><meta property="og:url" content="https://acme.slack.com/signin"></head><h1>Notes</h1>',
       ),
     ).toBe(false);
     // And a lookalike host cannot stand in for the real one.
