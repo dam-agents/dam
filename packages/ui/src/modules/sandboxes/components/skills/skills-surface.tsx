@@ -1,15 +1,14 @@
-import { Add, Upload } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import type { SkillsState } from "api-server-api";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
+import { useResolvedHarnessConfig } from "../../../agents/api/harness-config.js";
 import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
@@ -19,6 +18,7 @@ import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSetActions } from "./skill-set-actions.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
+import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
 import {
@@ -54,6 +54,9 @@ export function SkillsSurface({
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
+  // `hasRun: false` is the one honest signal that no snapshot is even possible
+  // — distinct from a snapshot that happens to be empty.
+  const { hasRun } = useResolvedHarnessConfig(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
   // Ephemeral filter over data this component already holds. Not URL-owned:
@@ -75,9 +78,6 @@ export function SkillsSurface({
   } = useSkillsConfirms(surface, derived);
   const {
     sources,
-    sourcesLoaded,
-    stateLoaded,
-    standalone,
     standaloneSnapshot,
     publishes,
     updatingAll,
@@ -99,40 +99,10 @@ export function SkillsSurface({
     snapshotOnCount,
   } = derived;
 
-  // The stopped surface is a different page, not a dimmed copy of this one: a
-  // dated snapshot plus the live source list. Gated on the snapshot existing,
-  // so a sandbox that never ran falls through to its own panel (07) instead of
-  // claiming an empty recording is what it had.
-  const stoppedPanel = readOnly && standaloneSnapshot !== undefined && (
-    <SkillsStoppedPanel
-      capturedAt={standaloneSnapshot.capturedAt}
-      onCount={snapshotOnCount}
-      rows={snapshotRows}
-      sources={sources}
-      visibilityBySource={surface.visibilityBySource}
-      scannedAtBySource={surface.scannedAtBySource}
-      addSourceButton={
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            setOpenModal({ kind: "add-source", tab: "github", files: [] })
-          }
-        >
-          <Add size={14} /> Add source
-        </Button>
-      }
-      comingUp={!!comingUp}
-      onStart={() => agentId && wakeAgent.wake(agentId)}
-      onRescan={(src) => void surface.refreshSource(src.id)}
-      onRemove={(src) => void removeSourceWithConfirm(src)}
-    />
-  );
-
-  // Read-only while the agent is stopped/starting (matches the design):
-  // administering sources is a running-agent action, so drop "Add source"
-  // rather than dim a dead control.
-  const addSourceButton = readOnly ? null : (
+  // Always offered, in every state: a source is an account-scoped row, so
+  // connecting one needs no pod. It is the one thing you can still do to a
+  // stopped or never-started sandbox's skills.
+  const addSourceButton = (
     <Button
       variant="outline"
       size="sm"
@@ -142,6 +112,26 @@ export function SkillsSurface({
     >
       <Add size={14} /> Add source
     </Button>
+  );
+
+  // The stopped surface is a different page, not a dimmed copy of this one: a
+  // dated snapshot plus the live source list. Gated on the snapshot existing,
+  // so a sandbox that never ran falls through to its own panel instead of
+  // claiming an empty recording is what it had.
+  const stoppedPanel = readOnly && standaloneSnapshot !== undefined && (
+    <SkillsStoppedPanel
+      capturedAt={standaloneSnapshot.capturedAt}
+      onCount={snapshotOnCount}
+      rows={snapshotRows}
+      sources={sources}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      addSourceButton={addSourceButton}
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+    />
   );
 
   // Dropping .md files anywhere on the surface opens the upload tab preloaded.
@@ -168,15 +158,21 @@ export function SkillsSurface({
       }
     : {};
 
-  // While stopped, `standalone` is whatever was last recorded — empty for a
-  // sandbox that never ran. Either way it isn't evidence the sandbox is bare,
-  // so don't collapse to the "add a source" empty state then.
-  const isEmpty =
-    !readOnly &&
-    sourcesLoaded &&
-    stateLoaded &&
-    sources.length === 0 &&
-    standalone.length === 0;
+  // Running with nothing in it is no longer a special page: each group shows
+  // its own empty panel, so the image group still renders when the image ships
+  // skills. Only the two non-running states replace the surface wholesale.
+  const neverRunPanel = readOnly && hasRun === false && (
+    <SkillsNeverRunPanel
+      sources={sources}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      addSourceButton={addSourceButton}
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+    />
+  );
 
   return (
     <div
@@ -189,22 +185,10 @@ export function SkillsSurface({
         pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
       )}
     >
-      {stoppedPanel ? (
+      {neverRunPanel ? (
+        neverRunPanel
+      ) : stoppedPanel ? (
         stoppedPanel
-      ) : isEmpty ? (
-        <section>
-          <SectionLabel spaced>Skills</SectionLabel>
-          <Callout variant="dashed">
-            <div className="flex flex-col items-center gap-4 py-10 text-center">
-              <Upload size={22} className="text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                Drop a .md file here to create a skill, or add a GitHub repo as
-                a source.
-              </p>
-              {addSourceButton}
-            </div>
-          </Callout>
-        </section>
       ) : (
         <>
           {/* Left out while read-only, matching the design: search and the
@@ -262,11 +246,11 @@ export function SkillsSurface({
                 trackUnavailableNames={trackUnavailableNames}
               />
             ) : searching ? null : readOnly ? (
-              // Stopped/starting: the list is on the offline pod, so show the
-              // section with a placeholder instead of dropping it.
+              // Starting: the list is on a pod that isn't answering yet, so
+              // show the section with a placeholder instead of dropping it.
               <StandaloneSkillsPlaceholder />
             ) : (
-              <StandaloneSkillsEmptyState action={addSourceButton} />
+              <StandaloneSkillsEmptyState />
             )}
 
             <SkillSourcesSection

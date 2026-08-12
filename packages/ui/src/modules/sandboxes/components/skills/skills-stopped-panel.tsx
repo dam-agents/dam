@@ -1,28 +1,15 @@
-import {
-  Information,
-  Launch,
-  OverflowMenuHorizontal,
-  Play,
-  Time,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Information, Play } from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
-import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
+
+import { SkillSourceList } from "./skills-source-list.js";
 
 /** How many names a row spells out before it starts counting. A source with
  *  twenty installed skills would otherwise wrap the row four times and bury
@@ -58,90 +45,6 @@ function SnapshotRow({
         {label}
       </span>
       <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{children}</div>
-    </div>
-  );
-}
-
-/** A connected source while stopped: everything the platform still knows about
- *  it, and nothing that would need the pod. Sources are account-scoped, so the
- *  kebab keeps working here. */
-function SourceListRow({
-  source,
-  visibility,
-  scannedAt,
-  divided,
-  onRescan,
-  onRemove,
-}: {
-  source: SkillSource;
-  visibility?: "public" | "private";
-  scannedAt?: string;
-  divided: boolean;
-  onRescan: () => void;
-  onRemove: () => void;
-}) {
-  const canRemove = !source.system && !source.fromTemplate;
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 px-4 py-2.5",
-        divided && "border-t border-border",
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-[15px] font-medium text-foreground">
-            {source.name}
-          </p>
-          {visibility === "private" && (
-            <Badge variant="template" className="shrink-0">
-              Private
-            </Badge>
-          )}
-        </div>
-        <p className="truncate font-mono text-xs text-muted-foreground">
-          {repoSlug(source.gitUrl)}
-          {source.path ? ` · ${source.path}` : ""}
-        </p>
-      </div>
-      {scannedAt && (
-        <span
-          className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground"
-          title={formatTimestamp(scannedAt)}
-        >
-          <Time size={13} />
-          scanned {timeAgo(scannedAt)}
-        </span>
-      )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Source actions"
-            className="shrink-0 text-muted-foreground"
-          >
-            <OverflowMenuHorizontal size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() =>
-              window.open(source.gitUrl, "_blank", "noopener,noreferrer")
-            }
-          >
-            <span className="flex-1">View repo</span>
-            <Launch size={14} />
-          </DropdownMenuItem>
-          {canRemove && (
-            <DropdownMenuItem tone="danger" onSelect={onRemove}>
-              <TrashCan size={14} />
-              <span className="flex-1">Remove source</span>
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }
@@ -248,25 +151,13 @@ export function SkillsStoppedPanel({
           <SectionLabel>Connected sources</SectionLabel>
           {addSourceButton}
         </div>
-        {sources.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No skill sources connected.
-          </p>
-        ) : (
-          <Card>
-            {sources.map((source, i) => (
-              <SourceListRow
-                key={source.id}
-                source={source}
-                visibility={visibilityBySource[source.id]}
-                scannedAt={scannedAtBySource[source.id]}
-                divided={i > 0}
-                onRescan={() => onRescan(source)}
-                onRemove={() => onRemove(source)}
-              />
-            ))}
-          </Card>
-        )}
+        <SkillSourceList
+          sources={sources}
+          visibilityBySource={visibilityBySource}
+          scannedAtBySource={scannedAtBySource}
+          onRescan={onRescan}
+          onRemove={onRemove}
+        />
         <p className="mt-2.5 text-sm text-muted-foreground">
           Sources and their scan times are platform-side, so they stay accurate
           and editable while stopped.

@@ -43,7 +43,10 @@ export interface SkillsDerivations {
   /** What was on at the last run, grouped for the stopped snapshot panel:
    *  created-here, then one row per source, then image-shipped. */
   snapshotRows: { label: string; names: string[] }[];
-  /** How many skills were on at the last run, across all three provenances. */
+  /** How many source-backed skills were installed at the last run. The same
+   *  measure as the running surface's `on`, so the number doesn't jump when a
+   *  sandbox stops — and the same one the per-source rows below it add up to.
+   *  Created-here and image skills are provenance, not toggles. */
   snapshotOnCount: number;
 }
 
@@ -316,6 +319,6 @@ export function useSkillsDerivations(
     drifted,
     trackUnavailableNames,
     snapshotRows,
-    snapshotOnCount: installed.length + createdHere.length + builtIn.length,
+    snapshotOnCount: installed.length,
   };
 }

@@ -1,6 +1,5 @@
-import { Upload } from "@carbon/icons-react";
+import { Document } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
-import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
@@ -33,17 +32,16 @@ export function StandaloneSkillsPlaceholder() {
 }
 
 /** Running-agent empty state (#2828): the section keeps its header and an
- *  authoring affordance instead of vanishing when no user skill exists yet. */
-export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
+ *  authoring affordance instead of vanishing when no user skill exists yet.
+ *  No button — the panel itself is the drop target, and the only other way in
+ *  is asking the agent, which no button can do. */
+export function StandaloneSkillsEmptyState() {
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <SectionLabel>Created in this sandbox</SectionLabel>
-        {action}
-      </div>
+      <SectionLabel spaced>Created in this sandbox</SectionLabel>
       <Callout variant="dashed">
         <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <Upload size={20} className="text-muted-foreground" />
+          <Document size={20} className="text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             No skills created in this sandbox yet. Drop a .md file here, or ask
             the agent to author one.

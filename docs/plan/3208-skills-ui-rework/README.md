@@ -186,7 +186,7 @@ the only durable record besides memory. File only if you want them tracked.
 | 04 ✅ | Set modals restyle | Save-as-set + Add-sets visuals per prototype | 01 |
 | 05 ✅ | Skill detail drawer | Unified drawer: header toggle, chips, file strip, footer gating | 02 |
 | 06 ✅ | Stopped state | Snapshot notice, Skills-at-last-run chips, live sources list | 03 |
-| 07 | Never-run and Running · empty | Scoped-down never panel; empty panels with image group | 06 |
+| 07 ✅ | Never-run and Running · empty | Scoped-down never panel; empty panels with image group | 06 |
 | 08 | Stale-model callout | Stopped banner + nav dot + Start & fix | 01 |
 | 09 | Sidebar summaries, docs, final sweep | Nav copy, `skills.md` update, both-themes sweep, deviations → PR | 02–08 |
 
