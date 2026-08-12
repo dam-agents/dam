@@ -19,7 +19,6 @@ import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
-import { useScheduleSessionModes } from "../../schedules/api/queries.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
@@ -106,11 +105,6 @@ export function SessionsSidebar({
     features?.["session-costs"] ?? false,
   );
 
-  // A continuous schedule reuses one session across every fire, so that
-  // session's timestamps span all runs rather than one — the row keeps its run
-  // time to itself there, and while the modes are still unknown.
-  const { data: scheduleModes } = useScheduleSessionModes(selectedAgent);
-
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
   const approvalSessions = useMemo(() => {
     const set = new Set<string>();
@@ -161,9 +155,6 @@ export function SessionsSidebar({
         needsApproval={needsApproval}
         unread={unread}
         cost={sessionCosts?.get(s.sessionId)}
-        showRunTime={
-          !!s.scheduleId && scheduleModes?.get(s.scheduleId) === "fresh"
-        }
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);

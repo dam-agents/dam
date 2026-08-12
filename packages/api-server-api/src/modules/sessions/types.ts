@@ -79,4 +79,11 @@ export interface SessionView {
   running?: boolean;
   /** When a viewer last saw the session; unread = updatedAt newer than this. */
   seenAt?: string | null;
+  /** Run accounting for scheduled fires, summed over every fire this session
+   *  served — a continuous schedule reuses one session, so `runCount` counts
+   *  them all. Set while a fire is in flight. Absent on sessions that predate
+   *  the accounting. */
+  runStartedAt?: string | null;
+  runTotalMs?: number | null;
+  runCount?: number | null;
 }

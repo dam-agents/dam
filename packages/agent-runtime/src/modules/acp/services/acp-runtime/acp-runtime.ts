@@ -1169,6 +1169,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             active !== undefined && active.outboundId === outboundId;
           if (turnEnded) {
             activePromptBySession.delete(sid);
+            deps.sessionMetadata?.finishRun(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
           }
           // A completed turn is activity too — a response landing with no
@@ -1419,6 +1420,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         deps.sessionMetadata?.recordActivity(promptSessionId);
         if (hasEngagedViewer(promptSessionId))
           deps.sessionMetadata?.recordSeen(promptSessionId);
+        // A prompt off a machine-driven channel is a scheduled fire, not a
+        // person typing — only those are timed as runs.
+        if (nonViewerChannels.has(channel))
+          deps.sessionMetadata?.startRun(promptSessionId);
         // Synthesize user_message_chunk(s) from the prompt payload and
         // append them to the log. The SDK drops plain-text user_message_chunk
         // emissions in live, so without this, viewers other than the sender
@@ -1650,6 +1655,11 @@ function withPlatformMeta(
         createdAt: entry.createdAt,
         running,
         ...(entry.seenAt ? { seenAt: entry.seenAt } : {}),
+        ...(entry.runStartedAt ? { runStartedAt: entry.runStartedAt } : {}),
+        ...(entry.runTotalMs !== undefined
+          ? { runTotalMs: entry.runTotalMs }
+          : {}),
+        ...(entry.runCount !== undefined ? { runCount: entry.runCount } : {}),
       },
     },
   };

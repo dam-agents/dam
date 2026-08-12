@@ -40,16 +40,6 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-/** The span between two timestamps, formatted by {@link formatDuration}; null
- *  when either end is missing or unparseable, so callers can drop the line
- *  rather than render a placeholder. */
-export function durationBetween(from: DateInput, to: DateInput): string | null {
-  const start = toDate(from);
-  const end = toDate(to);
-  if (!start || !end) return null;
-  return formatDuration(end.getTime() - start.getTime());
-}
-
 /** Past-facing relative time: "just now", "5m ago", "2h ago", "3d ago";
  *  "—" for an unparseable date. */
 export function timeAgo(value: DateInput): string {

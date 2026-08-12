@@ -30,22 +30,6 @@ export function useSchedules(agentId: string | null) {
   });
 }
 
-/** Each of the agent's schedules by id, mapped to how it treats sessions —
- *  "continuous" reuses one session across fires, "fresh" starts one per fire
- *  (the default when the spec omits it). Shares the schedules-list cache with
- *  the panel but adds no poll of its own: the mode only changes when someone
- *  edits the schedule. Undefined until the list resolves, so a caller can tell
- *  "not continuous" from "don't know yet". */
-export function useScheduleSessionModes(agentId: string | null) {
-  return useQuery({
-    ...trpc.schedules.list.queryOptions(agentId ? { agentId } : skipToken),
-    staleTime: 60_000,
-    retry: false,
-    select: (schedules) =>
-      new Map(schedules.map((s) => [s.id, s.sessionMode ?? "fresh"] as const)),
-  });
-}
-
 /** A schedule's sessions, read straight off the owning agent over ACP and
  *  filtered by `scheduleId` — the server has no session list. */
 export function useScheduleSessions(

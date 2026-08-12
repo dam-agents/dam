@@ -15,6 +15,12 @@ const sessionMetaEntrySchema = z.object({
   lastActivityAt: z.string().optional(),
   /** When a viewer last saw the session; unread = lastActivityAt > seenAt. */
   seenAt: z.string().optional(),
+  /** Run accounting for machine-driven turns (scheduled fires) only, so a human
+   *  reply in the same session never counts as run time. Set while one is in
+   *  flight; the totals sum every fire the session has served. */
+  runStartedAt: z.string().optional(),
+  runTotalMs: z.number().optional(),
+  runCount: z.number().optional(),
 });
 
 // A malformed entry is dropped rather than discarding the whole store.
@@ -41,6 +47,10 @@ export interface SessionMetadataStore {
   set(sessionId: string, meta: PlatformSessionMeta): void;
   recordActivity(sessionId: string): void;
   recordSeen(sessionId: string): void;
+  startRun(sessionId: string): void;
+  /** Fold the in-flight run into the totals. No-op unless one is open, so a
+   *  human turn ending cannot inflate them. */
+  finishRun(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
   /** Soft delete: drop the entry and remember the id so list
    *  enrichment filters it out even while the harness still lists the JSONL. */
@@ -116,6 +126,36 @@ export function createSessionMetadataStore(
         sessions: {
           ...sessions,
           [sessionId]: { ...existing, seenAt: now() },
+        },
+      });
+    },
+    startRun(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing) return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: { ...existing, runStartedAt: now() },
+        },
+      });
+    },
+    finishRun(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing?.runStartedAt) return;
+      const { runStartedAt, ...rest } = existing;
+      const elapsed = Date.parse(now()) - Date.parse(runStartedAt);
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...rest,
+            runTotalMs: (existing.runTotalMs ?? 0) + Math.max(0, elapsed),
+            runCount: (existing.runCount ?? 0) + 1,
+          },
         },
       });
     },

@@ -128,6 +128,25 @@ describe("createSessionMetadataStore", () => {
     expect(store.get("s1")?.meta).toEqual({ mode: "chat" });
   });
 
+  it("sums run time across fires and ignores an unopened run", () => {
+    let clock = "2026-01-01T00:00:00Z";
+    const store = createSessionMetadataStore(backend, () => clock);
+    store.set("s1", { type: "schedule_cron" });
+
+    store.startRun("s1");
+    clock = "2026-01-01T00:02:00Z";
+    store.finishRun("s1");
+    clock = "2026-01-01T01:00:00Z";
+    store.startRun("s1");
+    clock = "2026-01-01T01:01:00Z";
+    store.finishRun("s1");
+    // A human turn ending with no run open must not count.
+    store.finishRun("s1");
+
+    expect(store.get("s1")).toMatchObject({ runCount: 2, runTotalMs: 180_000 });
+    expect(store.get("s1")?.runStartedAt).toBeUndefined();
+  });
+
   it("writes pretty-printed JSON under a created .platform dir", () => {
     const store = createSessionMetadataStore(
       backend,
