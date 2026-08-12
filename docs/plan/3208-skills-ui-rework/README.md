@@ -100,7 +100,7 @@ description before the plan folder is deleted. Seeded entries:
 
 | # | Prototype shows | We ship | Why |
 |---|---|---|---|
-| D1 | Badges `Open`, `Merged`, `Published` (state unknown) | `In review`, `Published` (merged), `Submitted` (unknown) | Prototype labels re-introduce the conflation #3019 rejected; live labels encode settled semantics |
+| D1 | A publish whose pull-request state can't be read is badged `Published` | `Submitted` | Publishing is the action; the badge reports what became of the pull request, so `Draft`/`Open`/`Merged`/`Closed` follow the prototype and GitHub exactly. The unresolved case cannot: `Published` would give the weakest claim ("no idea") the strongest word |
 | D2 | Publish pill is a bare label | Pill stays a clickable PR link with tooltip | Losing the link is a capability regression |
 | D3 | Publish only via drawer footer, unconditional | Kebab + drawer, gated (no record / closed) | Discoverability of the epic's core loop; shipped gating rules are deliberate |
 | D4 | Never-run: "pick skills now — applied the first time the sandbox starts" | "Start the sandbox to configure skills"; Start sandbox primary | Capability does not exist; every mutating path wakes the pod (`ensureAgentReachable`) |

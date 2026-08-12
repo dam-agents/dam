@@ -22,18 +22,22 @@ import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 /**
- * The label answers "is this skill published upstream?", not "what happened to
- * the pull request?" — so a merged one reads `Published`, which is precisely why
- * an unresolved one cannot: it would conflate "definitely in the catalog" with
- * "no idea" (#3019).
+ * Publishing is the action; this reports what became of the pull request it
+ * opened. So the labels are the pull request's own states, in the same words
+ * GitHub uses on the page the pill links to.
+ *
+ * `unknown` is the exception and must stay one: it means a publish was recorded
+ * but the pull request cannot be read right now. Labelling that "Published"
+ * would give the weakest claim the strongest word, and hand "definitely in the
+ * catalog" to a case that means "no idea".
  */
 const PR_STATE_PILL: Record<
   NonNullable<SkillPublishRecord["prState"]> | "unknown",
-  { label: string; variant: "outline" | "info" | "success" | "muted" }
+  { label: string; variant: "info" | "success" | "muted" }
 > = {
-  draft: { label: "Draft", variant: "outline" },
-  open: { label: "In review", variant: "info" },
-  merged: { label: "Published", variant: "success" },
+  draft: { label: "Draft", variant: "muted" },
+  open: { label: "Open", variant: "info" },
+  merged: { label: "Merged", variant: "success" },
   closed: { label: "Closed", variant: "muted" },
   unknown: { label: "Submitted", variant: "muted" },
 };

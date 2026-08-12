@@ -13,8 +13,8 @@ const DRIFT_HINT =
 /**
  * One skill inside a source card: the name on the left, and on the right the
  * drift "Update" affordance followed by an immediate install/uninstall toggle.
- * Clicking the name opens the SKILL.md render modal (05). A drifted installed
- * skill offers "Update", which re-installs at the latest version (06).
+ * Clicking the name opens the SKILL.md preview. A drifted installed skill
+ * offers "Update", which re-installs it at the latest version.
  *
  * No description: at twenty-odd rows per source it turned the card into a wall
  * of prose, and the drawer behind the name carries it.
