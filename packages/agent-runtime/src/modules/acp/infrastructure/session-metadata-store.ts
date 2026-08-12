@@ -67,19 +67,26 @@ export function createSessionMetadataStore(
     initial: () => ({ sessions: {}, tombstones: [] }),
   });
 
-  // One-time backfill: pre-feature entries have no seenAt and would all read
-  // as unread. Grandfather them as seen at their last known activity.
+  // Boot fixups. One-time backfill: pre-feature entries have no seenAt and
+  // would all read as unread — grandfather them as seen at their last known
+  // activity. And no run can outlive the process that started it, so a
+  // surviving runStartedAt means that fire died with the pod; its length is
+  // unknowable, so the stamp is dropped rather than folded into the totals.
   {
     const { sessions, tombstones } = store.read();
-    if (Object.values(sessions).some((e) => e.seenAt === undefined)) {
-      const backfilled: Record<string, SessionMetaEntry> = {};
+    const stale = Object.values(sessions).some(
+      (e) => e.seenAt === undefined || e.runStartedAt !== undefined,
+    );
+    if (stale) {
+      const fixed: Record<string, SessionMetaEntry> = {};
       for (const [id, e] of Object.entries(sessions)) {
-        backfilled[id] = {
-          ...e,
+        const { runStartedAt: _abandoned, ...rest } = e;
+        fixed[id] = {
+          ...rest,
           seenAt: e.seenAt ?? e.lastActivityAt ?? e.createdAt,
         };
       }
-      store.write({ sessions: backfilled, tombstones });
+      store.write({ sessions: fixed, tombstones });
     }
   }
 
@@ -132,7 +139,9 @@ export function createSessionMetadataStore(
     startRun(sessionId) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
-      if (!existing) return;
+      // Never clobber an open run's start — a concurrent fire would discard it
+      // and the next finish would be charged both.
+      if (!existing || existing.runStartedAt) return;
       store.write({
         tombstones,
         sessions: {

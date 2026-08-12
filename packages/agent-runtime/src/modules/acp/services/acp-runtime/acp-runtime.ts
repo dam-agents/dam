@@ -634,6 +634,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
       pendingFromAgent.clear();
+      finishOpenRuns();
       // The harness took its children down with it — nothing left to hold.
       deps.backgroundWork?.clear();
     });
@@ -684,6 +685,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const t of idleReapTimers.values()) clearTimeout(t);
     idleReapTimers.clear();
     pendingFromAgent.clear();
+    finishOpenRuns();
     activePromptBySession.clear();
     promptQueueBySession.clear();
     deps.backgroundWork?.clear();
@@ -792,7 +794,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     // session/close cancels the session's ongoing work, so its turn slot and
     // queue must not outlive it — a stale slot would strand a deferred env
     // recycle (and the idle flag) until the pod rolls.
-    activePromptBySession.delete(sessionId);
+    endActivePrompt(sessionId);
     promptQueueBySession.delete(sessionId);
     // The subprocess is going away, so anything it was still running goes with
     // it — the hold has nothing left to protect.
@@ -933,6 +935,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       channel: entry.channel,
       originalId: entry.originalId,
     });
+    // A prompt off a machine-driven channel is a scheduled fire, not a person
+    // typing — only those are timed. Timed from here rather than from arrival,
+    // so a fire that queued behind another turn isn't charged its wait.
+    if (nonViewerChannels.has(entry.channel))
+      deps.sessionMetadata?.startRun(sessionId);
     a.send(entry.frame);
     // The prompt is now the agent's problem — delivery is real. Sender-only and
     // ephemeral: never through the log, so it's neither replayed nor seen by
@@ -948,6 +955,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         ),
       );
     }
+  }
+
+  /** Release a session's turn slot and close the run it may be timing. The two
+   *  move together, or a teardown strands a fire as forever "running". */
+  function endActivePrompt(sessionId: string): void {
+    activePromptBySession.delete(sessionId);
+    deps.sessionMetadata?.finishRun(sessionId);
+  }
+
+  /** For the paths that lose every in-flight turn at once — an env recycle or
+   *  the harness dying — where no response will ever arrive to close them. */
+  function finishOpenRuns(): void {
+    for (const sessionId of activePromptBySession.keys())
+      deps.sessionMetadata?.finishRun(sessionId);
   }
 
   function advanceQueue(a: AgentProcess, sessionId: string): void {
@@ -1168,8 +1189,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const turnEnded =
             active !== undefined && active.outboundId === outboundId;
           if (turnEnded) {
-            activePromptBySession.delete(sid);
-            deps.sessionMetadata?.finishRun(sid);
+            endActivePrompt(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
           }
           // A completed turn is activity too — a response landing with no
@@ -1420,10 +1440,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         deps.sessionMetadata?.recordActivity(promptSessionId);
         if (hasEngagedViewer(promptSessionId))
           deps.sessionMetadata?.recordSeen(promptSessionId);
-        // A prompt off a machine-driven channel is a scheduled fire, not a
-        // person typing — only those are timed as runs.
-        if (nonViewerChannels.has(channel))
-          deps.sessionMetadata?.startRun(promptSessionId);
         // Synthesize user_message_chunk(s) from the prompt payload and
         // append them to the log. The SDK drops plain-text user_message_chunk
         // emissions in live, so without this, viewers other than the sender
