@@ -41,9 +41,20 @@ function restartsToApply(agent: AgentView): boolean {
 /** The banner only offers a batch from two up, but nothing stops a caller
  *  passing one, and "1 sandboxes" would be the tell. */
 function batchSubject(total: number): string {
-  return total === 1
-    ? "sandbox to the version its template now ships?"
-    : "sandboxes to the versions their templates now ship?";
+  return total === 1 ? "sandbox" : "sandboxes";
+}
+
+/** The images the batch moves to, each with how many sandboxes take it. Grouped
+ *  because a batch usually spans one template, so the common case is a single
+ *  line; consent is bound to these images by `expectedToImage`, so they are
+ *  what the dialog has to name. */
+function byTargetImage(
+  pending: readonly PendingUpdate[],
+): Array<{ image: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const p of pending)
+    counts.set(p.toImage, (counts.get(p.toImage) ?? 0) + 1);
+  return [...counts].map(([image, count]) => ({ image, count }));
 }
 
 /** The release notes, repeated here because the hover card's copy is reachable
@@ -120,10 +131,29 @@ export function useUpdateSandbox() {
       const restarting = agents.filter(
         (a) => a.templateUpdate && restartsToApply(a),
       ).length;
+      const targets = byTargetImage(pending);
       const msg = (
         <>
           Update <strong className="text-foreground">{pending.length}</strong>{" "}
           {batchSubject(pending.length)}{" "}
+          {targets.length === 1 ? (
+            <>
+              to <span className="font-mono text-xs">{targets[0]!.image}</span>
+              ?{" "}
+            </>
+          ) : (
+            <>
+              to the versions their templates now ship?
+              <ul className="my-2 flex flex-col gap-1">
+                {targets.map(({ image, count }) => (
+                  <li key={image} className="text-sm">
+                    <span className="font-mono text-xs">{image}</span> — {count}{" "}
+                    {count === 1 ? "sandbox" : "sandboxes"}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {batchApplyNote(restarting, pending.length)}
         </>
       );
