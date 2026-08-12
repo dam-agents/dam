@@ -198,14 +198,14 @@ export function useRestartAgentMutation() {
   });
 }
 
-// Upgrading rolls a running pod onto the new image — refresh the budget
+// Updating rolls a running pod onto the new image — refresh the budget
 // meter alongside, like the other lifecycle mutations.
 export function useUpgradeAgentMutation() {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to upgrade sandbox",
+      errorToast: "Failed to update sandbox",
     },
   });
 }

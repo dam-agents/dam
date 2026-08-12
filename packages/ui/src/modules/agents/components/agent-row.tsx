@@ -21,6 +21,7 @@ import {
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
+import { UpdateAvailableAction } from "./update-available-action.js";
 
 interface Props {
   agent: AgentView;
@@ -29,7 +30,10 @@ interface Props {
   /** Live compute of this sandbox's temporary spawns, when it has any. */
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
+  /** This sandbox's template update is in flight. */
+  updatePending: boolean;
   onSelect: () => void;
+  onUpdate: () => void;
   onConfigure: () => void;
   configureLabel: string;
   onWake: () => void;
@@ -45,7 +49,9 @@ export function AgentRow({
   subtitle,
   temporaryDraw,
   deletePending,
+  updatePending,
   onSelect,
+  onUpdate,
   onConfigure,
   configureLabel,
   onWake,
@@ -96,6 +102,15 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {/* Both the action and its portaled hover card sit inside the row's
+            click target, so their clicks must not also open the sandbox. */}
+        <span onClick={(e) => e.stopPropagation()}>
+          <UpdateAvailableAction
+            agent={agent}
+            pending={updatePending}
+            onUpdate={onUpdate}
+          />
+        </span>
         <ContributionFailuresBadge failures={agent.contributionFailures} />
         {/* A parked sandbox explains itself: the controller's figures ride
             the badge tooltip — focusable and labelled, so keyboard and

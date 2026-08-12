@@ -1,6 +1,10 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import * as React from "react";
 
+import {
+  FLOATING_PANEL,
+  FloatingPanelTail,
+} from "@/components/ui/floating-panel";
 import { cn } from "@/lib/utils";
 
 const Popover = PopoverPrimitive.Root;
@@ -23,19 +27,12 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         collisionPadding={8}
-        className={cn(
-          "z-popover rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
-          className,
-        )}
+        className={cn(FLOATING_PANEL, className)}
         {...props}
       >
         {children}
-        {/* A rotated square rather than Radix's triangle: pulled half over the
-            panel's edge, it carries the border on its two outward sides and its
-            filled half hides the segment of the panel border behind it — which
-            a filled triangle sitting outside the edge cannot do. */}
         <PopoverPrimitive.Arrow asChild>
-          <div className="h-[9px] w-[9px] -translate-y-1/2 rotate-45 border-b border-r border-border bg-popover" />
+          <FloatingPanelTail />
         </PopoverPrimitive.Arrow>
       </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
