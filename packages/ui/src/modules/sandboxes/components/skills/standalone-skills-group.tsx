@@ -123,6 +123,7 @@ export function StandaloneSkillsGroup({
               skill={skill}
               publish={pub}
               divided={i > 0}
+              readOnly={readOnly}
               canPublish={canPublish}
               onPublish={() => onPublish(skill)}
               onDownload={() => onDownload(skill)}

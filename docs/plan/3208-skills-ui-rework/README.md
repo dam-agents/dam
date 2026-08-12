@@ -169,7 +169,7 @@ the only durable record besides memory. File only if you want them tracked.
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | Page shell and grouping | Group order, section headers, counts line, search row, drift banner placement | — |
-| 02 | Created-here rows | Name-only rows, badge restyle, publish → kebab, Track from | 01 |
+| 02 ✅ | Created-here rows | Name-only rows, badge restyle, publish → kebab, Track from | 01 |
 | 03 | Source cards | Header layout, scanning state, row density, expand control, error restyle, `visibility` field | 01 |
 | 04 | Set modals restyle | Save-as-set + Add-sets visuals per prototype | 01 |
 | 05 | Skill detail drawer | Unified drawer: header toggle, chips, file strip, footer gating | 02 |

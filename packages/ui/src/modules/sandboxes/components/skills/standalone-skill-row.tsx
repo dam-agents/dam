@@ -1,9 +1,10 @@
 import {
   Download,
-  Launch,
+  Export,
   OverflowMenuHorizontal,
-  PullRequest,
   Renew,
+  TrashCan,
+  View,
 } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
@@ -38,9 +39,13 @@ const PR_STATE_PILL: Record<
 };
 
 /**
- * One Standalone Local Skill: name + description, the publish pill once it has
- * a publish record, and the kebab. The pill's label is a function of the pull
- * request's resolved state, so it stays true after a merge or a close.
+ * One Standalone Local Skill: the name, the publish pill once it has a publish
+ * record, and the kebab. The pill's label is a function of the pull request's
+ * resolved state, so it stays true after a merge or a close.
+ *
+ * The row carries no description and no inline buttons — every action lives in
+ * the kebab, so five rows read as a list rather than as five control panels.
+ * The description is one click away in the drawer.
  *
  * Publishing is offered when there is no record at all, and again only in the
  * `closed` state — where nothing landed, so the local copy is all there is.
@@ -53,6 +58,7 @@ export function StandaloneSkillRow({
   skill,
   publish,
   divided,
+  readOnly,
   canPublish,
   onPublish,
   onDownload,
@@ -66,6 +72,9 @@ export function StandaloneSkillRow({
   publish?: SkillPublishRecord;
   /** Draw the separator — every row but the first. */
   divided: boolean;
+  /** Agent stopped/starting: the card behind the row is `bg-muted`, which a
+   *  muted pill would otherwise disappear into. */
+  readOnly: boolean;
   /** Whether any publishable (GitHub) source exists to publish into. */
   canPublish: boolean;
   onPublish: () => void;
@@ -87,7 +96,9 @@ export function StandaloneSkillRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-4 py-3",
+        // py-2, not py-3: the 28px kebab sets the row height, so this is what
+        // lands the row on the design's 44px.
+        "flex items-center gap-3 px-4 py-2",
         divided && "border-t border-border",
       )}
     >
@@ -107,17 +118,12 @@ export function StandaloneSkillRow({
             {skill.name}
           </p>
         )}
-        <p
-          className={cn(
-            "truncate text-sm text-muted-foreground",
-            !skill.description && "italic",
-          )}
-        >
-          {skill.description || "No description"}
-        </p>
       </div>
 
       {publish && (
+        // The bare state label, per the design. The source and the date moved
+        // into the tooltip, which already named both — the row says what
+        // happened, the tooltip says where and when.
         <Tooltip
           content={`Published to ${publish.sourceName} on ${formatDateTime(
             publish.publishedAt,
@@ -128,31 +134,13 @@ export function StandaloneSkillRow({
             {...externalLinkProps}
             className={cn(
               badgeVariants({ variant: pill.variant }),
-              // border-border, because the readOnly card is bg-muted too and the
-              // pill would otherwise vanish into it.
-              "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
+              "shrink-0 font-medium transition-opacity hover:opacity-80",
+              readOnly && "border-border",
             )}
           >
-            <PullRequest size={13} /> {pill.label} · {publish.sourceName}
+            {pill.label}
           </a>
         </Tooltip>
-      )}
-
-      {canRepublish && (
-        <Button
-          variant="outline"
-          size="xs"
-          disabled={!canPublish}
-          onClick={onPublish}
-          tooltip={
-            canPublish
-              ? "Publish this skill as a pull request"
-              : "Add a GitHub source first to publish there"
-          }
-          className="shrink-0 gap-1.5"
-        >
-          {publish ? "Publish again" : "Publish"} <Launch size={13} />
-        </Button>
       )}
 
       <DropdownMenu>
@@ -167,6 +155,12 @@ export function StandaloneSkillRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          {onOpen && (
+            <DropdownMenuItem onSelect={onOpen}>
+              <View size={14} />
+              <span className="flex-1">Preview SKILL.md</span>
+            </DropdownMenuItem>
+          )}
           {publish?.prState === "merged" && onTrack && (
             <DropdownMenuItem
               disabled={trackUnavailable}
@@ -181,12 +175,32 @@ export function StandaloneSkillRow({
               <span className="flex-1">Track from {publish.sourceName}</span>
             </DropdownMenuItem>
           )}
+          {/* Disabled rather than hidden when there is nowhere to publish: the
+              action exists, it is the sandbox that is missing a GitHub source,
+              and the tooltip is the only place that can say so. */}
+          {canRepublish && (
+            <DropdownMenuItem
+              disabled={!canPublish}
+              onSelect={onPublish}
+              title={
+                canPublish
+                  ? undefined
+                  : "Add a GitHub source first to publish there"
+              }
+            >
+              <Export size={14} />
+              <span className="flex-1">
+                {publish ? "Publish again…" : "Publish…"}
+              </span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={onDownload}>
             <Download size={14} />
             <span className="flex-1">Download skill</span>
           </DropdownMenuItem>
           <DropdownMenuItem tone="danger" onSelect={onDelete}>
-            Delete skill
+            <TrashCan size={14} />
+            <span className="flex-1">Delete skill</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
