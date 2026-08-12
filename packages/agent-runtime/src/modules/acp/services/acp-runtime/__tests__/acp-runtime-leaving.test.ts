@@ -199,4 +199,53 @@ describe("acp-runtime: leaving", () => {
     ).toEqual([{ sessionId: SESSION }]);
     expect(world.harness().killed()).toBe(false);
   });
+
+  /**
+   * A connection dies mid-turn and the agent keeps talking to a room with
+   * nobody in it. When the person comes back, everything said into that
+   * silence must be waiting for them.
+   *
+   * The harness said each of those lines once, into a socket nobody held,
+   * and was never told the reader dropped — nothing will make it repeat
+   * itself. Only the runtime kept the conversation while nobody was
+   * listening, and only it knows where the returning client's copy ends, so
+   * handing back precisely the missed span — once — is its job.
+   */
+  it("should show a client that drops and comes back what was said while it was gone", () => {
+    const world = createWorld();
+
+    // Alice asks and sees the answer start.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "run the whole test suite"));
+    world.harness().emit(frames.agentMessage(SESSION, "starting the suite"));
+
+    // Her connection dies mid-turn, and the agent keeps going with nobody
+    // there to hear it.
+    alice.disconnect();
+    world.harness().emit(frames.agentMessage(SESSION, "unit tests passed"));
+    world.harness().emit(frames.agentMessage(SESSION, "e2e passed"));
+
+    // She comes back and opens the conversation again.
+    const aliceAgain = world.connect();
+    aliceAgain.send(frames.loadSession(1, SESSION));
+
+    // She is not merely caught up but live again: the turn's last line
+    // arrives as it is said, with no second ask needed.
+    world.harness().emit(frames.agentMessage(SESSION, "all green"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // Her load was answered, and the transcript is whole: what she saw
+    // before the drop, what was said to nobody while she was gone, and what
+    // came after her return — once each, in order.
+    expect(aliceAgain.reply(1)).toBeDefined();
+    expect(transcriptOf(aliceAgain)).toEqual([
+      `${SESSION}: run the whole test suite`,
+      `${SESSION}: starting the suite`,
+      `${SESSION}: unit tests passed`,
+      `${SESSION}: e2e passed`,
+      `${SESSION}: all green`,
+    ]);
+  });
 });
