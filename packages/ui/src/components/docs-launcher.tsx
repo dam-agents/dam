@@ -33,9 +33,12 @@ export function DocsLauncher() {
           className={cn(
             "fixed right-3 z-nav h-[34px] w-[34px] md:right-4",
             chatSurface && "hidden md:inline-flex",
+            // Steps up over a submit bar where one is on screen: below ~1149px
+            // the bar's content reaches the right edge, so this would otherwise
+            // sit on top of Submit changes.
             banner
-              ? "bottom-[124px] md:bottom-[60px]"
-              : "bottom-[80px] md:bottom-4",
+              ? "bottom-[calc(124px+var(--bottom-bar-inset))] md:bottom-[calc(60px+var(--bottom-bar-inset))]"
+              : "bottom-[calc(80px+var(--bottom-bar-inset))] md:bottom-[calc(16px+var(--bottom-bar-inset))]",
           )}
         >
           <Help size={16} />

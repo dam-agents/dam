@@ -60,7 +60,11 @@ export function SandboxHomeView() {
 
   return (
     <SandboxTwoColumnShell
-      footer={f.dirty ? footer : undefined}
+      // Setup is the one section that commits on Submit, and its bar stays put
+      // rather than appearing on the first edit — a control that materializes
+      // under the content shifts the page as you reach for it. Other sections
+      // save their own edits, so a disabled Submit there would promise nothing.
+      footer={section === "setup" ? footer : undefined}
       nav={
         <SandboxSectionNav
           active={section}

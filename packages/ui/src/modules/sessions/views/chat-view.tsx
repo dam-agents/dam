@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   OverflowMenuVertical,
   Renew,
-  Settings,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -28,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
@@ -76,6 +74,7 @@ import {
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
+import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
@@ -401,13 +400,15 @@ export function ChatView() {
         actionsAria: "Knowledge base actions",
         configure: "Configure knowledge base",
         delete: "Delete Knowledge Base",
-        modelTitle: "Open knowledge base configuration",
+        modelSubject: "knowledge base",
+        modelSettings: "Knowledge Base Settings",
       }
     : {
         actionsAria: "Sandbox actions",
         configure: "Configure sandbox",
         delete: "Delete Sandbox",
-        modelTitle: "Model — change in sandbox configuration",
+        modelSubject: "sandbox",
+        modelSettings: "Sandbox Settings",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -715,16 +716,12 @@ export function ChatView() {
                 {!hasPendingPermission && harnessCurrent?.model && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <Tooltip content={surfaceCopy.modelTitle}>
-                        <button
-                          type="button"
-                          onClick={handleConfigureSandbox}
-                          className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          {harnessCurrent.model}
-                          <Settings size={12} />
-                        </button>
-                      </Tooltip>
+                      <ModelIndicator
+                        model={harnessCurrent.model}
+                        subject={surfaceCopy.modelSubject}
+                        settingsLabel={surfaceCopy.modelSettings}
+                        onConfigure={handleConfigureSandbox}
+                      />
                     </ChatColumn>
                   </div>
                 )}

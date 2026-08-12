@@ -6,6 +6,7 @@ import {
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
 import { ModelSettingsPanel } from "../../sessions/components/model-settings-panel.js";
+import type { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
 import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
 /**
@@ -14,7 +15,13 @@ import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
  * recorded values read-only with a "Start agent to edit" action, and a spinner
  * while the agent is coming up.
  */
-export function SandboxModelSettings({ agentId }: { agentId: string }) {
+export function SandboxModelSettings({
+  agentId,
+  draft,
+}: {
+  agentId: string;
+  draft: ReturnType<typeof useHarnessConfigDraft>;
+}) {
   const { operable, comingUp } = useOperableState(agentId);
   const { data: status } = useHarnessConfigStatus(agentId);
   const { origin, hasRun } = useResolvedHarnessConfig(agentId);
@@ -48,6 +55,7 @@ export function SandboxModelSettings({ agentId }: { agentId: string }) {
     <ModelSettingsPanel
       agentId={agentId}
       variant="page"
+      draft={draft}
       disabled={!operable}
       headerAction={
         operable ? undefined : (

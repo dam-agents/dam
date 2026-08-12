@@ -45,16 +45,26 @@ type ModelSettingsVariant = "chat" | "page";
 // renders the pickers read-only (agent asleep) and `headerAction` fills the
 // page header's right slot (e.g. "Start agent to edit"). Chat passes none of
 // these, so its appearance and behavior are unchanged.
+//
+// `draft` hands the values and the edits to a caller that has its own Submit,
+// which is what the settings page does (#3057). Without it the panel applies on
+// change, which is right in chat: no Submit exists there to commit a staged
+// edit, and the next turn would run settings the pickers no longer show.
 export function ModelSettingsPanel({
   agentId,
   variant = "chat",
   disabled = false,
   headerAction,
+  draft,
 }: {
   agentId: string | null;
   variant?: ModelSettingsVariant;
   disabled?: boolean;
   headerAction?: ReactNode;
+  draft?: {
+    valueOf: (field: string) => string | null;
+    set: (field: string, value: string | null) => void;
+  };
 }) {
   const { data: status } = useHarnessConfigStatus(agentId);
   const {
@@ -103,6 +113,7 @@ export function ModelSettingsPanel({
   if (!agentId || !catalog || catalog.options.length === 0) return null;
 
   const valueOf = (field: string): string | null => {
+    if (draft) return draft.valueOf(field);
     if (field === "model") return current?.model ?? null;
     if (field === "mode") return current?.mode ?? null;
     const v = current?.configOptions[field];
@@ -113,6 +124,10 @@ export function ModelSettingsPanel({
     (current?.model && catalog.modelConstraints?.[current.model]) || undefined;
 
   const change = (field: string, value: string | null) => {
+    if (draft) {
+      draft.set(field, value);
+      return;
+    }
     setSaving(true);
     const input =
       field === "model"

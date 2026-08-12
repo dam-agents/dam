@@ -92,6 +92,24 @@
   --z-popover: 60;
   --z-tooltip: 70;
   --z-toast: 80;
+
+  /* Height of the sticky submit bar (StickyFooterLayout), and the clearance
+     anything floating at the bottom of the viewport must add to sit above it.
+     The inset is zero until a bar is actually on screen — StickyFooterLayout
+     marks the root while one is mounted, so a floating control clears the bar
+     on the pages that have one without knowing which pages those are. */
+  --bottom-bar-h: 52px;
+  --bottom-bar-inset: 0px;
+}
+
+:root[data-bottom-bar] {
+  --bottom-bar-inset: var(--bottom-bar-h);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --bottom-bar-h: 70px;
+  }
 }
 
 @utility z-content {
