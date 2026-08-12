@@ -33,6 +33,9 @@ interface CheckboxItemProps extends Omit<
   /** Extra classes for the label text, e.g. `font-mono` for an identifier. */
   labelClassName?: string;
   description?: string;
+  /** Extra classes for the description, e.g. `truncate` where a long one would
+   *  otherwise turn a picker into a wall of prose. */
+  descriptionClassName?: string;
   testId?: string;
 }
 
@@ -43,6 +46,7 @@ function CheckboxItem({
   label,
   labelClassName,
   description,
+  descriptionClassName,
   testId,
   className,
   id,
@@ -79,7 +83,13 @@ function CheckboxItem({
           {label}
         </span>
         {description && (
-          <span id={descriptionId} className="text-sm text-muted-foreground">
+          <span
+            id={descriptionId}
+            className={cn(
+              "text-sm text-muted-foreground",
+              descriptionClassName,
+            )}
+          >
             {description}
           </span>
         )}

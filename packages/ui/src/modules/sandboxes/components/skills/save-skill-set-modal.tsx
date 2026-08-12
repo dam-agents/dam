@@ -112,8 +112,13 @@ export function SaveSkillSetModal({
   };
 
   return (
-    <Modal widthClass="w-[640px]">
-      <DialogHeader title="Save as skill set" onClose={onClose} />
+    <Modal widthClass="w-[620px]">
+      <DialogHeader
+        title="Save as skill set"
+        subtitle="Starts from what's on here — unmark anything you don't want in the set."
+        onClose={onClose}
+        divided={false}
+      />
 
       <form
         onSubmit={(e) => {
@@ -121,22 +126,19 @@ export function SaveSkillSetModal({
           if (canCreate) void submit();
         }}
       >
-        <DialogBody className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">
-            Starts from what's on here — unmark anything you don't want in the
-            set.
-          </p>
-
-          {omittedCount > 0 && (
-            <p className="text-sm text-warning-fg">
-              {omittedCount} skill{omittedCount === 1 ? "" : "s"} that{" "}
-              {omittedCount === 1 ? "is" : "are"} on can't be included —{" "}
-              {snapshot.omitted.map((o) => o.source.name).join(", ")} can't be
-              read right now.
-            </p>
-          )}
-
-          <div className="flex flex-col gap-1.5">
+        {/* Flush, so the counts band and the rows span the dialog. Each region
+            re-adds the gutter; the list would otherwise sit in a column with
+            its hover states clipped short of the edge. */}
+        <DialogBody flush className="py-0">
+          <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-7">
+            {omittedCount > 0 && (
+              <p className="pb-2 text-sm text-warning-fg">
+                {omittedCount} skill{omittedCount === 1 ? "" : "s"} that{" "}
+                {omittedCount === 1 ? "is" : "are"} on can't be included —{" "}
+                {snapshot.omitted.map((o) => o.source.name).join(", ")} can't be
+                read right now.
+              </p>
+            )}
             <SectionLabel>Set name</SectionLabel>
             <Input
               size="sm"
@@ -156,7 +158,10 @@ export function SaveSkillSetModal({
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {/* Its own band: it reports the selection and carries the two
+              controls that change it, so it reads as a toolbar over the list
+              rather than another line of body copy. */}
+          <div className="flex items-center gap-2 border-y border-border bg-muted/40 px-5 py-2.5 text-sm text-muted-foreground md:px-7">
             <span>
               {marked.size} skill{marked.size === 1 ? "" : "s"} selected
             </span>
@@ -175,22 +180,36 @@ export function SaveSkillSetModal({
             </Button>
           </div>
 
-          <div className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto">
+          <div className="max-h-[44vh] overflow-y-auto">
             {snapshot.groups.map((group) => (
-              <div key={group.source.id} className="flex flex-col gap-2">
-                <SectionLabel>{group.source.name}</SectionLabel>
+              <div key={group.source.id}>
+                {/* Sticky: scrolling a long source shouldn't leave you unable
+                    to tell which repo the rows in front of you came from. */}
+                <div className="sticky top-0 bg-card px-5 pt-3 pb-1 md:px-7">
+                  <SectionLabel>{group.source.name}</SectionLabel>
+                </div>
                 {group.skills.map((skill) => {
                   const key = skillKey(skill);
                   return (
-                    <div key={key} className="flex items-start gap-2">
+                    <div
+                      key={key}
+                      className="flex items-center gap-2 px-5 py-1.5 transition-colors hover:bg-muted md:px-7"
+                    >
                       <CheckboxItem
+                        // flex-1 + min-w-0 beat the base `w-full`, which would
+                        // otherwise claim the whole row and push "on here" out
+                        // of it — taking the description's truncation with it.
+                        className="min-w-0 flex-1 items-center"
                         label={skill.name}
                         description={skill.description}
+                        // One line: these run to several sentences, and four of
+                        // them turn the picker into a wall of prose.
+                        descriptionClassName="truncate"
                         checked={marked.has(key)}
                         onCheckedChange={() => toggle(key)}
                       />
                       {snapshot.on.has(key) && (
-                        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+                        <span className="shrink-0 text-xs text-muted-foreground">
                           on here
                         </span>
                       )}
@@ -201,7 +220,7 @@ export function SaveSkillSetModal({
             ))}
           </div>
 
-          <p className="text-sm text-muted-foreground">
+          <p className="px-5 py-4 text-sm text-muted-foreground md:px-7">
             Only skills from a connected source can go in a set — a set installs
             by name, and skills authored here or shipped with the image have
             nowhere to install from.

@@ -67,7 +67,10 @@ function SetRow({
         ? "already all on"
         : null;
   return (
-    <div className="flex w-full items-start gap-2">
+    // items-start, not center: the meta line wraps on a set with many skills,
+    // and centring then floats the box between the two lines instead of
+    // beside the name it belongs to.
+    <div className="flex w-full items-start gap-2 px-5 py-3 transition-colors hover:bg-muted/40 md:px-7">
       <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 text-left">
         <Checkbox
           checked={checked}
@@ -230,25 +233,27 @@ export function AddSkillSetsModal({
 
   return (
     <Modal>
-      <DialogHeader title="Add skill sets" onClose={onClose} />
+      <DialogHeader
+        title="Add skill sets"
+        subtitle="Pick any number. Their skills turn on alongside what you already have — overlap is fine, and nothing gets turned off."
+        onClose={onClose}
+        divided={false}
+      />
 
-      <DialogBody className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          Pick any number. Their skills turn on alongside what you already have
-          — overlap is fine, and nothing gets turned off.
-        </p>
-
+      <DialogBody flush className="py-0">
         {loadFailed ? (
-          <p className="text-sm text-danger">
+          <p className="px-5 py-4 text-sm text-danger md:px-7">
             Couldn't load your saved skill sets. Reopen the Skills page to try
             again.
           </p>
         ) : sets.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="px-5 py-4 text-sm text-muted-foreground md:px-7">
             No saved skill sets yet — save one from this sandbox first.
           </p>
         ) : (
-          <div className="flex flex-col gap-3">
+          // Divided rows rather than spaced ones: a set is a row in a list, and
+          // the divider is what makes a long list scannable.
+          <div className="divide-y divide-border border-y border-border">
             {previews.map((preview) => (
               <SetRow
                 key={preview.set.id}
