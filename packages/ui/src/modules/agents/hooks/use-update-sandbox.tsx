@@ -1,11 +1,13 @@
 import { useCallback } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useUpgradeAgentMutation } from "../api/mutations.js";
+import { whatsNewUrl } from "../utils/template-update.js";
 
 /** What one sandbox's update moves, narrowed off `templateUpdate` so the apply
  *  loop needs no non-null assertion. */
@@ -35,9 +37,37 @@ function restartsToApply(agent: AgentView): boolean {
   return !(agent.state === "hibernated" || agent.overBudget);
 }
 
+/** The banner only offers a batch from two up, but nothing stops a caller
+ *  passing one, and "1 sandboxes" would be the tell. */
+function batchSubject(total: number): string {
+  return total === 1
+    ? "sandbox to the version its template now ships?"
+    : "sandboxes to the versions their templates now ship?";
+}
+
 /** When a batch takes effect — the same two facts the single-sandbox
  *  confirmation gives, worded per case so each sentence has a subject. Naming
  *  the groups beats "the rest", which refers to nothing when none is running. */
+/** The release notes, repeated here because the hover card's copy is reachable
+ *  by pointer only — Radix takes its content out of the tab order. */
+function whatsNewLink(image: string) {
+  const href = whatsNewUrl(image);
+  if (!href) return null;
+  return (
+    <>
+      {" "}
+      <a
+        href={href}
+        {...externalLinkProps}
+        className="font-medium text-accent hover:underline"
+      >
+        See what changed
+      </a>
+      .
+    </>
+  );
+}
+
 function batchApplyNote(restarting: number, total: number): string {
   if (restarting === 0) return "Each applies it the next time it starts.";
   if (restarting === total)
@@ -71,6 +101,7 @@ export function useUpdateSandbox() {
           {restartsToApply(agent)
             ? "The sandbox restarts to apply it — in-flight work is interrupted."
             : "It applies when the sandbox next starts."}
+          {whatsNewLink(update.toImage)}
         </>
       );
       if (!(await showConfirm(msg, "Update Sandbox"))) return;
@@ -91,7 +122,7 @@ export function useUpdateSandbox() {
       const msg = (
         <>
           Update <strong className="text-foreground">{pending.length}</strong>{" "}
-          sandboxes to the versions their templates now ship?{" "}
+          {batchSubject(pending.length)}{" "}
           {batchApplyNote(restarting, pending.length)}
         </>
       );

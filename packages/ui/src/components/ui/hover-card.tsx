@@ -1,6 +1,5 @@
 import * as HoverCardPrimitive from "@radix-ui/react-hover-card";
 import * as React from "react";
-import { useSyncExternalStore } from "react";
 
 import {
   FLOATING_PANEL,
@@ -28,35 +27,42 @@ function HoverCard({
   );
 }
 
-const HOVER_QUERY = "(hover: hover) and (pointer: fine)";
-
-function subscribeHover(onChange: () => void) {
-  const mq = window.matchMedia(HOVER_QUERY);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
-}
-
 /**
- * Whether this input can hover at all — the precondition for wrapping anything
- * in a `HoverCard`.
+ * Wraps a trigger that carries its own click, keeping a tap working.
  *
- * A trigger that is also a button must render bare on touch: Radix cancels
- * `touchstart` on the trigger to keep the card from opening on a tap, and that
- * cancels the emulated click with it, leaving the button dead. Nothing is lost,
- * since a card that only opens on hover was already unreachable there.
+ * Radix cancels `touchstart` on the trigger so a tap can't open the card — and
+ * cancels the emulated click with it, leaving a button trigger dead. It does
+ * that unconditionally, so no media query can gate it: a touchscreen laptop
+ * reports `hover: hover` and still fires `touchstart`. Stopping the event one
+ * level below the trigger keeps Radix's handler from ever seeing it, and leaves
+ * hover alone — React dispatches enter/leave to every element newly entered,
+ * the wrapper included.
+ *
+ * Needs a box of its own, so no `display: contents`: the wrapper is what the
+ * card measures itself against.
  */
-export function useCanHover(): boolean {
-  return useSyncExternalStore(
-    subscribeHover,
-    () => window.matchMedia(HOVER_QUERY).matches,
-    () => false,
+export function HoverCardTappableTrigger({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <HoverCardTrigger asChild>
+      <span
+        className="inline-flex"
+        onTouchStart={(event) => event.stopPropagation()}
+      >
+        {children}
+      </span>
+    </HoverCardTrigger>
   );
 }
 
 /** Detail that opens on hover or focus and takes no click of its own, so the
  *  trigger keeps its own action. Radix holds the card open across the gap
- *  between trigger and panel, so content here can be reached with the pointer.
- *  Nothing essential belongs in it: a touch device gets no hover at all. */
+ *  between trigger and panel, so content here can be reached with the pointer —
+ *  but only with the pointer: it stamps `tabindex="-1"` on everything tabbable
+ *  inside, on every render. Anything essential needs a second home. */
 function HoverCardContent({
   className,
   sideOffset = 8,

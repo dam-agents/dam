@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
-  HoverCardTrigger,
-  useCanHover,
+  HoverCardTappableTrigger,
 } from "@/components/ui/hover-card";
 import { externalLinkProps } from "@/lib/external-link";
 
@@ -25,28 +24,24 @@ interface Props {
  * opens the confirmation that applies it.
  */
 export function UpdateAvailableAction({ agent, onUpdate, pending }: Props) {
-  const canHover = useCanHover();
   const update = agent.templateUpdate;
   if (!update) return null;
   const whatsNew = whatsNewUrl(update.toImage);
 
-  const button = (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={pending}
-      className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
-      onClick={onUpdate}
-    >
-      <Renew size={16} />
-      {pending ? "Updating…" : "Update"}
-    </Button>
-  );
-  if (!canHover) return button;
-
   return (
     <HoverCard>
-      <HoverCardTrigger asChild>{button}</HoverCardTrigger>
+      <HoverCardTappableTrigger>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+          onClick={onUpdate}
+        >
+          <Renew size={16} />
+          {pending ? "Updating…" : "Update"}
+        </Button>
+      </HoverCardTappableTrigger>
       <HoverCardContent
         side="top"
         align="end"
