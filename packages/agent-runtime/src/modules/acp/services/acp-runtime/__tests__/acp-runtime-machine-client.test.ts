@@ -90,4 +90,39 @@ describe("acp-runtime: the machine client", () => {
     human.send(frames.loadSession(1, SESSION));
     expect(meta.unread(SESSION)).toBe(false);
   });
+
+  /**
+   * Every live session pins a CLI subprocess of roughly 300MB, and every
+   * other release in this suite is set off by a departure — but a scheduled
+   * session's only visitor left before the turn began, so no disconnect is
+   * ever coming. The turn's own end is the one moment left, and only the
+   * runtime is there for it: the harness would hold the session forever, and
+   * a schedule that leaked one subprocess per night would bloat the pod
+   * until it died.
+   */
+  it("should release a scheduled turn's session when it finishes", () => {
+    const world = createWorld();
+
+    const machine = world.connect({ viewer: false });
+    machine.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    machine.send(frames.prompt(2, SESSION, "rotate the credentials"));
+    machine.disconnect();
+
+    // The departure alone releases nothing: the turn is still running, and
+    // closing the session now would cancel it.
+    expect(world.harness().received("session/close")).toEqual([]);
+
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    // The moment it finishes, the session is let go. The harness itself
+    // stays up: releasing a conversation is not stopping the sandbox.
+    expect(
+      world
+        .harness()
+        .received("session/close")
+        .map((frame) => frame.params),
+    ).toEqual([{ sessionId: SESSION }]);
+    expect(world.harness().killed()).toBe(false);
+  });
 });
