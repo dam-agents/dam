@@ -63,6 +63,9 @@ export interface SkillsSurface {
   visibilityBySource: Record<string, "public" | "private">;
   installed: SkillRef[];
   standalone: LocalSkill[];
+  /** Present only while `standalone` came from a recording rather than a live
+   *  pod read — which is exactly the stopped case, and what dates its panel. */
+  standaloneSnapshot: SkillsState["standaloneSnapshot"];
   /** Publish records for this agent — drives the "Published" pill. */
   publishes: SkillPublishRecord[];
   /** Row currently mid-install/uninstall, so its toggle can show a spinner. */
@@ -723,6 +726,7 @@ export function useSkillsSurface(
     visibilityBySource,
     installed,
     standalone,
+    standaloneSnapshot,
     publishes,
     busyKey,
     busySourceId,

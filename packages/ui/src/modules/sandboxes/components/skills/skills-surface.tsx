@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
+import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
@@ -19,6 +20,7 @@ import { SkillSetActions } from "./skill-set-actions.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
+import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
 import {
   StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
@@ -51,6 +53,7 @@ export function SkillsSurface({
 }) {
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const wakeAgent = useWakeAgent();
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
   // Ephemeral filter over data this component already holds. Not URL-owned:
@@ -75,6 +78,7 @@ export function SkillsSurface({
     sourcesLoaded,
     stateLoaded,
     standalone,
+    standaloneSnapshot,
     publishes,
     updatingAll,
     updateAll,
@@ -91,7 +95,39 @@ export function SkillsSurface({
     anyInstalled,
     drifted,
     trackUnavailableNames,
+    snapshotRows,
+    snapshotOnCount,
   } = derived;
+
+  // The stopped surface is a different page, not a dimmed copy of this one: a
+  // dated snapshot plus the live source list. Gated on the snapshot existing,
+  // so a sandbox that never ran falls through to its own panel (07) instead of
+  // claiming an empty recording is what it had.
+  const stoppedPanel = readOnly && standaloneSnapshot !== undefined && (
+    <SkillsStoppedPanel
+      capturedAt={standaloneSnapshot.capturedAt}
+      onCount={snapshotOnCount}
+      rows={snapshotRows}
+      sources={sources}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      addSourceButton={
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setOpenModal({ kind: "add-source", tab: "github", files: [] })
+          }
+        >
+          <Add size={14} /> Add source
+        </Button>
+      }
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+    />
+  );
 
   // Read-only while the agent is stopped/starting (matches the design):
   // administering sources is a running-agent action, so drop "Add source"
@@ -147,14 +183,15 @@ export function SkillsSurface({
       {...surfaceDropProps}
       className={cn(
         "flex flex-col",
-        // Stopped / starting: a dimmed, non-interactive read-only snapshot.
-        // Per Figma: rows at 40% opacity when stopped, 60% while starting.
-        readOnly && "pointer-events-none",
-        readOnly && (comingUp ? "opacity-60" : "opacity-40"),
+        // No dimming while stopped any more: the panel below says what it is
+        // in words and leaves the dead controls out, which a 40%-opacity copy
+        // of the live surface never managed to.
         pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
       )}
     >
-      {isEmpty ? (
+      {stoppedPanel ? (
+        stoppedPanel
+      ) : isEmpty ? (
         <section>
           <SectionLabel spaced>Skills</SectionLabel>
           <Callout variant="dashed">

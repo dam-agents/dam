@@ -2,6 +2,8 @@ import type { LocalSkill, Skill, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useMemo } from "react";
 
+import { repoSlug } from "@/lib/git-source";
+
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
@@ -38,6 +40,11 @@ export interface SkillsDerivations {
   anyInstalled: boolean;
   drifted: Skill[];
   trackUnavailableNames: ReadonlySet<string>;
+  /** What was on at the last run, grouped for the stopped snapshot panel:
+   *  created-here, then one row per source, then image-shipped. */
+  snapshotRows: { label: string; names: string[] }[];
+  /** How many skills were on at the last run, across all three provenances. */
+  snapshotOnCount: number;
 }
 
 /**
@@ -252,6 +259,40 @@ export function useSkillsDerivations(
     return out;
   }, [publishes, skillsBySource]);
 
+  // Reads from `installed` (Postgres, always current) and `standalone` (the
+  // recording, while stopped) — never from a scan, which needs the pod that is
+  // by definition not there.
+  const snapshotRows = useMemo(() => {
+    const rows: { label: string; names: string[] }[] = [];
+    if (createdHere.length > 0) {
+      rows.push({
+        label: "Created here",
+        names: createdHere.map((s) => s.name),
+      });
+    }
+    const byUrl = new Map<string, string[]>();
+    for (const ref of installed) {
+      const names = byUrl.get(ref.source);
+      if (names) names.push(ref.name);
+      else byUrl.set(ref.source, [ref.name]);
+    }
+    for (const src of sources) {
+      const names = byUrl.get(src.gitUrl);
+      if (names && names.length > 0) rows.push({ label: src.name, names });
+      byUrl.delete(src.gitUrl);
+    }
+    // Installed from a source that has since been disconnected. Listed under
+    // its URL rather than dropped: the skills are still on disk, and a row
+    // that silently vanishes reads as data loss.
+    for (const [gitUrl, names] of byUrl) {
+      rows.push({ label: repoSlug(gitUrl), names });
+    }
+    if (builtIn.length > 0) {
+      rows.push({ label: "With the image", names: builtIn.map((s) => s.name) });
+    }
+    return rows;
+  }, [createdHere, builtIn, installed, sources]);
+
   return {
     q,
     searching,
@@ -274,5 +315,7 @@ export function useSkillsDerivations(
     anyInstalled: totals.on > 0,
     drifted,
     trackUnavailableNames,
+    snapshotRows,
+    snapshotOnCount: installed.length + createdHere.length + builtIn.length,
   };
 }
