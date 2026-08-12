@@ -21,7 +21,7 @@ import type {
   SkillSetSkipReason,
 } from "api-server-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
-import type { RuntimeSettledPort } from "../../agents/index.js";
+import type { RuntimeAppliedPort } from "../../agents/index.js";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
@@ -76,7 +76,11 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
-  runtimeSettled: RuntimeSettledPort;
+  /** Whether the pod has cleanly applied everything the outbox has asked of it.
+   *  The `state` reconcile is only sound once it has: until then a tracked
+   *  skill's directory is legitimately absent, because the apply that writes it
+   *  hasn't run yet — or ran and failed, and is being retried. */
+  runtimeApplied: RuntimeAppliedPort;
   owner: string;
   scanSource: (
     scope: ScanScope,
@@ -944,17 +948,37 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       const onDisk = new Set(local.map((s) => s.name));
 
-      let settled = false;
+      // Drop ghost rows whose directories no longer exist — but only once the
+      // pod has caught up with the outbox. Install is declarative: the row is
+      // written first and the apply worker fetches the files after, so between
+      // those two moments every freshly-installed skill looks like a ghost.
+      // Reaping then doesn't just lose the install — the files still land, and
+      // the skill resurfaces as a Standalone one the user supposedly authored.
+      // One install's window is a single fetch wide; a batch's is N, which is
+      // what makes the guard necessary rather than merely tidy.
+      // Applied, not merely settled: a driver failure settles the version too,
+      // and reaping then would drop the row of the very install that is still
+      // being retried.
+      // A failed read defers reaping rather than failing the whole state read:
+      // this is the one query the Skills page cannot do without.
+      let applied = false;
       try {
-        settled = await deps.runtimeSettled.isSettled(agentId);
+        applied = await deps.runtimeApplied.isApplied(agentId);
       } catch (err) {
         getLogger().warn(
           { err, agentId },
-          "skills state: settled check failed; deferring reconcile",
+          "skills state: applied check failed; deferring reconcile",
         );
       }
-      if (settled) {
-        await deps.agentSkillsRepo.reconcile(agentId, onDisk);
+      if (applied) {
+        const reaped = await deps.agentSkillsRepo.reconcile(agentId, onDisk);
+        // The pod's applied hash still describes the set that held these, so
+        // re-installing one would reproduce that hash and be skipped as
+        // already-applied. Bumping re-delivers the set it actually has.
+        if (reaped.length > 0) {
+          await deps.runtimeMutator.bump(agentId, []);
+          await deps.runtimeMutator.enqueueAfterCommit(agentId);
+        }
       }
 
       const installed = await deps.agentSkillsRepo.listSkills(agentId);

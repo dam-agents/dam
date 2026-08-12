@@ -247,10 +247,10 @@ sequenceDiagram
   WK->>RT: runtime.v1.applyState (version, state, events)
   RT->>RT: reconcile contributions per kind
   loop per event in order
-    RT->>RT: per-kind handler — does the work, dedup via local state store
+    RT->>RT: per-kind handler — does the work, dedups locally
   end
   RT-->>WK: apply outcome (cursor, settled events, failures)
-  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to applied cursor
+  WK->>PG: record the outcome, stamp the settled events
 ```
 
 ### `applyState` — state and events delivery (server → agent)
@@ -260,9 +260,9 @@ The server sends a per-agent monotonic `version` cursor, the **full desired stat
 The reply is a discriminated outcome, not a bare ack:
 
 - **applied** — the payload was processed. It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**. A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload.
-- **stale** — the agent's contributions were already at or beyond the requested version, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
+- **stale** — the requested version is strictly older than the agent's applied cursor, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
 
-Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 ### `hello` — agent → api-server catch-up
 

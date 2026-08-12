@@ -63,10 +63,23 @@ export interface ContributionsSettledPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
   isSettled(agentId: string): Promise<boolean>;
+  /** Stricter than {@link isSettled}: the pod applied the current version
+   *  *cleanly*. A driver failure settles the version as well, so a consumer
+   *  that acts on "the pod's disk now reflects the spec" has to ask this one. */
+  isApplied(agentId: string): Promise<boolean>;
 }
 
 export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
 
+/** The applied bit alone; see {@link ContributionsSettledPort.isApplied}. */
+export type RuntimeAppliedPort = Pick<ContributionsSettledPort, "isApplied">;
+
+/**
+ * Port consumed by `create()` to seed `egress_rules` for a brand-new agent.
+ * Declared locally so the agents module doesn't import across
+ * module boundaries; the egress-rules module's adapter structurally
+ * satisfies this shape.
+ */
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
 }

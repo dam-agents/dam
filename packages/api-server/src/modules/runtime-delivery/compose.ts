@@ -49,6 +49,10 @@ export interface RuntimeDeliveryComposition {
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
+  /** The agent answered *cleanly*: `lastAppliedVersion >= version`. A driver
+   *  failure advances the settled cursor but not this one, so anything gating
+   *  on "the pod's disk now reflects the spec" asks here. */
+  contributionsApplied(agentId: string): Promise<boolean>;
 }
 
 export interface ContributionsStatus {
@@ -137,6 +141,14 @@ export function composeRuntimeDelivery(
         failures: row.applyFailures,
         preparingWorkspace,
       };
+    },
+
+    // Reads the outbox row alone: the full status also probes for a pending
+    // workspace-seed, which a caller gating on one boolean discards. No row
+    // means nothing was ever asked of the agent.
+    async contributionsApplied(agentId): Promise<boolean> {
+      const row = await outboxRepo.getRow(agentId);
+      return row === null || row.lastAppliedVersion >= row.version;
     },
 
     async contributionsStatusMany(

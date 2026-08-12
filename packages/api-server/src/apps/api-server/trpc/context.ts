@@ -193,7 +193,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       runtimeMutator,
       templatesRepo,
-      runtimeSettled: contributionsSettled,
+      runtimeApplied: contributionsSettled,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;

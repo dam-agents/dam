@@ -4,6 +4,7 @@ export type {
   PresetSeeder,
   ContributionsSettledPort,
   RuntimeSettledPort,
+  RuntimeAppliedPort,
 } from "./services/agents-service.js";
 export {
   createAgentsRepository,

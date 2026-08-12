@@ -42,9 +42,13 @@ export function createRuntimeChannelService(
       `[applyState] incoming v=${input.version} hash=${input.state.hash.slice(0, 8)} local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} contribs={${kindCounts}} events={${eventCounts}}`,
     );
 
-    if (input.version <= local.lastAppliedVersion) {
+    // Strictly older only. At the same version the hash decides: the server may
+    // re-deliver one version with different contributions (a row reaped without
+    // a bump), and refusing on the version alone would leave that difference
+    // unapplied forever. Events carry their own version — still apply them.
+    if (input.version < local.lastAppliedVersion) {
       deps.log(
-        `[applyState] contributions stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; events only`,
+        `[applyState] contributions stale — incoming v=${input.version} < local v=${local.lastAppliedVersion}; events only`,
       );
       const settledEvents = await processEvents(
         input.events,

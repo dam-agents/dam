@@ -292,6 +292,7 @@ export async function bootstrap() {
     statusMany: runtimeDelivery.contributionsStatusMany,
     isSettled: async (agentId: string) =>
       (await runtimeDelivery.contributionsStatus(agentId)).settled,
+    isApplied: runtimeDelivery.contributionsApplied,
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
@@ -889,7 +890,7 @@ export async function bootstrap() {
     runtimeHello: runtimeDelivery.hello,
     schedulesBoot,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    runtimeSettled: contributionsSettledPort,
+    runtimeApplied: contributionsSettledPort,
     artifacts,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,

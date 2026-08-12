@@ -6,7 +6,7 @@ import type {
   RuntimeDeliveryService,
 } from "api-server-api";
 import type { Db } from "db";
-import type { RuntimeSettledPort } from "../../modules/agents/index.js";
+import type { RuntimeAppliedPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
@@ -40,7 +40,9 @@ export interface HarnessApiServerAppDeps {
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   wakeAgent: (agentId: string) => Promise<void>;
-  runtimeSettled: RuntimeSettledPort;
+  /** Whether the pod has applied everything the outbox holds — gates the skills
+   *  `state` reconcile, which would otherwise reap rows mid-apply. */
+  runtimeApplied: RuntimeAppliedPort;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -57,7 +59,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     wakeAgent,
-    runtimeSettled,
+    runtimeApplied,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -104,7 +106,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         brandName: config.brand.name,
         runtimeMutator,
         templatesRepo,
-        runtimeSettled,
+        runtimeApplied,
       }),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
