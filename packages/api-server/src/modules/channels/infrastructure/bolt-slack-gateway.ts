@@ -264,7 +264,10 @@ export function createBoltSlackGateway(
       });
     },
 
-    async downloadFile(urlPrivate: string): Promise<ArrayBuffer> {
+    async downloadFile(
+      urlPrivate: string,
+      maxBytes?: number,
+    ): Promise<ArrayBuffer> {
       // A 2xx here does not mean the bytes are the file: Slack answers a
       // request it won't serve with a 200 and a sign-in page. The caller
       // classifies what actually arrived rather than trusting the status.
@@ -272,7 +275,47 @@ export function createBoltSlackGateway(
         headers: { Authorization: `Bearer ${deps.botToken}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.arrayBuffer();
+      if (maxBytes === undefined) return res.arrayBuffer();
+
+      // Read against a budget instead of buffering whatever arrives: this
+      // process holds the bytes and serves every channel in the install, and
+      // neither the declared size nor Content-Length has to be honest.
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        throw new Error(`file is larger than ${maxBytes} bytes`);
+      }
+      const body = res.body;
+      if (!body) return res.arrayBuffer();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const reader = body.getReader();
+      let overBudget = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > maxBytes) {
+            overBudget = true;
+            throw new Error(`file is larger than ${maxBytes} bytes`);
+          }
+          chunks.push(value);
+        }
+      } finally {
+        // Releasing the lock lets fetch tear the connection down; without it an
+        // abandoned read holds the socket until GC.
+        reader.releaseLock();
+        if (overBudget) await body.cancel().catch(() => {});
+      }
+      // An exact allocation, not `Buffer.concat(...).buffer` — that hands back
+      // the shared pool the buffer happens to sit in.
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return out.buffer;
     },
 
     async listBotChannels(): Promise<SlackChannelInfo[]> {

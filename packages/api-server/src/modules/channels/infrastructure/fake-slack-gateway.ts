@@ -179,9 +179,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async downloadFile(urlPrivate) {
+    async downloadFile(urlPrivate, maxBytes) {
       const bytes = fileBytes.get(urlPrivate);
       if (!bytes) throw new Error(`HTTP 404`);
+      // Refuses over-budget bytes like the real gateway, so a test can seed a
+      // file bigger than its own declared size.
+      if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
+        throw new Error(`file is larger than ${maxBytes} bytes`);
+      }
       return bytes.buffer.slice(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,

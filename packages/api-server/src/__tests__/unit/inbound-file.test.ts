@@ -72,22 +72,51 @@ describe("mayContainMarkup", () => {
 
 describe("looksLikeSignInPage", () => {
   it("recognises the page a messenger serves instead of a file", () => {
-    expect(
-      looksLikeSignInPage("<!DOCTYPE html><html>Sign in to your workspace"),
-    ).toBe(true);
+    // The real thing names Slack, in its title or its asset URLs.
     expect(looksLikeSignInPage("<html><title>Slack</title>")).toBe(true);
+    expect(
+      looksLikeSignInPage(
+        '<!DOCTYPE html><html><a href="https://slack.com/signin">Sign in</a>',
+      ),
+    ).toBe(true);
     expect(looksLikeSignInPage("<html>You are not authorized</html>")).toBe(
       true,
     );
+    // Or it is unmistakably a login form, whoever serves it.
+    expect(
+      looksLikeSignInPage(
+        '<html><form>Sign in<input type="password" name="p"></form>',
+      ),
+    ).toBe(true);
   });
 
-  it("leaves a genuine HTML document alone", () => {
-    // A saved page is a real upload; only the login screen is a failed
-    // download, so the two must not be confused.
+  it("recognises the API refusal a JSON download can be", () => {
+    expect(
+      looksLikeSignInPage('{"ok":false,"error":"not_allowed_token_type"}'),
+    ).toBe(true);
+    // Someone's own JSON, which happens to be an error shape, is their file.
+    expect(looksLikeSignInPage('{"ok":false,"error":"rate_limited"}')).toBe(
+      false,
+    );
+    expect(looksLikeSignInPage('{"items":[{"id":1}]}')).toBe(false);
+  });
+
+  it("leaves a genuine document alone, even one that talks about signing in", () => {
+    // A saved page is a real upload; only the refusal is a failed download. A
+    // generic phrase must not decide it — these were all withheld before the
+    // markers were tightened.
     expect(
       looksLikeSignInPage(
         "<!DOCTYPE html><html><h1>Quarterly report</h1><table>",
       ),
+    ).toBe(false);
+    expect(looksLikeSignInPage("<html><h1>My blog index</h1>")).toBe(false);
+    expect(looksLikeSignInPage("<html><p>catalog information</p>")).toBe(false);
+    expect(
+      looksLikeSignInPage("<html><nav>Sign in</nav><h1>Release notes</h1>"),
+    ).toBe(false);
+    expect(
+      looksLikeSignInPage("<html><p>How permissions work in Kubernetes</p>"),
     ).toBe(false);
     // Not markup at all.
     expect(looksLikeSignInPage("%PDF-1.7")).toBe(false);

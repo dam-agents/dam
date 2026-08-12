@@ -243,11 +243,13 @@ function framePrompt(opts: {
   ];
 }
 
-/** A filename as it may appear inside the platform's own prompt framing. The
- *  uploader picks it, and in a shared channel the uploader is whoever the
- *  workspace admits — a name carrying `<`, `>` or a newline could otherwise
- *  close the block it sits in and open a forged one in the same vocabulary the
- *  turn contract uses. Length-capped for the same reason. */
+/** A filename as it may appear in anything the platform emits — its own prompt
+ *  framing, an ACP link a harness may splice into the model's text, a message
+ *  posted into the channel. A name carrying `<`, `>` or a newline could
+ *  otherwise close the block it sits in and open a forged one in the same
+ *  vocabulary the turn contract uses, or hand Slack a `<!channel>` to act on.
+ *  Length-capped for the same reason. Applied once, at {@link attachmentName},
+ *  so every reader downstream can take the name as it finds it. */
 function promptSafeName(name: string): string {
   return (
     name
@@ -263,9 +265,7 @@ function promptSafeName(name: string): string {
  *  what ties the files to *this* message, rather than leaving the agent to infer
  *  that a path it was handed is the thing being asked about. */
 function renderDeliveredFiles(files: DeliveredFile[]): string {
-  const list = files
-    .map((f) => `- ${promptSafeName(f.name)} → ${f.path}`)
-    .join("\n");
+  const list = files.map((f) => `- ${f.name} → ${f.path}`).join("\n");
   return `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`;
 }
 
@@ -308,8 +308,15 @@ type DeliveredFile = {
 type TurnDelivery = { files: DeliveredFile[]; withheldNote: string };
 
 /** A withheld attachment, and why — `kind` picks the noun the sender's notice
- *  uses, since "image" would be wrong for a spreadsheet. */
-type FetchedFailure = { name: string; kind: "image" | "file"; reason: string };
+ *  uses, since "image" would be wrong for a spreadsheet. `plural` marks the one
+ *  case where several are withheld together: a message-level limit is a property
+ *  of the message, so it is explained once and names them all. */
+type FetchedFailure = {
+  name: string;
+  kind: "image" | "file";
+  plural?: true;
+  reason: string;
+};
 
 type FetchAttachmentsResult = {
   images: FetchedImage[];
@@ -373,12 +380,15 @@ function describeSlackFile(f: SlackImageFile) {
   return { name: f.name, mimeType: f.mimetype };
 }
 
-/** The attachment's name, or a stand-in. Slack omits `name` on some clients
- *  despite the field being typed as present, and every renderer downstream —
- *  the prompt's file list, the withheld note, the ACP link's required `name` —
- *  reads it, so it is settled once here rather than guarded at each. */
+/** The attachment's name, as everything downstream may use it. Two problems are
+ *  settled once here rather than at each of the many readers: Slack omits `name`
+ *  on some clients despite typing it as present, and the name is chosen by the
+ *  uploader — who, in a shared channel, is anyone the workspace admits. It
+ *  reaches the prompt's file list, the ACP link (which some harnesses splice
+ *  straight into the model's text), the withheld note, and messages this bot
+ *  posts into the channel, where Slack would act on `<!channel>`. */
 function attachmentName(f: SlackImageFile): string {
-  return f.name || "file";
+  return promptSafeName(f.name || "file");
 }
 
 function megabytes(bytes: number): string {
@@ -418,25 +428,28 @@ async function fetchSlackAttachments(
     // The picture cap is about what one prompt may carry, so it withholds the
     // pictures and nothing else: a file on the same message is written to disk,
     // never sent as bytes, and dropping it here was the silent drop this whole
-    // path exists to end.
+    // path exists to end. One notice for the message, not one per picture — the
+    // cap is a property of the message, and a dozen identical ephemerals would
+    // be a wall of copy for the sender and a dozen calls at Slack.
     const pictureBytes = pictures.reduce((sum, f) => sum + (f.size ?? 0), 0);
     const picturesOverCap = pictureBytes > TOTAL_IMAGE_BYTES_CAP;
     if (picturesOverCap) {
-      for (const f of pictures) {
-        failures.push({
-          name: attachmentName(f),
-          kind: "image",
-          reason:
-            `the images on this message total ${megabytes(pictureBytes)} MB, over ` +
-            `the ${(TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0)} MB a single ` +
-            "message can carry. Send smaller images or fewer at once.",
-        });
-      }
+      failures.push({
+        name: pictures.map(attachmentName).join(", "),
+        kind: "image",
+        plural: true,
+        reason:
+          `they total ${megabytes(pictureBytes)} MB, over the ` +
+          `${(TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0)} MB of images a ` +
+          "single message can carry. Send smaller images or fewer at once.",
+      });
     }
 
     for (const f of picturesOverCap ? [] : pictures) {
       try {
-        const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
+        const bytes = Buffer.from(
+          await gateway.downloadFile(f.url_private, TOTAL_IMAGE_BYTES_CAP),
+        );
         // A 2xx download is not proof it returned the file, and `image/*`
         // covers formats no harness decodes. Trust the bytes — and their
         // sniffed type, so a mislabelled upload still reaches the agent.
@@ -504,7 +517,11 @@ async function fetchSlackAttachments(
         continue;
       }
       try {
-        const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
+        // The declared size is a claim and is sometimes missing, so the transfer
+        // carries the ceiling too — this process holds the bytes.
+        const bytes = Buffer.from(
+          await gateway.downloadFile(f.url_private, MAX_FILE_BYTES),
+        );
         const tooBig = overCap(bytes.length);
         if (tooBig) {
           failures.push({ name, kind: "file", reason: tooBig });
@@ -582,9 +599,7 @@ type TurnAttachments = {
 
 function renderWithheldNote(failures: FetchedFailure[]): string {
   if (failures.length === 0) return "";
-  const list = failures
-    .map((f) => `${promptSafeName(f.name)} (${f.reason})`)
-    .join("; ");
+  const list = failures.map((f) => `${f.name} (${f.reason})`).join("; ");
   return (
     `\n\nAn attachment on this message could not be read and was not ` +
     `included: ${list} Say so plainly if the question depends on seeing it — ` +
@@ -1836,7 +1851,7 @@ export function createSlackWorker(
         event.channel,
         slackUserId,
         event.threadTs,
-        `Couldn't use attached ${f.kind} '${f.name}': ${f.reason}`,
+        `Couldn't use attached ${f.plural ? `${f.kind}s` : f.kind} '${f.name}': ${f.reason}`,
       );
     }
     return { images, files, withheldNote: renderWithheldNote(failures) };
@@ -2093,6 +2108,10 @@ export function createSlackWorker(
     messages: Array<{ text: string; eventTs: string }>;
     images: FetchedImage[];
     files: FetchedFile[];
+    /** Attachments the coalesced batch could not carry. Not delivered, but named
+     *  to the agent: a file it can see in the channel and was never handed is
+     *  exactly what it must not answer as though it had. */
+    droppedFiles: FetchedFile[];
     externalActorId: string;
   }) {
     if (!gateway) return;
@@ -2112,9 +2131,19 @@ export function createSlackWorker(
       threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
       eventTs: m.eventTs,
     }));
-    const text = multi
-      ? args.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
-      : args.messages[0]!.text;
+    const droppedNote = renderWithheldNote(
+      args.droppedFiles.map((f) => ({
+        name: f.name,
+        kind: "file" as const,
+        reason:
+          "several messages arrived at once and it did not fit in the turn. " +
+          "Send it again on its own.",
+      })),
+    );
+    const text =
+      (multi
+        ? args.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
+        : args.messages[0]!.text) + droppedNote;
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -2254,12 +2283,17 @@ export function createSlackWorker(
     files: FetchedFile[];
   };
 
-  /** The files of a coalesced batch, up to what one turn may carry. Each message
-   *  was capped on its own way in, but a burst coalesces several of them into one
-   *  prompt. The overflow is dropped silently, as an over-cap read-along
-   *  attachment already is: nobody summoned the agent. */
-  function batchFiles(batch: AmbientPendingMessage[]): FetchedFile[] {
+  /** The files of a coalesced batch, up to what one turn may carry, plus the
+   *  overflow. Each message was capped on its own way in, but a burst coalesces
+   *  several of them into one prompt. The overflow is named to the agent rather
+   *  than vanishing — a file the sender can see in the channel that the agent was
+   *  never given is the failure this whole path exists to end. */
+  function batchFiles(batch: AmbientPendingMessage[]): {
+    kept: FetchedFile[];
+    dropped: FetchedFile[];
+  } {
     const kept: FetchedFile[] = [];
+    const dropped: FetchedFile[] = [];
     let bytes = 0;
     for (const f of batch.flatMap((m) => m.files)) {
       if (bytes + f.bytes.length > TOTAL_FILE_BYTES_CAP) {
@@ -2267,27 +2301,28 @@ export function createSlackWorker(
           { file: f.name, bytes: f.bytes.length },
           "slack.ambient_file.over_batch_cap",
         );
+        dropped.push(f);
         continue;
       }
       bytes += f.bytes.length;
       kept.push(f);
     }
-    return kept;
+    return { kept, dropped };
   }
 
-  /** What one read-along queue may hold in attachment bytes while a turn is in
-   *  flight. The drain caps what a turn *carries*, which says nothing about what
-   *  the wait costs: every message that arrives during a slow turn keeps its
-   *  buffers alive here, and this process runs the channel workers for the whole
-   *  install. Past the budget a message still relays — only its attachments are
+  /** Attachment bytes this worker is holding for read-along traffic that has not
+   *  run yet. One counter for the process, not one per queue: a queue exists per
+   *  channel *and* per thread with no bound on how many, and a batch's buffers
+   *  stay live for the length of its turn — a wake included — so per-queue
+   *  accounting reads near zero exactly when the most memory is held. This
+   *  process runs the channel workers for the whole install, so what matters is
+   *  the total. Past the budget a message still relays; only its attachments are
    *  dropped, and only for traffic nobody addressed to the agent. */
-  const AMBIENT_QUEUE_BYTES_CAP = 3 * TOTAL_FILE_BYTES_CAP;
+  const AMBIENT_HELD_BYTES_CAP = 3 * TOTAL_FILE_BYTES_CAP;
+  let ambientHeldBytes = 0;
 
-  function pendingAttachmentBytes(queue: AmbientQueue): number {
-    return queue.pending.reduce(
-      (sum, m) => sum + m.files.reduce((n, f) => n + f.bytes.length, 0),
-      0,
-    );
+  function fileBytes(files: FetchedFile[]): number {
+    return files.reduce((n, f) => n + f.bytes.length, 0);
   }
 
   // Ambient traffic is serialized per session and coalesced: messages that
@@ -2329,15 +2364,15 @@ export function createSlackWorker(
       queue = { channelId, threadTs, pending: [], draining: false };
       ambientQueues.set(key, queue);
     }
-    if (
-      msg.files.length > 0 &&
-      pendingAttachmentBytes(queue) >= AMBIENT_QUEUE_BYTES_CAP
-    ) {
+    const bytes = fileBytes(msg.files);
+    if (bytes > 0 && ambientHeldBytes + bytes > AMBIENT_HELD_BYTES_CAP) {
       getLogger().warn(
-        { channelId, files: msg.files.length },
-        "slack.ambient_file.over_queue_cap",
+        { channelId, files: msg.files.length, bytes, held: ambientHeldBytes },
+        "slack.ambient_file.over_held_cap",
       );
       msg = { ...msg, files: [] };
+    } else {
+      ambientHeldBytes += bytes;
     }
     queue.pending.push(msg);
     if (!queue.draining) void drainAmbientQueue(key, queue);
@@ -2348,45 +2383,54 @@ export function createSlackWorker(
     try {
       while (queue.pending.length > 0) {
         const batch = queue.pending.splice(0);
-        const last = batch.at(-1);
-        if (!last) continue;
-        // Re-resolve: the binding may have been unbound, dialed back to
-        // mentions-only, or rebound to a different owner while the batch
-        // waited — the ToU gate must hold against the owner whose
-        // credentials actually run the turn, so it is re-checked here too.
-        const binding = await channelRegistry.resolveSlackBinding(
-          queue.channelId,
-        );
-        if (!binding || !binding.ambient) {
-          continue;
-        }
-        if (!(await isTermsAccepted(binding.owner))) {
-          getLogger().debug(
-            { agentId: binding.instanceName, channelId: queue.channelId },
-            "slack.ambient_turn.skipped_terms",
+        // Released once this batch's turn settles: its buffers live in `batch`
+        // until then, which is the expensive part of the wait, not the queueing.
+        const held = fileBytes(batch.flatMap((m) => m.files));
+        try {
+          const last = batch.at(-1);
+          if (!last) continue;
+          // Re-resolve: the binding may have been unbound, dialed back to
+          // mentions-only, or rebound to a different owner while the batch
+          // waited — the ToU gate must hold against the owner whose
+          // credentials actually run the turn, so it is re-checked here too.
+          const binding = await channelRegistry.resolveSlackBinding(
+            queue.channelId,
           );
-          continue;
+          if (!binding || !binding.ambient) {
+            continue;
+          }
+          if (!(await isTermsAccepted(binding.owner))) {
+            getLogger().debug(
+              { agentId: binding.instanceName, channelId: queue.channelId },
+              "slack.ambient_turn.skipped_terms",
+            );
+            continue;
+          }
+          // A thread's read-along resumes the thread's own session (the same key
+          // a mention there resumes) and threads its reply back into the thread;
+          // top-level flow uses the channel's rolling ambient session and opens
+          // a reply thread under the batch's newest message.
+          const inThread = queue.threadTs !== null;
+          const { kept, dropped } = batchFiles(batch);
+          await relayAmbientTurn({
+            instanceName: binding.instanceName,
+            channel: queue.channelId,
+            threadKey: inThread
+              ? slackThreadKey(queue.channelId, queue.threadTs!)
+              : ambientThreadKey(queue.channelId),
+            ...(inThread ? { legacyThreadKey: queue.threadTs! } : {}),
+            replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
+            eventTs: last.eventTs,
+            hasThread: inThread,
+            messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
+            images: batch.flatMap((m) => m.images),
+            files: kept,
+            droppedFiles: dropped,
+            externalActorId: last.slackUserId,
+          });
+        } finally {
+          ambientHeldBytes = Math.max(0, ambientHeldBytes - held);
         }
-        // A thread's read-along resumes the thread's own session (the same key
-        // a mention there resumes) and threads its reply back into the thread;
-        // top-level flow uses the channel's rolling ambient session and opens a
-        // reply thread under the batch's newest message.
-        const inThread = queue.threadTs !== null;
-        await relayAmbientTurn({
-          instanceName: binding.instanceName,
-          channel: queue.channelId,
-          threadKey: inThread
-            ? slackThreadKey(queue.channelId, queue.threadTs!)
-            : ambientThreadKey(queue.channelId),
-          ...(inThread ? { legacyThreadKey: queue.threadTs! } : {}),
-          replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
-          eventTs: last.eventTs,
-          hasThread: inThread,
-          messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
-          images: batch.flatMap((m) => m.images),
-          files: batchFiles(batch),
-          externalActorId: last.slackUserId,
-        });
       }
     } catch (err) {
       // The drain floats outside any awaited chain — a rejection here (e.g.

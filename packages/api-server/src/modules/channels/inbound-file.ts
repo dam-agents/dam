@@ -65,28 +65,46 @@ export function mayContainMarkup(f: InboundFileDescriptor): boolean {
 
 /** Ceiling for one delivered file, and for one message's files together.
  *
- *  Deliberately far below the 50 MB a *web-UI* upload may be: those bytes go
- *  from the browser straight to the pod, while a messenger's go through the
- *  api-server, which holds the file in memory and then hands the pod a
- *  base64 JSON body — several times the file's size, live at once, in a
- *  process whose default limit is 512Mi and which runs the channel workers for
- *  the whole install as a single replica. The cap that matters here is that
- *  budget, not what the pod would accept. */
-export const MAX_FILE_BYTES = 8 * 1_000_000;
-export const TOTAL_FILE_BYTES_CAP = 8 * 1_000_000;
+ *  Deliberately below the 50 MB a *web-UI* upload may be, and the reason is
+ *  where the bytes travel rather than what a pod accepts: a browser uploads
+ *  straight to the pod, while a messenger's attachment goes through the
+ *  api-server, which holds the file and then hands the pod a base64 JSON body —
+ *  several times the file's size, live at once, in a process whose default limit
+ *  is 512Mi and which runs the channel workers for the whole install as a single
+ *  replica. 20 MB covers the documents people actually share (a long PDF, a
+ *  deck) while leaving that budget intact; a file above it is refused with its
+ *  size named, rather than being delivered at the cost of the process. */
+export const MAX_FILE_BYTES = 20 * 1_000_000;
+export const TOTAL_FILE_BYTES_CAP = 20 * 1_000_000;
 
-/** Whether markup is the sign-in page a messenger serves in place of a file it
- *  won't release. Checked even for formats whose contents may legitimately be
- *  markup: a `.csv` that is really a login screen would otherwise be written
- *  into the workspace and summarised as the sender's spreadsheet. */
+/** Markers that identify the page on their own: the messenger names itself, or
+ *  the body says outright that it is refusing. */
+const REFUSAL_MARKERS =
+  /<title>[^<]*slack[^<]*<\/title>|slack\.com|sign in to slack|not authori[sz]ed|access denied|permission denied/;
+
+/** A sign-in phrase means little by itself — a saved page can have "Sign in" in
+ *  its nav — so it counts only alongside the field that makes a page a login
+ *  form. Word-bounded, or "blog index" reads as "log in". */
+const SIGN_IN_PHRASE = /\bsign[\s-]?in\b|\blog[\s-]?in\b/;
+const PASSWORD_FIELD = /(type|name|id)\s*=\s*["']?password/;
+
+/** Slack's own API error codes. A JSON refusal body carries one of these, which
+ *  a sample response someone actually meant to upload would not. */
+const SLACK_AUTH_ERROR =
+  /"(not_allowed_token_type|invalid_auth|not_authed|missing_scope|no_permission|token_revoked|account_inactive|invalid_permissions)"/;
+
+/** Whether these bytes are the messenger refusing rather than the file. Checked
+ *  even for formats whose contents may legitimately be markup: a `.csv` that is
+ *  really a login screen would otherwise be written into the workspace and
+ *  summarised as the sender's spreadsheet. Deliberately conservative — a
+ *  genuine `.html` upload that merely mentions signing in must still arrive, so
+ *  a generic phrase never decides this on its own. */
 export function looksLikeSignInPage(head: string): boolean {
-  const lower = head.toLowerCase();
-  if (!/^<(!doctype|html|head|body)\b/.test(lower.trimStart())) return false;
-  return (
-    /sign\s?in|signin|log\s?in|<title>\s*slack\s*<\/title>|slack\.com/.test(
-      lower,
-    ) || /not authorized|permission|forbidden/.test(lower)
-  );
+  const lower = head.toLowerCase().trimStart();
+  if (lower.startsWith("{")) return SLACK_AUTH_ERROR.test(lower);
+  if (!/^<(!doctype|html|head|body|meta|!--)/.test(lower)) return false;
+  if (REFUSAL_MARKERS.test(lower)) return true;
+  return SIGN_IN_PHRASE.test(lower) && PASSWORD_FIELD.test(lower);
 }
 
 /** Workspace directory inbound attachments land under. Shared with the web

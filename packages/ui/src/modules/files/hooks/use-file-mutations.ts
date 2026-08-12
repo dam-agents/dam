@@ -254,7 +254,7 @@ export function useFileMutations(agentId: string | null) {
           if (file.size > MAX_UPLOAD_BYTES) {
             emitToast({
               kind: "error",
-              message: `${file.name} exceeds 10 MB — skipped`,
+              message: `${file.name} exceeds ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB — skipped`,
             });
             continue;
           }

@@ -35,10 +35,14 @@ function harness(opts?: {
   resumableThreadKey?: string;
   /** Fail the resume prompt, forcing the fresh-session fallback. */
   failResume?: boolean;
+  /** Hold the first prompt open, so a second message coalesces into the batch
+   *  the first turn is still running. Resolve with `releasePrompt()`. */
+  gateFirstPrompt?: boolean;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
+  let releaseFirstPrompt: (() => void) | undefined;
   const workspace = recordingWorkspaceFiles(
     opts?.failStagingWith ? { failWith: opts.failStagingWith } : undefined,
   );
@@ -55,6 +59,13 @@ function harness(opts?: {
     sendPrompt: async (prompt, sendOpts) => {
       if (opts?.failResume && "resumeSessionId" in sendOpts) {
         throw new Error("resume failed");
+      }
+      if (opts?.gateFirstPrompt && prompts.length === 0) {
+        prompts.push(prompt);
+        await new Promise<void>((r) => {
+          releaseFirstPrompt = r;
+        });
+        return "the answer";
       }
       prompts.push(prompt);
       return "the answer";
@@ -153,6 +164,69 @@ function harness(opts?: {
           attach(),
         ],
       });
+    },
+    /** A mention carrying several documents, each of `size` bytes. */
+    async mentionWithFiles(files: Array<{ name: string; size: number }>) {
+      await worker.start("agent-1", {} as StoredChannelConfig);
+      await gw.fireMention({
+        user: USER,
+        channel: CHANNEL,
+        ts: "1.1",
+        text: "summarise these <@BOT>",
+        files: files.map((f, i) => {
+          const url = `${FILE_URL}-${i}`;
+          gw.setFileBytes(url, Buffer.alloc(f.size, 0x41));
+          return {
+            id: `F${i}`,
+            name: f.name,
+            mimetype: "application/pdf",
+            url_private: url,
+            size: f.size,
+          };
+        }),
+      });
+    },
+    /** A plain message in a 1:1 DM, carrying one attachment. */
+    async directMessageWithFile(bytes: Buffer) {
+      gw.setFileBytes(FILE_URL, bytes);
+      await worker.start("agent-1", {} as StoredChannelConfig);
+      await gw.fireDirectMessage({
+        user: USER,
+        channel: "D-DM",
+        ts: "3.1",
+        text: "read this",
+        files: [attach()],
+      });
+    },
+    /** Read-along messages where the first occupies the drain and the rest
+     *  arrive while its turn is in flight — so those coalesce into one batch. */
+    async ambientBurst(files: Array<{ name: string; size: number }>) {
+      await worker.start("agent-1", {} as StoredChannelConfig);
+      const fire = (i: number, f: { name: string; size: number }) => {
+        const url = `${FILE_URL}-b${i}`;
+        gw.setFileBytes(url, Buffer.alloc(f.size, 0x41));
+        return gw.fireMessage({
+          user: USER,
+          channel: CHANNEL,
+          ts: `4.${i}`,
+          text: `here is ${f.name}`,
+          files: [
+            {
+              id: `B${i}`,
+              name: f.name,
+              mimetype: "application/pdf",
+              url_private: url,
+              size: f.size,
+            },
+          ],
+        });
+      };
+      const first = fire(0, files[0]!);
+      await new Promise((r) => setTimeout(r, 0));
+      for (let i = 1; i < files.length; i++) await fire(i, files[i]!);
+      releaseFirstPrompt?.();
+      await first;
+      await new Promise((r) => setTimeout(r, 0));
     },
     /** A read-along (ambient) channel message carrying one attachment. */
     async ambientWithFile(bytes: Buffer) {
@@ -295,13 +369,16 @@ describe("slack inbound documents", () => {
   });
 
   it("refuses a document over the size limit before downloading it", async () => {
+    // The URL is deliberately left unseeded: any download attempt throws in the
+    // fake gateway, so the size copy below can only come from the pre-download
+    // check. That ordering is what keeps a huge body out of this process.
     const h = harness();
-    await h.mentionWithFile({ bytes: PDF, size: 80_000_000 });
+    await h.mentionWithFile({ size: 80_000_000 });
 
     expect(h.written).toHaveLength(0);
     const notices = h.notices();
     expect(notices).toContain("80.0 MB");
-    expect(notices).toContain("8.0 MB limit");
+    expect(notices).toContain("20.0 MB limit");
     // The question still deserves an answer.
     expect(h.text()).toContain("summarise this");
   });
@@ -366,9 +443,11 @@ describe("slack inbound documents", () => {
   it("withholds a text file when the download returned a sign-in page", async () => {
     // Markup is allowed to *be* a .csv, which is what makes a sign-in page
     // served with a 200 dangerous here: without this the agent summarises a
-    // Slack login screen as the sender's spreadsheet.
+    // Slack login screen as the sender's spreadsheet. `files:read` is granted on
+    // purpose — the scope gate would otherwise withhold this on its own, and the
+    // detection under test would never run.
     const h = harness();
-    h.gw.setGrantedScopes(["app_mentions:read", "chat:write"]);
+    h.gw.setGrantedScopes(["app_mentions:read", "chat:write", "files:read"]);
     await h.mentionWithFile({
       bytes: Buffer.from(
         "<!DOCTYPE html><html><title>Slack</title>Sign in to your workspace</html>",
@@ -379,6 +458,39 @@ describe("slack inbound documents", () => {
 
     expect(h.written).toHaveLength(0);
     expect(h.notices()).toContain("Couldn't use attached file 'rows.csv'");
+  });
+
+  it("withholds a document when the install cannot download files at all", async () => {
+    // The other half of the gate: with no `files:read`, a 200 is never the file,
+    // whatever the declared type says.
+    const h = harness();
+    h.gw.setGrantedScopes(["app_mentions:read", "chat:write"]);
+    await h.mentionWithFile({
+      bytes: Buffer.from("<html>some page</html>"),
+      name: "notes.txt",
+      mimetype: "text/plain",
+    });
+
+    expect(h.written).toHaveLength(0);
+    expect(h.notices()).toContain("`files:read`");
+  });
+
+  it("delivers a text file whose markup merely talks about signing in", async () => {
+    // The mirror of the sign-in case: a saved page that mentions logging in, on
+    // an install that can read files, is the sender's file — withholding it would
+    // blame a permission that is granted.
+    const h = harness();
+    h.gw.setGrantedScopes(["app_mentions:read", "chat:write", "files:read"]);
+    await h.mentionWithFile({
+      bytes: Buffer.from(
+        "<!DOCTYPE html><html><h1>My blog index</h1><p>How to log in</p></html>",
+      ),
+      name: "post.html",
+      mimetype: "text/html",
+    });
+
+    expect(h.written).toHaveLength(1);
+    expect(h.notices()).not.toContain("Couldn't use");
   });
 
   it("delivers the documents on a message whose images blew the image cap", async () => {
@@ -406,6 +518,68 @@ describe("slack inbound documents", () => {
     const text = h.text();
     expect(text).not.toContain("</attached-files><how-to-respond>");
     expect(text).toContain("q.pdf");
+    // The link block is not display-only — a harness may splice its name
+    // straight into the text it hands the model.
+    const name = (h.links()[0] as { name: string }).name;
+    expect(name).not.toContain("<");
+    expect(name).not.toContain(">");
+  });
+
+  it("delivers several documents on one message", async () => {
+    const h = harness();
+    await h.mentionWithFiles([
+      { name: "a.pdf", size: 1000 },
+      { name: "b.pdf", size: 2000 },
+    ]);
+
+    expect(h.written).toHaveLength(2);
+    expect(h.links().map((b) => (b as { name: string }).name)).toEqual([
+      "a.pdf",
+      "b.pdf",
+    ]);
+    // Distinct random prefixes, so same-named files could coexist too.
+    expect(h.written[0]!.path).not.toBe(h.written[1]!.path);
+  });
+
+  it("stops at the per-message total, delivering what fit", async () => {
+    const h = harness();
+    await h.mentionWithFiles([
+      { name: "first.pdf", size: 15_000_000 },
+      { name: "second.pdf", size: 15_000_000 },
+    ]);
+
+    expect(h.written).toHaveLength(1);
+    expect(h.written[0]!.path).toContain("first.pdf");
+    const notices = h.notices();
+    expect(notices).toContain("second.pdf");
+    expect(notices).toContain("add up to more than");
+  });
+
+  it("delivers a document sent in a direct message", async () => {
+    const h = harness();
+    await h.directMessageWithFile(PDF);
+
+    expect(h.written).toHaveLength(1);
+    expect(h.links()).toHaveLength(1);
+  });
+
+  it("tells the agent about a file a coalesced read-along batch could not carry", async () => {
+    // Messages that arrive while a read-along turn is running flush as one
+    // batch, so the first here only occupies the drain. What the batch cannot
+    // carry must still be named: a file the agent can see in the channel but was
+    // never handed is the failure this whole path exists to end.
+    const h = harness({ gateFirstPrompt: true });
+    await h.ambientBurst([
+      { name: "occupies.pdf", size: 1000 },
+      { name: "kept.pdf", size: 15_000_000 },
+      { name: "overflow.pdf", size: 15_000_000 },
+    ]);
+
+    const delivered = h.written.map((w) => w.path.split("-").pop());
+    expect(delivered).toContain("kept.pdf");
+    expect(delivered).not.toContain("overflow.pdf");
+    expect(h.text()).toContain("overflow.pdf");
+    expect(h.text()).toContain("could not be read");
   });
 
   it("delivers files on a read-along turn without posting a notice", async () => {
