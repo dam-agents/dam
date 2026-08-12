@@ -1,14 +1,20 @@
 import { providerTypeForTemplateId } from "api-server-api";
 import { useMemo } from "react";
 
+import { timeAgo } from "@/lib/format-time";
+
 import type { AgentView } from "../../../types.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
+  useResolvedHarnessConfig,
+  useStaleModel,
 } from "../../agents/api/harness-config.js";
-import { useStaleModel } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
-import { useSkillsState } from "../../agents/api/skills.js";
+import {
+  useSkillSourceCount,
+  useSkillsState,
+} from "../../agents/api/skills.js";
 import {
   type SandboxSubtitleLookup,
   sandboxSubtitleParts,
@@ -28,6 +34,8 @@ type SectionWarnings = Partial<Record<SandboxSection, string>>;
 /** Why the Setup section is flagged. One string, because the nav renders it as
  *  the marker's accessible name and its tooltip. */
 const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** First `max` names, with a "+N more" tail; undefined when the list is empty
  *  so the nav falls back to its neutral placeholder. */
@@ -77,6 +85,8 @@ export function useSectionSummaries(agent: AgentView | null): {
   );
 
   const staleModel = useStaleModel(agent?.id ?? null);
+  const sourceCount = useSkillSourceCount(agent?.id ?? null);
+  const { hasRun } = useResolvedHarnessConfig(agent?.id ?? null);
 
   const setup = useMemo(() => {
     if (!agent) return undefined;
@@ -104,14 +114,22 @@ export function useSectionSummaries(agent: AgentView | null): {
     return formatNameList([...new Set(titles)]) ?? "No connections added";
   }, [connectionsQuery.data, apps, providerAppIds]);
 
+  // Counts, not names: the line has to say something true in four different
+  // states, and a list of names can't distinguish "none yet" from "we can't
+  // know yet". `on` counts installed skills — the same measure the page's own
+  // counts line and its stopped snapshot use, so the number never moves just
+  // because the sandbox did.
   const skills = useMemo(() => {
-    // Standalone (authored-in-sandbox) skills are on disk and active just like
-    // installed ones, so the summary lists both — standalone first to mirror
-    // the surface's "Created in this sandbox" group ordering.
-    const standalone = (skillsState.data?.standalone ?? []).map((s) => s.name);
-    const installed = (skillsState.data?.installed ?? []).map((s) => s.name);
-    return formatNameList([...standalone, ...installed]);
-  }, [skillsState.data]);
+    if (!hasRun) return "Not known yet";
+    const on = skillsState.data?.installed.length ?? 0;
+    const capturedAt = skillsState.data?.standaloneSnapshot?.capturedAt;
+    if (capturedAt) return `${on} on · as of ${timeAgo(capturedAt)}`;
+    const created = skillsState.data?.standalone.length ?? 0;
+    if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
+    return sourceCount === null
+      ? `${on} on`
+      : `${on} on across ${plural(sourceCount, "source")}`;
+  }, [hasRun, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
   const channelsSummary = useMemo(() => {
