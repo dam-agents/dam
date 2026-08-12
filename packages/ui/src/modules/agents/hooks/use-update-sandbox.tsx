@@ -6,8 +6,9 @@ import { externalLinkProps } from "@/lib/external-link";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { useTemplates } from "../../templates/api/queries.js";
 import { useUpgradeAgentMutation } from "../api/mutations.js";
-import { whatsNewUrl } from "../utils/template-update.js";
+import { releaseNotesUrl } from "./use-release-notes-url.js";
 
 /** What one sandbox's update moves, narrowed off `templateUpdate` so the apply
  *  loop needs no non-null assertion. */
@@ -45,13 +46,9 @@ function batchSubject(total: number): string {
     : "sandboxes to the versions their templates now ship?";
 }
 
-/** When a batch takes effect — the same two facts the single-sandbox
- *  confirmation gives, worded per case so each sentence has a subject. Naming
- *  the groups beats "the rest", which refers to nothing when none is running. */
 /** The release notes, repeated here because the hover card's copy is reachable
  *  by pointer only — Radix takes its content out of the tab order. */
-function whatsNewLink(image: string) {
-  const href = whatsNewUrl(image);
+function whatsNewLink(href: string | null) {
   if (!href) return null;
   return (
     <>
@@ -68,6 +65,9 @@ function whatsNewLink(image: string) {
   );
 }
 
+/** When a batch takes effect — the same two facts the single-sandbox
+ *  confirmation gives, worded per case so each sentence has a subject. Naming
+ *  the groups beats "the rest", which refers to nothing when none is running. */
 function batchApplyNote(restarting: number, total: number): string {
   if (restarting === 0) return "Each applies it the next time it starts.";
   if (restarting === total)
@@ -82,6 +82,7 @@ function batchApplyNote(restarting: number, total: number): string {
  */
 export function useUpdateSandbox() {
   const showConfirm = useStore((s) => s.showConfirm);
+  const { data: templates } = useTemplates();
   const upgrade = useUpgradeAgentMutation();
   // The bulk loop reports once, in aggregate, so the per-mutation toast would
   // be one popup per failed sandbox on top of it.
@@ -101,7 +102,7 @@ export function useUpdateSandbox() {
           {restartsToApply(agent)
             ? "The sandbox restarts to apply it — in-flight work is interrupted."
             : "It applies when the sandbox next starts."}
-          {whatsNewLink(update.toImage)}
+          {whatsNewLink(releaseNotesUrl(templates, agent.templateId))}
         </>
       );
       if (!(await showConfirm(msg, "Update Sandbox"))) return;
@@ -109,7 +110,7 @@ export function useUpdateSandbox() {
       // the template moves meanwhile, the server rejects instead of surprising.
       upgrade.mutate({ id: agent.id, expectedToImage: update.toImage });
     },
-    [showConfirm, upgrade],
+    [showConfirm, upgrade, templates],
   );
 
   const updateAll = useCallback(

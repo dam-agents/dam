@@ -48,6 +48,9 @@ data:
     {{- with $tmpl.docsUrl }}
     docsUrl: {{ . | quote }}
     {{- end }}
+    {{- with $tmpl.releaseNotesUrl }}
+    releaseNotesUrl: {{ . | quote }}
+    {{- end }}
     {{- with $tmpl.setupNote }}
     setupNote:
       title: {{ .title | quote }}

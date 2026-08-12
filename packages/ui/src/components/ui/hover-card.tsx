@@ -33,10 +33,12 @@ function HoverCard({
  * Radix cancels `touchstart` on the trigger so a tap can't open the card — and
  * cancels the emulated click with it, leaving a button trigger dead. It does
  * that unconditionally, so no media query can gate it: a touchscreen laptop
- * reports `hover: hover` and still fires `touchstart`. Stopping the event one
- * level below the trigger keeps Radix's handler from ever seeing it, and leaves
- * hover alone — React dispatches enter/leave to every element newly entered,
- * the wrapper included.
+ * reports `hover: hover` and still fires `touchstart`. The guard sits on an
+ * inner element, not the trigger: `asChild` merges a handler onto the trigger
+ * itself, where Radix composes it with its own and gates only on
+ * `defaultPrevented` — which `stopPropagation` never sets. One level down, the
+ * event stops before the trigger sees it. Hover is unaffected: React dispatches
+ * enter/leave to every element newly entered, the wrapper included.
  *
  * Needs a box of its own, so no `display: contents`: the wrapper is what the
  * card measures itself against.
@@ -48,11 +50,13 @@ export function HoverCardTappableTrigger({
 }) {
   return (
     <HoverCardTrigger asChild>
-      <span
-        className="inline-flex"
-        onTouchStart={(event) => event.stopPropagation()}
-      >
-        {children}
+      <span className="inline-flex">
+        <span
+          className="inline-flex"
+          onTouchStart={(event) => event.stopPropagation()}
+        >
+          {children}
+        </span>
       </span>
     </HoverCardTrigger>
   );

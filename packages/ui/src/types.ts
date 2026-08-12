@@ -122,6 +122,8 @@ export interface TemplateView {
   category: "harness" | "preconfigured";
   tags?: string[];
   docsUrl?: string;
+  /** Where the harness publishes what changed between image versions. */
+  releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
   /** Backed by a KubeVirt VM rather than a pod — the image is a containerDisk,

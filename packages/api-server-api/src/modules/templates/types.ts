@@ -38,6 +38,9 @@ export interface TemplateSpec {
   category?: TemplateCategory;
   tags?: string[];
   docsUrl?: string;
+  /** Where this harness publishes what changed between image versions. A
+   *  release *list*: one update can span several versions. */
+  releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental?: boolean;
   mounts?: Mount[];

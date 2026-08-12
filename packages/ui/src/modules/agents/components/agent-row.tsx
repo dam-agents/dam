@@ -102,15 +102,11 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {/* Both the action and its portaled hover card sit inside the row's
-            click target, so their clicks must not also open the sandbox. */}
-        <span onClick={(e) => e.stopPropagation()}>
-          <UpdateAvailableAction
-            agent={agent}
-            pending={updatePending}
-            onUpdate={onUpdate}
-          />
-        </span>
+        <UpdateAvailableAction
+          agent={agent}
+          pending={updatePending}
+          onUpdate={onUpdate}
+        />
         <ContributionFailuresBadge failures={agent.contributionFailures} />
         {/* A parked sandbox explains itself: the controller's figures ride
             the badge tooltip — focusable and labelled, so keyboard and

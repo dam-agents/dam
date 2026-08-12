@@ -1221,6 +1221,7 @@ agentTemplates:
     enabled: true
     displayName: "Claude Code"
     description: "Default Claude Code agent"
+    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     telemetry: true
     tags: ["Anthropic"]
     image:
@@ -1249,6 +1250,7 @@ agentTemplates:
     enabled: true
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
+    releaseNotesUrl: "https://github.com/openai/codex/releases"
     tags: ["OpenAI"]
     image:
       repository: quay.io/dam-agents/codex
@@ -1269,6 +1271,7 @@ agentTemplates:
     enabled: true
     displayName: "IBM Bob"
     description: "Bob shell agent"
+    releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob
