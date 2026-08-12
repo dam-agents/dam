@@ -133,4 +133,50 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: use mise`,
     ]);
   });
+
+  /**
+   * The agent has stopped mid-turn to ask before doing something, and the
+   * question is still unanswered when Bob opens the conversation. The whole
+   * turn is blocked on it, so of everything Bob could be shown, the open
+   * prompt matters most — and he may well be the one who came to answer it.
+   *
+   * The harness asked exactly once, on its one stdout, and is now blocked
+   * waiting for the reply. It will not repeat the question for a reader it
+   * never knew arrived. Nor can the question ride in with the history: a
+   * prompt is not transcript, it is a request that is later answered and
+   * withdrawn, and replaying it from history would re-open dialogs long
+   * settled. Only the runtime still holds the open question, so putting it
+   * in front of a latecomer is the runtime's job.
+   */
+  it("should show a joiner the permission prompt that is open when it arrives", () => {
+    const world = createWorld();
+
+    // Alice asks for something the agent will not do unasked.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "delete the stale branches"));
+
+    // The agent stops to ask, and the question hangs there unanswered.
+    world.harness().emit(frames.requestPermission(77, SESSION));
+
+    // Bob opens the conversation while the dialog is up.
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+
+    // Bob is shown the very question Alice is looking at — same id and same
+    // options, so whichever of them answers, the answer finds its way home.
+    expect(bob.saw("session/request_permission")).toEqual([
+      frames.requestPermission(77, SESSION),
+    ]);
+
+    // The prompt came on top of a normal join, not instead of one: his load
+    // was still answered.
+    expect(bob.reply(1)).toBeDefined();
+
+    // And his arrival did not pop the dialog a second time for Alice.
+    expect(alice.saw("session/request_permission")).toEqual([
+      frames.requestPermission(77, SESSION),
+    ]);
+  });
 });
