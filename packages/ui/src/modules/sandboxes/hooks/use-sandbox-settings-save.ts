@@ -160,8 +160,6 @@ export function useSandboxSettingsSave({
           connectionIds: savedAppIds,
         });
       }
-      // One call carries every staged option. It rides the runtime channel and
-      // applies at the next idle turn, so nothing here waits on the pod.
       if (harnessDraft.dirty) {
         await applyHarnessConfig.mutateAsync(harnessDraft.buildInput(agentId));
       }

@@ -27,9 +27,7 @@ export function SandboxModelSettings({
     useHarnessConfigStatus(agentId);
   const { origin, hasRun } = useResolvedHarnessConfig(agentId);
   const hasCatalog = !!status?.catalog && status.catalog.options.length > 0;
-  // The catalog rides the agent's capabilities, so a running sandbox that
-  // hasn't hello'd since its last connect answers `supported` with no catalog
-  // and the status query polls for it. Both waits are the same to the reader.
+  // Loading, or supported with the catalog still to arrive — the same wait.
   const awaitingCatalog =
     statusPending || (status?.supported === true && !hasCatalog);
 
@@ -74,10 +72,7 @@ export function SandboxModelSettings({
   );
 }
 
-/** Placeholder pickers, shaped like `OptionGroup`'s page variant so the box
- *  doesn't reflow when the real ones arrive. The section used to render nothing
- *  at all until the catalog landed, so it appeared out of empty space seconds
- *  after the rest of the page. */
+/** Shaped like `OptionGroup`'s page variant so the box doesn't reflow. */
 function ModelSettingsSkeleton() {
   return (
     <section className="mb-8">

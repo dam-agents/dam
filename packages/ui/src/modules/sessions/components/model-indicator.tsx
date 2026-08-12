@@ -11,27 +11,19 @@ import {
 
 interface Props {
   model: string;
-  /** What this surface calls the thing that owns the model — "sandbox" or
-   *  "knowledge base" — so the copy reads in the user's own terms. */
+  /** "sandbox" or "knowledge base". */
   subject: string;
-  /** Where the model is actually changed, named as the page is titled. */
-  settingsLabel: string;
-  onConfigure: () => void;
+  /** Omitted where the model can't be changed — a knowledge base's config page
+   *  has no model settings, so there is nowhere to send the reader. */
+  settings?: {
+    label: string;
+    onConfigure: () => void;
+  };
 }
 
-/**
- * The model the sandbox is running, under the composer (#3057).
- *
- * It used to navigate straight to configuration on click, which threw the user
- * out of the conversation they were reading. It now says what the model is and
- * offers the trip, so leaving is a choice rather than a surprise.
- */
-export function ModelIndicator({
-  model,
-  subject,
-  settingsLabel,
-  onConfigure,
-}: Props) {
+/** The model under the composer. Says what it is and offers the trip to
+ *  configuration, rather than navigating on click (#3057). */
+export function ModelIndicator({ model, subject, settings }: Props) {
   const titleId = useId();
 
   return (
@@ -67,18 +59,20 @@ export function ModelIndicator({
         </div>
         <p className="text-muted-foreground">
           This {subject} is using{" "}
-          <span className="text-foreground">{model}</span>. Change the model in{" "}
-          {settingsLabel}.
+          <span className="text-foreground">{model}</span>
+          {settings ? `. Change the model in ${settings.label}.` : "."}
         </p>
-        <PopoverClose asChild>
-          <button
-            type="button"
-            onClick={onConfigure}
-            className="inline-flex items-center gap-1.5 self-start font-medium text-accent hover:underline"
-          >
-            Configure model <ArrowRight size={16} />
-          </button>
-        </PopoverClose>
+        {settings && (
+          <PopoverClose asChild>
+            <button
+              type="button"
+              onClick={settings.onConfigure}
+              className="inline-flex items-center gap-1.5 self-start font-medium text-accent hover:underline"
+            >
+              Configure model <ArrowRight size={16} />
+            </button>
+          </PopoverClose>
+        )}
       </PopoverContent>
     </Popover>
   );

@@ -401,14 +401,15 @@ export function ChatView() {
         configure: "Configure knowledge base",
         delete: "Delete Knowledge Base",
         modelSubject: "knowledge base",
-        modelSettings: "Knowledge Base Settings",
+        // Its config page has no model settings.
+        modelSettings: null,
       }
     : {
         actionsAria: "Sandbox actions",
         configure: "Configure sandbox",
         delete: "Delete Sandbox",
         modelSubject: "sandbox",
-        modelSettings: "Sandbox Settings",
+        modelSettings: "Sandbox Setup",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -719,8 +720,14 @@ export function ChatView() {
                       <ModelIndicator
                         model={harnessCurrent.model}
                         subject={surfaceCopy.modelSubject}
-                        settingsLabel={surfaceCopy.modelSettings}
-                        onConfigure={handleConfigureSandbox}
+                        settings={
+                          surfaceCopy.modelSettings
+                            ? {
+                                label: surfaceCopy.modelSettings,
+                                onConfigure: handleConfigureSandbox,
+                              }
+                            : undefined
+                        }
                       />
                     </ChatColumn>
                   </div>

@@ -80,8 +80,6 @@ export function useSandboxSettingsForm() {
   // alongside the rest; leaving discards.
   const net = useStagedNetworkAccess(agentId);
 
-  // Model settings stage the same way, for the same reason: this page commits on
-  // Submit, so the one section that applied on change was the odd one out.
   const harnessDraft = useHarnessConfigDraft(agentId);
 
   const [formReady, setFormReady] = useState(false);

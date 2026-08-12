@@ -3,33 +3,18 @@ import { useEffect, useState } from "react";
 
 import { useResolvedHarnessConfig } from "../../agents/api/harness-config.js";
 
-/** A picked value per option group id — `model`, `mode`, or a config option's
- *  own id. Null is the explicit "not set" choice, which unsets the field. */
+/** Keyed by option group id; null is the "not set" choice, which unsets. */
 type Edits = Readonly<Record<string, string | null>>;
 
-/**
- * Staging buffer for the sandbox settings page's Model settings section.
- *
- * The pickers used to apply on change, which made this the one section on the
- * page that saved itself while every other field waited for Submit changes.
- * Edits now stage here: Submit commits them, leaving discards them, and
- * switching sandbox resets them — the same contract as
- * {@link useStagedNetworkAccess}.
- *
- * Chat's copy of the panel still applies on change. There is no Submit in a
- * conversation, and a staged edit nobody commits would be a lie about what the
- * next turn runs.
- */
+/** Stages the settings page's Model settings so they commit on Submit like the
+ *  rest of that page. Same contract as {@link useStagedNetworkAccess}. */
 export function useHarnessConfigDraft(agentId: string | null) {
   const { values: live } = useResolvedHarnessConfig(agentId);
   const [edits, setEdits] = useState<Edits>({});
-  // What a successful Submit sent. The values the sandbox reports only catch up
-  // once the change reaches the pod and the snapshot is re-read, so without this
-  // the pickers would snap back to the old values the moment we stopped
-  // treating the edits as pending.
+  // What Submit sent. The sandbox only reports it once the change reaches the
+  // pod, so without this the pickers would snap back to the old values.
   const [submitted, setSubmitted] = useState<Edits>({});
 
-  // Switching sandbox discards anything staged for the previous one.
   useEffect(() => {
     setEdits({});
     setSubmitted({});
@@ -46,19 +31,15 @@ export function useHarnessConfigDraft(agentId: string | null) {
   const set = (field: string, value: string | null) =>
     setEdits((prev) => ({ ...prev, [field]: value }));
 
-  /** Only the edits that still differ from what is already saved, so picking a
-   *  value and then picking the original back is not a change. */
+  // Compared, not counted, so picking the original value back isn't a change.
   const changed = Object.entries(edits).filter(
     ([field, value]) => value !== settledValue(field),
   );
 
-  /** The staged value where one exists, else what is saved — what the pickers
-   *  display. Membership, not `??`: a deliberate "not set" is a null entry. */
+  // Membership, not `??`: a deliberate "not set" is a null entry.
   const valueOf = (field: string): string | null =>
     field in edits ? edits[field]! : settledValue(field);
 
-  /** One apply carries the whole batch: the schema takes model, mode, config
-   *  options, and unsets together. */
   const buildInput = (
     id: string,
   ): HarnessConfigChange & { agentId: string } => {
@@ -86,8 +67,6 @@ export function useHarnessConfigDraft(agentId: string | null) {
     valueOf,
     buildInput,
     dirty: changed.length > 0,
-    /** Adopt what was just sent as saved. Keeps showing it while the sandbox
-     *  catches up, without reading as unsaved. */
     commit: () => setSubmitted((prev) => ({ ...prev, ...edits })),
   };
 }

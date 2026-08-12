@@ -46,10 +46,8 @@ type ModelSettingsVariant = "chat" | "page";
 // page header's right slot (e.g. "Start agent to edit"). Chat passes none of
 // these, so its appearance and behavior are unchanged.
 //
-// `draft` hands the values and the edits to a caller that has its own Submit,
-// which is what the settings page does (#3057). Without it the panel applies on
-// change, which is right in chat: no Submit exists there to commit a staged
-// edit, and the next turn would run settings the pickers no longer show.
+// `draft` hands the values and edits to a caller with its own Submit (the
+// settings page). Without it the panel applies on change, as chat needs.
 export function ModelSettingsPanel({
   agentId,
   variant = "chat",
@@ -120,8 +118,11 @@ export function ModelSettingsPanel({
     return typeof v === "string" ? v : null;
   };
 
+  // The displayed model, not the settled one, or one Submit could send a model
+  // with a mode its own constraints exclude.
+  const shownModel = valueOf("model");
   const constraints =
-    (current?.model && catalog.modelConstraints?.[current.model]) || undefined;
+    (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
 
   const change = (field: string, value: string | null) => {
     if (draft) {

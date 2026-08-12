@@ -13,12 +13,10 @@ export function StickyFooterLayout({
   footerClassName,
   children,
 }: Props) {
-  const hasFooter = footer !== undefined;
+  const hasFooter = Boolean(footer);
 
-  // Publishes the bar on the root so anything floating at the bottom of the
-  // viewport can clear it — see `--bottom-bar-inset`. Marking the root rather
-  // than exposing a prop keeps the pages that have a bar from having to tell
-  // every floating control about it.
+  // Publishes the bar on the root so anything fixed to the bottom of the
+  // viewport can clear it — see `--bottom-bar-inset`.
   useEffect(() => {
     if (!hasFooter) return;
     document.documentElement.dataset.bottomBar = "";
