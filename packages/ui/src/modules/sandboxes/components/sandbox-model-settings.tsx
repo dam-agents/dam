@@ -23,9 +23,15 @@ export function SandboxModelSettings({
   draft: ReturnType<typeof useHarnessConfigDraft>;
 }) {
   const { operable, comingUp } = useOperableState(agentId);
-  const { data: status } = useHarnessConfigStatus(agentId);
+  const { data: status, isPending: statusPending } =
+    useHarnessConfigStatus(agentId);
   const { origin, hasRun } = useResolvedHarnessConfig(agentId);
   const hasCatalog = !!status?.catalog && status.catalog.options.length > 0;
+  // The catalog rides the agent's capabilities, so a running sandbox that
+  // hasn't hello'd since its last connect answers `supported` with no catalog
+  // and the status query polls for it. Both waits are the same to the reader.
+  const awaitingCatalog =
+    statusPending || (status?.supported === true && !hasCatalog);
 
   // Nothing recorded and no pod to ask. Told apart from the case below because
   // "never run" is a complete explanation, while a sandbox that has run and
@@ -51,6 +57,8 @@ export function SandboxModelSettings({
     );
   }
 
+  if (awaitingCatalog) return <ModelSettingsSkeleton />;
+
   return (
     <ModelSettingsPanel
       agentId={agentId}
@@ -63,6 +71,32 @@ export function SandboxModelSettings({
         )
       }
     />
+  );
+}
+
+/** Placeholder pickers, shaped like `OptionGroup`'s page variant so the box
+ *  doesn't reflow when the real ones arrive. The section used to render nothing
+ *  at all until the catalog landed, so it appeared out of empty space seconds
+ *  after the rest of the page. */
+function ModelSettingsSkeleton() {
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+        <SectionLabel>Model settings</SectionLabel>
+      </div>
+      <Callout inset>
+        <div className="animate-pulse">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="mb-4 last:mb-0">
+              <SectionLabel className="mb-1.5 block">
+                <span className="inline-block h-[0.7em] w-20 rounded bg-muted align-middle" />
+              </SectionLabel>
+              <div className="h-10 rounded-md border border-input bg-muted/40" />
+            </div>
+          ))}
+        </div>
+      </Callout>
+    </section>
   );
 }
 
