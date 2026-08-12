@@ -189,4 +189,53 @@ describe("acp-runtime: session isolation", () => {
     });
     expect(alice.reply(7)?.result).toEqual({ stopReason: "refusal" });
   });
+
+  /**
+   * A connection opens before the user picks a conversation. The tab connects
+   * to the sandbox on arrival, then the user reads the list, thinks, and
+   * clicks — so every client spends time connected and entitled to nothing.
+   *
+   * The runtime must not read the socket's existence as interest. The harness
+   * offers no help here either way: it streams to one stdout whether one
+   * client is watching or none. So the moment a conversation's traffic starts
+   * flowing to a client has to be the client's own touch of that session,
+   * and the runtime is the only thing positioned to hold that line.
+   */
+  it("should hold a session's traffic back from a connected client until it touches the session", () => {
+    const world = createWorld();
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: ALICE_SESSION });
+
+    // Carol opens the sandbox and stops there. No conversation picked yet,
+    // but her socket is open for everything that follows.
+    const carol = world.connect();
+
+    alice.send(frames.prompt(2, ALICE_SESSION, "did the tests pass?"));
+    world.harness().emit(frames.agentMessage(ALICE_SESSION, "running them"));
+
+    // Connected is not subscribed. The whole exchange happened while Carol
+    // was attached, and none of it touched her socket.
+    expect(transcriptOf(carol)).toEqual([]);
+    expect(transcriptOf(alice)).toEqual([`${ALICE_SESSION}: running them`]);
+
+    // Now she opens the conversation.
+    carol.send(frames.loadSession(1, ALICE_SESSION));
+    world.harness().emit(frames.agentMessage(ALICE_SESSION, "all green"));
+
+    // The touch is what turned the tap on. What she missed arrives at the
+    // touch as a catch-up, and from then on she is live — nothing reached
+    // her a moment earlier than she asked for it.
+    expect(transcriptOf(carol)).toEqual([
+      `${ALICE_SESSION}: did the tests pass?`,
+      `${ALICE_SESSION}: running them`,
+      `${ALICE_SESSION}: all green`,
+    ]);
+    // And Carol's catch-up was hers alone: Alice got no second copy.
+    expect(transcriptOf(alice)).toEqual([
+      `${ALICE_SESSION}: running them`,
+      `${ALICE_SESSION}: all green`,
+    ]);
+  });
 });
