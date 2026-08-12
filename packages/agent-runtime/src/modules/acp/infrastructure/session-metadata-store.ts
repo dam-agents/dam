@@ -97,17 +97,18 @@ export function createSessionMetadataStore(
     set(sessionId, meta) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
-      const lastActivityAt = existing?.lastActivityAt;
-      const seenAt = existing?.seenAt ?? now();
+      // Spread rather than re-enumerate: this is a partial update (a resume
+      // carrying a new mode lands here), and an allowlist rebuild would
+      // silently drop every field the entry gained since it was written.
       store.write({
         tombstones,
         sessions: {
           ...sessions,
           [sessionId]: {
+            ...existing,
             meta,
             createdAt: existing?.createdAt ?? now(),
-            ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
-            seenAt,
+            seenAt: existing?.seenAt ?? now(),
           },
         },
       });
@@ -155,7 +156,10 @@ export function createSessionMetadataStore(
       const existing = sessions[sessionId];
       if (!existing?.runStartedAt) return;
       const { runStartedAt, ...rest } = existing;
-      const elapsed = Date.parse(now()) - Date.parse(runStartedAt);
+      const measured = Date.parse(now()) - Date.parse(runStartedAt);
+      // An unparseable stamp would poison the total with NaN, which the schema
+      // accepts and no later run can undo.
+      const elapsed = Number.isFinite(measured) ? measured : 0;
       store.write({
         tombstones,
         sessions: {

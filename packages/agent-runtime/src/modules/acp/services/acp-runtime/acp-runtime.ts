@@ -5,6 +5,7 @@ import {
   buildPlatformTurnEndedNotification,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  SessionType,
 } from "api-server-api";
 
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
@@ -935,11 +936,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       channel: entry.channel,
       originalId: entry.originalId,
     });
-    // A prompt off a machine-driven channel is a scheduled fire, not a person
-    // typing — only those are timed. Timed from here rather than from arrival,
-    // so a fire that queued behind another turn isn't charged its wait.
-    if (nonViewerChannels.has(entry.channel))
-      deps.sessionMetadata?.startRun(sessionId);
+    // Time a schedule's own fires: machine-driven (never a person typing) and
+    // belonging to a schedule, so the same driver's experiment launches don't
+    // accumulate totals nothing reads. From here rather than from arrival, so a
+    // fire queued behind another turn isn't charged its wait.
+    if (nonViewerChannels.has(entry.channel)) {
+      const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+      if (meta?.type === SessionType.ScheduleCron || meta?.scheduleId)
+        deps.sessionMetadata?.startRun(sessionId);
+    }
     a.send(entry.frame);
     // The prompt is now the agent's problem — delivery is real. Sender-only and
     // ephemeral: never through the log, so it's neither replayed nor seen by
