@@ -22,9 +22,18 @@ interface Props {
   onNavigate: (section: SandboxSection) => void;
   // Live one-line summary per section, keyed by section id (slice 03).
   summaries?: Partial<Record<SandboxSection, string>>;
+  /** Sections needing attention, mapped to why. Renders a marker beside the
+   *  title so a problem is findable from any section, not only the one that
+   *  happens to be open. */
+  warnings?: Partial<Record<SandboxSection, string>>;
 }
 
-export function SandboxSectionNav({ active, onNavigate, summaries }: Props) {
+export function SandboxSectionNav({
+  active,
+  onNavigate,
+  summaries,
+  warnings,
+}: Props) {
   return (
     <nav
       aria-label="Sandbox sections"
@@ -35,6 +44,7 @@ export function SandboxSectionNav({ active, onNavigate, summaries }: Props) {
           key={entry.section}
           title={entry.title}
           summary={summaries?.[entry.section]}
+          warning={warnings?.[entry.section]}
           active={entry.section === active}
           onClick={() => onNavigate(entry.section)}
         />
@@ -46,11 +56,13 @@ export function SandboxSectionNav({ active, onNavigate, summaries }: Props) {
 function SectionNavItem({
   title,
   summary,
+  warning,
   active,
   onClick,
 }: {
   title: string;
   summary?: string;
+  warning?: string;
   active: boolean;
   onClick: () => void;
 }) {
@@ -63,7 +75,17 @@ function SectionNavItem({
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
     >
-      <span className="text-sm font-medium text-foreground">{title}</span>
+      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        {title}
+        {warning && (
+          <span
+            role="img"
+            aria-label={warning}
+            title={warning}
+            className="size-1.5 shrink-0 rounded-full bg-warning"
+          />
+        )}
+      </span>
       <span className="truncate text-sm text-muted-foreground">
         {summary ?? "—"}
       </span>

@@ -138,6 +138,39 @@ export function useResolvedHarnessConfig(
   };
 }
 
+/**
+ * Whether the model this sandbox is set to is provably not offered any more.
+ *
+ * One place, because two surfaces render it and a second copy of this reasoning
+ * would eventually disagree with the first. Deliberately conservative on three
+ * counts, each of which withholds a warning rather than risk a false one:
+ *
+ * - Only while the sandbox is *not* operable. A running pod resolved a model
+ *   for itself, so the live read is the truth and this recording is history.
+ * - Only when the recorded catalog was observed against the model now saved
+ *   (`modelAtDiscovery === model`). Once those drift — a model applied after
+ *   the list was read, or a list that outlived a failed re-read — the
+ *   comparison proves nothing.
+ * - Only when a catalog was recorded at all; a null one is "never asked".
+ */
+export function useStaleModel(agentId: string | null): {
+  stale: boolean;
+  model: string | null;
+} {
+  const operable = useIsAgentOperable(agentId);
+  const { data } = useHarnessConfigSnapshot(agentId);
+  const snapshot = data?.snapshot;
+  const model = snapshot?.model ?? null;
+  if (operable || !snapshot || !model || !snapshot.availableModels) {
+    return { stale: false, model };
+  }
+  if (snapshot.modelAtDiscovery !== model) return { stale: false, model };
+  return {
+    stale: !snapshot.availableModels.some((c) => c.value === model),
+    model,
+  };
+}
+
 export function useApplyHarnessConfig() {
   return useMutation({
     ...trpc.harnessConfig.set.mutationOptions(),

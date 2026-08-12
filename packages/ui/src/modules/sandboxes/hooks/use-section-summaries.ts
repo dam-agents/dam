@@ -6,6 +6,7 @@ import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
 } from "../../agents/api/harness-config.js";
+import { useStaleModel } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import { useSkillsState } from "../../agents/api/skills.js";
 import {
@@ -22,6 +23,11 @@ import { useSchedules } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
+type SectionWarnings = Partial<Record<SandboxSection, string>>;
+
+/** Why the Setup section is flagged. One string, because the nav renders it as
+ *  the marker's accessible name and its tooltip. */
+const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 
 /** First `max` names, with a "+N more" tail; undefined when the list is empty
  *  so the nav falls back to its neutral placeholder. */
@@ -37,7 +43,10 @@ function formatNameList(names: string[], max = 2): string | undefined {
  * cheap list queries used elsewhere — no pod-waking calls, and everything
  * degrades gracefully to an omitted line while the agent is asleep.
  */
-export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
+export function useSectionSummaries(agent: AgentView | null): {
+  summaries: SectionSummaries;
+  warnings: SectionWarnings;
+} {
   const { data: templates = [] } = useTemplates();
   const { data: apps = [] } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
@@ -67,6 +76,8 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     [apps],
   );
 
+  const staleModel = useStaleModel(agent?.id ?? null);
+
   const setup = useMemo(() => {
     if (!agent) return undefined;
     const lookup: SandboxSubtitleLookup = {
@@ -74,8 +85,11 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
       connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
     };
     const { harness, provider } = sandboxSubtitleParts(agent, lookup);
-    return [harness, provider, modelName].filter(Boolean).join(", ");
-  }, [agent, templates, apps, modelName]);
+    const base = [harness, provider, modelName].filter(Boolean).join(", ");
+    // The suffix rides on the model it qualifies, so the line reads as one
+    // fact rather than a summary with a warning bolted on.
+    return staleModel.stale ? `${base} · not offered` : base;
+  }, [agent, templates, apps, modelName, staleModel.stale]);
 
   const connections = useMemo(() => {
     // Providers surface in the Setup line; app grants fold into provider
@@ -145,12 +159,15 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   }, [monthSpend]);
 
   return {
-    setup,
-    connections,
-    channels: channelsSummary,
-    skills,
-    schedules: schedulesSummary,
-    artifacts: artifactsSummary,
-    usage: usageSummary,
+    summaries: {
+      setup,
+      connections,
+      channels: channelsSummary,
+      skills,
+      schedules: schedulesSummary,
+      artifacts: artifactsSummary,
+      usage: usageSummary,
+    },
+    warnings: staleModel.stale ? { setup: STALE_MODEL_WARNING } : {},
   };
 }

@@ -67,6 +67,7 @@ export function SkillsStoppedPanel({
   visibilityBySource,
   scannedAtBySource,
   addSourceButton,
+  callout,
   comingUp,
   onStart,
   onRescan,
@@ -81,6 +82,9 @@ export function SkillsStoppedPanel({
   scannedAtBySource: Record<string, string>;
   /** The "Add source" control — sources stay editable while stopped. */
   addSourceButton: ReactNode;
+  /** Sits above the snapshot notice: a condition of the sandbox itself, which
+   *  outranks a note about how fresh this page's data is. */
+  callout?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
@@ -88,6 +92,7 @@ export function SkillsStoppedPanel({
 }) {
   return (
     <div className="flex flex-col gap-8">
+      {callout && <div className="-mb-4">{callout}</div>}
       <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted px-4 py-3 text-sm">
         <Information
           size={16}

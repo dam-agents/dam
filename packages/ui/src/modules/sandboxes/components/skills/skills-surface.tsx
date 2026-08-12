@@ -8,7 +8,10 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
-import { useResolvedHarnessConfig } from "../../../agents/api/harness-config.js";
+import {
+  useResolvedHarnessConfig,
+  useStaleModel,
+} from "../../../agents/api/harness-config.js";
 import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
@@ -21,6 +24,7 @@ import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
+import { StaleModelCallout } from "./stale-model-callout.js";
 import {
   StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
@@ -57,6 +61,7 @@ export function SkillsSurface({
   // `hasRun: false` is the one honest signal that no snapshot is even possible
   // — distinct from a snapshot that happens to be empty.
   const { hasRun } = useResolvedHarnessConfig(agentId);
+  const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
   // Ephemeral filter over data this component already holds. Not URL-owned:
@@ -127,6 +132,19 @@ export function SkillsSurface({
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
       addSourceButton={addSourceButton}
+      callout={
+        staleModel.stale && staleModel.model ? (
+          <StaleModelCallout
+            model={staleModel.model}
+            comingUp={!!comingUp}
+            onStartAndFix={() => {
+              if (!agentId) return;
+              wakeAgent.wake(agentId);
+              navigateToSandboxHome(agentId, "setup");
+            }}
+          />
+        ) : undefined
+      }
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}
       onRescan={(src) => void surface.refreshSource(src.id)}
