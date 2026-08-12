@@ -243,7 +243,9 @@ export function SkillsSurface({
                 setOpenModal({ kind: "render", source, skill })
               }
               onAddSets={() => setOpenModal({ kind: "add-sets" })}
-              onToggleAll={(src, on) => void toggleAllWithConfirm(src, on)}
+              onToggleAll={(src, on, scope) =>
+                void toggleAllWithConfirm(src, on, scope)
+              }
               onRemove={(src) => void removeSourceWithConfirm(src)}
               onManageConnections={
                 agentId

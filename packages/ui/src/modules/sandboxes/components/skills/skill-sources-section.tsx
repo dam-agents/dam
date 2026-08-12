@@ -34,7 +34,7 @@ export function SkillSourcesSection({
   action: ReactNode;
   onOpenSkill: (source: SkillSource, skill: Skill) => void;
   onAddSets: () => void;
-  onToggleAll: (source: SkillSource, on: boolean) => void;
+  onToggleAll: (source: SkillSource, on: boolean, scope?: Skill[]) => void;
   onRemove: (source: SkillSource) => void;
   onManageConnections: (() => void) | undefined;
 }) {
@@ -45,6 +45,7 @@ export function SkillSourcesSection({
     loadingBySource,
     errorBySource,
     scannedAtBySource,
+    visibilityBySource,
     stateLoaded,
     installedRef,
     busyKey,
@@ -89,6 +90,7 @@ export function SkillSourcesSection({
               loading={!!loadingBySource[src.id]}
               error={errorBySource[src.id] ?? null}
               scannedAt={scannedAtBySource[src.id]}
+              visibility={visibilityBySource[src.id]}
               installedRef={installedRef}
               busyKey={busyKey}
               disabled={!agentId || isError}
@@ -100,7 +102,7 @@ export function SkillSourcesSection({
               onRemove={() => onRemove(src)}
               onOpenSkill={(skill) => onOpenSkill(src, skill)}
               suppressedNames={suppressedBySource.get(src.id)}
-              onToggleAll={(on) => onToggleAll(src, on)}
+              onToggleAll={(on, scope) => onToggleAll(src, on, scope)}
               bulkBusy={busySourceId === src.id}
               onManageConnections={onManageConnections}
             />

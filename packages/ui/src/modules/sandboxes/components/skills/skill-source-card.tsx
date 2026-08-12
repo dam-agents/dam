@@ -3,12 +3,16 @@ import {
   ChevronUp,
   Launch,
   OverflowMenuHorizontal,
+  Renew,
+  Time,
+  TrashCan,
   Warning,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -31,6 +35,46 @@ import { SkillRowsSkeleton } from "./skills-skeleton.js";
 function repoLabel(source: SkillSource): string {
   const base = repoSlug(source.gitUrl);
   return source.path ? `${base} · ${source.path}` : base;
+}
+
+/** When the list was last read, and the control to read it again. Both live in
+ *  one place because the button's only job is to move the timestamp — while a
+ *  scan is in flight the pair collapses to a single "Scanning…" line, so the
+ *  card never offers a refresh that is already happening. */
+function ScanFreshness({
+  scannedAt,
+  scanning,
+  onRescan,
+}: {
+  scannedAt: string;
+  scanning: boolean;
+  onRescan: () => void;
+}) {
+  if (scanning) {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+        <Spinner size={13} /> Scanning…
+      </span>
+    );
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+      <Time size={13} />
+      <span title={formatTimestamp(scannedAt)}>
+        scanned {timeAgo(scannedAt)}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Re-scan this source"
+        tooltip="Re-scan this source"
+        onClick={onRescan}
+        className="text-muted-foreground"
+      >
+        <Renew size={14} />
+      </Button>
+    </span>
+  );
 }
 
 /** Why a source's scan failed: the cause on one line, the fix beneath it. Both
@@ -71,11 +115,12 @@ function SourceError({
 }
 
 /**
- * A single Skill Source rendered as a card: header (name · `N of M on` · repo
- * URL · kebab) over its skill rows. Enabled skills sort to the top and the
- * available ones collapse under an "Expand all" / "Hide available" control.
- * The kebab administers the source (re-scan / view repo / remove); a re-scan
- * shows a header spinner while the rows stay put.
+ * A single Skill Source rendered as a card: header (name · `N of M on` ·
+ * visibility · repo URL, then freshness, bulk toggle and kebab) over its skill
+ * rows. Enabled skills sort to the top and the available ones collapse under a
+ * "Show N more available" / "Hide available" control. The kebab administers the
+ * source (re-scan / view repo / remove); a re-scan replaces the timestamp with
+ * "Scanning…" while the rows stay put.
  */
 export function SkillSourceCard({
   source,
@@ -83,6 +128,7 @@ export function SkillSourceCard({
   loading,
   error,
   scannedAt,
+  visibility,
   installedRef,
   busyKey,
   disabled,
@@ -112,6 +158,9 @@ export function SkillSourceCard({
    *  until its first successful scan. Rendered as "scanned X ago", and hidden
    *  while errored so we never date a list the user can see failed. */
   scannedAt?: string;
+  /** Whether the scan proved the repo public or private; absent when nothing
+   *  proved it, which must render no badge rather than an assumed one. */
+  visibility?: "public" | "private";
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
@@ -142,9 +191,10 @@ export function SkillSourceCard({
    *  deliberately keeps counting the whole source: it states a fact about the
    *  source, not about the filter. */
   filteredNames?: ReadonlySet<string> | null;
-  /** Turn every skill in this source on or off in one action. `on` is what the
-   *  control will do, so the caller never has to re-derive it. */
-  onToggleAll?: (on: boolean) => void;
+  /** Turn a set of this source's skills on or off in one action. `on` is what
+   *  the control will do, so the caller never has to re-derive it; `scope` is
+   *  the rows it acts on, absent when that is the whole source. */
+  onToggleAll?: (on: boolean, scope?: Skill[]) => void;
   /** A bulk action is in flight for this source — the whole card is working,
    *  which the per-row `busyKey` cannot express. */
   bulkBusy?: boolean;
@@ -180,7 +230,6 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const allEnabled = list.length > 0 && enabled.length === list.length;
   const filtering = filteredNames != null;
   const visible = filtering
     ? sorted.filter((s) => filteredNames.has(s.name))
@@ -188,12 +237,20 @@ export function SkillSourceCard({
       ? enabled
       : sorted;
 
+  // What the bulk button acts on: the whole source normally, and exactly the
+  // rows a search left on screen while one is active. Its label counts this
+  // list, so the promise and the action can't drift apart.
+  const bulkList = filtering ? visible : list;
+  const bulkAllOn =
+    bulkList.length > 0 &&
+    bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
+
   // Non-user sources (Seed List / template) are protected from deletion.
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
     <Card className={cn(readOnly && "bg-muted")}>
-      <div className="flex items-center gap-2 px-4 py-3">
+      <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[15px] font-semibold text-foreground">
@@ -204,40 +261,56 @@ export function SkillSourceCard({
                 {enabled.length} of {list.length} on
               </span>
             )}
+            {/* Only ever "Private", never "Public": the badge marks the case
+                worth knowing about, and an unproven visibility must stay
+                unlabelled rather than default to reassuring. */}
+            {visibility === "private" && (
+              <Badge
+                variant="template"
+                className="shrink-0"
+                title="Only readable through this sandbox's GitHub connection"
+              >
+                Private
+              </Badge>
+            )}
           </div>
-          <p className="truncate text-sm text-muted-foreground">
+          <p className="truncate font-mono text-xs text-muted-foreground">
             {repoLabel(source)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {/* Names what it will do, never the current state. Hidden while a
-              search filter is active: a control that says "all" beside four
-              visible rows out of twenty-two is a trap, and narrowing it to the
-              matches would be a different, unasked-for action. */}
-          {onToggleAll && !readOnly && !filtering && loaded && !error && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={disabled || bulkBusy || list.length === 0}
-              onClick={() => onToggleAll(!allEnabled)}
-            >
-              {bulkBusy && <Spinner size={13} />}
-              {allEnabled ? "Disable all" : "Enable all"}
-            </Button>
-          )}
           {/* This label re-renders only because the surface's 5s installed-state
               poll hands back a fresh array identity. Memoizing this card, or
               moving that poll to react-query with structural sharing, freezes
               it at whatever it said on mount — give it its own tick first. */}
           {!error && scannedAt && (
-            <span
-              className="shrink-0 text-sm text-muted-foreground"
-              title={formatTimestamp(scannedAt)}
-            >
-              scanned {timeAgo(scannedAt)}
-            </span>
+            <ScanFreshness
+              scannedAt={scannedAt}
+              scanning={loading}
+              onRescan={onRescan}
+            />
           )}
-          {loading && <Spinner size={15} />}
+          {!scannedAt && loading && <Spinner size={15} />}
+          {/* Names what it will do, never the current state — including how
+              many rows it will touch once a search has narrowed the card, so
+              "all" can never mean twenty-two rows beside four visible ones. */}
+          {onToggleAll && !readOnly && loaded && !error && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disabled || bulkBusy || bulkList.length === 0}
+              onClick={() =>
+                onToggleAll(!bulkAllOn, filtering ? visible : undefined)
+              }
+            >
+              {bulkBusy && <Spinner size={13} />}
+              {filtering
+                ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
+                : bulkAllOn
+                  ? "Disable all"
+                  : "Enable all"}
+            </Button>
+          )}
           {/* Source administration (re-scan / view repo / remove) is
               account-scoped and pod-independent, so it stays available even
               while the agent is stopped. */}
@@ -264,7 +337,8 @@ export function SkillSourceCard({
               </DropdownMenuItem>
               {canRemove && (
                 <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                  Remove source
+                  <TrashCan size={14} />
+                  <span className="flex-1">Remove source</span>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -312,12 +386,17 @@ export function SkillSourceCard({
         })}
 
       {loaded && !error && collapsible && !filtering && (
+        // Counts what it will reveal rather than saying "expand all": the
+        // number is the reason to click, and it is the one thing a collapsed
+        // card cannot show you.
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}
-          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="flex w-full items-center justify-center gap-1 border-t border-border px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          {expanded ? "Hide available" : "Expand all"}
+          {expanded
+            ? "Hide available"
+            : `Show ${available.length} more available`}
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}

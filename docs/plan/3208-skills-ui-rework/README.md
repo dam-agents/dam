@@ -112,6 +112,15 @@ description before the plan folder is deleted. Seeded entries:
 
 Add rows as new deviations surface. Never silently diverge.
 
+**Plan corrections.** Slice 03's plan said the scan dispatch maps
+straight onto visibility: "public-archive scanner → `public`; agent-runtime pod
+scan → `private`". That is wrong for a non-GitHub host, which never consults the
+public archive and always answers from the pod — it would badge a *public*
+GitLab repo `Private`. Shipped instead: the pod branch proves `private` only
+when the archive was actually asked and returned 404, so a non-GitHub source
+stays unknown and renders no badge. Verified on the dev cluster's
+`Non-GitHub (gitlab)` source.
+
 **Not deviations — prototype bugs.** The prototype's `doSearch` toggles rows,
 show-more hints and groups, and never inspects source cards. A card matching
 nothing therefore keeps its header, while a query matching nothing *anywhere*
@@ -170,7 +179,7 @@ the only durable record besides memory. File only if you want them tracked.
 |----|-------|-------|------------|
 | 01 ✅ | Page shell and grouping | Group order, section headers, counts line, search row, drift banner placement | — |
 | 02 ✅ | Created-here rows | Name-only rows, badge restyle, publish → kebab, Track from | 01 |
-| 03 | Source cards | Header layout, scanning state, row density, expand control, error restyle, `visibility` field | 01 |
+| 03 ✅ | Source cards | Header layout, scanning state, row density, expand control, error restyle, `visibility` field | 01 |
 | 04 | Set modals restyle | Save-as-set + Add-sets visuals per prototype | 01 |
 | 05 | Skill detail drawer | Unified drawer: header toggle, chips, file strip, footer gating | 02 |
 | 06 | Stopped state | Snapshot notice, Skills-at-last-run chips, live sources list | 03 |

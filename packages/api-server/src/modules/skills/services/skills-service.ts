@@ -297,6 +297,13 @@ interface SourceScan {
    *  be served an `agent`-scoped entry, so the branch that produced the list is
    *  also the access level it was read with. */
   viaPod: boolean;
+  /** Whether the repo is public, when the dispatch proves it. The public
+   *  archive serves only public repos, so an answer from it proves `public`,
+   *  and falling through its 404 into the pod proves `private`. Undefined for
+   *  a host the archive was never asked about (non-GitHub): the pod answers
+   *  those regardless of visibility, so `viaPod` alone would report a public
+   *  GitLab repo as private. */
+  visibility?: "public" | "private";
 }
 
 /**
@@ -389,7 +396,12 @@ async function runScanForSource(
   // works in every connection state (no app configured, not Connected,
   // not granted, fully granted) because api-server has direct internet
   // egress — it never touches the agent pod's per-grant gating.
+  // Whether the archive was consulted at all — the only thing that makes the
+  // pod branch below evidence of a private repo rather than merely of a host
+  // the archive doesn't serve.
+  let archiveAsked = false;
   if (detectHost(src.gitUrl)) {
+    archiveAsked = true;
     try {
       const { skills, scannedAt } = await deps.scanSource(
         { kind: "shared" },
@@ -397,7 +409,7 @@ async function runScanForSource(
         src.path,
         (gitUrl) => deps.scanPublic(gitUrl, src.path),
       );
-      return { skills, scannedAt, viaPod: false };
+      return { skills, scannedAt, viaPod: false, visibility: "public" };
     } catch (err) {
       if (!(err instanceof PublicArchiveNotFoundError)) throw err;
       // 404 → repo is private (or nonexistent). Only the authenticated
@@ -436,7 +448,12 @@ async function runScanForSource(
       src.path,
       (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
     );
-    return { skills, scannedAt, viaPod: true };
+    return {
+      skills,
+      scannedAt,
+      viaPod: true,
+      visibility: archiveAsked ? "private" : undefined,
+    };
   } catch (err) {
     const verdict = await podGithubVerdict(deps, err, agentId);
     if (!verdict) throw err;
@@ -645,8 +662,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      const { skills, scannedAt } = await scanForSource(deps, src, agentId);
-      return { skills, scannedAt: new Date(scannedAt).toISOString() };
+      const { skills, scannedAt, visibility } = await scanForSource(
+        deps,
+        src,
+        agentId,
+      );
+      return {
+        skills,
+        scannedAt: new Date(scannedAt).toISOString(),
+        visibility,
+      };
     },
 
     async getSkillContent(sourceId: string, name: string, agentId?: string) {

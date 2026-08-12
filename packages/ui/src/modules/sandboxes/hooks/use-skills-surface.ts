@@ -57,6 +57,10 @@ export interface SkillsSurface {
   /** ISO 8601 time each source's list was last read from upstream; absent
    *  until that source's first successful scan. */
   scannedAtBySource: Record<string, string>;
+  /** Whether each source's repo is public, where the scan proved it. Absent
+   *  when nothing did (a non-GitHub host is never checked against the public
+   *  archive), and the card must then badge nothing rather than guess. */
+  visibilityBySource: Record<string, "public" | "private">;
   installed: SkillRef[];
   standalone: LocalSkill[];
   /** Publish records for this agent — drives the "Published" pill. */
@@ -175,6 +179,9 @@ export function useSkillsSurface(
   const [scannedAtBySource, setScannedAtBySource] = useState<
     Record<string, string>
   >({});
+  const [visibilityBySource, setVisibilityBySource] = useState<
+    Record<string, "public" | "private">
+  >({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
   const [standalone, setStandalone] = useState<LocalSkill[]>([]);
   // Set only while the pod is unreachable, when `standalone` came from a
@@ -218,12 +225,15 @@ export function useSkillsSurface(
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
-        const { skills, scannedAt } = await api.skills.listWithScan.query({
-          sourceId,
-          agentId,
-        });
+        const { skills, scannedAt, visibility } =
+          await api.skills.listWithScan.query({ sourceId, agentId });
         setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
         setScannedAtBySource((m) => ({ ...m, [sourceId]: scannedAt }));
+        // Only ever written, never cleared to a default: an unproven
+        // visibility must stay absent so the card badges nothing.
+        if (visibility) {
+          setVisibilityBySource((m) => ({ ...m, [sourceId]: visibility }));
+        }
       } catch (err) {
         setErrorBySource((e) => ({ ...e, [sourceId]: toScanFailure(err) }));
         setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
@@ -710,6 +720,7 @@ export function useSkillsSurface(
     loadingBySource,
     errorBySource,
     scannedAtBySource,
+    visibilityBySource,
     installed,
     standalone,
     publishes,
