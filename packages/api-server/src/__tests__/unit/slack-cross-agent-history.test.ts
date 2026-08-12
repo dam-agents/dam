@@ -5,6 +5,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.ge
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import {
   agentContextBlock,
   formatSlackTs,
@@ -56,6 +57,7 @@ function harness(boundChannelId = "C1") {
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     () => {},
   );
 

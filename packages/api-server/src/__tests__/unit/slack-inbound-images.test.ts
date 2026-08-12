@@ -9,6 +9,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { DomainEvent } from "../../events.js";
@@ -105,6 +106,7 @@ function harness() {
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 
@@ -338,9 +340,10 @@ describe("slack inbound images", () => {
     ).toBe(false);
   });
 
-  it("leaves a genuine non-image attachment alone", async () => {
-    // Documents are a separate, still-open gap: they are not downloaded at all,
-    // so widening the label gate must not start rejecting them noisily.
+  it("never shows a document as a picture", async () => {
+    // A document is handed over as a file instead (slack-inbound-files.test.ts):
+    // what must not happen is a PDF riding the prompt as image bytes, which is
+    // the shape the harness fails to decode.
     const h = harness();
     await h.mentionWithFile({
       bytes: Buffer.from("%PDF-1.7"),
@@ -350,6 +353,5 @@ describe("slack inbound images", () => {
 
     expect(h.imageBlocks()).toHaveLength(0);
     expect(h.notices()).not.toContain("Couldn't use");
-    expect(String(h.prompts[0])).not.toContain("could not be read");
   });
 });

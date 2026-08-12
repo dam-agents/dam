@@ -4,6 +4,7 @@ import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import type { DomainEvent } from "../../events.js";
 import { EventType } from "../../events.js";
@@ -55,6 +56,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 

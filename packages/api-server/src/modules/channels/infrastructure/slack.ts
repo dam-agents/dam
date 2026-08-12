@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
@@ -14,6 +15,14 @@ import {
   classifyInboundAttachment,
   type InboundAttachment,
 } from "../inbound-image.js";
+import {
+  inboundFilePath,
+  mayContainMarkup,
+  wasSentAsImage,
+  MAX_FILE_BYTES,
+  TOTAL_FILE_BYTES_CAP,
+} from "../inbound-file.js";
+import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
   ChannelReaction,
   ChannelReply,
@@ -193,7 +202,8 @@ function ambientGuidance(brand: { name: string }): string {
 
 /** Assemble the framed prompt for a turn: the contract first, then optional
  *  ambient guidance, then injected thread history (fresh sessions only), then
- *  the user's message — carrying any images as content blocks. */
+ *  the user's message — carrying any images as content blocks, and any file
+ *  delivered for this turn as a link to where it now sits in the workspace. */
 function framePrompt(opts: {
   contract: string;
   guidance?: string;
@@ -203,6 +213,8 @@ function framePrompt(opts: {
   contextLegend?: string;
   text: string;
   images: FetchedImage[];
+  /** Files already written into the agent's workspace for this turn. */
+  files?: DeliveredFile[];
 }): string | ContentBlock[] {
   const parts: string[] = [opts.contract];
   if (opts.guidance) parts.push(opts.guidance);
@@ -211,9 +223,36 @@ function framePrompt(opts: {
     parts.push(`<context>\n${opts.context.join("\n")}\n</context>`);
   }
   parts.push(opts.text);
+  const delivered = opts.files ?? [];
+  if (delivered.length > 0) parts.push(renderDeliveredFiles(delivered));
   const text = parts.join("\n\n");
-  if (opts.images.length === 0) return text;
-  return [{ type: "text", text }, ...opts.images.map((i) => i.block)];
+  if (opts.images.length === 0 && delivered.length === 0) return text;
+  return [
+    { type: "text", text },
+    ...opts.images.map((i) => i.block),
+    ...delivered.map(
+      (f): ContentBlock => ({
+        type: "resource_link",
+        uri: `file://${f.path}`,
+        name: f.name,
+        size: f.size,
+        ...(f.contentType ? { mimeType: f.contentType } : {}),
+      }),
+    ),
+  ];
+}
+
+/** Names the turn's files and where they landed. The link blocks carry the same
+ *  paths, but a Slack turn's prompt is machine-framed: saying it in words is
+ *  what ties the files to *this* message, rather than leaving the agent to infer
+ *  that a path it was handed is the thing being asked about. The name is the
+ *  uploader's, so it is flattened to one line — a line per file is what makes
+ *  the block readable, and a newline in a filename would otherwise forge one. */
+function renderDeliveredFiles(files: DeliveredFile[]): string {
+  const list = files
+    .map((f) => `- ${f.name.replace(/\s+/g, " ").trim()} → ${f.path}`)
+    .join("\n");
+  return `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`;
 }
 
 /** A 1:1 DM conversation (Slack `im`) always has an id starting with "D". Used
@@ -228,10 +267,39 @@ export type FetchedImage = {
   meta: { name: string; size: number };
 };
 
-type FetchedFailure = { name: string; reason: string };
+/** A downloaded attachment the agent is handed as a file. The bytes wait here
+ *  until the turn's pod is awake, because writing them is something only a
+ *  running pod can do. */
+export type FetchedFile = {
+  name: string;
+  bytes: Buffer;
+  contentType?: string;
+};
 
-type FetchImagesResult =
-  | { kind: "ok"; images: FetchedImage[]; failures: FetchedFailure[] }
+/** A file that made it into the agent's workspace: the name the sender knows it
+ *  by, and the absolute path it can now be opened from. */
+type DeliveredFile = {
+  name: string;
+  path: string;
+  size: number;
+  contentType?: string;
+};
+
+/** The outcome of handing a turn's files over: what the agent can open, and a
+ *  note about any that never got there. */
+type TurnDelivery = { files: DeliveredFile[]; withheldNote: string };
+
+/** A withheld attachment, and why — `kind` picks the noun the sender's notice
+ *  uses, since "image" would be wrong for a spreadsheet. */
+type FetchedFailure = { name: string; kind: "image" | "file"; reason: string };
+
+type FetchAttachmentsResult =
+  | {
+      kind: "ok";
+      images: FetchedImage[];
+      files: FetchedFile[];
+      failures: FetchedFailure[];
+    }
   | { kind: "cap_exceeded"; totalBytes: number; count: number };
 
 const TOTAL_IMAGE_BYTES_CAP = 30 * 1_000_000;
@@ -258,13 +326,15 @@ function createSemaphore(max: number) {
 
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
-/** Why a downloaded attachment never became a prompt block, in words the
- *  sender can act on. A rejected attachment is worth explaining rather than
- *  dropping: the harness would otherwise hand the model an unreadable blob and
- *  the agent would answer with an internal resize error (#3008). */
-async function unreadableImageCopy(
+/** Why a downloaded attachment never reached the agent, in words the sender can
+ *  act on. A rejected attachment is worth explaining rather than dropping: the
+ *  harness would otherwise hand the model an unreadable blob and the agent
+ *  would answer with an internal resize error (#3008). `noun` is what the
+ *  sender sent — a picture the agent looks at, or a file it opens. */
+async function withheldCopy(
   gw: SlackGateway,
   attachment: Exclude<InboundAttachment, { kind: "image" }>,
+  noun: "image" | "file",
 ): Promise<string> {
   if (attachment.kind === "unreadable") {
     return attachment.retryable
@@ -275,40 +345,52 @@ async function unreadableImageCopy(
   return scopes && !scopes.has("files:read")
     ? "Slack returned a web page instead of the file — this install lacks the " +
         "`files:read` permission, so it cannot download attachments. Reinstall " +
-        "the app with that scope and send the image again."
+        `the app with that scope and send the ${noun} again.`
     : "Slack returned a web page instead of the file, so the agent never saw " +
-        "the image. That usually means the app cannot download attachments in " +
+        `the ${noun}. That usually means the app cannot download attachments in ` +
         "this conversation — check that it is still installed and can read files.";
 }
 
-/** Whether an attachment is worth downloading and letting the bytes judge.
- *  Slack's `mimetype` decides that much, but it is the uploading client's claim,
- *  not a fact — so a generic or absent label with an image extension is taken
- *  seriously too, rather than dropping a real screenshot unread on the strength
- *  of a bad label. Anything else (a PDF, a spreadsheet) is still left alone. */
-const GENERIC_MIME_TYPES = ["application/octet-stream", "binary/octet-stream"];
-
-function mayBeImageAttachment(f: SlackImageFile): boolean {
-  if (f.mimetype?.startsWith("image/")) return true;
-  if (f.mimetype && !GENERIC_MIME_TYPES.includes(f.mimetype)) return false;
-  return /\.(png|jpe?g|gif|webp)$/i.test(f.name ?? "");
+/** Slack's own claims about an attachment, as the shared descriptor the
+ *  image/file fork reads. Both fields are typed as present but Slack omits them
+ *  on some clients. */
+function describeSlackFile(f: SlackImageFile) {
+  return { name: f.name, mimeType: f.mimetype };
 }
 
-async function fetchSlackImages(
+function megabytes(bytes: number): string {
+  return (bytes / 1_000_000).toFixed(1);
+}
+
+/** Download a message's attachments and sort them into what the agent can be
+ *  shown and what it can be handed. Pictures ride the prompt, so they are
+ *  bounded by what a model accepts and are dropped when the bytes turn out not
+ *  to be a picture at all. Everything else is a file: it is delivered whatever
+ *  format it is, and only withheld when the download plainly didn't return the
+ *  file (a messenger serves a sign-in page with a 200) or it is too big to
+ *  write. */
+async function fetchSlackAttachments(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
-): Promise<FetchImagesResult> {
-  const imageFiles = (files ?? []).filter(mayBeImageAttachment);
-  const totalBytes = imageFiles.reduce((sum, f) => sum + (f.size ?? 0), 0);
+): Promise<FetchAttachmentsResult> {
+  const attachments = files ?? [];
+  const pictures = attachments.filter((f) =>
+    wasSentAsImage(describeSlackFile(f)),
+  );
+  const documents = attachments.filter(
+    (f) => !wasSentAsImage(describeSlackFile(f)),
+  );
+  const totalBytes = pictures.reduce((sum, f) => sum + (f.size ?? 0), 0);
   if (totalBytes > TOTAL_IMAGE_BYTES_CAP) {
-    return { kind: "cap_exceeded", totalBytes, count: imageFiles.length };
+    return { kind: "cap_exceeded", totalBytes, count: pictures.length };
   }
 
   const release = await imageFetchSemaphore.acquire();
   try {
     const images: FetchedImage[] = [];
+    const staged: FetchedFile[] = [];
     const failures: FetchedFailure[] = [];
-    for (const f of imageFiles) {
+    for (const f of pictures) {
       try {
         const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
         // A 2xx download is not proof it returned the file, and `image/*`
@@ -327,7 +409,8 @@ async function fetchSlackImages(
           );
           failures.push({
             name: f.name,
-            reason: await unreadableImageCopy(gateway, attachment),
+            kind: "image",
+            reason: await withheldCopy(gateway, attachment, "image"),
           });
           continue;
         }
@@ -342,21 +425,106 @@ async function fetchSlackImages(
       } catch (err) {
         failures.push({
           name: f.name,
+          kind: "image",
           reason: `${formatError(err)}. Try resending.`,
         });
       }
     }
-    return { kind: "ok", images, failures };
+
+    let stagedBytes = 0;
+    /** Why this file doesn't fit, or null. Asked twice per file: of Slack's
+     *  declared size, so 200 MB is refused before it is pulled into memory, and
+     *  of the bytes that actually arrived, because the declared size is the
+     *  uploading client's claim like everything else on the file. */
+    const overCap = (size: number): string | null => {
+      if (size > MAX_FILE_BYTES) {
+        return (
+          `it is ${megabytes(size)} MB, over the ` +
+          `${megabytes(MAX_FILE_BYTES)} MB limit for a file the agent can be handed.`
+        );
+      }
+      if (stagedBytes + size > TOTAL_FILE_BYTES_CAP) {
+        return (
+          `the files on this message add up to more than ` +
+          `${megabytes(TOTAL_FILE_BYTES_CAP)} MB. Send them a few at a time.`
+        );
+      }
+      return null;
+    };
+
+    for (const f of documents) {
+      const declaredTooBig = overCap(f.size ?? 0);
+      if (declaredTooBig) {
+        failures.push({ name: f.name, kind: "file", reason: declaredTooBig });
+        continue;
+      }
+      try {
+        const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
+        const tooBig = overCap(bytes.length);
+        if (tooBig) {
+          failures.push({ name: f.name, kind: "file", reason: tooBig });
+          continue;
+        }
+        const attachment = classifyInboundAttachment(bytes);
+        // A file's format is its own business — the agent opens it with the
+        // tools it opens anything with. Only two verdicts mean the file itself
+        // never arrived: nothing at all, or the markup a messenger answers with
+        // when it won't release a file. Markup is the file when the file *is*
+        // markup, which only its declared type can say.
+        const arrived =
+          bytes.length > 0 &&
+          (attachment.kind !== "web_page" ||
+            mayContainMarkup(describeSlackFile(f)));
+        if (!arrived) {
+          getLogger().warn(
+            {
+              file: f.name,
+              claimedMimeType: f.mimetype,
+              bytes: bytes.length,
+              verdict: bytes.length === 0 ? "empty" : attachment.kind,
+            },
+            "slack.file.unreadable",
+          );
+          failures.push({
+            name: f.name,
+            kind: "file",
+            reason:
+              bytes.length === 0
+                ? "it arrived empty, so the upload didn't complete. Try resending."
+                : await withheldCopy(gateway, { kind: "web_page" }, "file"),
+          });
+          continue;
+        }
+        stagedBytes += bytes.length;
+        staged.push({
+          name: f.name,
+          bytes,
+          ...(f.mimetype ? { contentType: f.mimetype } : {}),
+        });
+      } catch (err) {
+        failures.push({
+          name: f.name,
+          kind: "file",
+          reason: `${formatError(err)}. Try resending.`,
+        });
+      }
+    }
+    return { kind: "ok", images, files: staged, failures };
   } finally {
     release();
   }
 }
 
-/** The accepted images for a turn, plus a line naming any attachment that was
- *  withheld. The note goes into the prompt, not just the sender's notice: an
- *  agent that is asked about a picture it never received would otherwise answer
- *  blind, which reads as a worse failure than saying it couldn't see the file. */
-type TurnImages = { images: FetchedImage[]; withheldNote: string };
+/** A turn's accepted attachments — pictures to show, files to hand over — plus
+ *  a line naming any that was withheld. The note goes into the prompt, not just
+ *  the sender's notice: an agent that is asked about a picture it never received
+ *  would otherwise answer blind, which reads as a worse failure than saying it
+ *  couldn't see the file. */
+type TurnAttachments = {
+  images: FetchedImage[];
+  files: FetchedFile[];
+  withheldNote: string;
+};
 
 function renderWithheldNote(failures: FetchedFailure[]): string {
   if (failures.length === 0) return "";
@@ -368,12 +536,22 @@ function renderWithheldNote(failures: FetchedFailure[]): string {
   );
 }
 
-function renderTurnFiles(images: FetchedImage[]): string {
-  if (images.length === 0) return "";
-  const list = images
-    .map((i) => `${i.meta.name} (${(i.meta.size / 1_000_000).toFixed(1)} MB)`)
-    .join(", ");
-  return `\nTurn included: ${list}.`;
+/** Names what a failed turn went down with, so the sender knows the attachments
+ *  went with it. */
+function renderTurnFiles(attachments: {
+  images: FetchedImage[];
+  files: FetchedFile[];
+}): string {
+  const list = [
+    ...attachments.images.map(
+      (i) => `${i.meta.name} (${megabytes(i.meta.size)} MB)`,
+    ),
+    ...attachments.files.map(
+      (f) => `${f.name} (${megabytes(f.bytes.length)} MB)`,
+    ),
+  ];
+  if (list.length === 0) return "";
+  return `\nTurn included: ${list.join(", ")}.`;
 }
 
 /** Injected history for a fresh session, with each line attributed. Because one
@@ -703,6 +881,11 @@ export function createSlackWorker(
    *  whether the marker does anything is the store's own business, decided
    *  where it is built. */
   attendance: ChannelTurnAttendance,
+  /** Writes the files people attach into the agent's own workspace, so it can
+   *  open them. Required, not optional: an unwired factory would silently
+   *  restore the drop this exists to end — a file would arrive and go nowhere,
+   *  which is indistinguishable from the agent ignoring it. */
+  workspaceFiles: AgentWorkspaceFilesFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   const brandShort = brand.short;
@@ -1012,7 +1195,9 @@ export function createSlackWorker(
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
-    resumePrompt: string | ContentBlock[];
+    /** Built inside the turn, like the fresh prompt: a prompt can carry files
+     *  that had to be written into the pod first, which needs it awake. */
+    buildResumePrompt: () => Promise<string | ContentBlock[]>;
     buildFreshPrompt: () => Promise<string | ContentBlock[]>;
     onWaking?: () => void;
     onImagesDropped?: () => void;
@@ -1058,7 +1243,7 @@ export function createSlackWorker(
       };
       if (existing) {
         try {
-          return await acp.sendPrompt(args.resumePrompt, {
+          return await acp.sendPrompt(await args.buildResumePrompt(), {
             resumeSessionId: existing.sessionId,
             ...sendOpts,
           });
@@ -1091,10 +1276,12 @@ export function createSlackWorker(
     slackUserId: string;
     teamId?: string;
     images: FetchedImage[];
+    files: FetchedFile[];
   }) {
     if (!gateway) return;
     const gw = gateway;
     const { instanceName } = ctx;
+    const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
 
     // The thread/message the reply/react tools target when the agent doesn't
     // echo ids back. Registered inside the turn's `try` below (not here) so a
@@ -1147,21 +1334,45 @@ export function createSlackWorker(
       );
     };
 
+    // Delivered once, whichever prompt ends up carrying them and however many
+    // times the turn is re-run.
+    let delivery: Promise<TurnDelivery>;
+    const deliverFiles = () =>
+      (delivery ??= deliverTurnFiles({
+        agentId: instanceName,
+        conversation: threadKey,
+        files: ctx.files,
+        actor: ctx.slackUserId,
+        onWithheld: (f) =>
+          ephemeral(
+            ctx.channel,
+            ctx.slackUserId,
+            ctx.hasThread ? ctx.threadTs : undefined,
+            `Couldn't use attached file '${f.name}': ${f.reason}`,
+          ),
+      }));
+
     let ghostTurn = false;
     const runTurn = async () => {
-      const resumePrompt = framePrompt({
-        contract,
-        text: ctx.text,
-        images: ctx.images,
-      });
       // The response is not posted — the agent replies via the `reply` tool
       // during the turn. We only need to know the turn completed.
       await runSessionTurn({
         instanceName,
-        threadKey: slackThreadKey(ctx.channel, ctx.threadTs),
+        threadKey,
         legacyThreadKey: ctx.threadTs,
-        resumePrompt,
-        buildFreshPrompt: () => buildThreadPrompt(gw, ctx, contract),
+        buildResumePrompt: async () => {
+          const delivered = await deliverFiles();
+          return framePrompt({
+            contract,
+            text: ctx.text + delivered.withheldNote,
+            images: ctx.images,
+            files: delivered.files,
+          });
+        },
+        buildFreshPrompt: async () =>
+          buildThreadPrompt(gw, ctx, contract, {
+            delivered: await deliverFiles(),
+          }),
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
@@ -1192,10 +1403,10 @@ export function createSlackWorker(
       // Wake timeouts get human copy mapped from the classified cause;
       // everything else keeps the raw path (out of scope here).
       const text = isAgentStoppedError(err)
-        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx.images)}`
+        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
         : isAgentWakeTimeoutError(err)
-          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx.images)}`
-          : `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`;
+          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
+          : `Error: ${formatError(err)}.${renderTurnFiles(ctx)}`;
       await gw.postMessage({
         channel: ctx.channel,
         threadTs: ctx.threadTs,
@@ -1262,7 +1473,7 @@ export function createSlackWorker(
       images: FetchedImage[];
     },
     contract: string,
-    guidance?: string,
+    opts?: { guidance?: string; delivered?: TurnDelivery },
   ): Promise<string | ContentBlock[]> {
     const { lines, hasAgentAuthored } = await getContextMessages(
       gw,
@@ -1273,13 +1484,14 @@ export function createSlackWorker(
     );
     return framePrompt({
       contract,
-      guidance,
+      guidance: opts?.guidance,
       context: lines,
       contextLegend: hasAgentAuthored
         ? historyLegend(await canLookupUsers(gw))
         : undefined,
-      text: ctx.text,
+      text: ctx.text + (opts?.delivered?.withheldNote ?? ""),
       images: ctx.images,
+      files: opts?.delivered?.files ?? [],
     });
   }
 
@@ -1539,14 +1751,14 @@ export function createSlackWorker(
     });
   }
 
-  async function fetchTurnImages(
+  async function fetchTurnAttachments(
     event: SlackMentionEvent,
     slackUserId: string,
-  ): Promise<TurnImages | null> {
+  ): Promise<TurnAttachments | null> {
     if (!gateway) return null;
-    const fetchResult = await fetchSlackImages(gateway, event.files);
+    const fetchResult = await fetchSlackAttachments(gateway, event.files);
     if (fetchResult.kind === "cap_exceeded") {
-      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
+      const mb = megabytes(fetchResult.totalBytes);
       const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
       await ephemeral(
         event.channel,
@@ -1556,16 +1768,86 @@ export function createSlackWorker(
       );
       return null;
     }
-    const { images, failures } = fetchResult;
+    const { images, files, failures } = fetchResult;
     for (const f of failures) {
       await ephemeral(
         event.channel,
         slackUserId,
         event.threadTs,
-        `Couldn't use attached image '${f.name}': ${f.reason}`,
+        `Couldn't use attached ${f.kind} '${f.name}': ${f.reason}`,
       );
     }
-    return { images, withheldNote: renderWithheldNote(failures) };
+    return { images, files, withheldNote: renderWithheldNote(failures) };
+  }
+
+  /** Hand a turn's files to the agent: written into its workspace under the
+   *  conversation they arrived in, then linked from the prompt. This runs inside
+   *  the turn rather than at intake because only a woken pod can be written to,
+   *  and it runs at most once per turn — a resume that fails and re-runs on a
+   *  fresh session must not deliver second copies. A file that can't be
+   *  delivered is reported like an unreadable picture: to the sender where the
+   *  surface has a voice, and always to the agent, so it never answers as though
+   *  it had the file. */
+  async function deliverTurnFiles(opts: {
+    agentId: string;
+    /** The turn's conversation, which the files land in a directory of. */
+    conversation: string;
+    files: FetchedFile[];
+    actor: string;
+    onWithheld?: (failure: FetchedFailure) => Promise<void>;
+  }): Promise<TurnDelivery> {
+    if (opts.files.length === 0) return { files: [], withheldNote: "" };
+    const store = workspaceFiles(opts.agentId);
+    const delivered: DeliveredFile[] = [];
+    const failures: FetchedFailure[] = [];
+    for (const f of opts.files) {
+      try {
+        const path = await store.write({
+          path: inboundFilePath({
+            conversation: opts.conversation,
+            name: f.name,
+            unique: randomUUID().slice(0, 8),
+          }),
+          bytes: f.bytes,
+          ...(f.contentType ? { contentType: f.contentType } : {}),
+        });
+        delivered.push({
+          name: f.name,
+          path,
+          size: f.bytes.length,
+          ...(f.contentType ? { contentType: f.contentType } : {}),
+        });
+        // Anyone the channel admits can hand an agent a file, so who put what
+        // into its workspace belongs in the audit trail.
+        securityLog("info", "channel.file.delivered", {
+          category: "channel",
+          actor: opts.actor,
+          actorKind: "external",
+          surface: "slack",
+          agentId: opts.agentId,
+          result: "success",
+          target: path,
+          detail: { file: f.name, bytes: f.bytes.length },
+        });
+      } catch (err) {
+        getLogger().warn(
+          {
+            agentId: opts.agentId,
+            file: f.name,
+            bytes: f.bytes.length,
+            error: formatError(err),
+          },
+          "slack.file.undelivered",
+        );
+        failures.push({
+          name: f.name,
+          kind: "file",
+          reason: `the agent couldn't be handed it (${formatError(err)}). Try resending.`,
+        });
+      }
+    }
+    for (const f of failures) await opts.onWithheld?.(f);
+    return { files: delivered, withheldNote: renderWithheldNote(failures) };
   }
 
   /** Copy for an inbound message that hit an unbound conversation. Channels
@@ -1607,7 +1889,7 @@ export function createSlackWorker(
       return;
     }
 
-    const fetched = await fetchTurnImages(event, slackUserId);
+    const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
     await relaySharedTurn({
       channel: event.channel,
@@ -1620,6 +1902,7 @@ export function createSlackWorker(
       owner: binding.owner,
       teamId: event.teamId,
       images: fetched.images,
+      files: fetched.files,
       // A 1:1 DM has exactly one human speaker, so labelling the prompt with
       // their Slack mention is redundant — keep the private DM prompt clean.
       speakerLabel: !opts.directMessage,
@@ -1653,6 +1936,7 @@ export function createSlackWorker(
     owner: string;
     teamId?: string;
     images: FetchedImage[];
+    files: FetchedFile[];
     /** Prefix the prompt with the speaker's Slack mention (multi-speaker
      *  channels/group DMs). Defaults to true; a 1:1 DM passes false. */
     speakerLabel?: boolean;
@@ -1701,6 +1985,7 @@ export function createSlackWorker(
       slackUserId: args.slackUserId,
       teamId: args.teamId,
       images: args.images,
+      files: args.files,
     });
   }
 
@@ -1728,6 +2013,7 @@ export function createSlackWorker(
      *  message's own ts, so a multi-message turn can target per message. */
     messages: Array<{ text: string; eventTs: string }>;
     images: FetchedImage[];
+    files: FetchedFile[];
     externalActorId: string;
   }) {
     if (!gateway) return;
@@ -1764,12 +2050,18 @@ export function createSlackWorker(
       })),
     });
     const guidance = ambientGuidance(brand);
-    const resumePrompt = framePrompt({
-      contract,
-      guidance,
-      text,
-      images: args.images,
-    });
+
+    // Read-along turns post nothing, so a file that can't be delivered is told
+    // only to the agent — nobody summoned it, and an ephemeral would ping
+    // someone who never asked.
+    let delivery: Promise<TurnDelivery>;
+    const deliverFiles = () =>
+      (delivery ??= deliverTurnFiles({
+        agentId: args.instanceName,
+        conversation: args.threadKey,
+        files: args.files,
+        actor: args.externalActorId,
+      }));
 
     let ghostTurn = false;
     const runTurn = () =>
@@ -1779,8 +2071,17 @@ export function createSlackWorker(
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
           : {}),
-        resumePrompt,
-        buildFreshPrompt: () =>
+        buildResumePrompt: async () => {
+          const delivered = await deliverFiles();
+          return framePrompt({
+            contract,
+            guidance,
+            text: text + delivered.withheldNote,
+            images: args.images,
+            files: delivered.files,
+          });
+        },
+        buildFreshPrompt: async () =>
           buildThreadPrompt(
             gw,
             {
@@ -1796,7 +2097,7 @@ export function createSlackWorker(
               images: args.images,
             },
             contract,
-            guidance,
+            { guidance, delivered: await deliverFiles() },
           ),
         // Every message in a coalesced batch runs on the one session, so they
         // all link back to the same conversation.
@@ -1872,7 +2173,30 @@ export function createSlackWorker(
     eventTs: string;
     slackUserId: string;
     images: FetchedImage[];
+    files: FetchedFile[];
   };
+
+  /** A coalesced batch's files, up to what one turn may carry. Each message was
+   *  capped on its own way in, but a burst coalesces several of them and their
+   *  bytes are all held in this process until the turn runs — so the batch is
+   *  capped again. The overflow is dropped silently, as an over-cap read-along
+   *  attachment already is: nobody summoned the agent. */
+  function batchFiles(batch: AmbientPendingMessage[]): FetchedFile[] {
+    const kept: FetchedFile[] = [];
+    let bytes = 0;
+    for (const f of batch.flatMap((m) => m.files)) {
+      if (bytes + f.bytes.length > TOTAL_FILE_BYTES_CAP) {
+        getLogger().warn(
+          { file: f.name, bytes: f.bytes.length },
+          "slack.ambient_file.over_batch_cap",
+        );
+        continue;
+      }
+      bytes += f.bytes.length;
+      kept.push(f);
+    }
+    return kept;
+  }
 
   // Ambient traffic is serialized per session and coalesced: messages that
   // arrive while a turn is in flight flush as one multi-message prompt, so a
@@ -1958,6 +2282,7 @@ export function createSlackWorker(
           hasThread: inThread,
           messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
           images: batch.flatMap((m) => m.images),
+          files: batchFiles(batch),
           externalActorId: last.slackUserId,
         });
       }
@@ -2002,11 +2327,12 @@ export function createSlackWorker(
       return;
     }
 
-    // Images ride along when they fit; ambient turns never post error
-    // ephemerals, so oversized or unfetchable attachments just drop — but the
-    // agent is still told, in the prompt, that one was withheld.
-    const fetchResult = await fetchSlackImages(gateway, event.files);
+    // Attachments ride along when they fit; ambient turns never post error
+    // ephemerals, so oversized or unfetchable ones just drop — but the agent is
+    // still told, in the prompt, that one was withheld.
+    const fetchResult = await fetchSlackAttachments(gateway, event.files);
     const images = fetchResult.kind === "ok" ? fetchResult.images : [];
+    const files = fetchResult.kind === "ok" ? fetchResult.files : [];
     const withheldNote =
       fetchResult.kind === "ok" ? renderWithheldNote(fetchResult.failures) : "";
 
@@ -2036,6 +2362,7 @@ export function createSlackWorker(
       eventTs: event.ts,
       slackUserId,
       images,
+      files,
     });
   }
 

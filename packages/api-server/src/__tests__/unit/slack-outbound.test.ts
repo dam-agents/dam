@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import {
   createFakeSlackGateway,
   type FakeSlackChannel,
@@ -60,6 +61,7 @@ function harness(opts: {
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     () => {},
   );
 

@@ -45,12 +45,14 @@ export function ChatInput({
 
   const addFiles = useCallback((files: FileList | File[]) => {
     for (const file of Array.from(files)) {
-      // Mirror the server-side 10 MB cap so oversized files never get
-      // base64-encoded into memory just to fail on upload.
+      // Mirror the server-side cap so oversized files never get base64-encoded
+      // into memory just to fail on upload. The number comes from the cap
+      // itself — quoting a stale one sends people looking for a limit that
+      // isn't there.
       if (file.size > MAX_UPLOAD_BYTES) {
         emitToast({
           kind: "error",
-          message: `${file.name} exceeds 10 MB — skipped`,
+          message: `${file.name} exceeds ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB — skipped`,
         });
         continue;
       }
