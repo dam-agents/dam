@@ -3,6 +3,8 @@ import {
   buildPlatformPromptAcceptedNotification,
   buildPlatformPromptStartedNotification,
   buildPlatformTurnEndedNotification,
+  PROMPT_QUEUE_FULL_CODE,
+  PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
 import { frameDirectTurn, isDirectSurface } from "../domain/direct-turn.js";
@@ -873,10 +875,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     channel: ClientChannel,
     id: JsonRpcId,
     message: string,
+    data?: { code: typeof PROMPT_QUEUE_FULL_CODE },
   ): void {
     sendToChannel(
       channel,
-      JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message } }),
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message, ...(data ? { data } : {}) },
+      }),
     );
   }
 
@@ -1435,7 +1442,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             sendErrorResponse(
               channel,
               frame.id,
-              `prompt queue full for session ${promptSessionId}`,
+              `${PROMPT_QUEUE_FULL_MESSAGE} for session ${promptSessionId}`,
+              { code: PROMPT_QUEUE_FULL_CODE },
             );
             return;
           }

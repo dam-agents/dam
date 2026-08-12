@@ -277,10 +277,9 @@ export function createAcpRelay(
           upstream.on("close", (code, reason) => {
             if (client.readyState !== WebSocket.OPEN) return;
             try {
-              client.close(
-                sanitizeCloseCode(code),
-                reason.toString() || "upstream closed",
-              );
+              // Passed through as-is: a substituted default would reach the
+              // sender as a stated cause for a close that stated none.
+              client.close(sanitizeCloseCode(code), reason.toString());
             } catch {
               client.terminate();
             }

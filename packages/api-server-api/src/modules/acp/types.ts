@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+// --- prompt rejections -----------------------------------------------------
+
+/** `data.code` on the runtime's queue-full rejection. JSON-RPC's application
+ *  range gives one catch-all code for every cause, so the cause rides here. */
+export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
+
+/** The rejection's message stem, shared so neither side can reword it alone —
+ *  older runtimes are recognised by this text, not by the code above. */
+export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
+
 // --- platform/turnEnded ----------------------------------------------------
 
 export const platformTurnEndedParamsSchema = z.object({
