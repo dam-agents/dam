@@ -3,7 +3,8 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 export class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
   /** What the socket said on the way out, when it said anything. The relay
-   *  reports the cause here ("agent not ready: …", "upstream closed"). */
+   *  reports a real cause here ("agent not ready: …", "instance not found")
+   *  and passes an empty reason through rather than inventing one. */
   readonly closeReason: string | null;
   constructor(closeReason: string | null) {
     super(
