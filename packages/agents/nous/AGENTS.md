@@ -292,10 +292,11 @@ list (a "channel type … not available" error means it isn't):
      with 400 — that still means "up"); only a refused connection starts one:
      ```sh
      curl -s -o /dev/null --max-time 2 -X POST http://127.0.0.1:8765/gate -d '{}' || \
-       platform-bg nous-channel-bridge > "$NOUS_CAMPAIGN_PARENT/.bridge.pid"
+       nohup nous-channel-bridge > "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1 &
      ```
-     A race (two launches at once) is harmless: the loser hits the in-use port
-     and exits cleanly.
+     The bridge needs no `platform-bg`: it listens on a port, and the platform
+     never reaps a process something can still connect to. A race (two launches
+     at once) is harmless: the loser hits the in-use port and exits cleanly.
   2. Add a `channels:` block to `campaign.yaml`, with `channel=` set to the bound
      type (`slack` or `telegram`):
      ```yaml

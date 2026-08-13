@@ -39,10 +39,23 @@ export function createOrphanReaper(opts: OrphanReaperOptions): OrphanReaper {
   /** `null` = reachability is unknowable right now, so nothing may be reaped. */
   function candidates(): ProcessEntry[] | null {
     const keep = spared();
-    const orphans = reapableOrphans(readProcessTable(), {
+    const table = readProcessTable();
+
+    // A declared process leads the session `platform-bg` made for it, so that
+    // session is the work: its children are not orphans, but a grandchild whose
+    // parent exited is. Never a child of ours — the harness and every PTY lead a
+    // session too, and one stray declaration must not shield all of it.
+    const keptSessions = new Set(
+      table
+        .filter(
+          (p) => keep.has(p.pid) && p.sid === p.pid && p.ppid !== process.pid,
+        )
+        .map((p) => p.sid),
+    );
+    const orphans = reapableOrphans(table, {
       selfPid: process.pid,
       selfCgroup,
-    }).filter((p) => !keep.has(p.pid));
+    }).filter((p) => !keep.has(p.pid) && !keptSessions.has(p.sid));
     if (orphans.length === 0) return [];
 
     // A process still listening is a service something means to come back to;

@@ -96,7 +96,8 @@ function runCommand(
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
-      // No sweep on exit: a setup command may mean to leave a service running.
+      // No sweep on exit: a setup command that means to leave a service running
+      // declares it with `platform-bg`, which this inherits the env to reach.
       if (code === 0) resolve();
       else reject(new Error(`workspace command exited with code ${code}`));
     });

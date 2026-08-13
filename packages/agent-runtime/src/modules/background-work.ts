@@ -1,19 +1,48 @@
 // One registry for work still running: a session's report, or an agent's declaration.
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import type { BackgroundWorkItem } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../core/document-store.js";
 import { readProcessEntry } from "../core/process-table.js";
 
+/** `""` when unreadable, which disables the check rather than wiping the store —
+ *  and is never persisted, or a later readable boot would look like a new one. */
+let cachedBootId: string | undefined;
+function bootId(): string {
+  try {
+    return (cachedBootId ??= readFileSync(
+      "/proc/sys/kernel/random/boot_id",
+      "utf8",
+    ).trim());
+  } catch {
+    return (cachedBootId ??= "");
+  }
+}
+
+/** Truncated, never rejected: a cap that can fail the request would drop the
+ *  declaration over the length of a label, and the work with it. */
+const advisory = (max: number) =>
+  z
+    .string()
+    .transform((text) => text.slice(0, max))
+    .optional();
+
+const stamp = (): { bootId?: string } => (bootId() ? { bootId: bootId() } : {});
+
 const processSchema = z.object({
   pid: z.number().int().positive(),
   /** Pins the pid against reuse. */
   startTime: z.number().int().nonnegative(),
-  description: z.string().max(200).optional(),
+  description: advisory(200),
   /** uuid-named, so only findable from here. */
-  log: z.string().max(1024).optional(),
+  log: advisory(1024),
 });
 
-const stateSchema = z.object({ processes: z.array(processSchema) });
+const stateSchema = z.object({
+  /** `startTime` counts from boot, so it only pins a pid within one boot. */
+  bootId: z.string().max(64).optional(),
+  processes: z.array(processSchema),
+});
 
 export type BackgroundProcess = z.infer<typeof processSchema>;
 
@@ -77,16 +106,30 @@ export function createBackgroundWorkRegistry(deps: {
       .slice(0, 300);
   }
 
-  /** Prunes what has finished, so liveness needs no retraction. */
+  /** Prunes what has finished, so liveness needs no retraction. Declarations
+   *  from an earlier boot name processes that are gone whatever their pid says. */
   function liveProcesses(): BackgroundProcess[] {
-    const { processes } = store.read();
+    const state = store.read();
+    if (
+      bootId() !== "" &&
+      state.bootId !== undefined &&
+      state.bootId !== bootId()
+    ) {
+      if (state.processes.length > 0)
+        log?.(
+          `dropping ${state.processes.length} declaration(s) from a previous boot`,
+        );
+      store.write({ ...stamp(), processes: [] });
+      return [];
+    }
+    const { processes } = state;
     const kept = processes.filter(
       (p) => readProcessEntry(p.pid)?.startTime === p.startTime,
     );
     if (kept.length !== processes.length) {
       for (const gone of processes.filter((p) => !kept.includes(p)))
         log?.(`declared process ${gone.pid} has finished`);
-      store.write({ processes: kept });
+      store.write({ ...stamp(), processes: kept });
     }
     return kept;
   }
@@ -114,7 +157,7 @@ export function createBackgroundWorkRegistry(deps: {
       if (!running) return false;
       const processes = liveProcesses().filter((p) => p.pid !== entry.pid);
       processes.push({ ...entry, startTime: running.startTime });
-      store.write({ processes });
+      store.write({ ...stamp(), processes });
       log?.(
         `declared process ${entry.pid}` +
           (entry.description ? ` — ${entry.description}` : ""),

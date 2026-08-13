@@ -96,38 +96,52 @@ export function readProcessTable(): ProcessEntry[] {
   return out;
 }
 
-/** Every socket in this netns that something can still connect to, by inode. */
-function listeningSockets(): Map<number, string> | null {
-  const out = new Map<number, string>();
-  let read = false;
+/** A socket table, `""` when the address family is absent, `null` when it exists
+ *  but could not be trusted — every table always prints its header. */
+function socketTable(name: string, header: string): string | null {
+  let text: string;
   try {
-    // SO_ACCEPTCON (0x10000) in the hex Flags column marks a unix listener.
-    for (const line of readFileSync("/proc/net/unix", "utf8").split("\n")) {
-      const f = line.trim().split(/\s+/);
-      if (f.length < 7 || (parseInt(f[3] ?? "", 16) & 0x10000) === 0) continue;
-      out.set(Number(f[6]), f[7] ?? "a unix socket");
-    }
-    read = true;
+    text = readFileSync(`/proc/net/${name}`, "utf8");
+  } catch (err) {
+    const absent = (err as NodeJS.ErrnoException).code === "ENOENT";
+    return absent ? "" : null;
+  }
+  return text.trimStart().startsWith(header) ? text : null;
+}
+
+/** Every socket in this netns that something can still connect to, by inode.
+ *  Each source fails closed on its own: one unreadable table would otherwise
+ *  make everything it holds look unreachable, and reachable is what spares. */
+function listeningSockets(): Map<number, string> | null {
+  // Without /proc/net every family looks absent, which must not read as "no
+  // listeners" — this is what makes the per-family ENOENT above safe.
+  try {
+    readdirSync("/proc/net");
   } catch {
-    // Fall through: tcp alone still answers the question for inet listeners.
+    return null;
+  }
+
+  const out = new Map<number, string>();
+  const unix = socketTable("unix", "Num");
+  if (unix === null) return null;
+  // SO_ACCEPTCON (0x10000) in the hex Flags column marks a unix listener.
+  for (const line of unix.split("\n")) {
+    const f = line.trim().split(/\s+/);
+    if (f.length < 7 || (parseInt(f[3] ?? "", 16) & 0x10000) === 0) continue;
+    out.set(Number(f[6]), f[7] ?? "a unix socket");
   }
   for (const proto of ["tcp", "tcp6"]) {
-    try {
-      for (const line of readFileSync(`/proc/net/${proto}`, "utf8").split(
-        "\n",
-      )) {
-        const f = line.trim().split(/\s+/);
-        // 0A is TCP_LISTEN; an outbound connection is 01 and never qualifies.
-        if (f.length < 10 || f[3] !== "0A") continue;
-        const port = parseInt((f[1] ?? "").split(":")[1] ?? "", 16);
-        out.set(Number(f[9]), `${proto} port ${port}`);
-      }
-      read = true;
-    } catch {
-      // Same: a kernel without ipv6 has no /proc/net/tcp6.
+    const text = socketTable(proto, "sl");
+    if (text === null) return null;
+    for (const line of text.split("\n")) {
+      const f = line.trim().split(/\s+/);
+      // 0A is TCP_LISTEN; an outbound connection is 01 and never qualifies.
+      if (f.length < 10 || f[3] !== "0A") continue;
+      const port = parseInt((f[1] ?? "").split(":")[1] ?? "", 16);
+      out.set(Number(f[9]), `${proto} port ${port}`);
     }
   }
-  return read ? out : null;
+  return out;
 }
 
 /** Which of `pids` something can still reach. `null` = the socket tables were

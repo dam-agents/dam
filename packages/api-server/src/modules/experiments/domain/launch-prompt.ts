@@ -7,9 +7,9 @@ export function buildLaunchPrompt(input: {
   return [
     `Execute the experiment "${name}" and keep the user posted in this session.`,
     "",
-    `1. Run the experiment script at ${scriptPath} as a detached background process, with the environment variable PLATFORM_EXPERIMENT_ID set exactly as shown:`,
+    `1. Run the experiment script at ${scriptPath} as a detached background process, with the environment variable PLATFORM_EXPERIMENT_ID set exactly as shown. \`platform-bg\` returns immediately and declares the run to the platform, so it is neither cleaned up as a leak nor hibernated mid-run:`,
     "",
-    `    setsid nohup env PLATFORM_EXPERIMENT_ID=${experimentId} python3 ${scriptPath} > ${scriptPath}.log 2>&1 &`,
+    `    platform-bg sh -c 'PLATFORM_EXPERIMENT_ID=${experimentId} python3 ${scriptPath} > ${scriptPath}.log 2>&1'`,
     "",
     `2. Confirm it started (check the first lines of ${scriptPath}.log; if it failed to start, report that with the log lines and stop here).`,
     "",

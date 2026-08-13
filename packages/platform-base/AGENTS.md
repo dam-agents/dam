@@ -26,5 +26,8 @@ idle. Start anything meant to outlive the current turn with
 `platform-bg <command> [args...]` instead: it backgrounds the command, tells the
 platform the process is deliberate — which also keeps the sandbox awake until it
 ends — and prints its PID (its output goes to a log file whose path it reports).
-You lose the live output handle when the session ends, so read the log file.
+Pass the actual long-running command, not a script that starts it and exits —
+the platform tracks the process you hand it, so a starter that returns early
+takes the protection with it and the real work is reaped. You also lose the live
+output handle when the session ends, so read the log file.
 

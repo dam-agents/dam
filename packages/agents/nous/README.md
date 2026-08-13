@@ -72,8 +72,9 @@ harness scripts. The chat harness drives `nous` per `AGENTS.md`:
   unique web-safe `run_id` (repo + question, `-2`/`-3` on collision); the target
   repo is cloned into `<run_id>/repo`, never in the pod root. `campaign.yaml`
   always declares `locked_parameters`.
-- **Every run** → launched **auto-approved** as a **background process** (PID in
-  `run.pid`, output in `campaign.log`) so the agent stays conversational and can
+- **Every run** → launched **auto-approved** as a **background process** through
+  `platform-bg` (PID in `run.pid`, log path printed by the wrapper) so the agent
+  stays conversational and can
   poll `nous status` while it runs. Both design/findings gates auto-pass; a bound
   Slack/Telegram channel still receives gate summaries as progress.
 - **Autonomous launch** → when the launch prompt carries an autonomous

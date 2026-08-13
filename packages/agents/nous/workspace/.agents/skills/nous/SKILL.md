@@ -159,8 +159,7 @@ prompts:
 ```bash
 # 2. Run it auto-approved, in the background (see AGENTS.md), and follow progress.
 cd "$dir"
-nohup nous run campaign.yaml --auto-approve --max-iterations 2 > campaign.log 2>&1 &
-echo $! > run.pid
+platform-bg nous run campaign.yaml --auto-approve --max-iterations 2 > run.pid
 nous status "$run_id" --watch
 
 # 3. When it finishes, harvest the findings into the wiki (see "Post-campaign knowledge").
@@ -310,8 +309,8 @@ Notes:
 **Reading liveness (don't be fooled):** `nous status --line` gives phase/iteration;
 for fine-grained progress watch the executor log mtime under `runs/iter-N/` (e.g.
 `runs/iter-N/inputs/executor_log.jsonl`) and the result-file count — they advance
-continuously during EXECUTE_ANALYZE. A backgrounded run's `campaign.log` only
-writes at phase transitions, so it looks frozen mid-phase — don't read "no new log
+continuously during EXECUTE_ANALYZE. A backgrounded run's stdout log (whose path
+`platform-bg` prints) only writes at phase transitions, so it looks frozen mid-phase — don't read "no new log
 lines" as "stuck". The `STUCK` marker is a ~5-min-silence heuristic that fires
 during legitimate long batches: treat it as "look closer", not "it died". Phases
 are long (DESIGN ~10–15 min) — poll infrequently with wide spacing; looking more
@@ -339,7 +338,8 @@ already taken). Bridges in *other* agent pods are isolated — `127.0.0.1` is
 pod-local, and each posts only to its own agent's bound channel.
 
 ```bash
-# Start the shared bridge (idempotent — one per pod):
+# Start the shared bridge (idempotent — one per pod). It needs no platform-bg:
+# it listens on a port, and the platform never reaps a process still listening.
 nohup nous-channel-bridge > "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1 &
 ```
 

@@ -1,6 +1,6 @@
 # Agent runtime
 
-Last verified: 2026-08-11
+Last verified: 2026-08-13
 
 ## Overview
 
@@ -18,6 +18,8 @@ The harness child process runs for the pod's lifetime, not per-connection. Multi
 Each session is an append-only in-memory log (≤2 MB soft cap, with a truncation sentinel for older history). Every channel keeps a per-session cursor; new events are appended to the log and fanned out to engaged channels at or behind the new sequence number. `session/load` is served from the log on cache hit and falls through to the agent's on-disk store on cold start.
 
 `session/resume` is mediated entirely by the runtime — the frame never reaches the harness. On the hot path (cached metadata) the runtime engages the channel, advances its cursor to the log tail, and returns a synthetic response with no replay. On the cold path (no metadata, e.g. after the pod restarts) the runtime parks the request as a waiter and issues its own `session/load` to rehydrate the harness; replay events populate the log without reaching any client, and on completion every parked resume waiter is served from memory. This shields the UI from per-harness capability differences (some harnesses, like `pi-agent`, don't implement `unstable_resumeSession` at all) and from the cold-subprocess problem on which even resume-capable harnesses would fail.
+
+Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
 
 ### Prompt delivery
 
@@ -128,21 +130,33 @@ work on purpose: a campaign running for hours belongs to no session and must
 survive every turn that ends. Such a process is indistinguishable from a leak,
 so the agent says which it is by starting it through the `platform-bg` wrapper
 instead of a bare `nohup`. The wrapper backgrounds the command and registers the
-resulting pid, and the reaper skips what is registered — which covers the whole
-subtree, since the children of a live process are not orphans.
+resulting pid; the sweep then spares that process and everything else in the
+session the wrapper created for it, so an orphaned grandchild of live declared
+work is safe too.
+
+Two limits follow from tracking the process it was handed. The command must *be*
+the work: a starter script that spawns the real job and exits takes the
+declaration with it, and the job is reaped like any other undeclared leftover.
+And a descendant that calls `setsid` leaves the declared session — while its own
+parent lives it is no orphan either way, but once orphaned it is judged on its
+own, and only the listening-socket rule can spare it.
 
 A declaration needs no retraction: liveness is the process itself, so it expires
 when the work ends. It lands in the same registry as
 [reported](#session-inside-the-pod) background work, so it keeps the Agent awake
 too — the idle checker sees a declaration exactly as it sees a report. The
 registry is persisted, since on the VM backend a runtime restart that forgot its
-declarations would hand every running campaign to the reaper.
+declarations would hand every running campaign to the reaper — but only within a
+boot, because a pid pinned by its start time means nothing across a reboot.
 
-Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP (`session/resume` carrying `_meta.platform.mode`), which the runtime merges into its session-metadata store. The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render. There is no cross-client notification; other clients reflect the change on their next `session/list`. The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and calls agent-runtime's `resetSession`, which sends `session/close` to the harness and clears the in-memory log and cursors.
+## Skills surface
 
 Beyond ACP frames, agent-runtime also serves a Bearer-authenticated tRPC surface on the harness port for skill install / uninstall / scan / publish / listLocal. The api-server is the sole caller; the skills-*management* calls wake a hibernated pod through the reachability primitive ([Wake](agent-lifecycle.md#wake)) before reaching it, while the read paths (`state` / `listLocal`) degrade gracefully and never wake. Skill files land on the PVC under the configured Skill Paths and are picked up by the harness on the next session start (no hot-reload). See [skills](skills.md).
 
+## Target model
+
 The **target** lifetime model is single-use Kubernetes Jobs per turn, with a Redis-backed read cache for lightweight queries and a two-tier PVC layout (per-session + shared). Migration is on a parallel track and not blocking. The current prototype uses the persistent runtime described above.
+
 ## `dam-run` — local exec shim
 
 The remote Run-executor machinery (a separate executor pod per `dam-run` invocation, backed by a `Run` CR and a WebSocket relay) was removed. Its model was a second pod writing into the calling agent's live workspace — exactly the shared-writable access that ReadWriteOnce workspace volumes no longer provide — and it had been disabled since the RWO cutover.

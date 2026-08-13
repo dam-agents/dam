@@ -47,7 +47,7 @@ try {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       pid: child.pid,
-      description: argv.join(" "),
+      description: argv.join(" ").slice(0, 200),
       log: logPath,
     }),
     signal: AbortSignal.timeout(5_000),

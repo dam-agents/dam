@@ -27,7 +27,7 @@ export function createGitProtocolClient(): GitProtocolClient {
   return {
     async cloneShallow(url, dest, depth = 50, ref) {
       try {
-        await runProc("git", [
+        await git([
           "clone",
           "--quiet",
           "--no-local",
@@ -48,25 +48,17 @@ export function createGitProtocolClient(): GitProtocolClient {
     },
     async fetchAtSha(url, sha, dest) {
       try {
-        await runProc("git", ["init", "--quiet", dest]);
-        await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
-        await runProc("git", [
-          "-C",
-          dest,
-          "fetch",
-          "--depth",
-          "1",
-          "origin",
-          sha,
-        ]);
-        await runProc("git", ["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
+        await git(["init", "--quiet", dest]);
+        await git(["-C", dest, "remote", "add", "origin", url]);
+        await git(["-C", dest, "fetch", "--depth", "1", "origin", sha]);
+        await git(["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
         return ok(undefined);
       } catch {}
       try {
         await fs.rm(dest, { recursive: true, force: true });
         await fs.mkdir(dest, { recursive: true });
-        await runProc("git", ["clone", "--quiet", "--no-local", url, dest]);
-        await runProc("git", ["-C", dest, "checkout", "--quiet", sha]);
+        await git(["clone", "--quiet", "--no-local", url, dest]);
+        await git(["-C", dest, "checkout", "--quiet", sha]);
         return ok(undefined);
       } catch (e) {
         return err({
@@ -99,6 +91,11 @@ export function createGitProtocolClient(): GitProtocolClient {
   };
 }
 
+// Throwaway clones: git's auto-maintenance would fork a detached repack that
+// outlives the command and leaves the reaper to collect it.
+const git = (args: string[]): Promise<void> =>
+  runProc("git", ["-c", "maintenance.auto=false", ...args]);
+
 async function runProc(cmd: string, args: string[]): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const supervised = spawnSupervised(cmd, args, {
@@ -122,7 +119,7 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
-      // auto-gc forks a repack that keeps old packs mmap'd past the command.
+      // git's network helpers outlive a kill on git, inside git's own session.
       void supervised.terminate();
       if (code === 0) {
         resolve();
