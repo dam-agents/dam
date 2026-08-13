@@ -20,6 +20,16 @@ import {
   type SkillPublishRecord,
 } from "api-server-api";
 
+export interface SkillKey {
+  source: string;
+  name: string;
+}
+
+/** How long a tracked row counts as an install in flight. One sweep interval:
+ *  wide enough for a batch's whole write loop, and a row orphaned by a crash is
+ *  still reaped, one sweep later. */
+const GHOST_MIN_AGE_SECONDS = 60;
+
 export interface AgentSkillsRepository {
   listSkills(agentId: string): Promise<SkillRef[]>;
   upsertSkill(agentId: string, ref: SkillRef): Promise<void>;
@@ -28,7 +38,14 @@ export interface AgentSkillsRepository {
     key: { source: string; name: string },
   ): Promise<void>;
   removeBySource(agentIds: string[], gitUrl: string): Promise<void>;
-  reconcile(agentId: string, presentNames: Set<string>): Promise<void>;
+  /** Tracked rows whose directory is absent from `presentNames` and that are
+   *  old enough for the absence to mean something. A row is written before the
+   *  apply fetches its files, and the bump that tells the pod is a separate
+   *  statement, so a young row is an install in flight rather than a ghost. */
+  listGhosts(agentId: string, presentNames: Set<string>): Promise<SkillKey[]>;
+  /** Deletes exactly these rows, so the caller's evidence and the act cover
+   *  the same set — a row that appeared since is left alone. */
+  reap(agentId: string, ghosts: SkillKey[]): Promise<void>;
 
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
@@ -130,12 +147,24 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         );
     },
 
-    async reconcile(agentId, presentNames) {
+    async listGhosts(agentId, presentNames) {
+      // Tracked refs whose directories vanished from the pod's filesystem
+      // (manual rm, PVC wipe, etc). The filesystem is authoritative for "what
+      // is installed" — spec catches up. The age cut runs in Postgres so the
+      // api-server's clock never enters the comparison.
       const rows = await db
         .select({ name: agentSkills.name, source: agentSkills.source })
         .from(agentSkills)
-        .where(eq(agentSkills.agentId, agentId));
-      const ghosts = rows.filter((r) => !presentNames.has(r.name));
+        .where(
+          and(
+            eq(agentSkills.agentId, agentId),
+            sql`${agentSkills.installedAt} < now() - make_interval(secs => ${GHOST_MIN_AGE_SECONDS})`,
+          ),
+        );
+      return rows.filter((r) => !presentNames.has(r.name));
+    },
+
+    async reap(agentId, ghosts) {
       if (ghosts.length === 0) return;
       await Promise.all(
         ghosts.map((g) =>

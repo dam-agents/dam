@@ -1003,6 +1003,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       // So the gate is read *here*, before the disk list it authorises. Read
       // after, it could clear a reap for an install that completed since the
       // list was taken — the files on disk, the list saying otherwise.
+      // The gate cannot carry that alone — a row is briefly visible at a
+      // version the pod has already applied — so `listGhosts` holds off on a
+      // row young enough to be in that window.
       const gateBefore = await reapGate(deps, agentId);
 
       const local = await deps.runtimeClient.listLocal(agentId, publishedNames);
@@ -1013,7 +1016,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       let installed = tracked;
       const ghosts =
         gateBefore?.applied === true
-          ? tracked.filter((s) => !onDisk.has(s.name))
+          ? await deps.agentSkillsRepo.listGhosts(agentId, onDisk)
           : [];
       if (gateBefore !== null && ghosts.length > 0) {
         // Close the bracket: the row has to be unchanged across the evidence.
@@ -1033,8 +1036,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         // longer exists — re-installing a reaped skill would reproduce that
         // hash and be skipped, which is the failure this path exists to break.
         if (stable && (await bumpForReap(deps, agentId))) {
-          await deps.agentSkillsRepo.reconcile(agentId, onDisk);
-          installed = tracked.filter((s) => onDisk.has(s.name));
+          await deps.agentSkillsRepo.reap(agentId, ghosts);
+          const reaped = new Set(ghosts.map(skillKey));
+          installed = tracked.filter((s) => !reaped.has(skillKey(s)));
         }
       }
 

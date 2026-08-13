@@ -364,9 +364,15 @@ async function write(
       await fs.rename(staged, dst);
       published = true;
     } finally {
-      await fs.rm(staged, { recursive: true, force: true });
+      // Only the restore may affect the outcome. Both sidecars are invisible to
+      // every reader, so failing to remove one leaves nothing the next attempt
+      // won't clear — whereas throwing here would replace the real error, or
+      // fail an install whose files are already published.
+      await fs.rm(staged, { recursive: true, force: true }).catch(leaveSidecar);
       if (published) {
-        await fs.rm(previous, { recursive: true, force: true });
+        await fs
+          .rm(previous, { recursive: true, force: true })
+          .catch(leaveSidecar);
       } else {
         // Failed after the old tree was moved aside — put it back, so a failed
         // update leaves the skill as it was rather than gone.
@@ -542,6 +548,8 @@ async function hashSkillDir(absDir: string): Promise<string> {
 function ignoreMissing(err: unknown): void {
   if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
+
+function leaveSidecar(): void {}
 
 async function assertNoSymlinks(root: string): Promise<void> {
   const stack = [root];
