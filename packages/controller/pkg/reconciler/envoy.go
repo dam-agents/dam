@@ -2,7 +2,6 @@ package reconciler
 
 import (
 	"context"
-	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -425,7 +424,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 }
 
 func hostShort(host string) string {
-	h := sha1.Sum([]byte(host))
+	h := sha256.Sum256([]byte(host))
 	return hex.EncodeToString(h[:])[:8]
 }
 
