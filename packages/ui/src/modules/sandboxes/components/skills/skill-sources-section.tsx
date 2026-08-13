@@ -12,9 +12,7 @@ import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 
 export function SkillSourcesSection({
-  agentId,
   readOnly,
-  isError,
   surface,
   derived,
   action,
@@ -24,9 +22,7 @@ export function SkillSourcesSection({
   onRemove,
   onManageConnections,
 }: {
-  agentId: string | null;
   readOnly: boolean;
-  isError: boolean;
   surface: SkillsSurface;
   derived: SkillsDerivations;
   action: ReactNode;
@@ -46,6 +42,7 @@ export function SkillSourcesSection({
     visibilityBySource,
     stateLoaded,
     installedRef,
+    mutationsDisabled,
     busyKey,
     busySourceId,
     sets,
@@ -98,7 +95,7 @@ export function SkillSourcesSection({
               visibility={visibilityBySource[src.id]}
               installedRef={installedRef}
               busyKey={busyKey}
-              disabled={!agentId || isError || readOnly}
+              disabled={mutationsDisabled}
               stateLoaded={stateLoaded}
               readOnly={readOnly}
               onToggle={surface.toggle}

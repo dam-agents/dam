@@ -1,12 +1,12 @@
 import { Information, Play } from "@carbon/icons-react";
-import type { SkillSource } from "api-server-api";
+import type { ScanFailure, SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
-import { formatTimestamp, timeAgo } from "@/lib/format-time";
+import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { SkillSourceList } from "./skills-source-list.js";
@@ -23,10 +23,12 @@ function Chip({ children }: { children: ReactNode }) {
 
 function SnapshotRow({
   label,
+  note,
   divided,
   children,
 }: {
   label: string;
+  note?: string;
   divided: boolean;
   children: ReactNode;
 }) {
@@ -39,6 +41,11 @@ function SnapshotRow({
     >
       <span className="w-40 shrink-0 text-sm font-medium text-foreground">
         {label}
+        {note && (
+          <span className="block text-xs font-normal text-muted-foreground">
+            {note}
+          </span>
+        )}
       </span>
       <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{children}</div>
     </div>
@@ -46,31 +53,37 @@ function SnapshotRow({
 }
 
 export function SkillsStoppedPanel({
-  capturedAt,
   onCount,
   rows,
   sources,
+  sourcesLoaded,
   visibilityBySource,
   scannedAtBySource,
+  loadingBySource,
+  errorBySource,
   addSourceButton,
   callout,
   comingUp,
   onStart,
   onRescan,
   onRemove,
+  onManageConnections,
 }: {
-  capturedAt: string;
   onCount: number;
-  rows: { label: string; names: string[] }[];
+  rows: { label: string; names: string[]; capturedAt?: string }[];
   sources: SkillSource[];
+  sourcesLoaded: boolean;
   visibilityBySource: Record<string, "public" | "private">;
   scannedAtBySource: Record<string, string>;
+  loadingBySource: Record<string, boolean>;
+  errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
   callout?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
   onRemove: (source: SkillSource) => void;
+  onManageConnections?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-8">
@@ -81,12 +94,10 @@ export function SkillsStoppedPanel({
           className="mt-px shrink-0 text-muted-foreground"
         />
         <p className="min-w-0 flex-1">
-          <span className="font-semibold" title={formatTimestamp(capturedAt)}>
-            Last known configuration, captured {timeAgo(capturedAt)}
-          </span>{" "}
+          <span className="font-semibold">This sandbox is stopped</span>{" "}
           <span className="text-muted-foreground">
-            — the sandbox is stopped, so this is a snapshot rather than live
-            state. Start the sandbox to change its skills.
+            — its skills are read-only until it runs again. Start the sandbox to
+            change them.
           </span>
         </p>
         <Button
@@ -102,13 +113,7 @@ export function SkillsStoppedPanel({
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <SectionLabel>Skills at last run</SectionLabel>
-          <span
-            className="text-sm text-muted-foreground"
-            title={formatTimestamp(capturedAt)}
-          >
-            as of {timeAgo(capturedAt)}
-          </span>
+          <SectionLabel>Skills at next start</SectionLabel>
         </div>
         <Card>
           <SnapshotRow label="On" divided={false}>
@@ -117,7 +122,16 @@ export function SkillsStoppedPanel({
             </span>
           </SnapshotRow>
           {rows.map((row) => (
-            <SnapshotRow key={row.label} label={row.label} divided>
+            <SnapshotRow
+              key={row.label}
+              label={row.label}
+              note={
+                row.capturedAt
+                  ? `recorded ${timeAgo(row.capturedAt)}`
+                  : undefined
+              }
+              divided
+            >
               {row.names.slice(0, MAX_CHIPS).map((name) => (
                 <Chip key={name}>{name}</Chip>
               ))}
@@ -140,14 +154,18 @@ export function SkillsStoppedPanel({
         </div>
         <SkillSourceList
           sources={sources}
+          loaded={sourcesLoaded}
           visibilityBySource={visibilityBySource}
           scannedAtBySource={scannedAtBySource}
+          loadingBySource={loadingBySource}
+          errorBySource={errorBySource}
           onRescan={onRescan}
           onRemove={onRemove}
+          onManageConnections={onManageConnections}
         />
         <p className="mt-2.5 text-sm text-muted-foreground">
-          Sources and their scan times are platform-side, so they stay accurate
-          and editable while stopped.
+          Sources stay editable while stopped. Reading what a private one
+          contains needs the sandbox running.
         </p>
       </section>
     </div>

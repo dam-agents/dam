@@ -32,7 +32,7 @@ export interface SkillsDerivations {
   anyInstalled: boolean;
   drifted: Skill[];
   trackUnavailableNames: ReadonlySet<string>;
-  snapshotRows: { label: string; names: string[] }[];
+  snapshotRows: { label: string; names: string[]; capturedAt?: string }[];
   snapshotOnCount: number;
 }
 
@@ -46,6 +46,7 @@ export function useSkillsDerivations(
     skillsBySource,
     errorBySource,
     standalone,
+    standaloneSnapshot,
     publishes,
     installed,
     installedRef,
@@ -201,11 +202,14 @@ export function useSkillsDerivations(
   }, [publishes, skillsBySource]);
 
   const snapshotRows = useMemo(() => {
-    const rows: { label: string; names: string[] }[] = [];
+    const rows: { label: string; names: string[]; capturedAt?: string }[] = [];
     if (createdHere.length > 0) {
       rows.push({
         label: "Created here",
         names: createdHere.map((s) => s.name),
+        ...(standaloneSnapshot
+          ? { capturedAt: standaloneSnapshot.capturedAt }
+          : {}),
       });
     }
     const byUrl = new Map<string, string[]>();
@@ -226,7 +230,7 @@ export function useSkillsDerivations(
       rows.push({ label: "With the image", names: builtIn.map((s) => s.name) });
     }
     return rows;
-  }, [createdHere, builtIn, installed, sources]);
+  }, [createdHere, builtIn, installed, sources, standaloneSnapshot]);
 
   return {
     q,

@@ -23,12 +23,12 @@ import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
+import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
 import { StaleModelNotice } from "./stale-model-notice.js";
 import {
   StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
-  StandaloneSkillsPlaceholder,
 } from "./standalone-skills-group.js";
 
 export function SkillsSurface({
@@ -65,14 +65,8 @@ export function SkillsSurface({
     toggleAllWithConfirm,
     removeSourceWithConfirm,
   } = useSkillsConfirms(surface, derived);
-  const {
-    sources,
-    standaloneSnapshot,
-    publishes,
-    updatingAll,
-    updateAll,
-    downloadStandalone,
-  } = surface;
+  const { sources, publishes, updatingAll, updateAll, downloadStandalone } =
+    surface;
   const {
     searching,
     totals,
@@ -100,14 +94,20 @@ export function SkillsSurface({
     </Button>
   );
 
-  const stoppedPanel = readOnly && standaloneSnapshot !== undefined && (
+  const manageConnections = agentId
+    ? () => navigateToSandboxHome(agentId, "connections")
+    : undefined;
+
+  const stoppedPanel = (
     <SkillsStoppedPanel
-      capturedAt={standaloneSnapshot.capturedAt}
       onCount={snapshotOnCount}
       rows={snapshotRows}
       sources={sources}
+      sourcesLoaded={surface.sourcesLoaded}
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
+      loadingBySource={surface.loadingBySource}
+      errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
       callout={
         staleModel.stale && staleModel.model ? (
@@ -126,6 +126,7 @@ export function SkillsSurface({
       onStart={() => agentId && wakeAgent.wake(agentId)}
       onRescan={(src) => void surface.refreshSource(src.id)}
       onRemove={(src) => void removeSourceWithConfirm(src)}
+      onManageConnections={manageConnections}
     />
   );
 
@@ -151,16 +152,20 @@ export function SkillsSurface({
       }
     : {};
 
-  const neverRunPanel = readOnly && !configPending && !hasRun && (
+  const neverRunPanel = (
     <SkillsNeverRunPanel
       sources={sources}
+      sourcesLoaded={surface.sourcesLoaded}
       visibilityBySource={surface.visibilityBySource}
       scannedAtBySource={surface.scannedAtBySource}
+      loadingBySource={surface.loadingBySource}
+      errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}
       onRescan={(src) => void surface.refreshSource(src.id)}
       onRemove={(src) => void removeSourceWithConfirm(src)}
+      onManageConnections={manageConnections}
     />
   );
 
@@ -172,40 +177,42 @@ export function SkillsSurface({
         pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
       )}
     >
-      {neverRunPanel ? (
-        neverRunPanel
-      ) : stoppedPanel ? (
-        stoppedPanel
+      {readOnly ? (
+        configPending ? (
+          <SkillSourcesSkeleton />
+        ) : hasRun ? (
+          stoppedPanel
+        ) : (
+          neverRunPanel
+        )
       ) : (
         <>
           {}
-          {!readOnly && (
-            <div className="mb-5">
-              <SkillsSearchHeader
-                query={query}
-                onQueryChange={setQuery}
-                totals={totals}
-                matchCount={matchCount}
-                notice={
-                  drifted.length > 0 ? (
-                    <SkillDriftBanner
-                      drifted={drifted}
-                      busy={updatingAll}
-                      onUpdateAll={() => void updateAll(drifted)}
-                    />
-                  ) : undefined
-                }
-                actions={
-                  <SkillSetActions
-                    canSave={anyInstalled}
-                    previewReady={previewReady}
-                    onAddSets={() => setOpenModal({ kind: "add-sets" })}
-                    onSaveSet={() => setOpenModal({ kind: "save-set" })}
+          <div className="mb-5">
+            <SkillsSearchHeader
+              query={query}
+              onQueryChange={setQuery}
+              totals={totals}
+              matchCount={matchCount}
+              notice={
+                drifted.length > 0 ? (
+                  <SkillDriftBanner
+                    drifted={drifted}
+                    busy={updatingAll}
+                    onUpdateAll={() => void updateAll(drifted)}
                   />
-                }
-              />
-            </div>
-          )}
+                ) : undefined
+              }
+              actions={
+                <SkillSetActions
+                  canSave={anyInstalled}
+                  previewReady={previewReady}
+                  onAddSets={() => setOpenModal({ kind: "add-sets" })}
+                  onSaveSet={() => setOpenModal({ kind: "save-set" })}
+                />
+              }
+            />
+          </div>
 
           <div className="flex flex-col gap-8">
             {shownCreatedHere.length > 0 ? (
@@ -227,16 +234,12 @@ export function SkillsSurface({
                 }
                 trackUnavailableNames={trackUnavailableNames}
               />
-            ) : searching ? null : readOnly ? (
-              <StandaloneSkillsPlaceholder />
-            ) : (
+            ) : searching ? null : (
               <StandaloneSkillsEmptyState />
             )}
 
             <SkillSourcesSection
-              agentId={agentId}
               readOnly={readOnly}
-              isError={isError}
               surface={surface}
               derived={derived}
               action={addSourceButton}
@@ -248,11 +251,7 @@ export function SkillsSurface({
                 void toggleAllWithConfirm(src, on, scope)
               }
               onRemove={(src) => void removeSourceWithConfirm(src)}
-              onManageConnections={
-                agentId
-                  ? () => navigateToSandboxHome(agentId, "connections")
-                  : undefined
-              }
+              onManageConnections={manageConnections}
             />
 
             {}

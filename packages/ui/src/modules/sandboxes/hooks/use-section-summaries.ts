@@ -1,8 +1,6 @@
 import { providerTypeForTemplateId } from "api-server-api";
 import { useMemo } from "react";
 
-import { timeAgo } from "@/lib/format-time";
-
 import type { AgentView } from "../../../types.js";
 import {
   useHarnessConfigCurrent,
@@ -107,8 +105,6 @@ export function useSectionSummaries(agent: AgentView | null): {
     const state = skillsState.data;
     if (!state) return undefined;
     const on = state.installed.length;
-    const capturedAt = state.standaloneSnapshot?.capturedAt;
-    if (capturedAt) return `${on} on · as of ${timeAgo(capturedAt)}`;
     const created = state.standalone.length;
     if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
     return sourceCount === null

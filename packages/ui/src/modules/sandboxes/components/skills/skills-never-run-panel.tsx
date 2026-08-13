@@ -1,5 +1,5 @@
 import { Information, Play } from "@carbon/icons-react";
-import type { SkillSource } from "api-server-api";
+import type { ScanFailure, SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,22 +11,30 @@ import { SkillSourceList } from "./skills-source-list.js";
 
 export function SkillsNeverRunPanel({
   sources,
+  sourcesLoaded,
   visibilityBySource,
   scannedAtBySource,
+  loadingBySource,
+  errorBySource,
   addSourceButton,
   comingUp,
   onStart,
   onRescan,
   onRemove,
+  onManageConnections,
 }: {
   sources: SkillSource[];
+  sourcesLoaded: boolean;
   visibilityBySource: Record<string, "public" | "private">;
   scannedAtBySource: Record<string, string>;
+  loadingBySource: Record<string, boolean>;
+  errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
   onRemove: (source: SkillSource) => void;
+  onManageConnections?: () => void;
 }) {
   const startButton = (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
@@ -76,10 +84,14 @@ export function SkillsNeverRunPanel({
         </div>
         <SkillSourceList
           sources={sources}
+          loaded={sourcesLoaded}
           visibilityBySource={visibilityBySource}
           scannedAtBySource={scannedAtBySource}
+          loadingBySource={loadingBySource}
+          errorBySource={errorBySource}
           onRescan={onRescan}
           onRemove={onRemove}
+          onManageConnections={onManageConnections}
         />
         <p className="mt-2.5 text-sm text-muted-foreground">
           The source list is known before first boot; which of its skills are

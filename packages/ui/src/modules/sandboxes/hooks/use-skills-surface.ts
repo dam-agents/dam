@@ -51,6 +51,7 @@ export interface SkillsSurface {
   standalone: LocalSkill[];
   standaloneSnapshot: SkillsState["standaloneSnapshot"];
   publishes: SkillPublishRecord[];
+  mutationsDisabled: boolean;
   busyKey: string | null;
   busySourceId: string | null;
   updatingAll: boolean;
@@ -624,6 +625,7 @@ export function useSkillsSurface(
     standalone,
     standaloneSnapshot,
     publishes,
+    mutationsDisabled: !agentId || isError || readOnly,
     busyKey,
     busySourceId,
     updatingAll,

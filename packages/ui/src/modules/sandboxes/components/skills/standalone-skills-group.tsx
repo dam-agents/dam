@@ -8,21 +8,6 @@ import { cn } from "@/lib/utils";
 
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
 
-export function StandaloneSkillsPlaceholder() {
-  return (
-    <section>
-      <div className="mb-3">
-        <SectionLabel>Created in this sandbox</SectionLabel>
-      </div>
-      <div className="rounded-lg border border-border bg-muted px-4 py-6">
-        <p className="text-sm text-muted-foreground">
-          Skills created in this sandbox appear here once it's running.
-        </p>
-      </div>
-    </section>
-  );
-}
-
 export function StandaloneSkillsEmptyState() {
   return (
     <section>

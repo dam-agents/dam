@@ -118,7 +118,7 @@ export function SkillsModals({
           visibility={surface.visibilityBySource[open.source.id]}
           installed={ref !== undefined}
           hasDrift={isDrifted(ref, open.skill)}
-          disabled={!agentId}
+          disabled={surface.mutationsDisabled}
           onToggle={() => surface.toggle(open.skill)}
           onUpdate={() => void surface.update(open.skill)}
           onClose={onClose}
