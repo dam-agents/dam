@@ -68,7 +68,6 @@ export function SandboxModelSettings({
   return (
     <ModelSettingsPanel
       agentId={agentId}
-      variant="page"
       draft={draft}
       disabled={!operable}
       headerAction={

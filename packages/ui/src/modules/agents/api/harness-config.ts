@@ -149,19 +149,3 @@ export function useApplyHarnessConfig() {
     },
   });
 }
-
-// Polls whether the agent has applied all pending runtime state. Enabled only
-// while a change is in flight; polls every 800ms until settled.
-export function useHarnessConfigSettled(
-  agentId: string | null,
-  enabled: boolean,
-) {
-  return useQuery({
-    ...trpc.harnessConfig.settled.queryOptions(
-      agentId && enabled ? { agentId } : skipToken,
-    ),
-    refetchInterval: (query) =>
-      enabled && query.state.data?.settled !== true ? 800 : false,
-    retry: false,
-  });
-}

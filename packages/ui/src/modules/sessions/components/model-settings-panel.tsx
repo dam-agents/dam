@@ -1,5 +1,5 @@
 import { Checkmark, ChevronDown } from "@carbon/icons-react";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
 import {
@@ -9,18 +9,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import { queryClient } from "../../../query-client.js";
 import {
-  harnessConfigCurrentKey,
-  useApplyHarnessConfig,
-  useHarnessConfigSettled,
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
-import { Section } from "./config-section.js";
 import {
   SnapshotNote,
   StaleModelCallout,
@@ -33,33 +27,21 @@ interface Choice {
   description?: string | null;
 }
 
-type ModelSettingsVariant = "chat" | "page";
-
 // The agent's persistent model/mode/config default, one picker per option group.
 // Each picker is a compact trigger that opens a menu showing every choice with
-// its description. No optimistic update: the displayed value is the live read,
-// with a "saving" hint until the change settles and the value is re-read in one
-// step. Hidden when no catalog.
-//
-// `variant` swaps the chat-rail chrome for the sandbox-home card; `disabled`
-// renders the pickers read-only (agent asleep) and `headerAction` fills the
-// page header's right slot (e.g. "Start agent to edit"). Chat passes none of
-// these, so its appearance and behavior are unchanged.
-//
-// `draft` hands the values and edits to a caller with its own Submit (the
-// settings page). Without it the panel applies on change, as chat needs.
+// its description. Hidden when no catalog. `draft` holds the edits; the caller's
+// Submit applies them. `disabled` renders the pickers read-only (agent asleep)
+// and `headerAction` fills the header's right slot ("Start agent to edit").
 export function ModelSettingsPanel({
   agentId,
-  variant = "chat",
   disabled = false,
   headerAction,
   draft,
 }: {
   agentId: string | null;
-  variant?: ModelSettingsVariant;
   disabled?: boolean;
   headerAction?: ReactNode;
-  draft?: {
+  draft: {
     valueOf: (field: string) => string | null;
     set: (field: string, value: string | null) => void;
   };
@@ -71,52 +53,10 @@ export function ModelSettingsPanel({
     capturedAt,
     modelsPaired,
   } = useResolvedHarnessConfig(agentId);
-  const apply = useApplyHarnessConfig();
-
-  // `awaitingSettle` is set only after the apply is enqueued, so the settle poll
-  // can't observe a stale "already settled" before our event bumps the outbox.
-  const [saving, setSaving] = useState(false);
-  const [awaitingSettle, setAwaitingSettle] = useState(false);
-  const settled = useHarnessConfigSettled(agentId, awaitingSettle);
-  const settledNow = settled.data?.settled === true;
-  useEffect(() => {
-    if (!awaitingSettle || !settledNow) return;
-    let cancelled = false;
-    void (async () => {
-      if (agentId) {
-        await queryClient.invalidateQueries({
-          queryKey: harnessConfigCurrentKey(agentId),
-        });
-      }
-      if (!cancelled) {
-        setAwaitingSettle(false);
-        setSaving(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [awaitingSettle, settledNow, agentId]);
-  // Give up if it never settles (agent down / slow).
-  useEffect(() => {
-    if (!saving) return;
-    const t = setTimeout(() => {
-      setSaving(false);
-      setAwaitingSettle(false);
-    }, 15_000);
-    return () => clearTimeout(t);
-  }, [saving]);
-
   const catalog = status?.catalog ?? null;
   if (!agentId || !catalog || catalog.options.length === 0) return null;
 
-  const valueOf = (field: string): string | null => {
-    if (draft) return draft.valueOf(field);
-    if (field === "model") return current?.model ?? null;
-    if (field === "mode") return current?.mode ?? null;
-    const v = current?.configOptions[field];
-    return typeof v === "string" ? v : null;
-  };
+  const valueOf = (field: string): string | null => draft.valueOf(field);
 
   // The displayed model, not the settled one, or one Submit could send a model
   // with a mode its own constraints exclude.
@@ -125,45 +65,18 @@ export function ModelSettingsPanel({
     (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
 
   const change = (field: string, value: string | null) => {
-    if (draft) {
-      draft.set(field, value);
-      // One Submit sends the batch, so drop staged values this model forbids.
-      if (field === "model") {
-        const allowed = (value && catalog.modelConstraints?.[value]) || {};
-        for (const group of catalog.options) {
-          if (group.id === "model") continue;
-          const list = allowed[group.id];
-          const staged = draft.valueOf(group.id);
-          if (list && staged && !list.includes(staged)) {
-            draft.set(group.id, null);
-          }
-        }
-      }
-      return;
+    draft.set(field, value);
+    // One Submit sends the batch, so drop staged values this model forbids.
+    if (field !== "model") return;
+    const allowed = (value && catalog.modelConstraints?.[value]) || {};
+    for (const group of catalog.options) {
+      if (group.id === "model") continue;
+      const list = allowed[group.id];
+      const staged = draft.valueOf(group.id);
+      if (list && staged && !list.includes(staged)) draft.set(group.id, null);
     }
-    setSaving(true);
-    const input =
-      field === "model"
-        ? value
-          ? { agentId, model: value }
-          : { agentId, unset: ["model"] }
-        : field === "mode"
-          ? value
-            ? { agentId, mode: value }
-            : { agentId, unset: ["mode"] }
-          : value
-            ? { agentId, configOptions: { [field]: value } }
-            : { agentId, unset: [field] };
-    apply.mutate(input, {
-      onSuccess: () => setAwaitingSettle(true),
-      onError: () => {
-        setSaving(false);
-        setAwaitingSettle(false);
-      },
-    });
   };
 
-  const isPage = variant === "page";
   const groups = catalog.options.map((group) => {
     // Model group uses live-discovered models when available, else the static catalog.
     const source =
@@ -200,7 +113,6 @@ export function ModelSettingsPanel({
         title={group.name}
         choices={choices}
         value={cur}
-        variant={variant}
         disabled={disabled}
         onSelect={(id) => change(group.id, id)}
       />
@@ -208,56 +120,29 @@ export function ModelSettingsPanel({
   });
 
   const note = (
-    <p
-      className={cn(
-        "text-[11px] leading-snug text-muted-foreground",
-        isPage ? "pt-3" : "px-4 py-2.5",
-      )}
-    >
+    <p className="pt-3 text-[11px] leading-snug text-muted-foreground">
       Applies to new sessions. A session that's already running keeps the
       settings it started with — start a new session to use these.
     </p>
   );
 
-  if (isPage) {
-    const fromSnapshot = origin === "snapshot";
-    // Only judge a model against a list observed against that same model.
-    const staleModel =
-      fromSnapshot && current && modelsPaired
-        ? unavailableModel(current)
-        : null;
-    return (
-      <section className="mb-8">
-        {staleModel && <StaleModelCallout model={staleModel} />}
-        <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-          <SectionLabel>Model settings</SectionLabel>
-          {headerAction ?? (saving ? <SavingHint /> : null)}
-        </div>
-        <Callout inset>
-          {fromSnapshot && capturedAt && (
-            <SnapshotNote capturedAt={capturedAt} />
-          )}
-          {groups}
-          {note}
-        </Callout>
-      </section>
-    );
-  }
-
+  const fromSnapshot = origin === "snapshot";
+  // Only judge a model against a list observed against that same model.
+  const staleModel =
+    fromSnapshot && current && modelsPaired ? unavailableModel(current) : null;
   return (
-    <Section title="Model" headerRight={saving ? <SavingHint /> : undefined}>
-      {groups}
-      {note}
-    </Section>
-  );
-}
-
-function SavingHint() {
-  return (
-    <span className="flex items-center gap-1 normal-case tracking-normal font-normal text-muted-foreground">
-      <Spinner size={11} />
-      Saving…
-    </span>
+    <section className="mb-8">
+      {staleModel && <StaleModelCallout model={staleModel} />}
+      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+        <SectionLabel>Model settings</SectionLabel>
+        {headerAction}
+      </div>
+      <Callout inset>
+        {fromSnapshot && capturedAt && <SnapshotNote capturedAt={capturedAt} />}
+        {groups}
+        {note}
+      </Callout>
+    </section>
   );
 }
 
@@ -265,25 +150,18 @@ function OptionGroup({
   title,
   choices,
   value,
-  variant = "chat",
   disabled = false,
   onSelect,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
-  variant?: ModelSettingsVariant;
   disabled?: boolean;
   onSelect: (id: string | null) => void;
 }) {
   const selected = value === null ? null : choices.find((c) => c.id === value);
-  const isPage = variant === "page";
-  const triggerClass = cn(
-    "flex w-full items-center justify-between gap-2 rounded-md border bg-transparent text-foreground transition-colors",
-    isPage
-      ? "h-10 border-input px-4 text-sm"
-      : "h-8 border-border px-3 text-sm",
-  );
+  const triggerClass =
+    "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors";
   const face = (
     <>
       <span className="truncate">{selected?.name ?? "Not set"}</span>
@@ -291,13 +169,7 @@ function OptionGroup({
     </>
   );
   return (
-    <div
-      className={
-        isPage
-          ? "mb-4 last:mb-0"
-          : "border-b border-border last:border-b-0 px-4 py-3"
-      }
-    >
+    <div className="mb-4 last:mb-0">
       <SectionLabel className="mb-1.5 block">{title}</SectionLabel>
       {disabled ? (
         // Static value while read-only: mounting a real trigger would still open
@@ -316,7 +188,6 @@ function OptionGroup({
               className={cn(
                 triggerClass,
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                !isPage && "hover:bg-muted",
               )}
             >
               {face}
