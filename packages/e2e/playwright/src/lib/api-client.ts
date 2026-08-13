@@ -27,6 +27,7 @@ export function createWsApiClient(token: string): {
   const ws = createWSClient({
     url: `${baseUrl.replace(/^http/, "ws")}/api/trpc-ws`,
     connectionParams: { token },
+    retryDelayMs: () => 3_600_000,
   });
   return {
     api: createTRPCClient<AppRouter>({ links: [wsLink({ client: ws })] }),

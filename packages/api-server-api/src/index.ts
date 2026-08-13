@@ -4,7 +4,6 @@ export type { ApiContext, UserIdentity } from "./context.js";
 export { ChannelType, envVarSchema, type EnvVar } from "./modules/shared.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
-export { markTermsProven } from "./trpc.js";
 export type { LiveEventsService } from "./modules/events/types.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
