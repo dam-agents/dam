@@ -18,5 +18,10 @@ export function onTermsStale(): void {
 }
 
 export function isTermsStaleError(error: unknown): boolean {
-  return error instanceof Error && error.message === "terms not accepted";
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "data" in error &&
+    !!(error as { data?: { termsStale?: boolean } }).data?.termsStale
+  );
 }

@@ -8,14 +8,14 @@ import { baseUrl, testUser } from "../../config.js";
 
 const storageStatePath = "./.auth/user.json";
 
-// TEST_OVERVIEW: The auth project in declaration order: the tests that must
+// TEST_OVERVIEW: The auth project in declaration order: the tests that must run before any terms acceptance come first, then the deep-link roundtrip, then the login that persists storage state for every later project.
 
 function trpcError(err: unknown): TRPCClientError<AppRouter> {
   expect(err).toBeInstanceOf(TRPCClientError);
   return err as TRPCClientError<AppRouter>;
 }
 
-// TEST_SCENARIO: Authentication and the pre-consent terms gate on BOTH tRPC
+// TEST_SCENARIO: Authentication and the pre-consent terms gate on BOTH tRPC transports — HTTP and WebSocket — must refuse bad bearers and gate every procedure except terms.* until terms are accepted.
 test("both tRPC doors: bad bearers refused, stale terms gate all but terms.*", async () => {
   await test.step("authn — HTTP door: missing and bad bearers get 401", async () => {
     const missing = await fetch(
@@ -66,14 +66,17 @@ test("both tRPC doors: bad bearers refused, stale terms gate all but terms.*", a
         (e: unknown) => e,
       );
       expect(trpcError(refused).data?.code).toBe("FORBIDDEN");
-      expect(trpcError(refused).message).toBe("terms not accepted");
+      expect(
+        (trpcError(refused).data as { termsStale?: boolean } | undefined)
+          ?.termsStale,
+      ).toBe(true);
     } finally {
       close();
     }
   });
 });
 
-// TEST_SCENARIO: The flow id is deliberately bogus: the picker only
+// TEST_SCENARIO: The flow id is deliberately bogus: the picker only needs to render to prove the deep link survived the login roundtrip and the terms gate (#3107); no real bind flow is required.
 const bindFlowId = "e2e-deep-link-probe";
 const bindDeepLink = `/slack/bind?flow=${bindFlowId}`;
 
@@ -118,7 +121,7 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
   );
 });
 
-// TEST_SCENARIO: On a fresh run the deep-link test above has already
+// TEST_SCENARIO: On a fresh run the deep-link test above has already accepted the terms, so this login may or may not see the terms screen; either way it must end authenticated and persist storage state for the later projects.
 test("login via Keycloak and accept terms", async ({ page }) => {
   wireBrowserDiagnostics(page);
   await page.goto(baseUrl);

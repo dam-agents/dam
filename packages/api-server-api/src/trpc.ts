@@ -11,12 +11,27 @@ function extractScanFailure(cause: unknown): unknown {
   return parsed.success ? parsed.data : undefined;
 }
 
+function isTermsStaleCause(cause: unknown): boolean {
+  return (
+    !!cause &&
+    typeof cause === "object" &&
+    "termsStale" in cause &&
+    (cause as { termsStale: unknown }).termsStale === true
+  );
+}
+
 const tBase = initTRPC.context<ApiContext>().create({
   errorFormatter: ({ shape, error }) => {
     const scanFailure = extractScanFailure(error.cause);
     return {
       ...shape,
-      data: { ...shape.data, ...(scanFailure ? { scanFailure } : {}) },
+      data: {
+        ...shape.data,
+        ...(scanFailure ? { scanFailure } : {}),
+        ...(isTermsStaleCause(error.cause)
+          ? { termsStale: true as const }
+          : {}),
+      },
     };
   },
 });
@@ -31,7 +46,11 @@ const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
   if (path.startsWith("terms.")) return next();
   if (!termsProven.has(ctx)) {
     if (!(await ctx.terms.isAccepted(ctx.user.sub))) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "terms not accepted" });
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "terms not accepted",
+        cause: { termsStale: true },
+      });
     }
     termsProven.add(ctx);
   }
