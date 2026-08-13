@@ -34,6 +34,13 @@ told what this sandbox is for.
    model without its provider connection), and that candidates belong in the
    Artifact Library so runs stay browsable afterwards.
 
+5. **If their goal fits a purpose-built worker, interview before designing.**
+   A goal like "make X faster in repo Y" or "test whether Z helps" is a Nous
+   campaign, and the `dam-experiment` skill's Nous section lists the questions
+   to settle with them first — target repo, metric and pass condition,
+   campaign iterations, seeds, rounds. Ask those *before* proposing stages;
+   a Nous run authored on guessed parameters fails hours in, not at review.
+
 ## Tone
 
 Warm, short, concrete. No headings, no bulleted feature tour, no restating this

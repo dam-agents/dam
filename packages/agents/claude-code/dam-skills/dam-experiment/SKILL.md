@@ -21,8 +21,37 @@ import experiment_sdk as x
 ```
 
 It self-configures from the pod environment. It also carries the full driver
-surface — `x.spawn(...)`, `x.list_images()`, `x.list_connections()`, and the
-`x.s(...)` schema shorthand — so one script both drives and reports.
+surface — `x.spawn(...)`, `x.list_images()`, `x.require_image(...)`,
+`x.list_connections()`, and the `x.s(...)` schema shorthand — so one script
+both drives and reports.
+
+## Choose the worker image FIRST
+
+The worker image decides what the experiment can actually do — it is the
+loop's most consequential choice, so make it before writing any loop, and
+make it *with* the human. Read the catalog and show it to them:
+
+```sh
+python3 -c 'import experiment_sdk as x; [print(i["id"], "-", i.get("description") or i["name"]) for i in x.list_images()]'
+```
+
+Present the ids with their descriptions and ask which the worker should be.
+`claude-code` is the general-purpose worker, not the default answer: several
+entries are **purpose-built for one kind of loop** and doing that loop on
+`claude-code` means reimplementing the tool from scratch inside the worker.
+For instance `nous` runs hypothesis-driven campaigns (plan → build & test →
+analyze → learn against a target repo) and already ships the `nous` CLI, its
+skill, and a gateway-wired model path.
+
+**Never install a framework inside a worker.** No `pip install`, no cloning,
+no building a tool the iteration needs. If a curated image exists for it,
+spawn that image; targets have no unrestricted egress, so the install
+usually fails outright and burns the iteration when it doesn't. If nothing in
+the catalog fits, say so to the human instead of improvising an install.
+
+Pin the choice through `x.require_image(...)` in the declaration section, so a
+wrong id fails at `--plan` while the human is reviewing the design rather
+than at a run's first spawn hours later.
 
 ## Authoring a script
 
@@ -37,6 +66,8 @@ with x.Experiment("prompt-evolver") as exp:
     evaluate = loop.stage("eval", after=produce)
     select = loop.stage("select", after=evaluate)
 
+    # The image the human chose, checked against the catalog while planning.
+    worker = x.require_image("claude-code")
     # Targets start with NOTHING: pass the connection ids they need (a
     # claude-code worker cannot call its model without its credential).
     connections = [c["id"] for c in x.list_connections()]
@@ -47,7 +78,7 @@ with x.Experiment("prompt-evolver") as exp:
             candidate = x.spawn(
                 f"Improve this prompt: {best!r}",
                 x.s({"prompt": "string"}),
-                template="claude-code",
+                template=worker,
                 connections=connections,
             )
         with evaluate.run() as span:
@@ -59,6 +90,9 @@ with x.Experiment("prompt-evolver") as exp:
 
 Rules that matter:
 
+- **The worker image comes from the catalog, never from a guess.** Resolve it
+  with `x.require_image(<id>)` in the declaration section and pass that value
+  as `template=`. Don't hardcode `claude-code` because it is the familiar one.
 - **Spawned targets get only the connections you pass.** No `connections=`
   means no credentials at all — a claude-code target then fails its first
   model call and the invocation hangs until its liveness deadline. Pick the
@@ -76,6 +110,89 @@ Rules that matter:
 - **Use `with Experiment(...)`** so a crash reports `failed` and a clean end
   reports `completed`.
 - Keep the whole experiment in **one file** (it is captured and versioned).
+
+### A purpose-built worker: one Nous campaign per iteration
+
+The same shape with a curated image instead of `claude-code`. The worker
+already *is* the loop's machinery, so the stage is one spawn and your script
+only decides what to try next and records the score.
+
+**Interview the human before authoring a Nous experiment.** A Nous campaign
+pre-registers its own science, and a guessed parameter fails hours in, not at
+`--plan`. Ask — don't default — for:
+
+- **Target repo and research question / hypothesis** — what to optimize, in
+  the human's words.
+- **Primary metric, direction, and pass condition** (e.g. "median
+  speedup ≥ 1.30 in ≥ 8/10 seeds") — the campaign's `ground_truth`; Nous
+  commits to it before running.
+- **Campaign iterations** (`max_iterations` *inside* the worker: rehearsal +
+  confirm is 2–3; a real search is more) and **seeds** for the confirming
+  iteration.
+- **Experiment rounds** (your loop's `max_iterations` — how many campaigns to
+  chain) — total runtime multiplies through, so compute the TTL from these
+  answers rather than assuming one.
+
+Bake the answers into the campaign prompt so the worker doesn't re-decide
+them. How the worker's results are laid out on disk — the stable verdict
+files, per-seed measurements, and what to have it report — is documented in
+[references/nous-evaluator.md](references/nous-evaluator.md); read it before
+writing the spawn prompt or judging a finished campaign.
+
+```python
+import experiment_sdk as x
+
+CAMPAIGN = """Run a Nous campaign, unattended and to completion — no human
+will reply to you. Target repo: {repo}. Hypothesis to test: {hypothesis}.
+Optimize: {metric} (higher is better); pass condition: {pass_condition}.
+Author campaign.yaml yourself with an objective block over that metric,
+max_iterations: {campaign_iters}, seeds: {seeds}, run --auto-approve, and
+stay alive until the campaign is DONE. Then report the objective score from
+best_found.json, the h-main arm status from the last iteration's
+findings.json, and a summary from meta_findings.json."""
+
+with x.Experiment("nous-campaigns") as exp:
+    loop = exp.loop("rounds")
+    campaign = loop.stage("campaign")
+
+    worker = x.require_image("nous")
+    connections = [c["id"] for c in x.list_connections()]
+
+    hypothesis = "..."  # from the interview
+    for round_ in exp.iterations(loop, max_iterations=ROUNDS):
+        with campaign.run() as span:
+            result = x.spawn(
+                CAMPAIGN.format(repo=REPO, hypothesis=hypothesis, metric=METRIC,
+                                pass_condition=PASS_CONDITION,
+                                campaign_iters=CAMPAIGN_ITERS, seeds=SEEDS),
+                x.s({"score": "number", "status": "string", "summary": "string",
+                     "pr_url": "string?"}),
+                template=worker,
+                connections=connections,
+                ttl_ms=TTL_MS,  # computed from the interview, not assumed
+            )
+            span.score = result["score"]
+            span.attrs["summary"] = result["summary"]
+        hypothesis = next_hypothesis(result)  # your own choice of what to try
+```
+
+Three things this example is really teaching:
+
+- **Give a purpose-built worker an autonomous prompt.** Its own instructions
+  (the image's `AGENTS.md`) may default to a conversational, ask-the-human
+  flow. Say plainly that no human will reply and that it must run to
+  completion, or it stalls waiting for an answer nobody sends.
+- **Match the TTL to the real runtime — and know the clock starts at spawn.**
+  `nous`-class work runs for hours; the default liveness deadline is not a
+  promise your loop should lean on. Budget ~30–45 min per campaign iteration,
+  multiply by the iteration count, and add slack: a spawn that queues for
+  compute room spends its deadline waiting. A heavy worker also holds real
+  CPU/memory/disk per target, so keep the fan-out to a handful of arms, not
+  dozens.
+- **Everything on the worker dies with it.** The worker is reaped right after
+  it reports; make the prompt name what to report and which files to publish
+  as artifacts (`report.md`, `meta_findings.json` — see the reference) or the
+  evidence is unrecoverable.
 
 ## Plan, then run — never run the loop yourself
 
