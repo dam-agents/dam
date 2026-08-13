@@ -3,9 +3,9 @@
 The full driver surface for experiment scripts, stdlib-only by design (it is
 baked into every agent image; a dependency would have to be baked too):
 
-- ``spawn`` / ``list_images`` / ``list_connections`` — the Invocation
-  primitive, ported from the JS driver-sdk. Works standalone, no Experiment
-  required.
+- ``spawn`` / ``list_images`` / ``list_connections`` / ``require_image`` — the
+  Invocation primitive, ported from the JS driver-sdk. Works standalone, no
+  Experiment required.
 - ``Experiment`` / ``Stage`` / ``Span`` — declare a skeleton, run the loop,
   report stage-tagged spans (status, score, artifact refs). A ``spawn`` made
   inside a span is attached to it automatically (contextvars).
@@ -47,8 +47,10 @@ __all__ = [
     "Loop",
     "Span",
     "Stage",
+    "UnknownImage",
     "list_connections",
     "list_images",
+    "require_image",
     "s",
     "spawn",
 ]
@@ -65,6 +67,19 @@ _DEFAULT_SPAWN_TIMEOUT_S = 6 * 60 * 60 + 60
 class ExperimentClosed(Exception):
     """The platform rejected a report: the experiment is no longer running
     (stopped, finished, or reaped). The loop should exit promptly."""
+
+
+class UnknownImage(Exception):
+    """``require_image`` was given a template id the catalog doesn't have.
+    Raised at declaration time so ``--plan`` fails while the human is still
+    reviewing the design, not hours into a run's first spawn."""
+
+    def __init__(self, template_id: str, available: list[str]):
+        super().__init__(
+            f'unknown image "{template_id}" — available: {", ".join(sorted(available))}'
+        )
+        self.template_id = template_id
+        self.available = available
 
 
 class InvocationFailed(Exception):
@@ -187,6 +202,24 @@ s.enum = _s_enum  # type: ignore[attr-defined]
 def list_images() -> list[dict[str, Any]]:
     """The image catalog an Invocation may run; pass an ``id`` as template."""
     return _request("GET", "/images")["images"]
+
+
+def require_image(template_id: str) -> str:
+    """Assert the catalog offers ``template_id`` and return it, for use as
+    ``spawn(template=...)``.
+
+    Call this in the declaration section, next to ``list_connections()``: the
+    worker image is the loop's most consequential choice, and in plan mode the
+    loop body never runs, so an id that doesn't exist would otherwise go
+    unnoticed until a run's first spawn. Raises ``UnknownImage`` naming the ids
+    that do exist.
+
+        template = x.require_image("nous")
+    """
+    available = [str(i["id"]) for i in list_images()]
+    if template_id not in available:
+        raise UnknownImage(template_id, available)
+    return template_id
 
 
 def list_connections() -> list[dict[str, Any]]:

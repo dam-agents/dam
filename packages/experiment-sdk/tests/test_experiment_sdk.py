@@ -243,3 +243,33 @@ def test_spawn_without_span_or_experiment(stub):
     body = stub.requests[0][2]
     assert "experimentSpanId" not in body
     assert body["image"] == "some/image:1"
+
+
+# ---- image choice ----------------------------------------------------------------
+
+CATALOG = (
+    200,
+    {
+        "images": [
+            {"id": "claude-code", "name": "Claude Code", "description": "general"},
+            {"id": "nous", "name": "NOUS", "description": "campaigns"},
+        ]
+    },
+)
+
+
+def test_require_image_returns_the_id_when_the_catalog_has_it(stub):
+    stub.routes[("GET", "/images")] = CATALOG
+
+    assert x.require_image("nous") == "nous"
+
+
+def test_require_image_rejects_an_unknown_id_and_names_the_real_ones(stub):
+    stub.routes[("GET", "/images")] = CATALOG
+
+    with pytest.raises(x.UnknownImage) as caught:
+        x.require_image("nous-agent")
+
+    assert caught.value.template_id == "nous-agent"
+    assert caught.value.available == ["claude-code", "nous"]
+    assert "claude-code, nous" in str(caught.value)

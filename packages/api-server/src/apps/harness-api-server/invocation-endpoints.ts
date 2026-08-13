@@ -39,6 +39,27 @@ export function mountInvocationRoutes(
       return c.json({ error: (err as Error).message }, 400);
     }
 
+    // A template id the catalogue doesn't know is a driver-side mistake, not a
+    // server fault: reject it here — naming the ids that do exist — rather than
+    // let `agents.create` raise a bare NOT_FOUND that surfaces as a 500. The
+    // catalogue is the same list `GET /images` served the driver, so the error
+    // and the offer agree.
+    if (body.templateId) {
+      const templates = await deps.templates.list();
+      if (!templates.some((t) => t.id === body.templateId)) {
+        const available = templates
+          .map((t) => t.id)
+          .sort()
+          .join(", ");
+        return c.json(
+          {
+            error: `unknown template "${body.templateId}" — available: ${available}`,
+          },
+          400,
+        );
+      }
+    }
+
     const connections = body.connections ?? [];
     const size =
       body.cpu !== undefined || body.memory !== undefined

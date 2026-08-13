@@ -161,6 +161,19 @@ failure and retries dies too. A loop doing pure local compute exits at its
 next report; the released pin lets the idle checker reclaim a truly silent
 one.
 
+**The worker image is a design-time choice.** Which image a loop spawns decides
+what the experiment can do, so the platform makes the catalogue part of
+designing one rather than something the author must already know: the
+`dam-experiment` skill requires reading `GET /images` (the same catalogue the
+one-shot spawn flow offers) and presenting it to the human before any loop is
+written, and forbids installing a framework inside a worker when a curated
+image already ships it. Two checks keep a wrong id from surfacing as an empty
+result hours in: `require_image()` resolves the id against the catalogue during
+the declaration section, so plan mode fails while the human is still reviewing
+the design, and the spawn route rejects an unknown `templateId` with a `400`
+naming the ids that exist — the lenient-skeleton rule is about *stage* drift and
+does not extend to naming an image that isn't there.
+
 **Span ↔ spawn attach.** A spawn made inside a span carries
 `experimentSpanId` ("experimentId/spanId") on the invocation request; the
 feed joins invocations back to their stage through it. The invocations
