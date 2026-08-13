@@ -47,7 +47,7 @@ export function SkillRow({
     <div
       className={cn(
         "flex items-center gap-3 border-t border-border px-4 py-2",
-        installed && "bg-muted/30",
+        installed && "bg-muted/40",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -77,7 +77,7 @@ export function SkillRow({
             /* A disabled button opens no tooltip, so the hint falls back to
                `title` exactly where "why can't I click this?" is asked. */
             title={disabled ? DRIFT_HINT : undefined}
-            className="shrink-0 text-sm font-medium text-accent transition-colors hover:underline disabled:opacity-50"
+            className="shrink-0 text-xs font-medium text-accent transition-colors hover:underline disabled:opacity-50"
           >
             Update
           </button>

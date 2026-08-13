@@ -18,7 +18,7 @@ const MAX_CHIPS = 8;
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-md bg-muted px-2 py-1 text-xs text-foreground">
+    <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
       {children}
     </span>
   );
