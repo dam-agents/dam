@@ -155,13 +155,13 @@ export const agentsRouter = t.router({
         case "TemplateNotFound":
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "No template to upgrade from",
+            message: "No template to update from",
           });
         case "TemplateMoved":
           throw new TRPCError({
             code: "CONFLICT",
             message:
-              "The template changed since you reviewed the upgrade — check the new version and retry",
+              "The template changed since you reviewed the update — check the new version and retry",
           });
       }
     }),
