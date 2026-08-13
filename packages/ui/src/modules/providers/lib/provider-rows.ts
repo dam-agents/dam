@@ -26,7 +26,6 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
 ];
 
-/** The rows a surface offers: `allow` restricts them, `recommended` goes first. */
 export function offeredProviderRows(
   allow?: readonly ProviderPresetType[],
   recommended?: ProviderPresetType,

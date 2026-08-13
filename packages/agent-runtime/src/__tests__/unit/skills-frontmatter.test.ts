@@ -6,8 +6,6 @@ import {
 } from "../../modules/skills/domain/frontmatter.js";
 import { makeSkillSlug } from "../../modules/skills/domain/skill-name.js";
 
-/** What the harness actually loads: the frontmatter block through a real YAML
- *  parser, as opposed to `parseFrontmatter`'s line-oriented fast path. */
 function yamlName(content: string): unknown {
   const body = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)?.[1] ?? "";
   return (parseYaml(body) as { name?: unknown } | null)?.name;
@@ -23,9 +21,6 @@ describe("ensureFrontmatterName", () => {
     ["crlf", "---\r\nname: Old\r\ndescription: d\r\n---\r\n\r\nBody\r\n"],
   ];
 
-  // The invariant the feature rests on: the name the user confirmed in the
-  // modal is the name the harness loads. A multi-line `name:` used to leave its
-  // continuation lines behind, which YAML folds into the value.
   it.each(cases)(
     "%s — a real YAML parser sees the confirmed name",
     (_, src) => {
@@ -54,8 +49,6 @@ describe("ensureFrontmatterName", () => {
 });
 
 describe("makeSkillSlug", () => {
-  // The UI pre-checks staged rows for this collision so the pod's
-  // "already exists" CONFLICT can't mislabel two rows that merely clash.
   it("collapses spaces and underscores to the same slug", () => {
     const a = makeSkillSlug("My Skill");
     const b = makeSkillSlug("my_skill");

@@ -30,13 +30,11 @@ describe("pollUntilReady", () => {
     const resultPromise = pollUntilReady(isReady, 100, 500, 1_000);
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await resultPromise).toBe(false);
-    // Should have polled at least a few times before giving up.
     expect(isReady.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("backs off exponentially, capped at maxMs", async () => {
     vi.useFakeTimers();
-    // Pin Math.random so jitter is exactly 1.0 (0.8 + 0.4 * 0.5).
     vi.spyOn(Math, "random").mockReturnValue(0.5);
 
     const isReady = vi.fn().mockResolvedValue(false);
@@ -53,13 +51,10 @@ describe("pollUntilReady", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await resultPromise;
 
-    // gaps[0] is before the first sleep — always 0. Skip it.
-    // gaps[1] should be ~100ms, gaps[2] ~150, gaps[3] ~225, gaps[4] ~337, gaps[5] capped at 500.
     expect(gaps[1]).toBe(100);
     expect(gaps[2]).toBe(150);
     expect(gaps[3]).toBe(225);
     expect(gaps[4]).toBe(337);
-    // After a few iterations the cap kicks in.
     const latest = gaps.slice(5);
     expect(latest.every((g) => g === 500)).toBe(true);
   });

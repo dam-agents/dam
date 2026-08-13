@@ -1,28 +1,10 @@
 #!/usr/bin/env node
-// Generate docs/adrs/index.md from ADR frontmatter.
-//
-// The index is a projection of the ADR log, never hand-maintained. Each ADR
-// carries YAML frontmatter (id, title, status, supersedes, subsystem, tags,
-// summary); this script reads them all, derives superseded status from the
-// forward `supersedes` links, and renders the scannable index.
-//
-// Legacy ADRs without frontmatter fall back to the filename, the `# ADR-NNN:`
-// heading, and the `**Status:**` line so the index generates before every
-// record is migrated. Frontmatter takes precedence and enriches rows over time.
-//
-// Modes:
-//   node scripts/adr-index.mjs            write docs/adrs/index.md
-//   node scripts/adr-index.mjs --check    fail if the committed index drifts
-//
-// The `--check` mode is the gate wired into `mise run check` + CI. It mirrors
-// db:check:generated: regenerate, diff against what is committed, fail closed.
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// ADR_INDEX_DIR overrides the ADR directory (used by tests); defaults to docs/adrs.
 const ADR_DIR = process.env.ADR_INDEX_DIR
   ? resolve(process.env.ADR_INDEX_DIR)
   : join(REPO_ROOT, "docs", "adrs");
@@ -49,8 +31,6 @@ function unquote(v) {
   return t;
 }
 
-// Minimal YAML for the flat ADR frontmatter schema: `key: scalar`, inline
-// `key: [a, b]` lists, and block `- item` lists. No nesting beyond that.
 export function parseFrontmatter(fm) {
   const out = {};
   const lines = fm.split("\n");
@@ -99,7 +79,6 @@ function normalizeStatus(raw) {
   return { status: STATUS.ACCEPTED };
 }
 
-// Fallback for legacy ADRs: `# ADR-NNN: Title` heading and `**Status:** ...`.
 function parseLegacyBody(body) {
   const out = {};
   const heading = body.match(/^#\s+(?:ADR-\d+:\s*)?(.+?)\s*$/m);
@@ -148,8 +127,6 @@ function loadAdrs() {
   const byId = new Map();
   for (const r of records) if (r.id) byId.set(r.id, r);
 
-  // Derive superseded status from forward links (authoritative) plus any legacy
-  // "Superseded by NNN" status line (back-compat until frontmatter lands).
   const supersededBy = new Map();
   for (const r of records) {
     for (const target of r.supersedes) {
@@ -260,8 +237,6 @@ function main() {
   process.stdout.write("✅ docs/adrs/index.md matches the generated projection.\n");
 }
 
-// Run only when invoked directly, so adr-immutable.mjs can import the parser
-// helpers without regenerating the index as a side effect.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main();
 }

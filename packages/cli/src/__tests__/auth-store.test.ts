@@ -37,12 +37,9 @@ describe("TOML AuthStore", () => {
     const { rm } = await import("node:fs/promises");
     try {
       await rm(dir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    } catch {}
   });
 
-  // Claim 8 (analysis §7.1) — the real security property.
   it("initial write sets mode 0600", async () => {
     const store = createTomlAuthStore(authPath);
     const w = await store.write(HOST_A, sampleAuth());
@@ -52,8 +49,6 @@ describe("TOML AuthStore", () => {
     expect(s.mode & 0o777).toBe(0o600);
   });
 
-  // Spec-promised read-merge-write contract. If this regresses, hand-edited
-  // user comments and unknown top-level keys silently disappear on write.
   it("write preserves multiple host entries and unrelated top-level keys", async () => {
     await writeFile(
       authPath,
@@ -93,8 +88,6 @@ describe("TOML AuthStore", () => {
     }
   });
 
-  // Logout idempotency contract — auth-service.logout returns success on
-  // unknown host without rewriting. A no-op `remove` keeps the file clean.
   it("remove targeted host preserves others; remove on missing host is a no-op", async () => {
     const store = createTomlAuthStore(authPath);
     await store.write(HOST_A, sampleAuth({ username: "a" }));

@@ -36,7 +36,6 @@ function Dimension({ label, used, ceiling, unit, fill }: DimensionProps) {
   );
 }
 
-/** Compute in use across the user's running sandboxes, against their budget. */
 export function BudgetMeter() {
   const { data } = useBudgetReserved();
   if (!data) return null;

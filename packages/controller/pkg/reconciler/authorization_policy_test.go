@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Harness policy targets the api-server's waypoint Gateway via
-// targetRefs (Gateway-API CRD), ALLOWs the SA principal to a path-prefix
-// keyed on the URL `:id`. Lives in the release ns alongside the waypoint.
 func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
 	p := BuildHarnessAuthorizationPolicy("my-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 
@@ -33,10 +30,6 @@ func TestBuildHarnessAuthorizationPolicy_PathPrefix(t *testing.T) {
 		"harness policy must scope to /api/agents/<id>/* — the URL :id is the SPIFFE-bound identity")
 }
 
-// Ext-authz policy targets the per-instance ext-authz Service
-// (one per instance, named via cfg.ExtAuthzServiceName), ALLOWs only the
-// matching SA principal — no header check, no host match needed since
-// the Service itself is per-instance.
 func TestBuildExtAuthzAuthorizationPolicy_TargetsService(t *testing.T) {
 	p := BuildExtAuthzAuthorizationPolicy("my-instance", testConfig, testOwnerCM.Namespace, configMapOwnerRef(testOwnerCM))
 

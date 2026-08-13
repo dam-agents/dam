@@ -23,7 +23,6 @@ export const acpSessionsKeys = {
     [...acpSessionsKeys.agentLists(agentId), include] as const,
 };
 
-// Optimistic insert so the sidebar shows the row immediately; the next refetch reconciles.
 export function optimisticInsertSession(
   agentId: string,
   sessionId: string,
@@ -51,7 +50,6 @@ export function optimisticInsertSession(
   );
 }
 
-// Remove the session from the sidebar list cache so the row disappears immediately; the invalidate that follows reconciles.
 export function removeSessionFromCache(
   agentId: string,
   sessionId: string,
@@ -62,8 +60,6 @@ export function removeSessionFromCache(
   );
 }
 
-// Mirror the agent-side seen stamp into the list cache ahead of the next poll.
-// Stamps the row's own activity time, not the browser clock, to rule out skew.
 export function setSessionSeen(agentId: string, sessionId: string): void {
   queryClient.setQueriesData<SessionView[]>(
     { queryKey: acpSessionsKeys.agentLists(agentId) },
@@ -76,8 +72,6 @@ export function setSessionSeen(agentId: string, sessionId: string): void {
   );
 }
 
-// Seed the open session's live busy state into the list cache so its status dot
-// stays correct the instant it stops being the open row — before the next poll.
 export function setSessionRunning(
   agentId: string,
   sessionId: string,
@@ -90,18 +84,6 @@ export function setSessionRunning(
   );
 }
 
-/**
- * Sessions list, read straight off the agent over ACP `session/list`
- * and decoded from `_meta.platform`. Regular and experiment-execute sessions
- * are always listed (an experiment's launch turn is reachable from its
- * driver's sidebar); schedule and channel sessions are included only when
- * asked. Pass
- * `enabled: false` (e.g. while the agent is waking) to keep the query in cache
- * without firing requests.
- *
- * `refetchOnMount: "always"` because the title is harness-set after the first
- * turn — a returning user must see the updated title without a manual refresh.
- */
 export function useAcpSessions(
   agentId: string | null,
   include: SessionListInclude,
@@ -124,7 +106,6 @@ export function useAcpSessions(
             allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
           if (include.scheduled) allowed.push(SessionType.ScheduleCron);
           const fresh = sessions.filter((s) => allowed.includes(s.type));
-          // Keep the active session's optimistic stub if not fetched so a refetch can't drop it.
           const activeId = options?.activeSessionId;
           if (!activeId || fresh.some((s) => s.sessionId === activeId))
             return fresh;
@@ -136,7 +117,6 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
-    // Poll while running so per-session status dots and harness-set titles stay live.
     refetchInterval: live ? STATUS_POLL_MS : false,
     staleTime: STATUS_POLL_MS,
     meta: { errorToast: "Couldn't refresh session list" },

@@ -12,19 +12,10 @@ import { createBrandRoutes } from "./brand.js";
 
 type App = Hono<{ Variables: { user: UserIdentity; roles: string[] } }>;
 
-/** Plain-HTTP odds and ends: the public bootstrap endpoints (health,
- *  readiness, version, auth config, brand, terms), OAuth callback routes,
- *  usage routes, and the artifact-library binary paths. Everything here
- *  mounts BEHIND the admission chain in app.ts — an endpoint is public if
- *  and only if it is on the middleware's PUBLIC_PATHS allowlist, so adding
- *  a public route means adding it there too (missing = 401, fail-closed). */
 export function mountRoutes(app: App, boot: ApiServerDeps): void {
   const { config, terms, jwksWarmup } = boot;
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
-  // Readiness (not liveness): 503 until the Keycloak JWKS has been fetched
-  // once, so a rolling update keeps the old pod serving while this pod's
-  // egress path converges. Latched — never flaps mid-life (see jwks-warmup.ts).
   app.get("/api/ready", (c) =>
     jwksWarmup.ready()
       ? c.json({ status: "ok" })
@@ -48,7 +39,6 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     } satisfies AuthConfig),
   );
   app.get("/api/terms", (c) => c.json(terms.document()));
-  // Everything brand — document, PWA manifest, icons. Public (UI bootstrap).
   app.route("/api/brand", createBrandRoutes(config.brand));
 
   app.route(
@@ -65,8 +55,6 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
 
   boot.mountUsageRoutes(app);
 
-  // Artifact-library binary paths — non-tRPC (upload carries raw bytes in,
-  // download streams bytes or returns a presigned direct link).
   app.route(
     "/api/artifact-library",
     createArtifactLibraryRoutes({

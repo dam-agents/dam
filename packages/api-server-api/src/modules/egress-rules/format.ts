@@ -1,9 +1,5 @@
 import type { EgressRuleSource, EgressRuleView } from "./types.js";
 
-/**
- * Non-null for every variant — callers that want to hide manual rows check
- * `source === "manual"` explicitly.
- */
 export function formatEgressRuleSource(source: EgressRuleSource): string {
   if (source === "manual") return "manual";
   if (source === "inbox") return "from inbox";
@@ -15,8 +11,6 @@ export function formatEgressRuleSource(source: EgressRuleSource): string {
   return source;
 }
 
-/** `<verdict> [<method>] <host>[:<port>][<path>]` — wildcard method/path
- *  and the default port suppressed. */
 export function formatEgressRuleInline(
   rule: Pick<
     EgressRuleView,
@@ -42,7 +36,6 @@ function joinHostPath(
   return `${normalizedHost}${normalizedPath}`;
 }
 
-// Index-based, not `/\/+$/` — that regex is quadratic on user-typed input.
 function stripTrailingSlashes(s: string): string {
   let end = s.length;
   while (end > 0 && s[end - 1] === "/") end--;

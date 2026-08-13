@@ -24,10 +24,6 @@ interface RadioGroupItemProps extends Omit<
   testId?: string;
 }
 
-/** The whole row is the radio, so a click anywhere in it selects — callers own
- *  the row's container look through `className`. `aria-label` keeps the
- *  description out of the accessible name, where name-from-content would
- *  otherwise run label and description together. */
 function RadioGroupItem({
   label,
   description,

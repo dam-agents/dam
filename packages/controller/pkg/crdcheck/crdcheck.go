@@ -1,8 +1,3 @@
-// Package crdcheck asserts at startup that the cluster's CRDs are at least as
-// new as the schema this controller was built against. Environment
-// deploys never upgrade the shared CRDs, so a release can run ahead of the
-// cluster schema — admission would then silently prune its writes; failing
-// loud here is the designed alternative.
 package crdcheck
 
 import (
@@ -20,9 +15,6 @@ import (
 
 var crdGVR = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
 
-// Assert returns an error when a platform CRD is missing or its
-// schema-generation annotation is older than this build's; the remedy is the
-// operator-run CRD upgrade in the ops repository.
 func Assert(ctx context.Context, client dynamic.Interface) error {
 	required := map[string]int{
 		"agents." + apiv1.GroupVersion.Group:      apiv1.AgentSchemaGeneration,

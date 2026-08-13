@@ -4,14 +4,12 @@ import type {
 } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
 
-// The template's optional config inputs.
 export function configInputsOf(
   template: ConnectionTemplateView,
 ): ConnectionTemplateInput[] {
   return template.inputs.filter((i) => i.configInput);
 }
 
-// Validate against the input's declared pattern/enumValues; empty = valid (optional, skipped).
 export function validateConfigInputValue(
   input: ConnectionTemplateInput,
   value: string,
@@ -35,7 +33,6 @@ export type ConfigFlagError =
   | { kind: "unknown-key"; key: string; validKeys: readonly string[] }
   | { kind: "invalid-value"; key: string; message: string };
 
-// Parse repeatable `--config key=value` into a validated configInputs record; blank skips, last wins.
 export function resolveConfigInputFlags(
   template: ConnectionTemplateView,
   rawFlags: readonly string[],

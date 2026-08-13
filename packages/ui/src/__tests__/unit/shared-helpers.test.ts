@@ -90,8 +90,6 @@ describe("getErrorMessage", () => {
     );
   });
   test("an empty-string fallback is honoured, not treated as absent", () => {
-    // The shared mutation onError passes "" to mean "a real message or nothing"
-    // so the toast degrades to its bare title — it must not leak String(e).
     expect(getErrorMessage({}, "")).toBe("");
     expect(getErrorMessage(new Error(""), "")).toBe("");
     expect(getErrorMessage(new Event("error"), "")).toBe("");

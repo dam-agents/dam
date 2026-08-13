@@ -20,7 +20,6 @@ export function LabeledInput({
   testId?: string;
   placeholder?: string;
   type?: "text" | "password";
-  // Renders a monospace textarea instead of a single-line input (e.g. a PEM key).
   multiline?: boolean;
   value: string;
   onChange: (v: string) => void;

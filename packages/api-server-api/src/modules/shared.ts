@@ -10,10 +10,6 @@ export enum ChannelType {
   Telegram = "telegram",
 }
 
-/** One rule for every user-named resource: lowercase, digits, single hyphens,
- *  1–63 chars. Shared so two surfaces can never drift on what is legal; each
- *  supplies its own example, since a message naming the wrong kind of thing is
- *  worse than a slightly duplicated sentence. */
 export const RESOURCE_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export function resourceNameSchema(example: string) {

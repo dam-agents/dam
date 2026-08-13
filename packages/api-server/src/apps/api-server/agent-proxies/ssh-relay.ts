@@ -104,7 +104,6 @@ export function createSshRelay(
       try {
         await repo.ensureReady(agentId);
       } catch (err) {
-        // Close reasons cap at 123 bytes — carry the short cause kind.
         const reason = isAgentWakeTimeoutError(err)
           ? `agent not ready: ${err.failure.kind}`
           : "agent unavailable";

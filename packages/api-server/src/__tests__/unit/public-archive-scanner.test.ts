@@ -93,7 +93,6 @@ describe("scanPublicGithubArchive", () => {
     status = 200,
   ): Response {
     const res = new Response(new Uint8Array(body), { status });
-    // Node fetch doesn't let us set `url` via constructor, so override for the test.
     Object.defineProperty(res, "url", { value: finalUrl });
     return res;
   }
@@ -132,7 +131,6 @@ describe("scanPublicGithubArchive", () => {
     expect(skills[0].contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(skills[1].contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(skills[0].contentHash).not.toBe(skills[1].contentHash);
-    // Only one fetch — no api.github.com calls, just the archive endpoint.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe(
       "https://github.com/acme/tools/archive/HEAD.tar.gz",
@@ -185,7 +183,6 @@ describe("scanPublicGithubArchive", () => {
       "packages/tools/skills",
     );
 
-    // Only the subdir's skill — the standard `skills/` root is not consulted.
     expect(skills.map((s) => s.name)).toEqual(["sub-skill"]);
   });
 

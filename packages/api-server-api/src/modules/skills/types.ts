@@ -86,26 +86,16 @@ export interface SkillsService {
   getSkillContent: (
     sourceId: string,
     name: string,
-    /** Targets the pod for a private source's read — the only path that can
-     *  reach a repo the api-server cannot see anonymously. */
     agentId?: string,
   ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
-  /** Many changes, one apply cycle. Returns the full installed list, like the
-   *  single-skill paths, so a caller renders from an authoritative result. */
   applyBatch: (input: SkillApplyBatchInput) => Promise<SkillRef[]>;
-  /** Skill sets belong to the user, not to a sandbox, so these take no agentId. */
   listSets: () => Promise<SkillSet[]>;
   createSet: (input: SkillSetCreateInput) => Promise<SkillSet>;
   deleteSet: (input: SkillSetDeleteInput) => Promise<void>;
-  /** Install every set's skills that this sandbox's sources can serve and that
-   *  aren't on yet. Additive by construction — never uninstalls. Reports what
-   *  it could not apply rather than dropping it. */
   applySets: (input: SkillSetApplyInput) => Promise<SkillSetApplyResult>;
   createLocal: (input: SkillCreateLocalInput) => Promise<LocalSkill[]>;
-  /** Returns the remaining standalone list, so the UI renders from an
-   *  authoritative result rather than guessing (mirrors `uninstall`). */
   deleteLocal: (input: SkillDeleteLocalInput) => Promise<LocalSkill[]>;
   readLocal: (input: SkillReadLocalInput) => Promise<SkillLocalFiles>;
   listLocal: (agentId: string) => Promise<LocalSkill[]>;

@@ -3,7 +3,7 @@ import { nextFlowStep } from "../modules/auth/domain/flow.js";
 import type { TokenEndpointResponse } from "../modules/auth/domain/tokens.js";
 
 const STARTED_AT = new Date("2026-01-01T00:00:00Z");
-const NOW = new Date("2026-01-01T00:00:30Z"); // 30s elapsed
+const NOW = new Date("2026-01-01T00:00:30Z");
 const EXPIRES_IN = 600;
 const INTERVAL = 5;
 
@@ -33,7 +33,6 @@ describe("nextFlowStep (RFC 8628 §3.5 polling rules)", () => {
     expect(step).toEqual({ action: "poll-again", intervalSeconds: 5 });
   });
 
-  // Claim 6 (analysis §7.1, first half).
   it("slow_down → poll-again at interval + 5 seconds", () => {
     const step = nextFlowStep({
       response: err("slow_down"),
@@ -60,7 +59,6 @@ describe("nextFlowStep (RFC 8628 §3.5 polling rules)", () => {
     });
   });
 
-  // Claim 6 (analysis §7.1, second half).
   it("expired_token → fail('expired-token')", () => {
     const step = nextFlowStep({
       response: err("expired_token"),

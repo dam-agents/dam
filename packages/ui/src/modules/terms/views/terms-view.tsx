@@ -49,9 +49,6 @@ export function TermsView() {
             onClick={() =>
               accept.mutate(
                 { version: doc.version },
-                // Full reload on purpose (unlike BackButton): it clears the
-                // server's 412 terms_stale gate with a clean refetch. Resumes
-                // wherever the gate interrupted — a bind deep link, usually.
                 {
                   onSuccess: () =>
                     window.location.assign(takeReturnPath("terms")),
@@ -101,8 +98,6 @@ function AcceptButton({
 
 function BackButton() {
   const setView = useStore((s) => s.setView);
-  // setView rather than history.back(): a deep link to /terms has no in-app
-  // history behind it, and history.back() would leave the app entirely.
   return (
     <Button type="button" onClick={() => setView("list")}>
       Back

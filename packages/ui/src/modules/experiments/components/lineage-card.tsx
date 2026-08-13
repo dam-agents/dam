@@ -19,14 +19,11 @@ import { LineageRuns } from "./lineage-runs.js";
 
 interface Props {
   lineage: LineageRow;
-  /** False once the sandbox is deleted: browsable, but routes nowhere. */
   openable: boolean;
   onOpen: () => void;
   onDelete: () => void;
 }
 
-/** One experiment inside its sandbox, revealing its runs. Opens the sandbox
- *  chat — a sandbox holds many experiments, so there's no page of its own. */
 export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
   const [expanded, setExpanded] = useState(false);
 
@@ -39,8 +36,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           openable && "cursor-pointer transition-colors hover:bg-muted",
         )}
       >
-        {/* Closed reads as a plain chevron; open boxes it, so an expanded row is
-            obvious without reading the runs below. */}
+        {}
         <button
           type="button"
           aria-label={expanded ? "Collapse runs" : "Show runs"}
@@ -64,8 +60,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           <span className="truncate text-[15px] font-semibold text-foreground">
             {lineage.name}
           </span>
-          {/* Just the run count: invocation counts belong on the run rows, where
-              they say which run they describe. */}
+          {}
           <span className="truncate text-sm text-muted-foreground">
             {lineage.runCount} run{lineage.runCount === 1 ? "" : "s"}
           </span>
@@ -99,8 +94,7 @@ export function LineageCard({ lineage, openable, onOpen, onDelete }: Props) {
           </DropdownMenu>
         </div>
       </div>
-      {/* Mounted only when expanded, so the run details and per-run feeds
-          are fetched lazily, card by card. */}
+      {}
       {expanded && (
         <LineageRuns
           driverAgentId={lineage.driverAgentId}

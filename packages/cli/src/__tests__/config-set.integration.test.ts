@@ -60,10 +60,7 @@ describe("dam config set (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  afterAll(async () => {
-    // Best-effort — leave dist/ in place; subsequent test runs reuse the
-    // beforeAll build.
-  });
+  afterAll(async () => {});
 
   it("writes a valid TOML file with the server key", async () => {
     const r = await runDam(
@@ -89,7 +86,6 @@ describe("dam config set (integration)", () => {
     expect(r.stderr).toContain("invalid value for `server`");
     expect(r.stderr).toContain("not-a-url");
 
-    // File must not exist (no partial writes on validation failure).
     await expect(readFile(configPath, "utf-8")).rejects.toThrow();
   });
 
@@ -132,7 +128,6 @@ describe("dam config set (integration)", () => {
       expect(r.stdout).toContain(expected);
       const contents = await readFile(expected, "utf-8");
       expect(contents.trim()).toBe('server = "https://example.test"');
-      // The HOME-derived path must NOT exist when XDG_CONFIG_HOME wins.
       await expect(readFile(configPath, "utf-8")).rejects.toThrow();
     } finally {
       await rm(xdg, { recursive: true, force: true });

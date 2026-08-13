@@ -6,11 +6,6 @@ export interface VersionCommandDeps {
   localCliVersion: string;
 }
 
-/**
- * Un-gated counterpart to `dam ping`. Always exits 0 — informational, not
- * a gate. Local line always prints; server line and warnings are
- * best-effort additions when a server is configured and reachable.
- */
 export function buildVersionCommand(deps: VersionCommandDeps): Command {
   return new Command("version")
     .description("Print local CLI version and (best-effort) the server's")
@@ -28,7 +23,6 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
       if (!result.ok) {
         switch (result.error.kind) {
           case "missing-config":
-            // Quietly stop — `version` works without a server.
             return;
           case "malformed-config":
             process.stderr.write(
@@ -44,10 +38,6 @@ export function buildVersionCommand(deps: VersionCommandDeps): Command {
       }
 
       const verdict = result.value;
-      // Server line first (stdout), then any warning/error (stderr). This
-      // preserves the spec'd contract that the server line always prints
-      // when reachable, and matches the conventional stdout-then-stderr
-      // shape so a trailing warning amplifies the line that just printed.
       const minClient =
         verdict.serverMinClient !== undefined
           ? ` (min CLI ${verdict.serverMinClient})`

@@ -3,7 +3,6 @@ import { createOpenAiModelDiscovery } from "../../modules/runtime-channel/infras
 
 const noop = () => {};
 
-/** A stub `fetch` that records requested URLs and returns a canned response. */
 function stubFetch(opts: {
   body?: unknown;
   ok?: boolean;
@@ -33,8 +32,6 @@ describe("createOpenAiModelDiscovery", () => {
     expect(urls).toEqual([]);
   });
 
-  // Declared but the env hasn't materialized the URL: unavailable, not
-  // not-configured, so a recorded list is preserved rather than cleared.
   it("reports unavailable when no candidate env var is set (no fetch)", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createOpenAiModelDiscovery({ log: noop, fetchImpl });
@@ -93,8 +90,6 @@ describe("createOpenAiModelDiscovery", () => {
     });
   });
 
-  // The provider answered and offers no chat models. That is an observation, not
-  // a failure, so it is allowed to clear a previously recorded list.
   it("reports an observed empty list when everything filtered out", async () => {
     const { fetchImpl } = stubFetch({
       body: { data: [{ id: "text-embedding-3-large" }] },

@@ -47,8 +47,6 @@ export function buildAcceptCommand(deps: {
             belowFloor: EXIT_BELOW_FLOOR,
           },
         });
-        // Refuse a non-interactive accept before any network work: CI can't
-        // answer the prompt, so --yes is the only scripted path.
         if (!opts.yes && !process.stdin.isTTY) {
           process.stderr.write(
             "error: refusing to accept the Terms of Use non-interactively without --yes\nhint: re-run with --yes to accept in a script or CI\n",
@@ -75,9 +73,6 @@ export function buildAcceptCommand(deps: {
           process.stderr.write(
             `Terms of Use — version ${currentVersion}\n\n${doc.value.text}\n\n`,
           );
-          // Generous idle window: the user is expected to read the full text
-          // before answering, so the default 30s destructive-prompt timeout
-          // would wrongly auto-decline a careful reader.
           if (
             !(await confirm("Accept the Terms of Use?", {
               timeoutMs: 15 * 60_000,
@@ -88,9 +83,6 @@ export function buildAcceptCommand(deps: {
 
         const accepted = await service.accept(currentVersion);
         if (!accepted.ok) {
-          // The version bumped between our document fetch and the accept —
-          // the user reviewed the old text, so surface it and stop rather
-          // than silently accepting the new version.
           if (
             accepted.error.kind === "transport" &&
             accepted.error.serverCode === "PRECONDITION_FAILED"

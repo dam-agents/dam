@@ -21,10 +21,6 @@ const invalidatesAgentsList = {
   invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
 };
 
-// Lifecycle mutations move Reserved (#1900) — refresh the meter immediately
-// rather than waiting out its 5s poll. Symmetric across everything that can
-// change what's running or how big it is: create/delete, wake/restart,
-// pause/stop, and resize (update).
 const invalidatesAgentsAndBudget = {
   invalidates: [
     ...invalidatesAgentsList.invalidates,
@@ -41,29 +37,12 @@ export interface CreateAgentInput {
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
   registryCredential?: { server: string; username: string; password: string };
-  /** Optional: clone this public repo (optionally a branch/tag) into the working
-   *  dir once, shortly after first start (a one-shot `workspace-seed` event).
-   *  Flows to `agents.create`. */
   gitRepo?: { url: string; ref?: string };
-  /** Optional local-context import. Files are bundled and uploaded as a
-   *  tar to the new agent's `<agenthome>/work` after the agent is
-   *  created. Failures here surface as a toast but do not roll back the
-   *  agent — the user can retry from the files panel. */
   importEntries?: BundleEntry[];
-  /** Pre-built tar / tar.gz / tgz to upload verbatim. Mutually exclusive
-   *  with `importEntries`; if both are present, the raw bundle wins. */
   importRawBundle?: File;
-  /** The sandbox's Size (#1900): CPU/memory limits from the wizard sliders.
-   *  Omitted means the template's default (else the chart default). */
   size?: { cpu?: string; memory?: string };
 }
 
-/**
- * Create-agent orchestrates: create agent, optional file import, set agent
- * access, set app connections. The agent is now a single CM
- * (no separate instance create) — `agents.create` returns the full Agent
- * including runtime state.
- */
 export function useCreateAgent() {
   return useMutation({
     mutationFn: async ({
@@ -73,8 +52,6 @@ export function useCreateAgent() {
       importRawBundle: rawBundle,
       ...input
     }: CreateAgentInput) => {
-      // Single-shot create: grants ride the create call (no post-create swap).
-      // Import follows; raw bundle wins over entries when both are present.
       const agent = await api.agents.create.mutate({
         ...input,
         egressPreset,
@@ -87,7 +64,6 @@ export function useCreateAgent() {
         queryKey: agentsKeys.listWithChannels(),
       });
 
-      // Raw bundle is sent verbatim; entries are tarred + gzipped inside importBundle.
       let runImport: (() => Promise<unknown>) | undefined;
       let importLabel = "";
       if (rawBundle != null) {
@@ -145,11 +121,6 @@ export function useUpdateAgent() {
   });
 }
 
-/**
- * Raw wake mutation. The optimistic "Starting" lifecycle is managed by
- * useWakeAgent in hooks/use-wake-agent.ts — consumers should call that so the
- * overlay/pill flips the instant the user clicks Start, not on the next poll.
- */
 export function useWakeAgentMutation() {
   return useMutation({
     ...trpc.agents.wake.mutationOptions(),
@@ -160,7 +131,6 @@ export function useWakeAgentMutation() {
   });
 }
 
-/** Pause: sleeps now, wakes on its next use. Frees budget immediately. */
 export function usePauseAgent() {
   return useMutation({
     ...trpc.agents.pause.mutationOptions(),
@@ -171,7 +141,6 @@ export function usePauseAgent() {
   });
 }
 
-/** Hard stop: stays down until explicitly started (or a schedule fires). */
 export function useStopAgent() {
   return useMutation({
     ...trpc.agents.stop.mutationOptions(),
@@ -182,12 +151,6 @@ export function useStopAgent() {
   });
 }
 
-/**
- * Raw restart mutation. The UI-side "Restarting" pill lifecycle is managed
- * by useRestartAgent in hooks/use-restart-agent.ts — consumers should
- * call that hook, not this mutation directly, so the pill lights up the
- * moment the user clicks.
- */
 export function useRestartAgentMutation() {
   return useMutation({
     ...trpc.agents.restart.mutationOptions(),
@@ -198,9 +161,6 @@ export function useRestartAgentMutation() {
   });
 }
 
-// Updating rolls a running pod onto the new image — refresh the budget
-// meter alongside, like the other lifecycle mutations. `silent` is for the
-// bulk path, which reports every sandbox's outcome in one toast of its own.
 export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
@@ -237,9 +197,6 @@ export function useSetAgentConnections() {
   return useMutation({
     mutationFn: (vars: { agentId: string; connectionIds: string[] }) =>
       api.connections.setAgentConnections.mutate(vars),
-    // Optimistically rewrite the grants cache so consecutive toggles compound
-    // — both reading the pre-mutation set would make the second full-set
-    // write silently drop the first grant.
     onMutate: async (vars) => {
       const key = trpc.connections.getAgentConnections.queryKey({
         agentId: vars.agentId,
@@ -263,15 +220,11 @@ export function useSetAgentConnections() {
       }
       return { previous, key };
     },
-    // `meta.invalidates` fires only on success, so roll back here.
     onError: (_err, _vars, context) => {
       if (context?.previous)
         queryClient.setQueryData(context.key, context.previous);
     },
     meta: {
-      // Server-side `setAgentConnections` syncs `connection:<id>` egress
-      // rules per granted provider's API hosts.
-      // Refetch the editor's view alongside the grants query.
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),
         egressRulesKeys.all,

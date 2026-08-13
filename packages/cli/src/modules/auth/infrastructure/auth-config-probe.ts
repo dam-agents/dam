@@ -2,12 +2,6 @@ import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { AuthConfigProbeError } from "../domain/errors.js";
 
-/**
- * The shape advertised by `GET <server>/api/auth/config`. The api-server
- * extension landed in issue 1 of #80; deployments that predate that issue
- * surface a 200 with `cliClientId` absent — handled as a distinct
- * `missing-cli-client-id` error rather than a generic malformed response.
- */
 export interface AuthConfig {
   issuer: string;
   clientId: string;
@@ -19,19 +13,12 @@ export interface AuthConfigProbe {
 }
 
 export interface HttpAuthConfigProbeOpts {
-  /** Per-call deadline. Default 5s — matches the version probe; long
-   *  enough for a wakeful pod, short enough that login never feels hung. */
   timeoutMs?: number;
 }
 
-// Validates only the fields the CLI consumes. The platform may add more
-// (idle-timeout hints, brand info, etc.); we ignore the rest.
 const authConfigSchema = z.object({
   issuer: z.string().min(1),
   clientId: z.string().min(1),
-  // `cliClientId` is allowed to be absent so we can distinguish "server
-  // too old" from generic malformed-response. The validator below picks
-  // it up explicitly.
   cliClientId: z.string().min(1).optional(),
 });
 

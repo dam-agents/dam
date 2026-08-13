@@ -100,8 +100,6 @@ export function buildReauthCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        // A healthy connection is already `active`, so status can't tell us the
-        // consent landed — an advancing `connectedAt` can.
         const connectedAtBefore = match.connectedAt;
 
         const started = await svc.startOAuth(match.id);
@@ -161,8 +159,6 @@ async function pollUntilReconnected(
   const deadline = Date.now() + timeoutSeconds * 1000;
   while (true) {
     const res = await svc.getConnection(id);
-    // A transient read failure shouldn't abort a multi-minute wait — retry on
-    // the next tick; a persistent one surfaces as the timeout message.
     if (res.ok && res.value && res.value.connectedAt !== connectedAtBefore) {
       return true;
     }

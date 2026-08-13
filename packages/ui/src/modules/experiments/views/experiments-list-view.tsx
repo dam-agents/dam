@@ -14,8 +14,6 @@ import { useDriverSummaries } from "../api/queries.js";
 import { SandboxGroupCard } from "../components/sandbox-group-card.js";
 import { type LineageRow, toSandboxGroups } from "../lib/sandbox-groups.js";
 
-/** The sandboxes that run experiments, each holding its named loops. Opening
- *  anything here lands in the sandbox chat, where the live panel docks. */
 export function ExperimentsListView() {
   const { data: summaries } = useDriverSummaries();
   const { data: agentsData } = useAgents();
@@ -30,8 +28,6 @@ export function ExperimentsListView() {
     agentsData?.list ?? [],
     isExperimentSandbox,
   );
-  // Gate on data presence, not query success, so a transient refetch failure
-  // keeps the cached list rendered instead of flashing skeletons over it.
   const initialLoaded = summaries !== undefined && agentsData !== undefined;
   const createExperimentSandbox = () => navigateToCreateSandbox("experiment");
 
@@ -111,8 +107,6 @@ export function ExperimentsListView() {
           setDeleteTarget(null);
           if (!target) return;
           void (async () => {
-            // Sequential: each id is one row; failures toast individually
-            // and the rest still go.
             for (const id of target.experimentIds) {
               await deleteExperiment.mutateAsync({ id }).catch(() => {});
             }

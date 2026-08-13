@@ -9,8 +9,6 @@ import {
 import { securityLog } from "../../core/security-log.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
-/** Internal link the platform UI renders as an inline preview chip that
- *  opens the artifact beside the chat. */
 function withInternalLink(
   artifact: LibraryArtifact,
 ): LibraryArtifact & { internal_link: string } {
@@ -31,10 +29,6 @@ function errorResult(text: string): ToolContent {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-/** Quote a value for a single-quoted POSIX shell argument: end the quote,
- *  emit an escaped quote, reopen. Keeps the name exact — spaces, accents and
- *  `$` included — while making it impossible for an artifact named by another
- *  publisher to break out of the example command's quoting. */
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -52,19 +46,11 @@ const folderIdInput = z
   .optional()
   .describe('Folder id; pass "" to move the artifact out of its folder.');
 
-/** Registers the artifact-library tools on the per-agent platform MCP server.
- *  `agentId` is the network-verified caller — creations are attributed to it;
- *  the service is already owner-scoped, so the agent can only ever touch its
- *  owner's library. */
 export function registerArtifactLibraryTools(
   server: McpServer,
   deps: {
     artifactLibrary: ArtifactLibraryServiceImpl;
     agentId: string;
-    /** Attach a fresh artifact to an experiment run: explicit id from the
-     *  driver's monitoring harness, or auto-attribution when the calling
-     *  agent is itself an invocation target (experimentId omitted). Returns
-     *  where it landed, or null when there is nothing to attach to. */
     attachToExperiment?: (
       artifactId: string,
       experimentId?: string,
@@ -73,9 +59,6 @@ export function registerArtifactLibraryTools(
 ): void {
   const lib = deps.artifactLibrary;
 
-  /** Best-effort experiment attach after a successful publish: the artifact
-   *  exists either way, so attach problems report as a field on the result
-   *  instead of failing the tool (which would invite duplicate publishes). */
   async function experimentAttachment(
     artifactId: string,
     experimentId?: string,
@@ -186,9 +169,6 @@ export function registerArtifactLibraryTools(
     },
     ({ id, version }) =>
       run(async () => {
-        // A presigned link is a bearer capability to the bytes, so both
-        // outcomes are audited: logging only the successes would make a refused
-        // mint (an id the owner does not have) invisible in the trail.
         let ticket;
         try {
           ticket = await lib.createAgentDownloadUrl(id, version);

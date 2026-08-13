@@ -5,11 +5,7 @@ import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName, echoUrl, sentinel } from "../../lib/fixtures.js";
 
-// The binding is the authorization: anyone the channel admits drives the
-// agent under the agent's own credentials.
 const sharedChannelId = "C-E2E-SHARED";
-// Never logs in, links no account, holds no platform identity — channel
-// membership is this user's only credential.
 const strangerSlackUserId = "U-E2E-STRANGER";
 const mockDefaultReply = "Hello from the mock agent.";
 const helloText = "hello from a channel member";
@@ -38,8 +34,6 @@ test("any channel member drives the agent through a shared binding", async () =>
       text: helloText,
     });
 
-    // The mention relays and the agent's reply lands in-thread. The platform
-    // no longer auto-acks with a reaction, so the reply itself is the signal.
     await expect
       .poll(
         async () => {
@@ -59,7 +53,6 @@ test("any channel member drives the agent through a shared binding", async () =>
       )
       .toBe(true);
 
-    // No identity-link prompt, no allow-list denial, no failed turn.
     const { records } = await api.e2e.slackReadOutbound.query();
     const denials = records.filter(
       (r) =>
@@ -115,8 +108,6 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
       )
       .toBe(true);
 
-    // The credential on the wire is the connection the owner granted the
-    // agent in 03 — shared access lends the agent's authority.
     expect(replyText).toContain(sentinel);
   });
 });

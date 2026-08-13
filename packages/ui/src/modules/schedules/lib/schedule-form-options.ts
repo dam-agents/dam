@@ -2,8 +2,6 @@ import type { FrequencyPreset } from "api-server-api";
 
 export type RunKind = FrequencyPreset["kind"];
 
-/** RUN dropdown → the frequency preset it builds. "custom" is the advanced
- *  RRULE escape hatch. */
 export const RUN_OPTIONS: { value: RunKind; label: string }[] = [
   { value: "daily", label: "Daily" },
   { value: "hourly", label: "Hourly" },
@@ -15,7 +13,6 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** `HH:MM` (24h) → 12-hour label, e.g. "9:00 AM". */
 export function formatTime12(value: string): string {
   const [hour = 0, minute = 0] = value.split(":").map(Number);
   const period = hour < 12 ? "AM" : "PM";
@@ -23,7 +20,6 @@ export function formatTime12(value: string): string {
   return `${h}:${pad(minute)} ${period}`;
 }
 
-/** Half-hour steps across the day, value `HH:MM`, label 12-hour (e.g. 9:00 AM). */
 export const TIME_OPTIONS: { value: string; label: string }[] = Array.from(
   { length: 48 },
   (_, i) => {
@@ -50,8 +46,6 @@ function offsetLabel(zone: string): string {
   }
 }
 
-/** Every IANA zone the runtime knows, labelled with its current UTC offset.
- *  Static per session; the native <select>'s typeahead makes it searchable. */
 export const TIMEZONE_OPTIONS: { value: string; label: string }[] = (
   (Intl as IntlWithSupported).supportedValuesOf?.("timeZone") ?? []
 ).map((zone) => {

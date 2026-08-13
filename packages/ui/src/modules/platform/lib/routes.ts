@@ -24,9 +24,6 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
   | { view: "list" }
-  /** `session` addresses one conversation inside the agent's chat. It is what
-   *  makes a session linkable from outside the UI (a channel reply pointing back
-   *  at the thread it answered) and what a reload or a shared link re-opens. */
   | { view: "chat"; agent: string; session?: string }
   | { view: "settings"; settingsTab: SettingsTab }
   | { view: "inbox" }
@@ -43,7 +40,6 @@ export type Route =
 
 export type View = Route["view"];
 
-// Alternation derived from the schema so the regex can't drift from it.
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
 const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
@@ -71,8 +67,6 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  // Must stay above the sandbox-home regex, which would otherwise capture
-  // "new" as an agent id.
   if (path === "/sandboxes/new") return { view: "sandbox-new" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
@@ -86,9 +80,6 @@ export function parseRoute(path: string): Route {
   }
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
-  // Knowledge bases are created in the shared sandbox wizard now. Land old
-  // links there instead of letting them fall through to the chat matcher
-  // below, which would try to open a knowledge base named "new".
   if (path === "/knowledge-bases/new") return { view: "sandbox-new" };
   const knowledgeBaseConfigMatch = path.match(
     /^\/knowledge-bases\/([^/]+)\/settings$/,
@@ -154,7 +145,6 @@ export function routeToPath(route: Route): string {
   }
 }
 
-/** Map a route onto the four flat fields the navigation slice owns. */
 export function routeToNavigationState(route: Route): {
   view: View;
   agentId: string | null;
@@ -163,8 +153,6 @@ export function routeToNavigationState(route: Route): {
 } {
   return {
     view: route.view,
-    // The KB settings form keys off `agentId`, the same field sandbox-home
-    // uses; both chat surfaces carry their agent as `selectedAgent` instead.
     agentId:
       route.view === "sandbox-home" || route.view === "knowledge-base-config"
         ? route.agentId

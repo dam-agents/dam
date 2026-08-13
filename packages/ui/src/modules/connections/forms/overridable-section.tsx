@@ -20,9 +20,6 @@ export function OverridableSection({
   fromFamily?: boolean;
 }) {
   const overriding = useWatch({ control, name: "overrideDefaults" });
-  // A single toggle flips the whole overridable group: the fields only make
-  // sense overridden together (your own app means all of its credentials, not
-  // a mix of presets and custom values), so we don't expose them per-field.
   return (
     <DisclosureBox title="Customize defaults" testId="customize-defaults">
       <div className="flex flex-col gap-3">

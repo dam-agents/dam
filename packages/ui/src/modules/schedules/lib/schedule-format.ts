@@ -6,8 +6,6 @@ function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-/** A run's timestamp as "today at 7:30 AM" / "yesterday at 7:30 AM", falling
- *  back to "Jul 13 at 7:30 AM" (with the year once it differs from now). */
 export function formatRunTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
   const time = date.toLocaleTimeString([], {
@@ -25,7 +23,6 @@ export function formatRunTime(iso: string, now: Date = new Date()): string {
   return `${day} at ${time}`;
 }
 
-/** Human cadence line for a schedule's card face. */
 export function scheduleCadenceText(schedule: Schedule): string {
   if (schedule.type === "rrule" && schedule.rrule)
     return rruleToText(schedule.rrule);
@@ -37,8 +34,6 @@ export interface LastRunStatus {
   className: string;
 }
 
-/** Maps a schedule's most-recent `status.lastResult` to a coloured label.
- *  `lastResult` is either "success" or an error message. */
 export function lastRunStatus(lastResult?: string): LastRunStatus | null {
   if (!lastResult) return null;
   if (lastResult === "success")

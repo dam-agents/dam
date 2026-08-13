@@ -46,8 +46,6 @@ describe("splitTemporarySandboxes", () => {
   });
 
   test("hides a hibernated target but keeps it out of the draw", () => {
-    // Terminal-but-unreaped spawns must not flash back as peers, and a pod
-    // that is down draws nothing.
     const { visible, drawByDriver } = splitTemporarySandboxes([
       agent("driver"),
       agent("t1", { spawnedBy: "driver", state: "hibernated" }),

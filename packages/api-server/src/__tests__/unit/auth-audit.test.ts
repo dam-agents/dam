@@ -2,9 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { reloadMock } = vi.hoisted(() => ({ reloadMock: vi.fn() }));
 
-// Stub jose so the middleware can be exercised without a real Keycloak/JWKS.
-// Only the "jose" specifier is stubbed — "jose/errors" stays real, so the
-// classification tests below throw genuine jose error instances.
 vi.mock("jose", () => ({
   createRemoteJWKSet: () => Object.assign(() => ({}), { reload: reloadMock }),
   jwtVerify: vi.fn(),
@@ -33,7 +30,6 @@ function capture() {
   return { records: () => lines.map((l) => JSON.parse(l)) };
 }
 
-/** Minimal Hono-context stub covering what the auth middleware touches. */
 function fakeCtx(headers: Record<string, string>, path = "/api/trpc/x") {
   const responses: { body: unknown; status: number }[] = [];
   const c = {
@@ -116,11 +112,6 @@ describe("auth middleware audit", () => {
   });
 
   it("keeps a message-only TypeError (jose-internal, attacker-forgeable) at 401", async () => {
-    // jose throws `TypeError('non-ASCII string encountered in encode()')` while
-    // building the signing input from an attacker-supplied payload segment,
-    // BEFORE the signature is checked — a forged token can force it. Unlike
-    // undici's fetch failure it carries no `.cause`, so it must NOT be treated
-    // as a JWKS outage; a forged token stays a credential denial (401), not 503.
     const cap = capture();
     verifyMock.mockRejectedValueOnce(
       new TypeError("non-ASCII string encountered in encode()"),

@@ -46,18 +46,10 @@ import {
 
 const WAIT_TIMEOUT_SECONDS = 120;
 
-// Not a model provider, so it lives outside the shared registry.
 const GITHUB_PAT_TEMPLATE_ID = "github-pat";
 
-// Connection names must be lowercase-kebab (DB-enforced).
 const CONNECTION_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-// TRPCError codes where the server definitively rejected a mutation — the
-// resource was never created, so rolling back what we created in this run
-// is safe. Codes outside this set (INTERNAL_SERVER_ERROR, transport) are
-// ambiguous: the mutation may have succeeded server-side, and a rollback
-// delete would destroy real state. Mirrors `dam agent create`'s
-// ROLLBACK_CODES.
 const ROLLBACK_CODES: ReadonlySet<string> = new Set([
   "CONFLICT",
   "BAD_REQUEST",
@@ -70,11 +62,7 @@ const ROLLBACK_CODES: ReadonlySet<string> = new Set([
 ]);
 
 interface Cleanup {
-  /** Connection IDs created during this run (provider and/or GitHub PAT). */
   newConnectionIds: string[];
-  /** Set once `agents.create` has returned an id. Cascade-deletes the
-   *  agent's grants via the K8s OwnerReference chain when passed to
-   *  `agents.delete`. */
   agentId: string | null;
 }
 
@@ -90,13 +78,6 @@ function classifyFailure(e: unknown): "rollback" | "ambiguous" {
     : "ambiguous";
 }
 
-/**
- * Best-effort tear-down of everything in the ledger. Agent first (cascade
- * tears down any owned children via OwnerReferences), then any new
- * connections. Whatever fails to delete is returned as orphan info so the
- * caller can surface it. One pass — if the api-server is down, the orphan
- * list is the best we can do.
- */
 async function deleteCreated(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -139,11 +120,6 @@ function formatOrphans(
   return lines.join("\n");
 }
 
-/**
- * Deps for `dam agent create-interactive`. Mirrors `dam agent create`'s
- * shape so the orchestration verbs can drop in without widening the
- * interface.
- */
 export interface CreateAgentInteractiveCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
@@ -194,7 +170,6 @@ async function runCreate(
     },
   });
 
-  // --- Step 1: name --------------------------------------------------
   const name = await text({
     message: "Agent name",
     placeholder: "my-agent",
@@ -209,7 +184,6 @@ async function runCreate(
   });
   if (isCancel(name)) return cancelAndExit();
 
-  // --- Step 2: template ----------------------------------------------
   const templateSvc = deps.createTemplateService(host);
   const tmplResult = await templateSvc.list();
   if (!tmplResult.ok) {
@@ -237,31 +211,13 @@ async function runCreate(
   });
   if (isCancel(templateId)) return cancelAndExit();
 
-  // --- Rollback bookkeeping ------------------------------------------
-  // Anything created during *this* run goes here so a cancel between
-  // prompts (Critical #1) or a downstream mutation failure can clean it
-  // up. Pickers push into this ledger immediately on successful create
-  // so the entry is in place by the time control returns. Existing
-  // connections/secrets the user picked or replaced stay out: a replace-
-  // existing path overwrote the value in place and the old value isn't
-  // recoverable, so rollback would be destructive.
   const trpc = deps.createTrpcClient(host);
   const cleanup: Cleanup = { newConnectionIds: [], agentId: null };
 
-  // --- Step 3: model provider ---------------------------------------
   const provider = await pickProvider(trpc, cleanup);
 
-  // --- Step 4: optional GitHub PAT ----------------------------------
   const githubPat = await pickGithubPat(trpc, cleanup);
 
-  // --- Step 5: agents.create ----------------------------------------
-  // Agent absorbs Instance: a single agents.create call
-  // provisions the runnable resource. Stage 1 discriminates by TRPCError
-  // code. Definitive rejections (ROLLBACK_CODES) mean the resource was
-  // never created, so deleting what *we* created is safe; ambiguous
-  // codes (INTERNAL_SERVER_ERROR, network) may leave real state behind,
-  // so we don't auto-delete — we surface a hint and let the user
-  // inspect.
   const spin = spinner();
   spin.start("Creating agent...");
 
@@ -284,15 +240,6 @@ async function runCreate(
     process.exit(EXIT_RUNTIME_FAILURE);
   }
 
-  // --- Step 6: grant credentials ------------------------------------
-  // Past this point we have a real agent on the server. Stage 2
-  // (granting credentials) NEVER rolls back — the agent is user state
-  // and may have value even without a grant. The retry bridges the
-  // K8s-API visibility race for the just-created agent ConfigMap
-  // (matches the web UI's 5×/2s wait); if it exhausts, we surface a
-  // hint pointing the user at the UI.
-  //
-  // Idempotent full replace, so the retry can safely re-run it.
   spin.message("Granting credentials...");
   const connectionIds: string[] = [provider.routing.id];
   if (githubPat) connectionIds.push(githubPat.connectionId);
@@ -313,17 +260,9 @@ async function runCreate(
     process.exit(EXIT_RUNTIME_FAILURE);
   }
 
-  // --- Step 7: wait for running --------------------------------------
-  // Past this point we have a real agent + grants on the server.
-  // Failures from here on do NOT trigger rollback — the user can
-  // inspect/clean up via `dam agent get` / `dam agent delete`.
   spin.message(`Waiting for agent to start (state: ${agent.state})...`);
   const svc = deps.createAgentService(host);
 
-  // SIGINT during the wait: stop the spinner, point at the live agent,
-  // exit non-zero. Don't rollback — the user chose to interrupt; the
-  // agent's existence is their call from here. The handler runs once;
-  // we remove it on natural wait completion to restore default behavior.
   const onSigint = () => {
     spin.stop("Cancelled");
     log.warn(
@@ -367,9 +306,6 @@ async function runCreate(
       process.exit(EXIT_RUNTIME_FAILURE);
       return;
     case "timeout":
-      // The agent exists server-side; the pod is just slow. Per spec:
-      // warn and exit 0. The user can check progress with
-      // `dam agent get`.
       spin.stop(
         `Agent still starting after ${WAIT_TIMEOUT_SECONDS}s (state: ${waitResult.lastState})`,
       );
@@ -389,14 +325,6 @@ function cancelAndExit(): never {
   process.exit(0);
 }
 
-/**
- * Cancel path for prompts that run after a picker has already created a
- * new connection. Best-effort cleanup of anything tracked in the ledger
- * before exiting — without this a user who hits Ctrl+C between provider
- * and GitHub steps would leak the just-created provider connection.
- *
- * Exits 0 (cancel is a user action, not an error).
- */
 async function cancelAndCleanup(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -406,12 +334,6 @@ async function cancelAndCleanup(
   process.exit(0);
 }
 
-/**
- * Best-effort tear-down of everything in the ledger, surfacing whatever
- * we couldn't delete as a warning. Shared by the cancel-path
- * (`cancelAndCleanup`) and the stage-1 rollback path (`handleStage1Failure`
- * on a definitive TRPCError).
- */
 async function flushCleanup(trpc: TrpcClient, cleanup: Cleanup): Promise<void> {
   if (cleanup.agentId === null && cleanup.newConnectionIds.length === 0) return;
   const { orphanAgent, orphanConnections } = await deleteCreated(trpc, cleanup);
@@ -419,16 +341,6 @@ async function flushCleanup(trpc: TrpcClient, cleanup: Cleanup): Promise<void> {
   if (summary) log.warn(summary);
 }
 
-/**
- * Stage 1 (agents.create) failure handler.
- *
- * Discriminates by TRPCError code via `classifyFailure`: definitive
- * codes mean the server rejected the mutation outright and any resource
- * we created is safe to tear down. Ambiguous codes (INTERNAL_SERVER_ERROR,
- * transport) may mean the mutation actually succeeded server-side, so
- * we keep our hands off real state and surface what we know about — the
- * user inspects via the web UI.
- */
 async function handleStage1Failure(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -441,9 +353,6 @@ async function handleStage1Failure(
     return;
   }
 
-  // Ambiguous outcome — agent may or may not have been created
-  // server-side. Don't delete anything; just tell the user what we
-  // tried to create so they can investigate.
   log.error(`Failed to create agent: ${reason}`);
   const lines: string[] = [];
   if (cleanup.agentId) lines.push(`  Agent: ${cleanup.agentId}`);
@@ -473,10 +382,6 @@ interface ExistingProviderConn {
   type: ProviderPresetType;
 }
 
-/**
- * Lists connections + templates for the pickers. A list failure is fatal:
- * cancel, flush the rollback ledger, and exit.
- */
 async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
   try {
     return {
@@ -490,11 +395,6 @@ async function listCredentials(trpc: TrpcClient, cleanup: Cleanup) {
   }
 }
 
-/**
- * Provider step. Offers existing provider connections, or "Add new..." which
- * creates a connection. Singleton-per-type: adding a provider whose type
- * already has a connection offers to replace its credential instead.
- */
 async function pickProvider(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -553,8 +453,6 @@ async function addOrReplaceProvider(
   existingConns: readonly ExistingProviderConn[],
   templates: readonly ConnectionTemplateView[],
 ): Promise<ProviderSelection> {
-  // Loops on server-side create/update failures — re-types the type prompt
-  // rather than preserving prior input; the prompts are short.
   while (true) {
     const type = await select<ProviderPresetType>({
       message: "Provider type",
@@ -568,8 +466,6 @@ async function addOrReplaceProvider(
     const existingOfType = existingConns.find((c) => c.type === type);
 
     if (existingOfType) {
-      // Singleton-per-type. Default to NOT replacing — overwriting a working
-      // credential is the destructive option; the user has to opt in.
       const replace = await confirm({
         message: `A ${PROVIDERS[type].displayName} connection already exists. Replace its credential?`,
         initialValue: false,
@@ -638,11 +534,9 @@ async function addOrReplaceProvider(
       configInputs,
     );
     if (created) return created;
-    // Fall through to next loop iteration on a non-recoverable create error.
   }
 }
 
-// Prompts the template's optional config inputs after the credential — each skippable.
 async function promptConfigInputs(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -680,13 +574,6 @@ async function promptConfigInputs(
   return out;
 }
 
-/**
- * Creates a header connection, re-prompting for a fresh name on CONFLICT
- * until it succeeds or the user cancels. Tracks the new id in the rollback
- * ledger immediately so a later cancel/throw can't orphan it. Returns the
- * created `{ id, name }`, or `null` on a non-recoverable create error — the
- * caller decides what to re-prompt (provider type vs. token).
- */
 async function createConnectionWithRename(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -733,8 +620,6 @@ async function createConnectionWithRename(
   }
 }
 
-// Returns null on a non-recoverable create error so the caller re-prompts the
-// provider type.
 async function createProviderConnection(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -763,13 +648,8 @@ interface GithubSelection {
   name: string;
 }
 
-// Default name for a new GitHub PAT connection (kebab-valid).
 const DEFAULT_GITHUB_PAT_NAME = GITHUB_PAT_TEMPLATE_ID;
 
-/**
- * Optional GitHub PAT step (returns null if skipped). Offers existing
- * `github-pat` connections, or "Add new..." which creates one.
- */
 async function pickGithubPat(
   trpc: TrpcClient,
   cleanup: Cleanup,
@@ -808,9 +688,6 @@ async function addOrReplaceGithubPat(
   cleanup: Cleanup,
   existing: readonly ConnectionView[],
 ): Promise<GithubSelection> {
-  // Singleton-by-default-name: if a github-pat connection named
-  // DEFAULT_GITHUB_PAT_NAME already exists, offer to replace its token.
-  // Default to NOT replacing — overwriting a working token is destructive.
   const collide = existing.find((c) => c.name === DEFAULT_GITHUB_PAT_NAME);
 
   while (true) {
@@ -849,7 +726,6 @@ async function addOrReplaceGithubPat(
     if (created) {
       return { connectionId: created.id, name: created.name };
     }
-    // Non-recoverable create error: loop re-prompts the token.
   }
 }
 
@@ -862,16 +738,11 @@ async function withRetry<T>(
     try {
       return await fn();
     } catch (e) {
-      // Definitive rejections (the server made up its mind) — retrying
-      // burns ~8s behind a spinner for no chance of success. The
-      // visibility-race that motivates the retry surfaces as
-      // INTERNAL_SERVER_ERROR / transport failure, not these codes.
       if (classifyFailure(e) === "rollback") throw e;
       if (attempt === maxAttempts - 1) throw e;
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
-  // Unreachable — loop either returns or throws on the last attempt.
   throw new Error("withRetry: exhausted attempts");
 }
 

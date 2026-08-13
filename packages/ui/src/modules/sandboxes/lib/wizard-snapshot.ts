@@ -11,8 +11,6 @@ const SNAPSHOT_KEY = "platform-sandbox-wizard";
 export const egressPresetSchema = z.enum(["none", "trusted", "all"]);
 export type EgressPreset = z.infer<typeof egressPresetSchema>;
 
-/** The step-1 choice: decides what the step reveals and which create path
- *  finishes. `experiment` and `knowledge-base` mint an Agent Kind. */
 export const startingPointSchema = z.enum([
   "experiment",
   "knowledge-base",
@@ -22,24 +20,16 @@ export const startingPointSchema = z.enum([
 ]);
 export type StartingPoint = z.infer<typeof startingPointSchema>;
 
-/** Pinned on the kinded paths: both setups are exercised against Claude Code,
- *  and the experiment kit is staged only in that image. */
 export const KINDED_HARNESS_TEMPLATE_ID = "claude-code";
 
-/** Persisted wizard state — ids and pick-state only, never secret values. */
 export const wizardSnapshotSchema = z.object({
   step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   maxStep: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
   startingPoint: startingPointSchema.nullable().default(null),
   templateId: z.string().nullable(),
-  /** The installation procedure; set only on the `knowledge-base` path. */
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string(),
   name: z.string(),
-  // The selected provider Connection (the single credential model). A snapshot
-  // persisted by a pre-#1273 build carried a `{source, id}` shape where the id
-  // could be a legacy *secret* id; drop those to null rather than let a secret
-  // id leak through as a connection id on finish.
   providerRef: z
     .preprocess(
       (v) => (v && typeof v === "object" && "source" in v ? null : v),
@@ -48,9 +38,6 @@ export const wizardSnapshotSchema = z.object({
     .default(null),
   egressPreset: egressPresetSchema,
   connectionIds: z.array(z.string()),
-  // The chosen sandbox Size (#1900) in slider units (CPU millicores,
-  // memory Mi). null = untouched — the template's default applies and no
-  // `size` rides the create call.
   sizeCpuMilli: z.number().int().nullable().default(null),
   sizeMemoryMi: z.number().int().nullable().default(null),
 });
@@ -77,10 +64,6 @@ const KINDED_PROVIDERS: readonly ProviderPresetType[] = [
   "anthropic",
 ];
 
-/** The providers a starting point offers. The kinded paths run on Claude Code, so
- *  they offer the two credentials that reach Claude — the IBM proxy or Anthropic
- *  directly — and steer toward the proxy. Bob and OpenAI would need a different
- *  harness, so offering them here only sets up a failure at the first model call. */
 export function providerPolicy(startingPoint: StartingPoint | null): {
   allow?: readonly ProviderPresetType[];
   recommended?: ProviderPresetType;
@@ -91,10 +74,6 @@ export function providerPolicy(startingPoint: StartingPoint | null): {
   return {};
 }
 
-/** Clears downstream image state so the reveal starts clean, and pins what the
- *  kinded paths don't ask for. Also drops the provider pick, which the kinded
- *  paths may no longer offer — `autoSelectFirst` refills it, preferring the
- *  recommended one, so the usual case is invisible. */
 export function startingPointDefaults(
   startingPoint: StartingPoint,
 ): Partial<WizardSnapshot> {
@@ -119,7 +98,6 @@ export function startingPointDefaults(
   }
 }
 
-/** Whether step 1 has everything the chosen starting point needs. */
 export function startingPointComplete(snapshot: WizardSnapshot): boolean {
   switch (snapshot.startingPoint) {
     case "experiment":
@@ -136,11 +114,6 @@ export function startingPointComplete(snapshot: WizardSnapshot): boolean {
   }
 }
 
-/** A draft saved before step 1 asked for a starting point has an image but no
- *  choice, which would render an empty step 1 and hide the pick. Recover it from
- *  what the old wizard did record. A specialized image can't be told from a
- *  harness one without the template list, so it lands on general-purpose and the
- *  user re-picks; the draft is otherwise intact. */
 function inferStartingPoint(
   snapshot: Omit<WizardSnapshot, "startingPoint">,
 ): StartingPoint | null {

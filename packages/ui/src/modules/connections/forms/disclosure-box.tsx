@@ -10,10 +10,7 @@ interface Props {
   defaultOpen?: boolean;
   bodyClassName?: string;
   testId?: string;
-  /** `box` (default): boxed header with a divider above the body. `section`:
-   *  an uppercase form-label header, no divider, with an optional description. */
   variant?: "box" | "section";
-  /** `section` only — a muted line under the header (e.g. a docs link). */
   description?: ReactNode;
   children: ReactNode;
 }

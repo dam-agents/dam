@@ -15,9 +15,6 @@ const EMPTY: never[] = [];
 
 const FOREIGN_TOAST_MS = 60_000;
 
-/** Upper-right egress-approval toast stack. The viewed sandbox's toasts stay
- *  until acted on; foreign ones hide after a timeout but the row stays
- *  pending in the Inbox — same polled rows, same verdict mutations. */
 export function EgressApprovalToasts({ agentId }: { agentId: string | null }) {
   const { data: rows = EMPTY } = useApprovalsForOwner();
   const pendingEgress = useMemo(
@@ -27,8 +24,6 @@ export function EgressApprovalToasts({ agentId }: { agentId: string | null }) {
 
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  // Expansion is state (not CSS hover) so collapsed rear cards can be made
-  // inert — otherwise their occluded buttons stay clickable and tabbable.
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -46,8 +41,6 @@ export function EgressApprovalToasts({ agentId }: { agentId: string | null }) {
         ),
       );
     }
-    // Prune resolved rows, and own rows so they get a fresh timeout if their
-    // sandbox is left again.
     for (const [id, timer] of timers.current) {
       if (!pendingIds.has(id) || ownIds.has(id)) {
         clearTimeout(timer);
@@ -75,8 +68,6 @@ export function EgressApprovalToasts({ agentId }: { agentId: string | null }) {
   );
   if (visible.length === 0) return null;
 
-  // Collapsed by default: the newest toast in front, the rest peeking out
-  // beneath it; hovering or focusing the stack expands it to a column.
   return (
     <div
       aria-live="polite"

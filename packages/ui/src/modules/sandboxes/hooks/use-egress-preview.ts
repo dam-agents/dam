@@ -13,9 +13,6 @@ interface Args {
   savedConnections: AgentConnections["connections"] | undefined;
 }
 
-/** Egress preview for a staged provider swap: rows for the incoming
- *  provider's hosts, strikethrough for the outgoing one's rules — composed
- *  with the staged network-access edits into one controller. */
 export function useEgressPreview({
   net,
   apps,

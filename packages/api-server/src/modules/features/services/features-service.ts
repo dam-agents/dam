@@ -6,8 +6,6 @@ import {
 
 import type { FeaturesRepository } from "../infrastructure/features-repository.js";
 
-/** Every feature defaults OFF; only explicit toggles are stored, so unknown
- *  rows (a removed feature id) are ignored rather than surfaced. */
 export function createFeaturesService(deps: {
   repo: FeaturesRepository;
   owner: string;

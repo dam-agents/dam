@@ -26,8 +26,6 @@ func idleCheckerCfg(timeout time.Duration) *config.Config {
 	}
 }
 
-// idleAgentCR builds an Agent CR carrying activity annotations — the only
-// inputs the idle checker reads.
 func idleAgentCR(name, lastActivity string, annotations map[string]string) *apiv1.Agent {
 	if annotations == nil {
 		annotations = map[string]string{}
@@ -43,8 +41,6 @@ func idleAgentCR(name, lastActivity string, annotations map[string]string) *apiv
 	}
 }
 
-// newIdleChecker wires a checker over a typed fake (StatefulSets) and a dynamic
-// fake seeded with the given Agent CRs.
 func newIdleChecker(t *testing.T, timeout time.Duration, agents []*apiv1.Agent, sts ...runtime.Object) (*IdleChecker, *fake.Clientset) {
 	t.Helper()
 	dynObjs := make([]runtime.Object, 0, len(agents))
@@ -57,8 +53,6 @@ func newIdleChecker(t *testing.T, timeout time.Duration, agents []*apiv1.Agent, 
 	return NewIdleChecker(client, newFakeDynamic(dynObjs...), idleCheckerCfg(timeout)), client
 }
 
-// agentStatefulSet is a stand-in for the agent (or gateway) StatefulSet the
-// controller renders, labelled so the idle checker's scale-down selects it.
 func agentStatefulSet(name string, replicas int32) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -82,8 +76,6 @@ func TestIdleChecker_HibernatesIdleInstance(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "idle agent scaled to zero")
 
-	// Pods are gone, so the agent is not routable — Ready must reflect that,
-	// with the Hibernated reason that tells it apart from a still-starting agent.
 	u, err := checker.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
@@ -139,9 +131,6 @@ func TestIdleChecker_SkipsNoLastActivity(t *testing.T) {
 }
 
 func TestIdleChecker_SkipsBusyAgent(t *testing.T) {
-	// An idle-by-activity agent that the pod probe reports BUSY (active
-	// session/trigger/terminal) must not be hibernated — this guard is the
-	// reason scale-down lives in the idle checker, not the reconciler.
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("busy-agent", staleTime, nil)
 	ss := agentStatefulSet("busy-agent", 1)
@@ -173,9 +162,9 @@ func TestIdleChecker_CheckInterval(t *testing.T) {
 		timeout  time.Duration
 		expected time.Duration
 	}{
-		{1 * time.Hour, 5 * time.Minute},                   // 10m clamped to 5m
-		{3 * time.Minute, 30 * time.Second},                // 30s clamped to 30s
-		{15 * time.Minute, 2*time.Minute + 30*time.Second}, // 2m30s within range
+		{1 * time.Hour, 5 * time.Minute},
+		{3 * time.Minute, 30 * time.Second},
+		{15 * time.Minute, 2*time.Minute + 30*time.Second},
 	}
 	for _, tt := range tests {
 		checker := NewIdleChecker(nil, nil, idleCheckerCfg(tt.timeout))

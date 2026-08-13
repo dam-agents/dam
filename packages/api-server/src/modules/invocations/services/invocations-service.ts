@@ -16,16 +16,12 @@ import type {
   InvocationStatus,
 } from "../infrastructure/invocations-repository.js";
 
-// The TTL bounds live in the shared contract (api-server-api) so the /invocations
-// request schema and the driver SDK validate against the same numbers. Re-export
-// them here so in-tree consumers keep importing from the invocations module.
 export {
   DEFAULT_INVOCATION_TTL_MS,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
 };
 
-/** Clamp a requested TTL into the allowed range, defaulting when unset. */
 export function resolveInvocationTtlMs(ttlMs: number | undefined): number {
   if (ttlMs === undefined) return DEFAULT_INVOCATION_TTL_MS;
   return Math.min(
@@ -34,8 +30,6 @@ export function resolveInvocationTtlMs(ttlMs: number | undefined): number {
   );
 }
 
-/** Thrown by `spawn` when the requested connections aren't a subset of the
- *  driver's own grants. The endpoint maps this to 403. */
 export class AttenuationError extends Error {
   constructor(public readonly offending: string[]) {
     super(`connections not granted to the driver: ${offending.join(", ")}`);
@@ -43,9 +37,6 @@ export class AttenuationError extends Error {
   }
 }
 
-/** A spawn stamped with an experiment span while that experiment is not
- *  the caller's own running experiment — Stop closed the trace (the fan-out
- *  must die too), or the id belongs to another driver's experiment. */
 export class ExperimentNotRunningError extends Error {
   constructor(experimentId: string) {
     super(
@@ -55,11 +46,6 @@ export class ExperimentNotRunningError extends Error {
   }
 }
 
-/** Thrown by `spawn` when the driver chain cannot be resolved to a root Driver
- *  (`resolveRoot` returns null past the depth ceiling — a corruption guard).
- *  Stamping the target's own id would manufacture exactly the orphan spend row
- *  this feature eliminates (#3041), so spawn refuses at the door. The endpoint
- *  maps this to 409. */
 export class UnresolvableDriverError extends Error {
   constructor(driverAgentId: string) {
     super(
@@ -69,8 +55,6 @@ export class UnresolvableDriverError extends Error {
   }
 }
 
-/** Thrown by `spawn` when the driver supplies a malformed JSON Schema. The
- *  endpoint maps this to 400. */
 export class InvalidSchemaError extends Error {
   constructor(detail: string) {
     super(`invalid result schema: ${detail}`);
@@ -80,29 +64,19 @@ export class InvalidSchemaError extends Error {
 
 export interface SpawnInput {
   driverAgentId: string;
-  /** The driver's own granted connection ids — the attenuation ceiling. */
   driverGrantIds: string[];
   templateId?: string;
   image?: string;
   connections: string[];
   prompt: string;
-  /** JSON Schema the report_result result is validated against. */
   schema: unknown;
-  /** Liveness deadline for this target, clamped to
-   *  [MIN_INVOCATION_TTL_MS, MAX_INVOCATION_TTL_MS]; defaults to
-   *  DEFAULT_INVOCATION_TTL_MS when unset. */
   ttlMs?: number;
-  /** Resource limits for the target (K8s cpu/memory). A heavy Make needs more
-   *  than the template's default memory (a 1Gi default OOM-kills a clone +
-   *  install). Omitted dimensions inherit the template. */
   size?: { cpu?: string; memory?: string };
-  /** Experiments v2 span attach ("<experimentId>/<spanId>"); stored opaque. */
   experimentSpanId?: string;
 }
 
 export interface RecordResult {
   ok: boolean;
-  /** Populated when ok is false: why the result was rejected. */
   errors?: string;
 }
 
@@ -112,9 +86,6 @@ export interface InvocationsService {
     invocationId: string,
     driverAgentId: string,
   ): Promise<{ status: InvocationStatus; result: unknown } | null>;
-  /** report_result: validate the result against the stashed schema, store it,
-   *  and mark the Invocation done. Attribution is by the reporting agent's own
-   *  id. */
   recordResult(invocationId: string, result: unknown): Promise<RecordResult>;
 }
 
@@ -122,16 +93,9 @@ export function createInvocationsService(deps: {
   owner: string;
   repo: InvocationsRepository;
   agents: AgentsService;
-  /** Resolves a spawning target's driver chain up to the root Driver, whose
-   *  id is stamped into the target so its gateway attributes spend upward
-   *  (#3041). Safe at spawn: every ancestor is still `running`, so the chain
-   *  is fully present. */
   driverResolution: DriverResolution;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
-  /** Gate for experiment-attached spawns: a stopped experiment's loop must
-   *  not keep fanning out (its running invocations were already failed),
-   *  and a driver may only attach to its OWN experiment. */
   isExperimentRunning?: (
     experimentId: string,
     driverAgentId: string,
@@ -149,39 +113,25 @@ export function createInvocationsService(deps: {
     }
   }
 
-  // The `report_result` tool takes an untyped `result` arg, so some target
-  // harnesses deliver it JSON-encoded: a `42` arrives as the string "42", an
-  // object as its JSON text. Validation is structural, not truth, so accept a
-  // stringified payload when parsing it yields a value that fits the schema.
   function coerceResult(result: unknown, validate: ValidateFunction): unknown {
     if (validate(result)) return result;
     if (typeof result === "string") {
       try {
         const parsed: unknown = JSON.parse(result);
         if (validate(parsed)) return parsed;
-      } catch {
-        // Not JSON — let the original value fail validation with a real error.
-      }
+      } catch {}
     }
     return result;
   }
 
   return {
     async spawn(input) {
-      // Attenuation: a target may only carry a subset of the driver's grants.
       const grantSet = new Set(input.driverGrantIds);
       const offending = input.connections.filter((c) => !grantSet.has(c));
       if (offending.length > 0) throw new AttenuationError(offending);
 
-      // Fail fast on a malformed schema so the driver hears about it now, not
-      // via a target that can never pass validation.
       compileSchema(input.schema);
 
-      // A spawn attached to an experiment span dies with its experiment: after
-      // Stop, a loop that catches the failed invocation and retries must not
-      // keep fanning out fresh targets. The experiment must also be the
-      // CALLER's — a foreign (same-owner) experiment id would otherwise leak
-      // auto-attributed artifacts into someone else's run.
       if (input.experimentSpanId && deps.isExperimentRunning) {
         const experimentId = input.experimentSpanId.split("/", 1)[0]!;
         if (
@@ -191,11 +141,6 @@ export function createInvocationsService(deps: {
         }
       }
 
-      // Resolve the root Driver BEFORE the row (fail at the door — no row to
-      // clean up). The target has no spend identity of its own; its telemetry
-      // is the Driver's, so the target's gateway must attribute upward from the
-      // first exported record. A chain that can't resolve fails closed: stamping
-      // self would manufacture the orphan row this feature eliminates (#3041).
       const rootId = await deps.driverResolution.resolveRoot(
         input.driverAgentId,
       );
@@ -203,11 +148,6 @@ export function createInvocationsService(deps: {
         throw new UnresolvableDriverError(input.driverAgentId);
       }
 
-      // Row BEFORE agent, under a pre-minted id: from the first instant the
-      // target can appear in any agents list, the invocations table already
-      // attributes it to its driver — no window where it reads as a plain
-      // sandbox. The orphan sweeper's created-at grace covers the moments the
-      // row exists without its agent; a failed create deletes the row.
       const targetId = generateK8sName("agent");
       const expiresAt = new Date(
         now().getTime() + resolveInvocationTtlMs(input.ttlMs),
@@ -221,13 +161,6 @@ export function createInvocationsService(deps: {
         experimentSpanId: input.experimentSpanId ?? null,
       });
 
-      // The target is a fresh ephemeral Agent, marked Sweepable so the Agent
-      // Sweep reaps it once it hibernates — the backstop for the eager reap on
-      // this Invocation reaching terminal. No Lifetime grace: an Invocation
-      // target dies on hibernate. Preset `none`: under Egress Aliasing the
-      // target has no egress identity of its own — the ext_authz gate resolves
-      // every request to the driver's rules, so seeded target rules would be
-      // dead rows.
       let agent;
       try {
         agent = await deps.agents.create({
@@ -248,8 +181,6 @@ export function createInvocationsService(deps: {
         throw err;
       }
 
-      // Deliver the one-shot prompt (carrying the report_result contract +
-      // schema) via the trigger rail, then wake the fresh agent so it drains it.
       const task = buildInvocationPrompt({
         prompt: input.prompt,
         resultSchema: input.schema,
@@ -274,7 +205,6 @@ export function createInvocationsService(deps: {
 
     async get(invocationId, driverAgentId) {
       const row = await deps.repo.get(invocationId);
-      // Scope reads to the driver that spawned it.
       if (!row || row.driverAgentId !== driverAgentId) return null;
       return { status: row.status, result: row.result };
     },
@@ -294,22 +224,11 @@ export function createInvocationsService(deps: {
       }
       const stored = await deps.repo.complete(invocationId, value);
       if (!stored) {
-        // Lost a race with the liveness sweep — the Invocation was just failed.
         return { ok: false, errors: "invocation is no longer running" };
       }
-      // Eager reap: the Invocation is terminal, so the target Agent has served
-      // its purpose — drop it now rather than wait for the Agent Sweep to catch
-      // it on hibernate. Deleting the Agent ConfigMap cascades pod/gateway/PVC
-      // via ownerReferences; that teardown is downstream and async, so this
-      // tool response still flushes before the pod dies. Best-effort: if the
-      // delete fails, the target is Sweepable, so the Agent Sweep reaps it once
-      // it hibernates. The result row outlives the Agent (dropped later by the
-      // liveness sweep's retention pass) so a slightly late poll still reads it.
       try {
         await deps.agents.delete(invocationId);
-      } catch {
-        // Swallowed: Sweepable is the backstop.
-      }
+      } catch {}
       return { ok: true };
     },
   };

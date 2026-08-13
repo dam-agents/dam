@@ -14,8 +14,6 @@ import {
   libraryArtifactVersions as versionsTable,
 } from "db";
 
-/** Raw row shapes — mapped to contract types in the service layer, where the
- *  share URL and password-presence projections are decided. */
 export interface ArtifactRow {
   id: string;
   owner: string;
@@ -62,8 +60,6 @@ export interface ArtifactListQuery {
   limit: number;
 }
 
-/** Public folder pages list at most this many artifacts — the query serves
- *  an unauthenticated route, so it stays bounded like `listArtifacts`. */
 export const SHARED_FOLDER_PAGE_LIMIT = 500;
 
 export type ArtifactPatch = Partial<
@@ -89,8 +85,6 @@ export interface ArtifactLibraryRepository {
   getArtifact(id: string, owner: string): Promise<ArtifactRow | null>;
   getArtifactBySlug(slug: string): Promise<ArtifactRow | null>;
   listArtifacts(query: ArtifactListQuery): Promise<ArtifactRow[]>;
-  /** Artifacts of a folder visible on its public page. Bounded — this is
-   *  reachable unauthenticated, so it must never scale with row count. */
   listSharedInFolder(folderId: string): Promise<ArtifactRow[]>;
   countSharedInFolder(folderId: string): Promise<number>;
   updateArtifact(
@@ -98,16 +92,12 @@ export interface ArtifactLibraryRepository {
     owner: string,
     patch: ArtifactPatch,
   ): Promise<ArtifactRow | null>;
-  /** Delete the artifact and all its version rows in one transaction,
-   *  returning everything needed for blob cleanup afterwards. */
   deleteArtifactWithVersions(
     id: string,
     owner: string,
   ): Promise<{ artifact: ArtifactRow; versions: VersionRow[] } | null>;
   incrementViewCount(id: string): Promise<void>;
 
-  /** Snapshot the outgoing current version and advance the head row in one
-   *  transaction — a crash can't leave a duplicate snapshot behind. */
   advanceVersion(
     id: string,
     owner: string,
@@ -130,12 +120,8 @@ export interface ArtifactLibraryRepository {
     owner: string,
     patch: Partial<Pick<FolderRow, "name">>,
   ): Promise<FolderRow | null>;
-  /** Delete the folder and ungroup its artifacts in one transaction. */
   deleteFolder(id: string, owner: string): Promise<boolean>;
 
-  /** Expired artifacts past the grace window — the sweeper's scan. Expiry is
-   *  retention, not link lifetime: no visibility filter, private rows expire
-   *  the same way. */
   listExpiredBefore(cutoff: Date, limit: number): Promise<ArtifactRow[]>;
 }
 
@@ -252,9 +238,6 @@ export function createArtifactLibraryRepository(
 
     async deleteArtifactWithVersions(id, owner) {
       return db.transaction(async (tx) => {
-        // Lock the head row (proving ownership) before draining the version
-        // rows — deleting the head first would let the FK cascade swallow
-        // them and lose the storage refs the blob cleanup needs.
         const [head] = await tx
           .select({ id: artifactsTable.id })
           .from(artifactsTable)
@@ -271,8 +254,6 @@ export function createArtifactLibraryRepository(
           .delete(artifactsTable)
           .where(eq(artifactsTable.id, id))
           .returning(artifactColumns);
-        // Never absent: the FOR UPDATE lock above pins the head row for the
-        // rest of this transaction, so the delete always returns it.
         return { artifact: artifact!, versions };
       });
     },
@@ -375,8 +356,6 @@ export function createArtifactLibraryRepository(
 
     async deleteFolder(id, owner) {
       return db.transaction(async (tx) => {
-        // Ungroup before deleting: the FK's SET NULL would detach the
-        // artifacts anyway, but silently — this keeps their updatedAt bump.
         const [folder] = await tx
           .select({ id: foldersTable.id })
           .from(foldersTable)

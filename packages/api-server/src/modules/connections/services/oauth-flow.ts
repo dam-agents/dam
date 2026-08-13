@@ -98,10 +98,6 @@ export function createOAuthFlowService(deps: {
         );
       }
 
-      // Re-resolve the provider instead of trusting the stored copy: the
-      // pending record travels through Redis with the clientSecret stripped
-      // (see engine.start), and this also picks up a secret rotated
-      // mid-flow.
       const provider = await buildProvider(conn, conn.auth, deps);
       const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
@@ -118,17 +114,12 @@ export function createOAuthFlowService(deps: {
       }
       await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
 
-      // `expiresAt` stays in the OR for back-compat: connections authorized
-      // before `connectedAt` existed carry an expiry but no `connectedAt`.
       const isReauth =
         conn.auth.kind === "oauth" &&
         (conn.auth.connectedAt !== undefined ||
           conn.auth.expiresAt !== undefined);
 
       if (conn.auth.kind === "oauth") {
-        // `connectedAt` is written on every successful exchange, even when the
-        // provider returns no expiry. Scopes are what it says it granted; a
-        // silent provider is assumed to have granted what was requested.
         const updatedAuth: ConnectionAuthConfig = {
           ...withoutRefreshFailureMarker(conn.auth),
           connectedAt: Math.floor(Date.now() / 1000),
@@ -141,8 +132,6 @@ export function createOAuthFlowService(deps: {
       }
 
       const template = deps.templates.get(conn.templateId);
-      // Long-lived credentials minted via the public, unauthenticated callback
-      // — record the mint (never the tokens).
       securityLog("info", "oauth.token_mint", {
         category: "credential",
         actor: pending.ctx.ownerId,
@@ -157,8 +146,6 @@ export function createOAuthFlowService(deps: {
           reauth: isReauth,
         },
       });
-      // Only a first authorization is a new connection: the event feeds the usage
-      // activity log, so re-emitting would count one connection twice.
       if (!isReauth) {
         emit({
           type: EventType.ConnectionCreated,
@@ -180,8 +167,6 @@ export function createOAuthFlowService(deps: {
   };
 }
 
-// Best-effort: the token is already minted, so a failed identity lookup must
-// never fail the connection — identity lands on the next successful re-auth.
 async function applyGitHubIdentity(
   conn: Connection,
   accessToken: string,
@@ -195,7 +180,6 @@ async function applyGitHubIdentity(
     const next = upsertGitconfigContribution(conn.contributions, identity);
     await deps.repo.updateContributions(conn.id, next);
 
-    // State-builder reads contributions live, so a version bump re-pushes them.
     const agentIds = await deps.repo.listAgentsForConnection(conn.id);
     for (const agentId of agentIds) {
       await deps.runtimeMutator.bump(agentId, []);
@@ -243,9 +227,6 @@ async function buildProvider(
     if (dynamicSecret) clientSecret = dynamicSecret;
   }
 
-  // Consent asks for the template's *current* scopes, so a list that grew since
-  // create takes effect on re-auth. Discovery/DCR connections have no template
-  // list and keep their stored ones.
   const templateScopes =
     template?.authKind === "oauth" && template.scopes?.length
       ? template.scopes

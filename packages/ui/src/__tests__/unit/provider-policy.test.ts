@@ -27,8 +27,6 @@ describe("providerPolicy", () => {
   );
 
   test("switching to a kinded path drops a provider it may not offer", () => {
-    // Otherwise a previously-picked OpenAI would stay selected but invisible,
-    // and ride the create call.
     expect(startingPointDefaults("experiment").providerRef).toBeNull();
     expect(startingPointDefaults("knowledge-base").providerRef).toBeNull();
   });
@@ -43,8 +41,9 @@ describe("offeredProviderRows", () => {
 
   test("applies a kinded policy: only the allowed rows, recommended first", () => {
     const { allow, recommended } = providerPolicy("experiment");
-    expect(offeredProviderRows(allow, recommended).map((row) => row.type)) //
-      .toEqual(["ibm-litellm", "anthropic"]);
+    expect(
+      offeredProviderRows(allow, recommended).map((row) => row.type),
+    ).toEqual(["ibm-litellm", "anthropic"]);
   });
 
   test("keeps the recommended row first whatever the catalog order", () => {

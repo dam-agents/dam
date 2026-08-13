@@ -1,10 +1,5 @@
 import type { WakeFailureCause } from "../../agents/index.js";
 
-/** End-user sentence for a wake failure, shared by the channel workers.
- *  The cause taxonomy is agents-domain; the tone and retry advice are a
- *  channel-presentation concern, so the copy lives here. Deliberately
- *  never interpolates raw controller messages — those can carry
- *  resource names and belong in logs. */
 export function wakeFailureUserCopy(c: WakeFailureCause): string {
   switch (c.kind) {
     case "not-found":
@@ -53,7 +48,6 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
       );
     case "gateway-pod-failed":
       switch (c.gatewayReason) {
-        // Self-repairing, but read at the deadline — don't promise it's imminent.
         case "StuckOnSupersededRevision":
           return (
             "This agent can't reach the network: its gateway is stuck on an " +

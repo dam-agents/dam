@@ -1,7 +1,6 @@
 import type { Db } from "db";
 import { telegramConversations, eq } from "db";
 
-/** The chat→Agent binding a conversation resolves to on every inbound message. */
 export interface TelegramConversationBinding {
   agentId: string;
   authorizedBy: string;
@@ -23,9 +22,6 @@ export function findAgentByConversation(db: Db) {
   };
 }
 
-/** Insert-only bind: the PK enforces one Agent per conversation, so a lost
- *  insert race (or an existing binding) surfaces as "conflict" — the caller
- *  re-reads to distinguish same-agent idempotency from a real clash. */
 export function bindConversation(db: Db) {
   return async (
     conversationId: string,

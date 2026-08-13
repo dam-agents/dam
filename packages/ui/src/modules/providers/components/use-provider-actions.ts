@@ -7,8 +7,6 @@ export function useProviderActions() {
   const deleteConnection = useDeleteConnection();
 
   return {
-    /** Confirm with the user, then delete the provider connection.
-     *  Destructive variant: removing a provider breaks any agent using it. */
     async remove(ref: ProviderRef) {
       const ok = await showConfirm(
         "Are you sure you want to remove this provider? Any agent currently using this provider will no longer work as expected.",

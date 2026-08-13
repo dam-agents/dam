@@ -84,9 +84,6 @@ describe("publish gate (#2828)", () => {
   });
 
   it("exempts a skill tracked as installed from a Skill Source", async () => {
-    // Install overwrites the directory, so a source-installed skill always
-    // diverges from a same-named baked copy — it's the source's, not the
-    // image's, and publish-back-to-source must keep working.
     const { deps, publish } = makeDeps(
       [skill("websearch", "system-modified")],
       ["websearch"],

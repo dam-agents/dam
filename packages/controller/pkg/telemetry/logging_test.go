@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// spanContext returns a context carrying a valid recording span.
 func spanContext(t *testing.T) (context.Context, trace.SpanContext) {
 	t.Helper()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(tracetest.NewSpanRecorder()))
@@ -57,7 +56,6 @@ func TestTraceContextHandlerPlainOutsideSpan(t *testing.T) {
 	assert.NotContains(t, line, "span_id")
 }
 
-// recordingHandler counts records delivered to it.
 type recordingHandler struct {
 	records *[]slog.Record
 	min     slog.Level
@@ -102,8 +100,6 @@ func TestLeveledHandlerGates(t *testing.T) {
 	assert.True(t, h.Enabled(context.Background(), slog.LevelInfo))
 }
 
-// The enabled handler's stderr child must produce the same JSON shape as
-// today's plain handler for records outside a span.
 func TestEnabledStderrChildMatchesPlainOutput(t *testing.T) {
 	var plain, wrapped bytes.Buffer
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}

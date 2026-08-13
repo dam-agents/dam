@@ -7,11 +7,6 @@ import {
   SYNTHETIC_SESSION_PREFIX,
 } from "../infrastructure/acp-frames.js";
 
-/** TTL stamped on acp_native rows. The wrapper holds the awaiting promise
- *  in-process — there's no real timeout — but the column is NOT NULL. A row
- *  outliving its TTL stays visible in the inbox until the response goes
- *  through; a sweeper pass would mark inactive once we wire the wrapper
- *  heartbeat. */
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface RecordAcpNativePendingInput {
@@ -24,25 +19,10 @@ export interface RecordAcpNativePendingInput {
   options: readonly AcpPermissionOption[];
 }
 
-/**
- * Server-internal port the ACP relay consumes. The relay's HITL touchpoint
- * is just two operations: insert a pending row when the wrapper emits a
- * `session/request_permission`, and CAS-resolve it (marking delivered)
- * when an in-session response is forwarded upstream. The synth-frame
- * subscription is the only Redis hop the relay still owns — it's a UI
- * fan-out for ext_authz prompts, unrelated to ACP-native delivery.
- */
 export interface ApprovalsRelayService {
-  /** Returns the assigned row id, or null if the request shouldn't be
-   *  mirrored (e.g. synth ext_authz frames travelling over the same WS). */
   recordAcpNativePending(
     input: RecordAcpNativePendingInput,
   ): Promise<string | null>;
-  /** Called when the relay forwards an in-session JSON-RPC response
-   *  upstream. The wrapper has already received the response, so we
-   *  CAS-resolve and stamp `delivered_at` in one update. Idempotent at the
-   *  DB layer — non-permission responses pass a row id that doesn't exist
-   *  and the update affects zero rows. */
   resolveAcpNativeFromInSession(rowId: string): Promise<void>;
   subscribeFrameInjects(
     agentId: string,

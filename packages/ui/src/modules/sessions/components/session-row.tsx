@@ -84,7 +84,6 @@ export function SessionRow({
     onResume();
   }, [onResume, menuOpen]);
 
-  // Close menu on outside tap
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -95,8 +94,6 @@ export function SessionRow({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  // Show "(no title · abcd1234)" while the harness hasn't named the session
-  // — the id suffix keeps untitled rows distinguishable from each other.
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = !s.title
     ? "text-muted-foreground italic"
@@ -109,8 +106,6 @@ export function SessionRow({
   const channel =
     s.type === SessionType.ChannelSlack ||
     s.type === SessionType.ChannelTelegram;
-  // Slack channel sessions split into the channel's rolling ambient reader and
-  // the threads it spins off; the ambient one wears an extra "A" marker.
   const slackKind = slackSessionKind(s);
 
   return (
@@ -133,7 +128,7 @@ export function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          {/* The one 13px step in the design; every other size is on the scale. */}
+          {}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -162,7 +157,7 @@ export function SessionRow({
           )}
         </span>
       </div>
-      {/* Desktop: hover-visible overflow menu */}
+      {}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -186,7 +181,7 @@ export function SessionRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* Context menu — long press (mobile) or right-click */}
+      {}
       {menuOpen && (
         <div
           ref={menuRef}
@@ -235,8 +230,6 @@ function SessionIndicators({
       )}
       {channel &&
         (ambient ? (
-          // Rolling channel reader: keep the # channel glyph, brand it with a
-          // superscript "A" so it stands apart from the threads it spins off.
           <span
             className="inline-flex items-start text-foreground"
             aria-label="Ambient channel session"

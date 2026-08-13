@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// PreToolUse hook: front-line doc-size enforcement on Write/Edit to
-// docs/architecture/**.
-//
-// It computes the resulting file content, measures it with the shared module,
-// and denies the write in-session when it would exceed the cap — so the reason
-// lands while the overflowing content is still in the agent's context and it
-// reconciles then and there, not at commit time.
-//
-// The authoritative guarantee is the docs:check:doc-size gate; this hook is the
-// UX loop. It fails open on any error and never crashes the tool call: a human
-// editor or a Bash heredoc bypasses it, and the gate catches those.
 
 import { readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -35,8 +24,6 @@ function deny(reason) {
   process.exit(0);
 }
 
-// Simulate the Edit substitution to get the resulting content. Returns null when
-// the edit cannot be applied (missing match), so the tool itself reports it.
 function applyEdit(current, input) {
   const { old_string, new_string, replace_all } = input;
   if (old_string == null) return null;

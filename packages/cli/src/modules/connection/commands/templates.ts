@@ -75,9 +75,6 @@ export function buildTemplatesCommand(deps: {
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
-      // Every listed id must be a valid `dam connection connect <id>` argument.
-      // `connect` rejects mcp-category ids and demands a URL, so listing them
-      // would break the list-then-connect workflow this command exists for.
       const connectable = result.value.filter((t) => t.category !== "mcp");
 
       if (opts.json) {

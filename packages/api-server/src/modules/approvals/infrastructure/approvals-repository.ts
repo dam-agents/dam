@@ -8,7 +8,6 @@ import type {
 import type { PendingApprovalRow } from "../domain/types.js";
 
 export interface ListApprovalsRepoOpts {
-  /** Hard cap; the repository clamps to a safe upper bound on top of this. */
   limit?: number;
   status?: ApprovalStatus;
 }
@@ -16,11 +15,6 @@ export interface ListApprovalsRepoOpts {
 export interface ApprovalsRepository {
   insertPending(row: NewPendingApproval): Promise<void>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
-  /** Returns the most recent pending ext_authz row for an agent that
-   *  matches the request shape, or null. Used by the gate to dedupe
-   *  retried holds so the inbox doesn't fill with copies of one logical
-   *  decision when the agent's CLI retries (Envoy timeout, network blip,
-   *  api-server restart). */
   findActivePendingExtAuthz(input: {
     agentId: string;
     host: string;
@@ -35,11 +29,6 @@ export interface ApprovalsRepository {
     agentId: string,
     opts?: ListApprovalsRepoOpts,
   ): Promise<PendingApprovalRow[]>;
-  /** CAS update: only succeeds if the row is still `pending`. The single
-   *  consumer of the pending → resolved transition is enforced here, so
-   *  concurrent inbox clicks / in-session responses are at-most-once.
-   *  Returns whether this call won the CAS — `false` means the row was
-   *  unknown or already settled/expired. */
   resolvePending(
     id: string,
     verdict: "allow_once" | "allow" | "deny_once" | "deny",
@@ -51,27 +40,14 @@ export interface ApprovalsRepository {
     verdict: "allow" | "deny",
     decidedBy: string,
   ): Promise<void>;
-  /** Idempotent. Stamps `delivered_at` on a row whose response frame has
-   *  reached the wrapper. Re-running is harmless: the WHERE keeps it from
-   *  overwriting an earlier delivery timestamp. */
   markDelivered(id: string): Promise<void>;
-  /** Outbox sweep query — rows that were resolved at least `staleMs`
-   *  milliseconds ago and never received a delivery stamp. Best-effort
-   *  fallback for the rare case where the inline delivery path on the
-   *  click-handling replica died before stamping `delivered_at`. */
   listResolvedUndelivered(opts: {
     staleMs: number;
     limit: number;
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string): Promise<void>;
   expireOverdue(now: Date): Promise<string[]>;
-  /** Hard-delete every pending_approvals row for an agent. Called by the
-   *  cleanup hook on agent delete and by the orphan sweeper. Resolved and
-   *  expired rows are removed alongside pending — the agent is gone, the
-   *  audit trail goes with it. */
   deleteForAgent(agentId: string): Promise<void>;
-  /** Distinct `agent_id`s referenced by any pending_approvals row. The
-   *  sweeper uses this to find rows whose agent is no longer in K8s. */
   listDistinctAgentIds(): Promise<string[]>;
 }
 
@@ -92,8 +68,6 @@ interface RawPending {
   ownerSub: string;
   sessionId: string | null;
   payload: unknown;
-  // Raw `db.execute(sql...)` reads bypass drizzle's timestamptz mapper and
-  // yield strings; typed `.select()`/`.returning()` reads yield Dates.
   createdAt: Date | string;
   expiresAt: Date | string;
   resolvedAt: Date | string | null;
@@ -103,9 +77,6 @@ interface RawPending {
   deliveredAt: Date | string | null;
 }
 
-/** Default cap when the caller doesn't specify, and the hard ceiling
- *  regardless of what they ask for. Keeps the inbox bounded as resolved
- *  rows accumulate over the lifetime of an account. */
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 500;
 
@@ -139,9 +110,6 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
 export function createApprovalsRepository(db: Db): ApprovalsRepository {
   return {
     async insertPending(row) {
-      // Idempotent on id so the relay can re-emit the same acp_native row on
-      // every channel re-engagement without duplicating; ext_authz uses a
-      // fresh UUID per request so the conflict path is unreachable for it.
       await db
         .insert(pendingApprovals)
         .values({
@@ -165,11 +133,6 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     },
 
     async findActivePendingExtAuthz({ agentId, host, method, path }) {
-      // JSONB extraction matches the payload shape inserted by the gate
-      // (`{kind: "ext_authz", host, method, path}`). No supporting index —
-      // the inbox queries scan by (owner|instance, status), which already
-      // gates the candidate set; lookups here run after a status='pending'
-      // + agent_id filter so the row count is small.
       const rows = await db.execute(sql`
         SELECT id, type, agent_id AS "agentId",
                owner_sub AS "ownerSub", session_id AS "sessionId", payload,

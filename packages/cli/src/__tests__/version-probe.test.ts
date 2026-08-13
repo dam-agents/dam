@@ -103,8 +103,6 @@ describe("HttpVersionProbe", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe("malformed-response");
-      // Zod surfaces the missing required field by name; the floor is
-      // optional and must not appear in the error.
       expect(r.error.message).toContain("serverVersion");
       expect(r.error.message).not.toContain("minClientVersion");
     }
@@ -128,15 +126,9 @@ describe("HttpVersionProbe", () => {
   it("aborts with timeout error when fetch never resolves", async () => {
     vi.useRealTimers();
     stubFetch(
-      (_url) =>
-        new Promise<Response>((_, reject) => {
-          // Forward the AbortSignal abort to a rejection — that's what the
-          // real `fetch` does on abort.
-          // The signal is bound at call-time; we read it from the third arg.
-        }) as Promise<Response>,
+      (_url) => new Promise<Response>((_, reject) => {}) as Promise<Response>,
     );
 
-    // We intercept again with the proper signal-aware handler:
     globalThis.fetch = vi.fn(
       async (_input, init?: RequestInit) =>
         new Promise<Response>((_, reject) => {

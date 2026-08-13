@@ -29,16 +29,8 @@ import {
 } from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
-/** The service is re-composed per request (context-scoped), so the cache must
- *  outlive it at module scope to ever hit. */
 const sharedScanCache = createScanCache();
 
-/**
- * The pull-request state resolver, composed for background use. Separate from
- * {@link composeSkillsModule} because it is owner-agnostic: the skills service
- * is re-composed per request around one user, while the resolver sweeps every
- * agent's publish records.
- */
 export function composePrStateResolver(deps: {
   db: Db;
   agents: AgentsRepository;
@@ -66,8 +58,6 @@ export function composeSkillsModule(deps: {
   brandName: string;
   runtimeMutator: RuntimeMutator;
   templatesRepo: TemplatesRepository;
-  /** Whether the pod has applied everything the outbox holds — gates the
-   *  `state` reconcile, which would otherwise reap rows mid-apply. */
   runtimeSettled: RuntimeSettledPort;
 }): SkillsService {
   const { db, namespace, seedSources } = deps;

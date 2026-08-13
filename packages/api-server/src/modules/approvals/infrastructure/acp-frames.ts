@@ -1,6 +1,3 @@
-/** Sentinel session id prefix for ACP frames that aren't tied to a real
- *  session. The UI dispatches on this prefix to route them to the inbox
- *  surface rather than the in-session permission queue. */
 export const SYNTHETIC_SESSION_PREFIX = "_egress:";
 
 export function syntheticSessionId(approvalId: string): string {
@@ -14,17 +11,6 @@ export interface SynthFrameInput {
   path: string;
 }
 
-/** ACP `session/request_permission` synth frame for an ext_authz pending
- *  approval. Options match the inbox actions; the toolCall metadata carries
- *  the originating request so the UI can render it without re-querying.
- *
- *  The JSON-RPC `id` is required: the ACP SDK routes id-bearing messages to
- *  the request-handler path (`requestPermission`), where the UI's synth-prefix
- *  guard diverts to the inbox. Without an `id` the SDK would route to
- *  `extNotification` and the live-UI prompt never surfaces. The id is the
- *  approvalId itself — a UUID, so it can't collide with the wrapper's
- *  integer-counter request ids; nothing responds to it upstream because
- *  `awaitPermission` returns a never-resolving promise on the synth path. */
 export function buildExtAuthzSynthFrame(input: SynthFrameInput): string {
   return JSON.stringify({
     jsonrpc: "2.0",
@@ -61,7 +47,6 @@ export function buildExtAuthzSynthFrame(input: SynthFrameInput): string {
   });
 }
 
-/** Redis channel pattern for fanning synth frames to the relay's clients. */
 export const INJECT_CHANNEL_PREFIX = "inject:";
 export const injectChannelOf = (agentId: string): string =>
   `${INJECT_CHANNEL_PREFIX}${agentId}`;

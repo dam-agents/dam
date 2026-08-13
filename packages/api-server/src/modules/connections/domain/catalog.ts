@@ -18,7 +18,6 @@ import type {
 } from "./connection-template.js";
 import { KUBERNETES_TEMPLATE_ID } from "./kubernetes-contributions.js";
 
-// Project a provider preset's env bundle into `env` contributions
 function envContributions(mappings: EnvMapping[]): Contribution[] {
   return mappings.map((m) => ({
     kind: "env" as const,
@@ -74,9 +73,6 @@ const ANTHROPIC: HeaderConnectionTemplate = {
   ],
 };
 
-// Contributions are synthesized at build time from the user's API host —
-// see `buildKubernetesContributions`: a Bearer egress-inject (with port and
-// upgrade tunneling for exec/port-forward) plus a ready-to-use kubeconfig.
 const KUBERNETES: HeaderConnectionTemplate = {
   id: KUBERNETES_TEMPLATE_ID,
   name: "Kubernetes / OpenShift",
@@ -129,7 +125,6 @@ const OPENAI: HeaderConnectionTemplate = {
   host: "api.openai.com",
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
-  // Env bundle sourced from the provider preset so they can't drift (cf. ibm-litellm).
   contributions: [
     ...envContributions(openaiEnvMappings()),
     {
@@ -154,7 +149,6 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   host: IBM_LITELLM_HOST,
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
-  // Env bundle + host sourced from the provider preset so they can't drift; Claude model pins are omitted as the agent's gateway discovers them.
   contributions: [
     ...envContributions(ibmLitellmEnvMappings()),
     {
@@ -166,7 +160,6 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
-// Transport header for Bob's `?key=` injection; distinct from `Authorization` so both injections coexist on one host without colliding.
 const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";
 
 const BOB: HeaderConnectionTemplate = {
@@ -179,9 +172,7 @@ const BOB: HeaderConnectionTemplate = {
   authKind: "header",
   host: BOB_HOST,
   headerName: "Authorization",
-  // Opaque api-keys go in under `Apikey`; `Bearer` triggers JWT auth.
   valueFormat: "Apikey {value}",
-  // Dual injection: `Apikey` header on every request plus the `?key=` URL param Bob appends to admin endpoints.
   contributions: [
     ...envContributions(bobEnvMappings()),
     {
@@ -222,8 +213,6 @@ const BOB: HeaderConnectionTemplate = {
       envName: "BOB_MAX_COINS",
       label: "Max cost",
       hint: "Per-task cost cap (Bob 2.x --max-cost); Bob stops the task when exceeded.",
-      // A cost, not a coin count: a task can settle well under a unit (observed
-      // ~0.10), so an integer-only cap could not express anything below 1.
       pattern: "^(?:[1-9]\\d*(?:\\.\\d+)?|0?\\.\\d*[1-9]\\d*)$",
       patternHint: "a positive amount, e.g. 0.50 or 5",
     },
@@ -239,12 +228,6 @@ const BOB: HeaderConnectionTemplate = {
 
 const MODAL_HOST = "api.modal.com";
 
-// Modal's gRPC auth is two metadata headers: x-modal-token-id (a public id) and
-// x-modal-token-secret (the secret). Only the secret is the connection
-// credential, injected at the gateway over an HTTP/2 chain. The token-id is
-// non-secret and rides as a plain env (filled via the Token ID config input).
-// Blob uploads hit storage.googleapis.com (+ Cloudflare R2 with dynamic hosts,
-// approved from the HITL inbox at first run).
 const MODAL: HeaderConnectionTemplate = {
   id: "modal",
   name: "Modal",
@@ -258,8 +241,6 @@ const MODAL: HeaderConnectionTemplate = {
   headerName: "x-modal-token-secret",
   valueFormat: "{value}",
   contributions: [
-    // Placeholder so the modal client emits the header; the gateway overwrites
-    // it with the real secret. Keeps the `as-` shape the client expects.
     {
       kind: "env",
       name: "MODAL_TOKEN_SECRET",
@@ -272,8 +253,6 @@ const MODAL: HeaderConnectionTemplate = {
       valueFormat: "{value}",
       http2: true,
     },
-    // Modal streams function I/O and image-build context through cloud blob
-    // storage (it picks a backend with fallback) — allow the ones observed.
     { kind: "egress-allow", host: "storage.googleapis.com" },
     { kind: "egress-allow", host: "s3.amazonaws.com" },
   ],
@@ -396,10 +375,6 @@ function spotify(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
   };
 }
 
-// User-token scopes advertised by Slack's MCP server
-// (https://mcp.slack.com/.well-known/oauth-authorization-server). Requesting
-// the full set lets the agent use every Slack MCP tool — search, channel and
-// thread history, posting, reactions, canvases, files, and user lookups.
 const SLACK_SCOPES = [
   "search:read.public",
   "search:read.private",
@@ -442,18 +417,10 @@ function slack(creds?: OAuthClientCredentials): OAuthConnectionTemplate {
     setupUrl: "https://api.slack.com/apps",
     ...(creds?.clientId ? { clientId: creds.clientId } : {}),
     ...(creds?.clientSecret ? { clientSecret: creds.clientSecret } : {}),
-    // Slack's MCP OAuth is a standards-compliant AS (PKCE/S256, confidential
-    // client via client_secret_post) but offers no dynamic client registration,
-    // so the app is registered out of band and connects through the static
-    // OAuth path with these fixed endpoints.
     authorizationUrl: "https://slack.com/oauth/v2_user/authorize",
     tokenUrl: "https://slack.com/api/oauth.v2.user.access",
     scopes: SLACK_SCOPES,
     contributions: [
-      // The agent reaches Slack through its hosted MCP server, not a bearer in
-      // the pod: the mcp-entry writes a placeholder Authorization header into
-      // the harness MCP config and Envoy swaps in the real user token on egress
-      // to mcp.slack.com (same swap the OAuth-DCR MCP path relies on).
       {
         kind: "egress-inject",
         host: "mcp.slack.com",
@@ -655,11 +622,6 @@ function googleService(
     scopes: [...GOOGLE_BASELINE_SCOPES, ...def.scopes],
     extraAuthParams: { access_type: "offline", prompt: "consent" },
     contributions: [
-      // The Google Workspace CLI (`gws`, baked into platform-base) reads this
-      // env var as its OAuth access token. Granting any Google connection
-      // stamps the sentinel here; the egress-inject contribution below then
-      // has Envoy swap it for the real Bearer token on *.googleapis.com calls.
-      // Same name across all Google services — first-granted-wins.
       {
         kind: "env",
         name: "GOOGLE_WORKSPACE_CLI_TOKEN",
@@ -672,9 +634,6 @@ function googleService(
         headerName: "Authorization",
         valueFormat: "Bearer {value}",
       })),
-      // Google clients fetch the public discovery doc at startup (e.g.
-      // /discovery/v1/apis/gmail/v1/rest), outside each service's host scope.
-      // Public + read-only, so allow without credential injection.
       {
         kind: "egress-allow" as const,
         host: "www.googleapis.com",
@@ -684,7 +643,6 @@ function googleService(
   };
 }
 
-// github.com uses HTTP Basic `x-access-token:<pat>` (GitHub's git-over-HTTPS PAT form); api.github.com and raw.githubusercontent.com use Bearer.
 const GITHUB_PAT: HeaderConnectionTemplate = {
   id: "github-pat",
   name: "GitHub (Personal Access Token)",
@@ -721,10 +679,6 @@ const GITHUB_PAT: HeaderConnectionTemplate = {
   ],
 };
 
-// GitHub App installation tokens (ghs_…). The platform mints them from the
-// app's private key server-side and injects on the same three GitHub hosts as
-// github-pat: api.github.com (Bearer), github.com (Basic x-access-token, for
-// git-over-HTTPS), and raw.githubusercontent.com (Bearer).
 const GITHUB_APP: GitHubAppConnectionTemplate = {
   id: "github-app",
   name: "GitHub App (installation)",
@@ -760,13 +714,6 @@ const GITHUB_APP: GitHubAppConnectionTemplate = {
   ],
 };
 
-// GitHub App installation on a GitHub Enterprise host — the bot/agent
-// counterpart to the interactive `github-enterprise` OAuth connection. The
-// user supplies the enterprise host at connect time; `apiBaseUrl`'s `{host}`
-// placeholder is substituted the same way OAuth endpoint placeholders are
-// (see `buildGitHubApp`), and the host-scoped injections mirror the OAuth
-// template's (subdomain-isolated `api.{host}` for REST, apex `{host}` for
-// git-over-HTTPS).
 function githubEnterpriseApp(
   creds?: GitHubEnterpriseCredentials,
 ): GitHubAppConnectionTemplate {

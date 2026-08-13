@@ -1,7 +1,3 @@
-/**
- * Reacts to AgentDeleted — removes channel rows and per-channel
- * authorization state from PostgreSQL.
- */
 import type { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";
 import {

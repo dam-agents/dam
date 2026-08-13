@@ -12,41 +12,29 @@ import type { AuthRequiredError, TransportError } from "../domain/errors.js";
 type ConnResult<T> = Result<T, TransportError | AuthRequiredError>;
 
 export interface ConnectionService {
-  /** All of the owner's connections (apps + MCP), as stored on the server. */
   list(): Promise<
     Result<readonly ConnectionView[], TransportError | AuthRequiredError>
   >;
-  /** The provider templates a connection can be created from. */
   listTemplates(): Promise<ConnResult<readonly ConnectionTemplateView[]>>;
-  /** Create a connection from a template. Returns its id. */
   createConnection(
     input: ConnectionCreateInput,
   ): Promise<ConnResult<{ id: string }>>;
-  /** Replace a header connection's stored credential value in place. */
   update(id: string, value: string): Promise<ConnResult<void>>;
-  /** Begin the browser OAuth flow for a connection; returns the authorize URL. */
   startOAuth(connectionId: string): Promise<ConnResult<{ authUrl: string }>>;
-  /** Probe an MCP server URL for its auth requirement. */
   discoverMcp(url: string): Promise<ConnResult<{ auth: "oauth" | "none" }>>;
-  /** Probe a cluster API endpoint's TLS to auto-configure the upstream CA. */
   probeClusterCa(host: string): Promise<ConnResult<ClusterCaProbe>>;
-  /** A single connection by id, or null if the caller doesn't own it. */
   getConnection(id: string): Promise<ConnResult<ConnectionView | null>>;
-  /** Connection ids currently granted to an agent. */
   agentConnectionIds(
     agentId: string,
   ): Promise<Result<readonly string[], TransportError | AuthRequiredError>>;
-  /** Read current grants, union in `add`, write the full set back. Returns the resulting set. */
   grant(
     agentId: string,
     add: readonly string[],
   ): Promise<Result<readonly string[], TransportError | AuthRequiredError>>;
-  /** Read current grants, remove `remove`, write the full set back. Returns the resulting set. Idempotent. */
   revoke(
     agentId: string,
     remove: readonly string[],
   ): Promise<Result<readonly string[], TransportError | AuthRequiredError>>;
-  /** Delete a connection (the stored credential) by id. */
   disconnect(
     id: string,
   ): Promise<Result<void, TransportError | AuthRequiredError>>;
@@ -97,9 +85,6 @@ export function createConnectionService(deps: {
       return trpcCall(() => readIds(agentId));
     },
     async grant(agentId, add) {
-      // `setAgentConnections` is a full replace — read current grants, union
-      // in the additions, and write the whole set back so the server's
-      // contribution/egress resync sees the correct final state.
       return trpcCall(async () => {
         const current = await readIds(agentId);
         const next = Array.from(new Set([...current, ...add]));

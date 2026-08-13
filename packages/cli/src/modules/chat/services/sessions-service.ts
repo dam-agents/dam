@@ -4,9 +4,6 @@ import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import type { AcpSessionClient } from "../infrastructure/acp-session-client.js";
 
-/** How `dam chat` picks the terminal session to attach to. Owned by the CLI:
- *  there is no server-side session store, so strategy resolution is a
- *  client-side computation over the agent's live ACP session list. */
 export type TerminalStrategy =
   | { kind: "new" }
   | { kind: "continue" }
@@ -61,11 +58,8 @@ export function createSessionsPort(deps: {
       });
 
       try {
-        // `new` needs no agent round-trip: the PTY mints the session on attach
-        // and it surfaces in session/list with no `_meta` (terminal default).
         if (strategy.kind === "new") return ok(ready(randomUUID()));
 
-        // `continue` / `resume` resolve against the agent's live session list.
         const regular = (await deps.acp.list(agentId)).filter(
           (s) => s.type === SessionType.Regular,
         );
@@ -91,8 +85,6 @@ export function createSessionsPort(deps: {
             sessionId: strategy.sessionId,
           });
 
-        // Resuming a chat session in the terminal re-categorizes it; confirm
-        // first unless forced, then persist the flip over ACP.
         if (target.mode === SessionMode.Chat) {
           if (!opts?.force)
             return ok<SessionResolution>({

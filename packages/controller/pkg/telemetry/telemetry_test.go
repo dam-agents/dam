@@ -42,8 +42,6 @@ func TestSetupEnabledWithEndpoint(t *testing.T) {
 	shutdown, enabled, err := Setup(context.Background())
 	require.NoError(t, err)
 	assert.True(t, enabled)
-	// Shutdown flushes to an unreachable endpoint — it may error, but it must
-	// honor the deadline rather than hang or panic.
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	_ = shutdown(ctx)

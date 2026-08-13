@@ -1,23 +1,4 @@
 #!/usr/bin/env node
-// check:doc-size — enforce the architecture-doc character budget.
-//
-// Architecture docs are a hand-maintained, reduced view of the current system;
-// the cap keeps them reduced. It is a forcing function, not a byte budget: going
-// over means the page dropped to the level of the code, or grew to cover more
-// than one subsystem. The remedy is to raise the level, cut volatile detail, or
-// split — not to reword to fit, and not to offload description into the ADR log
-// (the log holds decisions, not documentation spillover). Precision of the
-// number is not the point; a hard limit that forces the re-think is.
-//
-// This module is the single measurement shared by two surfaces:
-//   - the authoritative gate (this file's `main`, wired as docs:check:doc-size
-//     in `mise run check` + CI) — scans the working tree, so it covers human
-//     edits and Bash-heredoc writes a tool hook cannot see;
-//   - the front-line PreToolUse hook (scripts/doc-size-hook.mjs) — imports the
-//     helpers here so the in-session rejection and the gate failure agree.
-//
-// Unit is characters: deterministic, zero-dependency, stable, and a human can
-// eyeball it. A crude proxy for token cost, but precision is not the goal.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -25,11 +6,6 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Caps in characters, calibrated once and left. The index (the always-loaded
-// landing page) is the hot working set, so it carries the hardest cap. The
-// per-page cap is the day-one lint ceiling: connections.md (~38k today) is the
-// largest page and sits just under it, so the next-most-bloated page feels
-// pressure first while the rest keep headroom. Tighten here as pages are consolidated.
 export const CAPS = { page: 40000, index: 8000 };
 
 const ARCH_DIR = join(REPO_ROOT, "docs", "architecture");
@@ -39,10 +15,6 @@ export function measure(content) {
   return content.length;
 }
 
-// Which cap governs a path, or null when it is not an architecture doc.
-//   docs/architecture.md            → index cap
-//   docs/architecture/<name>.md     → page cap
-// Accepts absolute or repo-relative paths.
 export function capFor(filePath) {
   const abs = resolve(REPO_ROOT, filePath);
   if (abs === INDEX_PATH) return { kind: "index", cap: CAPS.index };
@@ -51,12 +23,6 @@ export function capFor(filePath) {
   return isDirectChild ? { kind: "page", cap: CAPS.page } : null;
 }
 
-// The steering message, shared so the hook rejection and the gate failure read
-// identically. Over-cap is a wrong-level or too-broad signal, not a conciseness
-// ask, so the ladder leads with raising the level and splitting. It never tells the agent
-// to reword to fit, and never to mint an ADR as a spillover bucket: relocating
-// is the narrow last case, only for genuine decision rationale, which the log
-// already owns from when the decision was made.
 export function overageReport({ path, size, cap, kind }) {
   const over = size - cap;
   const label = kind === "index" ? "index (always loaded, hardest cap)" : "page";
@@ -93,8 +59,6 @@ function main() {
   process.stdout.write("✅ check:doc-size: all architecture docs within budget.\n");
 }
 
-// Run only when invoked directly, so the hook can import helpers without the
-// gate running as a side effect (same guard as adr-index.mjs).
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main();
 }

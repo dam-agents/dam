@@ -4,14 +4,6 @@ import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 const GH_TOKEN_ENV = "GH_TOKEN";
 const SETUP_TIMEOUT_MS = 10_000;
 
-// Point git's credential helper at `gh auth git-credential`: git hands the
-// GH_TOKEN sentinel to the Envoy sidecar, which swaps it for the real token on
-// the wire (same path REST uses). gh only treats github.com as authenticated
-// when GH_TOKEN is in its env, and env is runtime-delivered (not pod env), so
-// this runs as an env-change reaction — never at boot, where it always failed.
-// Idempotent; fire-and-forget + bounded so a slow gh can't stall the env
-// reaction, and a failure just leaves git unconfigured (private-repo ops would
-// then prompt) rather than wedging anything.
 export function configureGitCredentialHelper(
   envReader: RuntimeEnvReader,
   log: (msg: string) => void,

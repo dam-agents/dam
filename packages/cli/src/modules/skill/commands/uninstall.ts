@@ -79,7 +79,6 @@ export function buildUninstallCommand(deps: {
 
         const svc = deps.createSkillsService(host);
 
-        // Need the source's gitUrl for the mutation — no scan required.
         const sourcesRes = await svc.listSources(agentId);
         if (!sourcesRes.ok) {
           printServiceError(sourcesRes.error, host);

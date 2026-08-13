@@ -5,9 +5,6 @@ interface Props {
   rows?: number;
 }
 
-/**
- * Placeholder rows shown while a list query is in flight.
- */
 export function ListSkeleton({ rowHeight = 68, rows = 1 }: Props) {
   return (
     <div className="flex flex-col gap-3">

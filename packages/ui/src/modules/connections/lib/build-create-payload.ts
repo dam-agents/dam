@@ -13,9 +13,6 @@ export interface CreateFormValues {
   overrideDefaults: boolean;
 }
 
-/** Projects the form's raw field values into the create input for the
- *  template's auth kind, or an inline error. Overridable inputs are dropped
- *  unless the user opted into customizing defaults. */
 export function buildCreatePayload(
   template: ConnectionTemplateView,
   { name, fields, overrideDefaults }: CreateFormValues,

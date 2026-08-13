@@ -51,17 +51,9 @@ import type {
 } from "./admission/index.js";
 import type { SessionPresence } from "./agent-proxies/index.js";
 
-/** The single assembled dependency object the api-server app runs on. Built
- *  once by `bootstrap()` (the sole composition root) and consumed by
- *  `startApiServerApp`; every field is a live singleton, never a raw handle
- *  the app rebuilds. */
 export interface ApiServerDeps {
   config: Config;
-  /** Shared BullMQ periodic-job scheduler (one execution per period across
-   *  replicas). */
   periodicJobs: PeriodicJobs;
-  /** Dedicated Redis client for cross-replica shared state (session
-   *  presence, OAuth/bind handoff stores). */
   sharedRedis: Redis;
   api: CoreV1Api;
   db: Db;
@@ -69,9 +61,7 @@ export interface ApiServerDeps {
   identityLinkService: IdentityLinkService;
   pendingSlackOAuthFlows: TtlStore<SlackOAuthPending>;
   pendingTelegramOAuthFlows: TtlStore<TelegramOAuthPending>;
-  /** Present when Telegram is enabled; backs the chat→agent bind handoff. */
   telegramBindFlows?: TelegramBindFlowStore;
-  /** Backs the Slack in-chat bind handoff (OAuth callback → agent picker). */
   slackBindFlows: SlackBindFlowStore;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
@@ -79,31 +69,22 @@ export interface ApiServerDeps {
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
-  /** Hooks fired after a successful agent K8s delete; each clears its
-   *  module's per-agent durable state. */
   agentCleanupHooks: readonly AgentCleanupHook[];
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Reads an agent's advertised runtime capabilities (owned by runtime-delivery). */
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (
     app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
   ) => void;
-  /** Agent ids ever registered to an owner (Postgres registry, soft-deleted
-   *  included) — keeps deleted agents' spend attributable. */
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
-  /** ClickHouse-backed agent-metrics reader; `null` when the telemetry
-   *  backend is disabled (the metrics API then fails closed). */
   metricsReader: MetricsReader | null;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
-  /** Owner-agnostic; consumers owner-scope each read themselves. */
   artifacts: ArtifactService;
 
-  // ── App singletons (built in bootstrap, consumed across the app) ──
   k8sClient: K8sClient;
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
@@ -113,10 +94,8 @@ export interface ApiServerDeps {
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   auth: ReturnType<typeof createAuth>;
   jwksWarmup: ReturnType<typeof startJwksWarmup>;
-  /** azp→surface mapping constants for the UserAuthenticated emission sites. */
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
-  /** Hono middleware: routes the share host to the viewer app, before auth. */
   shareHostGate: MiddlewareHandler;
   sessionPresence: SessionPresence;
 }

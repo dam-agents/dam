@@ -37,7 +37,6 @@ describe("seedTelemetryIdentity", () => {
     );
     const attrs = env.find((e) => e.name === "OTEL_RESOURCE_ATTRIBUTES");
     expect(attrs?.value).toBe("team=blue,platform.agent.name=new-name");
-    // No duplicate entry appended.
     expect(
       env.filter((e) => e.name === "OTEL_RESOURCE_ATTRIBUTES"),
     ).toHaveLength(1);

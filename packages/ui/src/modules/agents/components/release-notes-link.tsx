@@ -3,8 +3,6 @@ import { ArrowRight } from "@carbon/icons-react";
 import { externalLinkProps, isExternalHttpUrl } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
-/** The harness's release list. Renders nothing unless the template declares an
- *  http(s) URL. */
 export function ReleaseNotesLink({
   href,
   className,

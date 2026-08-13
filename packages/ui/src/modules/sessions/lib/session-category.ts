@@ -34,13 +34,6 @@ export function sessionCategory(session: SessionView): SessionCategory {
   return "chats";
 }
 
-/**
- * A Slack channel session is either the channel's rolling **ambient** reader
- * (keyed `ambient:<channel>`, where top-level reads-along chatter accrues) or a
- * **thread** the agent got pulled into (its own `thread_ts` session). Returns
- * null for any other session — ambient is a Slack-only mode, so Telegram and
- * non-channel sessions have no such split.
- */
 export type SlackSessionKind = "ambient" | "thread";
 
 export function slackSessionKind(

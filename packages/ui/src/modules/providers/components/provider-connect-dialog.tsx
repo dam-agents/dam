@@ -24,9 +24,6 @@ interface Props {
   onClose: () => void;
 }
 
-// New setup writes a Connection. Editing rotates the credential in place —
-// connections.update carries only that one value, so config-input changes on an
-// existing connection don't persist.
 export function ProviderConnectDialog({
   provider,
   item,

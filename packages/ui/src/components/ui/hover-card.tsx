@@ -9,10 +9,6 @@ import { cn } from "@/lib/utils";
 
 const HoverCardTrigger = HoverCardPrimitive.Trigger;
 
-/** Radix defaults to 700ms, tuned for a card that interrupts reading. This one
- *  annotates a control the user has deliberately pointed at, so it should feel
- *  like a response to that. The close delay is the grace period for crossing
- *  the gap into the card. */
 function HoverCard({
   openDelay = 200,
   closeDelay = 200,
@@ -27,11 +23,6 @@ function HoverCard({
   );
 }
 
-/** Detail that opens on hover or focus and takes no click of its own, so the
- *  trigger keeps its own action. Radix holds the card open across the gap
- *  between trigger and panel, so content here can be reached with the pointer —
- *  but only with the pointer: it stamps `tabindex="-1"` on everything tabbable
- *  inside, on every render. Anything essential needs a second home. */
 function HoverCardContent({
   className,
   sideOffset = 8,

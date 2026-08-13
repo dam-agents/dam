@@ -30,11 +30,6 @@ import (
 func main() {
 	level := logLevel()
 
-	// Telemetry before the logger: the slog handler fans out to the OTel log
-	// bridge, so the SDK must exist when the handler is built. Runs on every
-	// replica, before leader election — standbys export runtime metrics and
-	// logs too (spans only happen on the leader, inside run()). A no-op
-	// unless an OTLP endpoint is configured via the standard OTEL_* env.
 	telemetryShutdown, telemetryEnabled, telemetryErr := telemetry.Setup(context.Background())
 	slog.SetDefault(slog.New(telemetry.NewHandler(level, telemetryEnabled)))
 	if telemetryErr != nil {
@@ -42,9 +37,6 @@ func main() {
 	}
 	if telemetryEnabled {
 		slog.Info("telemetry export enabled")
-		// Flush buffered spans/metrics/logs on the way out (after
-		// leader-election returns on SIGTERM). os.Exit paths skip this —
-		// nothing worth flushing has happened by then.
 		defer func() {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -66,17 +58,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Raise the client-go default (QPS 5 / Burst 10), shared across every
-	// reconcile loop against this one client; the API server's priority &
-	// fairness is the real backstop.
 	if restCfg.QPS == 0 {
 		restCfg.QPS = 50
 		restCfg.Burst = 100
 	}
 	slog.Info("kube client rate limits", "qps", restCfg.QPS, "burst", restCfg.Burst)
 
-	// Client spans for every K8s API call, parented to the reconcile span in
-	// the request context. Identity when telemetry is disabled.
 	restCfg.Wrap(telemetry.WrapTransport)
 
 	client, err := kubernetes.NewForConfig(restCfg)
@@ -93,8 +80,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	// Fail fast on every replica, before leader election — a stale CRD schema
-	// would otherwise have this build's writes silently pruned.
 	if err := crdcheck.Assert(ctx, dynClient); err != nil {
 		slog.Error("CRD schema check failed", "error", err)
 		os.Exit(1)
@@ -125,10 +110,6 @@ func main() {
 	})
 }
 
-// logLevel parses LOG_LEVEL (debug|info|warn|error, default info) — debug
-// surfaces the per-reconcile phase timing. The level governs both log streams:
-// the JSON handler on stderr and, when telemetry is enabled, the OTLP export
-// (see pkg/telemetry).
 func logLevel() slog.Level {
 	level := slog.LevelInfo
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
@@ -143,13 +124,9 @@ func logLevel() slog.Level {
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
 
-	// Agents are custom resources — watched via a dynamic informer.
 	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
 	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)
 
-	// Pod informer: pod readiness transitions re-enqueue the owning
-	// agent so its Ready conditions are recomputed. Separate factory — it pins a
-	// pod label selector the CR factory can't carry.
 	podFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
 		informers.WithNamespace(cfg.Namespace),
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
@@ -164,27 +141,14 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	go idleChecker.RunLoop(ctx)
 
-	// Warm PVC pool (#692): pre-provisions spare workspace volumes so new
-	// agents claim one instantly instead of waiting on dynamic provisioning.
-	// Leader-only and a no-op when disabled.
 	warmPool := reconciler.NewWarmPoolManager(client, cfg)
 	go warmPool.RunLoop(ctx)
 
-	// One-time RWX -> RWO workspace migration (#2988): drains every
-	// ReadWriteMany workspace volume onto ordinary single-writer storage.
-	// Leader-only; a no-op loop once no RWX volume remains.
 	storageMigration := reconciler.NewStorageMigrationManager(client, dynClient, cfg)
 	go storageMigration.RunLoop(ctx)
 
-	// Periodic GC for resources whose Agent has been removed out-of-band
-	// (issue #244). The Delete event handler covers the happy path; this
-	// catches crashes mid-delete and direct kubectl removals. Leaf TLS
-	// Secrets are also reaped here so historical leaks (from before
-	// owner-references were added) are eventually cleaned up.
 	go runOrphanSweep(ctx, agentReconciler, 10*time.Minute)
 
-	// Named queues: client-go only records workqueue metrics (depth, latency,
-	// retries — see pkg/telemetry) for queues that carry a name.
 	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
@@ -219,49 +183,32 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	}
 	slog.Info("informer caches synced")
 
-	// Exactly ONE agent worker: budget enforcement (#1900) relies on agent
-	// reconciles never interleaving — see the race note on budgetAllows
-	// before parallelizing this.
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
 
-// maxReconcileRetries is the consecutive-failure count after which an Agent is
-// marked BackoffLimitExceeded (visibility only). The rate limiter already caps
-// the retry delay (~1000s) and the resync keeps retrying, so recovery stays
-// automatic — this just surfaces "stuck" on the condition.
 const maxReconcileRetries = 15
 
-// runAgentWorker drains the agent queue, reconciling each Agent CR resolved
-// from the informer cache. Blocks until the queue shuts down.
 func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter reconciler.AgentGetter, queue workqueue.TypedRateLimitingInterface[string]) {
 	for {
 		name, shutdown := queue.Get()
 		if shutdown {
 			return
 		}
-		// queueDepth separates a slow reconcile from a backed-up queue.
 		slog.DebugContext(ctx, "agent reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
 			rctx, finish := telemetry.StartReconcile(ctx, "agent", name)
 			agent, err := getter.Get(name)
 			if err != nil {
-				// Gone from cache (deleted) — Delete handler owns teardown.
 				queue.Forget(name)
 				finish(telemetry.OutcomeNotFound, nil)
 				return
 			}
 			if err := r.Reconcile(rctx, agent); err != nil {
-				// Keep requeuing — the rate limiter caps the delay (~1000s) and
-				// the resync still retries, so a transient cause recovers. Don't
-				// Forget here: that resets the limiter to fast retries.
 				queue.AddRateLimited(name)
 				requeues := queue.NumRequeues(name)
 				telemetry.SetRequeues(rctx, requeues)
 				if requeues >= maxReconcileRetries {
-					// Surface the persistent failure on the condition; retries
-					// continue at the capped cadence. setError won't downgrade
-					// this back, so the agent settles instead of flip-flopping.
 					r.SetBackoffExceeded(rctx, name, requeues, err)
 					slog.ErrorContext(rctx, "reconcile agent: backoff limit exceeded",
 						"name", name, "requeues", requeues, "error", err)
@@ -279,18 +226,12 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 	}
 }
 
-// enqueueObjectName adds an object's name to the queue, tolerating the
-// unstructured shape the dynamic informer emits.
 func enqueueObjectName(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
 	if u := unstructuredFrom(obj); u != nil {
 		queue.Add(u.GetName())
 	}
 }
 
-// enqueuePodOwner re-enqueues the Agent that owns a pod (via the
-// agent-platform.ai/agent label) when the pod's readiness may have changed, so
-// the reconciler recomputes its Ready conditions. Run executor pods carry
-// the parent agent's label; re-reconciling the parent is harmless (idempotent).
 func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
@@ -307,8 +248,6 @@ func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface
 	}
 }
 
-// unstructuredFrom extracts the *unstructured.Unstructured from an informer
-// event payload, unwrapping a delete tombstone if present.
 func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
 	if u, ok := obj.(*unstructured.Unstructured); ok {
 		return u
@@ -323,8 +262,6 @@ func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
 
 func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
 	sweep := func() {
-		// Both passes list every PVC / Secret in the namespace; time them so a
-		// heavy sweep eating the shared QPS budget shows up.
 		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
 		start := time.Now()
 		r.ReconcileOrphanPVCs(sctx)

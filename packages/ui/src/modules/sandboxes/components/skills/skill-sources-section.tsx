@@ -10,8 +10,6 @@ import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 
-/** The "Sourced from GitHub" region: one card per connected source, with its own
- *  loading, empty and list states. */
 export function SkillSourcesSection({
   agentId,
   readOnly,
@@ -30,7 +28,6 @@ export function SkillSourcesSection({
   isError: boolean;
   surface: SkillsSurface;
   derived: SkillsDerivations;
-  /** The "Add source" control, or null while read-only. */
   action: ReactNode;
   onOpenSkill: (source: SkillSource, skill: Skill) => void;
   onAddSets: () => void;
@@ -54,7 +51,6 @@ export function SkillSourcesSection({
   const { searching, shownSources, filteredBySource, suppressedBySource } =
     derived;
 
-  // Every source filtered out is the search's answer, not an empty page.
   if (searching && shownSources.length === 0) return null;
 
   return (

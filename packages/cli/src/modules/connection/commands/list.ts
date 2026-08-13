@@ -103,9 +103,6 @@ export function buildListCommand(deps: {
           return writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
         }
 
-        // Agent-scoped: resolve the ref, read its grants, intersect with the
-        // team list. Granted ids absent from the team list (stale grants) are
-        // surfaced on stderr rather than rendered as fabricated rows.
         const resolver = createAgentResolver({
           agentService: deps.createAgentService(host),
         });
@@ -115,8 +112,6 @@ export function buildListCommand(deps: {
           process.exit(exitCodeForResolveError(resolved.error));
         }
 
-        // Independent reads — fetch the agent's grants and the team list
-        // concurrently; the intersection below needs both.
         const [idsRes, allRes] = await Promise.all([
           svc.agentConnectionIds(resolved.value.id),
           svc.list(),

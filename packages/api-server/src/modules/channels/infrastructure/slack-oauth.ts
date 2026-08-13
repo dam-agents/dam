@@ -11,20 +11,12 @@ import { securityLog } from "../../../core/security-log.js";
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
-/** Completes the Slack Keycloak roundtrip for both the `login` intent (identity
- *  linking, today's behavior) and the `bind` intent (in-chat channel bind). A
- *  bind callback links the identity too — so the binder can later run the
- *  unbind command without re-authenticating — then mints a bind flow pinned to
- *  the authenticated sub and hands the user to the UI agent picker, which does
- *  the ownership check and the write. */
 export function createSlackOAuthRoutes(deps: {
   pendingFlows: TtlStore<SlackOAuthPending>;
   bindFlows: SlackBindFlowStore;
   identityLinks: IdentityLinkService;
   oauthConfig: KeycloakOAuthConfig;
   uiBaseUrl: string;
-  /** Lowercase brand identifier — used to render the slash command name in
-   *  user-facing error messages ("Run `/<brandShort> login` again"). */
   brandShort: string;
 }) {
   const routes = new Hono();
@@ -45,7 +37,6 @@ export function createSlackOAuthRoutes(deps: {
 
     const pending = await deps.pendingFlows.consume(state);
     if (!pending) {
-      // Invalid/replayed state on a public callback — a CSRF/replay probe.
       securityLog("warn", "identity.link.denied", {
         category: "channel",
         actor: null,
@@ -57,8 +48,6 @@ export function createSlackOAuthRoutes(deps: {
       return c.text("Invalid or expired state", 400);
     }
 
-    // From here the intent is known, so bind failures land on the picker page
-    // (with an ?error=) while login failures keep the plain-text response.
     const isBind = pending.intent === "bind";
 
     if (Date.now() - pending.createdAt > FLOW_TTL_MS) {
@@ -90,8 +79,6 @@ export function createSlackOAuthRoutes(deps: {
       pending.slackUserId,
       result.keycloakSub,
     );
-    // The primary "who got bound to which Keycloak account" record. A bind
-    // callback links the identity too so the binder can later unbind in-chat.
     securityLog("info", "identity.link", {
       category: "channel",
       actor: result.keycloakSub,

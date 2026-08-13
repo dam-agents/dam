@@ -1,8 +1,5 @@
 import { cn } from "@/lib/utils";
 
-// Dependency-free switch: there's no Switch primitive in components/ui and
-// @radix-ui/react-switch isn't a dependency, so this follows the same pattern
-// as the other hand-rolled tokens here.
 export function Switch({
   checked,
   onCheckedChange,

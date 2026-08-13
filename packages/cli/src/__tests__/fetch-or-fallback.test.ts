@@ -32,11 +32,6 @@ function makeService(
 }
 
 describe("fetchOrFallback", () => {
-  // The helper is the single guardrail that keeps `--json` paths from
-  // emitting empty stdout when the post-action refresh fails. The
-  // contract tested here applies identically to `create --wait --json`
-  // (timeout branch) and `restart [--wait] --json`.
-
   it("returns the refreshed Agent when svc.get succeeds", async () => {
     const fresh = makeAgent({ state: "running" });
     const svc = makeService(() => ok(fresh));

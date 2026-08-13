@@ -86,7 +86,6 @@ describe("github-app template build", () => {
       "github.com",
       "raw.githubusercontent.com",
     ]);
-    // github.com uses Basic x-access-token so git-over-HTTPS works.
     const git = built.contributions.find(
       (c) => c.kind === "egress-inject" && c.host === "github.com",
     );
@@ -148,9 +147,6 @@ describe("github-app template build", () => {
     );
   });
 
-  // Storing the scope on the auth config is what makes it survive every
-  // re-mint; a scope that lived only on the create input would be gone by the
-  // first renewal.
   it("stores the parsed scope on the auth config", async () => {
     const built = await build({
       repositories: "docs, handbook",
@@ -202,8 +198,6 @@ describe("github-app template build", () => {
     const byName = new Map(view.inputs.map((i) => [i.name, i]));
     expect(byName.get("repositories")?.state).toBe("optional");
     expect(byName.get("permissions")?.state).toBe("optional");
-    // Optional means a user who ignores both fields still gets a working
-    // connection with the installation's full authority, as before.
     expect(
       view.inputs.filter((i) => i.state === "required").map((i) => i.name),
     ).toEqual(["appId", "installationId", "privateKey"]);

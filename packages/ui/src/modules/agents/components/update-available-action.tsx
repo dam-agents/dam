@@ -14,18 +14,10 @@ import { ReleaseNotesLink } from "./release-notes-link.js";
 interface Props {
   agent: AgentView;
   onUpdate: () => void;
-  /** This sandbox's update is in flight. */
   pending: boolean;
-  /** Any update is in flight, this sandbox's or another's. Updates run one at
-   *  a time, so a second start would queue behind the first with no sign of it. */
   busy: boolean;
 }
 
-/**
- * The single entry point for a pending template update (#3137), on the sandbox
- * row and in the sandbox header. Hovering explains what the update is; clicking
- * opens the confirmation that applies it.
- */
 export function UpdateAvailableAction({
   agent,
   onUpdate,
@@ -37,8 +29,6 @@ export function UpdateAvailableAction({
   if (!update) return null;
 
   return (
-    // Both the action and its portaled hover card sit inside the row's click
-    // target, so their clicks must not also open the sandbox.
     <span onClick={(e) => e.stopPropagation()}>
       <HoverCard>
         <HoverCardTrigger asChild>

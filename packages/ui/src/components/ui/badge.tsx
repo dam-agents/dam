@@ -41,7 +41,6 @@ export interface BadgeProps
     React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
-// span, not div: badges render inside phrasing content (buttons, inline rows).
 function Badge({ className, variant, size, ...props }: BadgeProps) {
   return (
     <span

@@ -27,16 +27,12 @@ import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
-// The agent-runtime files service is rooted at agentHome; the agent
-// process runs in agentHome/work. attachment.path can be absolute
-// (anywhere under agentHome) or workspace-relative (interpreted as
-// relative to the work dir).
 function resolveWorkspacePath(input: string, agentHome: string): string {
   const workDir = `${agentHome}/work`;
   if (input.startsWith("/")) {
     return input.startsWith(`${agentHome}/`)
       ? input.slice(agentHome.length + 1)
-      : input; // outside agentHome — let files.read reject it
+      : input;
   }
   const workRel = workDir.slice(agentHome.length + 1);
   return `${workRel}/${input}`;
@@ -52,7 +48,6 @@ interface McpSession {
 export interface ToolContent {
   content: { type: "text"; text: string }[];
   isError?: boolean;
-  /** MCP SDK expects an open shape on tool responses. */
   [key: string]: unknown;
 }
 
@@ -110,11 +105,7 @@ export interface McpSessionDeps {
   invocations: InvocationsService;
   experiments: ExperimentsService;
   agentHome: string;
-  /** Resolved once per session, before this function runs — see
-   *  ChannelManager.supportsUserLookup for what this reflects. */
   supportsUserLookup: boolean;
-  /** Resolved once per session, before this function runs — see
-   *  ChannelManager.supportsMessageReactions for what this reflects. */
   supportsMessageReactions: boolean;
 }
 
@@ -219,9 +210,6 @@ export function createMcpSession(
             : {}),
           ...(attachment.title ? { title: attachment.title } : {}),
         };
-        // Capture the requested (possibly absolute) and resolved source path
-        // so file-exfil-via-channel is investigable — an agent can attach an
-        // absolute pod path, not just a workspace file.
         attachmentAudit = {
           requestedPath: attachment.path,
           resolvedPath,
@@ -238,8 +226,6 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
-      // Autonomous egress to an external channel under the agent identity, no
-      // human in the loop. Never log the message text.
       securityLog(failed ? "warn" : "info", "channel.outbound", {
         category: "channel",
         actor: agentId,
@@ -259,10 +245,6 @@ export function createMcpSession(
     },
   );
 
-  // Omitted rather than always registered (unlike every other channel tool
-  // below): unlike a missing binding, a Slack app missing `users:read` can
-  // never make this succeed for any Agent, on any channel, so a static tool
-  // that always errors teaches the agent nothing and just wastes a turn.
   if (deps.supportsUserLookup) {
     server.tool(
       "describe_channel_users",
@@ -283,9 +265,6 @@ export function createMcpSession(
           channel,
           userIds,
         );
-        // A directory read under the agent's own identity, no human in the loop:
-        // the ids asked about are audit-worthy, the profiles that came back
-        // (names, emails) are not.
         const audit = {
           category: "channel",
           actor: agentId,
@@ -315,9 +294,6 @@ export function createMcpSession(
     );
   }
 
-  // Omitted rather than always registered, same reasoning as
-  // describe_channel_users above: a Slack app missing `reactions:read` can
-  // never make this succeed for any Agent, on any channel.
   if (deps.supportsMessageReactions) {
     server.tool(
       "describe_message_reactions",
@@ -343,9 +319,6 @@ export function createMcpSession(
           channel,
           { conversationId: chatId, messageTs },
         );
-        // A read under the agent's own identity, no human in the loop: which
-        // message was asked about is audit-worthy; who reacted is not (same
-        // treatment as describe_channel_users' profiles).
         const audit = {
           category: "channel",
           actor: agentId,
@@ -354,9 +327,6 @@ export function createMcpSession(
           agentId,
         } as const;
         if ("error" in result) {
-          // Both args are commonly omitted (default to the bound channel /
-          // current turn), and a failure before resolution — no binding, no
-          // active turn — means there is nothing resolved to log instead.
           securityLog("warn", "channel.reaction_lookup", {
             ...audit,
             result: "failure",
@@ -371,8 +341,6 @@ export function createMcpSession(
         securityLog("info", "channel.reaction_lookup", {
           ...audit,
           result: "success",
-          // The resolved target, not the (often-omitted) request — this is
-          // what actually got asked about.
           detail: {
             conversationId: result.conversationId,
             messageTs: result.messageTs,
@@ -392,13 +360,6 @@ export function createMcpSession(
       },
     );
   }
-
-  // ---- Slack turn tools -----------------------------------------------------
-  // `reply` and `react` are how a Slack agent answers the turn it is handling;
-  // plain text is not delivered, only these are. They target the turn's thread
-  // and triggering message by default, so the agent need not track ids. Always
-  // registered; they error when the agent has no Slack channel connected.
-  // (`no_reply_needed`, below, is the cross-channel silent-stop.)
 
   server.tool(
     "reply",
@@ -436,8 +397,6 @@ export function createMcpSession(
         surface: ChannelType.Slack,
         agentId,
         result: failed ? "failure" : "success",
-        // A broadcast reply reaches the whole channel, not just the thread's
-        // participants — a wider audience worth recording.
         detail: {
           action: "reply",
           textLength: text.length,
@@ -490,9 +449,6 @@ export function createMcpSession(
     },
   );
 
-  // Cross-channel (Slack or Telegram): a pure signal that posts nothing. It
-  // lets the agent end its turn having deliberately chosen to stay silent,
-  // rather than leaving plain text that would never be delivered.
   server.tool(
     "no_reply_needed",
     "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
@@ -506,10 +462,6 @@ export function createMcpSession(
     },
     async () => textResult("No reply sent."),
   );
-
-  // ---- Skills tools ---------------------------------------------------------
-  // `agentId` is captured from the verified MCP session, so agents cannot
-  // spoof it via tool input.
 
   server.tool(
     "list_skill_sources",
@@ -531,8 +483,6 @@ export function createMcpSession(
       textTool(
         "Failed to list skills",
         () => deps.skills.list(sourceId, agentId),
-        // Agents get the bare array the tool description promises; the
-        // response's scan timestamp is a UI freshness hint, not theirs.
         (result) => JSON.stringify(result.skills),
       ),
   );
@@ -587,11 +537,6 @@ export function createMcpSession(
       ),
   );
 
-  // ---- Schedule tools -------------------------------------------------------
-  // Schedule management: agent may only see/modify schedules belonging to itself.
-  // Descriptions are deliberately assertive — Claude Code ships with an in-process
-  // scheduled-tasks tool that would otherwise be preferred. These schedules are the
-  // *persistent, platform-level* ones visible in the host UI.
   server.tool(
     "list_schedules",
     "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
@@ -661,9 +606,6 @@ export function createMcpSession(
       if (rrule !== undefined && !timezone) {
         return errorResult("rrule requires timezone.");
       }
-      // cron is UTC-only: silently dropping a timezone here would hand back a
-      // schedule that fires an hour off the asked-for local time half the
-      // year — the exact DST drift the rrule path exists to prevent.
       if (cron !== undefined && (timezone || quietHours)) {
         return errorResult(
           "`cron` is UTC-only and ignores `timezone`/`quietHours` — use `rrule` with `timezone` to schedule in a local zone.",
@@ -784,9 +726,6 @@ export function createMcpSession(
     },
   );
 
-  // ---- Artifact-library tools ----------------------------------------------
-  // Publish/share/version artifacts; owner-scoped service, creations
-  // attributed to the network-verified caller.
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
@@ -816,8 +755,6 @@ export function createMcpSession(
       };
     },
   );
-
-  // ---- Transport ------------------------------------------------------------
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: () => crypto.randomUUID(),
@@ -852,12 +789,8 @@ export interface MountMcpDeps {
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
   app.all("/api/agents/:id/mcp", async (c) => {
     const agentId = c.req.param("id")!;
-    // Principal == URL :id is enforced at the waypoint; this
-    // resolve is just a label lookup for owner / agentId.
     const verified = await resolveAgent(deps.k8s, agentId);
     if (!verified) {
-      // Backstop for the waypoint guarantee: an agent id that resolves to no
-      // K8s agent means the mesh principal and cluster state diverged.
       securityLog("warn", "mcp.resolve_fail", {
         category: "authn",
         actor: agentId,
@@ -875,8 +808,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     if (sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId)!;
       if (session.agentId !== agentId) {
-        // A session id minted for one agent reused against another — a
-        // session-hijack signal.
         securityLog("warn", "mcp.session_mismatch", {
           category: "authn",
           actor: agentId,

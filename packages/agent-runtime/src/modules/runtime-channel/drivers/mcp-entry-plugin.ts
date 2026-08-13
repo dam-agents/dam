@@ -11,17 +11,6 @@ import { expandHome } from "../../../core/expand-home.js";
 const IMPL_NAME = "mcp-entry";
 const DEFAULT_KEY_PATH = "mcpServers";
 
-// MCP config is a JSON object merged under `keyPath`. Two knobs cover harness
-// dialects: `urlKey` for harnesses that key the transport off the property name
-// (Bob 1.x put streamable-HTTP under `httpUrl`), and `extraFields`, merged over
-// the entry, for those naming the transport in a sibling field (Bob 2.0 wants
-// `transportType:"http"` — without it it treats the server as SSE, which the
-// platform's streamable endpoint rejects).
-// `extraFields` adds siblings, never restates the transport: the keys the driver
-// builds itself stay reserved, so a manifest typo (`url: ""`) fails the binding
-// parse instead of silently clobbering the contributed URL. Which keys those are
-// depends on the branch in play — a `urlKey` dialect never builds `type`/`url`,
-// so reserving them there would reject a field the driver does not own.
 function ownedKeys(urlKey: string | undefined): string[] {
   return ["headers", ...(urlKey ? [urlKey] : ["type", "url"])];
 }
@@ -85,9 +74,6 @@ export function createMcpEntryPlugin(): Plugin {
         const names = Object.keys(entries);
         const targetPath = expandHome(path, ctx.agentHome);
 
-        // Preserve user-added servers: start from what's on disk, drop only the
-        // servers this driver installed before that are no longer desired, then
-        // set the desired ones. Anything the user added stays untouched.
         const segs = effectiveKey.split(".");
         const next = { ...readKeyedObject(targetPath, segs) };
         for (const name of installed) {
@@ -125,7 +111,6 @@ export function createMcpEntryPlugin(): Plugin {
   };
 }
 
-// Reads the object at `segs` from a JSON file, or {} if missing/unreadable.
 function readKeyedObject(
   targetPath: string,
   segs: string[],

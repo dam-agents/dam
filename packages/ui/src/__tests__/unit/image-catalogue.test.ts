@@ -26,8 +26,6 @@ const CATALOGUE = [
   template("nous-vm", true, "preconfigured"),
 ];
 
-// The feature flag is the only thing standing between a user and a VM sandbox,
-// so the "off" case is the one worth pinning down.
 describe("imageCatalogue", () => {
   it("hides VM-backed templates entirely when the feature is off", () => {
     const { harnesses, preconfigured } = imageCatalogue(CATALOGUE, {

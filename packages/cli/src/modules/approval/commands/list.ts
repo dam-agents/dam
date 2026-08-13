@@ -71,9 +71,6 @@ export function buildListCommand(deps: {
         let limit: number | undefined;
         if (opts.limit !== undefined) {
           const n = Number(opts.limit);
-          // The contract schema (`limit.max(500)`) rejects > 500 at the tRPC
-          // boundary; validate here for a clean exit 2 with a clear message
-          // instead of a raw transport error.
           if (!Number.isInteger(n) || n <= 0 || n > 500) {
             process.stderr.write(
               `error: invalid \`--limit\` value \`${opts.limit}\`; expected integer between 1 and 500\n`,
@@ -132,9 +129,6 @@ export function buildListCommand(deps: {
           process.exit(EXIT_SUCCESS);
         }
 
-        // Server row order is kept (newest first). REQUEST is the flex
-        // column — it carries a full method/host/path line and is collapsed
-        // to fit the terminal width (--json keeps the full text).
         const now = new Date();
         return writeStdoutAndExit(
           renderFittedTable(

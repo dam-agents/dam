@@ -117,8 +117,6 @@ describe("telegram message handler", () => {
       threadId: "chat-42",
       chatTitle: "Team chat",
     });
-    // The bind link posts as a card: text + an inline URL button, so the
-    // raw OAuth URL never shows in the chat.
     const posted = thread.posts.join("\n");
     expect(posted).toContain("Connect this chat to one of your agents");
     expect(posted).toContain("link-button");
@@ -135,8 +133,6 @@ describe("telegram message handler", () => {
 
   it("shows usage for a bare `/dam` (or `/dam@bot`) with no subcommand", async () => {
     const h = harness();
-    // Explicitly invoking the command answers on any surface — a DM, and (like
-    // a bind/unbind deny) an unbound group; a non-admin still gets the help.
     for (const isDM of [true, false]) {
       for (const text of ["/dam", "/dam@dam_bot", "/dam help"]) {
         const thread = makeThread({ isDM });
@@ -146,21 +142,17 @@ describe("telegram message handler", () => {
         expect(posted).toContain("/dam unbind");
       }
     }
-    // Usage is help only — it neither starts a bind flow nor unbinds.
     expect(h.pendingOAuthFlowsMap.size).toBe(0);
     expect(h.unbind).not.toHaveBeenCalled();
   });
 
   it("no longer treats `/login` or `/logout` as commands", async () => {
-    // `/login` is now ordinary text: no bind flow starts, and an unbound DM
-    // just gets the not-connected prompt.
     const loginH = harness();
     const dm = makeThread({ isDM: true });
     await loginH.handle(dm, { text: "/login", author: author() }, true);
     expect(loginH.pendingOAuthFlowsMap.size).toBe(0);
     expect(dm.posts.join("\n")).toContain("isn't connected to an agent");
 
-    // `/logout` in a bound chat no longer unbinds — it relays as a message.
     const logoutH = harness({ boundTo: "agent-1" });
     const bound = makeThread();
     await logoutH.handle(bound, { text: "/logout", author: author() }, true);

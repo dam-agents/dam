@@ -30,13 +30,6 @@ export interface CalloutProps
   inset?: boolean;
 }
 
-/** The one bordered box: hints, notices, alerts, and form groups all render
- *  through it so radius, border weight, padding, and background stop drifting
- *  per call site. A dumb container — children own their own anatomy.
- *
- *  `inset` is off by default (unlike `FormField`'s): most call sites live in
- *  gutter-less containers where the outdent would push the box onto the
- *  container's border. */
 function Callout({
   className,
   tone,

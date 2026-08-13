@@ -29,9 +29,6 @@ export default function Login(
       : msg("email");
 
   const providers = social?.providers ?? [];
-  // Strict "false" check fails open to the password form on any unexpected
-  // value, and a deployment that disallows passwords without configuring an
-  // identity provider still gets a working sign-in.
   const isSsoOnly =
     kcContext.properties.PLATFORM_ALLOW_PASSWORD === "false" &&
     providers.length > 0;

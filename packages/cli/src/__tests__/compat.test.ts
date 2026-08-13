@@ -8,13 +8,13 @@ describe("compareVersions", () => {
     ["1.0.0", "1.0.1", -1],
     ["2.0.0", "1.99.99", 1],
     ["1.10.0", "1.9.0", 1],
-    ["v1.2.3", "1.2.3", 0], // strips leading v
-    ["1.0.0+build.7", "1.0.0", 0], // ignores build metadata
-    ["1.0.0-rc.1", "1.0.0", -1], // pre-release < release
-    ["1.0.0-rc.1", "1.0.0-rc.2", -1], // numeric pre-release
-    ["1.0.0-alpha", "1.0.0-beta", -1], // alpha pre-release
+    ["v1.2.3", "1.2.3", 0],
+    ["1.0.0+build.7", "1.0.0", 0],
+    ["1.0.0-rc.1", "1.0.0", -1],
+    ["1.0.0-rc.1", "1.0.0-rc.2", -1],
+    ["1.0.0-alpha", "1.0.0-beta", -1],
     ["1.0.0-rc.1", "1.0.0-rc.1", 0],
-    ["1.0.0-1", "1.0.0-rc.1", -1], // numeric < alpha pre-release identifier
+    ["1.0.0-1", "1.0.0-rc.1", -1],
   ])("compareVersions(%j, %j) = %d", (a, b, expected) => {
     expect(compareVersions(a, b)).toBe(expected);
   });

@@ -9,9 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Per-instance SA shape — name == instance ID, lives in agent ns,
-// AutomountServiceAccountToken explicitly false, owner-refed to the
-// instance ConfigMap so K8s GC reaps it on instance delete.
 func TestBuildServiceAccount_Shape(t *testing.T) {
 	sa := BuildServiceAccount("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 
@@ -25,9 +22,6 @@ func TestBuildServiceAccount_Shape(t *testing.T) {
 	assert.Equal(t, testOwnerCM.UID, sa.OwnerReferences[0].UID)
 }
 
-// The SA name is whatever the caller passes — long-lived pairs
-// pass the instance name. This test pins the
-// contract: name == argument, no implicit transformation.
 func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	for _, id := range []string{"abc", "instance-with-dashes", "x"} {
 		sa := BuildServiceAccount(id, testConfig, configMapOwnerRef(testOwnerCM))
@@ -35,23 +29,16 @@ func TestBuildServiceAccount_NameEqualsInstanceID(t *testing.T) {
 	}
 }
 
-// Idempotent reconcile — labels and AutomountServiceAccountToken
-// must heal on drift (e.g. a pre-existing SA from a prior install or
-// manual creation). Without this, a drifted SA silently bypasses the
-// owner-ref + token guarantees.
 func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
 	agent := agentCR()
-	// Override the agent name to match the SA we pre-create below.
 	agent.Name = "my-instance"
 	r, client := setupReconciler(t, agent)
-	// Pre-create a drifted SA with no owner-ref and AutomountSA=nil.
 	pre := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-instance",
 			Namespace: testConfig.Namespace,
 			Labels:    map[string]string{"unrelated": "stays"},
 		},
-		// AutomountServiceAccountToken intentionally nil to simulate drift.
 	}
 	_, err := client.CoreV1().ServiceAccounts(testConfig.Namespace).Create(t.Context(), pre, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -67,6 +54,3 @@ func TestApplyServiceAccount_HealsLabelDrift(t *testing.T) {
 	require.Len(t, got.OwnerReferences, 1)
 	assert.Equal(t, agent.UID, got.OwnerReferences[0].UID)
 }
-
-// testConfig and testOwnerCM are reused across reconciler tests; declared
-// in resources_test.go.

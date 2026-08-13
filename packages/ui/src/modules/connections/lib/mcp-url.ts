@@ -1,5 +1,3 @@
-/** Validates a user-typed MCP server URL before OAuth discovery runs.
- *  Returns an error message, or null when the URL is well-formed. */
 export function validateMcpUrl(value: string): string | null {
   let parsed: URL;
   try {

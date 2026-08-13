@@ -6,9 +6,6 @@ import type { HarnessSpawn } from "../services/ports.js";
 
 const TIMEOUT_MS = 30_000;
 
-/** Spawns an Invocation through the harness surface, exactly like the driver
- *  SDK does from a real agent pod: PLATFORM_MCP_URL encodes the harness base
- *  and this agent's own id, and the mesh proves identity — no token. */
 export function createHarnessSpawn(): HarnessSpawn {
   return async (
     input: SpawnInvocationInput,

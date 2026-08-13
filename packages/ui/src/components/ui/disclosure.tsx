@@ -3,8 +3,6 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-/** The chevron every collapsible surface uses: down when open, rotated left
- *  when closed, animated between the two. */
 export function DisclosureChevron({
   open,
   size = 16,
@@ -27,8 +25,6 @@ export function DisclosureChevron({
   );
 }
 
-/** Header button for a collapsible section. Owns the `aria-expanded` contract
- *  so call sites can't omit it; the container's look stays with the caller. */
 export function DisclosureToggle({
   open,
   onToggle,

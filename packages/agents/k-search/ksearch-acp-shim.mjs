@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// Minimal ACP agent so agent-runtime's required harness-chat subprocess stays
-// alive; on a prompt it runs `ksearch-run` (driven by KSEARCH_* env) and
-// streams the output back. The prompt text is ignored.
 import * as acp from "@agentclientprotocol/sdk";
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
@@ -59,8 +56,6 @@ class KSearchAgent {
       `Starting K-Search kernel optimization (eval backend: ${mode})…\n`,
     );
 
-    // Serialize relayed chunks through `tail` (ordered + bounded via stream
-    // pause/resume); awaited before the summary so it prints last.
     let tail = Promise.resolve();
     const enqueue = (text) => {
       tail = tail.then(() => this.emit(params.sessionId, text)).catch(() => {});

@@ -10,11 +10,6 @@ export const agentsKeys = {
   listWithChannels: () => [...agentsKeys.root, "list-with-channels"] as const,
 };
 
-/**
- * Combined query for the agents list + available channels. The two are
- * always consumed together (agent panels render channel pills), and pairing
- * them avoids a render pass where one is loaded but not the other.
- */
 export function useAgents() {
   return useQuery({
     queryKey: agentsKeys.listWithChannels(),
@@ -33,22 +28,11 @@ export function useAgents() {
 
 const EMPTY_AGENTS: readonly AgentView[] = Object.freeze([]);
 
-/**
- * Stable view of just the agents list. Inline `data?.list ?? []` mints a
- * fresh array on every render and destabilizes any useEffect / useMemo deps
- * downstream — this hook returns the same `EMPTY_AGENTS` reference until
- * real data arrives.
- */
 export function useAgentsList(): readonly AgentView[] {
   const { data } = useAgents();
   return data?.list ?? EMPTY_AGENTS;
 }
 
-/**
- * Single source for an agent's lifecycle state. The gate for "can the UI talk
- * to this pod?" is `=== "running"`; everything that reaches into the pod (ACP
- * WS, file tree, terminal) keys off this so they all agree.
- */
 export function useAgentRunState(
   agentId: string | null,
 ): AgentState | undefined {
@@ -56,11 +40,6 @@ export function useAgentRunState(
   return agentId ? agents.find((a) => a.id === agentId)?.state : undefined;
 }
 
-/**
- * Resolve an agent id to its user-facing name. Falls back to the raw id —
- * references (artifact attribution, approvals) deliberately outlive their
- * agent, so a deleted agent's id is the only attribution left.
- */
 export function useAgentDisplayName(agentId: string): string;
 export function useAgentDisplayName(agentId: string | null): string | null;
 export function useAgentDisplayName(agentId: string | null): string | null {
@@ -69,25 +48,11 @@ export function useAgentDisplayName(agentId: string | null): string | null {
   return agents.find((a) => a.id === agentId)?.name ?? agentId;
 }
 
-/**
- * Whether the UI can actually talk to the pod right now. Three inputs, because
- * each catches a gap the others miss:
- *   - server reports `running` (the lifecycle truth, but it lags reality),
- *   - no optimistic restart in flight (covers a self-initiated Restart before
- *     the poll sees the dip),
- *   - not circuit-broken (covers any pod-down the server hasn't caught up to
- *     yet — env edits, controller restarts, schedules — via a real 502).
- * This is the single gate for pod-touching calls and the overlay alike.
- */
 export function useIsAgentOperable(agentId: string | null): boolean {
   const runState = useAgentRunState(agentId);
   const restarting = useStore((s) =>
     agentId ? s.restartingAgents.has(agentId) : false,
   );
-  // Optimistic Pause/Stop: the pod is on its way down, so treat the agent as
-  // non-operable the moment the user clicks — before the poll reports the
-  // transition — so pod-dependent affordances gate immediately (no flicker of
-  // a still-"operable" surface right after a pause).
   const pausing = useStore((s) =>
     agentId ? s.pausingAgents.has(agentId) : false,
   );
@@ -97,26 +62,11 @@ export function useIsAgentOperable(agentId: string | null): boolean {
   return runState === "running" && !restarting && !pausing && !unreachable;
 }
 
-/** The server refusing to name an agent to this user: it is someone else's or
- *  it is gone, and the two are deliberately indistinguishable — the read is
- *  owner-scoped, so an agent that isn't theirs simply isn't there. Anything else
- *  (an unreachable server, a transport hiccup) is not an access verdict. */
 function isDeniedAgentRead(error: unknown): boolean {
   const code = (error as { data?: { code?: unknown } } | null)?.data?.code;
   return code === "NOT_FOUND" || code === "FORBIDDEN";
 }
 
-/**
- * Whether this user may open the agent at all — the gate in front of a link
- * followed from outside the UI (a channel reply pointing at a session), where
- * the follower may be anyone in the conversation rather than the owner.
- *
- * Server-authoritative rather than "absent from my list": the list lags a
- * just-created agent, which would flash the no-access screen at the person who
- * just made it, and a failed list read must not read as a denial. Stays false
- * until the server actually refuses, so the lifecycle overlay keeps the surface
- * meanwhile.
- */
 export function useIsAgentInaccessible(agentId: string | null): boolean {
   const { error } = useQuery({
     ...trpc.agents.get.queryOptions(agentId ? { id: agentId } : skipToken),
@@ -125,11 +75,6 @@ export function useIsAgentInaccessible(agentId: string | null): boolean {
   return isDeniedAgentRead(error);
 }
 
-/**
- * Per-agent app-connection grants. The agent might not yet be fully reconciled
- * (controller syncs asynchronously after create), so errors stay silent and
- * initial data defaults to an empty grant list.
- */
 export function useAgentConnections(agentId: string | null) {
   return useQuery({
     ...trpc.connections.getAgentConnections.queryOptions(

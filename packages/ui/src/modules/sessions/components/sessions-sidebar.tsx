@@ -71,19 +71,12 @@ export function SessionsSidebar({
     activeSessionId: sessionId,
   });
   const sessions: SessionView[] = data ?? EMPTY;
-  // First load only, not every refetch: the list polls every few seconds, and
-  // keying the empty state off `isFetching` made "No sessions yet" blink out on
-  // each poll for an agent that genuinely has none.
   const loading = data === undefined && isFetching;
 
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
     [sessions, sessionFilter],
   );
-  // Experiment runs are agent-launched, not conversations — they get their
-  // own group below the sessions the user actually drives.
-  // A run whose launch session hasn't materialized yet (pod waking) renders
-  // as a skeleton row; the real session replaces it once the list has it.
   const launchingRun =
     pendingLaunch &&
     pendingLaunch.agentId === selectedAgent &&
@@ -125,20 +118,15 @@ export function SessionsSidebar({
 
   const renderRow = (s: (typeof sessions)[number]) => {
     const isOpen = s.sessionId === sessionId;
-    // Terminal sessions have no chat turn, so `busy` never applies.
     const working =
       s.mode === SessionMode.Terminal
         ? !!s.running
         : isOpen
           ? busy || !!s.running
           : !!s.running;
-    // Polled approvals cover all sessions; the live store surfaces the open one instantly.
     const needsApproval =
       approvalSessions.has(s.sessionId) ||
       pendingPermissions.some((p) => p.sessionId === s.sessionId);
-    // Terminals have no meaningful unread — their updatedAt tracks the
-    // harness file mtime (bumped by restarts and TUI repaints), not
-    // reading. No seenAt means an untracked (legacy) session — also read.
     const unread = Boolean(
       !isOpen &&
       s.mode !== SessionMode.Terminal &&

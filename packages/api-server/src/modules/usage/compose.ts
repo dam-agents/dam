@@ -27,7 +27,6 @@ export interface UsageModuleDeps {
   db: Db;
   subPseudonymizer: SubPseudonymizer;
   activityTrackingEnabled: boolean;
-  /** Empty string skips route mounting (no inspector role configured). */
   inspectorRole: string;
   listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
 }
@@ -35,13 +34,8 @@ export interface UsageModuleDeps {
 type AppEnv = { Variables: { user: UserIdentity; roles: string[] } };
 
 export interface UsageModule {
-  /** Mounts /api/usage/* handlers on the host app. No-op when no inspector
-   *  role is configured (the module still runs persistence/sagas). */
   mount(app: Hono<AppEnv>): void;
-  /** Starts the persist-agents saga + bootstrap, and (when activity tracking
-   *  is enabled) the persist-activity saga + retention job. */
   start(): void;
-  /** Unsubscribes from saga streams and stops the retention timer. */
   stop(): void;
 }
 

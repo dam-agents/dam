@@ -7,15 +7,6 @@ import { authFetch } from "../../../auth.js";
 
 export type BundleEntry = { path: string; file: File };
 
-/**
- * Path segments dropped before upload — for ergonomics, not safety.
- * Build/cache dirs whose contents are OS- or arch-specific and regenerate
- * inside the pod (your mac's compiled `sharp` won't load on Linux;
- * `npm install` will rebuild it correctly), plus cosmetic noise.
- *
- * `.git/` is deliberately NOT in this set: bringing repo history is
- * legitimate context. Size is the user's call.
- */
 const EXCLUDE_FROM_IMPORT = new Set([
   "node_modules",
   ".venv",
@@ -42,10 +33,6 @@ export function filterImportEntries(entries: BundleEntry[]): FilterReport {
   return { kept, dropped };
 }
 
-/** Flatten a DataTransferItemList (from a drop) into BundleEntry[].
- *  Paths are deduped — dropping the same folder twice yields one entry per
- *  child, not two with identical paths that would later confuse tar
- *  consumers (last entry would silently win on extract). */
 export async function walkDataTransfer(
   items: DataTransferItemList,
 ): Promise<BundleEntry[]> {
@@ -67,7 +54,6 @@ export async function walkDataTransfer(
   return out;
 }
 
-/** Walk a single FileSystemEntry into BundleEntry[] — lets callers defer the recursive walk per top-level drop entry. */
 export async function walkFileSystemEntry(
   entry: FileSystemEntry,
 ): Promise<BundleEntry[]> {
@@ -116,21 +102,12 @@ function readAll(
   });
 }
 
-/**
- * USTAR's `name` field is 100 bytes, plus a 155-byte `prefix` field that
- * concatenates as `prefix + "/" + name`. Real-world trees (`.git/objects`,
- * deep node_modules) easily exceed 100 bytes, so we use the prefix when
- * we have to. Paths that don't fit even after split are rejected loudly
- * — long-name PAX extensions are out of scope for the demo cut.
- */
 const MAX_TAR_NAME_BYTES = 100;
 const MAX_TAR_PREFIX_BYTES = 155;
 const TAR_ENCODER = new TextEncoder();
 
 type UstarPath = { name: string; prefix: string };
 
-/** Split `path` into USTAR `prefix`/`name` so that both fit their fields.
- *  Returns null when no `/` boundary produces a valid split. */
 function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
   if (enc.encode(path).byteLength <= MAX_TAR_NAME_BYTES) {
     return { name: path, prefix: "" };
@@ -150,7 +127,6 @@ function splitUstarPath(path: string, enc: TextEncoder): UstarPath | null {
   return null;
 }
 
-/** Build a raw USTAR tar Blob; parts reference each File lazily, so the upload streams from disk. */
 export async function buildBundle(entries: BundleEntry[]): Promise<Blob> {
   const splits: UstarPath[] = entries.map((ent) => {
     const split = splitUstarPath(ent.path, TAR_ENCODER);
@@ -235,15 +211,11 @@ async function postBundle(
       "[import-bundle] schema mismatch on import response:",
       parsed.error.issues,
     );
-    // Degraded-but-valid response. Callers display these counts in a success
-    // toast — zeros surface "upload completed, stats unavailable" rather
-    // than crashing on undefined fields.
     return { filesWritten: 0, bytes: 0, durationMs: 0 };
   }
   return parsed.data;
 }
 
-// Cap exists because gzipBlob materializes the whole compressed Blob in origin storage; multi-GB would blow the quota and truncate the upload.
 const MAX_GZIP_BUNDLE_BYTES = 512 * 1024 * 1024;
 
 async function gzipBlob(blob: Blob): Promise<Blob> {
@@ -265,12 +237,6 @@ export async function importBundle({
   return postBundle(agentId, tar, "bundle.tar");
 }
 
-/**
- * Pass-through upload for a pre-built tar / tar.gz / tgz bundle. Skips
- * the client-side tar layer entirely — the file is sent to the server
- * verbatim. Use when the user already has a packaged context bundle and
- * we shouldn't re-wrap it.
- */
 export type ImportRawBundleArgs = {
   agentId: string;
   bundle: Blob | File;
@@ -284,11 +250,6 @@ export async function importRawBundle({
   return postBundle(agentId, bundle, filename);
 }
 
-/**
- * Best-effort filename check: if a single dropped/picked file has one
- * of these extensions, we send it as-is instead of wrapping it in a
- * fresh tar.
- */
 export function isTarballName(name: string): boolean {
   const lower = name.toLowerCase();
   return (

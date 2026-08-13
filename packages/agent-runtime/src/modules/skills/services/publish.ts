@@ -14,24 +14,9 @@ import type { LocalSkillRepository } from "../infrastructure/local-skill-reposit
 export interface PublishDeps {
   github: GitHubRestClient;
   repo: LocalSkillRepository;
-  /** Wall-clock provider — passed in so the domain branch-timestamp helper
-   *  stays pure and tests can pin time. */
   now: () => Date;
 }
 
-/**
- * Publish a local skill to GitHub as a new branch + PR. Executes entirely
- * via the REST API through the agent pod's Envoy sidecar — no git
- * subprocess, no working copy on disk. Multi-step REST sequencing lives
- * here (not in the port); the port stays a thin typed wrapper around
- * api.github.com.
- *
- * Requires this pod to run with `GH_TOKEN=dummy-placeholder` + `HTTPS_PROXY`
- * pre-wired by the controller (always true on the platform), a GitHub OAuth
- * app configured, the user Connected, and this agent granted access. Failures
- * on any of those surface as a 401/403 from upstream with a structured
- * error body the contract relays.
- */
 export async function runPublish(
   deps: PublishDeps,
   name: SkillName,
@@ -52,11 +37,8 @@ export async function runPublish(
   if (!headRef.ok) return headRef;
   const headSha = headRef.value.sha;
 
-  // Publish back into the source's configured subdir so its scanner — which
-  // reads that subdir exclusively — finds the skill; default `skills/` when unset.
   const baseDir = input.path && input.path.length > 0 ? input.path : "skills";
 
-  // 1. Blob per file.
   const blobs: { path: string; sha: string }[] = [];
   for (const f of files) {
     const blob = await deps.github.createBlob(
@@ -72,7 +54,6 @@ export async function runPublish(
     });
   }
 
-  // 2. Tree referencing the blobs, parented on the default-branch HEAD tree.
   const tree = await deps.github.createTree(host, {
     base_tree: headSha,
     tree: blobs.map((b) => ({
@@ -84,11 +65,6 @@ export async function runPublish(
   });
   if (!tree.ok) return tree;
 
-  // 3. Commit pointing at the tree.
-  // Author + branch prefix are intentionally neutral ("platform") and not
-  // brand-driven — agent pods are deliberately brand-blind, and the
-  // user-facing PR title/body that the api-server passes through `input`
-  // already carries brand framing where it matters.
   const commit = await deps.github.createCommit(host, {
     message: `Add ${name} skill`,
     tree: tree.value.sha,
@@ -100,12 +76,6 @@ export async function runPublish(
   });
   if (!commit.ok) return commit;
 
-  // 4. Create the branch ref. Slugify the name for the ref segment: a Local
-  // Skill's name is a *display* name, and git refnames forbid spaces — so
-  // "My Cool Skill" would otherwise build an invalid ref and fail at createRef,
-  // after the blobs/tree/commit above already landed upstream. An
-  // already-slug-shaped name slugifies to itself, so branches for skills that
-  // could publish before keep their exact names.
   const slug = makeSkillSlug(name);
   const refName = slug.ok ? slug.value : "skill";
   const branch = `platform/publish-${refName}-${branchTimestamp(deps.now())}`;
@@ -115,7 +85,6 @@ export async function runPublish(
   });
   if (!refRes.ok) return refRes;
 
-  // 5. Open the PR.
   const pr = await deps.github.createPullRequest(host, {
     title: input.title,
     body: input.body,

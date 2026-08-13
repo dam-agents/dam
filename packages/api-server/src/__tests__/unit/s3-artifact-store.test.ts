@@ -17,13 +17,10 @@ import {
   ensureBucket,
 } from "../../modules/artifacts/infrastructure/s3-artifact-store.js";
 
-/** Stub S3Client: a `send` mock is all the adapter's data path touches. */
 function stubClient(send: ReturnType<typeof vi.fn>): S3Client {
   return { send } as unknown as S3Client;
 }
 
-/** Real client for the presign paths — presigning is offline crypto, no
- *  network involved, but it needs a fully-constructed client. */
 function signerClient(endpoint: string): S3Client {
   return new S3Client({
     endpoint,
@@ -149,8 +146,6 @@ describe("createS3ArtifactStore", () => {
     expect(parsed.pathname).toBe("/artifacts/exp/agent/u/c.bin");
     expect(parsed.searchParams.get("X-Amz-Expires")).toBe("900");
     expect(parsed.searchParams.get("X-Amz-Signature")).toBeTruthy();
-    // The SDK default checksum injection would bake an empty-body CRC into
-    // the URL and every real upload would fail BadDigest.
     expect(parsed.searchParams.get("x-amz-checksum-crc32")).toBeNull();
   });
 

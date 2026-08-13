@@ -14,18 +14,11 @@ import {
   doublePrecision,
 } from "drizzle-orm/pg-core";
 
-/** Outcome of a recorded activity. Constrained at the DB so a typo or a
- *  forgotten field surfaces as a constraint violation, not as a row that
- *  silently miscounts in the usage views. */
 export const activityOutcomeEnum = pgEnum("activity_outcome", [
   "success",
   "failure",
 ]);
 
-// An agent may hold several Slack bindings at once (#3086) — one row per bound
-// conversation — so (agent_id, type) is a lookup index, not a uniqueness
-// constraint. The place-scoped invariant that survives is the other way round:
-// a Slack conversation binds to at most one agent install-wide.
 export const channels = pgTable(
   "channels",
   {
@@ -58,13 +51,8 @@ export const identityLinks = pgTable(
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {
-    // SDK-encoded thread id (chat id + optional forum-topic id). Primary key
-    // alone enforces the place-scoped invariant: one conversation binds to
-    // exactly one Agent.
     conversationId: text("conversation_id").primaryKey(),
     agentId: text("agent_id").notNull(),
-    // Keycloak sub of the Agent owner who bound the conversation — the party
-    // whose Terms-of-Use acceptance gates inbound turns.
     authorizedBy: text("authorized_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -73,24 +61,12 @@ export const telegramConversations = pgTable(
   (table) => [index("telegram_conversations_agent_idx").on(table.agentId)],
 );
 
-/**
- * Egress rules — per-agent, owner-scoped via the agent CM. A rule keyed on
- * (agent_id, host, method, path_pattern) applies to the agent's pod and
- * any forks it spawns (mirrors the scoping of connector envs and
- * Secret-volume mounts).
- *
- * `source` records the row's origin — `manual`, `inbox`, `connection:<id>`,
- * `preset:trusted`, `preset:all`. User edits flip the source to `manual` so
- * later connection revokes/preset reseeds don't touch the row. A single
- * rules table mirrors the env-injection pattern.
- */
 export const egressRules = pgTable(
   "egress_rules",
   {
     id: text("id").primaryKey(),
     agentId: text("agent_id").notNull(),
     host: text("host").notNull(),
-    // Upstream port; NULL = 443. Transparency only, outside the lookup key.
     port: integer("port"),
     method: text("method").notNull(),
     pathPattern: text("path_pattern").notNull(),
@@ -112,12 +88,6 @@ export const egressRules = pgTable(
   ],
 );
 
-/**
- * Durable record of every HITL approval the user owes a verdict on. Written
- * before any synth-frame fan-out so the inbox sees it from t=0; survives held-
- * call timeouts, replica restarts, and pod hibernation. Held ext_authz calls
- * wake from a Redis pub/sub on `approval:<id>`; this table is the truth path.
- */
 export const pendingApprovals = pgTable(
   "pending_approvals",
   {
@@ -149,9 +119,6 @@ export const pendingApprovals = pgTable(
   ],
 );
 
-// Sessions are agent-owned: the agent's on-disk store is the source
-// of truth, surfaced over ACP `_meta`. The server keeps no session table.
-
 export const skillSources = pgTable(
   "skill_sources",
   {
@@ -159,7 +126,6 @@ export const skillSources = pgTable(
     owner: text("owner").notNull(),
     name: text("name").notNull(),
     gitUrl: text("git_url").notNull(),
-    // Repo-relative subdir to scan; null ⇒ default (`skills/` then root).
     path: text("path"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -174,13 +140,6 @@ export const skillSources = pgTable(
   ],
 );
 
-/** A reusable, named selection of skills, owned by a user rather than by any
- *  sandbox. `skills` holds `[{ source, name }]` where `source` is the source's
- *  **git URL** — the same identity `agent_skills` installs on, so a set survives
- *  its source row being deleted and re-added. Entries live as jsonb because
- *  nothing queries by entry, and one row keeps create and delete atomic.
- *  Names are unique per owner; the name schema forces lowercase, so a plain
- *  unique index gives case-insensitive uniqueness. */
 export const skillSets = pgTable(
   "skill_sets",
   {
@@ -206,8 +165,6 @@ export const agentSkills = pgTable(
     name: text("name").notNull(),
     version: text("version").notNull(),
     contentHash: text("content_hash"),
-    // Source's `path` denormalized at install time; the source may be a
-    // non-persisted system/template entry, or since deleted.
     path: text("path"),
     installedAt: timestamp("installed_at", { withTimezone: true })
       .defaultNow()
@@ -219,10 +176,6 @@ export const agentSkills = pgTable(
   ],
 );
 
-/** Append-only log of semantically-meaningful platform activity (auth, channel turns).
- *  `actor_sub` is HMAC-SHA256(keycloak_sub, ACTIVITY_HMAC_KEY) — pseudonymized
- *  (not anonymized) at the storage boundary; same key joins to actor_roles and
- *  agents.owner_sub. See packages/api-server/src/core/sub-pseudonymizer.ts. */
 export const activityEvents = pgTable(
   "activity_events",
   {
@@ -256,9 +209,6 @@ export const activityEvents = pgTable(
   ],
 );
 
-/** Role flags keyed by pseudonymized Keycloak sub (see activity_events.actor_sub).
- *  Populated by the persist-activity saga on every UserAuthenticated event.
- *  Read by usage_core_actor_subs to feed core-team exclusion filters. */
 export const actorRoles = pgTable("actor_roles", {
   actorSub: text("actor_sub").primaryKey(),
   isCore: boolean("is_core").notNull().default(false),
@@ -267,11 +217,6 @@ export const actorRoles = pgTable("actor_roles", {
     .notNull(),
 });
 
-/** Postgres mirror of K8s agent ConfigMaps — kept here so SQL views
- *  and cross-table joins can resolve agent ownership without a CM round-trip.
- *  Populated by the persist-agents saga (on AgentCreated/Deleted) plus a
- *  startup bootstrap that backfills agents pre-dating the saga.
- *  `owner_sub` is HMACed with the same key as activity_events.actor_sub. */
 export const agents = pgTable(
   "agents",
   {
@@ -287,20 +232,12 @@ export const agents = pgTable(
       withTimezone: true,
     }),
     runtimeAgentVersion: text("runtime_agent_version"),
-    /** Last known harness-resolved config (model/mode/options + the discovered
-     *  model list). A snapshot, never authoritative: `harness-config` writes the
-     *  harness's file once and never re-asserts, so the file can move underneath. */
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
-    /** Last known standalone skills — the ones that live only on the pod's
-     *  disk, so a stopped sandbox has no other way to report them. Its own
-     *  column, not shared with the harness-config snapshot: different modules
-     *  write them on different triggers. */
     skillsSnapshot: jsonb("skills_snapshot"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
 
-/** Per-agent user-typed env (the UI Environment editor). */
 export const agentEnv = pgTable(
   "agent_env",
   {
@@ -340,16 +277,9 @@ export const agentSkillPublishes = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    // text, not a pg enum: the value set is GitHub's, so widening it should not
-    // need a migration. The contract's Zod enum is what validates it.
     prState: text("pr_state"),
-    /** Last resolution *attempt*, not last success — it doubles as the backoff
-     *  clock that keeps unresolvable records off the anonymous rate limit. */
     prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
     prEtag: text("pr_etag"),
-    /** Dormant: the resolver neither reads nor writes it — resolution is a
-     *  flat hourly pass with no failure accounting. Kept only because
-     *  migration 0020 already shipped. */
     prStateCheckFailures: integer("pr_state_check_failures")
       .notNull()
       .default(0),
@@ -408,21 +338,17 @@ export const runtimeStateOutbox = pgTable(
     })
       .defaultNow()
       .notNull(),
-    // Last version whose apply cycle settled (terminated), success or not — the readiness gate.
     lastSettledVersion: bigint("last_settled_version", { mode: "number" })
       .notNull()
       .default(0),
-    // Last fully-clean version; advances only when every driver succeeded.
     lastAppliedVersion: bigint("last_applied_version", { mode: "number" })
       .notNull()
       .default(0),
     lastAppliedHash: text("last_applied_hash"),
     lastAppliedAt: timestamp("last_applied_at", { withTimezone: true }),
-    // Drivers that failed the last settle (DriverFailure[]); drives retry + the degraded badge.
     applyFailures: jsonb("apply_failures")
       .notNull()
       .default(sql`'[]'::jsonb`),
-    // Failing-settle retry counter for the current version; capped by the sweep.
     applyAttempts: integer("apply_attempts").notNull().default(0),
   },
   (table) => [
@@ -509,14 +435,6 @@ export const apiKeys = pgTable(
   ],
 );
 
-// Experiments v2 (#2942): an Experiment is one execution of a driver Agent's
-// loop script, observed via a declared Skeleton plus a Trace of stage-tagged
-// spans. The platform never runs the loop — this is the observation record.
-// Script source lives in the Artifact Library (versioned), never here; the row
-// keeps only the artifact reference and the sha of the last-executed source.
-// `last_activity_at` is the liveness clock the inactivity sweep reads (bumped
-// on every accepted trace event); the partial indexes back the sweep scan and
-// the pin/agent-card "running experiments for driver" lookups.
 export const experiments = pgTable(
   "experiments",
   {
@@ -526,7 +444,6 @@ export const experiments = pgTable(
     name: text("name").notNull(),
     status: text("status").notNull().default("draft"),
     skeleton: jsonb("skeleton").notNull(),
-    // Stages discovered from spans that the skeleton never declared.
     drift: jsonb("drift")
       .notNull()
       .default(sql`'[]'::jsonb`),
@@ -535,13 +452,7 @@ export const experiments = pgTable(
     scriptArtifactId: text("script_artifact_id").notNull(),
     scriptVersion: integer("script_version").notNull(),
     dashboardArtifactId: text("dashboard_artifact_id"),
-    // Run-level custom data the script posts (exp.post_data); opaque,
-    // size-capped at ingestion, delivered to dashboards as feed.custom.
     customData: jsonb("custom_data"),
-    // Artifact Library ids attached to this run outside the span flow: the
-    // driver's monitoring harness (create_artifact experiment_id=) and
-    // auto-attributed publishes by the run's invocation targets. The feed
-    // unions these with the span-referenced rollup.
     attachedArtifactIds: jsonb("attached_artifact_ids")
       .notNull()
       .default(sql`'[]'::jsonb`),
@@ -555,8 +466,6 @@ export const experiments = pgTable(
   },
   (table) => [
     index("experiments_owner_idx").on(table.owner),
-    // One draft per (driver, name): plan re-registration updates the draft
-    // in place; a new plan after execution creates a sibling Experiment.
     uniqueIndex("experiments_driver_name_draft_idx")
       .on(table.driverAgentId, table.name)
       .where(sql`${table.status} = 'draft'`),
@@ -569,10 +478,6 @@ export const experiments = pgTable(
   ],
 );
 
-// One span = one execution of a skeleton stage. Upserted: span-start inserts
-// the running row, span-end fills status/score/artifacts/attrs/ended_at. The
-// PK embeds the experiment so the SDK-chosen span_id only has to be unique
-// within its own experiment.
 export const experimentSpans = pgTable(
   "experiment_spans",
   {
@@ -603,10 +508,6 @@ export const experimentSpans = pgTable(
   ],
 );
 
-// Per-user feature flags (hidden Features menu). Only explicitly toggled
-// features have rows — every feature defaults OFF, so absence = disabled.
-// Stored server-side (not localStorage) because feature surfaces include the
-// per-agent MCP tools, which only the server can hide.
 export const userFeatures = pgTable(
   "user_features",
   {
@@ -620,14 +521,6 @@ export const userFeatures = pgTable(
   (table) => [primaryKey({ columns: [table.owner, table.feature] })],
 );
 
-// Artifact library (#2810): user- and agent-published artifacts, organized in
-// folders, shared by public slug on the dedicated share host. The unguessable
-// slug is the entire access control — no passwords by design. The current
-// version's content lives in the object store at `storage_ref`; prior
-// versions are rows in `library_artifact_versions`. Intra-module rows carry
-// real FKs for integrity (versions cascade with their artifact; folder
-// deletion ungroups via SET NULL); only references that leave Postgres
-// (owner → Keycloak, agent → K8s) stay plain strings.
 export const artifactFolders = pgTable(
   "artifact_folders",
   {
@@ -652,10 +545,6 @@ export const artifactFolders = pgTable(
   ],
 );
 
-// `agent_id` is attribution only (which agent published it) — artifacts
-// deliberately outlive their creating agent, so it is a plain string, never a
-// reference that cascades. `visibility` lifecycle: private (default, in-app
-// only) → public (share link live).
 export const libraryArtifacts = pgTable(
   "library_artifacts",
   {
@@ -688,15 +577,12 @@ export const libraryArtifacts = pgTable(
     uniqueIndex("library_artifacts_slug_unique_idx").on(table.slug),
     index("library_artifacts_folder_idx").on(table.folderId),
     index("library_artifacts_agent_idx").on(table.agentId),
-    // The expiry sweeper scans only rows that can still expire.
     index("library_artifacts_expires_idx")
       .on(table.expiresAt)
       .where(sql`${table.expiresAt} is not null`),
   ],
 );
 
-// Prior versions only — the current version lives on `library_artifacts`
-// itself, so the hot read path (viewer resolve-by-slug) needs no join.
 export const libraryArtifactVersions = pgTable(
   "library_artifact_versions",
   {
@@ -714,30 +600,13 @@ export const libraryArtifactVersions = pgTable(
   (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
 );
 
-// An Invocation (#2816) is a run-once, typed request from a driver Agent to a
-// target Agent: a `(driver, target, prompt, result schema) -> one validated
-// result` binding. The target reports via the fixed `report_result` MCP tool.
-// This is the platform-owned durable record of that request — the row both
-// stashes the result JSON Schema (so `report_result` can validate the target's
-// structural claim) and marks the target as an Invocation (a regular agent
-// calling `report_result` has no row). Lifecycle (autosweep) is NOT modeled
-// here — it lives on the Agent (Sweepable / Agent Lifetime / Agent Sweep); this
-// table owns only the result contract plus the per-result liveness deadline.
-// The common case pairs an Invocation with a freshly-spawned ephemeral Agent,
-// but that pairing is not part of the record. The candidate itself never lives
-// here — it crosses round boundaries as a git ref; only the opaque `result`
-// does.
 export const invocations = pgTable(
   "invocations",
   {
-    // Primary key is the target Agent's id — `report_result` runs on that
-    // agent's own /api/agents/<id>/mcp, so the id is the attribution key.
     id: text("id").primaryKey(),
     driverAgentId: text("driver_agent_id").notNull(),
     owner: text("owner").notNull(),
-    // JSON Schema the result is validated against (structural only).
     resultSchema: jsonb("result_schema").notNull(),
-    // The validated result; null until the target reports.
     result: jsonb("result"),
     status: text("status").notNull().default("running"),
     errorReason: text("error_reason"),
@@ -745,12 +614,7 @@ export const invocations = pgTable(
       .defaultNow()
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
-    // Liveness deadline: a `running` Invocation past this is failed by the
-    // liveness sweep (bounds one result, not the target agent).
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    // Experiments v2 span attach (#2942): "<experimentId>/<spanId>" stamped by
-    // the SDK when the spawn happened inside a span, so the Trace Feed can
-    // show the invocation under its stage. Null for non-experiment spawns.
     experimentSpanId: text("experiment_span_id"),
   },
   (table) => [

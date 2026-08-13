@@ -14,8 +14,6 @@ export interface VersionProbe {
 }
 
 export interface HttpVersionProbeOpts {
-  /** Per-call deadline. Default 5s — long enough for a wakeful pod, short
-   *  enough that `dam ping` never feels hung. */
   timeoutMs?: number;
 }
 

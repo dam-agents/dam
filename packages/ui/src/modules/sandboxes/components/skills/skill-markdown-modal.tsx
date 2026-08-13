@@ -5,12 +5,6 @@ import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 
-/**
- * The shell every skill preview renders into: header, loading skeleton, error
- * state, and the `<Markdown>` body. Presentational — each mode owns its own
- * query and hands the result here, so a source-backed skill and a Local Skill
- * share one piece of markup instead of two that drift.
- */
 export function SkillMarkdownModal({
   title,
   description,
@@ -22,7 +16,6 @@ export function SkillMarkdownModal({
 }: {
   title: string;
   description?: string | undefined;
-  /** GitHub blob URL for the rendered file. A Local Skill has none. */
   linkHref?: string | null;
   isPending: boolean;
   isError: boolean;

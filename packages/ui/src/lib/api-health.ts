@@ -29,9 +29,7 @@ async function poll() {
       onFetchSuccess();
       return;
     }
-  } catch {
-    // noop
-  }
+  } catch {}
   if (failureCount >= 2) pollTimer = setTimeout(poll, 3_000);
 }
 

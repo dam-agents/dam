@@ -8,19 +8,10 @@ import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
-/** The caller's latest acceptance as it arrives over the wire — the tRPC
- *  surface uses no date transformer, so `acceptedAt` is an ISO string here,
- *  not the server-side `Date`. */
 export type LatestAcceptance = Awaited<
   ReturnType<TrpcClient["terms"]["latestAcceptance"]["query"]>
 >;
 
-/**
- * CLI-side view of the terms surface. Metadata and acceptance go over tRPC
- * (`terms.*`, exempt from the 412 gate so they run while the caller is still
- * gated); the document text is served only at the plain, auth-exempt
- * `GET /api/terms`, so it is fetched directly rather than over tRPC.
- */
 export interface TermsService {
   document(): Promise<Result<TermsDocument, TransportError>>;
   current(): Promise<Result<TermsCurrent, TransportError | AuthRequiredError>>;

@@ -10,8 +10,6 @@ import { useUpgradeAgentMutation } from "../api/mutations.js";
 import { ReleaseNotesLink } from "../components/release-notes-link.js";
 import { releaseNotesUrl } from "./use-release-notes-url.js";
 
-/** What one sandbox's update moves, narrowed off `templateUpdate` so the apply
- *  loop needs no non-null assertion. */
 interface PendingUpdate {
   id: string;
   name: string;
@@ -32,22 +30,14 @@ function pendingUpdates(agents: readonly AgentView[]): PendingUpdate[] {
   );
 }
 
-/** Mirrors sizeRestartsAgent: only a sandbox that is already down applies the
- *  new image lazily, on its next start. */
 function restartsToApply(agent: AgentView): boolean {
   return !(agent.state === "hibernated" || agent.overBudget);
 }
 
-/** The banner only offers a batch from two up, but nothing stops a caller
- *  passing one, and "1 sandboxes" would be the tell. */
 function batchSubject(total: number): string {
   return total === 1 ? "sandbox" : "sandboxes";
 }
 
-/** The images the batch moves to, each with how many sandboxes take it. Grouped
- *  because a batch usually spans one template, so the common case is a single
- *  line; consent is bound to these images by `expectedToImage`, so they are
- *  what the dialog has to name. */
 function byTargetImage(
   pending: readonly PendingUpdate[],
 ): Array<{ image: string; count: number }> {
@@ -57,9 +47,6 @@ function byTargetImage(
   return [...counts].map(([image, count]) => ({ image, count }));
 }
 
-/** When a batch takes effect — the same two facts the single-sandbox
- *  confirmation gives, worded per case so each sentence has a subject. Naming
- *  the groups beats "the rest", which refers to nothing when none is running. */
 function batchApplyNote(restarting: number, total: number): string {
   if (restarting === 0) return "Each applies it the next time it starts.";
   if (restarting === total)
@@ -67,17 +54,10 @@ function batchApplyNote(restarting: number, total: number): string {
   return "Running sandboxes restart to apply it — in-flight work is interrupted. Stopped ones apply it the next time they start.";
 }
 
-/**
- * The one way a template update is applied (#3137): confirm what moves, then
- * apply. Shared by the sandbox list, the row, and the sandbox header so the
- * wording and the compare-and-swap guard can't drift between entry points.
- */
 export function useUpdateSandbox() {
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: templates } = useTemplates();
   const upgrade = useUpgradeAgentMutation();
-  // The bulk loop reports once, in aggregate, so the per-mutation toast would
-  // be one popup per failed sandbox on top of it.
   const bulkUpgrade = useUpgradeAgentMutation({ silent: true });
 
   const updateOne = useCallback(
@@ -101,8 +81,6 @@ export function useUpdateSandbox() {
         </>
       );
       if (!(await showConfirm(msg, "Update Sandbox"))) return;
-      // expectedToImage binds the confirmation to the movement just shown: if
-      // the template moves meanwhile, the server rejects instead of surprising.
       upgrade.mutate({ id: agent.id, expectedToImage: update.toImage });
     },
     [showConfirm, upgrade, templates],
@@ -143,8 +121,6 @@ export function useUpdateSandbox() {
       );
       if (!(await showConfirm(msg, "Update Sandboxes"))) return;
 
-      // Sequential: each update rolls a pod, and a burst of concurrent rolls
-      // buys nothing over a list this short.
       let updated = 0;
       const failures: string[] = [];
       for (const target of pending) {
@@ -155,9 +131,6 @@ export function useUpdateSandbox() {
           });
           updated += 1;
         } catch (err) {
-          // Named unconditionally: `getErrorMessage` prefers the server's own
-          // wording, which drops the sandbox exactly when there is a reason to
-          // report against it.
           failures.push(`${target.name}: ${getErrorMessage(err, "failed")}`);
         }
       }
@@ -169,8 +142,6 @@ export function useUpdateSandbox() {
         });
         return;
       }
-      // Every failure by name: each failed sandbox keeps its own Update, so the
-      // toast has to say which ones and why.
       emitToast({
         kind: "error",
         message: `Updated ${updated} of ${pending.length} sandboxes. ${failures.length} failed — ${failures.join("; ")}`,
@@ -182,8 +153,6 @@ export function useUpdateSandbox() {
   return {
     updateOne,
     updateAll,
-    /** The sandbox whose single update is in flight, so one row spins rather
-     *  than every row. */
     updatingId: upgrade.isPending ? upgrade.variables.id : null,
     updatingAll: bulkUpgrade.isPending,
   };

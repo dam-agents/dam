@@ -9,23 +9,9 @@ export type EnvParseError =
 
 export interface ParsedEnv {
   vars: EnvVar[];
-  /** Keys that appeared more than once. Last-wins semantics are
-   *  preserved; this list lets the command layer warn the user so a
-   *  misconfigured `--env FOO=1 --env FOO=2` is at least visible. */
   duplicates: readonly string[];
 }
 
-/**
- * Parses commander's repeatable `--env KEY=VAL` array into the wire shape
- * `agents.create` accepts. Rules (locked in spec §4.2):
- *
- * - Split on the **first** `=`; subsequent `=` chars are kept in the value.
- * - Missing `=` → `missing-equals` (exit 2).
- * - Empty value (`KEY=`) is valid.
- * - Key must match `[A-Z_][A-Z0-9_]*` (the server's `ENV_NAME_RE`).
- * - On duplicate keys, **last wins**; the duplicate keys are returned
- *   alongside so the command layer can surface them.
- */
 export function parseEnvFlag(
   values: readonly string[],
 ): Result<ParsedEnv, EnvParseError> {

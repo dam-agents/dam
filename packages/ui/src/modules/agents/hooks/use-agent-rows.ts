@@ -22,19 +22,11 @@ import { useWakeAgent } from "./use-wake-agent.js";
 
 const NO_TEMPLATES: TemplateView[] = [];
 
-/** Everything an agent list surface needs to render `AgentRow`s: the polled
- *  agents list, optimistic restart/pause sync, lifecycle mutations, and a
- *  per-agent props builder. Shared by the Sandboxes and Knowledge Bases lists,
- *  which differ only in filtering, copy, and the select/stop/delete flows —
- *  those stay in the views (`onSelect`/`onDelete` are per-surface; override
- *  `onStop` for a confirm flow). */
 export function useAgentRows() {
   const { data: templatesData } = useTemplates();
   const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
-  // Experiment-kinded rows lead their subtitle with how many named experiments
-  // they drive (#3001); one cached query, shared with the Experiments page.
   const { data: driverSummaries } = useDriverSummaries({ silent: true });
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
@@ -80,8 +72,6 @@ export function useAgentRows() {
     agent,
     display: resolveAgentDisplay(agent, restartingIds, pausingIds),
     subtitle: sandboxSubtitle(agent, subtitleLookup, {
-      // 0, not undefined, once summaries have loaded: a marked sandbox with no
-      // registered experiments reads "No active experiments".
       experimentCount: experimentCountByDriver
         ? (experimentCountByDriver.get(agent.id) ?? 0)
         : undefined,
@@ -99,8 +89,6 @@ export function useAgentRows() {
 
   return {
     agentsData,
-    // Gate on data presence, not query success: a transient poll failure keeps
-    // the cached list rendered instead of flashing skeletons over it.
     initialLoaded: agentsData !== undefined,
     rowProps,
     deleteAgent,

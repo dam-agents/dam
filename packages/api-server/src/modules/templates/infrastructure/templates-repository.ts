@@ -12,12 +12,6 @@ export interface TemplatesRepository {
   ): Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 }
 
-/**
- * Templates are chart-shipped config mounted as `<id>.yaml` files;
- * they change only on helm upgrade (which restarts the pod), so load them once
- * at construction rather than per-request. No user-owned templates (isOwned is
- * always false); an empty/missing `dir` yields an empty catalogue.
- */
 export function createTemplatesRepository(dir: string): TemplatesRepository {
   const byId = loadTemplates(dir);
   return {
@@ -49,8 +43,6 @@ function loadTemplates(dir: string): Map<string, Template> {
   }
 
   for (const entry of entries) {
-    // ConfigMap volume mounts surface data keys alongside `..data` symlinks
-    // and timestamped dirs; skip those and anything that isn't a template.
     if (entry.startsWith(".") || !entry.endsWith(".yaml")) continue;
     const id = entry.slice(0, -".yaml".length);
     try {

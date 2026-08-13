@@ -81,8 +81,6 @@ async function runDelete(
     if (!proceed) exitCancelled(opts);
   }
 
-  // Agent is the single resource — no separate Instance to
-  // orphan, so deleteAgent is the only path.
   const result = await svc.deleteAgent(agent.id);
   let alreadyGone = false;
   if (!result.ok) {

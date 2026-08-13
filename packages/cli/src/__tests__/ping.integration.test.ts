@@ -101,9 +101,7 @@ describe("dam ping (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  afterAll(async () => {
-    // dist/ stays for subsequent vitest runs.
-  });
+  afterAll(async () => {});
 
   async function configureServer(url: string) {
     const r = await runDam(["config", "set", "server", url], {
@@ -185,7 +183,6 @@ describe("dam ping (integration)", () => {
   });
 
   it("unreachable server: network error on stderr, non-zero exit", async () => {
-    // Use a port that won't accept connections (1 is privileged + unused).
     await configureServer("http://127.0.0.1:1");
 
     const r = await runDam(["ping"], {
@@ -200,7 +197,6 @@ describe("dam ping (integration)", () => {
     fixture.setResponse({
       body: { serverVersion: "1.0.0", minClientVersion: "0.0.0" },
     });
-    // Configure a bogus server; --server should override.
     await configureServer("http://127.0.0.1:1");
 
     const r = await runDam(["ping", "--server", fixture.url], {

@@ -8,8 +8,6 @@ export interface ExecuteLauncher {
   }): Promise<void>;
 }
 
-/** Delivers the Execute launch prompt over the runtime channel's durable
- *  outbox and pokes the driver awake — the same rail schedule fires ride. */
 export function createExecuteLauncher(deps: {
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;

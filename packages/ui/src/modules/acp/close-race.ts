@@ -2,9 +2,6 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 
 export class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
-  /** What the socket said on the way out, when it said anything. The relay
-   *  reports a real cause here ("agent not ready: …", "instance not found")
-   *  and passes an empty reason through rather than inventing one. */
   readonly closeReason: string | null;
   constructor(closeReason: string | null) {
     super(
@@ -16,29 +13,14 @@ export class ConnectionClosedError extends Error {
   }
 }
 
-/** The socket's parting reason, for a rejection that carries one. */
 export function connectionCloseReason(e: unknown): string | null {
   return e instanceof ConnectionClosedError ? e.closeReason : null;
 }
 
-/** Whether a rejection is this module's close race rather than an answer from
- *  the agent — the two mean opposite things to the user. */
 export function isConnectionClosed(e: unknown): boolean {
   return e instanceof ConnectionClosedError;
 }
 
-/**
- * Wrap a `ClientSideConnection` so every Promise-returning call races against
- * the connection's `closed` promise. On close, in-flight calls reject with
- * `ConnectionClosedError` so consumer catch-paths can surface a real error
- * instead of awaiting a promise that will never settle.
- *
- * Implementation detects requests dynamically — every public method on
- * `ClientSideConnection` returns a Promise, non-method members are getters
- * (`closed`, `signal`). This avoids a hand-maintained allowlist that would
- * silently disable the race for typos, new SDK methods, or future renames
- * (e.g. the `unstable_*` prefix dance).
- */
 export function withCloseRace(
   conn: ClientSideConnection,
   closeReason: () => string | null,

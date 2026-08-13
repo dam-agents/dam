@@ -2,10 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { baseUrl, testUser } from "../../config.js";
 
-// Runs before 01-auth (alphabetical, same "auth" project) and so faces the
-// Terms gate on a fresh install — the leg that made #3107 stick on the
-// dashboard. The flow id is deliberately bogus: the picker only validates it
-// when an agent is picked, so reaching the picker is the whole assertion.
 const bindFlowId = "e2e-deep-link-probe";
 const bindDeepLink = `/slack/bind?flow=${bindFlowId}`;
 
@@ -26,8 +22,6 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
     name: /connect this channel to an agent/i,
   });
 
-  // Whichever comes first, both paths have to land on the picker: acceptance
-  // resumes the parked destination instead of the dashboard.
   await expect(termsButton.or(picker)).toBeVisible();
   if (await termsButton.isVisible()) await termsButton.click();
 
