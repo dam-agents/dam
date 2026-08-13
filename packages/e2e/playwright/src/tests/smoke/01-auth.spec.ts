@@ -77,9 +77,22 @@ test("both tRPC doors: bad bearers refused, stale terms gate all but terms.*", a
 const bindFlowId = "e2e-deep-link-probe";
 const bindDeepLink = `/slack/bind?flow=${bindFlowId}`;
 
+function wireBrowserDiagnostics(page: import("@playwright/test").Page) {
+  page.on("pageerror", (err) => console.log(`[pageerror] ${err.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") console.log(`[console.error] ${msg.text()}`);
+  });
+  page.on("requestfailed", (req) =>
+    console.log(
+      `[requestfailed] ${req.url()} :: ${req.failure()?.errorText ?? "?"}`,
+    ),
+  );
+}
+
 test("a bind deep link survives the login roundtrip and the Terms gate (#3107)", async ({
   page,
 }) => {
+  wireBrowserDiagnostics(page);
   await page.goto(`${baseUrl}${bindDeepLink}`);
 
   await page.waitForURL(/\/realms\/platform\/protocol\/openid-connect\/auth/);
@@ -107,6 +120,7 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
 
 // TEST_SCENARIO: On a fresh run the deep-link test above has already
 test("login via Keycloak and accept terms", async ({ page }) => {
+  wireBrowserDiagnostics(page);
   await page.goto(baseUrl);
 
   await page.waitForURL(/\/realms\/platform\/protocol\/openid-connect\/auth/);
