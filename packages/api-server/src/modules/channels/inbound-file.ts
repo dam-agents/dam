@@ -97,14 +97,35 @@ const REFUSAL_HEADING =
  *  attribute alone. The host is matched whole (a subdomain, then `slack.com`)
  *  rather than as a substring, so neither an arbitrary prefix nor a lookalike
  *  host can stand in for it. */
-const SIGN_IN_HOST = String.raw`https?:\/\/(?:[a-z0-9-]+\.)*slack\.com\/(?:signin|workspace-signin)`;
-const SIGN_IN_TARGET = new RegExp(
-  // A form that submits there…
-  `<form[^>]*\\saction\\s*=\\s*["'][^"']*${SIGN_IN_HOST}` +
-    // …or a refresh that navigates there. `content` on any other tag is prose:
-    // an og:url or a description may name a sign-in page and still be a document.
-    `|<meta[^>]*\\shttp-equiv\\s*=\\s*["']?refresh["']?[^>]*content\\s*=\\s*["'][^"']*${SIGN_IN_HOST}`,
-);
+const SIGN_IN_HOST =
+  /https?:\/\/(?:[a-z0-9-]+\.)*slack\.com\/(?:signin|workspace-signin)/;
+
+/** Each `form` and `meta` tag, judged on its own attributes. Matching an element
+ *  and an attribute in one pattern makes the order they were written in
+ *  significant, which in HTML it is not — a stub emitting `content` before
+ *  `http-equiv` is the same stub. */
+const TARGET_TAGS = /<(form|meta)\b[^>]*>/g;
+const REFRESH = /http-equiv\s*=\s*["']?refresh/;
+const ACTION = /\saction\s*=\s*["']?([^"'\s>]+)/;
+const CONTENT = /\scontent\s*=\s*["']([^"']*)/;
+
+function hasSignInTarget(head: string): boolean {
+  for (const match of head.matchAll(TARGET_TAGS)) {
+    const tag = match[0];
+    if (match[1] === "form") {
+      const action = ACTION.exec(tag);
+      if (action?.[1] && SIGN_IN_HOST.test(action[1])) return true;
+      continue;
+    }
+    // `content` is where a meta tag carries prose — an og:url or a description
+    // may name a sign-in page and still belong to a document — so it counts only
+    // on the tag that makes it a destination.
+    if (!REFRESH.test(tag)) continue;
+    const content = CONTENT.exec(tag);
+    if (content?.[1] && SIGN_IN_HOST.test(content[1])) return true;
+  }
+  return false;
+}
 
 /** The field that makes a page a login form, whoever served it. */
 const PASSWORD_FIELD = /(type|name|id)\s*=\s*["']?password/;
@@ -128,7 +149,7 @@ export function looksLikeSignInPage(head: string): boolean {
   const lower = head.toLowerCase().trimStart();
   if (lower.startsWith("{")) return AUTH_ERROR_CODE.test(lower);
   if (!/^<(!doctype|html|head|body|meta|\?xml|!--)/.test(lower)) return false;
-  if (SIGN_IN_TARGET.test(lower)) return true;
+  if (hasSignInTarget(lower)) return true;
   for (const match of lower.matchAll(HEADING)) {
     const heading = (match[1] ?? match[2] ?? "").trim();
     if (REFUSAL_HEADING.test(heading)) return true;

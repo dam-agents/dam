@@ -83,6 +83,12 @@ describe("looksLikeSignInPage", () => {
     expect(
       looksLikeSignInPage('<html><form action="https://slack.com/signin">'),
     ).toBe(true);
+    // HTML attribute order is not significant, so neither is it here.
+    expect(
+      looksLikeSignInPage(
+        '<html><head><meta content="0;url=https://acme.slack.com/signin" http-equiv="refresh"></head>',
+      ),
+    ).toBe(true);
     expect(
       looksLikeSignInPage("<html><h1>You are not authorized</h1></html>"),
     ).toBe(true);

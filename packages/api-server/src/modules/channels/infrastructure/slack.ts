@@ -23,6 +23,12 @@ import {
   MAX_FILE_BYTES,
   TOTAL_FILE_BYTES_CAP,
 } from "../inbound-file.js";
+import {
+  createAttachmentBudget,
+  encodedFootprint,
+  type AttachmentBudget,
+  type AttachmentClaim,
+} from "../attachment-budget.js";
 import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
   ChannelReaction,
@@ -319,25 +325,6 @@ type FetchedFailure = {
   reason: string;
 };
 
-/** The worker's attachment-memory budget, as the download loop sees it.
- *
- *  Admission and charge are one call, deliberately: a `fits()` a caller acts on
- *  later is read across the download's `await`, so every concurrent fetch would
- *  pass the same snapshot and only then charge — bounding settled bytes while the
- *  bytes actually in flight go uncounted. Reserving up front means an admitted
- *  fetch is already paid for. */
-interface HeldBudget {
-  /** Reserve `bytes` before reading them, or refuse. */
-  reserve(bytes: number): HeldClaim | null;
-}
-
-interface HeldClaim {
-  /** Lower the reservation to what actually arrived. Only ever lowers, so it
-   *  cannot fail and cannot exceed what admission already granted. */
-  settle(bytes: number): void;
-  release(): void;
-}
-
 type FetchAttachmentsResult = {
   images: FetchedImage[];
   files: FetchedFile[];
@@ -440,7 +427,7 @@ async function fetchSlackAttachments(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
   uploader: string,
-  budget: HeldBudget,
+  budget: AttachmentBudget,
 ): Promise<FetchAttachmentsResult> {
   const attachments = files ?? [];
   const pictures = attachments.filter((f) =>
@@ -455,7 +442,7 @@ async function fetchSlackAttachments(
     const images: FetchedImage[] = [];
     const staged: FetchedFile[] = [];
     const failures: FetchedFailure[] = [];
-    const claims: HeldClaim[] = [];
+    const claims: AttachmentClaim[] = [];
 
     // The picture cap is about what one prompt may carry, so it withholds the
     // pictures and nothing else: a file on the same message is written to disk,
@@ -485,10 +472,11 @@ async function fetchSlackAttachments(
     for (const f of picturesOverCap ? [] : pictures) {
       const remaining = TOTAL_IMAGE_BYTES_CAP - pictureBytesTaken;
       // A picture costs the worker more than a file, not less: it is held to the
-      // same turn settlement and base64 inflates it by a third on the way into
-      // the prompt. Reserved on the declared size, or on the whole remaining
-      // share when the sender's client did not say.
-      const claim = budget.reserve(f.size || remaining);
+      // same turn settlement and rides the prompt encoded. Reserved as encoded
+      // bytes, the unit it is actually kept in, so the reservation is an upper
+      // bound on the claim — a sizeless attachment reserves the whole remaining
+      // share, which is what its transfer would be allowed to spend.
+      const claim = budget.reserve(encodedFootprint(f.size || remaining));
       if (!claim) {
         failures.push({
           name: attachmentName(f),
@@ -581,7 +569,7 @@ async function fetchSlackAttachments(
       // never read, and a fetch already on the wire counts against the next one —
       // which a per-message cap cannot do, nothing limiting how many messages
       // arrive at once.
-      const claim = budget.reserve(f.size || MAX_FILE_BYTES);
+      const claim = budget.reserve(encodedFootprint(f.size || MAX_FILE_BYTES));
       if (!claim) {
         failures.push({ name, kind: "file", reason: OVER_HELD_BUDGET });
         continue;
@@ -640,7 +628,10 @@ async function fetchSlackAttachments(
           continue;
         }
         stagedBytes += bytes.length;
-        claim.settle(bytes.length);
+        // Settled in the unit it was reserved in, and upward too when needed: a
+        // declared size that understated the file must still be charged what
+        // arrived, or the ceiling stops bounding anything.
+        claim.settle(encodedFootprint(bytes.length));
         claims.push(claim);
         staged.push({
           name,
@@ -2422,46 +2413,15 @@ export function createSlackWorker(
     return { kept, dropped };
   }
 
-  /** What this worker may hold in inbound attachment bytes at once, across every
-   *  path. A per-message cap says nothing about how many messages are in flight,
-   *  and the expensive stretch is the wait for a cold pod: bytes are downloaded
-   *  before the turn and held until it settles, so a mention and a read-along
-   *  message cost the same memory for the same duration. Nothing gates how many
-   *  arrive at once — Bolt delivers each event as it comes — and this process runs
-   *  the channel workers for the whole install, so the budget belongs to the
-   *  worker rather than to any one queue or turn. Past it an attachment is
-   *  withheld and said so; the message itself still relays. */
-  const HELD_BYTES_CAP = 3 * TOTAL_FILE_BYTES_CAP;
+  /** What this worker may hold in encoded attachment bytes at once, across every
+   *  inbound path — the reasoning is in `attachment-budget.ts`. Past it an
+   *  attachment is withheld and said so; the message itself still relays. */
+  const HELD_BYTES_CAP = encodedFootprint(3 * TOTAL_FILE_BYTES_CAP);
 
-  /** Bytes charged to attachments this worker is holding: from the moment one is
-   *  downloaded until the turn carrying it settles, whichever path it arrived on.
-   *  Every charge is paired with a release in a `finally`, so the two cannot come
-   *  apart, and a charge that outlives its turn would mean bytes that are still
-   *  resident anyway. */
-  let heldBytes = 0;
-
-  /** The budget the download loops reserve against. Passed in rather than reached
+  /** This worker's share, reserved on admission and released when the turn that
+   *  holds the bytes settles. Passed into the download loops rather than reached
    *  for, so a loop stays a function of what it is given. */
-  const heldBudget: HeldBudget = {
-    reserve: (bytes) => {
-      if (bytes > 0 && heldBytes + bytes > HELD_BYTES_CAP) return null;
-      // Reserved on admission, so a fetch that is admitted is already counted
-      // for the whole time it holds the bytes — including the download itself.
-      let held = bytes;
-      heldBytes += held;
-      return {
-        settle: (actual) => {
-          if (actual >= held) return;
-          heldBytes -= held - actual;
-          held = actual;
-        },
-        release: () => {
-          heldBytes = Math.max(0, heldBytes - held);
-          held = 0;
-        },
-      };
-    },
-  };
+  const heldBudget = createAttachmentBudget(HELD_BYTES_CAP);
 
   // Ambient traffic is serialized per session and coalesced: messages that
   // arrive while a turn is in flight flush as one multi-message prompt, so a
