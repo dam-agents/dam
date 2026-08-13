@@ -975,9 +975,19 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         // The pod's applied hash still describes the set that held these, so
         // re-installing one would reproduce that hash and be skipped as
         // already-applied. Bumping re-delivers the set it actually has.
+        // Best-effort, like the snapshot write below: this is the read the
+        // Skills page cannot do without, and the 60s sweep re-dispatches a
+        // bumped row on its own, so neither call is worth failing it for.
         if (reaped.length > 0) {
-          await deps.runtimeMutator.bump(agentId, []);
-          await deps.runtimeMutator.enqueueAfterCommit(agentId);
+          try {
+            await deps.runtimeMutator.bump(agentId, []);
+            await deps.runtimeMutator.enqueueAfterCommit(agentId);
+          } catch (err) {
+            getLogger().warn(
+              { err, agentId },
+              "skills state: re-delivery after reap failed",
+            );
+          }
         }
       }
 
