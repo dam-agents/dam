@@ -97,24 +97,29 @@ export interface SupervisedProcess<C extends ChildProcess = ChildProcess> {
 }
 
 /** `spawn`, but `detached` for `setsid`: our own session is no usable scope. */
+/** Never through a shell: argv goes straight to `execve`, so a path or url that
+ *  reached a command cannot become syntax. Enforced, not merely observed. */
+type NoShell<T> = Omit<T, "shell">;
+
 export function spawnSupervised(
   command: string,
   args: readonly string[],
-  options: SpawnOptionsWithoutStdio,
+  options: NoShell<SpawnOptionsWithoutStdio>,
 ): SupervisedProcess<ChildProcessWithoutNullStreams>;
 export function spawnSupervised(
   command: string,
   args: readonly string[],
-  options?: SpawnOptions,
+  options?: NoShell<SpawnOptions>,
 ): SupervisedProcess<ChildProcess>;
 export function spawnSupervised(
   command: string,
   args: readonly string[],
-  options: SpawnOptions = {},
+  options: NoShell<SpawnOptions> = {},
 ): SupervisedProcess<ChildProcess> {
   const child = spawn(command, args as string[], {
     ...options,
     detached: true,
+    shell: false,
   });
   // While it is certainly alive, so teardown can tell it from a pid reuse.
   const startTime =
