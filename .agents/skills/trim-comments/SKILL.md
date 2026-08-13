@@ -21,8 +21,10 @@ comments left in a file is a fine outcome. Never change code in this pass; comme
 
 ## Scope
 
-- **Files** written or edited this session. If that set is unclear, reconstruct it:
-  `git status --short` plus `git diff --name-only $(git merge-base HEAD main)`.
+- **Files** written or edited this session — you know your own edits. If that set is genuinely
+  unclear, establish it yourself: resolve the baseline explicitly and fail loudly rather than
+  guessing, and when the best set available is the whole branch rather than the session, say so
+  in the report instead of passing it off as the session's.
 - **Comments** this session authored or touched, plus any inside a hunk it changed. A violating
   comment elsewhere in the same file is reported, never rewritten — the diff stays reviewable.
 - **Out of scope**: docs and markdown, generated files, vendored code, untouched files.
@@ -52,7 +54,8 @@ Without this line, would a competent reader of this code do the wrong thing?
    not an issue number.
 6. **Bloat** — comments spanning paragraphs, hedging ("basically", "note that"), tutorials on
    the language or framework, ASCII diagrams, section banners, decorative dividers.
-7. **Dead weight** — commented-out code, and TODO/FIXME the agent invented unasked.
+7. **Dead weight** — commented-out code, and TODO/FIXME/XXX markers: this repo files issues
+   instead of parking work in comments.
 8. **Unverifiable claims** — if you cannot confirm what a comment asserts, delete it or flag it.
    Never restate it, and never write a "why" you cannot see in the code.
 
@@ -77,7 +80,9 @@ template directives.
 
 ## Style for the ones that stay
 
-- **One line.** Hard cap.
+- **One line**, with one release valve: a crucial fact that genuinely will not fit keeps its
+  longer comment, flagged in the report. Terseness never costs information — never drop a
+  load-bearing fact to satisfy the cap.
 - **Lead with the fact.** No preamble, no restating the subject.
 - **Present tense, current state.** No comparatives, no history, no plans.
 - **Terse and concrete.** Plain words over jargon; name the actual failure or constraint.
@@ -102,14 +107,13 @@ template directives.
 1. **Read each edited file in full.** Duplication is invisible from a diff alone.
 2. **Classify** every in-scope comment: delete, one-line rewrite, keep verbatim.
 3. **Apply** with Edit. Leave no orphan blank lines, dangling `/*`, or empty doc blocks.
-4. **Rescue** any load-bearing fact that will not fit in one line onto the subsystem's page
-   under [`docs/architecture/`](../../../docs/architecture/) — never back into the code as
-   prose. Terseness never costs information.
-5. **Verify.** `mise run check`, and `git diff` to confirm no statement changed.
+4. **Verify.** `mise run check`, then confirm the diff is comment-only — no statement changed.
 
 ## Report
 
 - One line per file: comments removed / rewritten / kept.
-- **Kept** — each surviving comment with the one-line reason it earns its place.
-- **Relocated** — facts moved to an architecture page, with the page.
+- **Kept** — each surviving comment with the one-line reason it earns its place, calling out any
+  that needed more than one line.
+- **Doc gaps** — subsystem behavior a deleted comment explained that no architecture page
+  covers. Reported, never written: this skill does not edit docs.
 - **Out-of-scope violations** — offered as optional follow-up, never fixed unilaterally.
