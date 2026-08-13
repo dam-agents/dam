@@ -69,9 +69,9 @@ export interface ContributionsSettledPort {
   isApplied(agentId: string): Promise<boolean>;
 }
 
-export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
-
-/** The applied bit alone; see {@link ContributionsSettledPort.isApplied}. */
+/** The applied bit alone, for modules that gate on it — one named dependency
+ *  instead of a bare function type re-spelled at every wiring hop. See
+ *  {@link ContributionsSettledPort.isApplied}. */
 export type RuntimeAppliedPort = Pick<ContributionsSettledPort, "isApplied">;
 
 /**

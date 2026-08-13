@@ -223,8 +223,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
-      isSettled: (agentId) =>
-        contributionsSettled.status(agentId).then((s) => s.settled),
+      isSettled: contributionsSettled.isSettled,
     });
     const metrics = metricsReader
       ? createMetricsService({

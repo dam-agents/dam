@@ -3,7 +3,6 @@ export type {
   AgentCleanupHook,
   PresetSeeder,
   ContributionsSettledPort,
-  RuntimeSettledPort,
   RuntimeAppliedPort,
 } from "./services/agents-service.js";
 export {
