@@ -7,9 +7,6 @@ import {
 } from "../../modules/metrics/index.js";
 import { isInvocationTargetName } from "../../modules/invocations/index.js";
 
-// Records the agent-id allowlist and window each reader method is called with,
-// so we can assert the ownership gate resolved the right scope before touching
-// ClickHouse.
 function spyReader(): {
   reader: MetricsReader;
   calls: string[][];
@@ -83,7 +80,7 @@ describe("metrics ownership gate", () => {
       runtimeBySession: [],
       contextPerCall: [],
     });
-    expect(calls).toEqual([]); // ClickHouse never touched — the ownership guarantee
+    expect(calls).toEqual([]);
   });
 
   it("passes the session filter through to every reader query", async () => {
@@ -124,9 +121,7 @@ describe("metrics ownership gate", () => {
       to: "2026-08-01T00:00:00.000Z",
       timeZone: "America/New_York",
     });
-    // One ownership resolution for the whole tab, not three.
     expect(scopeResolutions).toBe(1);
-    // The three rollups (byModel, byAgent, byDay) all run under that scope.
     expect(calls).toEqual(Array(3).fill(["agent-a", "agent-b"]));
     expect(windows).toEqual(
       Array(3).fill({
@@ -207,11 +202,6 @@ describe("metrics ownership gate", () => {
   });
 });
 
-// The per-agent spend rollup must never surface an Invocation target as a
-// spend principal: live agents are relabelled from the platform registry, and
-// buckets still carrying a minted `invocation-<hex>` name after that overlay
-// (pre-attribution-cutover targets whose driver is unrecoverable) are dropped
-// from byAgent while byModel/byDay keep counting their spend.
 describe("spendBreakdown per-agent labels", () => {
   const breakdownQuery = {
     from: "2026-07-01T00:00:00.000Z",
@@ -233,8 +223,6 @@ describe("spendBreakdown per-agent labels", () => {
   }
 
   it("labels a live agent from the registry even when its telemetry name is a target's", async () => {
-    // A driver whose in-window rows are all delegated child rows can end up
-    // with a target-polluted (or empty) telemetry name; the registry name wins.
     const svc = createMetricsService({
       reader: readerWithByAgent([
         {
@@ -282,9 +270,6 @@ describe("spendBreakdown per-agent labels", () => {
   });
 
   it("keeps a live agent the user literally named like a target", async () => {
-    // The target guard keys on "no live agent", not on the name alone — a
-    // user can create an agent called `invocation-<hex>`, and its spend must
-    // not vanish from the chart while still counting in the total.
     const svc = createMetricsService({
       reader: readerWithByAgent([
         {

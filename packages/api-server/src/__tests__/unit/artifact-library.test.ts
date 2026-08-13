@@ -88,9 +88,6 @@ describe("storage keys", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Viewer resolution: visibility, expiry + grace.
-
 function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
   return {
     id: "a1",
@@ -123,8 +120,6 @@ function fakeRepo(
   };
   return {
     insertArtifact: notImplemented,
-    // Owner-aware like the real SQL predicates — the owner-scoping tests
-    // below rely on this fidelity.
     getArtifact: (id, owner) =>
       Promise.resolve(
         artifacts.find((a) => a.id === id && a.owner === owner) ?? null,
@@ -174,8 +169,6 @@ function fakeRepo(
   };
 }
 
-/** Typed blob-store stub — overrides only what a test exercises, but keeps the
- *  port's shape so a signature change breaks the tests that depend on it. */
 function stubArtifacts(
   overrides: Partial<ArtifactService> = {},
 ): ArtifactService {
@@ -252,9 +245,6 @@ describe("share viewer resolution", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Share viewer blob access: metadata without buffering, size-capped content.
-
 describe("share viewer — meta and content cap", () => {
   const row = artifactRow({ sizeBytes: 40 });
   const viewer = createShareViewerService({
@@ -285,9 +275,6 @@ describe("share viewer — meta and content cap", () => {
     });
   });
 });
-
-// ---------------------------------------------------------------------------
-// In-app preview documents — same renderer as the share page.
 
 describe("library service — getPreviewHtml", () => {
   async function serviceWith(row: ArtifactRow) {
@@ -320,7 +307,6 @@ describe("library service — getPreviewHtml", () => {
     );
     const html = await service.getPreviewHtml("a1");
     expect(html).toContain("DOMPurify");
-    // Source is embedded as a JS literal with `<` escaped — never inline HTML.
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("\\u003cscript>alert(1)\\u003c/script>");
   });
@@ -333,10 +319,6 @@ describe("library service — getPreviewHtml", () => {
     await expect(service.getPreviewHtml("missing")).resolves.toBeNull();
   });
 });
-
-// ---------------------------------------------------------------------------
-// The kind is fixed at create: the share slug outlives every revision, so no
-// update may turn a link that served inert text into one that executes.
 
 describe("library service — the kind cannot move", () => {
   async function serviceOver(rows: ArtifactRow[], keys: string[] = []) {
@@ -363,9 +345,6 @@ describe("library service — the kind cannot move", () => {
     });
   }
 
-  // `kind` is not an update input at all, so the only ways to reach for it are
-  // the back doors: bytes that sniff differently, or a rename into another
-  // extension. Neither may move it.
   it("keeps the kind when a new version's bytes sniff as something else", async () => {
     const rows = [artifactRow({ kind: "markdown", fileName: "report.md" })];
     const service = await serviceOver(rows);
@@ -380,8 +359,6 @@ describe("library service — the kind cannot move", () => {
     const keys: string[] = [];
     const service = await serviceOver(rows, keys);
 
-    // The rename lands (it is only a label) but the artifact still renders as
-    // markdown — the share link cannot start executing under its viewers.
     await expect(
       service.update("a1", {
         content: "<script>alert(1)</script>",
@@ -395,7 +372,6 @@ describe("library service — the kind cannot move", () => {
     const rows = [artifactRow({ kind: "code", fileName: "loop.py" })];
     const service = await serviceOver(rows);
 
-    // What the experiments module does when a driver renames a draft script.
     await expect(
       service.update("a1", { fileName: "optimize.py" }),
     ).resolves.toMatchObject({
@@ -405,9 +381,6 @@ describe("library service — the kind cannot move", () => {
     });
   });
 });
-
-// ---------------------------------------------------------------------------
-// Agent download tickets — the direct-transfer path in reverse.
 
 describe("library service — createAgentDownloadUrl", () => {
   async function serviceOver(
@@ -491,10 +464,6 @@ describe("library service — createAgentDownloadUrl", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Owner scoping — the service must pass its bound owner into every repo call,
-// so a service composed for one user can never touch another user's rows.
-
 describe("library service — owner scoping", () => {
   async function intruderServiceOver(rows: ArtifactRow[]) {
     const { createArtifactLibraryService } =
@@ -527,15 +496,11 @@ describe("library service — owner scoping", () => {
     ).rejects.toThrow();
     await expect(service.delete("a1")).rejects.toThrow();
     await expect(service.listVersions("a1")).rejects.toThrow();
-    // The row is untouched.
     expect(rows).toHaveLength(1);
     expect(rows[0]!.title).toBe("T");
     expect(rows[0]!.visibility).toBe("public");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Expiry sweeper — expiry is retention, regardless of visibility.
 
 describe("expiry sweeper", () => {
   async function sweeperOver(

@@ -18,7 +18,6 @@ func warmCfg(sizes ...config.WarmPoolSize) *config.Config {
 	return &config.Config{
 		Namespace:   "test-agents",
 		ReleaseName: "platform",
-		// The pool inherits the cluster workspace access mode from AgentBase.
 		WarmPool: config.WarmPool{
 			Enabled:      true,
 			StorageClass: "platform-rwx-immediate",
@@ -27,7 +26,6 @@ func warmCfg(sizes ...config.WarmPoolSize) *config.Config {
 	}
 }
 
-// availableSpare is an unclaimed pool PVC with the given phase + creation time.
 func availableSpare(name, poolKey string, phase corev1.PersistentVolumeClaimPhase, created time.Time) *corev1.PersistentVolumeClaim {
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -40,7 +38,6 @@ func availableSpare(name, poolKey string, phase corev1.PersistentVolumeClaimPhas
 	}
 }
 
-// claimedSpare is a pool PVC already claimed by an agent (no available marker).
 func claimedSpare(name, poolKey, agent, mount string) *corev1.PersistentVolumeClaim {
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -89,7 +86,6 @@ func TestWarmPool_CountExcludesClaimed(t *testing.T) {
 	m.now = func() time.Time { return now }
 	m.reconcile(context.Background())
 
-	// 2 available + 1 freshly created = 3; the claimed PVC is never counted.
 	assert.Len(t, availablePVCs(t, client, "10Gi"), 3)
 	claimed, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "p-claimed", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -106,7 +102,6 @@ func TestWarmPool_NoOverProvisionWhilePending(t *testing.T) {
 	m.now = func() time.Time { return now }
 	m.reconcile(context.Background())
 
-	// Two fresh Pending spares already cover the target — create none.
 	assert.Len(t, availablePVCs(t, client, "10Gi"), 2)
 }
 
@@ -119,7 +114,6 @@ func TestWarmPool_GCStalePending(t *testing.T) {
 	m.now = func() time.Time { return now }
 	m.reconcile(context.Background())
 
-	// Pending far longer than maxPendingAge (default 30m) → reclaimed; target 0 → none created.
 	assert.Empty(t, availablePVCs(t, client, "10Gi"))
 }
 
@@ -148,7 +142,6 @@ func TestWarmPool_GCRemovedPool(t *testing.T) {
 	client := fake.NewSimpleClientset(
 		availableSpare("p-5gi", "5Gi", corev1.ClaimBound, time.Now()),
 	)
-	// Only 10Gi is configured now — the 5Gi pool was removed.
 	m := NewWarmPoolManager(client, warmCfg(config.WarmPoolSize{Size: "10Gi", Target: 1}))
 	m.reconcile(context.Background())
 
@@ -161,7 +154,7 @@ func TestWarmPool_DisabledIsNoop(t *testing.T) {
 	cfg := warmCfg(config.WarmPoolSize{Size: "10Gi", Target: 3})
 	cfg.WarmPool.Enabled = false
 	m := NewWarmPoolManager(client, cfg)
-	m.RunLoop(context.Background()) // returns immediately when disabled
+	m.RunLoop(context.Background())
 
 	all, err := client.CoreV1().PersistentVolumeClaims("test-agents").List(context.Background(), metav1.ListOptions{})
 	require.NoError(t, err)

@@ -21,7 +21,6 @@ export function SlackChannelModal({
   onClose,
 }: {
   agent: AgentView;
-  /** The binding being edited; omitted when connecting a new channel. */
   channel?: SlackChannel;
   onClose: () => void;
 }) {
@@ -88,9 +87,6 @@ export function SlackChannelModal({
   );
 }
 
-/** The conversation of an existing binding: shown, not edited. A binding *is*
- *  its conversation, so pointing this sandbox at another one is connecting that
- *  channel and disconnecting this one. */
 function ConnectedChannel({ slackChannelId }: { slackChannelId: string }) {
   return (
     <div className="flex flex-col gap-1">

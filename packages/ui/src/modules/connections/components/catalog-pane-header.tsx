@@ -2,7 +2,6 @@ import { ArrowLeft } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
-/** Back-arrow header for the catalogue modal's non-browse panes. */
 export function CatalogPaneHeader({
   title,
   subtitle,

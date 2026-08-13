@@ -22,15 +22,9 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
     Variables: { user: UserIdentity; roles: string[] };
   }>();
 
-  // Inspector-role gate scoped to /api/usage/* — must NOT use a wildcard
-  // path here. The router is mounted at "/" so a bare `*` would fire for
-  // every request on the parent app and 403 all non-inspector traffic.
-  // /report returns text/html on failure; everything else returns JSON.
   const inspectorOnly = async (c: Context<AppEnv>, next: Next) => {
     const roles = c.get("roles") ?? [];
     if (!roles.includes(deps.inspectorRole)) {
-      // Attempt to read the most privileged cross-tenant surface without the
-      // role.
       securityLog("warn", "usage.inspect.deny", {
         category: "privileged",
         actor: c.get("user")?.sub ?? null,
@@ -42,8 +36,6 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
       if (c.req.path === "/api/usage/report") return c.text("forbidden", 403);
       return c.json({ error: "forbidden" }, 403);
     }
-    // Successful privileged read of cross-tenant activity — recorded on STDOUT,
-    // distinct from the pseudonymized activity_events it reads.
     securityLog("info", "usage.inspect", {
       category: "privileged",
       actor: c.get("user")?.sub ?? null,

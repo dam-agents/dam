@@ -14,18 +14,12 @@ export function createChildAgentProcess(
 ): AgentProcess {
   const [cmd, ...args] = opts.command;
 
-  // Strip pnpm-injected npm_config_* vars so npx doesn't emit warnings.
   const cleanEnv = Object.fromEntries(
     Object.entries(opts.env ?? process.env).filter(
       ([k]) => !k.startsWith("npm_"),
     ),
   );
 
-  // A missing cwd fails the spawn as a misleading ENOENT on the *binary*
-  // (e.g. before the workspace init script has created WORK_DIR on a fresh
-  // volume). Creating it here is always safe — it's the harness's cwd.
-  // Non-fatal: the spawn below still runs, but its own error reports ENOENT
-  // on the *binary*, so the mkdir failure here is the only actionable line.
   try {
     mkdirSync(opts.workingDir, { recursive: true });
   } catch (err) {
@@ -44,10 +38,6 @@ export function createChildAgentProcess(
     process.stderr.write(`[agent-process] spawn error: ${err.message}\n`);
   });
 
-  // send()'s writable guard is racy: after the harness exits (e.g. an image
-  // without a chat harness, whose stub exits immediately), a dispatched write
-  // fails async with EPIPE on this stream — unhandled, it kills the runtime
-  // (PID 1) and the whole pod. Exit cleanup already closes the sessions.
   child.stdin!.on("error", (err) => {
     process.stderr.write(`[agent-process] stdin error: ${err.message}\n`);
   });

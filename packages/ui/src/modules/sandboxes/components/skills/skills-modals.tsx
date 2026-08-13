@@ -42,8 +42,6 @@ export type SkillsModal =
   | { kind: "save-set" }
   | { kind: "add-sets" };
 
-/** The surface's dialog stack. Split out so the surface reads as the page it is,
- *  rather than as a page plus six trailing conditionals. */
 export function SkillsModals({
   open,
   agentId,

@@ -28,11 +28,8 @@ export default function App() {
   const view = useStore((s) => s.view);
   const theme = useStore((s) => s.theme);
 
-  // Must stay above the early returns: the terms/bind views render without
-  // MainApp, and back/forward has to keep working there too.
   useBrowserHistory();
 
-  // Apply theme on mount + listen for system preference changes
   useEffect(() => {
     const apply = () => {
       const t = useStore.getState().theme;
@@ -61,8 +58,6 @@ function MainApp() {
   useFirstRunRedirect();
 
   useEffect(() => {
-    // The sandbox-creation wizard owns its own OAuth-return handling so it can
-    // rehydrate the in-progress sandbox before the params are stripped.
     const path = window.location.pathname;
     if (parseRoute(path).view === "sandbox-new") return;
     const params = new URLSearchParams(window.location.search);
@@ -84,9 +79,6 @@ function MainApp() {
     }
   }, []);
 
-  // Chat owns its mobile sessions/chat nav, so the rail hides its bottom bar
-  // here. A knowledge base's standalone page is the same chat surface under
-  // its own route, so it shares the shell.
   if (view === "chat" || view === "knowledge-base-chat")
     return (
       <>
@@ -102,7 +94,6 @@ function MainApp() {
       </>
     );
 
-  // All non-chat views share the icon-rail shell
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">

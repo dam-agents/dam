@@ -89,8 +89,6 @@ describe("approvals verdicts on expired requests (#2125)", () => {
     const { rows, service, inserts } = makeService(extAuthzRow());
     const outcome = await service.approvePermanent("appr-1");
     expect(inserts).toHaveLength(1);
-    // The row's agent keys the per-agent L7 promotion when the written
-    // rule needs it (#2322, #2865).
     expect(inserts[0].agentId).toBe("agent-1");
     expect(outcome.outcome).toBe("rule_written_expired");
     expect(rows[0].status).toBe("resolved");

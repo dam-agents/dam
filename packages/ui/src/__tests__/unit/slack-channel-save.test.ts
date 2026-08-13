@@ -51,9 +51,6 @@ describe("planSlackChannelSave — editing an existing binding", () => {
     ).toEqual({ id: AGENT, slackChannelId: "C-1" });
   });
 
-  // The conversation is a binding's identity — the edit form doesn't offer it,
-  // and a save can't move a binding even if some other channel id reaches the
-  // planner. Moving one is Connect + Disconnect, two deliberate acts (#2949).
   it("never connects a conversation other than the one being edited", () => {
     expect(plan(bound("C-1"), { channelId: "C-OTHER", ambient: true })).toEqual(
       {

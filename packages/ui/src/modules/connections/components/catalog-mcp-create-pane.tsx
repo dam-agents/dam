@@ -33,8 +33,6 @@ const mcpFormSchema = z
     headerValue: z.string(),
   })
   .superRefine((v, ctx) => {
-    // Reuse the contract name rules so the format error (lowercase, digits,
-    // hyphens) shows live rather than failing server-side on submit.
     const nameError = validateConnectionName(v.name);
     if (nameError)
       ctx.addIssue({
@@ -49,9 +47,6 @@ const mcpFormSchema = z
         path: ["url"],
         message: urlError,
       });
-    // A pre-registered public/PKCE client is id-only (buildOAuthDcr allows no
-    // secret), so only a secret without an id is invalid. The header pair below
-    // still needs both — an injected header is meaningless without a value.
     if (filled(v.clientSecret) && !filled(v.clientId))
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -75,9 +70,6 @@ interface Props {
   onCreated: (id: string) => void;
 }
 
-/** Single entry point for adding an MCP server (#423): Name + URL, with auth
- *  detected from the URL. The Advanced disclosure lets a power user pin a
- *  pre-registered OAuth client or a header credential, overriding detection. */
 export function McpCreatePane({
   templateById,
   oauthReturnView,
@@ -100,20 +92,14 @@ export function McpCreatePane({
   const clientId = watch("clientId");
   const headerValue = watch("headerValue");
 
-  // Detection precedes submit so the button label is right and the OAuth
-  // popup can open synchronously on click; the submit hook re-verifies.
   const { detected, detecting } = useMcpAuthDetection(url);
 
-  // Explicit advanced input wins over detection: OAuth creds → OAuth flow,
-  // a header credential → no-auth flow with gateway injection.
   const overriding = filled(clientId) || filled(headerValue);
   const wantsOAuth = filled(clientId)
     ? true
     : filled(headerValue)
       ? false
       : detected === "oauth";
-  // The button's Create vs Create + Authorize is only settled once detection
-  // resolves — hold it in a loading state rather than let it flip abruptly.
   const showDetecting = detecting && !overriding;
   const template = templateById.get(
     wantsOAuth ? MCP_OAUTH_TEMPLATE_ID : MCP_NONE_TEMPLATE_ID,
@@ -302,8 +288,6 @@ function McpField({
   );
 }
 
-// A placeholder while templates load — submit is disabled until the real one
-// resolves, so this is never used to build a payload.
 const EMPTY_TEMPLATE: ConnectionTemplateView = {
   id: MCP_NONE_TEMPLATE_ID,
   name: "MCP server",

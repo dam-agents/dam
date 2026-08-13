@@ -30,7 +30,6 @@ function messageForStatus(status: number): string {
 }
 
 export const connectionsRouter = t.router({
-  // Global connection catalog + lifecycle — credentials:* scopes.
   listTemplates: readCredentialsProcedure.query(({ ctx }) =>
     ctx.connections.listTemplates(),
   ),
@@ -92,8 +91,6 @@ export const connectionsRouter = t.router({
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
 
-  // Validates a caller-supplied Anthropic key/token against Anthropic before
-  // save; reads no stored state, so it's a plain inline handler.
   testAnthropic: readCredentialsProcedure
     .input(connectionTestAnthropicInputSchema)
     .mutation(async ({ input }) => {
@@ -122,9 +119,6 @@ export const connectionsRouter = t.router({
       }
     }),
 
-  // Per-agent grant linkage is agent configuration: reading it needs an agent
-  // scope; assigning is agents:manage (the agent is the resource being
-  // configured, not the connection itself).
   getAgentConnections: readAgentProcedure
     .input(connectionGetAgentConnectionsInputSchema)
     .query(({ ctx, input }) => {

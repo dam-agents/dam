@@ -24,7 +24,6 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string, name: string) => void;
   deletingId: string | null;
-  /** Per-row credential maintenance; omit to offer none. */
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;

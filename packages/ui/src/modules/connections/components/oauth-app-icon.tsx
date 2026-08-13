@@ -2,14 +2,6 @@ import { Link } from "@carbon/icons-react";
 
 import { GithubIcon } from "@/components/brand-icons";
 
-/**
- * Per-app brand icon. Known app ids resolve to a brand SVG under
- * `/icons/`; everything else falls back to a `Link` glyph — visually
- * distinct from KeyRound (which generic app-connection rows use) and
- * Globe (MCP rows), and reads as "user-supplied integration."
- *
- * Brand SVGs are SimpleIcons-style canonical glyphs (Apache 2.0).
- */
 const ICON_BY_APP_ID: Record<string, string> = {
   "github-enterprise": "/icons/github-enterprise.svg",
   spotify: "/icons/spotify.svg",
@@ -33,9 +25,7 @@ const ICON_BY_APP_ID: Record<string, string> = {
 
 interface Props {
   appId: string;
-  /** Alt text — usually the app's display name. */
   alt: string;
-  /** Pixel size. */
   size?: number;
 }
 
@@ -46,15 +36,7 @@ export function OAuthAppIcon({ appId, alt, size = 16 }: Props) {
   const src = ICON_BY_APP_ID[appId];
   if (src) {
     return (
-      <img
-        src={src}
-        alt={alt}
-        width={size}
-        height={size}
-        // `block` prevents the inline-img baseline gap inside the
-        // flex-centered icon slot.
-        className="block"
-      />
+      <img src={src} alt={alt} width={size} height={size} className="block" />
     );
   }
   return <Link size={size} aria-label={alt} />;

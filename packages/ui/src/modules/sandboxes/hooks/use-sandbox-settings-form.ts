@@ -75,9 +75,6 @@ export function useSandboxSettingsForm() {
   const { errors, isDirty, isSubmitting } = formState;
   const saving = isSubmitting;
 
-  // Network-access edits live outside RHF (none map to a schema field); this
-  // subhook stages them and self-resets on sandbox switch. Save commits them
-  // alongside the rest; leaving discards.
   const net = useStagedNetworkAccess(agentId);
 
   const harnessDraft = useHarnessConfigDraft(agentId);
@@ -89,12 +86,8 @@ export function useSandboxSettingsForm() {
     setFormReady(false);
   }, [agentId]);
 
-  // Adopt the agent's persisted values as the dirty-tracking baseline once the
-  // agent + its grants resolve. `reset` makes subsequent toggles read as dirty.
   useEffect(() => {
     if (baselinedRef.current) return;
-    // Grants/access refetch on mount; baselining off a stale cache would adopt
-    // a since-deleted connection and render it as an unavailable grant.
     if (connectionsQuery.isFetching) return;
     if (!agent || !connectionsQuery.data) return;
     baselinedRef.current = true;
@@ -122,8 +115,6 @@ export function useSandboxSettingsForm() {
   const hibernationTimeoutMin = watch("hibernationTimeoutMin");
   const appIdsSet = useMemo(() => new Set(assignedAppIds), [assignedAppIds]);
 
-  // App grants apply immediately elsewhere; re-adopt server truth so a later
-  // provider save doesn't resend a stale grant list.
   useEffect(() => {
     if (!formReady || formState.dirtyFields.assignedAppIds) return;
     const fresh = (connectionsQuery.data?.connections ?? [])
@@ -165,7 +156,6 @@ export function useSandboxSettingsForm() {
   const dirty = isDirty || net.dirty || harnessDraft.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
 
-  // Browser-level guard (tab close, refresh, URL nav).
   useUnsavedGuard(dirty);
 
   const onSave = useSandboxSettingsSave({
@@ -218,8 +208,6 @@ export function useSandboxSettingsForm() {
       if (patch.sizeMemoryMi !== undefined)
         setValue("sizeMemoryMi", patch.sizeMemoryMi, { shouldDirty: true });
     },
-    // A live resize restarts the pod (the CR patch re-renders the pair);
-    // sleeping sandboxes apply the new Size on their next start.
     sizeRestartsAgent:
       agent !== null && !(agent.state === "hibernated" || agent.overBudget),
     harnessDraft,

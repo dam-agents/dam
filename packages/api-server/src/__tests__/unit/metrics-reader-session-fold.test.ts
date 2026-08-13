@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { ClickHouseClient } from "@clickhouse/client";
 import { createClickhouseReader } from "../../modules/metrics/infrastructure/clickhouse-reader.js";
 
-// `runtimeBySession` groups each session under the root session of its trace
-// family. The fake client captures the emitted SQL to pin the fold's shape.
-
 function fakeClient(returnRows: Record<string, unknown>[]): {
   client: ClickHouseClient;
   queries: string[];
@@ -39,7 +36,6 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     await createClickhouseReader(client).runtimeBySession(["a-1"], {
       hours: 24,
     });
-    // Main read + trace_root + session_root.
     const gates = queries[0].match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );

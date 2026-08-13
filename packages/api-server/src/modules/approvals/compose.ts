@@ -25,16 +25,9 @@ import {
 import { createRedisApprovalsBus } from "./infrastructure/redis-approvals-bus.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 
-/**
- * Per-request, owner-scoped composition for the user-facing tRPC service.
- * The relay/gate are NOT owner-scoped — see `composeApprovalsSystem`.
- */
 export interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
-  /** Per-key agent binding. Forwarded into the service so
-   *  `loadOwned` rejects mutations against approval rows whose agentId
-   *  is outside the binding. */
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
@@ -59,12 +52,6 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
   return { service };
 }
 
-/**
- * Boot-time composition for the server-internal relay/gate/sweeper. These
- * cross all owners and live for the lifetime of the process — bound to the
- * shared bus and the cross-module ports (instance identity, rule matching,
- * wrapper-frame sender).
- */
 export interface ComposeApprovalsSystemDeps {
   db: Db;
   bus: RedisBus;
@@ -74,7 +61,6 @@ export interface ComposeApprovalsSystemDeps {
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedHosts: readonly string[];
-  /** Sweep cadence and freshness window for the outbox retry. */
   sweep?: {
     staleMs?: number;
     batchSize?: number;
@@ -106,12 +92,6 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   return { relay, gate, sweeper };
 }
 
-/**
- * Per-agent cleanup hook registered with `composeAgentsModule`. Hard-deletes
- * every pending_approvals row keyed by `agent_id` once the agent's K8s
- * ConfigMap is gone. Resolved/expired rows go too — the agent isn't around
- * to need an audit trail.
- */
 export function createApprovalsCleanupHook(
   db: Db,
 ): (agentId: string) => Promise<void> {
@@ -119,7 +99,6 @@ export function createApprovalsCleanupHook(
   return (agentId) => repo.deleteForAgent(agentId);
 }
 
-/** Read primitive used by the orphan sweeper saga. */
 export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
   return createApprovalsRepository(db).listDistinctAgentIds();
 }

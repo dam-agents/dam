@@ -2,23 +2,10 @@ import { WebSocket } from "ws";
 import type { WrapperFrameSender } from "../services/approvals-service.js";
 
 export interface CreateWrapperFrameSenderDeps {
-  /** Resolve an instance to the wrapper's ACP WebSocket URL. The composition
-   *  root injects this — keeps approvals out of pod-networking details. */
   resolveWrapperUrl(agentId: string): string;
-  /** How long to wait for the WS to OPEN before failing. */
   connectTimeoutMs?: number;
 }
 
-/**
- * Opens a one-shot WebSocket to the wrapper, sends a single JSON-RPC
- * response frame, and closes. Used by the inline delivery path on inbox
- * resolve and by the periodic sweep that retries undelivered rows.
- *
- * Idempotent at the wrapper: it matches incoming responses against its
- * `pendingFromAgent` map by JSON-RPC id and silently drops anything that
- * isn't pending. So if the inline send and a sweep retry race, the second
- * delivery is harmless.
- */
 export function createWrapperFrameSender(
   deps: CreateWrapperFrameSenderDeps,
 ): WrapperFrameSender {

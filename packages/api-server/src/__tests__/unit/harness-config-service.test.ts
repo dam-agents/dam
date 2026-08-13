@@ -92,7 +92,6 @@ describe("harness-config service", () => {
         capabilities: { harnessConfig: false },
       }).service.status("a1"),
     ).toEqual({ supported: false, catalog: null });
-    // Unknown capabilities (agent not booted) → optimistically supported.
     expect(
       await makeService({ capabilities: null }).service.status("a1"),
     ).toEqual({ supported: true, catalog: null });

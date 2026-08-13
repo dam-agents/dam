@@ -1,11 +1,6 @@
 import { WebSocket } from "ws";
 import type { ClientChannel } from "./client-channel.js";
 
-/**
- * How often we ping. A peer that goes silent for longer than this without
- * FIN'ing the socket (laptop lid closed, NAT drop) gets reaped on the next
- * tick, so in the worst case a dead connection lingers for 2 × interval.
- */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 export function createWebSocketChannel(ws: WebSocket): ClientChannel {
@@ -15,17 +10,13 @@ export function createWebSocketChannel(ws: WebSocket): ClientChannel {
     if (!alive) {
       try {
         ws.terminate();
-      } catch {
-        /* already gone */
-      }
+      } catch {}
       return;
     }
     alive = false;
     try {
       ws.ping();
-    } catch {
-      /* send buffer full or already closing */
-    }
+    } catch {}
   }, HEARTBEAT_INTERVAL_MS);
 
   ws.on("pong", () => {
@@ -40,9 +31,7 @@ export function createWebSocketChannel(ws: WebSocket): ClientChannel {
     close(code, reason) {
       try {
         ws.close(code, reason);
-      } catch {
-        // ignore — channel is closing anyway
-      }
+      } catch {}
     },
     isOpen() {
       return ws.readyState === WebSocket.OPEN;

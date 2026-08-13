@@ -26,7 +26,6 @@ interface Props {
   deleting?: boolean;
 }
 
-/** The row's right-hand cluster: inline fix, grant control, and the ⋮ menu. */
 export function ConnectionRowActions({
   connection,
   grant,
@@ -37,11 +36,8 @@ export function ConnectionRowActions({
 }: Props) {
   const reauthLabel =
     connection.status === "pending" ? "Authorize" : "Re-authenticate";
-  // One source, so the menu item and the dialog it opens can't disagree.
   const updateLabel =
     credentialCopyFor(connection.authKind)?.action ?? "Update credential";
-  // Recovery one click from the failure, not a hunt through the ⋮ menu.
-  // Re-authentication wins when both apply — it always works.
   const inlineFix =
     connection.status !== "expired"
       ? undefined
@@ -68,7 +64,6 @@ export function ConnectionRowActions({
         {grant &&
           !grant.actionHidden &&
           (grant.granted ? (
-            // Height and text size match the sibling "Add to sandbox" button.
             <Badge
               variant="muted"
               className="h-8 shrink-0 gap-1.5 px-3 text-sm text-foreground"

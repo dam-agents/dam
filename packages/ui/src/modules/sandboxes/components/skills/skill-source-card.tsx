@@ -31,7 +31,6 @@ import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
-/** Strip the scheme and trailing `.git` so a repo reads as `host/org/repo`. */
 function repoLabel(source: SkillSource): string {
   const base = repoSlug(source.gitUrl);
   return source.path ? `${base} · ${source.path}` : base;
@@ -146,17 +145,9 @@ export function SkillSourceCard({
   bulkBusy,
 }: {
   source: SkillSource;
-  /** `undefined` until this source's scan resolves — distinct from an empty
-   *  array (loaded, genuinely no skills), so we skeleton instead of flashing
-   *  "No skills". */
   skills: Skill[] | undefined;
   loading: boolean;
-  /** The server's verdict on the last failed scan, already classified — the
-   *  card renders it verbatim rather than interpreting an error. */
   error: ScanFailure | null;
-  /** ISO 8601 time this source's list was last read from upstream; absent
-   *  until its first successful scan. Rendered as "scanned X ago", and hidden
-   *  while errored so we never date a list the user can see failed. */
   scannedAt?: string;
   /** Whether the scan proved the repo public or private; absent when nothing
    *  proved it, which must render no badge rather than an assumed one. */
@@ -164,32 +155,15 @@ export function SkillSourceCard({
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
-  /** Whether the installed set has loaded — gates the collapse-default snapshot. */
   stateLoaded: boolean;
-  /** Read-only (agent stopped/starting): render the card on a muted background
-   *  — the dimming + non-interactivity come from the parent surface. */
   readOnly: boolean;
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
-  /** Re-install a drifted skill at the latest version (06). */
   onUpdate: (skill: Skill) => void;
-  /** Open a skill's SKILL.md render modal (05). */
   onOpenSkill: (skill: Skill) => void;
-  /** Scanned skills to leave out of this card entirely — rows *and* the count:
-   *  this source's own copy of a skill published from this sandbox that is still
-   *  byte-identical on disk, so the standalone row above already shows it and a
-   *  second row would claim it is "not installed" (#3019). */
   suppressedNames?: ReadonlySet<string>;
-  /** Navigate to the sandbox's Connections tab — shown as a "Manage
-   *  connections" affordance on a scan error with no server CTA. */
   onManageConnections?: () => void;
-  /** Names to show, when a search filter is active — null when it isn't. Rows
-   *  outside the set are dropped and the collapse control goes away, so a match
-   *  can't hide behind "Expand all"; the user's own collapse choice is left
-   *  untouched and returns when the query clears. The header's `N of M on`
-   *  deliberately keeps counting the whole source: it states a fact about the
-   *  source, not about the filter. */
   filteredNames?: ReadonlySet<string> | null;
   /** Turn a set of this source's skills on or off in one action. `on` is what
    *  the control will do, so the caller never has to re-derive it; `scope` is
@@ -200,10 +174,6 @@ export function SkillSourceCard({
   bulkBusy?: boolean;
 }) {
   const loaded = skills !== undefined;
-  // Suppressed entries drop out before anything else derives from the list, so
-  // the `N of M on` count and the collapse decision agree with the rows on
-  // screen. Counting a row the page deliberately hides reads as a bug — "0 of 3
-  // on" above two rows sends the reader looking for a third.
   const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
   const enabled = list.filter(
     (s) => installedRef(s.source, s.name) !== undefined,
@@ -211,14 +181,9 @@ export function SkillSourceCard({
   const available = list.filter(
     (s) => installedRef(s.source, s.name) === undefined,
   );
-  // Enabled skills sit at the top; available follow in scan order.
   const sorted = [...enabled, ...available];
   const collapsible = enabled.length > 0 && available.length > 0;
 
-  // Snapshot the default collapse once the installed set is known: a source
-  // with enabled skills opens collapsed (enabled only). Snapshotting — rather
-  // than deriving live — keeps an immediate toggle from collapsing the list
-  // mid-edit; it re-snapshots when the card remounts (nav away / refresh).
   const defaultCollapsedRef = useRef<boolean | null>(null);
   if (defaultCollapsedRef.current === null && loaded && stateLoaded) {
     defaultCollapsedRef.current = collapsible;
@@ -378,8 +343,6 @@ export function SkillSourceCard({
               }
               onToggle={() => onToggle(skill)}
               onUpdate={() => onUpdate(skill)}
-              // Previewing SKILL.md reads from the api-server (public sources),
-              // so it works without a running pod — keep the name clickable.
               onOpen={() => onOpenSkill(skill)}
             />
           );

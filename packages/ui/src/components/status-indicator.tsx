@@ -25,7 +25,6 @@ const stateVariant: Record<
   over_budget: "warning",
 };
 
-/** Dot color per state — keep aligned with `stateVariant`. */
 export const stateDotClass: Record<AgentDisplayState, string> = {
   running: "bg-success",
   starting: "bg-warning",

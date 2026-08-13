@@ -20,7 +20,6 @@ function rruleSpec(
 
 describe("nextFireAt (rrule)", () => {
   it("fires at the wall-clock time in the schedule's timezone, not UTC", () => {
-    // 09:00 Europe/Prague in June is 07:00Z (CEST, UTC+2).
     const spec = rruleSpec(
       "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
       "Europe/Prague",
@@ -30,7 +29,6 @@ describe("nextFireAt (rrule)", () => {
   });
 
   it("tracks the timezone's winter offset", () => {
-    // 09:00 Europe/Prague in January is 08:00Z (CET, UTC+1).
     const spec = rruleSpec(
       "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
       "Europe/Prague",
@@ -40,7 +38,6 @@ describe("nextFireAt (rrule)", () => {
   });
 
   it("does not skip a same-day occurrence in zones behind UTC", () => {
-    // 07:00 in New York (11:00Z); today's 09:00 fire is still ahead.
     const spec = rruleSpec(
       "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
       "America/New_York",
@@ -50,15 +47,12 @@ describe("nextFireAt (rrule)", () => {
   });
 
   it("does not inherit seconds from the evaluation instant", () => {
-    // Real schedules carry no BYSECOND; a from-instant with stray seconds
-    // must not shift the fire time off the whole minute.
     const spec = rruleSpec("FREQ=DAILY;BYHOUR=9;BYMINUTE=0", "Europe/Prague");
     const next = nextFireAt(spec, new Date("2026-06-11T00:00:59Z"));
     expect(next?.toISOString()).toBe("2026-06-11T07:00:00.000Z");
   });
 
   it("rolls to the next day once today's occurrence has passed locally", () => {
-    // 09:30 Prague (07:30Z) — today's 09:00 already fired.
     const spec = rruleSpec(
       "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
       "Europe/Prague",
@@ -68,9 +62,6 @@ describe("nextFireAt (rrule)", () => {
   });
 
   it("evaluates quiet hours against the schedule's local clock", () => {
-    // Hourly from 21:30 Prague (19:30Z). Occurrences 22:30, 23:30, ... local
-    // are suppressed by the cross-midnight window; 06:30 local (04:30Z) is
-    // the first survivor.
     const spec = rruleSpec("FREQ=HOURLY", "Europe/Prague", [
       { startTime: "22:00", endTime: "06:00", enabled: true },
     ]);
@@ -102,8 +93,6 @@ describe("nextFireAt (rrule)", () => {
   });
 
   it("resolves wall times erased by spring-forward to just past the jump", () => {
-    // Prague skips 02:00→03:00 on 2026-03-29; the nonexistent 02:30 local
-    // resolves to 03:30 local (01:30Z), past the gap.
     const spec = rruleSpec(
       "FREQ=DAILY;BYHOUR=2;BYMINUTE=30;BYSECOND=0",
       "Europe/Prague",

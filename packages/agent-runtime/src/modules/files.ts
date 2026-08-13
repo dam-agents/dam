@@ -22,18 +22,10 @@ import { err, ok } from "agent-runtime-api";
 
 import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
 
-// Wire-level per-file cap for tRPC-shaped reads and uploads. The transport
-// is JSON-base64 — ~50 MB fits well below the 70 MB tRPC body ceiling.
-// Larger transfers want a streaming endpoint, not this surface.
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
-/** Platform-reserved paths under the working directory. The controller writes
- *  trigger payloads to `.triggers/` and uses `.initialized` as a
- *  setup marker; user reads/writes against either would break agent lifecycle.
- *  Repo noise (.git, node_modules, .DS_Store, …) is surfaceable. */
 const RESERVED = new Set([".triggers", ".initialized"]);
 
-/** Fallback check for binary content when magic-byte detection fails. Null bytes in the first 8 KB are a reliable signal. */
 function hasNullBytes(buf: Buffer): boolean {
   const len = Math.min(buf.length, 8192);
   for (let i = 0; i < len; i++) if (buf[i] === 0) return true;
@@ -46,15 +38,11 @@ function safePath(workingDir: string, rel: string): string | null {
   return resolved;
 }
 
-/** True when any segment of the path hits the reserved set. Listing or
- *  writing such a path is refused server-side. */
 function touchesReserved(rel: string): boolean {
   if (!rel) return false;
   return rel.split("/").some((seg) => RESERVED.has(seg));
 }
 
-/** Every segment of a writable path must be outside the reserved set and
- *  must be a real segment (no traversal, no empties). */
 function isWritablePath(rel: string): boolean {
   if (!rel) return false;
   const parts = rel.split("/");
@@ -127,11 +115,6 @@ export function createFilesService(workingDir: string): FilesService {
         const s = await fh.stat();
         if (!s.isFile()) return err({ kind: "NotFound", path: rel });
         if (s.size > MAX_FILE_SIZE) {
-          // Reading a file over the tRPC-shaped cap is a transport
-          // constraint, not a successful "no content" read. Surfaces as
-          // PAYLOAD_TOO_LARGE at the router, matching the symmetric
-          // behavior of uploadFileSafe. Streaming transfer for large
-          // single files is out of scope for this route.
           return err({
             kind: "PayloadTooLarge",
             detail: `file ${s.size} bytes (max ${MAX_FILE_SIZE})`,
@@ -188,9 +171,6 @@ export function createFilesService(workingDir: string): FilesService {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
       if (expectedMtimeMs !== undefined) {
-        // Optimistic concurrency: refuse to clobber if the file changed under
-        // us. A missing file is treated as a conflict rather than a silent
-        // create — createFileSafe is the right call for net-new writes.
         try {
           const s = await statAsync(abs);
           if (Math.abs(s.mtimeMs - expectedMtimeMs) > 0.5) {
@@ -212,8 +192,6 @@ export function createFilesService(workingDir: string): FilesService {
       if (!abs) return err(forbidden("forbidden path"));
       await mkdir(dirname(abs), { recursive: true });
       try {
-        // `wx` fails when the path exists — we want "create" to be strict so
-        // the UI can prompt for an alternative name instead of clobbering.
         await writeFile(abs, content, { flag: "wx", encoding: "utf8" });
       } catch (e: unknown) {
         if ((e as NodeJS.ErrnoException)?.code === "EEXIST") {
@@ -231,9 +209,7 @@ export function createFilesService(workingDir: string): FilesService {
         const s = await statAsync(abs);
         if (!s.isDirectory()) return err({ kind: "AlreadyExists", path: rel });
         return ok({ ok: true });
-      } catch {
-        // Does not exist — create it.
-      }
+      } catch {}
       await mkdir(abs, { recursive: true });
       return ok({ ok: true });
     },
@@ -249,16 +225,12 @@ export function createFilesService(workingDir: string): FilesService {
         try {
           await statAsync(toAbs2);
           return err({ kind: "AlreadyExists", path: to });
-        } catch {
-          // destination is free
-        }
+        } catch {}
       }
       await mkdir(dirname(toAbs2), { recursive: true });
       try {
         await rename(fromAbs, toAbs2);
       } catch (e) {
-        // rename(2) can't replace a non-empty directory — surface it as a
-        // domain error instead of an internal one.
         const code = (e as NodeJS.ErrnoException).code;
         if (code === "ENOTEMPTY" || code === "EEXIST" || code === "EPERM") {
           return err(
@@ -297,9 +269,7 @@ export function createFilesService(workingDir: string): FilesService {
         try {
           await statAsync(abs);
           return err({ kind: "AlreadyExists", path: rel });
-        } catch {
-          // destination is free
-        }
+        } catch {}
       }
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, buf);

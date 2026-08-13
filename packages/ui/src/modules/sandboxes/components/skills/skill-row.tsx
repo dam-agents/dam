@@ -34,13 +34,10 @@ export function SkillRow({
   installed: boolean;
   busy: boolean;
   disabled: boolean;
-  /** Installed content differs from the latest scan (06). */
   hasDrift: boolean;
-  /** GitHub compare view (installed → latest), when drift is on a git host. */
   compareUrl: string | null;
   onToggle: () => void;
   onUpdate: () => void;
-  /** Open the skill's SKILL.md render modal (05). Makes the name clickable. */
   onOpen?: () => void;
 }) {
   return (

@@ -36,16 +36,11 @@ export interface PendingEventRow {
   expiresAt: Date;
 }
 
-/** Default cap on background re-dispatch of a failing settle. */
 export const DEFAULT_MAX_APPLY_ATTEMPTS = 8;
 
-/** Failure transitions for a settle, diffed under the row lock so each fires once. */
 export interface ApplyTransitions {
-  /** Started failing this settle → ContributionApplyFailed. */
   newlyFailed: DriverFailure[];
-  /** Were failing, now succeeded → ContributionRecovered. */
   recovered: string[];
-  /** Hit the retry cap this settle → ContributionApplyGaveUp. */
   gaveUp: DriverFailure[];
 }
 
@@ -58,7 +53,6 @@ export interface OutboxRepo {
     resetContributionErrors?: boolean,
   ): Promise<number>;
   pendingEvents(agentId: string): Promise<PendingEventRow[]>;
-  /** Record a settled apply and return the failure transitions (diffed under a row lock). */
   recordOutcome(
     agentId: string,
     settledVersion: number,
@@ -66,14 +60,11 @@ export interface OutboxRepo {
       appliedVersion: number;
       appliedHash: string | null;
       failures: DriverFailure[];
-      /** Event ids the agent settled this apply; marked dispatched regardless of failures. */
       settledEventIds: string[];
     },
     maxAttempts?: number,
   ): Promise<ApplyTransitions>;
-  /** Rows the sweep should re-dispatch: unsettled, or settled-with-failures under the attempt cap. */
   listRetryable(maxAttempts: number, limit: number): Promise<OutboxRow[]>;
-  /** Of `agentIds`, those with an undispatched, unexpired `workspace-seed` event — drives the "preparing workspace" state (#695). */
   seedingAgentIds(agentIds: string[]): Promise<Set<string>>;
   deleteExpiredEvents(): Promise<number>;
   insertEvent(
@@ -118,7 +109,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       tx = db,
       resetContributionErrors = true,
     ): Promise<number> {
-      // Only a contribution change re-arms retry; an event bump leaves errors intact.
       const clearErrors = resetContributionErrors
         ? sql`, apply_attempts = 0, apply_failures = '[]'::jsonb`
         : sql``;
@@ -172,7 +162,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
     ): Promise<ApplyTransitions> {
       const clean = result.failures.length === 0 && result.appliedHash !== null;
       return db.transaction(async (tx) => {
-        // Lock the row so concurrent workers can't both emit the same transition.
         const locked = (await tx
           .select()
           .from(runtimeStateOutbox)
@@ -188,7 +177,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         );
         const recovered = [...prevKinds].filter((k) => !currKinds.has(k));
 
-        // Events settle per-id, independent of the contribution outcome.
         if (result.settledEventIds.length > 0) {
           await tx
             .update(runtimeEvents)
@@ -203,7 +191,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         }
 
         if (!clean) {
-          // Leave the applied cursor behind so the retry re-dispatches.
           const nextAttempts = prev.applyAttempts + 1;
           await tx
             .update(runtimeStateOutbox)
@@ -213,7 +200,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               applyAttempts: nextAttempts,
             })
             .where(eq(runtimeStateOutbox.agentId, agentId));
-          // Only on the crossing into the cap, else a re-run (hello, direct enqueue) re-emits.
           const gaveUp =
             prev.applyAttempts < maxAttempts && nextAttempts >= maxAttempts
               ? result.failures

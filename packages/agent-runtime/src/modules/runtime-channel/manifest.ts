@@ -8,7 +8,6 @@ import {
 import { load as parseYaml } from "js-yaml";
 import { z } from "zod";
 
-// `impl` is optional (defaults to the kind's built-in impl); `false` disables a built-in.
 const driverEntry = z.union([
   z.object({ impl: z.string().min(1).optional() }).catchall(z.unknown()),
   z.literal(false),
@@ -21,8 +20,6 @@ const extensionImpl = z.object({
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
 
-// The harness-config driver binding: the config file + the dot-path each logical
-// field (model/mode/configOption id) maps to. See docs/architecture/connections.md.
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
   format: z.enum(["json", "toml"]).default("json"),
@@ -42,14 +39,9 @@ export const harnessConfigBinding = z.object({
           "harnessConfig.keys must map at least one of model/mode/configOptions",
       },
     ),
-  // Option catalog advertised on `hello` (optional — a harness can map keys
-  // without presenting one).
   catalog: harnessConfigCatalog.optional(),
-  // Optional live model discovery for harnesses whose models are connection-
-  // dependent (e.g. pi behind a proxy). See docs/architecture/connections.md.
   modelDiscovery: z
     .object({
-      // Env vars that may hold the provider base URL; first set wins.
       urlEnv: z.array(z.string().min(1)).nonempty(),
     })
     .optional(),
@@ -59,8 +51,6 @@ export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 export const runtimeManifestSchema = z.object({
   manifestVersion: z.literal(1),
 
-  // Every kind (contribution or event) is a driver entry; omitted built-ins fall
-  // back to defaults (see `resolveDrivers`).
   drivers: z.record(z.string(), driverEntry).default({}),
 
   extensions: z
@@ -99,9 +89,6 @@ export function loadManifest(path: string): RuntimeManifest {
   return parsed.data;
 }
 
-// Built-in drivers. `defaultOn` kinds are active even when the manifest omits
-// them; `harness-config` is off until declared (it needs a per-harness binding),
-// but its impl lives here too, so resolution never falls back to the kind name.
 const BUILTIN_DRIVERS: Record<
   string,
   { binding: DriverBinding; defaultOn: boolean }
@@ -143,8 +130,6 @@ function defaultImpl(kind: string): string {
   return BUILTIN_DRIVERS[kind]?.binding.impl ?? kind;
 }
 
-// Effective bindings: the default-on built-ins, plus declarations (impl filled
-// from the kind), minus `false` disables. Throws on an unknown kind.
 export function resolveDrivers(
   manifest: RuntimeManifest,
 ): Record<string, DriverBinding> {

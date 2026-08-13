@@ -67,33 +67,23 @@ export interface TabDef<T extends string> {
   value: T;
   label: ReactNode;
   icon?: ReactNode;
-  /** Right-aligned slot — a count, a badge. Stretches the trigger full-width. */
   trailing?: ReactNode;
   disabled?: boolean;
-  /** `id` of the panel this tab controls. The trigger then carries
-   *  `${panelId}-tab`, which the panel points back at with `aria-labelledby`. */
   panelId?: string;
   testId?: string;
 }
 
 interface TabsProps<T extends string> {
   tabs: readonly TabDef<T>[];
-  /** `null` leaves every tab unselected — for strips whose panel area can show
-   *  something outside the tab set. */
   value: T | null;
   onValueChange: (value: T) => void;
   variant?: "underline" | "pill";
   orientation?: "horizontal" | "vertical";
   size?: "default" | "sm";
-  /** Names the tab list for assistive tech. */
   ariaLabel: string;
   className?: string;
 }
 
-/** Controlled tab strip, triggers only — panels stay wherever the caller
- *  renders them. Hand-rolled rather than built on `@radix-ui/react-tabs`
- *  because that primitive has no unselected state and its orientation can't
- *  vary by breakpoint, both of which call sites here need. */
 export function Tabs<T extends string>({
   tabs,
   value,
@@ -109,9 +99,6 @@ export function Tabs<T extends string>({
     .filter((tab) => !tab.disabled)
     .map((tab) => tab.value);
 
-  // Exactly one trigger stays in the tab sequence, even when nothing is
-  // selected or the selected tab is disabled — otherwise the strip becomes
-  // unreachable by keyboard.
   const tabStop =
     value !== null && selectable.includes(value) ? value : selectable[0];
 

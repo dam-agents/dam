@@ -1,11 +1,5 @@
 import { readFileSync } from "node:fs";
 
-/**
- * Reads the helm-mounted trusted-hosts file and returns the parsed list.
- * Returns an empty list when the path is unset or the file is missing —
- * the `trusted` preset stays selectable, it just seeds nothing. Lines are
- * trimmed; blank lines and `#`-comments are ignored.
- */
 export function loadTrustedHosts(path: string): readonly string[] {
   if (!path) return [];
   let raw: string;

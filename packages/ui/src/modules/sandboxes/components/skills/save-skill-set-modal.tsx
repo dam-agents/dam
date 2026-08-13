@@ -19,14 +19,6 @@ export interface SaveSetGroup {
   skills: Skill[];
 }
 
-/**
- * Save what's on in this sandbox as a named, reusable skill set.
- *
- * Opens pre-marked with everything currently installed, so the common case is
- * "type a name, Create" and unmarking is the edit path. Only source-backed
- * skills are offered: a set installs by name from a source, so a skill authored
- * here or shipped with the image has nowhere to install from.
- */
 export function SaveSkillSetModal({
   groups,
   omitted,
@@ -35,19 +27,9 @@ export function SaveSkillSetModal({
   onCreate,
   onClose,
 }: {
-  /** Source-backed skills, grouped by source — a set reads as "these skills,
-   *  from these repos" rather than a flat bag of names. */
   groups: SaveSetGroup[];
-  /** Connected sources whose scan failed while skills from them stay on, with
-   *  how many. Those skills can't be offered below, and the dialog promises to
-   *  start from what's on — so it names what it dropped instead of implying
-   *  the list is complete. */
   omitted: { source: SkillSource; count: number }[];
-  /** Whether a skill is currently installed. Read once, at mount, to seed the
-   *  snapshot below. */
   isOn: (skill: Skill) => boolean;
-  /** Existing set names, so a clash is caught before submitting. The server
-   *  still answers CONFLICT — another session may take the name meanwhile. */
   existingNames: ReadonlySet<string>;
   onCreate: (input: {
     name: string;
@@ -56,11 +38,6 @@ export function SaveSkillSetModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  // One snapshot — rows and marks together — for the dialog's whole lifetime.
-  // Both inputs move underneath it: the 5s poll folds in agent-initiated
-  // installs, and a re-scan re-lists a source. Reading either live would put an
-  // "on here" badge beside an unchecked box under copy promising the marks start
-  // from what's on, and the created set would omit the skill it named.
   const [snapshot] = useState(() => {
     const on = new Set<string>();
     for (const group of groups) {

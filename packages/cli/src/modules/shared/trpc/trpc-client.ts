@@ -70,7 +70,7 @@ function wrapFetchWithServerGates(
       try {
         body = (await clone.json()) as { error?: string; message?: string };
       } catch {
-        return response; // non-JSON gate response — let tRPC handle the status
+        return response;
       }
       if (body.error === "terms_stale")
         throw new TermsStaleAtTransportError(host);

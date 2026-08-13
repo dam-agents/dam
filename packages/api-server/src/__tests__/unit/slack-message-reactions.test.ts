@@ -20,17 +20,13 @@ configureLogger({ level: "error", write: () => {} });
 const workspace: FakeSlackChannel[] = [
   { id: BOUND, name: "agent-home", botIsMember: true },
   { id: "C-GENERAL", name: "general", botIsMember: true },
-  // A visible channel the bot is not in (public, not yet invited).
   { id: "C-STAFF", name: "staff", botIsMember: false },
 ];
 
 function harness(opts: {
-  /** null = agent has no Slack binding. */
   boundChannelId: string | null;
   channels?: FakeSlackChannel[];
-  /** Make the gateway fail to start, so ensureGateway yields null. */
   gatewayDown?: boolean;
-  /** Replace getMessageReactions, e.g. to make Slack throw. */
   getMessageReactions?: FakeSlackGateway["getMessageReactions"];
 }) {
   const gw = createFakeSlackGateway();
@@ -208,16 +204,12 @@ describe("slack supportsMessageReactions", () => {
   });
 });
 
-// Withholding an optional scope must degrade the one affordance it backs and
-// nothing else — never fail the scope check itself, and never fail the MCP
-// session the check gates.
 describe("missing optional scopes never fail the gate", () => {
   it("both scopes withheld: each check resolves false, neither rejects", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
     await h.worker.start("agent-1", {} as StoredChannelConfig);
 
-    // Resolved as a pair, the way the MCP session gate asks for them.
     await expect(
       Promise.all([
         h.worker.supportsUserLookup(),
@@ -247,9 +239,6 @@ describe("missing optional scopes never fail the gate", () => {
     await h.worker.start("agent-1", {} as StoredChannelConfig);
     const manager = createChannelManager({ slackWorker: h.worker });
 
-    // This pair is exactly what mountMcpRoutes awaits before building a
-    // session — a rejection here would deny the agent its MCP endpoint
-    // outright rather than just dropping two tools.
     await expect(
       Promise.all([
         manager.supportsUserLookup(),
@@ -257,7 +246,6 @@ describe("missing optional scopes never fail the gate", () => {
       ]),
     ).resolves.toEqual([false, false]);
 
-    // The unaffected affordances are untouched by the withheld scopes.
     expect(
       await manager.listConversations("agent-1", ChannelType.Slack),
     ).toEqual([{ id: BOUND, title: BOUND }]);

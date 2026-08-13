@@ -5,7 +5,6 @@ type GithubAppInstallInput = Pick<
   "templateId" | "host" | "appSlug"
 >;
 
-// github.com serves App pages under /apps/; GitHub Enterprise Server uses /github-apps/.
 export function githubAppInstallUrl(
   connection: GithubAppInstallInput,
 ): string | null {

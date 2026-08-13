@@ -21,7 +21,6 @@ interface Props {
   selected: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
-  /** Pull-credential controls; present whenever Custom is the starting point. */
   registry?: RegistryControls;
 }
 

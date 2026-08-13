@@ -16,10 +16,6 @@ import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 export function ListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
     useAgentRows();
-  // Every agent the user created, badged with its Kind: the per-kind
-  // destinations are filtered views onto this list. Invocation targets are the
-  // one exception — run-owned and ephemeral, they hide behind a meta line on
-  // the driver's own row that accounts for their compute.
   const { visible: agents, drawByDriver } = splitTemporarySandboxes(
     agentsData?.list ?? [],
   );
@@ -31,7 +27,6 @@ export function ListView() {
   const showConfirm = useStore((s) => s.showConfirm);
 
   const stopSandbox = async (agent: AgentView) => {
-    // Schedules override a stop by design (#1900) — say so before it lands.
     const schedules = await fetchSchedulesForAgent(agent.id);
     const scheduleNote =
       schedules.length > 0 ? (
@@ -91,8 +86,6 @@ export function ListView() {
           title="No sandboxes yet"
           message="Create your first sandbox to get started."
           actionLabel="Create sandbox"
-          // Wrapped: navigateToCreateSandbox takes an optional starting point,
-          // and a bare handler would receive the click event as one.
           onAction={() => navigateToCreateSandbox()}
         />
       )}

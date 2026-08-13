@@ -7,7 +7,6 @@ import type { AgentView } from "../../../types.js";
 import { useOperableState } from "./sandbox-wake-to-edit.js";
 import { SkillsSurface } from "./skills/skills-surface.js";
 
-/** Skills surface on the sandbox home page (#944). */
 export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
   // Mirror the surface's reconciled state into the summary's query cache so the
   // sidebar line stays live, without the summary polling the destructive

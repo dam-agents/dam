@@ -17,8 +17,6 @@ function activeInstallUrl(connection: InstallHintConnection): string | null {
   return githubAppInstallUrl(connection);
 }
 
-/** Shared banner shown once per provider group when at least one connection
- *  has a GitHub App install step. */
 export function GithubAppInstallHint({
   connections,
 }: {
@@ -40,7 +38,6 @@ export function GithubAppInstallHint({
   );
 }
 
-/** Per-row link to the connection's GitHub App installation page. */
 export function GithubAppInstallLink({
   connection,
 }: {

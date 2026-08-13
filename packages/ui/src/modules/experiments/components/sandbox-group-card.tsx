@@ -11,9 +11,6 @@ interface Props {
   onDeleteLineage: (lineage: LineageRow) => void;
 }
 
-/** A sandbox and the experiments it holds, including none yet. No container
- *  box, per the design: the header sits bare on the page and only the
- *  experiment cards are bordered — the grouping reads from proximity. */
 export function SandboxGroupCard({
   group,
   onOpenSandbox,
@@ -27,8 +24,6 @@ export function SandboxGroupCard({
     <section>
       <div
         {...clickableProps(deleted ? undefined : open)}
-        // The hairline under the header is what scopes the group now that the
-        // container box is gone.
         className={cn(
           "group/head mb-3 flex w-full items-center gap-2.5 border-b border-border px-1.5 pb-3 pt-1.5 text-left",
           !deleted && "cursor-pointer transition-colors hover:bg-info-light",

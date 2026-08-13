@@ -22,10 +22,6 @@ export function createKnowledgeBasesService(deps: {
 
   return {
     async create(input: KnowledgeBaseCreateInput): Promise<Agent> {
-      // The Kind marker is what makes this agent a Knowledge Base; the install
-      // command bootstraps its knowledge tooling from an external installer.
-      // Everything else — provider, size, egress, connections — is a plain
-      // agent create, and the delivery mechanics are the shared kinded rail.
       return createKindedAgent(rail, {
         createInput: { ...input, kind: "knowledge-base" },
         installCommand: buildKnowledgeBaseInstallCommand(input.kbTemplateId),

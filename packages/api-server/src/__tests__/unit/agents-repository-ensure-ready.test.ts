@@ -15,9 +15,6 @@ type Condition = {
   message?: string;
 };
 
-/** In-memory K8sClient over a Map — the five custom-object methods the
- *  repository uses. Merge-patch is shallow-merged per subtree, which is
- *  all the repository's annotation/spec patches need. */
 function fakeK8s(initial: KubeObject[] = []) {
   const store = new Map<string, KubeObject>();
   for (const o of initial) store.set(o.metadata?.name ?? "", o);
@@ -62,8 +59,6 @@ function fakeK8s(initial: KubeObject[] = []) {
     async deleteCustomObject(_plural, name) {
       store.delete(name);
     },
-    // Secret methods are on the interface but never reached by the
-    // repository under test.
     listSecrets: () => Promise.reject(new Error("not implemented")),
     getSecret: () => Promise.reject(new Error("not implemented")),
     createSecret: () => Promise.reject(new Error("not implemented")),
@@ -109,9 +104,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Advance fake time in chunks until the promise settles. A single big
- *  advance can miss a poll timer scheduled at the window's edge; chunked
- *  advancing re-collects due timers each pass. */
 async function advanceUntilSettled(p: Promise<unknown>): Promise<void> {
   let settled = false;
   void p.then(
@@ -154,9 +146,6 @@ describe("ensureReady", () => {
     let notices = 0;
     const p1 = repo.ensureReady("a1", { onWaking: () => notices++ });
     const p2 = repo.ensureReady("a1", { onWaking: () => notices++ });
-    // Let the wake enter its poll (stop-check + readiness reads are awaits)
-    // before flipping the store to READY — mirrors real ordering, where no
-    // K8s read resolves synchronously.
     await vi.advanceTimersByTimeAsync(0);
     store.set("a1", agentObj("a1", READY));
     await vi.advanceTimersByTimeAsync(10_000);
@@ -232,7 +221,7 @@ describe("ensureReady", () => {
     it(`timeout: ${name}`, async () => {
       const { repo, lines } = harness([agentObj("a1", conditions)]);
       const p = repo.ensureReady("a1");
-      p.catch(() => {}); // avoid unhandled rejection while timers advance
+      p.catch(() => {});
       await advanceUntilSettled(p);
       const err = await p.then(
         () => null,
@@ -265,28 +254,19 @@ describe("ensureReady", () => {
   });
 
   it("keeps polling past a stale denial and succeeds once the controller admits", async () => {
-    // The regression this guards (#2768 review must-fix 2): a parked agent
-    // keeps Ready=False/OverBudget standing, so a fresh wake's first poll
-    // tick reads the PREVIOUS attempt's denial. The heuristic — fail fast
-    // only on a denial observed to appear during this wake, or after the
-    // grace window — must let this wake ride through to the controller's
-    // re-evaluation instead of failing a start that room now permits.
     const { repo, store } = harness([agentObj("a1", OVER_BUDGET)]);
     const p = repo.ensureReady("a1");
-    await vi.advanceTimersByTimeAsync(0); // tick 0 sees the stale denial
-    store.set("a1", agentObj("a1", READY)); // controller admits: room is free
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", READY));
     await vi.advanceTimersByTimeAsync(10_000);
     await expect(p).resolves.toBeUndefined();
   });
 
   it("fail-fast: a denial that appears during the wake rejects immediately", async () => {
-    // Hibernated at wake time, then the controller rules on our bump and
-    // parks us — a transition this wake itself observed is a fresh verdict,
-    // no grace needed.
     const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
-    await vi.advanceTimersByTimeAsync(0); // wake begins; tick 0 sees Hibernated
+    await vi.advanceTimersByTimeAsync(0);
     store.set("a1", agentObj("a1", OVER_BUDGET));
     await advanceUntilSettled(p);
     const err = await p.then(
@@ -302,8 +282,6 @@ describe("ensureReady", () => {
   });
 
   it("fail-fast: a standing denial outlasting the grace window rejects with the figures", async () => {
-    // Already parked and the controller keeps refusing (or is wedged):
-    // once the grace passes, waiting out the full 120s budget helps nobody.
     const { repo } = harness([agentObj("a1", OVER_BUDGET)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
@@ -324,7 +302,7 @@ describe("ensureReady", () => {
     const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
-    await vi.advanceTimersByTimeAsync(0); // past the entry stop-check
+    await vi.advanceTimersByTimeAsync(0);
     const obj = store.get("a1");
     obj!.metadata!.annotations!["agent-platform.ai/stop-requested"] =
       "2026-07-14T00:00:00Z";
@@ -334,8 +312,6 @@ describe("ensureReady", () => {
       (e: unknown) => e,
     );
     expect(isAgentStoppedError(err)).toBe(true);
-    // ensureReady bumps activity but must not touch the stop key — only
-    // wake()/wakeIfHibernated() clear a stop.
     expect(
       store.get("a1")?.metadata?.annotations?.[
         "agent-platform.ai/stop-requested"
@@ -345,9 +321,6 @@ describe("ensureReady", () => {
 
   it("late ready at the deadline counts as success", async () => {
     const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
-    // Never Ready during the poll; flip Ready just as the deadline passes
-    // by making the final read see a Ready CR: replace isReady's view via
-    // a poll that always misses, then set Ready right before the final GET.
     const original = store.get("a1")!;
     let polls = 0;
     const { client } = (() => {
@@ -356,8 +329,6 @@ describe("ensureReady", () => {
         ...inner.client,
         async getCustomObject(plural, name) {
           polls++;
-          // The poll loop's reads miss; once the deadline passed (fake
-          // clock ≥ 120s), the final diagnostic read sees Ready.
           if (Date.now() >= 120_000) {
             return agentObj("a1", READY);
           }
@@ -387,7 +358,6 @@ describe("requestPause settle", () => {
     expect(infra).not.toBeNull();
     const ann = () => store.get("a1")?.metadata?.annotations ?? {};
     expect(ann()[STOP_KEY]).toBeTruthy();
-    // Controller scales the pair down and restamps Hibernated.
     (store.get("a1") as { status?: unknown }).status = {
       conditions: HIBERNATED,
     };
@@ -396,9 +366,6 @@ describe("requestPause settle", () => {
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {
-    // Pause's settle-watcher must compare-and-clear its OWN stamp: a stop
-    // issued mid-settle carries a different value and must stay sticky, or
-    // the pair would revive under the wake's fresh last-activity.
     const { repo, store } = harness([agentObj("a1", READY)]);
     await repo.requestPause("a1");
     const obj = store.get("a1");

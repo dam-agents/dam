@@ -22,20 +22,13 @@ import {
 } from "./folder-group.js";
 
 interface Props extends ArtifactRowActions, FolderGroupActions {
-  /** Only the platform-managed experiment lineage folders. */
   folders: ArtifactFolder[];
   byFolder: Map<string | null, LibraryArtifact[]>;
-  /** A live search: open everything so matches inside are reachable. */
   searching: boolean;
 }
 
-/** Artifact rows don't know their run — the experiment rows point at their
- *  artifacts (script clone, results). Invert that into artifactId → cluster
- *  so a lineage folder can render grouped by run. Run numbers count runs
- *  oldest-first within a lineage, matching the server's title numbering. */
 interface Cluster {
   label: string;
-  /** Draft sorts first, then runs newest-first, unmatched files last. */
   sortKey: number;
 }
 
@@ -44,8 +37,6 @@ function useArtifactClusters(): Map<string, Cluster> {
   return useMemo(() => {
     const map = new Map<string, Cluster>();
     const all: Experiment[] = experiments ?? [];
-    // Drafts claim first: a live run's dashboardArtifactId still points at
-    // the draft's renderer, and the draft is the right home for it.
     for (const draft of all.filter((e) => e.status === "draft")) {
       map.set(draft.scriptArtifactId, { label: "Draft", sortKey: -1 });
       if (draft.dashboardArtifactId)
@@ -99,10 +90,6 @@ function partition(
     .map((e) => e.section);
 }
 
-/** Platform-managed experiment artifacts (scripts, dashboards, run results)
- *  are working files, not things the user curated — they live in one muted
- *  section at the bottom of the library, collapsed until asked for, with a
- *  nested folder per lineage grouped by run. */
 export function ExperimentsSection({
   folders,
   byFolder,
@@ -141,9 +128,6 @@ export function ExperimentsSection({
   return (
     <Card className="mt-2 overflow-hidden border-dashed bg-muted/30 anim-in">
       {searching ? (
-        // A search pins the section open, so render a static header rather than
-        // a toggle that keeps a pointer cursor and hover but does nothing — and
-        // would drop keyboard focus the moment the filter turns it inert.
         <div className="flex items-center gap-2.5 px-3.5 py-2.5">
           <DisclosureChevron open className="text-muted-foreground" />
           {header}
@@ -163,8 +147,6 @@ export function ExperimentsSection({
           const artifacts = byFolder.get(folder.id) ?? [];
           return (
             <FolderGroup
-              // Remount when a search starts/ends so the folders open to show
-              // matches and fold back after.
               key={`${folder.id}:${searching}`}
               nested
               defaultCollapsed={!searching}

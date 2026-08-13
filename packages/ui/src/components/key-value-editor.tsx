@@ -14,23 +14,13 @@ interface KeyValueEditorProps {
   value: KeyValue[];
   onChange: (next: KeyValue[]) => void;
   disabled?: boolean;
-  /** Value used when adding a new row. Default: empty string. */
   newRowValue?: string;
-  /** Placeholder shown in the key input. Default: "ENV_NAME". */
   keyPlaceholder?: string;
-  /** Placeholder shown in the value input. */
   valuePlaceholder?: string;
-  /** Shown when the editor has zero rows. */
   emptyMessage?: string;
-  /** Label on the add-row button. Default: "Add env var". */
   addLabel?: string;
 }
 
-/**
- * Repeater editor for an ordered list of key/value pairs. Keys must match
- * POSIX env-name rules — invalid keys are highlighted in danger tone and
- * callers should gate saves on `allKeyValuesValid`.
- */
 export function KeyValueEditor({
   value,
   onChange,

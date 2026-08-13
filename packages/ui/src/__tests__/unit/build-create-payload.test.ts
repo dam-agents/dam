@@ -93,8 +93,6 @@ describe("buildCreatePayload (github-app)", () => {
     });
   });
 
-  // Blank must not reach the server as an empty string — that would be a scope
-  // of "nothing" rather than the absence of one.
   it("omits the scope fields when the user leaves them blank", () => {
     const payload = buildCreatePayload(
       GITHUB_APP_SCOPED_TEMPLATE,

@@ -8,7 +8,6 @@ interface Props {
   onSelect: () => void;
 }
 
-/** One installation procedure — the user-facing "Template", not the image. */
 export function KbTemplateCard({ template, selected, onSelect }: Props) {
   return (
     <CardButton

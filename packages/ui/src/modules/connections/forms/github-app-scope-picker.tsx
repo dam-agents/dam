@@ -26,18 +26,10 @@ interface Props {
   control: Control<TemplateFormValues>;
   templateId: string;
   setField: (name: string, value: string) => void;
-  /** The template's own `repositories` / `permissions` inputs, rendered as
-   *  plain text fields whenever the installation has not been read. */
   fallbackInputs: ConnectionTemplateInput[];
-  /** Whether this template requires a host — the probe cannot resolve a
-   *  GitHub Enterprise REST base without one. */
   hostRequired: boolean;
 }
 
-/** Narrows a GitHub App connection by picking from what the installation
- *  actually grants, rather than typing names and levels blind. The selection
- *  lives in the form's own fields — this renders from them and writes back
- *  through them, so there is no second copy to drift. */
 export function GithubAppScopePicker({
   control,
   templateId,
@@ -49,9 +41,6 @@ export function GithubAppScopePicker({
   const probe = useProbeGitHubAppInstallation();
   const installation = probe.data;
 
-  // Which installation the current result describes. Editing any part of it
-  // leaves the rendered lists — and the selection made against them — talking
-  // about a different installation than the one being created.
   const identity = [
     fields.host?.trim() ?? "",
     fields.appId?.trim() ?? "",
@@ -65,11 +54,6 @@ export function GithubAppScopePicker({
     if (probedIdentity.current === identity) return;
     probedIdentity.current = null;
     resetProbe();
-    // A selection is only meaningful against the installation it was made on:
-    // ids may name different repositories elsewhere, and a level may exceed
-    // what the new installation grants. Typed names go too — when the listing
-    // is unavailable they are the selection, and they name repositories in the
-    // account the user has just navigated away from.
     setField("repositoryIds", "");
     setField("repositories", "");
     setField("permissions", "");
@@ -96,8 +80,6 @@ export function GithubAppScopePicker({
 
   const ready = canProbe(fields, hostRequired);
 
-  // The template's own text input for a scope field, used wherever the picker
-  // has nothing to offer in its place.
   const textInput = (name: string) => {
     const input = fallbackInputs.find((i) => i.name === name);
     if (!input) return null;
@@ -163,8 +145,6 @@ export function GithubAppScopePicker({
       {installation ? (
         <>
           {installation.repositoriesUnavailable ? (
-            // The grant was read but its repository list was not. Permissions
-            // are still pickable; repositories fall back to being typed.
             <>
               <Callout tone="muted" size="sm">
                 Couldn&rsquo;t list this installation&rsquo;s repositories, so
@@ -181,9 +161,6 @@ export function GithubAppScopePicker({
                 onToggle={toggleRepo}
               />
               {installation.repositoriesTruncated && (
-                // The list is a prefix, so a repository past it can only be
-                // reached by name — offer that rather than let the checkboxes
-                // read as the whole set.
                 <>
                   <Callout tone="muted" size="sm">
                     This installation reaches more repositories than are listed
@@ -201,9 +178,6 @@ export function GithubAppScopePicker({
           />
         </>
       ) : (
-        // Until the installation has been read — and if reading it fails —
-        // narrowing stays typeable, so a probe that cannot run never costs the
-        // user the ability to limit the token.
         fallbackInputs.map((input) => textInput(input.name))
       )}
     </div>

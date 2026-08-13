@@ -5,15 +5,12 @@ import type { AgentView } from "../../../types.js";
 
 interface Props {
   agent: AgentView;
-  /** Emphasize the row (e.g. an agent just created on this page). */
   highlighted: boolean;
   disabled: boolean;
-  /** This row's bind is in flight — shows a "Connecting …" label. */
   pending: boolean;
   onPick: () => void;
 }
 
-/** A pick-to-connect row in the Slack/Telegram bind pickers. */
 export function BindAgentRow({
   agent,
   highlighted,

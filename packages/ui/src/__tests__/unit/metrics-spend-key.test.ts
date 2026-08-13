@@ -6,10 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import { keyAgentId } from "../../modules/metrics/lib/spend-key.js";
 
-// Guards the one assumption the same-agent placeholder gate rests on: that a
-// spend key carries its `agentId` where `keyAgentId` looks. Keys are built here
-// by the tRPC client itself — a stand-in proxy rather than the app's, which
-// needs a DOM — so this fails if that shape ever moves.
 const trpc = createTRPCOptionsProxy<AppRouter>({
   client: createTRPCClient<AppRouter>({
     links: [httpLink({ url: "/api/trpc" })],

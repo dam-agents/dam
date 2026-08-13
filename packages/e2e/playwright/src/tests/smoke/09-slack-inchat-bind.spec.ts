@@ -5,17 +5,10 @@ import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName } from "../../lib/fixtures.js";
 
-// This spec exercises the in-chat bind/unbind slash commands at the command
-// level (deterministic, no OAuth round-trip). It replaces the agent's single
-// Slack binding, so it runs as its own project after "slack-shared".
 const inchatChannelId = "C-E2E-INCHAT";
 const freshChannelId = "C-E2E-INCHAT-FRESH";
-// A Slack user with no linked platform identity — channel membership only.
 const strangerSlackUserId = "U-E2E-INCHAT-STRANGER";
 
-// One ordered test: the initial connect starts the fake Slack gateway (the
-// e2e command endpoints require it), so every /bind and /unbind assertion runs
-// against a live gateway without depending on a prior spec's state.
 test("in-chat bind/unbind slash-command behavior", async () => {
   test.setTimeout(180_000);
   const token = await getAccessToken();
@@ -35,8 +28,6 @@ test("in-chat bind/unbind slash-command behavior", async () => {
       userId: strangerSlackUserId,
       channelId: freshChannelId,
     });
-    // Anyone may start a bind; the agent picker (behind the link) is where
-    // ownership is enforced.
     expect(ack).toContain("Connect an agent");
   });
 
@@ -57,7 +48,6 @@ test("in-chat bind/unbind slash-command behavior", async () => {
     });
     expect(unbind.ack).toContain("Link your account");
 
-    // Still bound: a second /bind is still refused.
     const rebind = await api.e2e.slackFireCommand.mutate({
       text: "bind",
       userId: strangerSlackUserId,

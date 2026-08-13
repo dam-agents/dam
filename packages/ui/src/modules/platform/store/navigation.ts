@@ -18,7 +18,6 @@ import {
   type View,
 } from "../lib/routes.js";
 
-/** Views whose route carries no parameters — the only ones `setView` can reach. */
 type ParameterlessView =
   | "list"
   | "inbox"
@@ -33,13 +32,8 @@ export interface NavigationSlice {
   agentId: string | null;
   settingsTab: SettingsTab;
   sandboxSection: SandboxSection;
-  /** Re-derive the route from the URL. Interstitials — the login roundtrip and
-   *  the Terms gate — rewrite it after this slice was initialized, so the app
-   *  calls this once they have settled and before the first render. */
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
-  /** `startingPoint` pre-selects step 1, so a per-kind "New …" button lands in
-   *  the shared wizard pointed at that kind. */
   navigateToCreateSandbox: (startingPoint?: StartingPoint) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
@@ -50,24 +44,14 @@ export interface NavigationSlice {
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
 
-/**
- * Resolve the path to hydrate from exactly once, so the `replaceState` side
- * effect below cannot race initializers that re-read `window.location`.
- */
 function initialPath(): string {
   const { pathname } = window.location;
-  // The Telegram/Slack bind pages are entered via an external redirect
-  // carrying a one-shot ?flow= param — a stale OAuth return-view must not
-  // replace them.
   const { view } = parseRoute(pathname);
   if (view === "telegram-bind" || view === "slack-bind") return pathname;
 
-  // Holds the path to restore after an OAuth roundtrip (e.g. /settings/connections).
   const saved = sessionStorage.getItem("platform-return-view");
   if (!saved) return pathname;
   sessionStorage.removeItem("platform-return-view");
-  // Resolved, never trusted as written: the slot holds a bare view path, and the
-  // live query/hash (the OAuth return params) ride along from the current URL.
   const restored = resolveReturnPathname(saved, window.location.origin);
   if (!restored) {
     console.warn("[navigation] ignoring unusable platform-return-view:", saved);
@@ -90,7 +74,6 @@ export const createNavigationSlice: StateCreator<
   NavigationSlice
 > = (set) => ({
   ...routeToNavigationState(parseRoute(initialPath())),
-  // Route fields only — chat's `selectedAgent` stays owned by the popstate hook.
   hydrateRoute: () =>
     set(routeToNavigationState(parseRoute(window.location.pathname))),
   setView: (v) => {
@@ -98,8 +81,6 @@ export const createNavigationSlice: StateCreator<
     set(routeToNavigationState({ view: v }));
   },
   navigateToCreateSandbox: (startingPoint) => {
-    // Seeded into the snapshot, not the route — where every other pick lives.
-    // Only URL-based re-entry (refresh, OAuth return) resumes a persisted draft.
     if (startingPoint) {
       saveSnapshot({
         ...EMPTY_SNAPSHOT,
@@ -138,8 +119,6 @@ export const createNavigationSlice: StateCreator<
       "",
       routeToPath({ view: "knowledge-base-config", agentId }),
     );
-    // The settings form keys off `agentId`; chat keeps `selectedAgent`. Set
-    // both so returning to the KB chat keeps the same agent selected.
     set({ view: "knowledge-base-config", agentId });
   },
   mobileScreen: "sessions",

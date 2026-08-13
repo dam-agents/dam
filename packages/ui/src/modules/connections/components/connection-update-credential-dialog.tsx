@@ -15,10 +15,6 @@ import { credentialCopyFor } from "../forms/field-copy.js";
 import { LabeledInput } from "../forms/labeled-input.js";
 import { ConnectionEditGithubAppScopeDialog } from "./connection-edit-github-app-scope-dialog.js";
 
-/** The dialog half of `useConnectionMaintenance`: owns the `updating` guard so
- *  a surface wiring the row actions can't forget the mount. Render it either
- *  alongside the list or, as the catalogue modal does, *instead of* the host —
- *  it is null until a row opens it. */
 export function ConnectionMaintenanceDialog({
   maintenance,
 }: {
@@ -46,8 +42,6 @@ export function ConnectionMaintenanceDialog({
   );
 }
 
-/** Replaces a connection's stored credential in place — identity and grants
- *  survive, so this only ever collects the one secret. */
 export function ConnectionUpdateCredentialDialog({
   connection,
   onClose,
@@ -61,8 +55,6 @@ export function ConnectionUpdateCredentialDialog({
   const copy = credentialCopyFor(connection.authKind);
   if (!copy) return null;
 
-  // A rejection is about what was typed, so the server's words belong on the
-  // field. A transport failure isn't — "fetch failed" there would blame it.
   const fieldError =
     update.error === null
       ? undefined
@@ -74,9 +66,7 @@ export function ConnectionUpdateCredentialDialog({
     try {
       await update.mutateAsync({ id: connection.id, value: value.trim() });
       onClose();
-    } catch {
-      // Rendered inline from the mutation's error below.
-    }
+    } catch {}
   };
 
   return (
@@ -119,7 +109,6 @@ export function ConnectionUpdateCredentialDialog({
   );
 }
 
-/** A bad secret comes back as BAD_REQUEST with the provider's own words. */
 function isBadRequest(err: unknown): err is Error {
   return err instanceof TRPCClientError && err.data?.code === "BAD_REQUEST";
 }

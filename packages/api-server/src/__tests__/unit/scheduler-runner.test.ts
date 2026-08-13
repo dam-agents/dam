@@ -100,7 +100,6 @@ describe("scheduler-runner fire", () => {
 
     await runner.buildFireHandler()(SCHEDULE_ID);
 
-    // The event was committed before the poke — it survives in the outbox.
     expect(calls).toContain(`bump:${AGENT_ID}`);
     expect(fires).toHaveLength(1);
     expect(fires[0]!.result).toContain("k8s api unreachable");

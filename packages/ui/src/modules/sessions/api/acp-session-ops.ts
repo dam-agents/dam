@@ -21,12 +21,6 @@ interface ListedSession {
   _meta?: { platform?: PlatformMeta };
 }
 
-/**
- * Decode an ACP-listed session into a SessionView. A session with no
- * `_meta.platform` is harness-minted (e.g. a terminal/`/clear` session) and
- * defaults to terminal; an ACP-created session carries a (possibly empty)
- * entry and defaults to chat.
- */
 function toSessionView(agentId: string, s: ListedSession): SessionView {
   const p = s._meta?.platform;
   return {
@@ -47,8 +41,6 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
   };
 }
 
-/** Open a short-lived ACP connection to an agent for a one-shot, cross-session
- *  operation (list, delete) — distinct from the live chat connection. */
 async function withConnection<T>(
   agentId: string,
   fn: (conn: ClientSideConnection) => Promise<T>,
@@ -74,12 +66,10 @@ async function withConnection<T>(
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
-  // Passive: listing is a read and must not defer the agent's hibernation.
   return withConnection(
     agentId,
     async (conn) => {
       const r = await conn.listSessions({ cwd: "." });
-      // Most-recently-active first; sessionId breaks ties for a stable order.
       return (r.sessions ?? [])
         .map((s) => toSessionView(agentId, s as unknown as ListedSession))
         .sort((a, b) => {
@@ -104,8 +94,6 @@ export async function deleteAgentSession(
   );
 }
 
-/** Mode is metadata: a `session/resume` carrying
- *  `_meta.platform.mode` updates the stored entry via the runtime intercept. */
 export async function setSessionMode(
   agentId: string,
   sessionId: string,

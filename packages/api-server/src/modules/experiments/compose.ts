@@ -18,38 +18,23 @@ import {
   type ExperimentInactivitySweep,
 } from "./services/experiment-inactivity-sweep.js";
 
-/** The hibernation-pin port: set/clear the `experiment-active` annotation on
- *  the driver Agent (see agents/infrastructure/labels.ts). */
 export interface ExperimentPinPort {
   set(driverAgentId: string): Promise<void>;
   clear(driverAgentId: string): Promise<void>;
 }
 
-/** Cap on invocation rows joined into one Trace Feed frame. */
 const FEED_INVOCATIONS_MAX = 500;
 
-/** Compose the owner-scoped Experiments service. Owner is bound here so the
- *  same factory backs the tRPC context and the harness REST routes without
- *  either passing an owner through request input. `artifactLibrary` must be
- *  the same owner's composition — script versions and dashboards are published
- *  into that owner's library, attributed to the driver agent. */
 export function composeExperimentsForOwner(opts: {
   db: Db;
   owner: string;
   artifactLibrary: ArtifactLibraryServiceImpl;
-  /** Hibernation pin; both production compositions pass it. */
   pin?: ExperimentPinPort;
-  /** startRun launch rail; the tRPC composition passes both, the harness REST
-   *  composition needs the pin only (finish releases it). */
   runtimeMutator?: RuntimeMutator;
   wakeAgent?: (agentId: string) => Promise<void>;
-  /** For Stop's invocation cancel: reaps the failed targets eagerly (they
-   *  are Sweepable, so a missed reap is caught by the Agent Sweep). */
   agents?: AgentsService;
 }): { experiments: ExperimentsService } {
   const invocationsRepo = createInvocationsRepository(opts.db);
-  // Destructured so TS narrows the three into the closure below, rather than
-  // asserting non-null on `opts` fields it can't prove stay set.
   const { agents, runtimeMutator, wakeAgent, owner } = opts;
   const kindedRail =
     agents && runtimeMutator && wakeAgent
@@ -72,9 +57,6 @@ export function composeExperimentsForOwner(opts: {
           }),
         }
       : {}),
-    // Same rail Knowledge Bases ride. Wired only where all three deps exist (the
-    // tRPC composition); the harness REST surface omits them and createSandbox
-    // refuses there — an agent never mints agents.
     ...(kindedRail
       ? {
           createSandbox: (input: ExperimentSandboxCreateInput) =>
@@ -94,7 +76,6 @@ export function composeExperimentsForOwner(opts: {
       );
       return rows.map((row) => ({
         id: row.id,
-        // Strip the "<experimentId>/" prefix back off to the SDK-side span id.
         spanId: row.experimentSpanId?.slice(experimentId.length + 1) ?? null,
         status: row.status,
       }));
@@ -102,8 +83,6 @@ export function composeExperimentsForOwner(opts: {
     runningInvocationsByDriver: () =>
       invocationsRepo.countRunningByDriver(opts.owner),
     experimentForInvocation: async (targetAgentId) => {
-      // The invocation's PK is its target agent's id; the span attach
-      // ("<experimentId>/<spanId>") names the run it belongs to.
       const invocation = await invocationsRepo.get(targetAgentId);
       const spanRef = invocation?.experimentSpanId;
       if (!spanRef) return null;
@@ -118,25 +97,18 @@ export function composeExperimentsForOwner(opts: {
       for (const invocationId of failed) {
         try {
           await opts.agents?.delete(invocationId);
-        } catch {
-          // Sweepable is the backstop — the Agent Sweep reaps it on hibernate.
-        }
+        } catch {}
       }
     },
   });
   return { experiments };
 }
 
-/** Compose the boot-level inactivity sweep. Owner-agnostic (it scans every
- *  owner's experiments), so it builds its own repository. Started once. A
- *  reap releases the driver's pin when it was its last running experiment —
- *  the sweep is what un-pins a crashed loop's driver. */
 export function composeExperimentInactivitySweep(opts: {
   db: Db;
   inactivityMs: number;
   batchSize: number;
   pin?: ExperimentPinPort;
-  /** Owner-scoped library factory for the terminal dashboard snapshot. */
   artifactLibraryFor?: (owner: string) => ArtifactLibraryServiceImpl;
 }): ExperimentInactivitySweep {
   const repo = createExperimentsRepository(opts.db);
@@ -176,10 +148,6 @@ export function composeExperimentInactivitySweep(opts: {
   });
 }
 
-/** Boot-time pin reconciliation: experiments survive restarts (unlike
- *  sessions), so instead of blanket-clearing, converge the annotation to the
- *  database truth — pin every driver with a running experiment, un-pin every
- *  agent carrying a stale pin. */
 export async function reconcileExperimentPins(opts: {
   db: Db;
   listPinnedAgentIds: () => Promise<string[]>;

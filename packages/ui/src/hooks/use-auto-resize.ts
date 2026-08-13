@@ -1,9 +1,5 @@
 import { type RefObject, useCallback, useEffect } from "react";
 
-/**
- * Auto-resizes a textarea to fit its content, up to 50vh.
- * Hides scrollbar when content fits; shows only when capped.
- */
 export function useAutoResize(
   ref: RefObject<HTMLTextAreaElement | null>,
   input: string,

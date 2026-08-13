@@ -14,10 +14,8 @@ describe("canTransition", () => {
   });
 
   it("rejects everything else", () => {
-    // A draft can only be executed — never finished or stopped directly.
     expect(canTransition("draft", "completed")).toBe(false);
     expect(canTransition("draft", "stopped")).toBe(false);
-    // Terminal states never reopen: re-execution is a sibling Experiment.
     expect(canTransition("completed", "running")).toBe(false);
     expect(canTransition("failed", "running")).toBe(false);
     expect(canTransition("stopped", "running")).toBe(false);

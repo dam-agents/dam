@@ -71,10 +71,6 @@ export function buildSlackDisconnectCommand(deps: {
           process.exit(exitCodeForResolveError(resolved.error));
         }
 
-        // An Agent may hold several Slack bindings, and the server reads a
-        // channel-less disconnect as "release them all". Refuse rather than
-        // release channels the user did not name — the resolved Agent already
-        // carries its bindings, so this costs no extra call.
         const bound = resolved.value.channels.filter(
           (c) => c.type === ChannelType.Slack,
         );

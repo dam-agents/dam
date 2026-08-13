@@ -5,8 +5,6 @@ import type {
   KubeObject,
 } from "../../modules/agents/infrastructure/k8s.js";
 
-// Live agents are Agent custom resources now, listed via
-// listCustomObjects — not ConfigMaps.
 function fakeK8s(liveAgents: string[]): K8sClient {
   return {
     listCustomObjects: async () =>
@@ -45,14 +43,9 @@ describe("agent-artifacts-sweeper", () => {
 
     await sweeper.tick();
 
-    // Live agents are NEVER touched.
     expect(cleaned.find((c) => c.id === "agent-live-1")).toBeUndefined();
     expect(cleaned.find((c) => c.id === "agent-live-2")).toBeUndefined();
 
-    // Both orphans get cleanup called on EVERY source — A appears in both
-    // tables, B only in egress, but we still call approvals.cleanup(B) so a
-    // stray pending row that arrived between the listAgentIds calls also
-    // gets reaped.
     const orphanIds = cleaned.map((c) => c.id);
     expect(orphanIds.filter((id) => id === "agent-orphan-A")).toHaveLength(2);
     expect(orphanIds.filter((id) => id === "agent-orphan-B")).toHaveLength(2);

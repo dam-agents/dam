@@ -16,15 +16,9 @@ interface Props {
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
-  /** Outdent the group cards into the page gutter (the default on gutter
-   *  forms). Set false on flush pages with no gutter, so the cards don't
-   *  bleed left of the other fields. */
   inset?: boolean;
 }
 
-/** The sandbox's granted connections, grouped by provider, with the entry
- *  point into the catalogue — shared by the sandbox home section and the
- *  create wizard step. */
 export function GrantedConnectionsPanel({
   groups,
   templateById,
@@ -83,8 +77,6 @@ export function GrantedConnectionsPanel({
   );
 }
 
-/** Group-card container: outdented into the gutter by default, flush when the
- *  hosting page has none. */
 function Wrap({
   inset,
   children,

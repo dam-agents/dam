@@ -31,15 +31,6 @@ import {
   StandaloneSkillsPlaceholder,
 } from "./standalone-skills-group.js";
 
-/**
- * The redesigned skills surface: skills grouped by provenance — user-authored
- * Standalone Local Skills ("Created in this sandbox"), image-shipped ones
- * ("Included with sandbox image"), and Skill Sources ("Sourced from GitHub").
- * Toggles install/uninstall immediately; the "+ Add source" control and the
- * per-source kebab (re-scan / view repo / remove) administer sources. While the
- * agent is stopped/starting the whole surface is a dimmed, non-interactive
- * read-only snapshot; the container renders the wake affordance.
- */
 export function SkillsSurface({
   agentId,
   agentState,
@@ -50,8 +41,6 @@ export function SkillsSurface({
   agentId: string | null;
   agentState: AgentState | undefined;
   readOnly: boolean;
-  /** Agent is coming up (starting) — still read-only, but rendered a touch
-   *  less dimmed than a full stop to signal it's on its way. */
   comingUp?: boolean;
   onStateChange?: (state: SkillsState) => void;
 }) {
@@ -65,9 +54,6 @@ export function SkillsSurface({
   const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
-  // Ephemeral filter over data this component already holds. Not URL-owned:
-  // routing here is path-based (routeToPath) and no route carries a query
-  // param, so a bookmarkable filter would mean new routing infrastructure.
   const [query, setQuery] = useState("");
 
   const surface = useSkillsSurface(agentId, {
@@ -210,9 +196,7 @@ export function SkillsSurface({
         stoppedPanel
       ) : (
         <>
-          {/* Left out while read-only, matching the design: search and the
-              per-skill toggles need a running sandbox, so a live control on a
-              dead surface is worse than no control. */}
+          {}
           {!readOnly && (
             // Sits closer to the first group than the groups sit to each
             // other: it describes them, so a full group gap would read as a

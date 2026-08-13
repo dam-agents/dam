@@ -21,13 +21,10 @@ const buttonVariants = cva(
         ghost: "hover:bg-muted hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
-      // Type scale lives per size, so `inline` can inherit the surrounding text
-      // instead of imposing its own.
       size: {
         default: "h-10 px-4 py-2 text-sm font-medium",
         sm: "h-8 rounded-md px-3 text-sm font-normal",
         xs: "h-7 rounded-md px-2.5 text-xs font-medium",
-        /** No box and no type of its own — for text inline in a sentence or row. */
         inline: "h-auto p-0",
         lg: "h-11 rounded-md px-8 text-sm font-medium",
         icon: "h-10 w-10 text-sm font-medium",
@@ -68,8 +65,6 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ComponentProps<"button">, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
-  /** Reads as a description, so an icon-only button still needs an
-   *  `aria-label`. */
   tooltip?: ReactNode;
 }
 
@@ -86,9 +81,6 @@ function Button({
   const button = (
     <Comp
       className={cn(buttonVariants({ variant, size, tone, className }))}
-      /* A disabled button fires neither pointer nor focus events, so the
-         tooltip can never open — `title` still reaches assistive tech, which
-         matters most for a hint that explains why the button is disabled. */
       title={
         props.disabled && typeof tooltip === "string" ? tooltip : undefined
       }

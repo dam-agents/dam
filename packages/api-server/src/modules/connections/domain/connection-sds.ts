@@ -3,7 +3,6 @@ import { encodeAccessToken } from "./host-injection.js";
 
 const PLACEHOLDER_TOKEN = "dummy-placeholder";
 
-/** Secret field holding the upstream CA (PEM) for `upstreamCa` chains. */
 export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
 
 export function sdsFileKeyForHost(host: string): string {
@@ -11,7 +10,6 @@ export function sdsFileKeyForHost(host: string): string {
   return `host-${slug}.sds.yaml`;
 }
 
-// One SDS file per injection. Header injections keep the per-host key; query-param injections key off host+header so they don't collide with the header injection on the same host.
 export function sdsFileKeyForInjection(c: {
   host: string;
   headerName: string;
@@ -43,7 +41,6 @@ export function buildConnectionSdsFields(
   const out: Record<string, string> = {};
   for (const c of contributions) {
     if (c.kind !== "egress-inject") continue;
-    // Query-param injections store the bare value; the Lua url-encodes it, so a baked `Bearer `/`Apikey ` prefix would corrupt the URL.
     const inlineString = c.queryParamName
       ? accessToken
       : c.valueFormat.replaceAll(
@@ -55,9 +52,6 @@ export function buildConnectionSdsFields(
   return out;
 }
 
-/** Per-Connection K8s Secret annotations the controller reads: the env
- *  placeholders to project and the injection-host descriptors to fan into
- *  Envoy chains. Projected from the connection's contributions. */
 export function connectionSecretAnnotations(
   contributions: Contribution[],
 ): Record<string, string> {
@@ -83,7 +77,6 @@ export function connectionSecretAnnotations(
       ...(c.port ? { port: c.port } : {}),
       ...(c.upgrades ? { upgrades: c.upgrades } : {}),
       ...(c.upstreamCa ? { caKey: UPSTREAM_CA_SECRET_FIELD } : {}),
-      // Single source of truth for the filename; the controller reads it rather than recomputing the key.
       sdsKey: sdsFileKeyForInjection(c),
     }));
 

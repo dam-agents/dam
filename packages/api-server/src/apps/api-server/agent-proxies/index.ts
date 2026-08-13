@@ -1,7 +1,3 @@
-// Agent proxies — every surface that fronts an agent pod: the three WS
-// relays (acp / terminal / ssh) plus the HTTP trpc- and import-proxies,
-// with the upgrade dispatch and relay admission that guard the WS family.
-
 export { createAcpRelay } from "./acp-relay.js";
 export { createTerminalRelay } from "./terminal-relay.js";
 export { createSshRelay } from "./ssh-relay.js";

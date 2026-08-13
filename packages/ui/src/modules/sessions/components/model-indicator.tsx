@@ -11,18 +11,13 @@ import {
 
 interface Props {
   model: string;
-  /** "sandbox" or "knowledge base". */
   subject: string;
-  /** Omitted where the model can't be changed — a knowledge base's config page
-   *  has no model settings, so there is nowhere to send the reader. */
   settings?: {
     label: string;
     onConfigure: () => void;
   };
 }
 
-/** The model under the composer. Says what it is and offers the trip to
- *  configuration, rather than navigating on click (#3057). */
 export function ModelIndicator({ model, subject, settings }: Props) {
   const titleId = useId();
 

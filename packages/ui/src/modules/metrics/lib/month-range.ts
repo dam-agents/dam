@@ -2,17 +2,12 @@ import type { SpendByDay } from "api-server-api";
 
 import { formatDate } from "@/lib/format-time";
 
-// Month boundaries are computed in the browser's timezone; the API takes the
-// resulting instants, so "calendar month" means the user's wall-clock month.
 export const monthStart = (base: Date, offset: number) =>
   new Date(base.getFullYear(), base.getMonth() + offset, 1);
 
 export const monthLabel = (month: Date) =>
   formatDate(month, { month: "long", year: "numeric" });
 
-/** The half-open `[from, to)` instant range a spend read takes for one calendar
- *  month, plus whether that month is the current one. Both Usage surfaces derive
- *  their query inputs here so neither reasons about calendars on its own. */
 export function monthRange(month: Date): {
   from: string;
   to: string;
@@ -25,10 +20,6 @@ export function monthRange(month: Date): {
   };
 }
 
-// The browser owns calendar semantics: from the sparse per-day rows the server
-// returns, build the full day list for the selected month, zero-filling days
-// with no spend. For the current month we stop at today so there are no empty
-// future columns. Keys are local `YYYY-MM-DD`, matching the server's buckets.
 const pad = (n: number) => String(n).padStart(2, "0");
 export function fillMonthDays(
   month: Date,

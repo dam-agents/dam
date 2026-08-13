@@ -17,12 +17,6 @@ import {
 } from "../domain/recurrences.js";
 import { securityLog } from "../../../core/security-log.js";
 
-// The domain validators throw plain `Error`, which tRPC surfaces as
-// INTERNAL_SERVER_ERROR — indistinguishable from a real server fault to a
-// client. Map them to BAD_REQUEST at the service boundary (the domain stays
-// transport-agnostic) so the CLI can exit on bad input. Each validator is
-// wrapped individually so an unexpected fault from repo/runner/ensureAgent
-// still propagates as INTERNAL_SERVER_ERROR.
 function asBadRequest(fn: () => void): void {
   try {
     fn();
@@ -69,8 +63,6 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
-      // An agent self-scheduling recurring executions (createdBy='agent') is
-      // especially notable.
       securityLog("info", "schedule.create", {
         category: "privileged",
         actor: deps.owner,
@@ -115,8 +107,6 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
-      // An agent self-scheduling recurring executions (createdBy='agent') is
-      // especially notable.
       securityLog("info", "schedule.create", {
         category: "privileged",
         actor: deps.owner,
@@ -149,8 +139,6 @@ export function createSchedulesService(deps: {
         quietHours: input.quietHours,
         task: input.task,
       };
-      // "fresh" is the absence of sessionMode — clear any value inherited from
-      // the spread so an edit to fresh isn't masked by the prior setting.
       if (input.sessionMode) spec.sessionMode = input.sessionMode;
       else delete spec.sessionMode;
       await deps.repo.updateName(input.id, deps.owner, input.name);

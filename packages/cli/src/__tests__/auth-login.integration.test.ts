@@ -23,8 +23,6 @@ const BIN_PATH = join(PKG_ROOT, "dist", "bin.js");
 
 const API_BASE = "http://api-server.localhost:4444";
 
-// Gate: skip the suite if no cluster is responding. Mirrors the existing
-// integration-test pattern — the test must not fail when there is no k3s.
 async function isClusterUp(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/config`, {
@@ -36,23 +34,11 @@ async function isClusterUp(): Promise<boolean> {
   }
 }
 
-// --- Minimal cookie jar -----------------------------------------------------
-//
-// Real browsers would refuse Keycloak's Secure cookies on plain http. For
-// the local k3s cluster (no TLS) we want the test to act *like a browser
-// would on an HTTPS deployment* — collect every Set-Cookie verbatim and
-// replay it on subsequent requests regardless of attributes. This is the
-// minimum needed to walk Keycloak's HTML login → consent flow.
-
 class CookieJar {
   private store = new Map<string, string>();
 
   ingest(setCookieHeader: string | null) {
     if (!setCookieHeader) return;
-    // Multiple Set-Cookie headers are joined with ", " by Headers.get();
-    // but Headers.getSetCookie() (node-undici) returns the array. Be
-    // defensive and split on ", " only between proper cookies (lookahead
-    // for "<name>=").
     const lines = setCookieHeader.split(/,(?=\s*[a-zA-Z0-9_-]+=)/);
     for (const line of lines) {
       const [pair] = line.split(";");
@@ -70,12 +56,6 @@ class CookieJar {
   }
 }
 
-/**
- * Single fetch step. Returns the response and the URL it was issued
- * against (so the caller can resolve relative `Location` / form actions
- * without relying on `Response.url`, which is empty after a manual
- * redirect).
- */
 async function step(
   url: string,
   jar: CookieJar,
@@ -108,28 +88,11 @@ async function followRedirects(
   return { res, url };
 }
 
-// The deployed Keycloak uses the first-party Keycloakify SPA login theme
-// (packages/keycloak-theme). It serves an HTML shell with an
-// embedded `const kcContext = {...}` object and renders the login/consent
-// forms client-side — there is no server-rendered `<form action=...>`. The
-// POST targets, however, are unchanged Keycloak endpoints carried in
-// kcContext (`url.loginAction`, `url.oauthAction`, `oauth.code`, `pageId`),
-// so we drive the flow by reading those fields instead of scraping <form>s.
-//
-// kcContext is JS, not JSON (trailing commas, comments, function values), so
-// we extract single string fields by key rather than parsing the object.
-// The only escape that appears in the fields we need is `\/`; URLs embed
-// `&`/`=` literally (no HTML-entity encoding).
 function extractKcContextString(html: string, key: string): string | null {
   const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(html);
   return m ? m[1]!.replace(/\\\//g, "/") : null;
 }
 
-/**
- * Drives the user-side device-flow consent as `dev/dev` against the
- * local Keycloak. Returns when the consent has been recorded; the CLI's
- * polling loop will then succeed on the next iteration.
- */
 async function authorizeAsDevUser(
   verificationUriComplete: string,
   username = "dev",
@@ -137,8 +100,6 @@ async function authorizeAsDevUser(
 ): Promise<void> {
   const jar = new CookieJar();
 
-  // 1. Verification URL → Keycloak 302s to the SPA login page (pageId
-  //    "login"). The credential POST target is kcContext.url.loginAction.
   const { res: loginPage, url: loginPageUrl } = await followRedirects(
     verificationUriComplete,
     jar,
@@ -153,7 +114,6 @@ async function authorizeAsDevUser(
   }
   const loginPostUrl = new URL(loginAction, loginPageUrl).toString();
 
-  // 2. POST credentials; follow redirect chain to the consent page.
   let { res, url } = await step(loginPostUrl, jar, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -168,9 +128,6 @@ async function authorizeAsDevUser(
 
   const consentHtml = await res.text();
 
-  // On success Keycloak advances to the consent page (pageId
-  // "login-oauth-grant"). If credentials were rejected it re-renders the
-  // login page, so a still-"login" pageId means the login failed.
   if (extractKcContextString(consentHtml, "pageId") === "login") {
     const summary = extractKcContextString(consentHtml, "summary");
     throw new Error(
@@ -178,14 +135,9 @@ async function authorizeAsDevUser(
     );
   }
 
-  // 3. The consent grant carries `oauth.code` and posts to
-  //    kcContext.url.oauthAction. Submit both — without `code`, the consent
-  //    endpoint 404s.
   const consentAction = extractKcContextString(consentHtml, "oauthAction");
   const codeValue = extractKcContextString(consentHtml, "code");
   if (!consentAction || !codeValue) {
-    // Some Keycloak configs may auto-grant without a consent screen.
-    // Treat that as success — the CLI poll will resolve the device code.
     return;
   }
   const consentUrl = new URL(consentAction, url).toString();
@@ -194,8 +146,6 @@ async function authorizeAsDevUser(
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ accept: "Yes", code: codeValue }),
   });
-  // 302 is the success status — Keycloak redirects to "Device Login
-  // Successful" page. Anything else is wrong.
   if (consentRes.res.status >= 400) {
     throw new Error(
       `consent POST returned ${consentRes.res.status} ${consentRes.res.statusText}`,
@@ -208,13 +158,9 @@ let clusterUp = false;
 beforeAll(async () => {
   clusterUp = await isClusterUp();
   if (!clusterUp) return;
-  // The integration suite needs a built dist/bin.js.
   await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
 }, 60_000);
 
-// `runIf(true)` rather than `runIf(clusterUp)` because vitest evaluates the
-// argument at registration time, before `beforeAll` has set `clusterUp`.
-// Each `it` checks `clusterUp` early-return instead.
 describe.runIf(true)(
   "dam auth login (integration vs local k3s Keycloak)",
   () => {
@@ -236,9 +182,7 @@ describe.runIf(true)(
       await rm(tmpConfig, { recursive: true, force: true });
     });
 
-    afterAll(() => {
-      // dist/bin.js stays for subsequent vitest runs.
-    });
+    afterAll(() => {});
 
     it("completes the device flow against the live cluster, writes auth.toml mode 0600, and the token authorizes api-server", async () => {
       if (!clusterUp) return;
@@ -250,9 +194,6 @@ describe.runIf(true)(
         PATH: process.env.PATH ?? "",
       };
 
-      // Spawn `dam auth login --no-browser`. The CLI prints the verification
-      // URL and user code, then blocks polling. In parallel, we drive the
-      // user-side consent.
       const child = execFile(
         "node",
         [BIN_PATH, "auth", "login", "--server", API_BASE, "--no-browser"],
@@ -281,8 +222,6 @@ describe.runIf(true)(
       expect(verificationUri).toBeDefined();
       await authorizeAsDevUser(verificationUri!);
 
-      // Wait for the CLI to finish (poll interval is 5s, plus the consent
-      // round-trip — give 60s safety budget).
       const exit = await new Promise<{
         code: number;
         signal: NodeJS.Signals | null;
@@ -292,7 +231,6 @@ describe.runIf(true)(
       expect(exit.code, `stdout: ${stdout}\nstderr: ${stderr}`).toBe(0);
       expect(stdout).toContain("✓ Logged in to");
 
-      // Assert auth.toml shape and mode.
       const authPath = join(tmpState, "dam", "auth.toml");
       const stats = await stat(authPath);
       expect(stats.mode & 0o777).toBe(0o600);
@@ -315,9 +253,6 @@ describe.runIf(true)(
       expect(entry?.refresh_token).toBeTruthy();
       expect(entry?.cli_client_id).toBe("platform-cli");
 
-      // The persisted access token should authorize a request to the
-      // api-server (any tRPC route works — health is unauthenticated, so we
-      // use the templates list).
       const apiRes = await fetch(
         `${API_BASE}/api/trpc/templates.list?batch=1&input=${encodeURIComponent("{}")}`,
         {

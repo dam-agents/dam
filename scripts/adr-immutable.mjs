@@ -1,27 +1,4 @@
 #!/usr/bin/env node
-// check:adr-immutable — enforce the ADR log is append-only.
-//
-// The ADR read model rests on one invariant: an accepted decision is never
-// rewritten. This is the deterministic, unbypassable gate for it (no LLM),
-// sibling to db:check:generated. The review-time ADR-policy skill calls this
-// same script for unified surfacing but never owns the invariant.
-//
-// What is frozen: the prose body (markdown after the frontmatter block) of any
-// ADR that is under the regime. Frontmatter fields (status, summary, supersedes,
-// subsystem, tags) are NOT hashed — their correctness is a judgment call routed
-// to the ADR-policy skill, and `status` is explicitly mutable (supersession is
-// derived, deprecation flips it). Deletion and rename of a frozen ADR are
-// forbidden: deletion rewrites history, rename breaks the id.
-//
-// Regime marker: an ADR is frozen once its base version has frontmatter and is
-// not proposed/DRAFT. This bootstraps the log — pre-frontmatter ADRs (and the
-// migration/renumber commit that introduces frontmatter) are exempt because
-// their base version carries no frontmatter; every ADR is frozen forward once
-// the frontmatter migration lands on main.
-//
-// Modes (same script, different base — precommit is fast, CI is authoritative):
-//   node scripts/adr-immutable.mjs --staged       base = HEAD, head = index
-//   node scripts/adr-immutable.mjs --merge-base    base = merge-base(main), head = HEAD
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -34,8 +11,6 @@ function git(args) {
   return execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 26 });
 }
 
-// Read a file at a git revision. rev "" means the staged index (`git show :path`).
-// Returns null when the path does not exist at that revision.
 function show(rev, path) {
   try {
     return execFileSync("git", ["show", `${rev}:${path}`], {
@@ -48,8 +23,6 @@ function show(rev, path) {
   }
 }
 
-// An ADR is frozen once it has frontmatter and is not proposed/DRAFT. DRAFT
-// files carry `status: proposed`, so the status check covers them.
 function isFrozen(raw) {
   if (raw == null) return false;
   const { frontmatter } = splitFrontmatter(raw);
@@ -72,7 +45,6 @@ function resolveMode() {
         base = git(["merge-base", "HEAD", ref]).trim();
         break;
       } catch {
-        // try the next candidate
       }
     }
     if (!base) {
@@ -88,11 +60,6 @@ function resolveMode() {
 
 function main() {
   const { baseRev, headRev, diffArgs } = resolveMode();
-  // Rename detection (-M) reports a rename as one R line. Sandboxed
-  // environments that proxy git through a command allowlist (Locki) may
-  // reject the -M flag — fall back to a plain diff there: a rename then
-  // surfaces as D + A, and the D alone is already a violation, so the
-  // fallback can only be stricter, never miss one.
   let raw;
   try {
     raw = git(["diff", "--name-status", "-M", ...diffArgs, "--", ADR_DIR]);
@@ -110,7 +77,6 @@ function main() {
     const newPath = parts[2] || parts[1];
     if (basename(oldPath) === "index.md") continue;
 
-    // Additions and copies never touch a base ADR — new records are free.
     if (letter === "A" || letter === "C") continue;
 
     const baseRaw = show(baseRev, oldPath);
@@ -126,7 +92,6 @@ function main() {
       );
       continue;
     }
-    // M / T (modify / type change): the prose body must not change.
     const headRaw = show(headRev, newPath);
     if (headRaw == null) {
       errors.push(`${newPath}: cannot read head version to compare — treat as a forbidden change.`);

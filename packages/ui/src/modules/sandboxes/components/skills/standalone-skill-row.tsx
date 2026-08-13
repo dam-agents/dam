@@ -72,9 +72,7 @@ export function StandaloneSkillRow({
   trackUnavailable,
 }: {
   skill: LocalSkill;
-  /** Latest publish record for this skill, when it has ever been published. */
   publish?: SkillPublishRecord;
-  /** Draw the separator — every row but the first. */
   divided: boolean;
   /** Agent stopped/starting: the card behind the row is `bg-muted`, which a
    *  muted pill would otherwise disappear into. */
@@ -84,14 +82,8 @@ export function StandaloneSkillRow({
   onPublish: () => void;
   onDownload: () => void;
   onDelete: () => void;
-  /** Hand the skill over to its source, so it becomes governed by the normal
-   *  source → install → drift → Update loop. Offered only once merged. */
   onTrack?: () => void;
-  /** Open the skill's SKILL.md render modal. Makes the name clickable; absent
-   *  when there is no pod to read the file from. */
   onOpen?: () => void;
-  /** The source hasn't been scanned yet (or is unreachable), so we can't tell
-   *  whether the local copy diverged — disable rather than guess. */
   trackUnavailable?: boolean;
 }) {
   const pill = PR_STATE_PILL[publish?.prState ?? "unknown"];
@@ -111,8 +103,6 @@ export function StandaloneSkillRow({
           <button
             type="button"
             onClick={onOpen}
-            /* max-w-full, not min-w-0: an inline-block button in a block
-               parent would otherwise size to its nowrap text and overflow. */
             className="max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
           >
             {skill.name}

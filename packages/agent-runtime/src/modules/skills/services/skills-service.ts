@@ -30,13 +30,8 @@ export interface SkillsServiceDeps {
   github: GitHubRestClient;
   git: GitProtocolClient;
   repo: LocalSkillRepository;
-  /** Read-side paths (listLocal / readLocal / publish), from the manifest's
-   *  skill-ref driver. install / uninstall get theirs from the driver. */
   skillPaths: SkillPath[];
-  /** Image-side counterparts of `skillPaths`, listLocal's origin reference.
-   *  Nonexistent dirs are harmless — everything classifies as `user`. */
   pristineSkillPaths: SkillPath[];
-  /** Wall-clock provider — used by publish for branch-name timestamps. */
   now: () => Date;
   log: (msg: string) => void;
 }
@@ -89,18 +84,11 @@ async function doInstall(deps: SkillsServiceDeps, input: SkillInstallInput) {
   );
 }
 
-/**
- * One skill's `SKILL.md` at the commit the scan pinned. Not a one-line
- * delegation like readPullRequest: it resolves the host itself and refuses a
- * `dir` that would walk out of the repo tree.
- */
 async function doReadSkillFile(
   deps: SkillsServiceDeps,
   input: SkillReadSkillFileInput,
 ): Promise<Result<{ content: string }, SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
-  // Defense in depth: the api-server's own host gate catches this first, so
-  // reaching here means a non-GitHub source was routed to a GitHub-only read.
   if (!host) {
     return err({
       kind: "SourceFetchFailed",
@@ -165,8 +153,6 @@ async function doDeleteLocal(
     name.value,
     deps.skillPaths,
   );
-  // Nothing on disk to remove — a delete whose target is already gone is
-  // satisfied, not an error (a double-click must not fail the second time).
   if (!resolved) return ok(undefined);
   await deps.repo.remove(resolved.dir, deps.skillPaths);
   return ok(undefined);

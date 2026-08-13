@@ -2,20 +2,13 @@ import { Add, Save } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
-/** The sandbox-level skill-set controls that sit on the counts row: reuse a
- *  saved selection here, or turn this sandbox's selection into one. */
 export function SkillSetActions({
   canSave,
   previewReady,
   onAddSets,
   onSaveSet,
 }: {
-  /** At least one source-backed skill is on — otherwise there is no selection
-   *  worth naming. */
   canSave: boolean;
-  /** Every source has reported. The save dialog's list and its pre-marks are a
-   *  one-shot snapshot, so opening it mid-scan would silently save a set that
-   *  omits the slower source's skills. */
   previewReady: boolean;
   onAddSets: () => void;
   onSaveSet: () => void;

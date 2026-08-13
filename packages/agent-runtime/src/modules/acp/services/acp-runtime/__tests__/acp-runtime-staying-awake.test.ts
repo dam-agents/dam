@@ -3,7 +3,7 @@ import { createBackgroundWorkRegistry } from "../../background-work-registry.js"
 import { createWorld, frames, IDLE_REAP_DELAY_MS } from "./acp-world.js";
 
 /**
- * Feature: staying awake.
+ * TEST_OVERVIEW: staying awake.
  *
  * The controller asks one question — `status()` — to decide whether a pod
  * can hibernate. Anything the answer misses gets killed: a running turn, a
@@ -15,7 +15,6 @@ import { createWorld, frames, IDLE_REAP_DELAY_MS } from "./acp-world.js";
 
 const SESSION = "sess-awake";
 
-/** Let the runtime's `exited` promise handler run. */
 const flushMicrotasks = (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
 
@@ -25,7 +24,7 @@ describe("acp-runtime: staying awake", () => {
   });
 
   /**
-   * The active-prompt hold is already pinned in the machine-client feature
+   * TEST_SCENARIO: The active-prompt hold is already pinned in the machine-client feature
    * (a scheduled turn keeps the pod busy with nobody connected). This file
    * starts one step later, with the holds that exist next to a turn or
    * after it.
@@ -38,7 +37,6 @@ describe("acp-runtime: staying awake", () => {
   it("should stay busy across the turn boundary while a question is still queued", () => {
     const world = createWorld();
 
-    // Alice's turn is running and Bob's question waits behind it.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -49,18 +47,15 @@ describe("acp-runtime: staying awake", () => {
 
     expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
 
-    // The first turn ends. The conversation is not over — Bob's question
-    // still needs an answer — and the pod must not look idle in between.
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
 
-    // Only when the queue is empty is there nothing left to protect.
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
   });
 
   /**
-   * The agent asked for permission and the person who could answer is gone.
+   * TEST_SCENARIO: The agent asked for permission and the person who could answer is gone.
    * Anyone who opens the conversation later can still answer, so the pod
    * must stay up and the session must stay open for them. Sleeping now, or
    * closing the session because nobody is connected, would silently throw
@@ -70,8 +65,6 @@ describe("acp-runtime: staying awake", () => {
     vi.useFakeTimers();
     const world = createWorld();
 
-    // Alice asks, the agent asks for permission, and Alice's connection
-    // dies before she answers. The turn then ends with nobody connected.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -80,27 +73,21 @@ describe("acp-runtime: staying awake", () => {
     alice.disconnect();
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Nobody is connected and no turn is running, yet the pod is not idle
-    // and the session is not released — even once the quiescence window
-    // that follows an idle turn has passed: the question is still open.
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
     expect(world.harness().received("session/close")).toEqual([]);
 
-    // Bob opens the conversation, sees the waiting question, and answers.
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
     expect(bob.saw("session/request_permission")).toHaveLength(1);
     bob.send(frames.permissionAnswer(900));
 
-    // The agent got its answer. With the question resolved, the pod can go
-    // idle.
     expect(world.harness().answersTo(900)).toHaveLength(1);
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
   });
 
   /**
-   * A turn can end with work still running: the agent started a job in the
+   * TEST_SCENARIO: A turn can end with work still running: the agent started a job in the
    * background and answered before the job finished. The harness reports
    * that work to the pod (the background-work contract), and only the
    * runtime can act on the report — closing the session would kill the
@@ -118,9 +105,6 @@ describe("acp-runtime: staying awake", () => {
       backgroundWorkRecheckMs: 15_000,
     });
 
-    // Alice starts a soak test. The session reports the job it left running
-    // (this is what the pod's report endpoint does on its behalf). The turn
-    // ends and Alice leaves.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -131,8 +115,6 @@ describe("acp-runtime: staying awake", () => {
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     alice.disconnect();
 
-    // The pod says exactly why it is awake, and the session that owns the
-    // work stays open even though nobody is connected.
     expect(world.runtime.status()).toEqual({
       idle: false,
       backgroundWork: [
@@ -150,16 +132,11 @@ describe("acp-runtime: staying awake", () => {
     });
     expect(world.harness().received("session/close")).toEqual([]);
 
-    // Hours can pass; as long as the work runs, nothing changes.
     vi.advanceTimersByTime(15_000);
     expect(world.harness().received("session/close")).toEqual([]);
 
-    // The job finishes and the session reports it has nothing running.
     backgroundWork.report(SESSION, []);
 
-    // The pod can go idle, and the session is released without anyone ever
-    // reconnecting. The harness itself stays up: releasing a conversation
-    // is not stopping the sandbox.
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
     vi.advanceTimersByTime(15_000);
     expect(
@@ -172,7 +149,7 @@ describe("acp-runtime: staying awake", () => {
   });
 
   /**
-   * A hold protects work running inside the harness's process tree, so when
+   * TEST_SCENARIO: A hold protects work running inside the harness's process tree, so when
    * the harness dies the work dies with it. A hold that survived would be
    * the worst failure this feature can have: an empty pod kept awake
    * forever, with a status naming a job that no longer exists.
@@ -191,13 +168,11 @@ describe("acp-runtime: staying awake", () => {
     world.harness().exit();
     await flushMicrotasks();
 
-    // Whatever was running died with the harness. Nothing is left to hold
-    // for, and the pod must be free to reclaim.
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
   });
 
   /**
-   * A hold is advisory, never final: a reporter may die without ever saying
+   * TEST_SCENARIO: A hold is advisory, never final: a reporter may die without ever saying
    * "done", and the contract accepts that because a hard teardown reclaims
    * the pod anyway. Resetting the session is that teardown — it kills the
    * session's subprocess and the work under it, so the hold must go too,
@@ -218,8 +193,6 @@ describe("acp-runtime: staying awake", () => {
 
     world.runtime.resetSession(SESSION);
 
-    // The session was closed on the agent's side too, and no leftover hold
-    // keeps the pod awake.
     expect(
       world
         .harness()

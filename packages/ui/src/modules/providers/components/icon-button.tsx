@@ -3,12 +3,6 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/**
- * Small (28×28) ghost-style icon button used in provider connected/edit
- * chrome. Wraps shadcn's `<Button variant="ghost" size="icon">` with a
- * single hover-tint knob — matches the design-branch shadcn aesthetic
- * (no thick borders or brutal shadows).
- */
 export function IconButton({
   onClick,
   label,

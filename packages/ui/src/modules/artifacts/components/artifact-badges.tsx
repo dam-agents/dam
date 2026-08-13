@@ -30,7 +30,6 @@ export function ArtifactKindBadge({ kind }: { kind: ArtifactKind }) {
   );
 }
 
-/** One badge summarizing reach: Expired > Password > Public > Private. */
 export function ArtifactStatusBadge({
   artifact,
 }: {

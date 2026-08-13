@@ -11,8 +11,6 @@ export function applyCallbackAlias(
 
 export const DEFAULT_OAUTH_RETURN_TO = "/settings/connections";
 
-// The OAuth callback is public and unauthenticated; only same-origin relative
-// paths may be honored, so a stale or tampered state can never redirect off-site.
 export function sanitizeReturnTo(returnTo: string | undefined): string {
   if (!returnTo) return DEFAULT_OAUTH_RETURN_TO;
   if (!returnTo.startsWith("/") || returnTo.startsWith("//")) {

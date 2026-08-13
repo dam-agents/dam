@@ -4,9 +4,6 @@ import {
   LABEL_OWNER,
 } from "../../modules/agents/infrastructure/labels.js";
 
-/** Resolved agent metadata. `uid` is the Agent CR's UID, used to owner-ref
- *  ephemeral children for cascade deletion. `vmBackend` marks a KubeVirt
- *  vm-backend agent. */
 export interface AgentIdentity {
   agentId: string;
   owner: string;
@@ -14,18 +11,6 @@ export interface AgentIdentity {
   vmBackend: boolean;
 }
 
-/**
- * Resolve the calling agent from the URL `:id`.
- *
- * Identity is enforced at the Istio waypoint via a per-agent
- * AuthorizationPolicy that ALLOWs only principal `<td>/ns/<agent-ns>/sa/<id>`
- * to path `/api/agents/<id>/*`. By the time a request reaches this handler
- * the URL `:id` is already authenticated — the application does not parse
- * XFCC and does not consult any header.
- *
- * Returns null when the Agent (agent-platform.ai/v1) is missing or its owner
- * label is absent; callers map that to 404.
- */
 export async function resolveAgent(
   k8s: K8sClient,
   agentId: string,

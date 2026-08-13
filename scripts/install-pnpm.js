@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Dumb corepack reimplementation. Workaround for chicken-and-egg
-// problem of RH HI not including corepack or pnpm.
-//
-// Expected packageManager: "pnpm@<version>+<algo>.<hex-digest>"
-// Example: "pnpm@10.33.4+sha512.1c67b3b3..."
-//
-// Usage: install-pnpm [path-to-package.json]
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';

@@ -2,20 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-/** Matches the modal's anim-scale-in duration — the srcdoc parse and CDN
- *  script work start only after the animation has finished its frames. */
 const MODAL_ANIMATION_MS = 220;
 
-/** Sandboxed iframe (no allow-same-origin: the document runs on a unique
- *  opaque origin — scripts work, the app origin's cookies/DOM/storage stay
- *  unreachable), optionally mounted after a host animation and faded in on
- *  load so heavy documents never make the surrounding UI stutter.
- *
- *  `postData` is the one inbound channel a sealed document gets: the host
- *  pushes it via postMessage on load and on every change (the experiments
- *  live view feeds its dashboard this way). Target origin is `"*"` by
- *  necessity — a srcdoc sandbox is an opaque origin — which is safe here
- *  because the payload is the viewer's own data, nothing secret. */
 export function DeferredFrame({
   html,
   title,

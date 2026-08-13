@@ -1,17 +1,9 @@
-/** Internal-link scheme for artifacts: the MCP layer mints these for agents
- *  to paste into chat replies, and the UI parses them back into inline
- *  preview chips — the two ends must stay in lock-step, so both import from
- *  here. */
 export const ARTIFACT_INTERNAL_LINK_PREFIX = "platform://artifacts/";
 
 export function artifactInternalLink(id: string): string {
   return `${ARTIFACT_INTERNAL_LINK_PREFIX}${id}`;
 }
 
-/** How an artifact is rendered — on the public share page and in-app. Detected
- *  from the file name / content at create time, never trusted from the wire
- *  content-type alone. `code`/`text` render highlighted/plain; `binary` is
- *  download-only (images preview inline). */
 export type ArtifactKind =
   | "html"
   | "jsx"
@@ -20,8 +12,6 @@ export type ArtifactKind =
   | "text"
   | "binary";
 
-/** `private` — in-app only (default). `public` — the share slug resolves on
- *  the share host; the unguessable slug is the entire access control. */
 export type ArtifactVisibility = "private" | "public";
 
 export interface ArtifactFolder {
@@ -43,13 +33,10 @@ export interface LibraryArtifact {
   sizeBytes: number;
   version: number;
   folderId: string | null;
-  /** Attribution: which agent published it; null = uploaded by the user.
-   *  Plain string — artifacts deliberately outlive their creating agent. */
   agentId: string | null;
   visibility: ArtifactVisibility;
   expiresAt: string | null;
   viewCount: number;
-  /** Absolute public link, present when visibility is public. */
   shareUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -62,9 +49,6 @@ export interface ArtifactVersionInfo {
   createdAt: string;
 }
 
-/** In-app preview payload — mirrors the file viewer's FileContent shape so the
- *  UI reuses its rendering stack. `content` is utf-8 for text kinds, base64
- *  when `binary`. `tooLarge` suppresses content for oversized text blobs. */
 export interface ArtifactContent {
   kind: ArtifactKind;
   contentType: string;
@@ -80,8 +64,6 @@ export interface ArtifactListFilter {
   search?: string;
 }
 
-/** Exactly one of `content` (inline utf-8 text) or `uploadRef` (a completed
- *  direct upload minted by `createUploadUrl`) carries the bytes. */
 export interface ArtifactCreateInput {
   title: string;
   content?: string;
@@ -91,36 +73,20 @@ export interface ArtifactCreateInput {
   contentType?: string;
   folderId?: string;
   visibility?: ArtifactVisibility;
-  /** Hours until the artifact expires; omitted/null = never. Expiry is
-   *  retention: the artifact is permanently deleted after a grace window,
-   *  regardless of visibility. */
   expiresInHours?: number | null;
 }
 
-/** No `kind`: an artifact's format is settled at create and no update can move
- *  it — not by passing one, and not by renaming into a different extension.
- *  The share slug survives every revision, so a mutable kind would let a link
- *  vetted while it served inert text later serve executing HTML or JSX at the
- *  same URL. Publishing executable content is allowed; silently changing what
- *  an already-shared URL *does* is not. It also keeps rendering consistent
- *  across a version history, since the viewer renders every version through
- *  the artifact's one kind. */
 export interface ArtifactUpdateInput {
   title?: string;
-  /** null moves the artifact out of its folder. */
   folderId?: string | null;
-  /** Either field publishes a new version. */
   content?: string;
   uploadRef?: string;
-  /** A label, not an identity: the current name is what every version
-   *  downloads as. Renaming never changes the artifact's kind. */
   fileName?: string;
   contentType?: string;
 }
 
 export interface ArtifactSharingInput {
   visibility?: ArtifactVisibility;
-  /** null removes the expiry. */
   expiresInHours?: number | null;
 }
 
@@ -135,19 +101,10 @@ export interface ArtifactUploadTicket {
   maxBytes: number;
 }
 
-/** Owner-scoped application service — composed per owner for the user tRPC
- *  router and the in-pod MCP session alike (owner bound at composition time,
- *  never taken from request input). `agentId` on create/update is attribution
- *  supplied by the MCP layer from the network-verified caller — the tRPC
- *  router never passes it. */
 export interface ArtifactLibraryService {
   list(filter?: ArtifactListFilter): Promise<LibraryArtifact[]>;
   get(id: string): Promise<LibraryArtifact | null>;
   getContent(id: string, version?: number): Promise<ArtifactContent | null>;
-  /** Self-contained HTML document rendering the artifact — the same inner
-   *  document the public share page hosts. Meant for a sandboxed iframe
-   *  (`srcdoc`, no allow-same-origin). null when the artifact is binary or
-   *  too large to render. */
   getPreviewHtml(id: string, version?: number): Promise<string | null>;
   listVersions(id: string): Promise<ArtifactVersionInfo[]>;
   create(
@@ -157,17 +114,11 @@ export interface ArtifactLibraryService {
   update(id: string, input: ArtifactUpdateInput): Promise<LibraryArtifact>;
   setSharing(id: string, input: ArtifactSharingInput): Promise<LibraryArtifact>;
   delete(id: string): Promise<void>;
-  /** Mint a short-lived direct-upload link (direct transfer — the
-   *  api-server never carries the bytes). Fails when no object store is
-   *  configured. */
   createUploadUrl(fileName: string): Promise<ArtifactUploadTicket>;
 
   listFolders(): Promise<ArtifactFolder[]>;
   createFolder(name: string): Promise<ArtifactFolder>;
   updateFolder(id: string, input: FolderUpdateInput): Promise<ArtifactFolder>;
-  /** Artifacts inside become ungrouped; their own share state is untouched. */
   deleteFolder(id: string): Promise<void>;
-  /** Absolute public link for a folder page, or null while it has no shared
-   *  artifacts. */
   folderShareUrl(id: string): Promise<string | null>;
 }

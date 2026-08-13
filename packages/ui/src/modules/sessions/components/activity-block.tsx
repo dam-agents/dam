@@ -3,8 +3,6 @@ import type { ReactNode } from "react";
 import { DisclosureChevron } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
-/** Left-bordered agent-activity row in the chat thread (thinking, tool runs):
- *  a label line plus optional collapsible detail. */
 export function ActivityBlock({
   label,
   onToggle,
@@ -13,7 +11,6 @@ export function ActivityBlock({
   children,
 }: {
   label: ReactNode;
-  /** Omit when there is no detail to expand — the label renders inert. */
   onToggle?: () => void;
   open?: boolean;
   className?: string;

@@ -5,8 +5,6 @@ import { Callout } from "@/components/ui/callout";
 import { useCopy } from "@/hooks/use-copy";
 import { externalLinkProps } from "@/lib/external-link";
 
-/** Bring-your-own-OAuth-app instructions: provider setup link plus the exact
- *  redirect URI to register. */
 export function OAuthAppHint({
   callbackUrl,
   setupUrl,

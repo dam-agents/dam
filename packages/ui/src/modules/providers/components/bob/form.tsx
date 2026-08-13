@@ -24,8 +24,6 @@ const bobCredentialSchema = z
     chatMode: z.string(),
   })
   .superRefine((data, ctx) => {
-    // Carries the empty-credential state to `isValid`, which disables submit; no
-    // message is rendered for it, so give any *further* value issue a home first.
     if (stripWhitespace(data.value).length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -33,8 +31,6 @@ const bobCredentialSchema = z
         message: "Required",
       });
     }
-    // Keep in step with the `maxCost` pattern in the server-side catalog: a cost
-    // cap has to be able to sit below a whole unit.
     if (
       data.maxCost.trim() !== "" &&
       !/^(?:[1-9]\d*(?:\.\d+)?|0?\.\d*[1-9]\d*)$/.test(data.maxCost.trim())

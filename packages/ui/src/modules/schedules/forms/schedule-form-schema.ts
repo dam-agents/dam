@@ -18,8 +18,6 @@ export const scheduleFormSchema = z
     timezone: z.string().trim().min(1, "Required"),
     sessionMode: z.enum(["fresh", "continuous"]),
     kind: z.enum(["daily", "hourly", "minutely", "custom"]),
-    // Held as raw text so the field can be cleared and retyped freely;
-    // parsed (and validated) only when the kind uses it.
     interval: z.string(),
     time: z.string(),
     days: z.array(z.number().int().min(1).max(7)),
@@ -65,8 +63,6 @@ export const scheduleFormSchema = z
       });
       return;
     }
-    // Guard the footgun where every tick lands inside a quiet window — the
-    // schedule would never fire. Only checked once the rule itself is valid.
     if (!hasVisibleOccurrence(body, v.quietHours))
       ctx.addIssue({
         code: "custom",
@@ -94,8 +90,6 @@ function toFrequencyPreset(v: ScheduleFormValues): FrequencyPreset {
   }
 }
 
-/** The RRULE body + human summary the current form values describe, or the
- *  build error. Drives the live cadence line and the submit payload. */
 export function buildRRuleParts(v: ScheduleFormValues): {
   body: string;
   summary: string;
@@ -113,8 +107,6 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** Default values for the form, seeded from an existing schedule when
- *  editing (recognising its RRULE via `detectPreset`). */
 export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
   const preset: FrequencyPreset = existing?.rrule
     ? detectPreset(existing.rrule)

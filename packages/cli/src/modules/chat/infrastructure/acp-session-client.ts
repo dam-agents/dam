@@ -6,13 +6,6 @@ import { WebSocket } from "ws";
 
 import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
 
-/**
- * Sessions are agent-owned: there is no server session store. The CLI
- * reads and mutates them directly over the api-server's ACP relay WebSocket,
- * exactly like the UI and channel workers — listing decodes `_meta.platform`,
- * and a mode change rides `session/resume` with `_meta.platform.mode`.
- */
-
 const TIMEOUT_MS = 120_000;
 
 interface PlatformMeta {
@@ -72,10 +65,6 @@ function acpUrl(host: string, agentId: string, token: string): string {
   return `${proto}//${base}/api/agents/${encodeURIComponent(agentId)}/acp?token=${encodeURIComponent(token)}`;
 }
 
-/** Decode an ACP-listed session into a SessionView: no `_meta.platform`
- *  marks a harness-minted session (e.g. terminal/`/clear`) and defaults to
- *  terminal; an ACP-created session carries a (possibly empty) entry and
- *  defaults to chat. */
 function toSessionView(agentId: string, s: ListedSession): SessionView {
   const p = s._meta?.platform;
   return {
@@ -99,8 +88,6 @@ async function withConnection<T>(
 ): Promise<T> {
   const { stream, ws } = await wsStream(url);
 
-  // A relay that accepts the socket but whose agent never answers would hang
-  // the CLI forever; abort after TIMEOUT_MS of inactivity (cf. api-server).
   const ac = new AbortController();
   let timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   const resetTimeout = () => {
@@ -110,11 +97,6 @@ async function withConnection<T>(
 
   const connection = new ClientSideConnection(
     () => ({
-      // Never answer a permission request. `list` can't trigger one; a
-      // `setMode` resume might make the runtime replay a pending request, but
-      // auto-approving (or declining) it from this throwaway connection would
-      // be wrong — leave it unanswered so a real client (the UI) handles it on
-      // its next connection. The connection closes right after the RPC anyway.
       requestPermission() {
         return new Promise<never>(() => {});
       },
@@ -168,11 +150,7 @@ async function withConnection<T>(
 }
 
 export interface AcpSessionClient {
-  /** List the agent's sessions, decoded from `_meta.platform`. Throws on
-   *  connection / RPC failure (the caller maps it to a transport error). */
   list(agentId: string): Promise<SessionView[]>;
-  /** Persist a session's mode via `session/resume` carrying
-   *  `_meta.platform.mode` — the runtime intercept merges it. */
   setMode(agentId: string, sessionId: string, mode: SessionMode): Promise<void>;
 }
 

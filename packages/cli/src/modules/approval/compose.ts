@@ -18,7 +18,6 @@ export interface ApprovalModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Per-host factory the resolver inside the list command consumes. */
   createAgentService: (host: string) => AgentService;
 }
 

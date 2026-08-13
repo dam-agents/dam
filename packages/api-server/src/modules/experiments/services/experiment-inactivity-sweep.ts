@@ -1,28 +1,14 @@
-// Inactivity sweep for Experiments v2 — the liveness guarantee that every
-// executed Experiment reaches a terminal state. A `running` run whose script
-// crashed, hibernated, or just went silent would otherwise stay running
-// forever, keeping its driver pinned awake. Every tick, running rows silent
-// past the window (no accepted trace event; executedAt as the pre-event
-// basis) are reaped to `failed`. Multi-replica safe: each reap is an atomic
-// conditional transition, so a contention race no-ops on the already-terminal
-// row.
-
 import { sweepDecision } from "../domain/lifecycle.js";
 import type { ExperimentsRepository } from "../infrastructure/experiments-repository.js";
 
 export interface ExperimentInactivitySweep {
-  /** One idempotent scan — scheduled via the shared periodic-jobs queue
-   *  (one execution per period across replicas). */
   tick(): Promise<void>;
 }
 
 export interface CreateExperimentInactivitySweepDeps {
   repo: ExperimentsRepository;
   inactivityMs: number;
-  /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
-  /** Terminal-transition hook — pin release and the terminal dashboard
-   *  snapshot ride here (composed in compose.ts). */
   onReaped?: (row: {
     id: string;
     owner: string;
@@ -49,8 +35,6 @@ export function createExperimentInactivitySweep(
       );
       for (const row of silent) {
         try {
-          // Re-check through the pure rule (the SQL scan is the coarse
-          // filter), then flip atomically; a lost race just no-ops.
           if (
             sweepDecision(
               {

@@ -4,9 +4,6 @@ import type {
   OAuthProvider,
 } from "../infrastructure/oauth-engine.js";
 
-// Fallback horizon when the token endpoint returns no `expires_in`: an hourly
-// idempotent re-mint beats trusting the token to live forever, and a set
-// `expiresAt` keeps the connection visible to the refresh loop's due query.
 export const CLIENT_CREDENTIALS_DEFAULT_TTL_SECONDS = 3600;
 
 export type ClientCredentialsAuth = Extract<
@@ -14,8 +11,6 @@ export type ClientCredentialsAuth = Extract<
   { kind: "client-credentials" }
 >;
 
-/** One client_credentials exchange, shared by connection create and the
- *  refresh loop. `expiresAt` is always set (see the default TTL above). */
 export async function mintClientCredentialsToken(
   engine: OAuthEngine,
   opts: {

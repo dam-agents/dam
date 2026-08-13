@@ -14,7 +14,5 @@ export function onTermsStale(): void {
     return;
   redirecting = true;
   rememberReturnPath("terms");
-  // Full reload on purpose: the server signalled terms_stale, and a hard
-  // navigation guarantees a clean refetch past the 412 gate.
   window.location.assign(routeToPath({ view: "terms" }));
 }

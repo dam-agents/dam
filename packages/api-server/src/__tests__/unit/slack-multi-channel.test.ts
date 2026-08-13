@@ -15,8 +15,6 @@ configureLogger({ level: "error", write: () => {} });
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-/** One agent bound to two Slack conversations (#3086). Records the session key
- *  every fresh prompt was minted under, and which session a resume targeted. */
 function harness(opts?: {
   sessions?: Array<{ sessionId: string; platform: { threadTs: string } }>;
 }) {
@@ -84,9 +82,6 @@ function harness(opts?: {
 
 describe("slack multi-channel bindings (#3086) — session isolation", () => {
   it("the same thread_ts in two channels drives two separate sessions", async () => {
-    // Slack timestamps are only unique within a conversation, so an
-    // unqualified key would make these one shared session — the exact leak
-    // between unrelated channels the binding model must not allow.
     const h = harness();
     await h.mention(C_ONE, "9.9");
     await h.mention(C_TWO, "9.9");
@@ -153,8 +148,6 @@ describe("slack multi-channel bindings (#3086) — session isolation", () => {
   });
 
   it("an id-less reply lands in the channel its turn came from", async () => {
-    // With one binding the bound channel was a safe default; with several it
-    // is not — the reply must follow the turn, not the binding list.
     const h = harness();
     await h.mention(C_TWO, "4.4");
     h.gw.resetOutbound();

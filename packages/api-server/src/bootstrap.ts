@@ -143,13 +143,6 @@ import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 
-/** The composition root: constructs every singleton, runs the boot-time
- *  migrations/sweeps, and starts the background services (channel lease,
- *  periodic sweeps). Returns the assembled `deps` for the api-server app,
- *  pre-bound thunks to start the harness and ext-authz servers, and a
- *  `cleanup` closure that tears down everything bootstrap built (but not the
- *  servers — index owns the ones it spawns). index.ts conducts: spawn the
- *  servers from these, then wire cleanup + server-close to process signals. */
 export async function bootstrap() {
   const config = loadConfig();
   configureLogger({
@@ -167,8 +160,6 @@ export async function bootstrap() {
   await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
   const { db, sql } = createDb(config.databaseUrl, dbTls);
 
-  // Candidate-artifact storage, shared by both app servers. ensureReady
-  // provisions the bucket and fails boot fast on an unreachable store.
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
     objectStorage: config.objectStorageEndpoint
@@ -203,23 +194,13 @@ export async function bootstrap() {
   const redisBus = createRedisBus(config.redisUrl, {
     password: config.redisPassword ?? undefined,
   });
-  // Dedicated general-purpose Redis client for cross-replica shared state
-  // (session presence keys, OAuth/bind handoff TTL stores).
   const sharedRedis = createBullConnection(
     config.redisUrl,
     config.redisPassword ?? undefined,
   ) as import("ioredis").Redis;
 
-  // Who can answer an egress approval for an agent: the channel workers mark a
-  // turn open for its duration, and the ext_authz gate reads that plus the
-  // relays' session-presence keys to decide whether holding is worth anything.
   const turnAttendance = createTurnAttendance(sharedRedis);
 
-  // Periodic background work runs as BullMQ job schedulers, one queue per job
-  // ("periodic.<name>") — one execution per period across replicas, and a
-  // hung tick can only stall its own lane. Ticks stay idempotent; the queue
-  // is scheduling and visibility, never correctness. Jobs register below;
-  // periodicJobs.start() runs after the last registration.
   const periodicJobs = createPeriodicJobs({
     connection: bullConnection,
     log: (msg) => process.stderr.write(`[periodic-jobs] ${msg}\n`),
@@ -229,10 +210,6 @@ export async function bootstrap() {
   const agentsRepo = createAgentsRepository(k8sClient);
   const agentEnvRepo = createAgentEnvRepository(db);
 
-  // ── api-server app singletons (formerly assembled in apps/api-server) ──
-  // File-mounted, request-independent catalogs — loaded once, shared across
-  // requests rather than re-read per call. `templatesRepo` also backs the
-  // harness spawn surface below.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
@@ -264,16 +241,11 @@ export async function bootstrap() {
     },
   );
   const jwksWarmup = startJwksWarmup(auth.warmJwks);
-  // The azp→surface mapping constants, bundled once for the two
-  // UserAuthenticated emission sites (HTTP middleware + tRPC WS).
   const surfaceAttribution: SurfaceAttribution = {
     uiClientId: config.keycloakClientId,
     cliClientId: config.keycloakCliClientId,
     coreRole: config.keycloakInspectorRole,
   };
-  // Public share host — a separate origin serving ONLY user-generated artifact
-  // content, gated before every app route and before auth so app credentials
-  // and shared content stay on disjoint origins.
   const shareHostGate = createShareHostGate(
     config.shareBaseUrl,
     createShareViewerApp({
@@ -287,11 +259,6 @@ export async function bootstrap() {
     sessionPresence.reconcile(),
   );
 
-  // Reconcile spec.l7Hosts from the rules table on a timer. The per-mutation
-  // promotion is non-transactional (Postgres and the Agent CR can't share a
-  // transaction), so a projection can drift when a CR patch fails or the pod
-  // dies between the rule commit and the patch; this heals it. Idempotent —
-  // a converged agent's set is a no-op — so a low cadence is enough.
   const l7PromotionReconcile = createL7PromotionReconcile(db, k8sClient, (m) =>
     getLogger().info(`[l7-reconcile] ${m}`),
   );
@@ -307,18 +274,10 @@ export async function bootstrap() {
     },
   );
 
-  // Concrete spec.resources.limits on legacy agents (#1900) are the
-  // controller's job: it materializes `legacyAgentSize` into any spec
-  // missing a dimension on reconcile (fill-if-absent) — watch-driven, so it
-  // also covers CRs created out-of-band, which a boot backfill here never
-  // could.
-
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
     bullConnection,
-    // The apply worker only dispatches to a ready agent (the controller's CRD
-    // Ready condition); otherwise it defers and the sweep retries once it's live.
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
     },
@@ -339,13 +298,10 @@ export async function bootstrap() {
   const secretStores = createSecretStoreRegistry();
   secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
 
-  // Redis-backed handoff stores: the browser callback leg may land on any replica.
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     secretStore: secretStores.default(),
-    // Same Redis namespace as the app-side engine — flows are one namespace
-    // regardless of which composition minted them.
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
       "oauth:connections",
@@ -401,9 +357,6 @@ export async function bootstrap() {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
-  // OAuth refresh runs on the shared periodic-jobs queue: one refresh pass
-  // per minute across replicas — refresh-token rotation must never race. A
-  // failed registration means tokens silently stop renewing, so fail loud.
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
       connectionsBoot.refreshLoop.tickOnce(),
@@ -458,9 +411,6 @@ export async function bootstrap() {
   });
   usage.start();
 
-  // Security audit trail (bus-driven half). Denials and call-site-only
-  // mutations log directly at their sites; this covers the actor-bearing
-  // success/observation events on the domain bus.
   const audit = composeAuditModule();
   audit.start();
 
@@ -504,8 +454,6 @@ export async function bootstrap() {
         ),
       })
     : undefined;
-  // Unconditional: needed whenever the Slack OAuth callback is mounted (real
-  // tokens or e2e). The bind command mints entries.
   const slackBindFlows = createSlackBindFlowStore({
     store: createRedisTtlStore(sharedRedis, "bind:slack", OAUTH_FLOW_TTL_MS),
   });
@@ -514,9 +462,6 @@ export async function bootstrap() {
     `${config.uiBaseUrl}/api/slack/oauth/callback`;
   const telegramOauthCallbackUrl = `${config.uiBaseUrl}/api/telegram/oauth/callback`;
 
-  // The chat-sdk state pool uses node-postgres (`pg`), which — unlike postgres-js
-  // — reads a CA file from `sslrootcert` in the connection string. Append it so
-  // the pool verifies against the same scoped CA; trust stays on this connection.
   const chatSdkDatabaseUrl = config.databaseCaCertPath
     ? `${config.databaseUrl}${config.databaseUrl.includes("?") ? "&" : "?"}sslrootcert=${config.databaseCaCertPath}`
     : config.databaseUrl;
@@ -553,8 +498,6 @@ export async function bootstrap() {
       ? () => fakeSlackGateway
       : undefined;
 
-  // Bind the ACP turn ceiling (and namespace) into the client factories at the
-  // composition root; workers get pre-wired factories and stay ignorant of both.
   const acpTurnCeilingMs = config.acpTurnCeilingSeconds * 1000;
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
@@ -618,19 +561,9 @@ export async function bootstrap() {
         })
       : undefined;
 
-  // Channel workers are single-holder: Slack Socket Mode load-balances each
-  // event across the app's open connections and Telegram admits one getUpdates
-  // consumer per token, while every piece of per-turn state in both workers
-  // (in-flight/lingering turn refs, the ambient queues, the per-thread turn
-  // lock) is in-process. So one replica runs them, elected by lease, and the
-  // outbound half — an agent's reply/react, which lands wherever the harness
-  // Service pinned its gateway — hops to that replica over the bus.
   const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
     bus: redisBus,
     service: "channels",
-    // Exactly-once execution across a lease handover, when the outgoing and
-    // incoming holders both briefly serve. Without it both would run the
-    // request and post the message twice.
     claim: async (id) =>
       (await sharedRedis.set(
         `rpc:claim:channels:${id}`,
@@ -646,8 +579,6 @@ export async function bootstrap() {
     telegramWorker,
     rpc: channelRpc,
     blobs: createRedisBlobHandoff(sharedRedis),
-    // Read per dispatch, so it always reflects the live lease rather than
-    // whatever was true at construction.
     isLeader: () => channelLease.isLeader(),
   });
 
@@ -655,21 +586,15 @@ export async function bootstrap() {
     redis: sharedRedis,
     name: "channels",
     onAcquired: async () => {
-      // Re-read the bindings on every acquisition: this replica may be taking
-      // over minutes after boot, from a leader that died.
       const channelsByInstance = await listChannelsByOwner(db, "")();
       await channelManager.bootstrap(channelsByInstance);
     },
     onLost: () => channelManager.standDown(),
   });
 
-  // Seed list for the `trusted` egress preset.
-  // Read once at boot; the helm ConfigMap is the operator-editable source.
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
-  // Egress Aliasing resolution for the ext_authz gate: Invocation target →
-  // root driver, consulted before every identity resolve on the egress path.
   const invocationDriverResolution = createDriverResolutionAdapter(db);
 
   const wrapperFrameSender = createWrapperFrameSender({
@@ -677,10 +602,6 @@ export async function bootstrap() {
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
 
-  // System-level approvals composition — bound to the bus + cross-module
-  // ports for instance identity (agents), rule matching (egress-rules), and
-  // wrapper-frame delivery. Relay, gate, and sweeper are long-lived and
-  // shared across all owners.
   const {
     relay: approvalsRelay,
     gate: extAuthzGate,
@@ -689,10 +610,6 @@ export async function bootstrap() {
     db,
     bus: redisBus,
     identityResolver: {
-      // Egress Aliasing: an Invocation target has no egress identity of its
-      // own — resolve the caller to its root driver first, so rule match,
-      // HITL hold, and approval writes all land on the driver. A target whose
-      // driver is gone resolves to nothing and the gate fails closed.
       resolve: async (agentId) => {
         const rootId = await invocationDriverResolution.resolveRoot(agentId);
         if (!rootId) return null;
@@ -714,8 +631,6 @@ export async function bootstrap() {
     attendance: turnAttendance,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
-    // The presigned link is the per-request authorization for the store, so
-    // no HITL decision. Bare hostname — the gate strips ports.
     platformAllowedHosts: config.objectStorageAgentEndpoint
       ? [new URL(config.objectStorageAgentEndpoint).hostname]
       : [],
@@ -724,10 +639,6 @@ export async function bootstrap() {
     deliverySweeper.tick(),
   );
 
-  // Per-agent cleanup hooks fired after a successful K8s delete. Each
-  // module's adapter clears its own table; failures log + continue. The
-  // orphan-sweeper saga catches anything missed (replica died mid-delete,
-  // hook threw, etc.).
   const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
   const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
   const connectionGrantsCleanupHook = createConnectionGrantsCleanupHook(db);
@@ -735,11 +646,6 @@ export async function bootstrap() {
   const agentEnvCleanupHook = (agentId: string) =>
     agentEnvRepo.deleteForAgent(agentId);
 
-  // Driver Cascade: deleting an agent fails its running Invocations and reaps
-  // their targets, so no dangling target keeps running against a deleted
-  // driver's egress identity. `agentsFor` binds lazily — the factory below is
-  // declared later and composes these same hooks, which is what makes chained
-  // Invocations unwind transitively.
   const invocationsCleanupHook = createInvocationsCleanupHook({
     db,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
@@ -754,9 +660,6 @@ export async function bootstrap() {
     invocationsCleanupHook,
   ];
 
-  // Cross-store orphan reaper. Lists live agent CRs, finds DB rows keyed by
-  // an agent_id no longer in the live set, and runs each module's cleanup.
-  // Scheduled on the periodic-jobs queue below.
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
     k8s: agentsCleanupK8s,
     sources: [
@@ -794,12 +697,6 @@ export async function bootstrap() {
     batchSize: 200,
   });
 
-  // Experiments v2 inactivity sweep: reaps `running` Experiments whose script
-  // has gone silent (no trace event) past the configured window to `failed`, so
-  // every executed Experiment reaches a terminal state — and releases the
-  // driver's hibernation pin when it was its last running experiment. Atomic
-  // conditional transitions make it multi-replica safe. Sweep at the window
-  // cadence, capped at 5 minutes.
   const experimentPin = {
     set: (agentId: string) =>
       agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
@@ -826,8 +723,6 @@ export async function bootstrap() {
     () => experimentInactivitySweep.tick(),
   );
 
-  // Converge experiment pins to database truth — experiments survive restarts
-  // (unlike sessions), so this reconciles rather than blanket-clears.
   void reconcileExperimentPins({
     db,
     listPinnedAgentIds: () =>
@@ -846,15 +741,10 @@ export async function bootstrap() {
     },
   );
 
-  // Cross-store orphan reap every 30 minutes — cheap diff scans, orphans are
-  // rare and non-urgent.
   await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
     agentArtifactsSweeper.tick(),
   );
 
-  // Artifact-library expiry sweep: hard-deletes artifacts (private ones too)
-  // whose expiry passed more than the grace window ago (the viewer 410s public
-  // ones meanwhile). Hourly is plenty — expiry granularity is hours.
   const artifactExpirySweeper = composeArtifactExpirySweeper({
     db,
     artifacts: artifactsModule.service,
@@ -864,10 +754,6 @@ export async function bootstrap() {
     artifactExpirySweeper.tick(),
   );
 
-  // Re-read the pull requests behind skill publish records so the badge reports
-  // their real state. Ten minutes is the tick, but each record is re-checked at
-  // most hourly (the resolver owns that throttle) — the short tick exists so a
-  // freshly published pull request resolves promptly rather than waiting an hour.
   const prStateResolver = composePrStateResolver({
     db,
     agents: agentsRepo,
@@ -893,15 +779,6 @@ export async function bootstrap() {
     );
   });
 
-  // Stale active-session pins (a replica that died holding sessions) are
-  // cleared by the session-presence reconcile periodic job — a boot-time
-  // blanket clear would wrongly drop pins held by other live replicas.
-
-  // Owner-scoped agents factory for the harness surface (the spawn primitive):
-  // a driver agent spawns an Invocation target = create an ephemeral Agent +
-  // submit a prompt. Mirrors the main app's per-owner agents composition, incl.
-  // the connections grantProvisioner so a target's connection subset
-  // materializes on create.
   const { readSpec: harnessReadTemplateSpec } =
     composeTemplatesModule(templatesRepo);
   const wakeAgentFor = async (agentId: string) => {
@@ -939,9 +816,6 @@ export async function bootstrap() {
     }).agents;
   };
 
-  // Invocation liveness sweep (owner-agnostic; started once): bounds one result
-  // — fails a target that ran past its deadline or crashed mid-turn, reaps it,
-  // and drops aged result rows. It does NOT own the target agent's lifecycle.
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
     agentsFor: harnessAgentsServiceFor,
@@ -952,11 +826,6 @@ export async function bootstrap() {
     invocationLivenessSweep.tick(),
   );
 
-  // Agent Sweep (#2816): generic GC that deletes any Sweepable agent once it
-  // hibernates (after its Lifetime grace, if any). Keyed off Agent state, never
-  // the Invocations table — the backstop for Invocation targets and the home for
-  // future Sweepable agents (e.g. inherited channel agents). Owner-agnostic:
-  // lists all agents, resolves an owner-scoped service per agent to delete.
   const agentSweep = createAgentSweep({
     listAgents: () => agentsRepo.list(),
     agentsFor: harnessAgentsServiceFor,
@@ -997,8 +866,6 @@ export async function bootstrap() {
     isTermsAccepted,
     e2e: e2eService,
     artifacts,
-    // App singletons absorbed from the former assembleBoot — now built once
-    // here in the single composition root.
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -1013,9 +880,6 @@ export async function bootstrap() {
     shareHostGate,
     sessionPresence,
   };
-  // One assembled deps object per app — index starts all three uniformly
-  // (startXApp(xDeps)). These carry the harness / ext-authz internal wiring
-  // (agents factory, ext_authz gate) that ApiServerDeps doesn't.
   const harnessDeps = {
     config,
     api,
@@ -1031,11 +895,6 @@ export async function bootstrap() {
     connectionsServiceFor,
     wakeAgent: wakeAgentFor,
   };
-  // Instance identity for ext-authz flows from the per-instance ext-authz
-  // Service the gateway's Envoy dials, pinned by its AuthorizationPolicy. One
-  // gRPC server backs both Envoy filters: the HTTP filter on TLS-terminated
-  // chains (L7 — method/path) and the network filter on the catch-all chain
-  // (L4 — SNI only); the handler reads whatever's populated.
   const extAuthzDeps = {
     port: config.extAuthzPort,
     holdSeconds: config.approvalHoldSeconds,
@@ -1043,16 +902,9 @@ export async function bootstrap() {
     releaseName: config.releaseName,
   };
 
-  // The bot handle renders in bind instructions on any replica, so resolve it
-  // everywhere; only the lease holder actually runs the poller.
   void telegramWorker?.resolveIdentity();
-  // Campaigns for the channel lease and bootstraps the workers if it wins.
   void channelLease.start();
 
-  // Teardown of everything bootstrap built — background services, workers,
-  // stores, and connections. NOT the servers: index closes the ones it
-  // spawned. Release the lease first so a surviving replica can pick the
-  // channels up without waiting out the TTL.
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
     skillsCleanupSub.unsubscribe();

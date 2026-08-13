@@ -11,26 +11,6 @@ interface ModalProps {
   children: ReactNode;
 }
 
-/**
- * Centered overlay modal. Closes only via explicit
- * actions in the modal body — backdrop clicks and Escape are ignored so
- * users can't lose in-progress form state by accident.
- *
- * Renders into document.body via a portal so it escapes the app shell's
- * `<main>` stacking context (z-content). Without the portal, the mobile
- * bottom bar (z-nav) would render above the modal because the modal's
- * effective stacking happens at z-content from the root's perspective.
- *
- * Compose the inside with `DialogHeader`, `DialogBody`, and `DialogFooter`
- * so layout (padding, dividers, scroll region) is consistent across every
- * dialog and cross-cutting fixes happen in one place. Extras like a tab
- * strip can sit between Header and Body as plain children.
- *
- * A11y: announces as `role="dialog"` with `aria-modal="true"` and is
- * labelled by `DialogHeader` (which picks up the id from `ModalContext`).
- * Tab cycles inside the panel; the previously focused element is restored
- * on unmount; body scroll is locked while mounted.
- */
 export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
   const labelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -67,27 +47,19 @@ interface DialogHeaderProps {
   children?: ReactNode;
   className?: string;
   title?: ReactNode;
-  /** Sits beside the title, outside the `<h2>` so it stays out of the dialog's
-   *  accessible name. */
   titleAccessory?: ReactNode;
   /** Right-aligned controls on the title row, immediately left of the ✕ — for
    *  a control that belongs at eye level with the name rather than in the
    *  footer, like a preview dialog's on/off state. */
   actions?: ReactNode;
   subtitle?: ReactNode;
-  /** Draws the ✕. Omit only where the dialog exists to force a choice. */
   onClose?: () => void;
-  /** Gate the ✕ while an in-flight action would lose something if the dialog
-   *  went away — a one-time secret, or a multi-step write mid-way. */
   closeDisabled?: boolean;
   closeTestId?: string;
   truncateTitle?: boolean;
   divided?: boolean;
 }
 
-/** Top region of a dialog. Picks up the `aria-labelledby` id from
- *  `ModalContext` so callers don't wire ids manually — it lands on the `<h2>`
- *  when there is a `title`, otherwise on the region itself. */
 export function DialogHeader({
   title,
   titleAccessory,
@@ -163,19 +135,11 @@ export function DialogHeader({
   );
 }
 
-/** Scrollable content region. Callers add their own `flex flex-col gap-N`
- *  via className — content density varies by dialog and Tailwind utility
- *  overrides aren't reliable without tailwind-merge. `min-h-0` is the
- *  load-bearing detail: without it a flex child won't shrink below its
- *  content, so the modal's max-height cap can't push the footer down —
- *  the body would push it off-screen. */
 export function DialogBody({
   children,
   className,
   flush,
 }: DialogRegionProps & { flush?: boolean }) {
-  // `flush` drops the horizontal padding so full-bleed content (e.g. a list
-  // whose row dividers must span the modal width) can own its own gutter.
   return (
     <div
       className={`flex-1 min-h-0 overflow-y-auto py-5 ${flush ? "" : "px-5 md:px-7"} ${className ?? ""}`}
@@ -185,8 +149,6 @@ export function DialogBody({
   );
 }
 
-/** Sticky bottom region with action buttons. `items-center` lets callers
- *  drop an `mr-auto` element (e.g. an inline warning) without re-aligning. */
 export function DialogFooter({ children, className }: DialogRegionProps) {
   return (
     <div
@@ -201,26 +163,16 @@ interface DialogActionsProps {
   onCancel: () => void;
   cancelLabel?: string;
   label: string;
-  /** Replaces `label` while `pending`. Required so a pending button can never
-   *  sit there looking idle. */
   pendingLabel: string;
   pending?: boolean;
-  /** Gate Cancel while an in-flight action would lose something if the dialog
-   *  went away. Off by default: a dialog should stay escapable. */
   cancelDisabled?: boolean;
   disabled?: boolean;
   destructive?: boolean;
-  /** Omit inside a `<form>` so the button submits it; pass to drive the action
-   *  from a handler instead. */
   onSubmit?: () => void;
   testId?: string;
   className?: string;
 }
 
-/** The dismiss + confirm pair a dialog ends with. Cancel is always an outline
- *  button and always `type="button"`, so it can't submit the form it sits in,
- *  and it stays enabled while the confirm is pending so the dialog is always
- *  escapable. */
 export function DialogActions({
   onCancel,
   cancelLabel = "Cancel",
@@ -260,12 +212,6 @@ export function DialogActions({
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Focusables that can actually take focus. The selector alone also matches
- *  unrendered elements — several dialogs open with a `display: none` file
- *  input first in the DOM — and `focus()` on one is a no-op, which would leave
- *  focus outside the panel and make Tab dead-end on it. Tested by client
- *  rects rather than `offsetParent`, which is also null for `position: fixed`
- *  elements that are perfectly focusable. */
 function focusablesIn(container: HTMLElement): HTMLElement[] {
   return Array.from(
     container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
@@ -288,8 +234,6 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     if (!container) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
 
-    // A spawning menu's focus trap stays alive through its exit animation and
-    // refocuses its trigger at the end, so re-assert until it gives up.
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
     const grab = () => {
@@ -341,16 +285,9 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   }, [containerRef]);
 }
 
-// Ref-counted so nested overlays (e.g. a DialogOverlay confirm on top of a
-// Modal) share one lock and the original overflow is restored only when
-// the outermost overlay unmounts.
 let bodyLockCount = 0;
 let previousBodyOverflow = "";
 
-/** Lock `body` scroll while the calling component is mounted. Prevents
- *  background content from scrolling behind a portaled overlay, which is
- *  especially noticeable on mobile where touch scroll otherwise leaks
- *  through the backdrop. */
 export function useBodyScrollLock() {
   useEffect(() => {
     if (bodyLockCount === 0) {

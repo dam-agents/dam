@@ -27,20 +27,11 @@ interface ValidatedSkill {
   content: string;
 }
 
-/**
- * Materialize user-uploaded Markdown as standalone Local Skills. Validates the
- * whole batch before writing anything (all-or-nothing): slugs, size caps, and
- * a collision check against both the batch itself and every existing Local
- * Skill. On success each file lands as `<skillPath>/<slug>/SKILL.md` with its
- * frontmatter `name:` forced to the confirmed display name.
- */
 export async function runWriteLocal(
   deps: WriteLocalDeps,
   skillPaths: SkillPath[],
   input: SkillWriteLocalInput,
 ): Promise<Result<LocalSkill[], SkillsDomainError>> {
-  // Pass 1 — per-skill validation. A bad name or oversized file fails the
-  // whole batch before any write happens.
   const validated: ValidatedSkill[] = [];
   let batchBytes = 0;
   for (const skill of input.skills) {
@@ -67,10 +58,6 @@ export async function runWriteLocal(
     });
   }
 
-  // Pass 2 — collision check. Collect every offending display name so the
-  // caller can mark all bad rows at once: within-batch slug clashes, on-disk
-  // directory clashes, and display names already taken by a Local Skill
-  // (installed skills are Local Skills too, so listLocal covers both).
   const existingNames = new Set(
     (await deps.repo.listLocal(skillPaths)).map((s) => s.name.trim()),
   );
@@ -91,12 +78,6 @@ export async function runWriteLocal(
     return err({ kind: "SkillAlreadyExists", names: [...offending] });
   }
 
-  // Pass 3 — materialize. Validation is complete, so the display name is the
-  // returned `name`; description is whatever the final frontmatter carries.
-  // The collision guard is not atomic (check-then-write) and the batch is
-  // written sequentially: a concurrent same-slug mutation could be clobbered,
-  // and a mid-batch I/O failure leaves earlier skills written. Tolerable here —
-  // the api-server is the sole caller and the UI blocks submit while in flight.
   const created: LocalSkill[] = [];
   for (const v of validated) {
     const finalContent = ensureFrontmatterName(v.content, v.name);

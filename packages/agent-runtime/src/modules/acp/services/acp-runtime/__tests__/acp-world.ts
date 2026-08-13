@@ -12,7 +12,7 @@ import {
 } from "../../../infrastructure/session-metadata-store.js";
 
 /**
- * Test doubles for the two ports the ACP runtime talks through, plus a world
+ * TEST_OVERVIEW: Test doubles for the two ports the ACP runtime talks through, plus a world
  * that wires them to a real runtime.
  *
  * These are fakes, not mocks: they implement the port and record what passed
@@ -26,39 +26,18 @@ import {
  * resolves by method, never by index.
  */
 
-/** A decoded JSON-RPC frame. */
 export type Frame = Record<string, unknown> & { method?: string; id?: unknown };
 
-/**
- * The quiescence window before an idle session is reaped, same value the
- * composition root injects (`compose.ts`). The world runs at production
- * values: the library default (0, inline reap) is a configuration the
- * product never runs, and scenarios that passed against it would prove
- * nothing. Scenarios that watch a session being released advance fake time
- * past this window.
- */
 export const IDLE_REAP_DELAY_MS = 3_000;
 
 export interface Harness {
-  /** Frames the runtime forwarded, all of them or just one method's. */
   received(method?: string): Frame[];
-  /** Methods in forward order. Responses (which carry no method) read as `<response>`. */
   receivedMethods(): string[];
-  /** Answers forwarded for one of the harness's own requests, by its id. */
   answersTo(id: number): Frame[];
-  /** Answer the most recent request of this method, matching its id. */
   replyTo(method: string, result?: unknown): void;
-  /**
-   * Answer the request of this method that carries this session id. Picking
-   * the request by what it says lets a scenario answer two of them out of
-   * order, which `replyTo` (newest wins) cannot.
-   */
   replyToSession(method: string, sessionId: string, result?: unknown): void;
-  /** Write a frame to stdout, as the harness would. */
   emit(frame: object): void;
-  /** Push a raw line as if the harness wrote it to stdout. */
   pushLine(line: string): void;
-  /** The subprocess died on its own. */
   exit(): void;
   killed(): boolean;
 }
@@ -130,16 +109,11 @@ function createHarness(): { harness: Harness; process: AgentProcess } {
 }
 
 export interface Client {
-  /** Send a frame the way a real client would. */
   send(frame: object): void;
-  /** Frames this client received, filtered by method. */
   saw(method: string): Frame[];
-  /** The response to one of this client's own requests, by the id it used. */
   reply(id: number): Frame | undefined;
-  /** Close code and reason, in the order they arrived. */
   closes: { code?: number; reason?: string }[];
   isOpen(): boolean;
-  /** The socket dropped from the client's side. */
   disconnect(): void;
 }
 
@@ -196,13 +170,9 @@ function createClient(): { client: Client; channel: ClientChannel } {
 
 export interface World {
   runtime: AcpRuntime;
-  /** Attach a new client. `viewer: false` marks a machine-driven one. */
   connect(opts?: { viewer?: boolean }): Client;
-  /** The harness currently serving this pod. Throws if none has started. */
   harness(): Harness;
-  /** Whether the subprocess has been started at all. */
   harnessStarted(): boolean;
-  /** How many harnesses have been spawned over this world's life. */
   harnessCount(): number;
 }
 
@@ -241,7 +211,6 @@ export function createWorld(
   };
 }
 
-/** The frames the scenarios need. Grows as features are added. */
 export const frames = {
   initialize: (id: number) => ({
     jsonrpc: "2.0",
@@ -273,7 +242,6 @@ export const frames = {
     method: "session/prompt",
     params: { sessionId, prompt: [{ type: "text", text }] },
   }),
-  /** The agent stopping to ask before it does something. Harness → client. */
   requestPermission: (id: number, sessionId: string, tool = "bash") => ({
     jsonrpc: "2.0",
     id,
@@ -287,13 +255,11 @@ export const frames = {
       ],
     },
   }),
-  /** A client answering a permission prompt, by the prompt's id. */
   permissionAnswer: (id: number, optionId = "allow") => ({
     jsonrpc: "2.0",
     id,
     result: { outcome: { outcome: "selected", optionId } },
   }),
-  /** What the harness streams back as the agent talks. */
   agentMessage: (sessionId: string, text: string) => ({
     jsonrpc: "2.0",
     method: "session/update",
@@ -307,12 +273,6 @@ export const frames = {
   }),
 };
 
-/**
- * The prompt texts the harness was asked to run, in the order they were
- * forwarded. What reached the harness is the ground truth for the prompt
- * queue: a message dropped before its turn is proven dropped by its absence
- * here, not by anything a client saw.
- */
 export function promptTextsOf(harness: Harness): string[] {
   return harness.received("session/prompt").map((frame) => {
     const params = frame.params as { prompt?: { text?: string }[] };
@@ -320,24 +280,11 @@ export function promptTextsOf(harness: Harness): string[] {
   });
 }
 
-/**
- * The session bookkeeping a scenario can look at afterwards. `store` goes
- * into `createWorld({ sessionMetadata: meta.store })`; the queries answer
- * what the sidebar would show.
- */
 export interface SessionMetadata {
   store: SessionMetadataStore;
-  /** Unread as the sidebar computes it: activity after the last time a
-   * viewer saw the session. */
   unread(sessionId: string): boolean;
 }
 
-/**
- * The real metadata store over an in-memory backend and a logical clock.
- * The double sits at the storage layer, not the port: faking the store
- * itself would mean re-implementing the seen/activity arithmetic that
- * "unread" is made of, and the copy would drift from the real one.
- */
 export function createSessionMetadata(): SessionMetadata {
   let tick = 0;
   const backend: DocumentStoreBackend = {
@@ -353,7 +300,6 @@ export function createSessionMetadata(): SessionMetadata {
   };
   const store = createSessionMetadataStore(
     backend,
-    // Zero-padded so the strings compare in tick order, as ISO dates do.
     () => `t${String(++tick).padStart(6, "0")}`,
   );
   return {
@@ -368,14 +314,6 @@ export function createSessionMetadata(): SessionMetadata {
   };
 }
 
-/**
- * The conversation a client actually saw, as `"<sessionId>: <text>"` lines in
- * arrival order — covering both what the agent said and what other people
- * typed, since both reach a client as `session/update`.
- *
- * Reading the transcript rather than counting frames is what lets a scenario
- * say "Alice never saw Bob's message" in one assertion.
- */
 export function transcriptOf(client: Client): string[] {
   return client.saw("session/update").map((frame) => {
     const params = frame.params as {

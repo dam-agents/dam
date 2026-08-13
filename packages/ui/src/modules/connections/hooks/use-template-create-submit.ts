@@ -26,9 +26,6 @@ const invalidateConnections = () =>
     queryKey: trpc.connections.list.queryKey(),
   });
 
-/** The create-and-authorize orchestration behind the template create form:
- *  MCP OAuth discovery, kubernetes CA probing, popup OAuth with full-page
- *  fallback, and the plain create path. Errors surface as toasts. */
 export function useTemplateCreateSubmit({
   template,
   popupOAuth,
@@ -47,21 +44,13 @@ export function useTemplateCreateSubmit({
   const [authorizing, setAuthorizing] = useState(false);
   const pendingIdRef = useRef<string | null>(null);
 
-  // A connection created for an OAuth flow that never completed is useless —
-  // delete it rather than leaving an "Authorizing…" husk in the catalogue.
   const discardPending = async (id: string) => {
     try {
       await api.connections.delete.mutate({ id });
       void invalidateConnections();
-    } catch {
-      // Best effort; the husk stays visible and deletable by hand.
-    }
+    } catch {}
   };
 
-  // The popup's result message only reaches the deployed UI origin (the Vite
-  // dev server runs on a different one), and a closed popup can mean either
-  // cancelled or completed — so on anything but a clear success the
-  // connection's server status decides the outcome.
   const settlePopup = async (result: OAuthPopupResult) => {
     const id = pendingIdRef.current;
     pendingIdRef.current = null;
@@ -82,7 +71,6 @@ export function useTemplateCreateSubmit({
         return;
       }
     } catch {
-      // Status unknown — keep the connection and report the failure.
       fail(result.message ?? "Authorization was cancelled.");
       return;
     }
@@ -105,11 +93,6 @@ export function useTemplateCreateSubmit({
 
   const submit = async (payload: ConnectionCreateInput) => {
     if (needsOAuth) {
-      // Custom MCP servers are reached by a user-typed URL. Verify it exposes
-      // OAuth discovery metadata before opening any tab, so an unreachable or
-      // non-OAuth URL fails here instead of flashing a popup that the create
-      // call would immediately close. Premade providers carry no `url` input
-      // and skip this, keeping their synchronous popup.
       const mcpUrl = payload.authKind === "oauth" ? payload.url : undefined;
       if (mcpUrl) {
         const urlError = validateMcpUrl(mcpUrl);
@@ -126,19 +109,16 @@ export function useTemplateCreateSubmit({
             return;
           }
         } catch {
-          // The mutation's error toast surfaced the transport failure.
           return;
         }
       }
 
-      // Open the popup synchronously (or it gets blocked); navigate it below.
       const popup = popupOAuth ? openPopup() : null;
       setAuthorizing(true);
       let created: { id: string };
       try {
         created = await create.mutateAsync(payload);
       } catch {
-        // The mutation's error toast surfaced the failure.
         closePopup();
         setAuthorizing(false);
         return;
@@ -146,8 +126,6 @@ export function useTemplateCreateSubmit({
       try {
         if (popup) {
           if (popup.closed) {
-            // Closed while the create call was in flight — the close poll
-            // settled with no pending id, so clean up here.
             setAuthorizing(false);
             void discardPending(created.id);
             fail("Authorization was cancelled.");
@@ -161,7 +139,6 @@ export function useTemplateCreateSubmit({
           popup.location.href = r.authUrl;
           return;
         }
-        // Fallback: full-page redirect (popup blocked, or not requested).
         const r = await api.connections.startOAuth.mutate({
           connectionId: created.id,
           ...(oauthReturnView ? { returnTo: oauthReturnView } : {}),
@@ -181,9 +158,6 @@ export function useTemplateCreateSubmit({
       }
       return;
     }
-    // Probe the endpoint (unless a CA was pasted) so a private-CA cluster
-    // fails here with a clear instruction instead of at use time. Reachable
-    // but untrusted → must supply the CA; unreachable/failure falls through.
     if (
       template.id === "kubernetes" &&
       payload.authKind === "header" &&
@@ -200,17 +174,13 @@ export function useTemplateCreateSubmit({
           );
           return;
         }
-      } catch {
-        // Probe failure surfaces via the mutation's error toast; fall through.
-      }
+      } catch {}
     }
 
     try {
       const result = await create.mutateAsync(payload);
       onCreated(result.id);
-    } catch {
-      // The mutation's error toast surfaced the failure.
-    }
+    } catch {}
   };
 
   return {
@@ -219,8 +189,6 @@ export function useTemplateCreateSubmit({
     authorizing,
     verifying: discover.isPending,
     needsOAuth,
-    // A popup is open and we're waiting on it — the caller keeps its button
-    // live so a repeat click can bring the strayed popup back to the front.
     awaitingPopup: !!popupOAuth && authorizing,
     refocusPopup: focusPopup,
   };

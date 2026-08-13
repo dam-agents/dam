@@ -412,6 +412,11 @@ exec pnpm audit --prod
 ["common:check"]
 depends = ["common:check:*"]
 
+["common:check:comment-types"]
+description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+dir = "{{config_root}}"
+run = "node scripts/check-comment-types.mjs"
+
 ["common:check:zizmor"]
 description = "Static security analysis for GitHub Actions workflows"
 dir = "{{config_root}}"

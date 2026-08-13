@@ -18,18 +18,10 @@ import {
 } from "./services/owner-active-probe.js";
 import { createApiKeyTokenCodec } from "./domain/token.js";
 
-/**
- * System-level wiring — the validator and owner-active probe are shared across
- * all requests (no per-user state). The service factory is per-request because
- * it carries the authenticated principal's `ownerSub`.
- */
 export function composeApiKeysModule(deps: {
   db: Db;
-  /** Server-side HMAC pepper for at-rest token digests. Stable across restarts
-   *  — rotating it invalidates every existing key. */
   hmacKey: string;
   isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;
-  /** Identity-provider check behind the per-request owner-active probe. */
   ownerDirectory: OwnerDirectoryPort;
 }): {
   validator: ApiKeyValidator;

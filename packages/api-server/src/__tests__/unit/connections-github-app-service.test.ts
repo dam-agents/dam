@@ -127,8 +127,6 @@ function makeService(
     githubAppEngine,
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
-    // The advisory lock is Postgres-side; the section itself is what these
-    // tests exercise, so run it straight through and record the key.
     connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {
       lockKeys.push(key);
       return fn();
@@ -166,7 +164,6 @@ describe("github-app connection create", () => {
     expect(fields[sdsFileKeyForHost("api.github.com")]).toContain(
       "Bearer ghs_1",
     );
-    // github.com carries the git-over-HTTPS credential: Basic base64("x-access-token:<token>").
     expect(fields[sdsFileKeyForHost("github.com")]).toContain(
       `Basic ${Buffer.from("x-access-token:ghs_1", "utf8").toString("base64")}`,
     );
@@ -178,7 +175,6 @@ describe("github-app connection create", () => {
       Math.floor(Date.parse("2027-01-15T13:00:00Z") / 1000),
     );
     expect(conn.auth.connectedAt).toBeGreaterThan(0);
-    // The private key never lands in the re-render inputs.
     expect(JSON.stringify(conn.inputs)).not.toContain("PRIVATE KEY");
 
     const view = await svc.getConnection(id);
@@ -217,8 +213,6 @@ describe("github-app connection create", () => {
     const after = Math.floor(Date.now() / 1000);
     const auth = rows.get(id)!.auth;
     if (auth.kind !== "github-app") throw new Error("wrong kind");
-    // The fallback is stamped from the engine's clock (NOW_MS), not the wall
-    // clock, so it sits an hour past NOW_MS regardless of when the test runs.
     expect(auth.expiresAt).toBe(Math.floor(NOW_MS / 1000) + 3600);
     expect(after).toBeGreaterThanOrEqual(before);
   });
@@ -270,7 +264,6 @@ describe("github-app connection create", () => {
       publicKeyEncoding: { type: "spki", format: "pem" },
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
     });
-    // How a PEM arrives from a JSON/env value; newlines must be restored.
     await svc.update(id, rotatedPem.replaceAll("\n", "\\n"));
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());
@@ -309,8 +302,6 @@ describe("github-app scope editing", () => {
       permissions: "contents:read",
     });
 
-    // The edit mints again rather than waiting for the next renewal, so the
-    // live token is the narrowed one.
     expect(JSON.parse(tokenBodies.at(-1)!)).toEqual({
       repository_ids: [12, 34],
       permissions: { contents: "read" },
@@ -338,8 +329,6 @@ describe("github-app scope editing", () => {
     expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
   });
 
-  // Clearing is a widening, so it has to reach GitHub as "no body" rather than
-  // leaving the previous narrowing quietly in place.
   it("clears the scope back to the full installation", async () => {
     const { svc, rows, tokenBodies } = makeService(okToken);
     const id = await svc.createFromTemplate(
@@ -370,15 +359,11 @@ describe("github-app scope editing", () => {
     expect(auth).not.toHaveProperty("repositories");
   });
 
-  // Proven before it is stored, exactly as create does — otherwise a scope the
-  // installation cannot cover would park the connection an hour later instead
-  // of failing the edit the user is looking at.
   it("leaves everything untouched when GitHub rejects the new scope", async () => {
     let mints = 0;
     const { svc, rows, stored } = makeService((url) => {
       if (!url.includes("/access_tokens")) return okToken();
       mints += 1;
-      // The create's mint succeeds; the edit's is refused.
       return mints === 1
         ? okToken()
         : new Response("no access to that repository", { status: 422 });
@@ -395,8 +380,6 @@ describe("github-app scope editing", () => {
     expect(stored.get(SECRET_PATH)!.access_token).toBe(tokenBefore);
   });
 
-  // The mint proves the credential still works, which is what un-parks a
-  // connection everywhere else in this module.
   it("clears a refresh-failure marker on a successful re-scope", async () => {
     const { svc, rows } = makeService(okToken);
     const id = await svc.createFromTemplate(createInput());
@@ -416,8 +399,6 @@ describe("github-app scope editing", () => {
     expect((await svc.getConnection(id))?.status).toBe("active");
   });
 
-  // The refresh loop names the same key for the same connection; if these two
-  // ever diverge the section stops being mutual and the race is back.
   it("runs the edit under the connection's mint lock", async () => {
     const { svc, lockKeys } = makeService(okToken);
     const id = await svc.createFromTemplate(createInput());
@@ -466,7 +447,6 @@ describe("github-app scope editing", () => {
     expect((await svc.getConnection(id))?.githubAppScope).toBeUndefined();
   });
 
-  // The connection already holds its key, so editing must never ask for it.
   it("probes the installation using the connection's stored key", async () => {
     const { svc, tokenCalls } = makeService((url) =>
       url.endsWith("/app/installations/987654")

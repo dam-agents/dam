@@ -16,10 +16,6 @@ export const resourcesSchema = z.object({
   limits: z.record(z.string(), z.string()).optional(),
 });
 
-// Loose schema for parsing ConfigMap-stored env entries. Looser than
-// the user-input `envVarSchema` in `../shared.ts` because data already
-// inside a ConfigMap was written by code we trust and may predate the
-// stricter user-input rules.
 const envVarConfigMapSchema = z.object({
   name: z.string(),
   value: z.string(),
@@ -51,14 +47,7 @@ export const templateSpecSchema = z
     env: z.array(envVarConfigMapSchema).optional(),
     resources: resourcesSchema.optional(),
     imagePullPolicy: z.string().optional(),
-    // Names a kubernetes.io/dockerconfigjson Secret in the agent namespace,
-    // pre-created by the chart for templates that pull from a private registry
-    // (e.g. experimental external agents). Carried onto the agent spec so the
-    // pod can pull the image without the user entering registry credentials.
     imagePullSecretRef: z.string().optional(),
-    // Seeds the created agent's per-agent hibernation override (Go duration):
-    // "0s" never hibernates, omitted inherits the chart-wide default. A user's
-    // explicit choice at create time still wins over this.
     hibernationTimeout: z.string().optional(),
     storageSize: z.string().optional(),
     backend: z

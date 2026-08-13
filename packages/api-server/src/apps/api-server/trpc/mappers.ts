@@ -1,11 +1,6 @@
 import type { AuthDenialKind } from "../admission/auth.js";
 import type { TermsDenialKind } from "../admission/terms.js";
 
-/** How the tRPC WS endpoint answers a refused admission — the TRPCError
- *  encoding of every denial kind the gates composed in its createContext
- *  can produce. The HTTP door has no table: its denials are delivered
- *  upstream by the middleware chain (see admission/mappers.ts); the relays'
- *  twin lives in agent-proxies/mappers.ts. */
 export const trpcDenial: Record<
   AuthDenialKind | TermsDenialKind,
   {

@@ -28,8 +28,6 @@ describe("withTrpcTelemetry", () => {
     tracerProvider = new NodeTracerProvider({
       spanProcessors: [new SimpleSpanProcessor(spans)],
     });
-    // register() installs the tracer provider AND the AsyncLocalStorage
-    // context manager the nesting assertions rely on.
     tracerProvider.register();
     reader = new PeriodicExportingMetricReader({
       exporter: new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE),
@@ -155,7 +153,6 @@ describe("withTrpcTelemetry", () => {
     resetTrpcTelemetryForTest();
     await withTrpcTelemetry("agents.list", "query", async () => ({ ok: true }));
 
-    // Re-register and reset: the next call must reach the real provider.
     metrics.setGlobalMeterProvider(meterProvider);
     resetTrpcTelemetryForTest();
     await withTrpcTelemetry("agents.list", "query", async () => ({ ok: true }));

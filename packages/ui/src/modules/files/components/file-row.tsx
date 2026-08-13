@@ -61,8 +61,6 @@ export function FileRow({
   const isDir = type === "dir";
   const isActive = useStore((s) => s.openFilePath) === path && !isDir;
   const targetDir = isDir ? path : parentDirOf(path);
-  // Raise the row above its siblings while its menu is open (parity with the
-  // previous coordinate menu); Radix portals the menu content itself.
   const [menuOpen, setMenuOpen] = useState(false);
 
   const drag = useFileRowDrag(
@@ -80,8 +78,6 @@ export function FileRow({
   const dispatch = (action: FileRowMenuAction) =>
     panel.onAction(action, path, type);
 
-  // Dir rows highlight on drop-hover; file rows route their drops to the
-  // parent dir but don't highlight (matches VSCode/Finder).
   const highlight = isDir && dropActive;
 
   return (

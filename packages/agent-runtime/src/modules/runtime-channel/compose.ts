@@ -56,7 +56,6 @@ export interface ComposeRuntimeChannelOpts {
 export async function composeRuntimeChannel(
   opts: ComposeRuntimeChannelOpts,
 ): Promise<RuntimeChannelComposition> {
-  // Timestamp the boot timeline so it's diagnosable (#695).
   const log =
     opts.log ??
     ((m) =>
@@ -126,7 +125,6 @@ export async function composeRuntimeChannel(
   const contributionKinds = Object.keys(
     contributionDrivers(resolved),
   ) as readonly ContributionKind[];
-  // A kind with no active driver no-ops at dispatch, so advertise the whole set.
   const eventKinds = eventKind.options;
 
   const service = createRuntimeChannelService({
@@ -151,7 +149,6 @@ export async function composeRuntimeChannel(
         harnessConfig: harnessConfigPlugin.supported,
         harnessConfigCatalog: harnessConfigPlugin.catalog,
       };
-      // Retry until it lands: the harness path can be unconverged at boot and readiness hard-depends on hello.
       for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
         if (
           await runHello({

@@ -11,8 +11,6 @@ interface Args {
   envVars: readonly EnvVar[];
 }
 
-/** Env vars the agent inherits: protected system vars plus contributions of
- *  the granted connections, minus names the user overrides. */
 export function useInheritedEnvs({
   agentEnv,
   apps,

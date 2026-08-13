@@ -67,9 +67,6 @@ describe("s() schema sugar", () => {
   });
 
   it("treats a field named like a JSON Schema keyword as raw passthrough", () => {
-    // `looksLikeJsonSchema` keys off well-known keywords, so a shorthand object
-    // whose only key is e.g. `items` is taken as a raw JSON Schema and passed
-    // through untouched rather than wrapped as a properties bag.
     const spec = { items: [{ id: "string" }] };
     expect(s(spec)).toBe(spec);
   });

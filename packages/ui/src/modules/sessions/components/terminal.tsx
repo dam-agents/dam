@@ -34,14 +34,8 @@ export function Terminal({
   sessionId: string;
   fresh?: boolean;
   onConnected?: () => void;
-  /** Fires once when the first output frame arrives — i.e. the agent is awake
-   *  and the shell is producing output, which the relay only reaches after
-   *  `ensureReady`. Use this (not `onConnected`) to clear a "starting" overlay,
-   *  since `onConnected` fires on the immediate relay handshake. */
   onFirstOutput?: () => void;
-  /** Fires on the first submitted line (CR/LF) — a sent message, not startup's device-report onData noise. */
   onFirstSubmit?: () => void;
-  /** Fires on every submitted line. */
   onSubmit?: () => void;
   autoConnect?: boolean;
 }) {
@@ -68,7 +62,6 @@ export function Terminal({
     }
   }, [autoConnect]);
 
-  // After React commits "live" the connecting overlay unmounts; refocus then.
   useEffect(() => {
     if (state === "live") requestAnimationFrame(() => termRef.current?.focus());
   }, [state]);
@@ -103,7 +96,6 @@ export function Terminal({
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
-      // Wait one frame so the container has its committed layout before fit().
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       if (cancelled) return;
       fitAddon.fit();
@@ -183,7 +175,6 @@ export function Terminal({
       termRef.current = null;
       container.innerHTML = "";
     };
-    // Callback props captured once at mount; `reconnectKey` forces reconnect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, sessionId, reconnectKey]);
 

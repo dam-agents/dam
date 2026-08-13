@@ -28,16 +28,11 @@ export function createTerminalRelay(
   namespace: string,
   repo: AgentsRepository,
   presence: SessionPresence,
-  /** Cross-replica supersede signal. Omitted, eviction is local only. */
   bus?: RedisBus,
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
   const replicaId = randomUUID();
-  // Keyed by agent AND session: a session id is only unique within its agent,
-  // and the `?? "default"` fallback below is shared by every agent that
-  // connects without one — so a bare session id would have one agent's
-  // terminal evict another's.
   const activeClients = new Map<string, WebSocket>();
   const clientKey = (agentId: string, sessionId: string) =>
     `${agentId}:${sessionId}`;
@@ -56,10 +51,6 @@ export function createTerminalRelay(
     }
   }
 
-  // One PTY per session admits one client. The previous client may be held on
-  // another replica (nothing pins a browser to the replica its earlier tab
-  // used), so supersede is announced on the bus as well as applied locally —
-  // otherwise both tabs stay attached and interleave input into one PTY.
   const unsubscribeEvict = bus?.subscribe(EVICT_CHANNEL, (payload) => {
     try {
       const { key, from } = JSON.parse(payload) as {
@@ -67,9 +58,7 @@ export function createTerminalRelay(
         from: string;
       };
       if (from !== replicaId) evictLocal(key, "superseded");
-    } catch {
-      /* malformed frame — nothing to evict */
-    }
+    } catch {}
   });
 
   function closeSession(agentId: string, sessionId: string) {
@@ -86,9 +75,6 @@ export function createTerminalRelay(
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
 
-    // Session mode is agent-owned metadata; the PTY runs the harness
-    // TUI against this session id regardless. The UI confirms the mode switch.
-
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
         try {
@@ -98,8 +84,6 @@ export function createTerminalRelay(
 
       const key = clientKey(agentId, sessionId);
       evictLocal(key, "superseded");
-      // Tell the other replicas too — the client we are superseding may be
-      // attached to any of them.
       void bus?.publish(
         EVICT_CHANNEL,
         JSON.stringify({ key, from: replicaId }),
@@ -109,8 +93,6 @@ export function createTerminalRelay(
       const release = presence.acquire(agentId);
       client.once("close", () => {
         release();
-        // Only if we are still the active client: a supersede already
-        // reassigned the slot, and this late close must not evict it.
         if (activeClients.get(key) === client) activeClients.delete(key);
       });
 
@@ -203,8 +185,6 @@ export function createTerminalRelay(
           });
 
           client.on("close", () => {
-            // Slot cleanup is handled by the `once("close")` above, which is
-            // registered whether or not the upstream dial ever succeeded.
             if (upstream.readyState === WebSocket.OPEN) upstream.close();
           });
         })
@@ -212,7 +192,6 @@ export function createTerminalRelay(
           process.stderr.write(
             `[terminal-relay] failed to connect: ${err?.message ?? err}\n`,
           );
-          // Close reasons cap at 123 bytes — carry the short cause kind.
           const reason = isAgentWakeTimeoutError(err)
             ? `agent not ready: ${err.failure.kind}`
             : "failed to connect to agent";

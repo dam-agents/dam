@@ -28,77 +28,27 @@ import type {
   HeldSession,
 } from "../background-work-registry.js";
 
-/** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
 
-/**
- * How long an agent→client request for a session can sit pending with no
- * channel engaged with that session before we give up and reject it back to
- * the agent. Keeps the buffer bounded on long-lived unattended sessions, and
- * gives the agent a clean error it can surface instead of hanging until
- * something inside its SDK times out.
- */
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
-// Wait this long for an idle turn boundary before forcing a harness recycle to apply changed env.
 const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
 
-// Cold boot: hold the first spawn this long for env to arrive, then spawn anyway.
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 
-/**
- * Soft cap on per-session log size. Once an append would push the log past
- * this, we drop the oldest entry and mark the log as `truncated` — future
- * catch-ups (session/load replays) prepend a `<clipped-conversation>`
- * sentinel so the UI can show that older history isn't available without a
- * forced full reload.
- */
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
-/**
- * How long to wait before re-testing a session whose reap was deferred because
- * the agent left background work running. Short enough that the pod idles down
- * promptly once the work exits, long enough that the check costs nothing.
- */
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
-  /**
-   * Sessions kept alive because they report background work still running.
-   * Non-empty forces `idle` false, so the controller's busy probe won't
-   * hibernate the pod out from under the work; published with what each session
-   * is holding for, so an unexpectedly awake sandbox is explainable rather than
-   * mysterious.
-   */
   backgroundWork: HeldSession[];
 }
 
 export interface AcpRuntime {
-  /**
-   * Attach a channel. Multiple channels may be attached at once. Attachment
-   * alone does not subscribe the channel to any session's traffic: a channel
-   * only receives updates and agent-initiated requests for sessions it has
-   * **engaged** with, where engagement is driven implicitly by ACP frames:
-   *
-   * - sending a request or notification with `params.sessionId`
-   *   (prompt, load, resume, cancel, set_mode, ...) engages that session;
-   * - receiving a response whose `result.sessionId` creates or identifies a
-   *   session (new, fork, load, resume) engages it too.
-   *
-   * A cross-session call like `listSessions` carries no sessionId and never
-   * engages — such channels can do their RPC round-trip without ever seeing
-   * another session's permission prompts or updates.
-   *
-   * `viewer: false` marks a machine-driven channel (the in-process trigger
-   * driver): its activity never counts as the user having seen the session.
-   */
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
   resetSession(sessionId: string): void;
-  /** Env on disk changed: recycle a running harness so it respawns with the
-   * new env. `force: false` never kills an in-flight turn — it waits for the
-   * next turn boundary instead of forcing after the bound. */
   refreshEnv(opts: { force: boolean }): void;
   shutdown(): void;
 }
@@ -107,38 +57,21 @@ export interface AcpRuntimeDeps {
   spawnAgent: () => AgentProcess;
   workingDir: string;
   log?: (msg: string) => void;
-  /** Override the orphan TTL — exposed for tests; production defaults to 10 min. */
   orphanTtlMs?: number;
-  /** Override the env force-recycle bound — exposed for tests; default 60s. */
   envForceRecycleMs?: number;
-  /** Quiescence window before reaping an idle session's subprocess. 0 (default)
-   * reaps inline; production injects a few seconds so a turn's trailing work
-   * finishes and quick re-attaches keep the subprocess warm. */
   idleReapDelayMs?: number;
-  /** Env already on disk at boot → spawn now; false gates the first spawn until env arrives. Defaults true. */
   envReadyAtBoot?: boolean;
-  /** Override the cold-boot warm-start bound — exposed for tests; default 15s. */
   warmStartTimeoutMs?: number;
-  /** Override the log size cap — exposed for tests. */
   logBytesCap?: number;
-  /** Owns the `_meta.platform.*` round-trip; skipped when omitted. */
   sessionMetadata?: SessionMetadataStore;
-  /**
-   * Holds the background work sessions report, so a session with work still
-   * running is neither closed nor counted as idle. Omitted — as in most tests —
-   * the runtime reaps purely on session refcount, as it did before #2965.
-   */
   backgroundWork?: BackgroundWorkRegistry;
-  /** Override the deferred-reap recheck interval — exposed for tests. */
   backgroundWorkRecheckMs?: number;
-  /** Terminal sessions have no ACP turn; their `running` comes from the PTY layer. */
   isTerminalSessionActive?: (sessionId: string) => boolean;
 }
 
 interface ActivePrompt {
   sessionId: string;
   outboundId: number;
-  /** Null if the owning channel disconnected while the prompt was active. */
   channel: ClientChannel | null;
   originalId: JsonRpcId;
 }
@@ -147,50 +80,27 @@ interface QueuedPrompt {
   channel: ClientChannel;
   outboundId: number;
   originalId: JsonRpcId;
-  /** Rewritten frame ready to forward to the agent. */
   frame: unknown;
-  /** Client-generated id from `_meta.platform.promptId`, when the sender wants
-   * delivery notifications. Null for senders that don't (CLI, workers). */
   promptId: string | null;
 }
 
 interface OutboundMapping {
-  /** Channel that originated this outbound id. Null when the runtime itself
-   * initiated the call (e.g. cold-resume translates to a runtime-issued
-   * session/load with no client channel — the response just populates log
-   * metadata, and any waiters are served by the bootstrap fan-out). */
   channel: ClientChannel | null;
-  /** Original client id to echo back in the response. Null for runtime-
-   * initiated calls (no client to respond to). */
   originalId: JsonRpcId | null;
-  /** The method that originated this outbound id, so we can engage the channel
-   * with a session returned in the response (e.g. `session/new` result). */
   method: string;
-  /** Non-null when this outbound id was allocated for a session/prompt so the
-   * queue advances when the response comes back. */
   promptSessionId: string | null;
-  /** Session id this request attaches the channel to, when the method is
-   * session-scoped but the response body doesn't echo the sid back
-   * (session/load). Used to cache metadata on response and to fan out to
-   * bootstrap waiters. */
   attachSessionId: string | null;
-  /** Captured on `session/new`, applied once the response carries the sessionId. */
   platformMeta: PlatformSessionMeta | null;
 }
 
 interface PendingAgentRequest {
-  /** The session this request is scoped to (from params.sessionId). Null
-   * means the request has no session scope — rare but possible. */
   sessionId: string | null;
   frame: string;
 }
 
 interface LogEntry {
-  /** Monotonic sequence within the session. Consumers tail by cursor > seq. */
   seq: number;
-  /** The raw JSON-RPC line to send to consumers. */
   line: string;
-  /** Approx byte cost — used for the soft cap. */
   bytes: number;
 }
 
@@ -198,53 +108,14 @@ interface SessionLog {
   entries: LogEntry[];
   nextSeq: number;
   totalBytes: number;
-  /** True once the soft cap has evicted at least one entry. */
   truncated: boolean;
-  /** Cached `session/load` response metadata, captured from the first
-   * (cold) bootstrap response. Used to synthesize responses to subsequent
-   * `session/load` requests without forwarding to the agent.
-   *
-   * Invariant: `metadata !== null` means "the agent has this session live
-   * and our log mirrors what it would replay." When `maybeCloseIdleSession`
-   * tears the session down inside the agent, it MUST reset `metadata` to
-   * null AND clear `entries`, so the next access goes through cold-bootstrap
-   * and rehydrates both sides from disk.
-   *
-   * `null` represents two states: (a) the session was never bootstrapped, or
-   * (b) the most recent cold `session/load` failed — the cache-population
-   * guard in `handleAgentLine` skips writes when the agent's response has
-   * `result === undefined` (i.e. an error frame), so an error leaves
-   * `metadata` null. The bootstrap completion handler relies on exactly
-   * this to detect cold-load failure (`loadFailed = log.metadata === null`)
-   * and relay the agent's error to parked waiters. A future discriminated
-   * union (`{ status: "loaded"; data: unknown } | null`) would let the
-   * type system encode this directly. */
   metadata: unknown | null;
 }
 
-/**
- * A waiter parked on an in-flight cold bootstrap. The kind decides how it is
- * served once the bootstrap response lands:
- *   - "load"   → catchUp + synthetic session/load response (replays history).
- *   - "resume" → engage + synthetic session/resume response (no replay; the
- *                client already has history in its UI state from a prior
- *                throwaway session/load).
- */
 type BootstrapWaiter =
   | { kind: "load"; channel: ClientChannel; originalId: JsonRpcId }
   | { kind: "resume"; channel: ClientChannel; originalId: JsonRpcId };
 
-/**
- * Max-1-in-flight bootstrap state per session. A `session/load` request
- * received while a cold bootstrap is already running for the same sid is
- * not forwarded again — the bootstrap's agent response fills the log for
- * everyone, and the waiter is then served from memory.
- *
- * `initiatorChannel === null` means the runtime started the bootstrap itself
- * (cold-resume path). In that case replay events populate the log but reach
- * no client channel — every engaged channel's cursor advances silently, and
- * waiters are served on completion.
- */
 interface BootstrapState {
   initiatorChannel: ClientChannel | null;
   initiatorOutboundId: number;
@@ -261,69 +132,30 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.backgroundWorkRecheckMs ?? DEFAULT_BACKGROUND_WORK_RECHECK_MS;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
-  // Cold-boot spawn gate: channels attaching before env lands buffer until it does.
   let envReady = deps.envReadyAtBoot ?? true;
   const warmWaiters = new Set<() => void>();
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
   let agent: AgentProcess | null = null;
   let agentExited = false;
-  /** Env on disk changed; a running harness must be recycled to pick it up. */
   let envRefreshPending = false;
   let envForceTimer: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * Whether the agent advertised `agentCapabilities.sessionCapabilities.close`
-   * in its `initialize` response. Some harnesses (notably pi-acp) don't
-   * implement `session/close`, and sending it raises an error / kills the
-   * subprocess — so the runtime must check the capability before reaping.
-   *
-   * Defaults to `true` (optimistic): the flag is updated on the first
-   * `initialize` response, which under ACP must precede any session-creating
-   * request, so the value reflects the real agent before any close is
-   * considered. The default only matters in tests that bypass `initialize`.
-   */
   let sessionCloseSupported = true;
-  /**
-   * Every attached channel → set of sessions it is engaged with. Used both
-   * as the source of truth for "who's attached" (Map.size) and to decide
-   * which channels receive fan-out broadcasts.
-   */
   const engagedSessions = new Map<ClientChannel, Set<string>>();
-  /** Machine-driven channels (trigger driver); their activity is never "seen". */
   const nonViewerChannels = new Set<ClientChannel>();
   const pendingFromAgent = new Map<JsonRpcId, PendingAgentRequest>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
   const activePromptBySession = new Map<string, ActivePrompt>();
   const promptQueueBySession = new Map<string, QueuedPrompt[]>();
 
-  /**
-   * Append-only per-session log of `session/update` notifications and our
-   * synthetic turn-end marker. Agent→client JSON-RPC requests (permission
-   * prompts, fs reads, …) are *not* logged — they're live-only, tracked in
-   * `pendingFromAgent`, and redelivered to fresh engagers from there. Logging
-   * them would cause catchUp to re-emit resolved permission prompts and the
-   * UI would re-show dialogs the user already answered.
-   */
   const sessionLogs = new Map<string, SessionLog>();
 
-  /**
-   * Per-channel cursor tracking: for each engaged session, the last seq the
-   * channel has received. An append past the cursor extends the cursor and
-   * ships the line; a catch-up replays everything between cursor and latest
-   * seq in one burst.
-   */
   const channelCursors = new Map<ClientChannel, Map<string, number>>();
 
-  /** Cold-bootstrap coordination — see `BootstrapState`. */
   const bootstrapBySession = new Map<string, BootstrapState>();
 
   let nextOutboundId = 1;
-  /** Per-session orphan timers. A session is orphaned when it has pending
-   * agent-initiated requests but no channel engaged with it. */
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Per-session debounced idle-reap timers (see maybeCloseIdleSession). */
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  // ── Session log ──
 
   function getOrCreateLog(sessionId: string): SessionLog {
     let log = sessionLogs.get(sessionId);
@@ -340,8 +172,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return log;
   }
 
-  /** Append a fanout-ready line to the session log, evicting oldest entries
-   * to stay under the byte cap. Returns the assigned seq. */
   function appendToLog(sessionId: string, line: string): number {
     const log = getOrCreateLog(sessionId);
     const bytes = line.length;
@@ -374,9 +204,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     map.set(sessionId, seq);
   }
 
-  /** Sentinel notification prepended to a catch-up when the log has been
-   * truncated. Clients render a system-style "older messages not loaded"
-   * placeholder. */
   function truncationSentinel(sessionId: string): string {
     return JSON.stringify({
       jsonrpc: "2.0",
@@ -388,9 +215,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
   }
 
-  /** Stream every log entry past `channel`'s cursor for this session. The
-   * channel's cursor is advanced to the latest seq. Prepends the truncation
-   * sentinel on the first send after eviction has occurred. */
   function catchUp(channel: ClientChannel, sessionId: string): void {
     const log = sessionLogs.get(sessionId);
     if (!log) return;
@@ -408,19 +232,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (lastSeq !== current) setCursor(channel, sessionId, lastSeq);
   }
 
-  // ── Engagement ──
-
   function engage(channel: ClientChannel, sessionId: string): void {
     const sessions = engagedSessions.get(channel);
-    if (!sessions) return; // channel detached
-    if (sessions.has(sessionId)) return; // idempotent
+    if (!sessions) return;
+    if (sessions.has(sessionId)) return;
     sessions.add(sessionId);
     if (!nonViewerChannels.has(channel))
       deps.sessionMetadata?.recordSeen(sessionId);
 
-    // Replay any pending agent→client requests for this session to the
-    // newly-engaged channel. A fresh viewer joining an in-progress prompt
-    // picks up the permission dialog right away.
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId && channel.isOpen()) {
         channel.send(rewriteAuthError(req.frame));
@@ -449,27 +268,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  // ── Fan-out ──
-
-  /** Append `line` to the session's log and ship it to every engaged channel
-   * whose cursor is behind the new seq. Each recipient's cursor advances so
-   * it can't receive the same line twice.
-   *
-   * `skipChannel` lets a caller append a line to the log (and advance that
-   * channel's cursor) without actually sending to it — used when the client
-   * already has the content locally (e.g. the sender of `session/prompt`
-   * which rendered an optimistic user bubble before forwarding). The entry
-   * is still in the log, so on reconnect that same client catches up to it
-   * through a new channel with cursor=0.
-   *
-   * `onlyChannel` restricts delivery during a cold-bootstrap replay so the
-   * agent's historical events populate the log (for future cache hits) but
-   * reach only the loader. Other engaged channels already have the history
-   * in their React state and would double-render the replay. The key may
-   * be set explicitly to `null` to mean "deliver to no channel" — used by
-   * the cold-resume path, where the runtime initiated the bootstrap and no
-   * client should receive the replay.
-   */
   function appendAndFanOut(
     sessionId: string,
     line: string,
@@ -497,25 +295,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  /**
-   * Synthesize `session/update` notifications for a client's `session/prompt`
-   * payload and append them to the log. The Claude Agent SDK drops plain-text
-   * user_message_chunk emissions in live (see acp-agent.js: "Skip these user
-   * messages for now"), so without this, viewers other than the sender never
-   * see the user's message. Running this through the log means it's captured
-   * for catch-up too, so any later loader reconstructs the turn correctly.
-   *
-   * Skips the originating channel at fan-out — the sender's UI already
-   * rendered the message as an optimistic bubble. The sender's cursor is
-   * still advanced, so subsequent fan-outs don't re-deliver this entry,
-   * but a fresh channel (after reload) will catch it through the normal
-   * catch-up from cursor=0.
-   *
-   * When `queued` is set (the prompt is parked behind an in-flight turn), the
-   * chunk carries `_meta.queued` so viewers render it as a pending background
-   * prompt instead of treating it as a turn boundary that would split the
-   * active reply (issue #703).
-   */
   function appendUserPromptToLog(
     sessionId: string,
     prompt: unknown,
@@ -550,8 +329,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (c.isOpen()) c.send(line);
   }
 
-  // ── Per-session orphan TTL ──
-
   function updateOrphanTimerForSession(sessionId: string): void {
     const engaged = hasEngagedChannel(sessionId);
     let hasPending = false;
@@ -582,8 +359,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (req.sessionId === sessionId) toExpire.push(id);
     }
     for (const id of toExpire) {
-      // Respond to the agent-side pending JSON-RPC call so it gets a clean
-      // error instead of waiting until the Claude Code SDK times out.
       agent.send({
         jsonrpc: "2.0",
         id,
@@ -596,8 +371,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     if (toExpire.length > 0) maybeRecycleForEnv();
   }
-
-  // ── Agent lifecycle ──
 
   function ensureAgent(): AgentProcess | null {
     if (agent && !agentExited) return agent;
@@ -619,7 +392,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
     });
     a.exited.then(() => {
-      // A detached (recycled) process exiting must not clobber the current one.
       if (agent !== a) return;
       agentExited = true;
       for (const channel of engagedSessions.keys()) {
@@ -634,14 +406,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
       pendingFromAgent.clear();
-      // The harness took its children down with it — nothing left to hold.
       deps.backgroundWork?.clear();
     });
     return a;
   }
 
-  // ── Cold-boot warm-start gate ──
-  // Release the gate: spawn the harness for every channel parked while waiting.
   function markEnvReady(): void {
     if (envReady) return;
     envReady = true;
@@ -653,11 +422,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     warmWaiters.clear();
   }
 
-  // Safety valve: never hold the gate forever if env never arrives.
   if (!envReady) warmTimer = setTimeout(markEnvReady, warmStartTimeoutMs);
-
-  // ── Env-change recycle ──
-  // Kills the harness but leaves agentExited false, so the next attach respawns.
 
   function clearEnvForceTimer(): void {
     if (envForceTimer) {
@@ -672,7 +437,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const old = agent;
     if (!old || agentExited) return;
     deps.log?.("recycling harness to apply env change");
-    // Close code 1011 matches a real agent exit; clients reconnect and resume.
     for (const channel of engagedSessions.keys())
       channel.close(1011, "agent recycled for env change");
     engagedSessions.clear();
@@ -687,14 +451,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     activePromptBySession.clear();
     promptQueueBySession.clear();
     deps.backgroundWork?.clear();
-    // Detach before kill so the old process's exit handler no-ops.
     agent = null;
     old.kill();
   }
 
-  /** The runtime's single definition of in-flight work — shared by the idle
-   * status and the env-recycle boundary, so a recycle never kills what the
-   * idle flag still reports as busy. */
   function runtimeBusy(): boolean {
     if (activePromptBySession.size > 0 || pendingFromAgent.size > 0)
       return true;
@@ -703,15 +463,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (deps.backgroundWork?.held().length ?? 0) > 0;
   }
 
-  /** Recycle now if an env refresh is pending and nothing is in flight. */
   function maybeRecycleForEnv(): void {
     if (envRefreshPending && !runtimeBusy()) recycleAgentForEnv();
   }
 
-  // A released background hold is a boundary too — re-check the deferred recycle.
   deps.backgroundWork?.onRelease(() => maybeRecycleForEnv());
-
-  // ── Channel lifecycle ──
 
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);
@@ -719,17 +475,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     nonViewerChannels.delete(channel);
     channelCursors.delete(channel);
 
-    // Drop any prompts this channel had queued but not yet sent to the agent.
     for (const [sid, queue] of promptQueueBySession) {
       const kept = queue.filter((q) => q.channel !== channel);
       if (kept.length) promptQueueBySession.set(sid, kept);
       else promptQueueBySession.delete(sid);
     }
 
-    // Drop bootstrap waiters from this channel, and clear bootstrap state
-    // if this channel was the initiator (the agent response will still
-    // arrive but we won't have anyone to deliver it to — the mapping
-    // cleanup below handles that).
     for (const [sid, state] of bootstrapBySession) {
       if (state.initiatorChannel === channel) {
         bootstrapBySession.delete(sid);
@@ -741,25 +492,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
     }
 
-    // If this channel owns the currently active prompt, leave the slot occupied
-    // but null the channel — the agent is still working on it and we need its
-    // response to advance the queue. We just won't forward the response anywhere.
     for (const active of activePromptBySession.values()) {
       if (active.channel === channel) active.channel = null;
     }
 
-    // Drop outbound mappings for non-prompt requests this channel initiated;
-    // their responses will be silently discarded if they arrive.
     for (const [outId, m] of outboundIdToClient) {
       if (m.channel === channel && m.promptSessionId === null) {
         outboundIdToClient.delete(outId);
       }
     }
 
-    // Any session this channel was engaged with might now be orphaned.
-    // Update the pending-request TTL timer and, if the session has nothing
-    // keeping it alive, reap its SDK session so the claude CLI subprocess
-    // is freed.
     if (sessions) {
       for (const sid of sessions) {
         updateOrphanTimerForSession(sid);
@@ -768,16 +510,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  /**
-   * Tear a session down on both sides of the relay: send `session/close` to
-   * the agent (if it supports it) and drop the runtime's cache + per-channel
-   * cursors. The two halves MUST happen together — otherwise the cache lies
-   * to the UI about a session the agent has forgotten, and the next
-   * `session/prompt` comes back with "Session not found".
-   *
-   * Fire-and-forget on the agent side: we don't register the outbound id, so
-   * the agent's response is silently dropped by `handleAgentLine`.
-   */
   function tearDownSession(sessionId: string): void {
     if (agent && !agentExited && sessionCloseSupported) {
       agent.send({
@@ -789,15 +521,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     sessionLogs.delete(sessionId);
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
-    // session/close cancels the session's ongoing work, so its turn slot and
-    // queue must not outlive it — a stale slot would strand a deferred env
-    // recycle (and the idle flag) until the pod rolls.
     activePromptBySession.delete(sessionId);
     promptQueueBySession.delete(sessionId);
-    // The subprocess is going away, so anything it was still running goes with
-    // it — the hold has nothing left to protect.
     deps.backgroundWork?.forget(sessionId);
-    // After forget(), so the closing session's own hold can't block the drain.
     maybeRecycleForEnv();
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
@@ -806,16 +532,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  /**
-   * Refcount-driven reap: when no channel is engaged with the session and no
-   * work is in flight, tear it down to free the ~300MB CLI subprocess the
-   * SDK pins per session. The cold-bootstrap path rehydrates from disk on
-   * the next viewer's `session/resume`.
-   *
-   * Skipped entirely when the agent doesn't advertise
-   * `sessionCapabilities.close`: we can't tell the agent to drop the session,
-   * so we also keep the cache so future resumes can still serve from memory.
-   */
   function reapIdleSessionNow(sessionId: string): void {
     idleReapTimers.delete(sessionId);
     if (!agent || agentExited) return;
@@ -823,18 +539,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (hasEngagedChannel(sessionId)) return;
     if (activePromptBySession.has(sessionId)) return;
     if (promptQueueBySession.has(sessionId)) return;
-    // An in-flight cold bootstrap (e.g. runtime-initiated session/load
-    // triggered by a cold-resume) is still pinning a session in the agent
-    // — closing now would race the load and orphan the cached metadata.
     if (bootstrapBySession.has(sessionId)) return;
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
     }
-    // Closing the session tears down the harness's subprocess, and a harness
-    // that supervises background jobs kills them as it goes — so the work dies
-    // seconds after the last tab closes, silently. Wait while the session
-    // reports work still running; the release arrives as a later report, so
-    // re-check rather than closing.
     if (deps.backgroundWork?.hasWork(sessionId)) {
       idleReapTimers.set(
         sessionId,
@@ -850,14 +558,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.log?.(`closing idle session ${sessionId}`);
   }
 
-  // Defer the reap by a quiescence window: the harness can still be flushing
-  // a turn's trailing work (async post-tool hooks) after its prompt response
-  // lands, and a quick re-attach or the next queued prompt should keep the
-  // ~300MB subprocess warm rather than pay a cold respawn. The full guard is
-  // re-checked when the timer fires, so anything that re-engages in the window
-  // cancels the reap. Delay 0 (the library default, and tests) reaps inline,
-  // preserving the original synchronous behaviour. Ceiling: a fixed delay, not
-  // a true harness-idle signal.
   function maybeCloseIdleSession(sessionId: string): void {
     if (idleReapDelayMs <= 0) {
       reapIdleSessionNow(sessionId);
@@ -887,16 +587,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
-  // ── Prompt queue ──
-
-  /**
-   * Tell the sender the runtime has the prompt and what it did with it. Like
-   * `platform/promptStarted`, this goes to the originating channel only and
-   * deliberately not through `appendAndFanOut`: delivery feedback is the
-   * sender's business, and putting it in the session log would replay a stale
-   * "accepted" to every later loader. A prompt with no `promptId` (CLI, channel
-   * workers, older clients) gets nothing.
-   */
   function notifyPromptAccepted(
     channel: ClientChannel,
     sessionId: string,
@@ -934,9 +624,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       originalId: entry.originalId,
     });
     a.send(entry.frame);
-    // The prompt is now the agent's problem — delivery is real. Sender-only and
-    // ephemeral: never through the log, so it's neither replayed nor seen by
-    // other viewers. Fires for direct sends and for `advanceQueue` promotions.
     if (entry.promptId !== null) {
       sendToChannel(
         entry.channel,
@@ -961,12 +648,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     forwardPromptToAgent(a, sessionId, next);
   }
 
-  // ── session/load and session/resume serve-from-memory ──
-
-  /** Serve a `session/load` from the in-memory log without forwarding to
-   * the agent. Stream the catch-up first, then engage the channel and
-   * deliver the synthetic response — mirroring the agent's own order
-   * (notifications → response). */
   function serveLoadFromLog(
     channel: ClientChannel,
     originalId: JsonRpcId,
@@ -988,14 +669,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sendToChannel(channel, rewriteAuthError(response));
   }
 
-  /** Serve a `session/resume` from the in-memory log. Resume's contract is
-   * "rebind for future events" — unlike load, it must NOT replay history
-   * (the caller already has it via a prior throwaway `session/load`). So
-   * we engage the channel and advance its cursor to the log's tail before
-   * sending the synthetic response, so future `appendAndFanOut` deliveries
-   * land but no historical entry does. The cached `metadata` is captured
-   * from `session/new` / `session/fork` / `session/load` responses and is
-   * a structural superset of `ResumeSessionResponse`. */
   function serveResumeFromLog(
     channel: ClientChannel,
     originalId: JsonRpcId,
@@ -1019,8 +692,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sendToChannel(channel, rewriteAuthError(response));
   }
 
-  // ── Agent → client traffic ──
-
   function handleAgentLine(line: string): void {
     const frame = parseFrame(line);
 
@@ -1028,11 +699,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const sessionId = extractParamsSessionId(frame);
       pendingFromAgent.set(frame.id, { sessionId, frame: line });
       if (sessionId) {
-        // Live-fan-out only — never log agent→client requests. Once the
-        // client responds, pendingFromAgent drops the entry; a logged copy
-        // would get replayed on the next catchUp and re-trigger the
-        // permission dialog. Fresh engagers still pick up currently-pending
-        // requests via engage()'s replay from pendingFromAgent.
         const out = rewriteAuthError(line);
         for (const [channel, sessions] of engagedSessions) {
           if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
@@ -1050,28 +716,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (mapping) {
         outboundIdToClient.delete(outboundId);
 
-        // Cache the agent's session capabilities from the initialize response.
-        // Per ACP, support for `session/close` is signalled by the presence of
-        // `agentCapabilities.sessionCapabilities.close` (a non-null object).
         if (mapping.method === "initialize") {
           sessionCloseSupported = extractSessionCloseSupported(frame);
         }
 
-        // Engage the originating channel with a session identified by the
-        // response. session/new and session/fork put the new sessionId in
-        // the result body; session/load doesn't (the client already knows
-        // the sid from its request) — we recover it from the mapping's
-        // attachSessionId captured on forward. session/resume frames are
-        // never forwarded to the agent (handled entirely by the runtime),
-        // so they never appear here.
         const sidFromResult = extractResultSessionId(frame);
         const sidForChannel = sidFromResult ?? mapping.attachSessionId;
         if (sidForChannel) {
           if (mapping.channel) engage(mapping.channel, sidForChannel);
-          // Cache the response body as log metadata on paths that produce
-          // authoritative log state: session/new and session/fork start an
-          // empty log that the creator's prompts will populate, and
-          // session/load populates it via replaySessionHistory.
           const cacheable =
             mapping.method === "session/new" ||
             mapping.method === "session/fork" ||
@@ -1083,8 +735,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               log.metadata = result;
             }
           }
-          // Record every session/new: a missing entry marks a harness-minted
-          // session (TUI /clear), which decodes as terminal downstream.
           if (
             mapping.method === "session/new" &&
             sidFromResult &&
@@ -1094,29 +744,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
         }
 
-        // `session/load` cold-bootstrap response: serve any waiters that
-        // arrived during the bootstrap window. Load waiters get full
-        // history replay (catchUp); resume waiters get engagement plus a
-        // synthetic resume response with no replay (their UI already has
-        // history from a prior throwaway loadSession). The original
-        // initiator (if any) already received every replay event via
-        // appendAndFanOut (engaged on forward), so no catch-up for it.
         if (mapping.method === "session/load" && mapping.attachSessionId) {
           const sid = mapping.attachSessionId;
           const log = getOrCreateLog(sid);
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
-            // Error responses leave metadata null (cache-population guard
-            // above requires `result !== undefined`); see SessionLog.metadata
-            // invariant for the full coupling.
             const loadFailed = log.metadata === null;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
               if (loadFailed) {
-                // Relay the agent's error to the waiter under its own id
-                // — we have no cached metadata to synthesize a response,
-                // and a thrown error here would leave the waiter hanging.
                 const out = JSON.stringify({
                   ...(frame as object),
                   id: waiter.originalId,
@@ -1133,8 +770,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
         }
 
-        // Rewrite the response id back to what the originating client used.
-        // Skip when the runtime initiated the call (no client to respond to).
         if (mapping.channel && mapping.originalId !== null) {
           const responseFrame =
             mapping.method === "session/list" && deps.sessionMetadata
@@ -1154,14 +789,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             mapping.channel.send(rewriteAuthError(out));
         }
 
-        // If this response completes a queued prompt, advance the session's
-        // queue and signal the turn boundary to every engaged channel so
-        // viewers that didn't originate the prompt can close their current
-        // assistant bubble. ACP has no on-the-wire "turn ended" notification,
-        // so we send a custom JSON-RPC notification — the originating client
-        // doesn't need it (its sendPrompt finally fires from the response),
-        // but other viewers do. Clients that don't implement extNotification
-        // silently swallow it.
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
           const active = activePromptBySession.get(sid);
@@ -1171,8 +798,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             activePromptBySession.delete(sid);
             if (agent && !agentExited) advanceQueue(agent, sid);
           }
-          // A completed turn is activity too — a response landing with no
-          // viewer attached is what makes the session unread.
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           appendAndFanOut(
@@ -1181,33 +806,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               buildPlatformTurnEndedNotification({ sessionId: sid }),
             ),
           );
-          // Reap the SDK session if the turn finished with nothing left to
-          // watch it — e.g. a scheduled trigger fired a prompt with no UI
-          // attached. If a queued prompt was just promoted by advanceQueue,
-          // activePromptBySession now has it and maybeCloseIdleSession is a
-          // no-op.
           maybeCloseIdleSession(sid);
-          // Turn boundary — last, so viewers receive the turn-ended fan-out
-          // before a recycle closes their channels and drops the log.
           if (turnEnded) maybeRecycleForEnv();
         }
       }
       return;
     }
 
-    // Notification — append to the session's log and fan out to engaged
-    // channels by cursor. Notifications without a sessionId (rare) go to
-    // every attached channel.
-    //
-    // Cold-bootstrap window: when session/load is in flight for this sid,
-    // the agent is streaming replaySessionHistory. Those events need to
-    // populate the log (so future session/loads hit cache) but MUST NOT
-    // fan out to other engaged channels — they already have the history
-    // in their React state, and receiving the replay would append a
-    // second copy on top. When a real initiator exists, route replay to
-    // it only; when the runtime initiated the bootstrap (cold-resume),
-    // route to nobody — every engaged channel advances its cursor
-    // silently and is later served by the resume waiter handler.
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
       const boot = bootstrapBySession.get(sessionId);
@@ -1223,8 +828,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  // ── Client → agent traffic ──
-
   function handleClientMessage(
     a: AgentProcess,
     channel: ClientChannel,
@@ -1237,15 +840,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isResponse(frame)) {
-      // Client responding to an agent-initiated request. Only forward if the
-      // request is still pending — late/duplicate responses (other client
-      // already answered) are silently dropped so the agent isn't confused.
       const pending = pendingFromAgent.get(frame.id);
       if (!pending) return;
       pendingFromAgent.delete(frame.id);
       if (pending.sessionId) updateOrphanTimerForSession(pending.sessionId);
-      // No recycle re-check here: forwarding the answer is the start of more
-      // agent work, not a boundary.
       a.send(frame);
       return;
     }
@@ -1257,10 +855,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
-      // `platform/deleteSession` ExtRequest: soft delete — tombstone
-      // in the metadata store so `session/list` enrichment hides it even while
-      // the harness still lists the on-disk JSONL. Answered synthetically; the
-      // vanilla harness has no delete capability, so it never forwards.
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         sendToChannel(
@@ -1270,34 +864,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
-      // `session/resume` short-circuit: the runtime mediates resume entirely.
-      // Many harnesses (pi-acp) don't implement `unstable_resumeSession` at
-      // all, and even harnesses that do can't resume against a freshly-
-      // respawned subprocess that has no in-memory session. The runtime is
-      // the only thing that can reconcile both — so resume never reaches
-      // the agent.
-      //
-      //   Hot path: log metadata already cached → engage + advance cursor +
-      //             synthetic response (no replay).
-      //   Cold path: park as a resume waiter and run a runtime-initiated
-      //             session/load (the only ACP RPC that rehydrates a session
-      //             in a fresh subprocess). Replay events populate the log
-      //             but reach no client. On completion, all resume waiters
-      //             are served via `serveResumeFromLog`.
       if (method === "session/resume" && paramsSid) {
-        // setMode: a resume may carry `_meta.platform` (e.g. a new
-        // mode) — merge it into the stored entry, preserving fields it omits.
         const incomingMeta = extractPlatformMeta(frame);
         if (incomingMeta && deps.sessionMetadata) {
           const current = deps.sessionMetadata.get(paramsSid)?.meta ?? {};
           deps.sessionMetadata.set(paramsSid, { ...current, ...incomingMeta });
         }
-        // Engage immediately so the channel receives pending agent requests
-        // for the session and has its cursor advanced silently during a
-        // cold-bootstrap window. `serveResumeFromLog` will call `engage`
-        // again on the hot path / on waiter dispatch — that's intentional
-        // and harmless: `engage` is idempotent (early-returns when the
-        // session is already in the channel's set).
         engage(channel, paramsSid);
         const existing = sessionLogs.get(paramsSid);
         if (existing && existing.metadata !== null) {
@@ -1333,20 +905,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
-      // `session/load` short-circuit: if the runtime already has a log with
-      // cached metadata for this session, serve the entire history (plus any
-      // future live events) from memory. The agent is never involved.
       if (method === "session/load" && paramsSid) {
         const existing = sessionLogs.get(paramsSid);
         if (existing && existing.metadata !== null) {
           serveLoadFromLog(channel, frame.id, paramsSid, existing);
           return;
         }
-        // Cold-bootstrap coalescing: if a bootstrap is already in flight for
-        // this session, park this channel as a waiter — the in-flight load's
-        // response will populate the log, then we serve all waiters from it.
-        // This prevents two concurrent `session/load`s from double-forwarding
-        // and appending two copies of the same history to the log.
         const boot = bootstrapBySession.get(paramsSid);
         if (boot) {
           boot.waiters.push({ kind: "load", channel, originalId: frame.id });
@@ -1356,33 +920,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       const outboundId = nextOutboundId++;
 
-      // Engage forward so subsequent updates for this session reach this channel.
       if (paramsSid) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
-      // Methods whose response body doesn't echo the sid (session/load) —
-      // we stash it from params to recover it when the response comes back.
       const attachSessionId = method === "session/load" ? paramsSid : null;
 
       const platformMeta =
         method === "session/new" ? extractPlatformMeta(frame) : null;
-      // A prompt's `_meta.platform.promptId` opts the sender into the delivery
-      // notifications below; like session/new's meta it is platform-internal,
-      // so it's stripped before the frame reaches the agent.
       const promptId =
         method === "session/prompt" ? extractPromptId(frame) : null;
-      // Stripped for every prompt, not just ones carrying a promptId: whatever
-      // a client puts under `platform` is ours, and the agent never sees it.
       const forwardFrame =
         platformMeta !== null || method === "session/prompt"
           ? stripPlatformMeta(frame)
           : frame;
 
-      // A session that also lives in a messenger thread carries that thread's
-      // reply contract in its history; a turn typed here needs to be told it
-      // isn't one of those. Only sessions with a thread are framed — an
-      // ordinary chat has no contract to contradict — and only the forwarded
-      // copy is, so the framing stays out of what viewers see as the prompt.
       const framedFrame =
         promptSessionId !== null &&
         isDirectSurface(extractPromptSurface(frame)) &&
@@ -1403,8 +954,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         platformMeta,
       });
 
-      // Mark a cold bootstrap in flight so concurrent loads of the same sid
-      // pile into `waiters` instead of double-forwarding.
       if (method === "session/load" && attachSessionId) {
         bootstrapBySession.set(attachSessionId, {
           initiatorChannel: channel,
@@ -1414,17 +963,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (promptSessionId !== null) {
-        // A real prompt is genuine activity — stamp it so the session list
-        // sorts/displays by last message, not the harness mtime.
         deps.sessionMetadata?.recordActivity(promptSessionId);
         if (hasEngagedViewer(promptSessionId))
           deps.sessionMetadata?.recordSeen(promptSessionId);
-        // Synthesize user_message_chunk(s) from the prompt payload and
-        // append them to the log. The SDK drops plain-text user_message_chunk
-        // emissions in live, so without this, viewers other than the sender
-        // never see the user's message. The sender is skipped on fan-out (it
-        // already has its optimistic bubble) but the line is logged, so a replay
-        // shows it there too.
         const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
         const willQueue = activePromptBySession.has(promptSessionId);
@@ -1455,10 +996,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             promptId,
           });
           promptQueueBySession.set(promptSessionId, queue);
-          // Parked, not lost — tell the sender so it stops waiting for content
-          // that legitimately can't arrive until the prior turn ends. Only
-          // after the push succeeded: the queue-full path above is already
-          // covered by its error response.
           notifyPromptAccepted(channel, promptSessionId, promptId, true);
           return;
         }
@@ -1477,7 +1014,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return;
     }
 
-    // Client notification (has method, no id). Forward; engage if scoped.
     const notifSid = extractParamsSessionId(frame);
     if (notifSid) engage(channel, notifSid);
     a.send(rewriteCwd(frame, deps.workingDir));
@@ -1485,9 +1021,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   return {
     attach(channel, opts) {
-      // One path for both: buffer frames until the agent is bound, then replay.
-      // Warm (env present) releases synchronously below — buffered stays empty.
-      // Cold-boot parks the release until env lands (or the safety timer fires).
       engagedSessions.set(channel, new Set());
       if (opts?.viewer === false) nonViewerChannels.add(channel);
       const buffered: string[] = [];
@@ -1529,19 +1062,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     refreshEnv(opts) {
-      // First delivery after a cold boot just releases the gate — no recycle.
       if (!envReady) {
         markEnvReady();
         return;
       }
-      // Nothing running → the next spawn reads the new env for free.
       if (!agent || agentExited) return;
       envRefreshPending = true;
       if (!runtimeBusy()) {
         recycleAgentForEnv();
         return;
       }
-      // Work is in flight: recycle once it drains; force after a bound only when asked.
       deps.log?.(
         `env recycle deferred: ${activePromptBySession.size} turn(s), ` +
           `${pendingFromAgent.size} pending request(s), ` +
@@ -1586,11 +1116,6 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   return parsed.success ? parsed.data : null;
 }
 
-/**
- * Pull a `session/prompt`'s client-generated prompt id out of
- * `params._meta.platform.promptId`. Null — no id, or anything but a non-empty
- * string there — means the sender didn't ask for delivery notifications.
- */
 function extractPromptId(frame: unknown): string | null {
   if (!isNonNullObject(frame)) return null;
   const params = frame.params;
@@ -1603,11 +1128,6 @@ function extractPromptId(frame: unknown): string | null {
   return typeof promptId === "string" && promptId.length > 0 ? promptId : null;
 }
 
-/**
- * Pull a `session/prompt`'s originating surface out of
- * `params._meta.platform.surface`. Null — absent, or anything but a string —
- * means the sender didn't say, and the turn is framed by nothing.
- */
 function extractPromptSurface(frame: unknown): string | null {
   if (!isNonNullObject(frame)) return null;
   const params = frame.params;
@@ -1633,7 +1153,6 @@ function stripPlatformMeta(frame: unknown): object {
   return { ...frame, params: nextParams };
 }
 
-// createdAt rides inside _meta.platform so it round-trips to the server.
 function withPlatformMeta(
   session: Record<string, unknown>,
   entry: SessionMetaEntry,
@@ -1655,12 +1174,6 @@ function withPlatformMeta(
   };
 }
 
-/** Enrich the harness's session list with `_meta.platform` from the store. The
- * harness list is the ground truth for session existence — entries that live
- * only in the store (e.g. a session created via `session/new` but never
- * prompted, so never written to disk, or the UI's config-probe) are NOT
- * invented into the list. A listed session with no store entry passes through
- * unenriched (terminal default); tombstoned sessions are dropped. */
 function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
@@ -1683,8 +1196,6 @@ function injectPlatformMetaIntoList(
       if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
       const entry = store.get(s.sessionId);
       if (entry) return withPlatformMeta(s, entry, isRunning(s.sessionId));
-      // Store-less sessions decode as terminal by having no platform meta;
-      // adding meta for `running` must stamp the mode to keep that decode.
       if (!isRunning(s.sessionId)) return s;
       const existingMeta = isNonNullObject(s._meta) ? s._meta : {};
       return {

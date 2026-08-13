@@ -41,7 +41,6 @@ import { ok } from "../../result.js";
 export interface AuthModuleOptions {
   authPath?: string;
   env?: NodeJS.ProcessEnv;
-  /** Cross-module dependencies injected by the package-level compose. */
   compatService: CompatService;
   configService: ConfigService;
 }
@@ -56,12 +55,6 @@ export interface AuthModule {
   };
 }
 
-/**
- * Resolves the token endpoint for a host on demand. Used only by the
- * TokenProvider during refresh — the AuthService runs its own probe path
- * during login. Caches per CLI invocation; `cliClientId` is read from
- * the stored HostAuth, not re-probed here.
- */
 function createTokenEndpointResolver(
   authConfigProbe: ReturnType<typeof createAuthConfigProbe>,
   oidcDiscovery: ReturnType<typeof createOidcDiscovery>,
@@ -148,9 +141,6 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
   );
   authParent.addCommand(buildStatusCommand({ authService }));
 
-  // `dam auth token` — API key management. The sub-tree reuses the
-  // shared tRPC client built on this module's own TokenProvider, so the auth
-  // module owns the wiring without taking a dependency on the package compose.
   const buildTrpc: (host: string) => TrpcClient = (host) =>
     createTrpcClient({ host, tokenProvider });
   const tokenParent = new Command("token").description(
@@ -183,5 +173,4 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
   };
 }
 
-// Re-export so package-level compose can hand types to other consumers.
 export type { AuthConfig, OidcMetadata };

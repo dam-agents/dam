@@ -2,10 +2,6 @@ import { ChevronLeft, ChevronRight } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
-/** ‹ v3 / 5 › stepper for browsing an artifact's version history in the
- *  in-app previews (mirrors the share page's version nav). `current` and
- *  `total` are 1-based version numbers; renders nothing with a single
- *  version. */
 export function VersionSwitcher({
   current,
   total,

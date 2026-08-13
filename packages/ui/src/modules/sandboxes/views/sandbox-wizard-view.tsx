@@ -36,7 +36,6 @@ import {
 
 const NO_TEMPLATES: TemplateView[] = [];
 
-/** Name what is actually being created. */
 function createLabel(startingPoint: StartingPoint | null): string {
   if (startingPoint === "knowledge-base") return "Create knowledge base";
   if (startingPoint === "experiment") return "Create experiment sandbox";
@@ -58,20 +57,15 @@ export function SandboxWizardView() {
     createKnowledgeBase.isPending ||
     createExperimentSandbox.isPending;
 
-  // Pull credentials are secret, so they live here as ephemeral state — never
-  // in the wizard snapshot, which is persisted to sessionStorage.
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
   );
-  // Disclosure lives here too — the section unmounts on every step change,
-  // and the credentials it shows must not outlive their own visibility toggle.
   const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
     boolean | null
   >(null);
   const isCustomImage = snapshot.startingPoint === "custom";
 
   const imageLabel = useMemo(() => {
-    // The image is pinned and hidden on these paths — name the kind instead.
     if (snapshot.startingPoint === "experiment") return "Experiment";
     if (snapshot.startingPoint === "knowledge-base") return "Knowledge base";
     if (snapshot.templateId)
@@ -87,10 +81,6 @@ export function SandboxWizardView() {
     templateList,
   ]);
 
-  // Own the OAuth return here (app.tsx skips /sandboxes/new): the popup flow
-  // never leaves the page, so this only fires after a popup-blocked full-page
-  // redirect — stage the authorized connection into the draft on success,
-  // surface failures, then strip the query params.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get("oauth");
@@ -130,8 +120,6 @@ export function SandboxWizardView() {
     const image = snapshot.customImage.trim();
     const useRegistry =
       !!image && registryFilledCount(registryCredential) === 3;
-    // Provider connections and catalog connections both grant the same way;
-    // only the field name differs between the create paths.
     const connectionIds = [
       ...snapshot.connectionIds,
       ...(snapshot.providerRef ? [snapshot.providerRef.id] : []),
@@ -144,12 +132,9 @@ export function SandboxWizardView() {
     };
 
     try {
-      // The kinded paths go through their own module so the marker and its
-      // Install Command land together.
       if (snapshot.startingPoint === "knowledge-base") {
         const agent = await createKnowledgeBase.mutateAsync({
           ...shared,
-          // Pinned by startingPointDefaults; named so this doesn't depend on it.
           templateId: snapshot.templateId ?? KINDED_HARNESS_TEMPLATE_ID,
           kbTemplateId: snapshot.kbTemplateId ?? DEFAULT_KB_TEMPLATE_ID,
           ...(connectionIds.length ? { connectionIds } : {}),
@@ -166,7 +151,6 @@ export function SandboxWizardView() {
           ...(connectionIds.length ? { connectionIds } : {}),
         });
         reset();
-        // The chat is where a fresh one greets the user.
         selectAgent(agent.id);
         return;
       }
@@ -191,9 +175,7 @@ export function SandboxWizardView() {
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);
       selectAgent(agent.id);
-    } catch {
-      // Mutation surfaces its own error toast; stay on Step 3 to retry.
-    }
+    } catch {}
   };
 
   const footer =

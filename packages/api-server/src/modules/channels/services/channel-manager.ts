@@ -25,37 +25,19 @@ export interface PostMessageOptions {
   attachment?: ChannelAttachment;
 }
 
-/** A reply threaded under the turn the agent is answering. */
 export interface ChannelReply {
   text: string;
-  /** Thread to post into. Omitted, it resolves to the sole in-flight turn's
-   *  thread; with several turns in flight at once the reply is refused rather
-   *  than guessed, so the agent must pass this (the prompt injects it). */
   threadTs?: string;
-  /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
-  /** Surface the reply in the channel too, not only inside the thread — one
-   *  post in both places. For threads that have scrolled out of the channel,
-   *  where a thread-only reply would go unseen. Off by default. */
   alsoSendToChannel?: boolean;
 }
 
-/** An emoji reaction on a specific message. */
 export interface ChannelReaction {
-  /** Emoji short name, no surrounding colons (e.g. `eyes`, `white_check_mark`). */
   emoji: string;
-  /** Message to react to. Omitted, it resolves to the sole in-flight turn's
-   *  message; with several turns in flight at once the react is refused rather
-   *  than guessed, so the agent must pass this (the prompt injects it). */
   messageTs?: string;
-  /** Conversation override; defaults to the bound channel. */
   conversationId?: string;
 }
 
-/** One person behind a messenger user id. Everything but `id` is optional —
- *  the messenger reports only what the person filled in and what the app's
- *  scopes cover. `error` marks an id that alone failed to resolve, so one bad
- *  id in a batch never costs the caller the others. */
 export interface ChannelUser {
   id: string;
   username?: string;
@@ -73,35 +55,23 @@ export interface ChannelUser {
   error?: string;
 }
 
-/** One emoji reaction on a message: the emoji's short name, how many people
- *  used it, and which messenger user ids did. */
 export interface ChannelMessageReaction {
   name: string;
   count: number;
   users: string[];
 }
 
-/** Which message to inspect for reactions. Same addressing as ChannelReaction
- *  minus the emoji: conversationId defaults to the bound channel, messageTs to
- *  the sole in-flight turn's message. */
 export interface ReactionsQuery {
   conversationId?: string;
   messageTs?: string;
 }
 
-/** Reactions on one message, plus the conversation and message they were
- *  resolved against — the caller's query is often left to default (the bound
- *  channel, the current turn's message), so the resolved ids are what the
- *  caller should audit and surface, not the (possibly empty) request. */
 export interface MessageReactionsResult {
   reactions: ChannelMessageReaction[];
   conversationId: string;
   messageTs: string;
 }
 
-/** The dispatch surface both adapters share; per-agent lifecycle is
- *  Slack-only (Telegram is a single platform bot with data-only bindings).
- *  `reply`/`react` are turn-scoped affordances only Slack implements today. */
 interface Worker {
   type: ChannelType;
   stopAll(): Promise<void>;
@@ -125,31 +95,19 @@ interface Worker {
     instanceName: string,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  /** False only when this worker has confirmed a lookup can't succeed (e.g. a
-   *  missing Slack scope). Absent on workers with no directory to begin with
-   *  (Telegram) — those already refuse `describeUsers` on their own. */
   supportsUserLookup?(): Promise<boolean>;
   describeMessageReactions?(
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  /** False only when this worker has confirmed a lookup can't succeed (e.g. a
-   *  missing Slack scope). Absent on workers with nothing to ask (Telegram). */
   supportsMessageReactions?(): Promise<boolean>;
 }
 
 export interface ChannelManager {
   availableChannels(): Partial<Record<ChannelType, boolean>>;
-  /** Platform Telegram bot handle (no @), or null when Telegram is off. */
   telegramBotUsername(): string | null;
-  /** Start the workers and serve the cross-replica rpc. Called only on the
-   *  replica holding the channel lease. */
   bootstrap(channelsByInstance: Map<string, ChannelConfig[]>): Promise<void>;
-  /** Reverse of {@link bootstrap} for a lost lease: stops the workers and
-   *  the rpc server, but leaves the lifecycle-event subscriptions in place
-   *  (they are leader-guarded, and this replica may win the lease again). */
   standDown(): Promise<void>;
-  /** Process shutdown: {@link standDown} plus the event subscriptions. */
   stopAll(): Promise<void>;
   listConversations(
     instanceName: string,
@@ -171,33 +129,20 @@ export interface ChannelManager {
     channelType: ChannelType,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
-  /** Resolve messenger user ids to the people behind them. */
   describeUsers(
     instanceName: string,
     channelType: ChannelType,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  /** Whether describe_channel_users could plausibly resolve anything right
-   *  now, across every channel type. False only when every worker that
-   *  implements a directory lookup has confirmed it can't (a missing
-   *  optional scope) — an install with no such worker at all, or one whose
-   *  capability is unknown, fails open so the tool stays registered exactly
-   *  as it always has. */
   supportsUserLookup(): Promise<boolean>;
-  /** Who reacted to a message, and with what emoji. */
   describeMessageReactions(
     instanceName: string,
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  /** Whether describe_message_reactions could plausibly resolve anything
-   *  right now, across every channel type — same fail-open semantics as
-   *  supportsUserLookup. */
   supportsMessageReactions(): Promise<boolean>;
 }
 
-/** An outbound channel call marshalled to the worker-holding replica. The
- *  method names mirror the `Worker` surface one-for-one. */
 export type ChannelRpcRequest = {
   method:
     | "listConversations"
@@ -211,22 +156,13 @@ export type ChannelRpcRequest = {
   args: unknown[];
 };
 
-/** `PostMessageOptions` as it crosses the bus: the attachment's bytes are
- *  replaced by the key naming them in the blob handoff, since a Buffer cannot
- *  survive JSON. */
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
 
 export function createChannelManager(deps: {
   slackWorker?: SlackWorker;
   telegramWorker?: TelegramWorker;
-  /** Cross-replica hop to the leader. Omitted, every call runs locally —
-   *  the single-replica shape, and what the tests use. */
   rpc?: BusRpc<ChannelRpcRequest, unknown>;
-  /** Carries attachment bytes alongside the rpc. Required for cross-replica
-   *  attachments; without it a follower refuses one rather than posting the
-   *  message with the file silently missing. */
   blobs?: BlobHandoff;
-  /** Whether this replica holds the channel lease. Omitted, always true. */
   isLeader?: () => boolean;
 }): ChannelManager {
   const { slackWorker, telegramWorker, rpc, blobs } = deps;
@@ -243,9 +179,6 @@ export function createChannelManager(deps: {
     await Promise.all(workers.map((w) => w.stopAll()));
   }
 
-  // Outbound work runs where the workers run. On the leader that is here; on
-  // any other replica it is one bus hop away. Without an rpc hop configured
-  // the local path is all there is.
   async function dispatch<T>(
     method: ChannelRpcRequest["method"],
     args: unknown[],
@@ -255,12 +188,6 @@ export function createChannelManager(deps: {
     return rpc.call({ method, args }) as Promise<T>;
   }
 
-  /** `dispatch` for the calls whose contract is a `{ ok } | { error }` union.
-   *  A failed hop (no leader mid-election, a leader that died with the call in
-   *  flight) becomes an `error` result rather than a rejection: every caller
-   *  branches on `"error" in result`, and for the MCP tools this is what turns
-   *  a lost hop into a message the agent can act on. Deliberately not retried
-   *  — a replayed post could double-post into a conversation. */
   async function dispatchResult<T>(
     method: ChannelRpcRequest["method"],
     args: unknown[],
@@ -273,8 +200,6 @@ export function createChannelManager(deps: {
     }
   }
 
-  /** The local half of every dispatch — also what the leader's rpc server
-   *  runs for calls handed over from other replicas. */
   const localHandlers = {
     listConversations: (instanceName: string, channelType: ChannelType) => {
       const worker = workers.find((w) => w.type === channelType);
@@ -291,8 +216,6 @@ export function createChannelManager(deps: {
       if (!worker)
         return { error: `channel type ${channelType} not available` };
 
-      // A call that came over the bus carries the attachment's bytes in the
-      // blob handoff, not in the payload. Rehydrate before the worker sees it.
       const wire = options?.attachment as
         | (ChannelAttachment & Partial<WireAttachment>)
         | undefined;
@@ -376,11 +299,6 @@ export function createChannelManager(deps: {
     },
   } as const;
 
-  // Slack's per-agent registration is a no-op today (bindings resolve from
-  // Postgres on every event), but `start` still opens the socket lazily —
-  // so a bind served by a non-leader must not touch the worker, or that
-  // replica ends up with a second Socket Mode connection taking events the
-  // leader's turn state can't see.
   subscriptions.push(
     events$()
       .pipe(ofType<SlackConnected>(EventType.SlackConnected))
@@ -406,8 +324,6 @@ export function createChannelManager(deps: {
     events$()
       .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
       .subscribe((event) => {
-        // Telegram bindings are rows, not runtime state — the channel-cleanup
-        // saga deletes them; only Slack tracks per-agent worker state.
         if (slackWorker && isLeader()) slackWorker.stop(event.agentId);
       }),
   );
@@ -422,13 +338,6 @@ export function createChannelManager(deps: {
     },
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
-      // Called only on the replica holding the channel lease — the workers
-      // are single-holder by construction (Slack Socket Mode fans each event
-      // to one connection; Telegram admits one getUpdates consumer), and
-      // every piece of per-turn state in them is in-process.
-      //
-      // Serving the rpc starts here so the hop is live for exactly as long
-      // as the workers behind it are.
       if (rpc) {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
@@ -441,16 +350,9 @@ export function createChannelManager(deps: {
         });
       }
 
-      // Both platform bots connect unconditionally at startup — inbound
-      // commands (the bind command), mentions and DMs must reach the bot in
-      // chats that have no binding yet. Slack opens its socket-mode connection
-      // here rather than lazily on the first bind/post, so it never misses
-      // those events.
       if (telegramWorker) await telegramWorker.start();
       if (slackWorker) await slackWorker.connect();
 
-      // The socket is already up; walking the bindings only restores the
-      // per-Agent registration the SlackConnected event installs at runtime.
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
           if (channel.type === ChannelType.Slack && slackWorker) {
@@ -468,18 +370,12 @@ export function createChannelManager(deps: {
     },
 
     listConversations(instanceName, channelType) {
-      // Degrades to "no conversations" on a failed hop, matching what a
-      // missing worker already returns — this feeds a discovery listing, not
-      // a delivery path.
       return dispatch("listConversations", [instanceName, channelType], () =>
         localHandlers.listConversations(instanceName, channelType),
       ).catch(() => []);
     },
 
     async postMessage(instanceName, channelType, text, options) {
-      // Attachment bytes can't ride the JSON payload, so on a hop they go
-      // through the blob handoff and only the key travels. Done here rather
-      // than inside the rpc because this is the one call that carries bytes.
       let wireOptions = options;
       if (!isLeader() && rpc && options?.attachment) {
         if (!blobs)
@@ -528,8 +424,6 @@ export function createChannelManager(deps: {
     },
 
     supportsUserLookup() {
-      // Fails open like the local path: a leader that is mid-election or
-      // unreachable must not strip the tool off every agent's MCP surface.
       return dispatch(
         "supportsUserLookup",
         [],

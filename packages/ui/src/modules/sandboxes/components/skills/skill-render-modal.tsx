@@ -50,15 +50,8 @@ export function SkillRenderModal({
       name: skill.name,
       ...(agentId ? { agentId } : {}),
     }),
-    // A refusal here is a verdict (unsupported host, skill gone, no GitHub
-    // grant), not a transient fault. The global `retry: 3` would also strand
-    // the modal on its skeleton: with networkMode "online" the retryer pauses
-    // instead of failing, leaving the query `pending` and the message unseen.
     retry: false,
   });
-  // Both scans report each skill's real directory, so the link is right before
-  // the content query resolves. The guess covers only a sandbox whose runtime
-  // predates reporting `dir`.
   const dir =
     skill.dir ?? data?.dir ?? `${source.path ?? "skills"}/${skill.name}`;
 

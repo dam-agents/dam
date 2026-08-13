@@ -25,10 +25,6 @@ import {
   writeRepositoryIds,
 } from "../lib/github-app-scope-fields.js";
 
-/** Changes which repositories and permissions an existing GitHub App
- *  connection mints against, without recreating it. The connection already
- *  holds its app identity and private key, so this reads the installation on
- *  the user's behalf and never asks for the key again. */
 export function ConnectionEditGithubAppScopeDialog({
   connection,
   onClose,
@@ -40,8 +36,6 @@ export function ConnectionEditGithubAppScopeDialog({
   const save = useUpdateGitHubAppScope();
   const installation = probe.data;
 
-  // Seeded from what the connection mints against today, so the dialog opens
-  // showing the current scope rather than an empty one.
   const [repoIds, setRepoIds] = useState<Set<number>>(
     () => new Set(connection.githubAppScope?.repositoryIds ?? []),
   );
@@ -55,8 +49,6 @@ export function ConnectionEditGithubAppScopeDialog({
       >,
   );
 
-  // Names that the connection narrows by but the installation no longer lists,
-  // so saving would drop them. Surfaced rather than silently discarded.
   const [unresolvedNames, setUnresolvedNames] = useState<string[]>([]);
 
   const { mutate: runProbe } = probe;
@@ -65,17 +57,11 @@ export function ConnectionEditGithubAppScopeDialog({
       { connectionId: connection.id },
       {
         onSuccess: (result) => {
-          // A connection narrowed by name — created before the picker, or from
-          // the CLI — has no ids to seed from. Resolve them against the
-          // installation so an untouched Save keeps the same repositories
-          // instead of clearing the selection and widening the token.
           const names = connection.githubAppScope?.repositories ?? [];
           if (names.length === 0) return;
           const byName = new Map(
             result.repositories.map((r) => [r.name, r.id] as const),
           );
-          // Split before touching state: an updater that appended to `missing`
-          // would build a different list each time React invoked it.
           const resolved: number[] = [];
           const missing: string[] = [];
           for (const name of names) {
@@ -108,8 +94,6 @@ export function ConnectionEditGithubAppScopeDialog({
     });
   };
 
-  // A rejected scope is about what was just chosen, so the server's words
-  // belong in the dialog. A transport failure isn't — it would misattribute.
   const saveError =
     save.error === null
       ? undefined
@@ -117,15 +101,6 @@ export function ConnectionEditGithubAppScopeDialog({
         ? save.error.message
         : "Couldn't update the scope. Please try again.";
 
-  // Editing repositories needs a complete picture of the installation. Without
-  // one, the repository half is passed through exactly as stored rather than
-  // rewritten from a selection built against a partial list — which would
-  // silently drop whatever the list did not cover.
-  //
-  // Truncation only matters when the connection narrows by *name*: an id the
-  // list omits is still carried through the selection, but a name can only be
-  // matched against what came back, so beyond the cap it is indistinguishable
-  // from one the installation has genuinely dropped.
   const namesToResolve = (connection.githubAppScope?.repositories ?? []).length;
   const repositoriesLocked =
     Boolean(installation?.repositoriesUnavailable) ||
@@ -148,14 +123,9 @@ export function ConnectionEditGithubAppScopeDialog({
         permissions: writePermissions(permissions),
       });
       onClose();
-    } catch {
-      // Rendered inline from the mutation's error below.
-    }
+    } catch {}
   };
 
-  // Ids kept from the stored scope that the probe did not list — a repository
-  // beyond the page cap, or one the installation has since dropped. They are
-  // preserved on save, so say so rather than leaving them invisible.
   const keptUnlisted = installation
     ? [...repoIds].filter(
         (id) => !installation.repositories.some((r) => r.id === id),
@@ -222,9 +192,7 @@ export function ConnectionEditGithubAppScopeDialog({
               selection={permissions}
               onChange={setPermission}
             />
-            {/* Only meaningful against a complete list: when the listing was
-                partial, an unmatched name is preserved rather than dropped, so
-                the locked callout above already covers it. */}
+            {}
             {!repositoriesLocked && unresolvedNames.length > 0 && (
               <Callout tone="danger" size="sm">
                 This connection also names {unresolvedNames.join(", ")}, which
@@ -262,8 +230,6 @@ export function ConnectionEditGithubAppScopeDialog({
   );
 }
 
-/** A scope the installation does not cover comes back as BAD_REQUEST with
- *  GitHub's own words. */
 function isBadRequest(err: unknown): err is Error {
   return err instanceof TRPCClientError && err.data?.code === "BAD_REQUEST";
 }

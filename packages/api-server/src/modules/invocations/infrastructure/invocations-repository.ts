@@ -10,8 +10,6 @@ import {
   invocations as invocationsTable,
 } from "db";
 
-/** Lifecycle of an Invocation. `running` until the target reports (or the
- *  liveness deadline fails it); terminal at `done`/`failed`. */
 export type InvocationStatus = "running" | "done" | "failed";
 
 export interface InvocationRow {
@@ -24,7 +22,6 @@ export interface InvocationRow {
   errorReason: string | null;
   expiresAt: Date;
   completedAt: Date | null;
-  /** Experiments v2 span attach ("<experimentId>/<spanId>"), null otherwise. */
   experimentSpanId: string | null;
 }
 
@@ -38,47 +35,22 @@ export interface InvocationsRepository {
     experimentSpanId: string | null;
   }): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
-  /** Store the validated result and flip to `done`. No-op (returns false) if the
-   *  Invocation is no longer `running` — a late report after a liveness fail. */
   complete(id: string, result: unknown): Promise<boolean>;
   fail(id: string, reason: string): Promise<void>;
-  /** `running` rows whose deadline has passed — the liveness sweep fails these. */
   listExpiredRunning(now: Date, limit: number): Promise<InvocationRow[]>;
-  /** All `running` rows — the restart sweep checks each one's pod for a crash. */
   listRunning(limit: number): Promise<InvocationRow[]>;
-  /** `running` rows spawned by this driver — the Driver Cascade fails and
-   *  reaps these when the driver agent is deleted. */
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
-  /** Every agent id a `running` row references (targets and drivers) — the
-   *  orphan sweeper checks these against live agents and cascades the rest.
-   *  Rows younger than `olderThan` are skipped: the row is written BEFORE the
-   *  target agent exists in K8s, so without the grace an unlucky sweeper tick
-   *  would read a newborn spawn as an orphan and cascade it. */
   listRunningAgentIds(olderThan: Date): Promise<string[]>;
-  /** Terminal rows whose result is old enough to drop (retention elapsed). */
   listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
-  /** Invocations a driver stamped with this experiment's span ids — the
-   *  Trace Feed's span↔spawn attach. */
   listByExperiment(
     driverAgentId: string,
     experimentId: string,
     limit: number,
   ): Promise<InvocationRow[]>;
-  /** `running` experiment-attached Invocation counts per driver for one
-   *  owner — the experiments index's "what is this agent doing right now"
-   *  signal. Plain (non-experiment) spawns are deliberately excluded. */
   countRunningByDriver(owner: string): Promise<Map<string, number>>;
-  /** Every Invocation of one owner as driver → target pairs (an Invocation's
-   *  id IS its target agent's id) — what lets the Sandboxes list hide targets
-   *  and put their compute on the driver's row. Deliberately ALL statuses:
-   *  a terminal row outlives its agent (retention sweep), so a reaped-any-
-   *  second target stays attributed instead of flashing back as a peer. */
   listTargetsByOwner(
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
-  /** Fail every `running` Invocation attached to this experiment (Stop's
-   *  teeth: unblocks spawn() waiters at once). Returns the failed ids so the
-   *  caller can eagerly reap the target agents. */
   failAllRunningByExperiment(
     driverAgentId: string,
     experimentId: string,

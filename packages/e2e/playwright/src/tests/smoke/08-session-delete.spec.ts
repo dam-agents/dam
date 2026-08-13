@@ -41,9 +41,6 @@ test("deleting the active session clears it and lets a fresh session start (#108
     });
   });
 
-  // The session we just engaged is the active one. Capture its id so the
-  // assertion targets that specific row regardless of any other sessions
-  // earlier specs may have left in the sidebar.
   const activeRow = page.locator(activeRowSelector);
   await expect(activeRow).toHaveCount(1);
   const deletedSessionId = await activeRow.getAttribute("data-session-id");
@@ -54,8 +51,6 @@ test("deleting the active session clears it and lets a fresh session start (#108
 
   await test.step("(A) deleting the active session removes it without a refresh", async () => {
     await activeRow.hover();
-    // Delete moved behind the row's overflow menu in the chat-shell rework
-    // (#2769); the menu item is portaled, so target it at page scope.
     await activeRow.getByTestId("session-menu-button").click();
     await page.getByTestId("session-delete-button").click();
     await page
@@ -63,7 +58,6 @@ test("deleting the active session clears it and lets a fresh session start (#108
       .getByRole("button", { name: "Confirm" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
-    // No page.reload() / no sidebar refresh: the row must vanish on its own.
     await expect(deletedRow).toHaveCount(0);
   });
 
@@ -73,7 +67,6 @@ test("deleting the active session clears it and lets a fresh session start (#108
     await expect(page.getByText(scriptedReply)).toBeVisible({
       timeout: 30_000,
     });
-    // A new active session row exists, and it is not the deleted one.
     const freshRow = page.locator(activeRowSelector);
     await expect(freshRow).toHaveCount(1);
     await expect(freshRow).not.toHaveAttribute(

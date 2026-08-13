@@ -9,21 +9,12 @@ import { SendErrorCard } from "./send-error-card.js";
 
 interface Props {
   message: Message;
-  /** Last entry in the transcript — only that one anchors the pending-approval
-   *  status line. */
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: (text: string, attachments?: Attachment[]) => void;
   onFileClick: (path: string) => void;
 }
 
-/** One transcript entry. A failed turn keeps whatever it already streamed and
- *  takes the error card *underneath* that content; the card stands in for the
- *  bubble only when there is nothing to show, so an interruption never reads
- *  as a lost turn. The card's own label keys off `hasAgentContent`, which is
- *  stricter than "has parts" — a verdict-only bubble renders its verdict line
- *  and still reads as a send that never landed, because the agent never
- *  produced anything. */
 export function ChatMessage({
   message,
   isLast,

@@ -1336,8 +1336,11 @@ agentTemplates:
         memory: "16Gi"
         nvidia.com/gpu: "1"
 
-  # Published by CI (build-workloads / merge-workloads in cd.yml). Experimental: the
-  # harness drives long-running Nous campaigns — see packages/agents/nous/README.md.
+  # Published by CI (build-workloads / merge-workloads in cd.yml); the
+  # published chart pins each workload tag to its source sha (@ci-pin), so an
+  # unchanged workload keeps last deploy's tag and never rebuilds just for a
+  # deploy. Experimental: the harness drives long-running Nous campaigns —
+  # see packages/agents/nous/README.md.
   nous:
     enabled: true
     category: preconfigured
@@ -1352,7 +1355,7 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/nous/README.md"
     image:
       repository: quay.io/dam-agents/nous
-      tag: ""
+      tag: "" # @ci-pin nous-image-tag
     # Never auto-hibernate ("0s"). A Nous campaign runs as a background process
     # detached from any session, which the idle checker can't see (see the
     # "background work" blind spot in docs/architecture/agent-lifecycle.md), so
@@ -1381,7 +1384,7 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/openevolve/README.md"
     image:
       repository: quay.io/dam-agents/openevolve
-      tag: ""
+      tag: "" # @ci-pin openevolve-image-tag
     storageSize: "5Gi"
 
   shinkaevolve:
@@ -1394,7 +1397,7 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/shinkaevolve/README.md"
     image:
       repository: quay.io/dam-agents/shinkaevolve
-      tag: ""
+      tag: "" # @ci-pin shinkaevolve-image-tag
     storageSize: "5Gi"
 
   gepa:
@@ -1415,7 +1418,7 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/gepa/README.md"
     image:
       repository: quay.io/dam-agents/gepa
-      tag: ""
+      tag: "" # @ci-pin gepa-image-tag
     storageSize: "5Gi"
 
   # AdaEvolve and EvoX are SkyDiscover's two own search strategies, exposed as
@@ -1432,7 +1435,7 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
     image:
       repository: quay.io/dam-agents/skydiscover
-      tag: ""
+      tag: "" # @ci-pin skydiscover-image-tag
     storageSize: "5Gi"
     env:
       - name: SKYDISCOVER_SEARCH
@@ -1448,7 +1451,7 @@ agentTemplates:
     docsUrl: "https://github.com/dam-agents/dam/blob/main/packages/agents/skydiscover/README.md"
     image:
       repository: quay.io/dam-agents/skydiscover
-      tag: ""
+      tag: "" # @ci-pin skydiscover-image-tag
     storageSize: "5Gi"
     env:
       - name: SKYDISCOVER_SEARCH

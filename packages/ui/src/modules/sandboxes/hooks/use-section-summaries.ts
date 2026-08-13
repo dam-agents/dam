@@ -37,8 +37,6 @@ const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** First `max` names, with a "+N more" tail; undefined when the list is empty
- *  so the nav falls back to its neutral placeholder. */
 function formatNameList(names: string[], max = 2): string | undefined {
   if (names.length === 0) return undefined;
   const shown = names.slice(0, max);
@@ -60,8 +58,6 @@ export function useSectionSummaries(agent: AgentView | null): {
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
-  // Catalog is available while asleep; current is operable-gated (never wakes
-  // the pod), so the model segment appears only when the pod is up or cached.
   const { data: configStatus } = useHarnessConfigStatus(agent?.id ?? null);
   const { data: currentConfig } = useHarnessConfigCurrent(agent?.id ?? null);
 
@@ -104,8 +100,6 @@ export function useSectionSummaries(agent: AgentView | null): {
   }, [agent, templates, apps, modelName, staleModel.stale]);
 
   const connections = useMemo(() => {
-    // Providers surface in the Setup line; app grants fold into provider
-    // titles ("GitHub, Custom Headers, +6 more").
     if (!connectionsQuery.data) return undefined;
     const titles = connectionsQuery.data.connections
       .map((c) => c.connectionId)
@@ -143,8 +137,6 @@ export function useSectionSummaries(agent: AgentView | null): {
   const availableChannels = useAgents().data?.availableChannels;
   const channelsSummary = useMemo(() => {
     if (!agent || !availableChannels) return undefined;
-    // Nothing to connect when the install wired up no messenger — say that
-    // instead of implying an empty list the user could fill.
     if (!availableChannels.slack && !availableChannels.telegram)
       return "No messenger configured";
     const kinds = [
@@ -175,8 +167,6 @@ export function useSectionSummaries(agent: AgentView | null): {
     return shared > 0 ? `${base} · ${shared} shared` : base;
   }, [agent, agentArtifacts]);
 
-  // Undefined while loading, and on deployments without a telemetry store where
-  // the read fails closed — the nav's placeholder is the right answer to both.
   const { data: monthSpend } = useAgentMonthSpend(agent?.id ?? null);
   const usageSummary = useMemo(() => {
     if (monthSpend === undefined) return undefined;

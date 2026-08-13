@@ -8,7 +8,6 @@ import { pack as tarPack } from "tar-stream";
 import { err, ok, type Result } from "../../../result.js";
 import { EXIT_SIGINT } from "../../shared/exit-codes.js";
 
-/** Mirror of packages/ui/src/modules/files/api/import-bundle.ts EXCLUDE_FROM_IMPORT. */
 export const EXCLUDE_FROM_IMPORT = new Set([
   "node_modules",
   ".venv",
@@ -17,7 +16,6 @@ export const EXCLUDE_FROM_IMPORT = new Set([
 ]);
 
 export interface ResolvedArg {
-  /** Path string the user typed — for prompts and error messages. */
   input: string;
   abs: string;
   name: string;
@@ -41,8 +39,6 @@ export interface BundleBuilder {
   ): Promise<Result<PackedBundle, BundleError>>;
 }
 
-/** Validate raw user paths once, up-front: stat, classify, collision-check,
- *  top-level exclusion-check. Cheap; runs before agent resolution. */
 export async function resolveArgs(
   paths: readonly string[],
 ): Promise<Result<ResolvedArg[], BundleError>> {
@@ -102,13 +98,10 @@ export function createBundleBuilder(): BundleBuilder {
       const tmpDir = await mkdtemp(join(tmpdir(), "dam-import-"));
       const tmpPath = join(tmpDir, "bundle.tar.gz");
 
-      // SIGINT terminates before `finally` runs; sync best-effort rm until cleanup() unhooks it.
       const onSigint = () => {
         try {
           rmSync(tmpDir, { recursive: true, force: true });
-        } catch {
-          // best effort — process is exiting
-        }
+        } catch {}
         process.exit(EXIT_SIGINT);
       };
       process.once("SIGINT", onSigint);
@@ -146,8 +139,6 @@ async function writeBundle(
     pack.finalize();
     await pipeDone;
   } catch (e) {
-    // Destroy the pack so the pipeline rejects cleanly, then swallow the
-    // rejection so it isn't unhandled. Re-throw the original cause.
     pack.destroy();
     await pipeDone.catch(() => {});
     throw e;
@@ -163,7 +154,6 @@ async function emit(
   try {
     st = await lstat(abs);
   } catch {
-    // Race: arg vanished between resolveArgs and emit. Skip silently.
     return;
   }
   if (st.isSymbolicLink()) return;
@@ -194,5 +184,4 @@ async function emit(
     });
     return;
   }
-  // block/char/socket/fifo — ignore.
 }

@@ -2,41 +2,28 @@ import type { ExperimentDriverSummary, ExperimentStatus } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
 
-/** One named loop within a sandbox, rolled up from its draft and runs. The
- *  experiment is the unit the user thinks in; the sandbox is where it lives. */
 export interface LineageRow {
   key: string;
   driverAgentId: string;
   name: string;
   runCount: number;
   liveCount: number;
-  /** Live wins, else the newest run's status, else draft. */
   badge: ExperimentStatus;
-  /** Driver-level running-invocation count, shown on live lineages. */
   runningInvocations: number;
-  /** createdAt of the lineage's newest row — the recency sort key. */
   newestAt: string;
-  /** Every experiment row in the lineage (draft + runs) — the delete set. */
   experimentIds: string[];
 }
 
-/** A sandbox and the experiments it holds — the container, since one sandbox can
- *  hold many. */
 export interface SandboxGroup {
   agentId: string;
-  /** Null when the sandbox was deleted — its results outlive it. */
   agent: AgentView | null;
   name: string;
   lineages: LineageRow[];
-  /** The experiments' rolled-up status, not the agent's lifecycle: live wins,
-   *  else the newest lineage's own badge. Null when there are none yet. */
   rollup: ExperimentStatus | null;
 }
 
 function rollupStatus(lineages: LineageRow[]): ExperimentStatus | null {
   if (lineages.length === 0) return null;
-  // toLineages already sorted live-first, then newest-first, so the head is the
-  // one worth reporting.
   return lineages[0]?.badge ?? null;
 }
 
@@ -50,7 +37,6 @@ function toLineages(summary: ExperimentDriverSummary): LineageRow[] {
   }
   const rows: LineageRow[] = [];
   for (const [name, experiments] of byName) {
-    // Summary order is newest-first already.
     const runs = experiments.filter((e) => e.status !== "draft");
     const live = runs.filter((e) => e.status === "running");
     rows.push({
@@ -71,12 +57,6 @@ function toLineages(summary: ExperimentDriverSummary): LineageRow[] {
   });
 }
 
-/** Marked experiment sandboxes ∪ agents that registered a plan. Both belong: the
- *  Kind marker is intent, and Plan Registration is keyed only on the calling
- *  agent, so any sandbox can become a driver. A deleted sandbox keeps its group
- *  so its results stay reachable.
- *
- *  Order: live, then by recency, then empty, then deleted. */
 export function toSandboxGroups(
   summaries: ExperimentDriverSummary[],
   agents: AgentView[],
@@ -85,9 +65,6 @@ export function toSandboxGroups(
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
   const groups = new Map<string, SandboxGroup>();
 
-  // Every deleted sandbox's lineages collect into ONE trailing group, as the
-  // vision draws it — the sandboxes are gone, so per-sandbox containers would
-  // just multiply tombstones.
   const deletedLineages: LineageRow[] = [];
   for (const summary of summaries) {
     const agent = agentById.get(summary.driverAgentId) ?? null;

@@ -6,17 +6,13 @@ import { cn } from "@/lib/utils";
 interface PanelCardProps {
   icon?: ReactNode;
   title: string;
-  /** Sits directly after the title. */
   titleAccessory?: ReactNode;
-  /** Pushed to the header's trailing edge. */
   headerRight?: ReactNode;
   testId?: string;
   className?: string;
   children: ReactNode;
 }
 
-/** A card introduced by a fixed-height header: icon, title, and a slot either
- *  side of the gap. */
 export function PanelCard({
   icon,
   title,

@@ -6,9 +6,6 @@ export type ReadTemplateSpec = (
   id: string,
 ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
 
-/** Wraps the pre-built (boot-loaded) templates repository into the service +
- *  read-spec port. The repo is constructed once at app startup (templates
- *  are file-mounted config, not read dynamically per request). */
 export function composeTemplatesModule(repo: TemplatesRepository): {
   templates: TemplatesService;
   readSpec: ReadTemplateSpec;

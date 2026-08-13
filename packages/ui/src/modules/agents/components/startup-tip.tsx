@@ -33,10 +33,7 @@ export function StartupTip({ sandbox }: { sandbox: string }) {
   const [index, setIndex] = useState(() =>
     Math.floor(Math.random() * tips.length),
   );
-  /** The card arriving, once. The tip inside it is opaque from the start so
-   *  the whole box — border, icon, text — fades in as one thing. */
   const [revealed, setRevealed] = useState(false);
-  /** The tip crossfading on a rotation, from then on. */
   const [shown, setShown] = useState(true);
   const indexRef = useRef(index);
   const swapRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -75,11 +72,7 @@ export function StartupTip({ sandbox }: { sandbox: string }) {
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
           <Idea size={16} className="text-foreground" />
         </span>
-        {/* Every tip is laid out in the same grid cell, so the box is as tall
-            as the longest one wraps at the current width and no rotation
-            resizes it. The column above is vertically centred: a card that
-            grew by a line would shift the spinner and the sandbox name, and at
-            mobile widths the tips wrap to two, three, and four lines. */}
+        {}
         <div className="grid flex-1">
           {tips.map((tip, i) => (
             <p

@@ -18,7 +18,7 @@ export function SelectableCard({
 }) {
   return (
     <div className={cn(cardSelectionVariants({ selected }), "relative p-4")}>
-      {/* Stretched overlay so a nested link can sit above it, which a real <button> can't wrap. */}
+      {}
       <button
         type="button"
         onClick={onSelect}

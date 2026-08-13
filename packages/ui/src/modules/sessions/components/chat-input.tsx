@@ -45,8 +45,6 @@ export function ChatInput({
 
   const addFiles = useCallback((files: FileList | File[]) => {
     for (const file of Array.from(files)) {
-      // Mirror the server-side 10 MB cap so oversized files never get
-      // base64-encoded into memory just to fail on upload.
       if (file.size > MAX_UPLOAD_BYTES) {
         emitToast({
           kind: "error",
@@ -119,15 +117,10 @@ export function ChatInput({
   const isComputing = busy && !loadingSession;
   const hasInput = input.trim().length > 0;
   const hasContent = hasInput || attachments.length > 0;
-  // Always show the stop affordance while busy so the user is never stranded
-  // without a way to interrupt. When they also have content typed, keep the
-  // send button alongside it so pressing the button queues the follow-up.
   const showStop = isComputing;
   const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
 
-  // Always dispatch — the server-side runtime queues prompts per session, so
-  // sending while busy just parks the prompt behind the active one.
   const send = useCallback(() => {
     const text = input.trim();
     const files = attachments.length > 0 ? attachments : undefined;
@@ -138,7 +131,6 @@ export function ChatInput({
   }, [input, attachments, onSend]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Mobile: Enter inserts newline (send via the button). Desktop: Enter sends, Shift+Enter newlines.
     if (e.key === "Enter" && !e.shiftKey && !isMobile()) {
       e.preventDefault();
       send();
