@@ -116,7 +116,7 @@ export function SkillsSurface({
         setOpenModal({ kind: "add-source", tab: "github", files: [] })
       }
     >
-      <Add size={14} /> Add source
+      <Add size={16} /> Add source
     </Button>
   );
 

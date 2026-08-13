@@ -84,7 +84,7 @@ export function SkillSourcesSection({
               {action}
               {!readOnly && sets.length > 0 && (
                 <Button variant="outline" size="sm" onClick={onAddSets}>
-                  <Add size={14} /> Add skill sets…
+                  <Add size={16} /> Add skill sets…
                 </Button>
               )}
             </div>
