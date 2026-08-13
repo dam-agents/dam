@@ -344,13 +344,34 @@ async function write(
   for (const targetRoot of skillPaths) {
     await fs.mkdir(targetRoot, { recursive: true });
     const dst = path.join(targetRoot, name);
-    await fs.rm(dst, { recursive: true, force: true });
-    await fs.cp(srcDir, dst, { recursive: true });
+    // Staged under a dot-prefixed sibling, then swapped in with two renames.
+    // `listEntries` skips dotted entries, so neither the copy nor the delete of
+    // the previous tree is ever visible — the published path is absent only
+    // between the two renames. Writing onto `dst` directly left the skill
+    // missing for the length of a recursive copy, long enough for a reader to
+    // take the absence for an out-of-band deletion. Validating the staged tree
+    // rather than the published one follows from the same rule: a rejected
+    // skill never becomes visible, and the previous copy survives the attempt.
+    const staged = path.join(targetRoot, `.${name}.staging`);
+    const previous = path.join(targetRoot, `.${name}.previous`);
+    let published = false;
     try {
-      await assertNoSymlinks(dst);
-    } catch (e) {
-      await fs.rm(dst, { recursive: true, force: true });
-      throw e;
+      await fs.rm(staged, { recursive: true, force: true });
+      await fs.rm(previous, { recursive: true, force: true });
+      await fs.cp(srcDir, staged, { recursive: true });
+      await assertNoSymlinks(staged);
+      await fs.rename(dst, previous).catch(ignoreMissing);
+      await fs.rename(staged, dst);
+      published = true;
+    } finally {
+      await fs.rm(staged, { recursive: true, force: true });
+      if (published) {
+        await fs.rm(previous, { recursive: true, force: true });
+      } else {
+        // Failed after the old tree was moved aside — put it back, so a failed
+        // update leaves the skill as it was rather than gone.
+        await fs.rename(previous, dst).catch(ignoreMissing);
+      }
     }
   }
   const firstTarget = path.join(skillPaths[0], name);
@@ -516,6 +537,10 @@ async function hashSkillDir(absDir: string): Promise<string> {
     h.update(Buffer.from([0]));
   }
   return h.digest("hex");
+}
+
+function ignoreMissing(err: unknown): void {
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
 
 async function assertNoSymlinks(root: string): Promise<void> {
