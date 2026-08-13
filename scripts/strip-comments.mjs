@@ -80,11 +80,28 @@ function loadTypescript() {
 }
 
 export function listFiles(scopes) {
-  const args = ['ls-files', '-z', '--', ...(scopes.length ? scopes : ['.'])];
-  const out = execFileSync('git', args, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 });
+  const paths = scopes.length ? scopes : ['.'];
+  // `-z --` is the robust form (NUL-safe, option-injection-proof), but
+  // restricted environments (the locki sandbox's git command bridge) admit
+  // only plain `git ls-files <path>...` — fall back to it and split on
+  // newlines. Source paths in this repo are ASCII, so the fallback is safe.
+  let out;
+  let sep = '\0';
+  const opts = { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 };
+  try {
+    // stderr swallowed: in the fallback environment this attempt fails by
+    // design and its complaint would print on every run.
+    out = execFileSync('git', ['ls-files', '-z', '--', ...paths], {
+      ...opts,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    out = execFileSync('git', ['ls-files', ...paths], opts);
+    sep = '\n';
+  }
   return out
     .toString('utf8')
-    .split('\0')
+    .split(sep)
     .filter(Boolean)
     .filter((f) => {
       const ext = path.extname(f);
