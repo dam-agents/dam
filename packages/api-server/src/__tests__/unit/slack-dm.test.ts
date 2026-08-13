@@ -129,7 +129,6 @@ describe("slack 1:1 DM", () => {
     expect(h.turnEvents()).toHaveLength(1);
     const turn = h.turnEvents()[0]!;
     expect(turn.outcome).toBe("success");
-    // Shared binding: attributed by Slack identity, no platform sub.
     expect(turn.actorSub).toBe(null);
     expect(turn.externalActorId).toBe(USER);
   });
@@ -171,8 +170,6 @@ describe("slack 1:1 DM", () => {
   });
 
   it("drops an app_mention duplicate in a DM (message.im is the source of truth)", async () => {
-    // A DM @mention can arrive on both paths; message.im owns it, so the
-    // mention path must be a no-op to avoid processing the turn twice.
     const h = harness({ binding: boundDm });
     await h.start();
     await h.gw.fireMention({

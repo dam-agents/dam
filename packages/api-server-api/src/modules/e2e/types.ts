@@ -33,7 +33,6 @@ export type SpawnInvocationInput = Omit<
 export type SpawnInvocationResult = z.infer<typeof spawnInvocationResultSchema>;
 
 export type SlackFireMentionInput = z.infer<typeof slackFireMentionInputSchema>;
-/** Same wire shape as a mention — only the trigger differs (ambient mode). */
 export type SlackFireMessageInput = SlackFireMentionInput;
 export type SlackFireCommandInput = z.infer<typeof slackFireCommandInputSchema>;
 export type SlackFireCommandResult = z.infer<
@@ -53,8 +52,6 @@ export interface E2eService {
     agentId: string,
     input: PerformFetchInput,
   ): Promise<PerformFetchResult>;
-  /** Make the mock agent spawn an Invocation as the driver, through the same
-   *  harness POST the driver SDK uses. Returns the target agent id. */
   spawnInvocation(
     agentId: string,
     input: SpawnInvocationInput,

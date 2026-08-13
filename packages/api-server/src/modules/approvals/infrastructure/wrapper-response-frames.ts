@@ -4,9 +4,6 @@ import type {
   ApprovalVerdict,
 } from "api-server-api";
 
-/** Pick the harness's option id matching the inbox action. Falls back when
- *  the harness omits `kind` or doesn't carry the exact match — better to
- *  send a slightly broader allow/reject than to drop the verdict. */
 export function pickOptionId(
   options: readonly AcpPermissionOption[],
   verdict: ApprovalVerdict,

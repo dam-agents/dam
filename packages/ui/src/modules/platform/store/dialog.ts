@@ -11,7 +11,6 @@ export interface ConfirmOptions {
   cancelLabel?: string;
 }
 
-/** An alert has one button, so it takes everything but the cancel label. */
 export type AlertOptions = Omit<ConfirmOptions, "cancelLabel">;
 
 export interface DialogState {

@@ -30,17 +30,12 @@ interface Args {
   net: ReturnType<typeof useStagedNetworkAccess>;
   harnessDraft: ReturnType<typeof useHarnessConfigDraft>;
   providerAppIds: ReadonlySet<string>;
-  /** Server-truth grant ids at render time (grants apply immediately
-   *  elsewhere, so the form's copy may be stale while a provider stages). */
   savedConnectionIds: string[];
   handleSubmit: UseFormHandleSubmit<SettingsValues>;
   reset: UseFormReset<SettingsValues>;
   dirtyFields: FormState<SettingsValues>["dirtyFields"];
 }
 
-/** The Save orchestration: restart confirmations first (so declining aborts
- *  before anything commits), then the agent patch, egress preset, provider
- *  grant swap, and rule edits, ending with a form re-baseline. */
 export function useSandboxSettingsSave({
   agentId,
   agent,
@@ -63,11 +58,6 @@ export function useSandboxSettingsSave({
 
   return handleSubmit(async (values) => {
     if (!agentId || !dirty) return;
-    // Adds that need L7 promotion (method, path, or non-443 port — mirrors
-    // needsL7Promotion server-side) force a gateway roll; confirm up front so
-    // declining aborts before anything commits. This view stays mounted
-    // (unlike the old modal), so a mid-save abort would otherwise leave
-    // already-committed fields shown as unsaved.
     const gatewayRestartHosts = net.pendingAdds
       .filter(
         (a) =>
@@ -126,9 +116,6 @@ export function useSandboxSettingsSave({
           ...(dirtyFields.hibernationTimeoutMin
             ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
             : {}),
-          // Only the touched dimension ships (the server merge-patches per
-          // dimension): re-sending an untouched one would rewrite a spec
-          // value this form couldn't parse (and so baselined to a fallback).
           ...(sizeDirty
             ? {
                 size: {
@@ -148,7 +135,6 @@ export function useSandboxSettingsSave({
       }
       let savedAppIds = values.assignedAppIds;
       if (dirtyFields.assignedAppIds) {
-        // Only the provider choice stages; app grants come from server truth.
         savedAppIds = [
           ...new Set([
             ...savedConnectionIds.filter((id) => !providerAppIds.has(id)),
@@ -175,9 +161,6 @@ export function useSandboxSettingsSave({
       }
       net.reset();
       harnessDraft.commit();
-      // RHF `reset(values)` replaces the value set wholesale — every schema
-      // field must be present, or the omitted ones become undefined and all
-      // later saves fail validation invisibly.
       reset({
         name: values.name.trim(),
         assignedAppIds: savedAppIds,
@@ -186,8 +169,6 @@ export function useSandboxSettingsSave({
         sizeCpuMilli: values.sizeCpuMilli,
         sizeMemoryMi: values.sizeMemoryMi,
       });
-    } catch {
-      // Mutation meta.errorToast surfaces the failure; stay on the page.
-    }
+    } catch {}
   });
 }

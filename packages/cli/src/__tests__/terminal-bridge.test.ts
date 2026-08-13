@@ -44,8 +44,6 @@ describe("connectTerminalBridge", () => {
 
   it("resets terminal modes after an abrupt disconnect", async () => {
     const host = listen((ws) => {
-      // Enable mouse tracking like a remote TUI would, then drop the
-      // connection without restoring anything.
       ws.send(encodeDataFrame(OP_OUTPUT, "\x1b[?1003h\x1b[?1006h"), () =>
         ws.terminate(),
       );

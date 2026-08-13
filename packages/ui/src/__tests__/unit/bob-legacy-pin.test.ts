@@ -10,9 +10,6 @@ const withMode = (mode: string): Contributions => ({
 });
 
 describe("bobPinsFromConnection", () => {
-  // A secret pinned before 2.0 must stay editable: the edit dialog validates the
-  // pin it reads back, so surfacing a retired mode verbatim disabled Save and
-  // locked the user out of rotating the credential.
   test.each(["code", "advanced"])("normalizes the retired %s mode", (mode) => {
     expect(bobPinsFromConnection(withMode(mode)).chatMode).toBe("agent");
   });

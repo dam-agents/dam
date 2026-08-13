@@ -51,9 +51,6 @@ export function StartingPointStep({
   onContinue,
 }: Props) {
   const { startingPoint } = snapshot;
-  // Both kinded paths pin one harness image. An install whose template set omits
-  // it cannot create either, so offer neither and say why — otherwise the user
-  // gets through all three steps and fails at the create call.
   const kindedHarnessInstalled =
     loading || templates.some((t) => t.id === KINDED_HARNESS_TEMPLATE_ID);
 
@@ -137,7 +134,6 @@ export function StartingPointStep({
   );
 }
 
-/** What the chosen starting point needs next. */
 function StartingPointReveal({
   snapshot,
   templates,

@@ -1,15 +1,7 @@
 import { z } from "zod";
 
-// "schedule session mode" — how the agent resumes between scheduled
-// ticks. Distinct from sessions/types.ts `sessionModeSchema`
-// (chat / terminal), which is about the channel kind. Extracted here
-// because it appears in three of the schedules input schemas.
 const scheduleSessionModeSchema = z.enum(["continuous", "fresh"]);
 
-// Quiet-hours window: inclusive start, exclusive end, in the schedule's
-// timezone. endTime < startTime is valid and denotes a crosses-midnight
-// window (e.g. 22:00–06:00) — the controller evaluates these as
-// [start, 24:00) ∪ [00:00, end).
 export const quietWindowSchema = z
   .object({
     startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM required"),
@@ -68,9 +60,6 @@ export const scheduleResetSessionInputSchema = z.object({
   id: z.string().min(1),
 });
 
-// Loose schema for parsing quiet-hours windows stored in ConfigMaps.
-// Looser than the user-input `quietWindowSchema` (no HH:MM regex) so
-// existing ConfigMap data parses even if it predates the stricter rules.
 const quietWindowConfigMapSchema = z.object({
   startTime: z.string(),
   endTime: z.string(),

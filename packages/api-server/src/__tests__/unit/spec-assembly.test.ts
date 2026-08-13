@@ -14,8 +14,6 @@ const defaultLimits = { cpu: "1", memory: "1Gi" };
 
 describe("assembleSpecFromTemplate", () => {
   it("carries the template's hibernationTimeout onto the agent spec", () => {
-    // "0s" is the never-hibernate sentinel a workload image (e.g. Nous) seeds
-    // so its off-session background work isn't hibernated mid-run.
     const spec = assembleSpecFromTemplate(
       "nous-1",
       { ...baseTemplate, hibernationTimeout: "0s" },

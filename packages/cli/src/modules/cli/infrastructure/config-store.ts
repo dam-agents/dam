@@ -29,7 +29,6 @@ export function createTomlConfigStore(filePath: string): ConfigStore {
       try {
         contents = await readFile(filePath, "utf-8");
       } catch (e) {
-        // ENOENT = no file yet; treat as empty config.
         if (errnoCode(e) === "ENOENT") return ok({});
         return err({
           kind: "malformed-config",
@@ -58,9 +57,6 @@ export function createTomlConfigStore(filePath: string): ConfigStore {
     },
 
     async write(partial) {
-      // Read-merge-write to preserve unrelated top-level keys; the file is
-      // shared with future config knobs and possibly user-added comments
-      // we don't want to clobber.
       let existing: TomlTable = {};
       try {
         existing = parse(await readFile(filePath, "utf-8"));

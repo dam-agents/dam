@@ -10,7 +10,6 @@ import {
 } from "../infrastructure/experiments-repository.js";
 import { toSpanView, toView } from "./experiments-service.js";
 
-/** Cap mirrors the live feed's invocation join. */
 const FEED_INVOCATIONS_MAX = 500;
 
 export type DashboardSnapshotter = (
@@ -18,13 +17,6 @@ export type DashboardSnapshotter = (
   owner: string,
 ) => Promise<void>;
 
-/** Create the run's single-version results artifact at its terminal
- *  transition: the current renderer (the draft's dashboard, which the live
- *  run pointed at) with the final Trace Feed baked in — self-contained and
- *  shareable — then point the run at it. Best-effort by contract: callers
- *  invoke it after the terminal flip and must never let a snapshot failure
- *  disturb the transition. Owner-agnostic: both the owner-scoped service and
- *  the boot-level inactivity sweep share this one implementation. */
 export function createDashboardSnapshotter(deps: {
   db: Db;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;

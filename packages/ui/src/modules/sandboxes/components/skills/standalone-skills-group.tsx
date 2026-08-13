@@ -9,14 +9,6 @@ import { cn } from "@/lib/utils";
 
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
 
-/**
- * Stopped/starting counterpart to {@link StandaloneSkillsGroup}. The standalone
- * list is read live from the pod's PVC (`listLocal`), so it's unavailable while
- * the agent is hibernated — `skills.state` returns an empty standalone list. We
- * still render the section (header + explanatory placeholder) rather than
- * dropping it, so it stays present and read-only in parity with the GitHub
- * group instead of vanishing (#944 review).
- */
 export function StandaloneSkillsPlaceholder() {
   return (
     <section>
@@ -32,8 +24,6 @@ export function StandaloneSkillsPlaceholder() {
   );
 }
 
-/** Running-agent empty state (#2828): the section keeps its header and an
- *  authoring affordance instead of vanishing when no user skill exists yet. */
 export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
   return (
     <section>
@@ -54,7 +44,6 @@ export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
   );
 }
 
-/** Latest publish record per skill name — drives the publish pill. */
 function latestPublishByName(
   publishes: SkillPublishRecord[],
 ): Map<string, SkillPublishRecord> {
@@ -66,17 +55,6 @@ function latestPublishByName(
   return map;
 }
 
-/**
- * "Created in this sandbox" — Standalone Local Skills authored in place or
- * uploaded as Markdown. Each row can be published upstream as a PR, shows a pill
- * reporting that PR's state once it has a publish record, and offers a kebab to
- * download or delete it. There is no install toggle: standalone skills are
- * simply present on disk.
- *
- * The per-row rendering lives in {@link StandaloneSkillRow}; this component owns
- * only the section, the header slot, and which publish record belongs to which
- * skill.
- */
 export function StandaloneSkillsGroup({
   skills,
   readOnly,
@@ -93,21 +71,13 @@ export function StandaloneSkillsGroup({
   skills: LocalSkill[];
   readOnly: boolean;
   publishes: SkillPublishRecord[];
-  /** Whether any publishable (GitHub) source exists to publish into. */
   canPublish: boolean;
   onPublish: (skill: LocalSkill) => void;
   onDownload: (skill: LocalSkill) => void;
-  /** The row's latest publish record is passed along so the confirm dialog can
-   *  mention the PR without re-deriving it in the parent. */
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
-  /** Hand a merged skill over to its source. */
   onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
-  /** Open a skill's SKILL.md preview. Absent when there is no pod to read
-   *  the file from, which leaves the names inert. */
   onOpenSkill?: (skill: LocalSkill) => void;
-  /** Names whose source hasn't been scanned, so tracking can't be offered yet. */
   trackUnavailableNames: ReadonlySet<string>;
-  /** Header-right slot (e.g. the "+ Add source" button). */
   action?: ReactNode;
 }) {
   const published = latestPublishByName(publishes);

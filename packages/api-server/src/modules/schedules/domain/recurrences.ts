@@ -3,45 +3,25 @@ import rrulePkg from "rrule";
 import { hasVisibleOccurrence, isInQuietHours } from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
 
-// rrule@2.8.1 ships CJS as its Node entry (`main`) with no `exports` map,
-// so Node ESM can't pull named bindings directly — destructure the default.
 const { RRule } = rrulePkg;
 
 export function validateCron(expr: string): void {
   CronExpressionParser.parse(expr);
 }
 
-/**
- * Validate an RFC 5545 RRULE body (e.g. "FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=7").
- * Throws on parse errors. We call `rrulestr` with the raw body; rrule.js
- * accepts either a full iCal block or a plain RRULE string.
- */
 export function validateRRule(expr: string): void {
-  // rrule.js throws a plain Error with the parse reason.
   const rule = RRule.fromString(expr);
   if (!rule) throw new Error(`invalid rrule: ${expr}`);
 }
 
-/**
- * Validate an IANA timezone using the platform's Intl database.
- * Throws if the timezone is not recognized.
- */
 export function validateTimezone(tz: string): void {
   try {
-    // Constructing a DateTimeFormat with an unknown tz throws RangeError.
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
   } catch {
     throw new Error(`invalid timezone: ${tz}`);
   }
 }
 
-/**
- * Refuse to save a schedule whose every RRULE occurrence falls inside a
- * quiet-hours window — nextFireAt would exhaust its iteration cap and the
- * schedule would never fire. Thin throw-wrapper over the shared
- * `hasVisibleOccurrence` (one copy of the visible-occurrence walk lives in
- * the contract package, consumed by the UI, CLI, and api-server alike).
- */
 export function validateHasVisibleOccurrence(
   rruleExpr: string,
   windows: QuietWindow[],
@@ -56,7 +36,6 @@ export function validateHasVisibleOccurrence(
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   if (spec.type === "cron") {
     try {
-      // Legacy cron schedules are UTC by contract.
       const cron = CronExpressionParser.parse(spec.cron, {
         currentDate: from,
         tz: "UTC",
@@ -67,7 +46,6 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
     }
   }
   const wallFrom = toWallClock(from, spec.timezone);
-  // Without BYSECOND, occurrences inherit dtstart's seconds — zero them.
   wallFrom.setUTCSeconds(0, 0);
   const rule = new RRule({
     dtstart: wallFrom,
@@ -86,7 +64,6 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   return null;
 }
 
-// Wall-clock fields of `instant` in `tz`, carried in the Date's UTC fields.
 function toWallClock(instant: Date, tz: string): Date {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
@@ -107,7 +84,6 @@ function toWallClock(instant: Date, tz: string): Date {
   );
 }
 
-// Inverse of toWallClock; the second offset read resolves DST boundaries.
 function toInstant(wall: Date, tz: string): Date {
   const guess = wall.getTime() - tzOffsetMs(wall, tz);
   return new Date(wall.getTime() - tzOffsetMs(new Date(guess), tz));

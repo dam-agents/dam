@@ -3,14 +3,6 @@ import { useEffect, useState } from "react";
 
 import type { PendingAdd } from "../../egress-rules/components/agent-egress-editor.js";
 
-/**
- * Staging buffer for the sandbox settings page's Network access section. The
- * preset swap, rule deletes, and rule adds live outside React Hook Form (none
- * map to a schema field): Save commits them alongside the form, leaving
- * discards them, and switching sandbox resets them. The grant-derived previews
- * stay in the settings-form hook — they're a projection of the staged
- * secret/app grants, which that hook owns.
- */
 export function useStagedNetworkAccess(agentId: string | null) {
   const [stagedPreset, setStagedPreset] = useState<EgressPreset | null>(null);
   const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(
@@ -24,7 +16,6 @@ export function useStagedNetworkAccess(agentId: string | null) {
     setPendingAdds([]);
   };
 
-  // Switching sandbox discards anything staged for the previous one.
   useEffect(() => {
     setStagedPreset(null);
     setPendingDeletes(new Set());

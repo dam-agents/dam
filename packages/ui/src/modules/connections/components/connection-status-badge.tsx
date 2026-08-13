@@ -11,7 +11,6 @@ const STATUS_PRESENTATION: Record<
   disconnected: { label: "Disconnected", variant: "muted" },
 };
 
-/** Active connections render no badge; callers only show this for the rest. */
 export function ConnectionStatusBadge({
   status,
 }: {

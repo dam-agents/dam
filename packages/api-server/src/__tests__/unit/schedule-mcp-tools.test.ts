@@ -12,9 +12,6 @@ import type {
   ScheduleCreator,
 } from "api-server-api";
 
-/** Drive the create_schedule MCP tool over a real MCP client, so its declared
- *  input schema (and the mutual-exclusivity check inside the handler) is what
- *  gets exercised. `schedules` is stubbed to record what the tool asked for. */
 async function mcpHarness() {
   const cronCalls: {
     input: ScheduleCreateCronInput;
@@ -174,8 +171,6 @@ describe("create_schedule MCP tool", () => {
   it("refuses cron paired with timezone rather than silently scheduling in UTC", async () => {
     const { client, cronCalls } = await mcpHarness();
 
-    // Accepting this would hand back a UTC schedule the agent believes fires
-    // at 9am Prague — the DST drift the rrule path exists to prevent.
     const res = await client.callTool({
       name: "create_schedule",
       arguments: {

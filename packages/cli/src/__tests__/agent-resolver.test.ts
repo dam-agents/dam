@@ -115,8 +115,6 @@ describe("agent-resolver", () => {
     });
 
     it("matches exact case (no normalization) — 'Prod' does not match 'prod'", async () => {
-      // Deliberate contract: a future `.toLowerCase()` or `.trim()` would
-      // silently break addressing, so the resolver pins case-sensitivity.
       const resolver = createAgentResolver({
         agentService: makeService({
           list: () => ok([makeAgent({ name: "prod" })]),

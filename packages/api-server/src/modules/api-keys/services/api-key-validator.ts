@@ -12,8 +12,6 @@ export interface ValidatedApiKey {
 export type ApiKeyValidationFailure = "unknown" | "expired" | "revoked";
 
 export interface ApiKeyValidatorDeps {
-  /** Computes the at-rest digest of an incoming token (HMAC-SHA256 with the
-   *  server pepper). Injected so the validator stays free of key material. */
   hashToken: (token: string) => string;
   findByHash: (hash: string) => Promise<ApiKeyRow | null>;
   touchLastUsed: (id: string) => Promise<void>;
@@ -35,8 +33,6 @@ export function createApiKeyValidator(
       return err("expired");
     }
 
-    // last_used_at is observability, not authorization — a write failure
-    // must not break a legitimate request.
     void deps.touchLastUsed(row.id).catch(() => {});
 
     return ok({

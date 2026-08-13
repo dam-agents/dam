@@ -13,11 +13,9 @@ const sessionMetaEntrySchema = z.object({
   meta: platformSessionMetaSchema.catch({}),
   createdAt: z.string(),
   lastActivityAt: z.string().optional(),
-  /** When a viewer last saw the session; unread = lastActivityAt > seenAt. */
   seenAt: z.string().optional(),
 });
 
-// A malformed entry is dropped rather than discarding the whole store.
 const sessionMetadataStateSchema = z
   .object({
     sessions: z.record(z.string(), z.unknown()).default({}),
@@ -42,8 +40,6 @@ export interface SessionMetadataStore {
   recordActivity(sessionId: string): void;
   recordSeen(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
-  /** Soft delete: drop the entry and remember the id so list
-   *  enrichment filters it out even while the harness still lists the JSONL. */
   tombstone(sessionId: string): void;
   isTombstoned(sessionId: string): boolean;
 }
@@ -57,8 +53,6 @@ export function createSessionMetadataStore(
     initial: () => ({ sessions: {}, tombstones: [] }),
   });
 
-  // One-time backfill: pre-feature entries have no seenAt and would all read
-  // as unread. Grandfather them as seen at their last known activity.
   {
     const { sessions, tombstones } = store.read();
     if (Object.values(sessions).some((e) => e.seenAt === undefined)) {

@@ -27,7 +27,6 @@ function makeAuth(expiresAtIso: string): HostAuth {
   };
 }
 
-/** In-memory Auth Store. Mirrors the production port shape exactly. */
 function makeStore(seed: Array<[HostUrl, HostAuth]> = []): AuthStore & {
   state: Map<HostUrl, HostAuth>;
   writes: number;
@@ -74,7 +73,6 @@ function metadataResolver(): HostMetadataResolver {
   };
 }
 
-/** Token endpoint client whose refresh() returns a scripted response. */
 function refreshClient(
   result: Result<TokenEndpointResponse, TokenTransportError>,
   spy?: { calls: number },
@@ -122,8 +120,6 @@ describe("TokenProvider — claim 5: DAM_TOKEN precedence", () => {
     const store = makeStore([[HOST, makeAuth("2027-01-01T00:00:00Z")]]);
     const tp = createTokenProvider({
       authStore: store,
-      // The production reader maps "" → undefined; injecting undefined
-      // here mirrors that contract.
       authEnvReader: envReader(undefined),
       tokenEndpointClient: refreshClient(
         ok({ kind: "error", error: "should_not_be_called" }),

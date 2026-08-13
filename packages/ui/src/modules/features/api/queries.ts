@@ -2,9 +2,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-/** Per-user feature flags (all default off; toggled in the hidden Features
- *  menu). Cached for the session — flag flips go through useSetFeature,
- *  which refreshes the cache immediately. */
 export function useFeatures() {
   return useQuery({
     ...trpc.features.flags.queryOptions(),

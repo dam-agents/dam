@@ -202,10 +202,6 @@ function substituteHostInContribution(
   }
 }
 
-// Shared by every GitHub Enterprise auth mode (OAuth today, GitHub App
-// below): GH_HOST for the `gh` CLI, plus the two host-scoped injections a
-// subdomain-isolated GHES instance serves — `api.{host}` (Bearer, REST) and
-// the apex `{host}` (Basic x-access-token, git-over-HTTPS).
 function githubEnterpriseHostContributions(host: string): Contribution[] {
   return [
     { kind: "env", name: "GH_HOST", placeholder: host },
@@ -243,8 +239,6 @@ async function buildOAuthDcr(
     throw new Error(`No OAuth discovery metadata at ${input.url}`);
   }
 
-  // A supplied client is pre-registered with the server — endpoints come
-  // from discovery, registration is skipped.
   let clientId: string;
   let clientSecret: string | undefined;
   if (input.clientId) {
@@ -304,10 +298,6 @@ async function buildOAuthDcr(
   };
 }
 
-// Resolves the token endpoint from the issuer's OAuth metadata (like the DCR
-// path above, discovery runs at build time so a bad issuer fails the create).
-// The secret map carries only the client secret: the access token (and the
-// SDS files baked from it) is minted by the service before the secret write.
 async function buildClientCredentials(
   template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
   input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
@@ -343,8 +333,6 @@ async function buildClientCredentials(
     issuerUrl = derived.issuerUrl;
     issuerMeta = derived;
   }
-  // grant_types_supported is optional metadata (many issuers omit it) —
-  // absence is deliberately treated as supported.
   if (
     issuerMeta.grantTypesSupported &&
     !issuerMeta.grantTypesSupported.includes("client_credentials")
@@ -418,14 +406,8 @@ async function buildClientCredentials(
   };
 }
 
-// Accepts the private key as raw PEM (real or `\n`-escaped newlines) or its
-// base64 encoding — so it survives a single-line paste or a JSON/env value —
-// and validates it up front for a clear error before the synchronous mint.
 export function normalizePrivateKeyPem(raw: string): string {
   const trimmed = raw.trim();
-  // Restore escaped newlines (a PEM pasted from a JSON/env value) or decode a
-  // base64-wrapped PEM; a final trim keeps the stored form canonical whichever
-  // way it arrived.
   const pem = (
     trimmed.includes("-----BEGIN ")
       ? trimmed.replace(/\\n/g, "\n")
@@ -441,13 +423,6 @@ export function normalizePrivateKeyPem(raw: string): string {
   return pem;
 }
 
-/** The GitHub REST base a `github-app` template's installation endpoints hang
- *  off. A host-parameterized template (its `apiBaseUrl` carries `{host}`, e.g.
- *  the GitHub Enterprise sibling) takes the host from user input and
- *  substitutes it through, same as the OAuth GHE path; the fixed github.com
- *  template has nothing to substitute and keeps its static host. Shared so the
- *  pre-create installation probe reads from exactly the base the create will
- *  mint against. */
 export function gitHubAppApiBase(
   template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
   inputHost: string | undefined,
@@ -466,10 +441,6 @@ export function gitHubAppApiBase(
   };
 }
 
-// GitHub App installation grant. Like client-credentials, the secret map carries
-// only the signing material (the private key); the installation token and its
-// SDS files are minted by the service before the secret write. The token reaches
-// only the gateway — the private key never leaves the api-server.
 function buildGitHubApp(
   template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
   input: Extract<ConnectionCreateInput, { authKind: "github-app" }>,
@@ -497,9 +468,6 @@ function buildGitHubApp(
     contributions.push(...githubEnterpriseHostContributions(host));
   }
 
-  // Rejected here rather than at GitHub so a typo fails the create with a
-  // usable message; whether the installation actually covers the subset is
-  // GitHub's call, made by the synchronous mint that follows.
   const scope = parseGitHubAppScope(input);
 
   return {
@@ -574,7 +542,6 @@ function buildHeader(
     });
   }
 
-  // Each filled config input becomes an `env` contribution.
   for (const spec of template.configInputs ?? []) {
     const value = input.configInputs?.[spec.inputName]?.trim();
     if (!value) continue;
@@ -632,8 +599,6 @@ function buildNone(
       url: input.url,
     });
 
-    // Optional header credential: injected at the gateway (egress-inject +
-    // header auth), never written into the mcp-entry the harness sees.
     if (input.headerName && input.value) {
       const headerName = input.headerName;
       const valueFormat = "{value}";

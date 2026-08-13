@@ -56,8 +56,6 @@ const themeOptions = [
 
 export function SettingsView() {
   const { data: flags } = useFeatures();
-  // The Features tab stays reachable once revealed here, and for anyone who
-  // already has a flag on (so it can be found again on another browser).
   const showFeatures =
     isFeaturesMenuRevealed() || Object.values(flags ?? {}).some(Boolean);
   const tabs = [
@@ -76,8 +74,6 @@ export function SettingsView() {
   const { data: appVersion } = useAppVersion();
   const [versionTaps, setVersionTaps] = useState(0);
 
-  // Hidden: five taps on the version string reveals the Features tab —
-  // the per-user toggles for pre-release surfaces live there.
   const onVersionTap = () => {
     if (versionTaps + 1 < 5) {
       setVersionTaps(versionTaps + 1);
@@ -99,18 +95,6 @@ export function SettingsView() {
         variant="pill"
         size="sm"
         orientation="vertical"
-        // Mobile lays the strip out as a row. It owns its horizontal overflow
-        // so a long tab set scrolls the strip instead of the whole view, and
-        // the triggers keep their full label instead of shrinking into wraps.
-        // Specifying `overflow-x` makes the strip a scroll container on both
-        // axes, so its clipping region is its padding box — and the triggers'
-        // focus ring paints 4px outside their border box on all four sides.
-        // Hence padding on both axes: without it the first and last triggers'
-        // rings are clipped, and the first tab is the default focus target.
-        // The inline padding clears 4px rather than matching it — fractional
-        // layout leaves the scroll-end edge ~0.06px short of an exact 4px.
-        // `gap-1` already spaces the interior rings. Desktop stays the plain
-        // vertical sidebar.
         className="flex-row overflow-x-auto px-1.5 py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] shrink-0"
       />
 
@@ -122,7 +106,7 @@ export function SettingsView() {
               description="Customize the look and feel of the interface."
             />
 
-            {/* Theme selector */}
+            {}
             <div className="mb-8">
               <SectionLabel spaced>Theme</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

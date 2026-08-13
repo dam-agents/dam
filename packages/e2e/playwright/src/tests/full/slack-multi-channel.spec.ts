@@ -5,21 +5,13 @@ import { createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { harnessName } from "../../lib/fixtures.js";
 
-// This project's own mock agent — not the smoke chain's shared `e2e-agent`,
-// which full-tier projects must neither create (03-agent asserts it does not
-// exist yet) nor assume exists (no dependency edge orders the chain first).
 const agentName = "e2e-slack-multi";
 
-// #3086: one agent reachable from several Slack channels at once, each channel
-// its own conversation. Full-tier: two agent turns end to end, minutes long.
 const channelA = "C-E2E-MULTI-A";
 const channelB = "C-E2E-MULTI-B";
 const strangerSlackUserId = "U-E2E-STRANGER";
 const mockDefaultReply = "Hello from the mock agent.";
 
-// Deliberately identical in both channels. A Slack timestamp is only unique
-// within a conversation, so this is the collision that must NOT merge the two
-// threads into one session.
 const sharedTs = "1700000900.000100";
 
 const textIn = (channel: string) => `hello from ${channel}`;
@@ -58,8 +50,6 @@ test("one agent serves two Slack channels, each its own conversation (#3086)", a
       slackChannelId: channelB,
     });
 
-    // The second connect adds a binding rather than replacing the first —
-    // the whole point of the feature.
     const agent = await api.agents.get.query({ id: agentId });
     const bound = agent.channels
       .filter((c) => c.type === "slack")
@@ -69,9 +59,6 @@ test("one agent serves two Slack channels, each its own conversation (#3086)", a
   });
 
   await test.step("a mention in each channel is answered in that channel", async () => {
-    // Both mentions carry the SAME thread_ts. Each must be answered in its own
-    // channel: a session key that ignored the conversation would have merged
-    // them, and the second channel's answer would surface in the first.
     await api.e2e.slackResetOutbound.mutate();
     for (const channel of [channelA, channelB]) {
       await api.e2e.slackFireMention.mutate({

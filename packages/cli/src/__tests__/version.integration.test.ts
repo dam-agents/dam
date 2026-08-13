@@ -108,9 +108,7 @@ describe("dam version (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  afterAll(async () => {
-    /* dist/ persists across runs */
-  });
+  afterAll(async () => {});
 
   async function configureServer(url: string) {
     const r = await runDam(["config", "set", "server", url], {
@@ -206,8 +204,6 @@ describe("dam version (integration)", () => {
       "below the server's minimum required version 99.0.0",
     );
     expect(r.stderr).toContain("ping/auth login/shell will fail");
-    // Server line goes to stdout; warning to stderr. stdout carries the
-    // matter-of-fact status, stderr carries the human-facing diagnostic.
     expect(r.stdout).toContain("server 1.0.0 (min CLI 99.0.0)");
     expect(r.stdout).not.toContain("ping/auth login/shell will fail");
   });
@@ -246,11 +242,6 @@ describe("dam version (integration)", () => {
   });
 
   it("relocated bin.js still resolves the version (build-time embed)", async () => {
-    // The version must be embedded in the bundle, not resolved by walking
-    // up to a sibling package.json. Copy the built bin to a tmp dir away
-    // from the repo and confirm `--version` prints the right string.
-    // Use a `.mjs` extension so Node treats it as ESM without relying on a
-    // sibling package.json (which is the whole point — no walk).
     const tmpDist = await mkdtemp(join(tmpdir(), "dam-relocated-"));
     try {
       const relocated = join(tmpDist, "bin.mjs");

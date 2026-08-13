@@ -36,9 +36,6 @@ interface Props {
   onResumeSession?: (sessionId: string) => void;
 }
 
-/** Lists the sessions a schedule has produced (#943). The contract exposes no
- *  per-run outcome, so each row is the session's own title + timestamp and
- *  opens that session. */
 export function ScheduleResultsModal({
   agentId,
   schedule,

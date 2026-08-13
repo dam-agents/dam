@@ -42,18 +42,9 @@ const EMPTY_DRAFT: AddRuleDraft = {
 };
 
 export interface PendingAdd extends AddRuleDraft {
-  /** Stable client-side id used as the React key while the row is unsaved.
-   *  Replaced by a server id on the next refetch after Save commits. */
   tempId: string;
 }
 
-/**
- * Optional staging hook used when the editor is embedded in a parent form
- * with its own Save button (the configure-agent dialog). Rules edits and
- * the preset choice are all funneled through this controller; the parent
- * accumulates them and commits on Save. When the prop is omitted the
- * editor falls back to live mode — every action commits immediately.
- */
 export interface StagedNetworkAccessController {
   preset: EgressPreset | null;
   setPreset: (next: EgressPreset | null) => void;
@@ -62,17 +53,8 @@ export interface StagedNetworkAccessController {
   pendingAdds: ReadonlyArray<PendingAdd>;
   appendPendingAdd: (draft: AddRuleDraft) => void;
   removePendingAdd: (tempId: string) => void;
-  /** Mirrors the connection-grant diff in the parent dialog. The server's
-   *  `setAgentConnections` writes a `(host, *, *, allow, source=connection:<id>)`
-   *  rule per granted connection host on Save — we render the same rows as
-   *  preview here so the user sees what their connection toggles will produce. */
   pendingConnectionGrants: ReadonlyArray<ConnectionGrantPreview>;
-  /** Connection ids whose rules will be revoked on Save. Existing rows
-   *  with `source = connection:<id>` for these ids are struck through to
-   *  match how preset sweeps render. */
   pendingConnectionRevokes: ReadonlySet<string>;
-  /** Resolves `connection:<id>` → human-readable label so the rule list
-   *  shows "from Anthropic API Key" instead of a raw UUID. */
   connectionLabels: ReadonlyMap<string, string>;
 }
 
@@ -82,19 +64,6 @@ export interface ConnectionGrantPreview {
   label: string;
 }
 
-/**
- * Renders the per-agent network access rules form + list. Embedded in the
- * sandbox settings page's Network access section (staged via the `staged`
- * controller — Save commits the bundle). Without `staged` it falls back to
- * live mode, where every action fires its mutation directly.
- *
- * `currentPreset` is the preset the server derives from the agent's rule
- * `source` column (via `useCurrentPreset` in the parent) — the
- * preset isn't stored on the agent spec; it's the projection of which
- * `preset:*` rows are present. It seeds the dropdown so the user sees
- * their existing choice instead of a hardcoded default. It's also what
- * we treat as the "effective" preset when no staged change is pending.
- */
 export function AgentEgressEditor({
   agentId,
   currentPreset,
@@ -117,10 +86,6 @@ export function AgentEgressEditor({
 
   const stagedMode = staged !== undefined;
 
-  // Path-specific and port-carrying rules need MITM, which means the
-  // controller has to re-issue the leaf cert and roll the gateway pod
-  // (the agent pod stays up, #2903). The L4 (host-only, 443) path is a
-  // pure DB write — no roll. Warn the user so they own the timing.
   const draftNeedsMitm =
     draft.method !== "*" ||
     draft.pathPattern.trim() !== "*" ||
@@ -149,8 +114,6 @@ export function AgentEgressEditor({
       verdict: draft.verdict,
     };
     if (stagedMode) {
-      // Path-rule warning fires at Save time — staging is reversible, so
-      // a confirm here is premature.
       staged.appendPendingAdd(next);
       setDraft(EMPTY_DRAFT);
       return;
@@ -168,9 +131,6 @@ export function AgentEgressEditor({
     );
   };
 
-  // Pressing Enter inside any input commits the rule. We avoid a wrapper
-  // <form> so this editor is safe to embed inside other forms (the configure-
-  // agent dialog) — nested forms are invalid HTML and break event handling.
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -212,13 +172,6 @@ export function AgentEgressEditor({
   const stagedDeleteCount = stagedMode ? staged.pendingDeletes.size : 0;
   const presetPending = stagedMode && staged.preset !== null;
 
-  // Preset preview: when a preset switch is staged, render existing
-  // `preset:*` rows as struck-through (server will sweep them on Save) and
-  // append virtual rows for what the new preset will seed. Same visual
-  // treatment as a user-initiated delete keeps the "this is going away on
-  // save" affordance consistent across both flows. Connection-grant
-  // toggles in the parent dialog produce the same kind of preview rows
-  // (pre-server) so the user sees the rules a Save will generate.
   const presetPreviewRows: PreviewRow[] = presetPending
     ? buildPresetPreviewRows(staged.preset!, trustedHosts)
     : [];
@@ -391,9 +344,6 @@ export function AgentEgressEditor({
                   rule={r}
                   sourceLabelOverride={sourceLabelOverride}
                   pendingDelete={userDelete || presetSweep || connectionSweep}
-                  // Preset / connection sweeps are tied to picker state in
-                  // the parent, not to the trash icon — toggling here can't
-                  // undo them, so hide the per-row action.
                   hideAction={(presetSweep || connectionSweep) && !userDelete}
                   onAction={() => onRowDeleteClick(r)}
                   disabled={!stagedMode && revokeRule.isPending}
@@ -459,17 +409,9 @@ function RuleRow({
   disabled,
 }: {
   rule: EgressRuleView;
-  /** When non-null, replaces the source badge text. Used to resolve a raw
-   *  `connection:<id>` source into "from <connection-name>". */
   sourceLabelOverride?: string | null;
-  /** true → row is staged for deletion; render dimmed with an undo affordance. */
   pendingDelete: boolean;
-  /** true → omit the per-row action button. Used when the row is being
-   *  removed by a preset sweep, where the only undo is to revert the
-   *  preset selection in the dropdown. */
   hideAction?: boolean;
-  /** Fired when the user clicks the trash (live mode) or the toggle button
-   *  (staged mode). Caller decides whether to mutate or stage. */
   onAction: () => void;
   disabled: boolean;
 }) {
@@ -553,16 +495,11 @@ function PendingAddRow({
   );
 }
 
-/** Virtual row rendered when a preset switch or connection grant is staged
- *  but not yet saved. Mirrors the same allow/host/method/path columns as a
- *  real rule, with a "preview" badge and no actions — the user can't
- *  interact with these individually; they materialize on Save. */
 interface PreviewRow {
   key: string;
   host: string;
   method: string;
   pathPattern: string;
-  /** Renders in the source slot, e.g. "preset: trusted" or "from <name>". */
   sourceBadge: string;
 }
 
@@ -615,9 +552,7 @@ function PreviewPresetRow({ row }: { row: PreviewRow }) {
         preview
       </Badge>
       <span className="ml-auto" />
-      {/* No per-row actions in preview mode: the rules don't exist yet, so
-          there's nothing to revoke. The user can change the dropdown
-          selection or cancel the dialog to drop the preview. */}
+      {}
     </li>
   );
 }

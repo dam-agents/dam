@@ -9,8 +9,6 @@ import {
 } from "../../../telegram/api/queries.js";
 import { ChannelCard } from "./channel-card.js";
 
-/** Telegram is a platform-wide bot; chats bind via the bind command in the
- *  chat — the same `/dam bind` / `/dam unbind` surface Slack uses. */
 export function TelegramChannelCard({ agentId }: { agentId: string }) {
   const brandShort = getBrand().short;
   const bot = useTelegramBot();

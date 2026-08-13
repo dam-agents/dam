@@ -12,17 +12,9 @@ function describeRule(rule: WrittenRule): string {
   return `${hostWide ? "host-wide " : ""}egress rule (${formatEgressRuleInline(rule)})`;
 }
 
-/**
- * Verb-specific strings for the shared outcome → output/exit mapping.
- * `rule` is non-null exactly when an egress rule was written, so the
- * messages can be precise without knowing the row's type.
- */
 export interface OutcomeWording {
-  /** "Approved" / "Denied" */
   pastTense: string;
-  /** `applied` with `rule: null` under `--once`. */
   onceLine: string;
-  /** What a `rule_written_expired` rule means for future requests. */
   expiredEffect: string;
 }
 

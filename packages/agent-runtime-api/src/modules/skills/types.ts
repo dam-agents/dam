@@ -34,25 +34,16 @@ export interface ScannedSkill {
   description: string;
   version: string;
   contentHash: string;
-  /** Repo-relative directory the skill was found in, whichever Source Root
-   *  that was — what a pinned single-file read needs to locate its SKILL.md.
-   *  Required: both scan paths always know it. */
   dir: string;
 }
 
-/** Provenance vs. the image's pristine workspace copy: shipped untouched,
- *  shipped but diverged on the PVC, or created at runtime. */
 export type SkillOrigin = "system" | "system-modified" | "user";
 
 export interface LocalSkill {
   name: string;
   description: string;
   skillPath: string;
-  /** Absent on pre-provenance agent-runtimes — readers treat as `user`. */
   origin?: SkillOrigin;
-  /** Deterministic SHA-256 of the skill directory. Present only for names the
-   *  caller asked for via `hashNames` — hashing is real I/O on an NFS-backed
-   *  PVC and this listing runs on every state poll (#3019). */
   contentHash?: string;
 }
 
@@ -62,7 +53,6 @@ export interface LocalSkillFile {
   base64?: true;
 }
 
-/** The three fields GitHub reports about a pull request's disposition. */
 export interface PullRequestDisposition {
   state: "open" | "closed";
   draft: boolean;
@@ -70,8 +60,6 @@ export interface PullRequestDisposition {
 }
 
 export interface SkillReadLocalResult {
-  /** The skill's on-disk directory basename — may differ from the requested
-   *  name, which is the frontmatter `name:` for anything writeLocal created. */
   dir: string;
   files: LocalSkillFile[];
 }
@@ -108,9 +96,6 @@ export type SkillsDomainError =
       status: number;
       body: GitHubErrorBody;
     }
-  /** The request to GitHub never produced an HTTP response — the pod's only
-   *  route there is the paired gateway, so this means egress was denied or
-   *  the gateway is down, never a GitHub-side verdict. */
   | {
       kind: "UpstreamUnreachable";
       method: string;
@@ -131,9 +116,6 @@ export interface SkillsService {
   readLocal: (
     input: SkillReadLocalInput,
   ) => Promise<Result<SkillReadLocalResult, SkillsDomainError>>;
-  /** Raw pull-request disposition. Authenticated through the paired gateway, so
-   *  it resolves private repos the api-server's anonymous read cannot. Returns
-   *  the raw fields — the api-server derives the verdict. */
   readPullRequest: (
     input: SkillReadPullRequestInput,
   ) => Promise<Result<PullRequestDisposition, SkillsDomainError>>;
@@ -143,10 +125,6 @@ export interface SkillsService {
   writeLocal: (
     input: SkillWriteLocalInput,
   ) => Promise<Result<LocalSkill[], SkillsDomainError>>;
-  /** One skill's `SKILL.md` at a pinned commit, read through the Contents API.
-   *  Authenticated through the paired gateway, so it resolves private repos the
-   *  api-server's anonymous read cannot. An object, not a bare string, so the
-   *  response can grow without a breaking change. */
   readSkillFile: (
     input: SkillReadSkillFileInput,
   ) => Promise<Result<{ content: string }, SkillsDomainError>>;

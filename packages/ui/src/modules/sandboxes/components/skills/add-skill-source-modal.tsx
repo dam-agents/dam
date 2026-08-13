@@ -21,12 +21,6 @@ const TABS: readonly TabDef<Tab>[] = [
   { value: "upload", label: "Upload .md files", icon: <Upload size={15} /> },
 ];
 
-/**
- * Add a Skill Source or upload skills. Two tabs — a GitHub repository (a
- * connected source whose skills are installable) and direct Markdown upload
- * (each file becomes a standalone skill). Both apply immediately; there is no
- * staged "Submit changes" step.
- */
 export function AddSkillSourceModal({
   onClose,
   onCreate,
@@ -49,9 +43,6 @@ export function AddSkillSourceModal({
   initialFiles?: File[];
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
-  // Both tabs' in-progress state is owned by the shell (not the tab
-  // components) so switching tabs — which unmounts the inactive tab — never
-  // discards the user's typed repo details or staged files.
   const githubForm = useGithubSourceForm({ onCreate, onClose });
   const uploadStaging = useUploadStaging({
     initialFiles,

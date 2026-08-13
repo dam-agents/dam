@@ -26,7 +26,6 @@ interface Props {
   agent: AgentView;
   display: AgentDisplay;
   subtitle: string;
-  /** Live compute of this sandbox's temporary spawns, when it has any. */
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   onSelect: () => void;
@@ -59,14 +58,11 @@ export function AgentRow({
     <Card
       data-testid="agent-row"
       {...clickableProps(onSelect)}
-      // The guard keeps the card flat while a nested action is hovered, so the
-      // two hover states don't stack.
       className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          {/* Full width until there is room to share the line, so the pills drop
-              below the name on a narrow screen instead of squeezing it. */}
+          {}
           <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:hover))_&]:text-primary">
             {agent.name}
           </h2>
@@ -97,9 +93,7 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {/* A parked sandbox explains itself: the controller's figures ride
-            the badge tooltip — focusable and labelled, so keyboard and
-            screen-reader users reach them, not just mouse hover. */}
+        {}
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage
@@ -112,8 +106,7 @@ export function AgentRow({
         >
           <StatusBadge state={display.state} />
         </span>
-        {/* Menu clicks (incl. portaled items, which bubble through the React
-            tree) must not trigger the row's onSelect. */}
+        {}
         <span onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -128,8 +121,7 @@ export function AgentRow({
               <DropdownMenuSeparator />
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={onWake}>
-                  {/* A parked sandbox was never asleep — it's waiting for
-                      room, and this retries the gate. */}
+                  {}
                   {display.state === "over_budget" ? "Start" : "Wake"}
                 </DropdownMenuItem>
               ) : (

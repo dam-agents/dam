@@ -7,11 +7,6 @@ import {
 } from "./auth.js";
 import { httpAuthDenial } from "./mappers.js";
 
-/** The HTTP edge of the auth gate: bearer extraction here; the decision and
- *  audit logging in the threaded `authenticate`; response encoding in the
- *  mappers. Public-path exemptions live at the mount site in app.ts
- *  (`except(PUBLIC_PATHS, …)`) — this middleware authenticates everything
- *  it is given. */
 export function createAuthMiddleware(
   authenticate: Authenticate,
   attribution: SurfaceAttribution,

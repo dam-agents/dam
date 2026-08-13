@@ -71,8 +71,6 @@ describe("slackSessionKind", () => {
   });
 
   test("ambient is Slack-only: Telegram never reads as ambient", () => {
-    // Even if a Telegram conversation id somehow carried the prefix, it is not
-    // a Slack channel session, so the ambient split does not apply.
     expect(
       slackSessionKind(
         session({

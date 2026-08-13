@@ -37,7 +37,6 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   const suspend = useSuspendAgent();
 
   const onStop = async () => {
-    // Schedules override a stop by design (#1900) — say so before it lands.
     const schedules = await fetchSchedulesForAgent(agent.id);
     const scheduleNote =
       schedules.length > 0 ? (

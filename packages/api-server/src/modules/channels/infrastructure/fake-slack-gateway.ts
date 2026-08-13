@@ -18,37 +18,17 @@ export interface FakeSlackChannel {
 
 export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: SlackMentionEvent): Promise<void>;
-  /** A plain (non-mention) channel message, as the real gateway would deliver
-   *  it post-filtering: human-authored, no subtype, not a DM. */
   fireMessage(event: SlackChannelMessageEvent): Promise<void>;
-  /** A plain message in a 1:1 DM (`message.im`), as the real gateway delivers
-   *  it post-filtering: human-authored, no subtype, not a bot post. */
   fireDirectMessage(event: SlackChannelMessageEvent): Promise<void>;
   fireCommand(command: SlackSlashCommand): Promise<string>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
-  /** Workspace channel directory; unlisted ids resolve as not found. */
   setChannels(channels: FakeSlackChannel[]): void;
-  /** Seed the messages returned by getThreadReplies / getChannelHistory, so a
-   *  test can exercise history injection (e.g. attribution footers). */
   setHistory(messages: SlackMessage[]): void;
-  /** Workspace member directory; unlisted ids resolve as not found. */
   setUsers(users: SlackUserInfo[]): void;
-  /** Every id getUserInfo was called with, in order — lets a test see the
-   *  lookups that actually reached Slack (i.e. missed the worker's cache). */
   readUserLookups(): string[];
-  /** Bot scopes to report from getGrantedScopes. Defaults to null (matching
-   *  the real gateway before its first probe), so a test only needs this to
-   *  simulate a scope that is confirmed granted or confirmed missing. */
   setGrantedScopes(scopes: string[] | null): void;
-  /** Seed what downloadFile returns for one `url_private`. Unseeded urls throw,
-   *  matching the real gateway on a download it can't complete. Bytes are
-   *  served verbatim so a test can hand the worker a real image, a web page,
-   *  or a format no harness reads. */
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
-  /** Seed the reactions getMessageReactions reports for one channel+ts pair.
-   *  An unseeded pair reports as message-not-found (null), matching the real
-   *  gateway on a bad ts. */
   setMessageReactions(
     channel: string,
     ts: string,
@@ -213,9 +193,6 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getPermalink(channel, ts) {
-      // Deterministic fake, assertable without per-test setup; a test that
-      // needs the not-found path overrides this property directly, the same
-      // way other tests already override getUserInfo/getMessageReactions.
       return `https://fake-workspace.slack.com/archives/${channel}/p${ts.replace(".", "")}`;
     },
 

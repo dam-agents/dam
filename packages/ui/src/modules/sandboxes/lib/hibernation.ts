@@ -1,6 +1,5 @@
 import type { DialogSlice } from "../../platform/store/dialog.js";
 
-// Confirms a hibernation-timeout change only when it crosses the "never" (0) boundary
 export function confirmHibernationChange(
   prev: number,
   next: number,

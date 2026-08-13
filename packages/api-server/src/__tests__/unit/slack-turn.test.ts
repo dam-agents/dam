@@ -28,9 +28,6 @@ type SendPromptFn = (
   opts: SendPromptOpts,
 ) => Promise<string>;
 
-/** Drives opts.onUpdate with `updates`, then resolves with `response`. The
- *  response is deliberately never posted — the agent replies via the `reply`
- *  tool, which tests exercise directly on the worker. */
 function scripted(updates: PromptUpdate[], response: string): SendPromptFn {
   return async (_prompt, opts) => {
     for (const u of updates) opts.onUpdate?.(u);
@@ -44,7 +41,6 @@ function harness(opts: {
   sendPrompt?: SendPromptFn;
   listSessions?: AcpClient["listSessions"];
   ensureReady?: AgentsService["ensureReady"];
-  /** Currently-bound channel; a function so a test can rebind mid-turn. */
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
 }) {
@@ -122,9 +118,6 @@ describe("slack turn presentation — owner turns", () => {
     await tick();
 
     const recs = h.records();
-    // The platform presents only the working status on the agent's behalf. The
-    // reply text is NOT delivered, and there is no automatic ack reaction — any
-    // reaction is the agent's own doing via the `react` tool.
     expect(recs.some((r) => r.kind === "status")).toBe(true);
     expect(recs.some((r) => r.kind === "reaction")).toBe(false);
     expect(recs.some((r) => r.kind === "message")).toBe(false);
@@ -196,7 +189,7 @@ describe("slack turn presentation — owner turns", () => {
 describe("slack reply / react tools", () => {
   it("reply posts into the current turn's thread with the agent footer", async () => {
     const h = harness({});
-    await h.mention(); // sets the active turn (thread 1.1, message 1.1)
+    await h.mention();
     await tick();
     h.gw.resetOutbound();
 
@@ -248,8 +241,6 @@ describe("slack reply / react tools", () => {
     });
     expect(result).toEqual({ ok: true });
 
-    // One post, still threaded — Slack fans it out to the channel itself, so
-    // the agent never posts twice to be seen.
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({
@@ -261,8 +252,6 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply footers link at the session the turn ran on", async () => {
-    // The whole point of the link: whoever reads the reply in the channel can
-    // follow it into this very conversation in the UI.
     const h = harness({
       sendPrompt: async (_prompt, opts) => {
         opts.onSession?.("sess-42");
@@ -272,7 +261,6 @@ describe("slack reply / react tools", () => {
     await h.mention();
     await tick();
 
-    // The fake gateway's records drop `blocks`, so read the posted args directly.
     const posts = vi.spyOn(h.gw, "postMessage");
     await h.worker.reply("agent-1", { text: "here you go" });
 
@@ -286,7 +274,6 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply footers fall back to the agent when no session is known", async () => {
-    // A turn whose session never resolved still posts a usable link.
     const h = harness({});
     await h.mention();
     await tick();
@@ -323,7 +310,6 @@ describe("slack reply / react tools", () => {
 
     const reactions = h.records().filter((r) => r.kind === "reaction");
     expect(reactions).toHaveLength(1);
-    // Colons are stripped; targets the triggering message.
     expect(reactions[0]).toMatchObject({
       channel: "C1",
       ts: "1.1",
@@ -344,7 +330,7 @@ describe("slack reply / react tools", () => {
 
   it("describeMessageReactions defaults to the current turn's message", async () => {
     const h = harness({});
-    await h.mention(); // sets the active turn (thread 1.1, message 1.1)
+    await h.mention();
     await tick();
     h.gw.setMessageReactions("C1", "1.1", [
       { name: "thumbsup", count: 2, users: ["U1", "U2"] },
@@ -353,8 +339,6 @@ describe("slack reply / react tools", () => {
     const result = await h.worker.describeMessageReactions("agent-1", {});
     expect(result).toEqual({
       reactions: [{ name: "thumbsup", count: 2, users: ["U1", "U2"] }],
-      // Resolved and returned even though the query left both to default —
-      // the caller (and its audit log) needs to know what actually got asked.
       conversationId: "C1",
       messageTs: "1.1",
     });
@@ -371,10 +355,6 @@ describe("slack reply / react tools", () => {
   });
 });
 
-/** A harness whose turns park in `sendPrompt` until released or failed, so a
- *  test can hold several turns in flight for one agent at once — the situation
- *  that used to cross-route a reply into the wrong thread. Each turn records
- *  the thread it drives (its fresh-session `platformMeta.threadTs`). */
 function gatedHarness() {
   const started = new Set<string>();
   const gates: Array<{ release: () => void; fail: (err: unknown) => void }> =
@@ -391,9 +371,7 @@ function gatedHarness() {
   return {
     ...h,
     started,
-    /** Prompts started so far — tells a same-thread re-relay apart. */
     calls: () => gates.length,
-    /** Fire a mention without awaiting — its turn parks in flight. */
     fire(ts: string, threadTs?: string) {
       void h.gw.fireMention({
         user: "U1",
@@ -404,8 +382,6 @@ function gatedHarness() {
         teamId: "T-e2e",
       });
     },
-    /** Threads are named by their bare `thread_ts`; session keys are qualified
-     *  by the conversation (#3086), and this harness only ever fires into C1. */
     async waitInFlight(...threads: string[]) {
       const keys = threads.map((t) => slackThreadKey("C1", t));
       for (let i = 0; i < 200 && !keys.every((k) => started.has(k)); i++) {
@@ -416,8 +392,6 @@ function gatedHarness() {
     release() {
       for (const g of gates) g.release();
     },
-    /** Fail the i-th started turn's prompt — the relay settles with an error
-     *  while, in production, the pod-side harness would keep working. */
     fail(i: number, err: unknown) {
       gates[i]!.fail(err);
     },
@@ -441,8 +415,6 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     h.fire("200.2");
     await h.waitInFlight("100.1", "200.2");
 
-    // The reply carries no turn id, so which thread it belongs to is ambiguous
-    // — refuse rather than guess (guessing is exactly the #2952 cross-route).
     const ambiguous = await h.worker.reply("agent-1", {
       text: "which thread?",
     });
@@ -451,7 +423,6 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     });
     expect(h.records().some((r) => r.kind === "message")).toBe(false);
 
-    // The prompt-injected threadTs resolves it deterministically.
     h.gw.resetOutbound();
     const ok = await h.worker.reply("agent-1", {
       text: "for thread A",
@@ -518,11 +489,6 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
 });
 
 describe("slack reply / react tools — turns that outlive their relay", () => {
-  // The runtime keeps a running prompt alive when its relay drops, so a turn
-  // whose relay settles with a transport error may still be executing in the
-  // pod — and its late id-less reply used to resolve against whatever turn was
-  // live by then, posting one thread's answer into another.
-
   it("refuses an id-less reply while a failed turn may still run and another thread is live", async () => {
     const h = gatedHarness();
     await h.start();
@@ -535,15 +501,12 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await h.waitInFlight("200.2");
     h.gw.resetOutbound();
 
-    // The failed turn's harness may still be working thread 100.1; routing its
-    // id-less reply to the sole *live* turn would post it into thread 200.2.
     const refused = await h.worker.reply("agent-1", { text: "late answer" });
     expect(refused).toMatchObject({
       error: expect.stringContaining("more than one"),
     });
     expect(h.records().some((r) => r.kind === "message")).toBe(false);
 
-    // The prompt-injected id still resolves deterministically.
     const ok = await h.worker.reply("agent-1", {
       text: "late answer",
       threadTs: "100.1",
@@ -571,8 +534,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await h.settled(() => h.turnEvents().length === 2);
     h.gw.resetOutbound();
 
-    // Thread 200.2 is the last active thread, but its turn finished cleanly —
-    // the only work that can still be running is the failed turn's.
     const ok = await h.worker.reply("agent-1", { text: "late answer" });
     expect(ok).toEqual({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
@@ -638,9 +599,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     h.fail(0, new Error("ACP connection lost (agent unreachable)"));
     await h.settled(() => h.turnEvents().length === 1);
 
-    // A new mention in the SAME thread: both candidates name thread 100.1, so
-    // a reply is unambiguous — but they trigger from different messages, so an
-    // id-less react could mark the wrong one.
     h.fire("100.2", "100.1");
     await h.settled(() => h.calls() === 2);
     h.gw.resetOutbound();
@@ -661,9 +619,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
   });
 
   it("a resume attempt that fails mid-turn keeps its turn resolvable after the fallback succeeds", async () => {
-    // The resume prompt may have reached the harness before the relay dropped
-    // — the runtime keeps that run alive while the worker retries on a fresh
-    // session. After the retry completes, the ghost run can still be working.
     const started = new Set<string>();
     const gates: Array<() => void> = [];
     const sendPrompt: SendPromptFn = async (_prompt, opts) => {
@@ -706,8 +661,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     for (let i = 0; i < 200 && !started.has(thread2); i++) await tick();
     h.gw.resetOutbound();
 
-    // The ghost run from the failed resume may still be driving thread 100.1;
-    // an id-less reply must not resolve to the sole live turn's thread.
     const refused = await h.worker.reply("agent-1", { text: "late" });
     expect(refused).toMatchObject({
       error: expect.stringContaining("more than one"),
@@ -756,8 +709,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     });
     for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
     for (let i = 0; i < 20; i++) await tick();
-    // The second turn waits at the session lock instead of racing the
-    // list-then-create session match into a duplicate session.
     expect(gates).toHaveLength(1);
     expect(sessions).toHaveLength(1);
 
@@ -792,9 +743,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
     expect(gates.length).toBe(1);
 
-    // The owner rebinds the agent to another channel while the turn is live.
-    // The turn's threadTs only means anything inside C1 — the reply must
-    // follow the turn, not the binding.
     bound = "C2";
     h.gw.resetOutbound();
     const ok = await h.worker.reply("agent-1", { text: "for C1's thread" });
@@ -804,8 +752,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       threadTs: "100.1",
     });
 
-    // An explicit id naming the live turn follows it into C1 the same way —
-    // batch turns must pass ids, so the protection can't hinge on omission.
     h.gw.resetOutbound();
     const okExplicit = await h.worker.reply("agent-1", {
       text: "explicit id",
@@ -846,8 +792,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     for (let i = 0; i < 200 && gates.length === 0; i++) await tick();
     expect(gates.length).toBe(1);
 
-    // Rebound mid-turn: the turn's ts only resolves inside C1, so a lookup
-    // that defaulted to the new binding would miss the message entirely.
     bound = "C2";
     expect(await h.worker.describeMessageReactions("agent-1", {})).toEqual({
       reactions: [{ name: "eyes", count: 1, users: ["U2"] }],
@@ -855,7 +799,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       messageTs: "100.1",
     });
 
-    // An explicit ts naming the live turn is back-filled to its channel too.
     expect(
       await h.worker.describeMessageReactions("agent-1", {
         messageTs: "100.1",
@@ -868,8 +811,6 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
 });
 
 describe("slack turn — network-access framing and attendance", () => {
-  /** Records the open/release calls and whether the marker is held right now,
-   *  so a test can assert the window rather than just the call order. */
   function recordingAttendance() {
     const calls: string[] = [];
     let open = 0;
@@ -904,18 +845,12 @@ describe("slack turn — network-access framing and attendance", () => {
     await tick();
 
     expect(prompt).toContain("<network-access>");
-    // The three things the turn can't work out for itself: that the refusal is
-    // a permission rather than a broken host, that this conversation isn't
-    // where it's granted, and that looping on the host is not the answer.
     expect(prompt).toContain("cannot be approved from this conversation");
     expect(prompt).toContain("only your owner can allow a host, in DAM");
     expect(prompt).toContain("don't retry the same host in a loop");
   });
 
   it("scopes the reply contract to the message it arrives with", async () => {
-    // The same session can be continued from the UI, where "only tool calls
-    // reach the channel" would send the answer to Slack instead of to the
-    // person typing. The contract has to say it speaks for this message only.
     let prompt = "";
     const h = harness({
       sendPrompt: async (p) => {
@@ -930,8 +865,6 @@ describe("slack turn — network-access framing and attendance", () => {
       "apply to the message they arrive with, not to this conversation",
     );
     expect(prompt).toContain("a later message carries its own");
-    // Names what to do with an unframed message, since a turn from the CLI or a
-    // schedule arrives carrying no block of its own.
     expect(prompt).toContain("didn't come from Slack");
     expect(prompt).toContain("post to Slack for it only if you're asked to");
   });
@@ -949,8 +882,6 @@ describe("slack turn — network-access framing and attendance", () => {
     await h.mention();
     await tick();
 
-    // The window that matters is the one the harness runs in — that is when its
-    // egress reaches the gate.
     expect(openDuringTurn).toBe(true);
     expect(rec.calls).toEqual(["open:agent-1", "release:agent-1"]);
     expect(rec.isOpen()).toBe(false);
@@ -972,8 +903,6 @@ describe("slack turn — network-access framing and attendance", () => {
     await h.mention();
     await tick();
 
-    // A stranded marker would keep denying this agent's egress fast long after
-    // the turn is gone.
     expect(rec.isOpen()).toBe(false);
     expect(rec.calls).toContain("release:agent-1");
   });

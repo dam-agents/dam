@@ -9,7 +9,6 @@ interface Props {
   icon: CarbonIconType;
   name: string;
   description: string;
-  /** Quiet trailing marker, e.g. "Advanced". */
   tag?: string;
   selected: boolean;
   onSelect: () => void;

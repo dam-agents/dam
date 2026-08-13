@@ -18,11 +18,6 @@ import type {
   ArtifactStore,
 } from "../domain/artifact-store.js";
 
-/** S3-compatible ArtifactStore. Separate signer clients because SigV4 binds
- *  the Host header — links must be signed against the authority their
- *  audience dials (agents through their gateway, browsers on the public
- *  endpoint). Only agents upload directly; both audiences download. No size
- *  policy here — that is the service's job. */
 export function createS3ArtifactStore(deps: {
   client: S3Client;
   bucket: string;
@@ -133,8 +128,6 @@ export function createS3ArtifactStore(deps: {
   };
 }
 
-/** Create the bucket if missing. Idempotent (a concurrent create by another
- *  replica is success); run at boot so a bad store fails fast. */
 export async function ensureBucket(
   client: S3Client,
   bucket: string,

@@ -2,23 +2,8 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * The field outdent. On `md+` it shifts a control (or a `p-4` bordered group)
- * left by 16px, cancelling the inner padding so the content's text lines up
- * with the label while the box bleeds into the gutter. Applied across migrated
- * forms (pages and modals alike); opted out only for not-yet-migrated forms and
- * gutter-less nested panels. Reusable on any element; `FormField` applies it
- * unless `disableInset` is set.
- */
 export const FIELD_INSET = "md:-ml-4";
 
-/**
- * The inverse strategy for gutter-less containers (modals, bordered boxes):
- * instead of outdenting the control into a gutter that isn't there — which
- * would push the input onto the container's border — keep the control flush
- * and indent the *label* to meet the control's text. Pairs with the control's
- * 16px inner padding, so the two land at the same x.
- */
 export const LABEL_INSET = "md:ml-4";
 
 export function Inset({

@@ -96,8 +96,6 @@ describe("audit-log saga", () => {
       surface: "other",
       isCore: false,
     });
-    // The usage saga consumes this per-request event; the audit trail must not,
-    // or an open UI's polling would flood it. Real logins live in Keycloak.
     expect(h.records()).toHaveLength(0);
   });
 });

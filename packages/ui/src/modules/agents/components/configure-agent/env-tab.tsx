@@ -13,9 +13,6 @@ export interface InheritedEnv {
   source: "system" | { secretName: string } | { appLabel: string };
 }
 
-// Inherited entries that a user-typed env shadows by name.
-// User-typed wins on collision; this surfaces the shadow so it isn't silent.
-// System entries (PORT etc.) are excluded — those have their own protection.
 function shadowWarnings(
   envVars: EnvVar[],
   inherited: InheritedEnv[],

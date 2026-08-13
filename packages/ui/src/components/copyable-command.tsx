@@ -6,8 +6,6 @@ import { cn } from "@/lib/utils";
 
 type CopyableCommandSize = "default" | "compact";
 
-/** A one-line shell command with a Copy button. The command scrolls
- *  horizontally rather than wrapping so it always reads as a single line. */
 export function CopyableCommand({
   command,
   size = "default",

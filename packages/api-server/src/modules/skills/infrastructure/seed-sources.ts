@@ -18,10 +18,6 @@ export interface SkillSourceSeed {
 
 const SEED_ID_PREFIX = "skill-src-seed-";
 
-/** kebab-case slug derived from a seed entry's name. Mirrors the previous
- *  helm template's id scheme so existing references in the wild keep
- *  resolving. Stable across api-server restarts as long as the name is
- *  unchanged. */
 export function seedSlug(name: string): string {
   return name
     .toLowerCase()
@@ -33,18 +29,6 @@ export function seedSourceId(name: string): string {
   return `${SEED_ID_PREFIX}${seedSlug(name)}`;
 }
 
-/** Parse the SKILL_SOURCES_SEED env var into a stable, deduped list of system
- *  Skill Sources. Returns an empty list when the env var is unset or empty.
- *
- *  Throws on:
- *  - malformed JSON
- *  - shape mismatch (caught by Zod)
- *  - empty slug (a name like "??!?" slugs to "" and would collide with itself)
- *  - slug collisions across entries
- *
- *  These throws happen at api-server startup so a misconfigured chart fails
- *  fast with a clear stderr instead of producing a silent missing-source
- *  bug discovered at install time. */
 export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
   if (!raw || raw.trim() === "") return [];
 
@@ -83,8 +67,6 @@ export function parseSeedSources(raw: string | undefined): SkillSourceSeed[] {
   });
 }
 
-/** Surface seeds as `SkillSource` views, tagged `system: true` so the UI's
- *  "Platform" badge and the protected-source delete check both fall out. */
 export function seedToSkillSource(seed: SkillSourceSeed): SkillSource {
   return {
     id: seed.id,

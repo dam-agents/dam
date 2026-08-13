@@ -5,8 +5,6 @@ import type {
   harnessConfigSnapshotSchema,
 } from "./schemas.js";
 
-// A one-shot change to an agent's harness config. `unset` lists fields to clear.
-// Applied once via a `harness-config` event, never reconciled.
 export interface HarnessConfigChange {
   model?: string;
   mode?: string;
@@ -25,8 +23,6 @@ export interface HarnessConfigSettled {
 
 export type HarnessConfigSnapshot = z.infer<typeof harnessConfigSnapshotSchema>;
 
-/** The fields a snapshot write may carry. `capturedAt` and `confirmed` are the
- *  writer's to stamp, so they aren't patchable. */
 export type HarnessConfigSnapshotPatch = Partial<
   Omit<HarnessConfigSnapshot, "capturedAt" | "confirmed">
 >;

@@ -11,14 +11,9 @@ import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 interface Props {
   agentId: string;
   oauthReturnView: string;
-  /** Outdent the panel into the page gutter. Flush by default — a page whose
-   *  layout has a gutter (sandbox home) opts in at the call site, so this
-   *  shared section carries no page's geometry. */
   inset?: boolean;
 }
 
-/** Grants apply immediately here — only the create wizard stages, since its
- *  sandbox doesn't exist yet. */
 export function ConnectionsSection({
   agentId,
   oauthReturnView,
@@ -36,7 +31,6 @@ export function ConnectionsSection({
       ),
     [agentConnectionsQ.data],
   );
-  // setAgentConnections replaces the full set, so resend untouched grants.
   const toggleGrant = (id: string, on: boolean) => {
     const current =
       agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
@@ -46,7 +40,6 @@ export function ConnectionsSection({
     setConnections.mutate({ agentId, connectionIds: next });
   };
 
-  // Provider credentials are managed by the Provider picker, not here.
   const granted = useMemo(
     () =>
       excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>

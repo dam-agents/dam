@@ -82,10 +82,6 @@ export function buildRevokeCommand(deps: {
 
         const svc = deps.createConnectionService(host);
 
-        // Resolve names to ids, but let a raw `conn-…` id pass through even if
-        // it's no longer in the team list — that's how a stale grant (a
-        // granted connection since deleted) gets cleaned up. Only an unknown
-        // *name* is an error.
         const allRes = await svc.list();
         if (!allRes.ok) {
           printServiceError(allRes.error, host);

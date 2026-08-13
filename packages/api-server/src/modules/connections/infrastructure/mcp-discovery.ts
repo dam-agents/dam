@@ -82,9 +82,6 @@ export interface DiscoveredIssuerMetadata {
   grantTypesSupported?: string[];
 }
 
-// Issuer-direct discovery for token-endpoint-only grants (client
-// credentials): unlike the MCP path above, an authorization endpoint is not
-// required — a machine-to-machine authorization server may not have one.
 export async function discoverIssuerMetadata(
   issuerUrl: string,
   fetchImpl: typeof fetch = fetch,
@@ -111,9 +108,6 @@ export interface DiscoveredIssuer extends DiscoveredIssuerMetadata {
   issuerUrl: string;
 }
 
-// When only the API host is known, find its authorization server: the host's
-// protected-resource metadata (RFC 9728) names the issuer; failing that, the
-// host itself may be the issuer.
 export async function discoverIssuerFromResourceHost(
   origin: string,
   fetchImpl: typeof fetch = fetch,

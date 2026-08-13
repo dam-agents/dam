@@ -34,10 +34,6 @@ function makeFakeEnv(values: Record<string, string> = {}): EnvReader {
   return { get: (name) => values[name] };
 }
 
-// Precedence + missing-config behavior is covered by resolve-config.test.ts.
-// These cases cover the service-only seams: it reads env using the
-// registered name, validates before writing, and never writes on bad input.
-
 describe("ConfigService", () => {
   it("getResolved reads env using SERVER_ENV_VAR", async () => {
     const { store } = makeFakeStore();

@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 
-// One canonical path per view. Non-canonical spellings (/settings/account,
-// /sandboxes/:id/setup) intentionally don't round-trip — routeToPath emits the
-// canonical form.
 const canonicalPaths = [
   "/",
   "/chat/agent-1",
@@ -30,8 +27,6 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  // Both traps fail silently if the literal check moves below its regex:
-  // the wizard becomes a detail page for an entity named "new".
   it("parses /sandboxes/new as the wizard, not a sandbox id", () => {
     expect(parseRoute("/sandboxes/new").view).toBe("sandbox-new");
   });
@@ -41,8 +36,6 @@ describe("route round-trip", () => {
   });
 });
 
-// A chat link is the shape a channel reply hands back to a reader, so both
-// halves have to survive the round trip through the address bar.
 describe("chat route", () => {
   it("carries the session a link points at", () => {
     expect(parseRoute("/chat/agent-1/sess-1")).toEqual({

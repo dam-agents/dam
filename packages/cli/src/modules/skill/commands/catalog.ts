@@ -79,8 +79,6 @@ export function buildCatalogCommand(deps: {
 
         const svc = deps.createSkillsService(host);
 
-        // A registered source is required — resolve <source> against the
-        // source list (which also yields the id the scan keys on).
         const sourcesRes = await svc.listSources(agentId);
         if (!sourcesRes.ok) {
           printServiceError(sourcesRes.error, host);
@@ -97,8 +95,6 @@ export function buildCatalogCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        // Independent reads — the scan and the agent's installed inventory have
-        // no dependency, so fetch them concurrently when --agent is set.
         const [catalogRes, installedRes] = await Promise.all([
           svc.catalog(source.id, agentId),
           agentId !== undefined
@@ -136,7 +132,6 @@ export function buildCatalogCommand(deps: {
           installedRes !== null ? installedRes.value : undefined;
 
         if (installed === undefined) {
-          // No --agent: raw catalog, no status annotation.
           if (opts.json) {
             return writeStdoutAndExit(
               `${JSON.stringify(catalogRes.value)}\n`,

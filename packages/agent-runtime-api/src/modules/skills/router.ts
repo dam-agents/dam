@@ -35,9 +35,6 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
         message: `skill ${JSON.stringify(error.name)} not found in source ${error.source}`,
       });
     case "SkillAlreadyExists":
-      // The `skill(s) already exist: <names>` shape is part of the contract:
-      // api-server (slice 02) forwards it verbatim and the UI (slice 03) parses
-      // the names back out to mark the offending rows. Don't reword.
       return new TRPCError({
         code: "CONFLICT",
         message: `skill(s) already exist: ${error.names.join(", ")}`,
@@ -58,10 +55,6 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
         message: `github ${error.method} ${error.path} → ${error.status}: ${error.body.message ?? error.body.error ?? "upstream error"}`,
         cause: { upstream: { status: error.status, body: error.body } },
       });
-    // status 0 = no HTTP response ever arrived (XHR convention). Carried as a
-    // structured envelope so the api-server can tell "the pod couldn't reach
-    // GitHub" apart from its own transport failures without sniffing message
-    // strings.
     case "UpstreamUnreachable":
       return new TRPCError({
         code: "BAD_GATEWAY",
@@ -93,7 +86,6 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  // Input stays optional so existing callers are untouched.
   listLocal: protectedProcedure
     .input(skillListLocalInputSchema.optional())
     .query(async ({ ctx, input }) => {
@@ -110,7 +102,6 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  // A query, not a mutation: it reads.
   readPullRequest: protectedProcedure
     .input(skillReadPullRequestInputSchema)
     .query(async ({ ctx, input }) => {
@@ -119,7 +110,6 @@ export const skillsRouter = t.router({
       return result.value;
     }),
 
-  // A query, not a mutation: it reads.
   readSkillFile: protectedProcedure
     .input(skillReadSkillFileInputSchema)
     .query(async ({ ctx, input }) => {

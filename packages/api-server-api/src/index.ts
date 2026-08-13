@@ -467,7 +467,6 @@ export {
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
 
-// ACP platform/* synthetic notifications
 export {
   platformTurnEndedNotificationSchema,
   platformTurnEndedParamsSchema,
@@ -490,11 +489,9 @@ export type {
   PlatformPromptStartedParams,
 } from "./modules/acp/types.js";
 
-// Brand
 export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
-// Terms
 export type {
   TermsCurrent,
   TermsDocument,
@@ -510,11 +507,9 @@ export {
   termsLatestAcceptanceSchema,
 } from "./modules/terms/schemas.js";
 
-// Auth config
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
 
-// E2E
 export type {
   E2eService,
   SlackFireCommandInput,
@@ -567,18 +562,12 @@ export type {
   StateSlice,
 } from "agent-runtime-api";
 
-// API keys
 export {
   AGENT_SCOPES,
   ALL_SCOPES,
   API_KEY_PREFIX,
   CREDENTIAL_SCOPES,
 } from "./modules/api-keys/types.js";
-// auth-procedures.ts (readAgentProcedure, operateAgentsProcedure,
-// manageAgentsProcedure, …, checkAgentBinding) is deliberately NOT re-exported
-// here. It calls `initTRPC.create()` at module load via `t.procedure.use(...)`,
-// which pulls @trpc/server into any consumer. Browser bundles must not load it;
-// routers in this package import it directly via `../../auth-procedures.js`.
 export type {
   AgentBinding,
   ApiKeyCreateInput,

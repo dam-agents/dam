@@ -25,15 +25,6 @@ export function createClickhouseClient(cfg: {
   });
 }
 
-// Claude Code exports one `claude_code.api_request` OTel *log* record per LLM
-// call into `otel_logs`; all counters live in the LogAttributes string map and
-// the trusted owner id in ResourceAttributes (stamped by the agent gateway —
-// see docs/architecture/observability.md). Every query is gated on that owner
-// id against the caller's resolved allowlist.
-//
-// `Body` alone scopes to Claude Code harness telemetry: ServiceName carries the
-// template name (OTEL_SERVICE_NAME, _helpers.tpl), so filtering it would hide
-// every template not literally named `claude-code` (e.g. `bugstone`).
 export const ownedApiRequests = (w: MetricsWindow): string => {
   const base = [
     "Body = 'claude_code.api_request'",
@@ -49,14 +40,6 @@ export const ownedApiRequests = (w: MetricsWindow): string => {
       : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
   ];
   if (w.sessionId === undefined) return base.join("\n  AND ");
-  // Child harness runs (a `claude -p` subshell, a dam-run executor) mint their
-  // own session.id but inherit the session's W3C trace context (TRACEPARENT),
-  // so their records carry the parent trace's TraceId. "This session" folds in
-  // every session sharing a trace with the target — whole sessions, not just
-  // same-trace rows, since a child's warmup calls carry no TraceId. Both
-  // subqueries reuse the ownership + time predicate, so the fold never reaches
-  // across owners; when the harness emitted no TraceId this degrades to the
-  // exact-session match.
   const owned = base.join(" AND ");
   return [
     ...base,
@@ -85,8 +68,6 @@ const TOK_CACHE_R = IN("'cache_read_tokens'");
 const TOK_CACHE_C = IN("'cache_creation_tokens'");
 const COST_USD = `${IN("'cost_usd_micros'")} / 1e6`;
 
-// ClickHouse returns Int64/UInt64 as JSON strings to avoid precision loss;
-// coerce every numeric column back to a JS number at the boundary.
 const n = (v: unknown): number => Number(v ?? 0);
 
 export function createClickhouseReader(
@@ -135,15 +116,6 @@ export function createClickhouseReader(
     },
 
     async spendByAgent(agentIds, window) {
-      // Group on the trusted, gateway-stamped agent id — now the root Driver's
-      // id for Invocation targets, so delegated work is attributed to the
-      // Driver. The display name is read from the telemetry itself — argMaxIf
-      // picks the latest `platform.agent.name` among the agent's OWN rows,
-      // excluding child rows (those carrying a `platform.invocation.id`) whose
-      // name belongs to the target, not the Driver the row is attributed to.
-      // This keeps a heavy delegator's bar labelled with its own name instead
-      // of the newest target's `invocation-<hex>`. A since-deleted agent still
-      // shows its last known name. The name is display-only; the id is the key.
       const r = await rows(
         `SELECT
            ResourceAttributes['platform.agent.id'] AS agentId,
@@ -163,12 +135,6 @@ export function createClickhouseReader(
     },
 
     async spendByDay(agentIds, window, timeZone) {
-      // Bucket each call into a wall-clock day in the caller's timezone:
-      // toTimeZone shifts the UTC Timestamp into `tz`, toDate truncates to that
-      // local calendar day. The [from, to) instants already bound the window;
-      // grouping by local day may pull in a call whose UTC day differs, which
-      // is exactly what "the user's calendar" means. Output is sparse — only
-      // days that actually had calls — and the client zero-fills the month.
       const r = await rows(
         `SELECT
            toDate(toTimeZone(Timestamp, {timeZone:String})) AS day,
@@ -186,10 +152,6 @@ export function createClickhouseReader(
     },
 
     async runtimeBySession(agentIds, window) {
-      // Group each session under the root of its trace family (root = the
-      // earliest session on a shared trace), so child harness runs count
-      // inside the session that spawned them. The CTEs stay session-unfiltered
-      // but owner-gated; a session with no traced rows keeps its own id.
       const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
         `WITH trace_root AS (

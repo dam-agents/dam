@@ -33,8 +33,6 @@ import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
 import { createXactLock, type XactLock } from "../../../core/xact-lock.js";
 
 export interface OAuthRefreshLoop {
-  /** One idempotent refresh pass — scheduled via the shared periodic-jobs
-   *  queue (one execution per period across replicas). */
   tickOnce(): Promise<{ refreshed: number; failed: number; skipped: number }>;
 }
 
@@ -45,19 +43,12 @@ interface RefreshDeps {
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
   refreshSkewSeconds?: number;
-  /** First-failure retry delay; doubles per consecutive failure. */
   backoffBaseMs?: number;
-  /** Ceiling for the exponential retry backoff. */
   backoffMaxMs?: number;
   now?: () => number;
   log?: (msg: string) => void;
 }
 
-/**
- * Exponential backoff: `base·2^(n-1)` for the n-th consecutive failure,
- * capped at `max`. The exponent is clamped so a long-dead connection can't
- * overflow the multiplication into `NaN`.
- */
 export function backoffDelayMs(
   failures: number,
   baseMs: number,
@@ -75,16 +66,6 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
   const log =
     deps.log ?? ((m) => process.stderr.write(`[oauth-refresh] ${m}\n`));
   let running = false;
-
-  // Per-connection failure backoff, persisted on the connection's `auth`
-  // (see `refreshBackoff` in api-server-api). A connection whose token can't
-  // be refreshed (e.g. a revoked refresh token) stays in the due set on every
-  // tick; without this it would be retried forever. It lives in Postgres
-  // rather than in-process because the sweep runs as a periodic job on
-  // whichever replica draws the tick — per-replica state would be a different
-  // replica's each time, so the backoff would never actually apply. Cleared
-  // by the first success — every credential write strips it via
-  // `withoutRefreshFailureMarker`.
 
   async function tick(): Promise<{
     refreshed: number;
@@ -120,8 +101,6 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           refreshed++;
         } catch (err) {
           failed++;
-          // Parked, not retried. A failed marker write falls through to the
-          // backoff below, so the connection never goes quiet.
           if (
             isPermanentAuthFailure(err, conn.auth) &&
             (await markRefreshFailure(conn, err, deps, now(), log))
@@ -161,7 +140,6 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
           "client-credentials",
           "github-app",
         ]),
-        // Marked connections are parked; clearing the marker re-admits them.
         sql`(${connectionsTable.auth} -> 'refreshFailedAt') IS NULL`,
         sql`
           (${connectionsTable.auth} -> 'expiresAt') IS NOT NULL
@@ -183,11 +161,6 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
     .filter((c): c is Connection => c !== null);
 }
 
-/** Merges the backoff into `auth` server-side, guarded the same way
- *  {@link markRefreshFailure} is: a successful credential write that landed
- *  since this tick read the row bumps `expiresAt`/`connectedAt`, and must not
- *  have a stale backoff written back over it. Best-effort — a lost write only
- *  means one extra attempt next tick. */
 async function recordBackoff(
   conn: Connection,
   backoff: { failures: number; nextAttempt: number },
@@ -208,9 +181,7 @@ async function recordBackoff(
           sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
         ),
       );
-  } catch {
-    /* backoff is an optimization; a failed write costs one extra attempt */
-  }
+  } catch {}
 }
 
 function isPermanentAuthFailure(
@@ -227,7 +198,6 @@ function isPermanentAuthFailure(
 
 function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
   switch (auth.kind) {
-    // Absent ref means the operator supplies the secret, fixed centrally.
     case "oauth":
       return auth.clientSecretRef !== undefined;
     case "client-credentials":
@@ -239,8 +209,6 @@ function ownsClientSecret(auth: ConnectionAuthConfig): boolean {
   }
 }
 
-/** Persists the marker. False when nothing was marked, so the caller falls back
- *  to the backoff rather than giving up on the connection. */
 async function markRefreshFailure(
   conn: Connection,
   err: unknown,
@@ -252,10 +220,6 @@ async function markRefreshFailure(
   const auth = conn.auth;
   let markedRows: number;
   try {
-    // This verdict is as old as the tick's read. Merge the one key server-side
-    // rather than replacing `auth`, and only while `expiresAt`/`connectedAt`
-    // still match what the tick saw — every successful credential write bumps
-    // one of them, so a fix that landed since wins and this marks nothing.
     const result = await deps.db
       .update(connectionsTable)
       .set({
@@ -277,8 +241,6 @@ async function markRefreshFailure(
     );
     return false;
   }
-  // A credential fix landed between the tick's read and this write — nothing
-  // was marked, so nothing is parked (and there is no failure to audit).
   if (markedRows === 0) return false;
   const rejection = tokenRejectionOf(err);
   securityLog("warn", "connection.refresh_permanent_failure", {
@@ -360,8 +322,6 @@ async function refreshOne(
     .where(eq(connectionsTable.id, conn.id));
 }
 
-// Client-credentials re-mint: no refresh token — every renewal is a fresh
-// client_credentials exchange with the stored client secret.
 export async function remintOne(
   conn: Connection,
   auth: Extract<ConnectionAuthConfig, { kind: "client-credentials" }>,
@@ -396,8 +356,6 @@ export async function remintOne(
     .where(eq(connectionsTable.id, conn.id));
 }
 
-// GitHub App re-mint: no refresh token — every renewal signs a fresh JWT with
-// the stored private key and exchanges it for a new installation token.
 export async function remintGitHubAppOne(
   conn: Connection,
   auth: Extract<ConnectionAuthConfig, { kind: "github-app" }>,
@@ -405,7 +363,6 @@ export async function remintGitHubAppOne(
     githubAppEngine: GitHubAppEngine;
     secretStore: SecretStore;
     db: Db;
-    /** Defaults to the Postgres advisory lock; injectable for tests. */
     connectionLock?: XactLock;
   },
 ): Promise<void> {
@@ -415,16 +372,7 @@ export async function remintGitHubAppOne(
   }
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
-  // A github-app connection's scope is editable in place, so this sequence
-  // races an edit doing the same thing to the same connection. Guarding the row
-  // alone cannot settle it: the token lives in a store no database transaction
-  // binds, so the two writes can still land in an order that leaves the stored
-  // scope and the live token describing different authority. Both sides take
-  // the same lock instead, so one finishes before the other starts.
   await withLock(gitHubAppMintLockKey(conn.id), async () => {
-    // Re-read inside the section: the copy this tick carried in may predate an
-    // edit that has since completed, and minting from it would hand back the
-    // authority that edit removed.
     const current = (await readGitHubAppAuth(deps.db, conn.id)) ?? auth;
 
     const next = await mintGitHubAppToken(deps.githubAppEngine, {
@@ -438,8 +386,6 @@ export async function remintGitHubAppOne(
       ...buildConnectionSdsFields(conn.contributions, next.accessToken),
     });
 
-    // Merge the two keys this tick owns rather than writing back the whole
-    // `auth` it read: the keys it does not name cannot be clobbered.
     await deps.db
       .update(connectionsTable)
       .set({
@@ -450,8 +396,6 @@ export async function remintGitHubAppOne(
   });
 }
 
-/** The connection's current github-app auth, or null if it is gone or is no
- *  longer a github-app connection. */
 async function readGitHubAppAuth(
   db: Db,
   id: string,

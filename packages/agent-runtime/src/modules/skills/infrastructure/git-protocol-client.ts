@@ -6,26 +6,17 @@ import { err, ok } from "agent-runtime-api";
 const COMMAND_TIMEOUT_MS = 60_000;
 
 export interface GitProtocolClient {
-  /** `git clone --quiet --depth N [--branch <ref>] <url> <dest>`. `ref` is a
-   *  branch or tag (not a bare SHA — use `fetchAtSha` for that). Maps
-   *  subprocess failures to `SourceFetchFailed`. */
   cloneShallow: (
     url: string,
     dest: string,
     depth?: number,
     ref?: string,
   ) => Promise<Result<void, SkillsDomainError>>;
-  /** Fetch a specific commit SHA into `dest`, falling back to a full clone
-   *  + checkout when the host doesn't support partial fetches. Used by
-   *  install for non-GitHub URLs. */
   fetchAtSha: (
     url: string,
     sha: string,
     dest: string,
   ) => Promise<Result<void, SkillsDomainError>>;
-  /** `git -C <dir> log -1 --format=%H -- <relPath>` — last touching commit
-   *  for a path inside a clone. Used by scan to derive per-skill versions
-   *  on non-GitHub sources. */
   lastTouchingSha: (
     repoDir: string,
     relPath: string,
@@ -70,9 +61,7 @@ export function createGitProtocolClient(): GitProtocolClient {
         ]);
         await runProc("git", ["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
         return ok(undefined);
-      } catch {
-        // fall through to full clone
-      }
+      } catch {}
       try {
         await fs.rm(dest, { recursive: true, force: true });
         await fs.mkdir(dest, { recursive: true });

@@ -8,43 +8,17 @@ import type {
 import type { EgressRuleRow } from "../domain/types.js";
 
 export interface EgressRulesRepository {
-  /**
-   * Match precedence (most-specific wins):
-   *   1. exact method + exact path
-   *   2. exact method + path glob (`/foo*` etc., translated to SQL LIKE)
-   *   3. method `*` + exact path
-   *   4. method `*` + path glob
-   *   5. method `*` + path `*`  (the "allow this entire host" rule)
-   * If multiple rules tie, the longest `path_pattern` wins as a tie-break —
-   * an exact deny on `/v1/admin` beats an allow on `/v1/*`. Done in SQL to
-   * keep the read in one round-trip on the egress hot path.
-   */
   findMatch(
     agentId: string,
     host: string,
     method: string,
     path: string,
   ): Promise<EgressRuleRow | null>;
-  /** True if any active manual or inbox rule covers `(agent, host)` —
-   *  used by the connection grant lifecycle to skip the broad auto-insert
-   *  when the user has already taken explicit ownership of the host. */
   hasUserOwnedRuleForHost(agentId: string, host: string): Promise<boolean>;
-  /** Active rules with `source LIKE 'connection:%'` for the agent. Used by
-   *  the connection-rules sync to compute add/revoke diffs without scanning
-   *  the full table. */
   listConnectionDerivedForAgent(agentId: string): Promise<EgressRuleRow[]>;
-  /** Revokes all active rows with `source LIKE 'preset:%'` for the agent.
-   *  Manual and connection-derived rows are untouched. Used by `applyPreset`
-   *  so switching presets sweeps the previous preset's auto-added rows. */
   revokePresetRowsForAgent(agentId: string): Promise<void>;
-  /** Derives the agent's current preset from active `preset:*` rows. The
-   *  preset is not stored on the spec — its rules' sources are the truth. */
   getPresetForAgent(agentId: string): Promise<EgressPreset>;
   getById(id: string): Promise<EgressRuleRow | null>;
-  /** Exact lookup on the active-row unique index (`egress_rules_lookup_idx`).
-   *  Used as the insert conflict fallback so callers get *the* conflicting
-   *  row, not a best-match — `findMatch` treats the path as a request path,
-   *  not a pattern. */
   getActiveByTuple(
     agentId: string,
     host: string,
@@ -52,43 +26,17 @@ export interface EgressRulesRepository {
     pathPattern: string,
   ): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
-  /** Insert-or-promote variant used by the connection-rules sync. If an
-   *  existing active row for `(agent, host, method, pathPattern)` is a
-   *  `preset:*` row, flip its `source` and `decided_by` to the connection's
-   *  values so a later preset sweep won't drop it. Same intent as
-   *  edit-promotes-to-manual: a user grant takes ownership of a host the
-   *  preset would otherwise own.
-   *  Returns the active row (newly inserted, promoted, or pre-existing
-   *  user-owned row that we left alone). */
   insertOrPromoteFromPreset(row: NewEgressRule): Promise<EgressRuleRow>;
-  /** Reassigns the row to an explicit user-decision source (`manual` or
-   *  `inbox`) regardless of prior origin. */
   updateTakeOwnership(input: TakeOwnershipInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
-  /** Reassign an agent's active rules from any of `fromSources` to `toSource`,
-   *  in place. The secrets→connections migration uses this to hand a legacy
-   *  secret's egress rows to the new connection without a revoke-then-insert
-   *  coverage gap; `source` isn't in the active-row unique index, so the
-   *  relabel can't collide. */
   reassignActiveSource(
     agentId: string,
     fromSources: string[],
     toSource: EgressRuleSource,
   ): Promise<void>;
   revoke(id: string): Promise<void>;
-  /** Hard-delete all rows for an agent. Used by the cleanup hook on agent
-   *  delete and by the orphan sweeper. Revoked rows are also removed —
-   *  there's no auditable retention requirement once the agent is gone. */
   deleteForAgent(agentId: string): Promise<void>;
-  /** Distinct active and revoked `agent_id`s across the table. Cheap
-   *  enough at the row counts we expect; the sweeper compares this set
-   *  against the live K8s agent CM list. */
   listDistinctAgentIds(): Promise<string[]>;
-  /** Every ACTIVE rule's promotion-relevant fields, across all agents.
-   *  Consumed once at startup by the L7-promotion backfill (#2865); the
-   *  promoted-host predicate stays in the domain, not in SQL. `source` lets
-   *  the domain exclude connection-derived rows (already TLS-terminated by
-   *  their own credential chain). */
   listActiveForPromotionScan(): Promise<
     Array<{
       agentId: string;
@@ -131,8 +79,6 @@ type RawRule = {
   pathPattern: string;
   verdict: string;
   decidedBy: string;
-  // Raw `db.execute(sql...)` reads bypass drizzle's timestamptz mapper and
-  // yield strings; typed `.select()`/`.returning()` reads yield Dates.
   decidedAt: Date | string;
   status: string;
   source: string;
@@ -166,8 +112,6 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     },
 
     async getActiveByTuple(agentId, host, method, pathPattern) {
-      // No LIMIT needed — the partial unique index guarantees at most one
-      // active row per tuple.
       const rows = await db
         .select()
         .from(egressRules)
@@ -240,8 +184,6 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     },
 
     async getPresetForAgent(agentId) {
-      // `preset:all` wins over `preset:trusted` if both are somehow present
-      // (transient state during a switch). No preset rows → "none".
       const rows = await db.execute<{ source: string }>(sql`
         SELECT DISTINCT source
         FROM ${egressRules}
@@ -304,10 +246,6 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         .onConflictDoNothing()
         .returning();
       if (inserted.length) return toRow(inserted[0] as RawRule);
-      // Conflict: an active row for this lookup key exists. If it's a
-      // preset:* row, promote it to the connection's source so a later
-      // preset sweep won't take it down. Manual / inbox / other connection
-      // rows are left alone — they already represent user intent.
       const promoted = await db.execute<RawRule>(sql`
         UPDATE ${egressRules}
         SET source = ${row.source}, decided_by = ${row.decidedBy}

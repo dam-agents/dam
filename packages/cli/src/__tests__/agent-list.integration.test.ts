@@ -40,9 +40,6 @@ async function runDam(
   env: Record<string, string>,
 ): Promise<RunResult> {
   try {
-    // process.execPath, not "node" from PATH: under mise, PATH's node is a
-    // shim that needs mise's own env, which this deliberately stripped env
-    // doesn't carry — the shim then dies silently with exit 1.
     const { stdout, stderr } = await exec(
       process.execPath,
       [BIN_PATH, ...args],
@@ -61,11 +58,6 @@ async function runDam(
   }
 }
 
-/** Minimal fake api-server. Serves `/api/version` (for the compat
- *  pre-flight) and proxies tRPC routes to `appRouter` against a stub
- *  ApiContext where only `agents` is implemented; other ctx fields
- *  are populated lazily via a proxy that throws if touched, so a test
- *  that accidentally hits an unrelated route fails loudly. */
 async function startFixture(opts: {
   list: () => Promise<Agent[]>;
   get?: (id: string) => Promise<Agent | null>;
@@ -76,8 +68,6 @@ async function startFixture(opts: {
     get: opts.get ?? (async () => null),
   };
 
-  // agents.list/get join spawn attribution in from the invocations table, so
-  // the fixture must answer that read too.
   const invocationsQuery = { listTargets: async () => [] };
   const ctx = new Proxy(
     { agents, invocationsQuery, user: FIXTURE_USER } as Record<string, unknown>,
@@ -93,7 +83,6 @@ async function startFixture(opts: {
   ) as unknown as ApiContext;
 
   const server: Server = createServer(async (req, res) => {
-    // Compat probe.
     if (req.url === "/api/version") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
@@ -102,7 +91,6 @@ async function startFixture(opts: {
       return;
     }
 
-    // tRPC routes — bridge node IncomingMessage to a Fetch Request.
     if (req.url?.startsWith("/api/trpc/")) {
       if (opts.expectAuthorization !== undefined) {
         const got = req.headers["authorization"];
@@ -175,8 +163,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
 }
 
 describe("dam agent list (integration)", () => {
-  // `dist/bin.js` is built once by `vitest.config.ts`'s globalSetup.
-
   let home: string;
 
   beforeEach(async () => {
@@ -187,9 +173,7 @@ describe("dam agent list (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  afterAll(async () => {
-    /* dist/ stays */
-  });
+  afterAll(async () => {});
 
   async function configureServer(url: string) {
     const r = await runDam(["config", "set", "server", url], {
@@ -230,7 +214,6 @@ describe("dam agent list (integration)", () => {
       expect(r.exitCode, `stderr: ${r.stderr}\nstdout: ${r.stdout}`).toBe(0);
       const lines = r.stdout.trimEnd().split("\n");
       expect(lines[0]).toMatch(/^NAME\s+ID\s+TEMPLATE\s+STATE$/);
-      // Alphabetical sort: prod < staging < test-x
       expect(lines[1]).toContain("prod");
       expect(lines[2]).toContain("staging");
       expect(lines[3]).toContain("test-x");
@@ -315,15 +298,13 @@ describe("dam agent list (integration)", () => {
   it("missing token (no auth.toml, no DAM_TOKEN): error directs user to dam auth login", async () => {
     const fixture = await startFixture({
       list: async () => [],
-      // No expectAuthorization — the request never reaches the server
-      // because the token provider aborts before the wire.
     });
     try {
       await configureServer(fixture.url);
 
       const r = await runDam(["agent", "list"], {
         HOME: home,
-        XDG_STATE_HOME: home, // empty state → not-logged-in
+        XDG_STATE_HOME: home,
         PATH: process.env.PATH ?? "",
       });
 

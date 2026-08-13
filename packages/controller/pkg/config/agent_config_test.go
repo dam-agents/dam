@@ -9,16 +9,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// AgentBase + AgentTemplateDefaults round-trip the JSON shape Helm ships
-// through AGENT_BASE / AGENT_TEMPLATE_DEFAULTS env vars. The unit tests in
-// config_test.go cover LoadFromEnv end-to-end; this file just guards the
-// raw shape so a typo in struct tags fails loud at compile or test time.
-
 func TestAgentBase_JSONRoundTrip(t *testing.T) {
 	in := AgentBase{
 		ImagePullSecrets:       []string{"regcred"},
 		StorageClass:           "platform-rwx",
-		IdleTimeout:            Duration(3600 * 1_000_000_000), // 1h
+		IdleTimeout:            Duration(3600 * 1_000_000_000),
 		TerminationGracePeriod: 5,
 		RuntimeClassName:       "kata",
 		ContainerSecurityContext: &corev1.SecurityContext{
@@ -71,8 +66,8 @@ func TestWarmPool_JSONRoundTrip(t *testing.T) {
 	in := WarmPool{
 		Enabled:             true,
 		StorageClass:        "platform-rwx-immediate",
-		ReplenishInterval:   Duration(30 * 1_000_000_000),      // 30s
-		MaxProvisioningTime: Duration(30 * 60 * 1_000_000_000), // 30m
+		ReplenishInterval:   Duration(30 * 1_000_000_000),
+		MaxProvisioningTime: Duration(30 * 60 * 1_000_000_000),
 		Sizes:               []WarmPoolSize{{Size: "10Gi", Target: 3}, {Size: "5Gi", Target: 1}},
 	}
 	data, err := json.Marshal(in)
@@ -99,7 +94,7 @@ func TestWarmPool_Validate(t *testing.T) {
 	}
 
 	t.Run("disabled skips all checks", func(t *testing.T) {
-		w := WarmPool{Enabled: false} // empty everything
+		w := WarmPool{Enabled: false}
 		assert.NoError(t, w.validate())
 	})
 	t.Run("valid passes", func(t *testing.T) {
@@ -128,7 +123,6 @@ func TestWarmPool_Validate(t *testing.T) {
 	})
 	t.Run("rejects duplicate canonical sizes", func(t *testing.T) {
 		w := valid()
-		// 5Gi and 5120Mi canonicalize to the same quantity.
 		w.Sizes = []WarmPoolSize{{Size: "5Gi", Target: 1}, {Size: "5120Mi", Target: 2}}
 		assert.Error(t, w.validate())
 	})

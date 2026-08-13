@@ -65,7 +65,7 @@ function DropdownMenuCheckboxItem({
       )}
       {...props}
     >
-      {/* Mirrors the shared Checkbox primitive's box styling */}
+      {}
       <span className="absolute left-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary group-data-[state=checked]:bg-primary group-data-[state=checked]:text-primary-foreground">
         <DropdownMenuPrimitive.ItemIndicator className="flex items-center justify-center text-current">
           <Checkmark className="h-4 w-4" />

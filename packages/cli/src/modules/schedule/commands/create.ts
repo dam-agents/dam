@@ -103,8 +103,6 @@ export function buildCreateCommand(deps: {
         process.exit(exitCodeForResolveError(resolved.error));
       }
 
-      // Compile recurrence + windows client-side (shared buildRRule); flag
-      // errors exit 2 before any mutation.
       let rrule: string;
       let quietHours;
       try {
@@ -123,7 +121,6 @@ export function buildCreateCommand(deps: {
       }
       const timezone = opts.timezone ?? detectTimezone();
 
-      // UI-identical precheck: refuse a schedule that would never fire.
       if (!hasVisibleOccurrence(rrule, quietHours)) {
         process.stderr.write(
           "error: quiet hours cover every scheduled occurrence — this schedule would never fire\n",

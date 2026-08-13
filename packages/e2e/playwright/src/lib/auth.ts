@@ -38,20 +38,11 @@ export async function getAccessToken(
   return data.access_token;
 }
 
-/** Accept the current Terms of Use for the client's user. The terms gate
- *  412s every non-terms API call until the user accepts, and only the UI
- *  login flow (01-auth) does it implicitly — self-contained API specs
- *  (the full-suite tier) must call this before anything else. */
 export async function acceptTerms(api: ApiClient): Promise<void> {
   const current = await api.terms.current.query();
   await api.terms.accept.mutate({ version: current.version });
 }
 
-/** Log the browser in through Keycloak and land on the app. Full-tier specs
- *  carry no `storageState` (they are self-contained by convention), so a spec
- *  that needs a *browser* session — not just an API token — establishes it
- *  itself. Idempotent: an already-authenticated context skips straight past
- *  the Keycloak form, and the Terms gate is only clicked when it shows. */
 export async function loginViaUi(page: Page): Promise<void> {
   await page.goto(baseUrl);
 

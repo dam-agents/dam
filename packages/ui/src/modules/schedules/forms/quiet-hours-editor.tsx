@@ -28,9 +28,6 @@ interface Props {
   error?: string;
 }
 
-/** Add/remove/enable editor for quiet-hours windows, backed by an RHF field
- *  array. A window's start time is inside the silenced range, its end time is
- *  outside (22:00→06:00 skips the 22:00 tick and fires at 06:00). */
 export function QuietHoursEditor({ control, register, error }: Props) {
   const { fields, append, remove } = useFieldArray({
     control,
@@ -69,8 +66,6 @@ export function QuietHoursEditor({ control, register, error }: Props) {
             outside.
           </p>
           {fields.map((field, idx) => {
-            // Live nudge for a degenerate window — start equal to end can
-            // never suppress anything and the schema rejects it at submit.
             const degenerate =
               rows?.[idx] && rows[idx].startTime === rows[idx].endTime;
             const variant = degenerate ? ("invalid" as const) : undefined;

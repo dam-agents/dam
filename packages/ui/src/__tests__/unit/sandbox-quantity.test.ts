@@ -7,10 +7,6 @@ import {
   sizeToQuantities,
 } from "../../modules/sandboxes/lib/quantity.js";
 
-// Sizes originate from template YAML and operator-edited specs, not just the
-// sliders' own "<n>m"/"<n>Mi" output — a misparse baselines the settings
-// form to a fallback and saving would then rewrite the sandbox's real size
-// (#2768 review, should-fix 3).
 describe("parseCpuMilli", () => {
   it("parses cores, fractional cores, and millicores", () => {
     expect(parseCpuMilli("2")).toBe(2000);
@@ -38,9 +34,9 @@ describe("parseMemoryMi", () => {
   });
 
   it("parses decimal suffixes and plain bytes", () => {
-    expect(parseMemoryMi("1G")).toBe(954); // 1e9 bytes ≈ 953.67Mi
+    expect(parseMemoryMi("1G")).toBe(954);
     expect(parseMemoryMi("1024M")).toBe(977);
-    expect(parseMemoryMi("1073741824")).toBe(1024); // bytes
+    expect(parseMemoryMi("1073741824")).toBe(1024);
   });
 
   it("rejects garbage, zero, and unknown suffixes", () => {

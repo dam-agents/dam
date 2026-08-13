@@ -20,30 +20,16 @@ import {
 } from "../lib/create-agent-input.js";
 
 interface Props {
-  /** Called with the freshly created agent once the create mutation resolves. */
   onCreated: (agent: AgentView) => void;
 }
 
-/**
- * Minimal, self-contained agent-create form for surfaces that can't leave the
- * page (the Slack/Telegram bind pickers). It reuses the sandbox wizard's own
- * building blocks — templates, provider selection, the create mutation — but
- * fixes the network preset to the trusted default so the whole thing fits in
- * one screen. Turns run under the chosen provider, so a provider is required.
- */
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
   const createAgent = useCreateAgent();
-  // Controlled state rather than the house RHF+Zod default for a 3-field form:
-  // the provider is a bespoke imperative picker (not an RHF-registerable input),
-  // and validation + mutation-input assembly already live in the tested pure
-  // `create-agent-input` module.
   const [name, setName] = useState(generateSandboxName);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
 
-  // Default to the first non-experimental template until the user picks one,
-  // computed here rather than leaning on the catalogue's sort order.
   const selectedTemplateId =
     templateId ??
     (templates.find((t) => !t.experimental) ?? templates[0])?.id ??
@@ -62,9 +48,7 @@ export function CreateAgentInline({ onCreated }: Props) {
     try {
       const agent = await createAgent.mutateAsync(buildCreateAgentInput(draft));
       onCreated(agent);
-    } catch {
-      // useCreateAgent surfaces its own error toast; stay put so the user can retry.
-    }
+    } catch {}
   };
 
   return (

@@ -13,20 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToggleSet } from "@/hooks/use-toggle-set";
 
-/** What one set would do to this sandbox right now. Derived in the browser from
- *  lists the surface already holds, so ticking a box is instant; the server
- *  recomputes the same thing and stays authoritative. */
 interface SetPreview {
   set: SkillSet;
-  /** `skillKey` of every entry this set would turn on that isn't on already —
-   *  keys, not names, so two sources carrying the same name count apart. */
   adds: string[];
-  /** Entries whose source this sandbox has no connection to at all. */
   unavailable: number;
-  /** Entries whose source *is* connected but failed to scan — a credential or
-   *  transport problem, not a missing source. Told apart from `unavailable`
-   *  because the fix is different: one needs the source added, the other needs
-   *  the source to become readable. */
   unreadable: number;
 }
 
@@ -39,10 +29,6 @@ function SetRow({
   onDelete,
 }: {
   preview: SetPreview;
-  /** Every source has reported. Until then there is no honest verdict: an
-   *  unscanned source is indistinguishable from an unconnected one, and saying
-   *  "not in a connected source" about a perfectly good set is worse than
-   *  saying nothing. */
   ready: boolean;
   checked: boolean;
   deleting: boolean;
@@ -50,14 +36,9 @@ function SetRow({
   onDelete: () => void;
 }) {
   const { set, adds, unavailable, unreadable } = preview;
-  // Confirmed in the row, not through the global confirm dialog: this row lives
-  // inside a modal, and a second layered dialog would fight this one's focus
-  // trap. Two clicks still stand between a saved set and losing it.
   const [confirming, setConfirming] = useState(false);
   const sample = set.skills.slice(0, 3).map((s) => s.name);
   const rest = set.skills.length - sample.length;
-  // 0 adds means "already on" only when everything is actually available;
-  // otherwise the unavailable clause is the whole story.
   const blocked = unavailable + unreadable;
   const verdict = !ready
     ? null
@@ -137,17 +118,6 @@ function SetRow({
   );
 }
 
-/**
- * Add one or more saved skill sets to this sandbox.
- *
- * Multi-select rather than single: adding is additive, so picking two sets is
- * just the union of their skills. Each row says what it would *add* on top of
- * what's already on, because picking shouldn't be a guess, and the footer counts
- * the union — two sets sharing a skill add it once.
- *
- * Deleting lives here too: sets have no rename, so correcting a typo means
- * deleting one, and this is the only surface that lists them.
- */
 export function AddSkillSetsModal({
   sets,
   loadFailed,
@@ -161,22 +131,13 @@ export function AddSkillSetsModal({
   onClose,
 }: {
   sets: SkillSet[];
-  /** The sets request failed, so `sets` being empty says nothing about whether
-   *  the user has any. Worded apart from the empty state for that reason. */
   loadFailed: boolean;
-  /** `skillKey` for every skill a connected source can serve here. */
   available: ReadonlySet<string>;
-  /** `skillKey` for every skill currently installed. */
   installedKeys: ReadonlySet<string>;
-  /** Git URLs of connected sources whose scan failed here. */
   unreadableSources: ReadonlySet<string>;
-  /** Every connected source has reported its skills, so the per-set verdicts
-   *  can be trusted. */
   ready: boolean;
   applying: boolean;
-  /** Returns false when nothing could be applied, so the modal stays open. */
   onApply: (setIds: string[]) => Promise<boolean>;
-  /** Delete a set for good. Returns whether it went. */
   onDelete: (id: string) => Promise<boolean>;
   onClose: () => void;
 }) {
@@ -204,7 +165,6 @@ export function AddSkillSetsModal({
     [sets, available, installedKeys, unreadableSources],
   );
 
-  // The union, not the sum: two picked sets sharing a skill add it once.
   const unionAdds = useMemo(() => {
     const keys = new Set<string>();
     for (const p of previews) {
@@ -221,10 +181,6 @@ export function AddSkillSetsModal({
     setDeletingId(id);
     const gone = await onDelete(id);
     setDeletingId(null);
-    // A deleted set must leave the selection with it, or Add would send an id
-    // the server no longer has and the whole apply would fail. `remove` rather
-    // than `toggle`: the checkbox stays live across the await, so a presence
-    // check made before it can go stale and flip the set back on.
     if (gone) remove(id);
   };
 

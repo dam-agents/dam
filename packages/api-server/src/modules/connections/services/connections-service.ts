@@ -60,8 +60,6 @@ export function createConnectionsService(deps: {
   githubAppEngine: GitHubAppEngine;
   oauthCallbackUrl: string;
   brandName: string;
-  /** Serializes a connection's mint → token write → auth write against the
-   *  refresh loop doing the same for the same connection. */
   connectionLock: XactLock;
 }): ConnectionsService {
   function toView(conn: Connection): ConnectionView {
@@ -114,9 +112,6 @@ export function createConnectionsService(deps: {
     };
   }
 
-  // Client creds the user already registered on a sibling connection, keyed
-  // by `credentialFamily` (e.g. all Google services share one Google Cloud
-  // client). First stored creds per family wins.
   async function familyClientCreds(): Promise<
     Map<string, { clientId: string; clientSecretRef?: SecretRef }>
   > {
@@ -163,9 +158,6 @@ export function createConnectionsService(deps: {
       ...(clientSecret ? { clientSecret } : {}),
     };
   }
-
-  // Each rotation is one merge onto the connection's single Secret, plus an auth
-  // update for the minting kinds. Identity, contributions, and grants stay put.
 
   async function rotateHeaderValue(
     conn: Connection,
@@ -229,8 +221,6 @@ export function createConnectionsService(deps: {
     });
   }
 
-  // The *client* secret, not the tokens: without this a rotated app secret is
-  // unfixable, since refresh and re-consent both die at the token exchange.
   async function rotateOAuthClientSecret(
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "oauth" }>,
@@ -243,15 +233,10 @@ export function createConnectionsService(deps: {
           "This connection uses the OAuth client secret configured for the whole deployment. Rotate it there; it can't be replaced per connection.",
       });
     }
-    // Never injected on the wire, so no SDS to re-bake.
     await deps.secretStore.putFields(auth.clientSecretRef, {
       [auth.clientSecretRef.field]: clientSecret,
     });
 
-    // An app-secret rotation doesn't revoke issued tokens, so the stored refresh
-    // token usually still works — trying it revives the connection with no
-    // consent at all. On failure the secret is still stored and the row's
-    // re-authenticate action, now unblocked, is the way back.
     try {
       const next = await refreshOAuthAccessToken({
         conn,
@@ -265,8 +250,6 @@ export function createConnectionsService(deps: {
         expiresAt: next.expiresAt,
       });
     } catch (err) {
-      // Swallowed by design, but never silent: otherwise the operator sees a
-      // successful update next to a still-expired connection and no reason.
       securityLog("warn", "connection.client_secret_revive_failed", {
         category: "credential",
         actor: deps.ownerId,
@@ -279,12 +262,6 @@ export function createConnectionsService(deps: {
     }
   }
 
-  // Validated by use: nothing is written until the provider accepts it, and its
-  // own rejection is the most useful thing to show, so it rides the BAD_REQUEST.
-  // Only the OAuth error code, though — a token-endpoint message embeds the
-  // provider's raw body, which could echo credential material.
-  /** Loads a connection the caller owns and narrows it to the github-app
-   *  shape, so the scope endpoints share one ownership and kind check. */
   async function requireGitHubAppConnection(id: string): Promise<{
     conn: Connection;
     auth: Extract<Connection["auth"], { kind: "github-app" }>;
@@ -437,10 +414,6 @@ export function createConnectionsService(deps: {
 
       if (affectedAgents.length > 0) {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
-        // The fan-out's egress sweep only revokes rules whose source id is in
-        // this owned set; `id` is already gone from `ownerConnsAfter`, so keep
-        // it here or the deleted connection's egress-allow rows would leak onto
-        // every affected agent.
         const allOwnerConnectionIds = new Set([
           ...ownerConnsAfter.map((c) => c.id),
           id,
@@ -539,7 +512,6 @@ export function createConnectionsService(deps: {
       for (const id of toRevoke) await deps.repo.revoke(id, agentId);
 
       if (toGrant.length > 0 || toRevoke.length > 0) {
-        // Links "credential granted" to "agent that may inject it".
         securityLog("info", "connection.grants_set", {
           category: "authz-list",
           actor: deps.ownerId,
@@ -575,8 +547,6 @@ export function createConnectionsService(deps: {
         deps.brandName,
       );
 
-      // The migration supplies a deterministic id (derived from the legacy
-      // secret) so re-runs are idempotent; interactive callers omit it.
       const id = input.id ?? newConnectionId();
       const contributions = built.contributions.map(
         (c): Contribution =>
@@ -584,9 +554,6 @@ export function createConnectionsService(deps: {
       );
       const secretPath = connectionSecretPath(built.auth);
 
-      // Client-credentials mints its first access token here, synchronously:
-      // bad credentials fail the create before anything is persisted, and the
-      // real token + SDS land in the initial secret write below.
       let auth = built.auth;
       if (auth.kind === "client-credentials" && secretPath) {
         const clientSecret = built.secrets.get(secretPath)?.["client_secret"];
@@ -618,9 +585,6 @@ export function createConnectionsService(deps: {
         });
       }
 
-      // GitHub App mints its first installation token here, synchronously:
-      // a bad key/app/installation fails the create before anything is
-      // persisted, mirroring the client-credentials path above.
       if (auth.kind === "github-app" && secretPath) {
         const privateKeyPem = built.secrets.get(secretPath)?.["private_key"];
         if (!privateKeyPem) {
@@ -693,8 +657,6 @@ export function createConnectionsService(deps: {
         }
         throw err;
       }
-      // Header-auth connections store a credential at rest here with no
-      // ConnectionCreated event (that fires only on OAuth-callback completion).
       securityLog("info", "connection.create", {
         category: "credential",
         actor: deps.ownerId,
@@ -729,13 +691,8 @@ export function createConnectionsService(deps: {
           message: "This template does not use a GitHub App installation.",
         });
       }
-      // Inside the wrapper: a missing host and an unusable key are both the
-      // caller's to fix, so they read as bad input rather than as a server
-      // fault carrying an internal message.
       return rejectIfInvalid(async () => {
         const { apiBaseUrl } = gitHubAppApiBase(template, input.host);
-        // Same normalization the create path applies, so a key that probes
-        // successfully is one that will also store successfully.
         const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
         return deps.githubAppEngine.readInstallation({
           id: `template:${template.id}`,
@@ -767,11 +724,6 @@ export function createConnectionsService(deps: {
       const { conn, auth } = await requireGitHubAppConnection(input.id);
       const privateKeyPem = await readPrivateKey(auth);
 
-      // Rebuilt rather than merged: the caller states the whole scope, so an
-      // omitted half clears rather than silently keeping the old narrowing.
-      // Rebuilding also drops any refresh-failure marker, which is what we
-      // want — the mint below proves the credential works, and that is exactly
-      // what un-parks a connection everywhere else.
       const scope = parseGitHubAppScope(input);
       const nextAuth: Connection["auth"] = {
         kind: "github-app",
@@ -787,15 +739,7 @@ export function createConnectionsService(deps: {
         ...(scope.permissions ? { permissions: scope.permissions } : {}),
       };
 
-      // Mint, token write, and auth write are one critical section against the
-      // refresh loop, which runs the same sequence for the same connection. The
-      // token lives in a store no database transaction can bind, so ordering
-      // the two by hand is what keeps the stored scope and the live token
-      // describing the same authority.
       await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
-        // Proven before it is stored, exactly as create does: a subset the
-        // installation does not cover fails the edit instead of parking the
-        // connection at its next renewal.
         const token = await rejectIfInvalid(() =>
           mintGitHubAppToken(deps.githubAppEngine, {
             connectionRef: `connection:${conn.id}:${conn.templateId}`,
@@ -807,9 +751,6 @@ export function createConnectionsService(deps: {
           }),
         );
 
-        // The new token replaces the live one, so the narrowing takes effect
-        // now rather than at the next renewal. Contributions are unchanged —
-        // same hosts, same injections — so no Agent spec moves, no pod rolls.
         await deps.secretStore.putFields(auth.accessTokenRef, {
           access_token: token.accessToken,
           ...buildConnectionSdsFields(conn.contributions, token.accessToken),
@@ -838,10 +779,6 @@ export function createConnectionsService(deps: {
   };
 }
 
-/** The narrowing a github-app connection mints against, for display and for
- *  pre-filling its editor. Omitted entirely when nothing is narrowed, so the
- *  view says "full installation authority" by absence, exactly as the stored
- *  auth does. */
 function githubAppScopeView(
   auth: Extract<Connection["auth"], { kind: "github-app" }>,
 ): { githubAppScope?: NonNullable<ConnectionView["githubAppScope"]> } {
@@ -853,7 +790,6 @@ function githubAppScopeView(
   return Object.keys(scope).length > 0 ? { githubAppScope: scope } : {};
 }
 
-// Metadata only: a provider's raw body could echo credential material.
 function reviveFailureReason(err: unknown): string {
   const rejection = tokenRejectionOf(err);
   if (rejection) {
@@ -881,20 +817,11 @@ function stripSecretsFromInputs(input: {
 function deriveStatus(conn: Connection): ConnectionView["status"] {
   switch (conn.auth.kind) {
     case "oauth":
-      // Never authorized — `expiresAt` stays in the OR for back-compat:
-      // connections created before `connectedAt` existed have an expiry but no
-      // `connectedAt`.
       if (!conn.auth.connectedAt && !conn.auth.expiresAt) return "pending";
       return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "client-credentials":
-      // expiresAt is always stamped at mint (provider expiry or the 1h
-      // fallback) — the unset guard is defensive. Past-expiry means the
-      // refresh loop has been failing to re-mint (it retries every tick
-      // and re-mints before expiry when healthy).
       return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "github-app":
-      // Same horizon logic as client-credentials: past-expiry means the
-      // refresh loop has been failing to re-mint the installation token.
       return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "header":
       return "active";
@@ -903,9 +830,6 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
   }
 }
 
-// The marker is definitive. A past horizon is the fallback: refresh renews well
-// ahead of expiry, so a token outliving it has no working refresh path. Providers
-// issuing no `expires_in` (GitHub) carry no horizon and stay active.
 function isExpiredAuth(auth: {
   expiresAt?: number;
   refreshFailedAt?: number;

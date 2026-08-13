@@ -38,7 +38,6 @@ type Pane =
 
 interface Props {
   onClose: () => void;
-  /** Grant controls of the hosting sandbox; omit for the global catalogue. */
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
 }
@@ -70,7 +69,6 @@ export function ConnectionCatalogModal({
   );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
 
-  // Deleting a granted connection also drops its grant (#2426).
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
       sandbox.onToggleGrant(id, false);
@@ -78,8 +76,6 @@ export function ConnectionCatalogModal({
 
   const openNew = (group: CatalogProviderGroup) => {
     const providerId = group.provider.id;
-    // MCP is one guided entry — the platform detects OAuth vs no-auth, so it
-    // skips the auth-method chooser (#423).
     if (providerId === MCP_PROVIDER_ID) setPane({ kind: "create-mcp" });
     else if (group.templates.length > 1)
       setPane({ kind: "choose", providerId });
@@ -114,10 +110,6 @@ export function ConnectionCatalogModal({
   };
 
   if (maintenance.updating || maintenance.editingScope) {
-    // A maintenance dialog replaces the catalogue while open — stacking two
-    // modals would trap focus in whichever mounted last. Both kinds must be
-    // named here: one left out is a menu item that does nothing, and its state
-    // then lingers to shadow the next dialog opened from another row.
     return <ConnectionMaintenanceDialog maintenance={maintenance} />;
   }
 
@@ -133,7 +125,6 @@ export function ConnectionCatalogModal({
         <Tabs
           ariaLabel="Connection categories"
           tabs={catalogTabs}
-          // No tab is highlighted while a create/choose pane is open.
           value={pane.kind === "browse" ? activeTab : null}
           onValueChange={(tab) => {
             setActiveTab(tab);

@@ -17,10 +17,6 @@ const regrantValue = "e2e-regrant-secret-5e1c";
 const regrantHost = "regrant.example.com";
 const regrantHeaderName = "x-regrant-key";
 
-// Regression for #2426: deleting a granted connection and creating a
-// replacement of the same type must leave the agent's grants clean — the
-// deleted id gone, the replacement granted (grants apply immediately on the
-// sandbox connections page; creating from the catalogue auto-grants).
 test("recreating a disconnected connection regrants cleanly", async ({
   page,
 }) => {
@@ -40,8 +36,6 @@ test("recreating a disconnected connection regrants cleanly", async ({
       listed,
       `agent ${agentName} must exist from earlier specs`,
     ).toBeTruthy();
-    // The grant fanout pushes contributions to the pod, so make sure earlier
-    // specs didn't leave the agent hibernating.
     await api.agents.wake.mutate({ id: listed!.id });
     agentId = await waitForAgentRunning(api, agentName);
 
@@ -82,12 +76,8 @@ test("recreating a disconnected connection regrants cleanly", async ({
   });
 
   await test.step("delete the granted connection via the catalogue", async () => {
-    // Delete lives only in the catalogue modal (and settings) — the sandbox
-    // list's row menu offers Remove/Manage instead.
     await page.getByTestId("open-connection-catalog").click();
     await page.getByTestId("catalog-tab-custom-headers").click();
-    // The section behind the modal renders the same row testids — scope to
-    // the modal's provider card.
     const card = page.getByTestId("catalog-provider-custom-header");
     await card.getByTestId(`catalog-menu-${originalId}`).click();
     await page
@@ -114,7 +104,6 @@ test("recreating a disconnected connection regrants cleanly", async ({
     await page.getByTestId("connection-field-value").fill(regrantValue);
     await page.getByTestId("connection-field-envName").fill(regrantEnvName);
     await page.getByTestId("connection-create-submit").click();
-    // A successful create auto-grants and closes the catalogue modal.
     await expect(page.getByTestId("catalog-close")).toBeHidden();
   });
 
@@ -142,8 +131,9 @@ test("recreating a disconnected connection regrants cleanly", async ({
     const grants = await api.connections.getAgentConnections.query({
       agentId,
     });
-    expect(grants.connections.map((c) => c.connectionId)) //
-      .not.toContain(originalId);
+    expect(grants.connections.map((c) => c.connectionId)).not.toContain(
+      originalId,
+    );
     await expect(page.getByText(/not owned by caller/)).toBeHidden();
   });
 

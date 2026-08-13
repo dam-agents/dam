@@ -51,8 +51,6 @@ describe("resize gate (#1900)", () => {
   });
 
   it("always admits a shrink — even for an owner already over the ceiling", async () => {
-    // Grandfathered overshoot: peers alone exceed the ceiling; shrinking
-    // must still go through, it only helps.
     const me = agent("me", { cpu: "4", memory: "4Gi" });
     const peers = [me, agent("peer", { cpu: "4", memory: "8Gi" })];
     await expect(
@@ -61,8 +59,6 @@ describe("resize gate (#1900)", () => {
   });
 
   it("fills a partial size from the agent's current limits", async () => {
-    // Only memory grows; cpu comes from the current spec, so the total is
-    // 1 (self) + 3 (peer) = 4 CPU — exactly at the ceiling, admitted.
     const me = agent("me", { cpu: "1", memory: "1Gi" });
     const peers = [me, agent("peer", { cpu: "3", memory: "1Gi" })];
     await expect(

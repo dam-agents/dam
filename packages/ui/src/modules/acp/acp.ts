@@ -40,9 +40,6 @@ function wsStream(url: string): Promise<{
         start(controller) {
           ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));
           ws.onclose = (e) => {
-            // Before `controller.close()`: closing the stream can settle the
-            // connection's `closed` promise, and whoever reads the reason off
-            // that must not find it unset.
             closeReason = e.reason || null;
             try {
               controller.close();
@@ -80,27 +77,12 @@ async function wsUrl(agentId: string, passive: boolean): Promise<string> {
   return `${proto}//${location.host}/api/agents/${agentId}/acp?token=${encodeURIComponent(token)}${suffix}`;
 }
 
-/**
- * Hand a permission request off to the store and await the user's choice. The
- * returned promise stays pending until a human picks an option (or cancels) —
- * there is no client-side auto-approve, and no timeout. If the WebSocket dies
- * before the user responds, the agent-runtime replays the request on the next
- * connection, which overwrites the pending entry and supplies a fresh resolver.
- */
-/** Synth ext_authz frames travel over the same WS as session-bound permission
- *  requests. They carry a sentinel sessionId so the UI can divert them to the
- *  inbox surface instead of the session-bound permission queue. The inbox
- *  resolves them via tRPC; the WS-side promise is left pending forever (the
- *  wrapper isn't awaiting a response on this synthetic id). */
 const SYNTH_EGRESS_PREFIX = "_egress:";
 
 function awaitPermission(
   params: RequestPermissionRequest,
 ): Promise<PermissionOutcome> {
   if (params.sessionId.startsWith(SYNTH_EGRESS_PREFIX)) {
-    // v1: handled exclusively by the inbox UI. Return a never-resolving
-    // promise so the SDK doesn't synthesize a response back to the wrapper —
-    // there's no upstream listener for this id.
     return new Promise<PermissionOutcome>(() => {});
   }
   return new Promise((resolve) => {
@@ -115,9 +97,6 @@ function awaitPermission(
   });
 }
 
-/** `openConnection` plus the `initialize` handshake every caller needs, closing
- *  the socket if the handshake fails — the one shape in which an un-owned socket
- *  can leak. */
 export async function openInitializedConnection(
   agentId: string,
   onUpdate: UpdateHandler,
@@ -139,12 +118,6 @@ export async function openInitializedConnection(
   return { connection, ws };
 }
 
-/**
- * Validate a `platform/*` ext-notification's params, warning and returning
- * `null` on a mismatch. A server running a variant without our extensions (or
- * a newer contract) must degrade to "no delivery feedback", never to a thrown
- * handler that tears down the whole notification stream.
- */
 function parseExtParams<T>(
   method: string,
   schema: z.ZodType<T>,
@@ -180,14 +153,6 @@ export async function openConnection(
       async readTextFile() {
         return { content: "" };
       },
-      // Our runtime emits custom `platform/*` notifications next to the ACP
-      // session updates: `platform/turnEnded` on the last response of each
-      // prompt, so viewers that didn't originate the prompt can close their
-      // in-progress assistant bubble, and `platform/promptAccepted` /
-      // `platform/promptStarted` to tell a prompt's *sender* what the runtime
-      // did with it (queued behind a running turn, or handed to the agent).
-      // All three surface through the same `onUpdate` channel as synthetic
-      // `sessionUpdate`s.
       async extNotification(method: string, params: Record<string, unknown>) {
         switch (method) {
           case "platform/turnEnded": {

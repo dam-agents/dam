@@ -1,29 +1,3 @@
-/**
- * Bundled default brand icon. Used when `BRAND_ICON_SVG` env var is unset
- * (i.e. no Helm `brand.icon` override). The icon is rasterized on demand by
- * the brand-icon routes; admins override it via Helm without rebuilding the
- * api-server image.
- *
- * Two bundled variants of the "DAM" square mark:
- *
- *   - `DEFAULT_BRAND_ICON_SVG` is the favicon source. It adapts to the
- *     browser/OS color scheme via an embedded `prefers-color-scheme` media
- *     query: a black square with white letters in light mode, a gradient
- *     square with black letters in dark mode. Browsers that honor media
- *     queries in SVG favicons (Chrome, Firefox) switch automatically; the
- *     rest fall back to the light-mode default.
- *   - `DEFAULT_BRAND_ICON_RASTER_SVG` is the source for the PNG rasters
- *     (PWA + Apple touch icons), which cannot adapt to color scheme. It is
- *     the gradient square so the installed-app icon reads on any home
- *     screen.
- *
- * Inlined as TS strings (not file reads at startup) so the api-server has
- * no filesystem dependency at module init and the icon ships with the
- * compiled bundle exactly once.
- */
-
-// The three "DAM" glyphs, centered in the 270×270 square. `attr` carries the
-// fill — a CSS class for the adaptive favicon, a fixed color for the raster.
 const damLetters = (
   attr: string,
 ): string => String.raw`<path ${attr} d="M162.314 162.226V107H174.103L188.265 133.98H188.582L202.586 107H213.9V162.226H204.01V122.587H203.694L199.421 131.369L188.107 152.257L176.793 131.369L172.52 122.587H172.204V162.226H162.314Z"/>

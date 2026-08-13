@@ -6,11 +6,6 @@ afterEach(() => {
 });
 
 describe("createGitHubRestClient", () => {
-  // Pins the pod-side half of the unreachable-GitHub contract: a transport
-  // throw never escapes raw — it becomes the structured domain error the
-  // api-server's grant-access classification keys on. Without this, dropping
-  // the catch would silently regress egress-blocked scans to a raw
-  // "fetch failed" (#2836).
   it("returns UpstreamUnreachable with the cause chain when fetch throws", async () => {
     const cause = new Error("Connect Timeout Error");
     vi.stubGlobal(

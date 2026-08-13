@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { createWorld, frames } from "./acp-world.js";
 
 /**
- * Feature: connecting to a sandbox.
+ * TEST_OVERVIEW: connecting to a sandbox.
  *
  * Written from the client's side of the socket. A scenario says what someone
  * did and what they should observe; the harness, the spawn gate, and the
@@ -10,7 +10,6 @@ import { createWorld, frames } from "./acp-world.js";
  * in an assertion.
  */
 
-/** Let the runtime's `exited` promise handler run. */
 const flushMicrotasks = (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
 
@@ -20,7 +19,7 @@ describe("acp-runtime: connecting", () => {
   });
 
   /**
-   * A sandbox with nobody in it runs no harness. The first client starts one,
+   * TEST_SCENARIO: A sandbox with nobody in it runs no harness. The first client starts one,
    * and everybody after that shares it.
    *
    * Only the runtime can arrange that. Clients connect independently and have
@@ -31,15 +30,12 @@ describe("acp-runtime: connecting", () => {
   it("should spawn a single harness for the first client and reuse the same instance for the next", () => {
     const world = createWorld();
 
-    // A sandbox with nobody connected runs no harness at all.
     expect(world.harnessCount()).toBe(0);
 
     const first = world.connect();
     first.send(frames.initialize(1));
     expect(world.harnessCount()).toBe(1);
 
-    // A colleague opens the same sandbox, and their traffic lands on the
-    // harness that is already running.
     const second = world.connect();
     second.send(frames.listSessions(2));
 
@@ -51,7 +47,7 @@ describe("acp-runtime: connecting", () => {
   });
 
   /**
-   * When the harness dies it takes the sandbox with it, and everyone
+   * TEST_SCENARIO: When the harness dies it takes the sandbox with it, and everyone
    * connected is closed. Someone opening a new tab a moment later knows none
    * of that and just connects.
    *
@@ -68,7 +64,6 @@ describe("acp-runtime: connecting", () => {
     await flushMicrotasks();
     expect(first.isOpen()).toBe(false);
 
-    // The new tab gets a closed socket with a reason, not one that hangs.
     const harnessesBeforeReconnect = world.harnessCount();
     const late = world.connect();
 
@@ -77,13 +72,11 @@ describe("acp-runtime: connecting", () => {
       code: 1011,
       reason: "agent process is not running",
     });
-    // Death is a one-way latch: connecting does not spawn a replacement the
-    // way it spawned the first one.
     expect(world.harnessCount()).toBe(harnessesBeforeReconnect);
   });
 
   /**
-   * On a first boot the pod answers /healthz before its env exists, so
+   * TEST_SCENARIO: On a first boot the pod answers /healthz before its env exists, so
    * api-server starts relaying and a client can be talking before the harness
    * can usefully be started.
    *
@@ -113,7 +106,7 @@ describe("acp-runtime: connecting", () => {
   });
 
   /**
-   * That wait cannot be open-ended, because env can fail to arrive at all: a
+   * TEST_SCENARIO: That wait cannot be open-ended, because env can fail to arrive at all: a
    * failed `hello` is logged and swallowed, which leaves the pod up and Ready
    * with nothing left that would ever open the gate.
    *
@@ -133,7 +126,6 @@ describe("acp-runtime: connecting", () => {
 
     expect(world.harnessStarted()).toBe(false);
 
-    // Env never arrives, and the bound runs out.
     vi.advanceTimersByTime(15_000);
 
     expect(world.harnessStarted()).toBe(true);

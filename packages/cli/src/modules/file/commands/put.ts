@@ -53,8 +53,6 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
           },
         });
 
-        // Resolve the agent before touching local I/O — a bad ref is the
-        // most common user error and we'd rather fail fast.
         const svc = deps.createAgentService(host);
         const resolver = createAgentResolver({ agentService: svc });
         const resolved = await resolver.resolve(ref);
@@ -65,8 +63,6 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
         const agent = resolved.value;
 
         const absLocal = resolve(localPath);
-        // Open once and stat+read through the same handle to avoid a TOCTOU
-        // race between the directory-guard and the read.
         let fh: FileHandle;
         try {
           fh = await open(absLocal, "r");
@@ -96,8 +92,6 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
         } finally {
           await fh.close();
         }
-        // The per-file cap belongs to the server; oversize comes back as
-        // PAYLOAD_TOO_LARGE and printTrpcUploadError surfaces it.
 
         const contentBase64 = buf.toString("base64");
 
@@ -133,11 +127,7 @@ function printTrpcUploadError(
 ): void {
   const trpcErr = e instanceof TRPCClientError ? e : undefined;
   const code = trpcErr?.data?.code as string | undefined;
-  // Server detail (e.g. "file 15728640 bytes (max 10485760)") lives in
-  // `data.message`; top-level `message` is just the code name.
   const message = (trpcErr?.data?.message as string | undefined) ?? "";
-  // `files.upload` only emits CONFLICT for the AlreadyExists domain error —
-  // no mtime-conflict branch on this route (see agent-runtime-api router).
   if (code === "CONFLICT") {
     process.stderr.write(
       `error: ${remotePath} already exists on the agent; pass --overwrite to clobber\n`,

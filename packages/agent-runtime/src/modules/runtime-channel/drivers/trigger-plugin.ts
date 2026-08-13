@@ -11,9 +11,6 @@ import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js
 
 const IMPL_NAME = "trigger";
 
-// Event driver for `trigger` and `schedule-reset`: fire a scheduled session
-// (resuming a continuous schedule's prior session, else starting fresh), or
-// clear a schedule's continuous binding so the next fire starts fresh.
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;

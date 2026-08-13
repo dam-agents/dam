@@ -17,9 +17,6 @@ interface Props {
   className?: string;
 }
 
-/** A single-select that filters its options by a typed query — for lists too
- *  long to scan in a native <select> (e.g. IANA timezones). Closes on outside
- *  click or Escape; Arrow/Enter navigate the filtered list. */
 export function SearchableSelect({
   value,
   onChange,

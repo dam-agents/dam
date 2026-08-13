@@ -60,8 +60,6 @@ export interface ExperimentsRepository {
     scriptArtifactId: string;
     scriptVersion: number;
     dashboardArtifactId: string | null;
-    /** Runs are born `running` (never draft — the lineage draft persists and
-     *  the one-draft-per-name index must stay free); omit for the draft. */
     status?: ExperimentStatus;
     executedAt?: Date;
     lastActivityAt?: Date;
@@ -69,18 +67,12 @@ export interface ExperimentsRepository {
   get(id: string, owner: string): Promise<ExperimentRow | null>;
   list(owner: string): Promise<ExperimentRow[]>;
   getDraft(driverAgentId: string, name: string): Promise<ExperimentRow | null>;
-  /** How many runs (non-draft rows) this lineage already has — the next
-   *  run's number for cloned-artifact titles. With `before`, counts only
-   *  runs created earlier (a run's own stable number at any later time). */
   countRuns(
     driverAgentId: string,
     name: string,
     before?: Date,
   ): Promise<number>;
-  /** Point the run at its results artifact (created at the terminal
-   *  snapshot; until then a run renders the draft's dashboard). */
   patchDashboardArtifact(id: string, artifactId: string): Promise<void>;
-  /** Plan re-registration: refresh a draft's declaration in place. */
   updateDraft(
     id: string,
     patch: {
@@ -91,8 +83,6 @@ export interface ExperimentsRepository {
       dashboardArtifactId: string | null;
     },
   ): Promise<void>;
-  /** Atomic conditional lifecycle flip (`WHERE status = from`); false = lost
-   *  the race to a concurrent transition, caller treats as already-terminal. */
   transition(
     id: string,
     from: ExperimentStatus,
@@ -108,11 +98,7 @@ export interface ExperimentsRepository {
     id: string,
     patch: { scriptSha256: string; scriptVersion: number },
   ): Promise<void>;
-  /** Full overwrite, not an atomic jsonb append: safe because one driver
-   *  emits an experiment's events serially through one service call — two
-   *  concurrent appendEvents for the same experiment don't happen. */
   appendDrift(id: string, drift: string[]): Promise<void>;
-  /** Replace the run's attached-artifact list (caller unions + dedups). */
   setAttachedArtifacts(id: string, artifactIds: string[]): Promise<void>;
   patchCustomData(
     id: string,
@@ -121,7 +107,6 @@ export interface ExperimentsRepository {
   bumpActivity(id: string, at: Date): Promise<void>;
   delete(id: string, owner: string): Promise<void>;
 
-  /** Insert the running row for span-start; a duplicate start no-ops. */
   insertSpan(
     experimentId: string,
     span: {
@@ -132,8 +117,6 @@ export interface ExperimentsRepository {
       startedAt: Date;
     },
   ): Promise<void>;
-  /** Close a span. An end with no prior start inserts the complete row, so
-   *  out-of-order batches never drop data. */
   endSpan(
     experimentId: string,
     span: {
@@ -145,16 +128,10 @@ export interface ExperimentsRepository {
       endedAt: Date;
     },
   ): Promise<void>;
-  /** Chronological (startedAt ascending) — the order projectFeed requires. */
   listSpans(experimentId: string): Promise<SpanRow[]>;
 
-  /** `running` rows silent past the window — the inactivity sweep reaps these.
-   *  The activity basis is lastActivityAt, falling back to executedAt. */
   listInactiveRunning(cutoff: Date, limit: number): Promise<ExperimentRow[]>;
-  /** Driver ids with at least one `running` experiment — pin reconciliation. */
   listRunningDrivers(): Promise<string[]>;
-  /** Whether the driver still has any `running` experiment — the pin is
-   *  released only when this goes false. */
   hasRunningForDriver(driverAgentId: string): Promise<boolean>;
 }
 
@@ -197,7 +174,6 @@ function toSpanRow(r: typeof spansTable.$inferSelect): SpanRow {
   };
 }
 
-/** The composite PK keeps SDK-chosen span ids unique per experiment only. */
 export function spanRowId(experimentId: string, spanId: string): string {
   return `${experimentId}/${spanId}`;
 }
@@ -378,8 +354,6 @@ export function createExperimentsRepository(db: Db): ExperimentsRepository {
           id: spanRowId(experimentId, span.spanId),
           experimentId,
           spanId: span.spanId,
-          // An end with no start carries no stage; "unknown" keeps the row
-          // visible in the drill-down instead of dropping the event.
           stage: "unknown",
           status: span.status,
           score: span.score,

@@ -26,8 +26,6 @@ const PAGE_DESCRIPTION = (
   </span>
 );
 
-/** Settings tab: the user's LLM API spend for one calendar month, totalled
- *  and broken down per model across all their agents. */
 export function UsageView() {
   const {
     month,
@@ -46,9 +44,6 @@ export function UsageView() {
     data?.byDay,
   );
 
-  // A deployment without a telemetry store has no usage to show for any month,
-  // so the verdict is rendered once in place of the period control rather than
-  // re-derived per month behind a skeleton.
   if (state === "unavailable") {
     return (
       <div>
@@ -75,8 +70,7 @@ export function UsageView() {
         }
       />
 
-      {/* Only when there is nothing to show: a failed refetch keeps the loaded
-          month, and the label by the period control names it as not fresh. */}
+      {}
       {state === "failed" && (
         <UsageNotice>{readFailureMessage(false, label)}</UsageNotice>
       )}
@@ -126,8 +120,6 @@ export function UsageView() {
   );
 }
 
-/** Placeholder shell shown while the month's spend loads, shaped at the final
- *  section heights so the layout doesn't jump when data lands. */
 function UsageSkeleton() {
   return (
     <div className="space-y-10">
@@ -151,8 +143,6 @@ function UsageSkeleton() {
   );
 }
 
-/** Matches a `SpendBar` stack: four rows at the bar's own height, inside the
- *  same padded card. */
 function BarsSkeleton() {
   return (
     <Card className="flex flex-col gap-4 p-5">

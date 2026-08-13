@@ -77,8 +77,6 @@ export function buildGrantCommand(deps: {
 
         const svc = deps.createConnectionService(host);
 
-        // Resolve each ref (id or name) up front — a dead grant the server
-        // can't turn into an egress rule would otherwise be stored silently.
         const allRes = await svc.list();
         if (!allRes.ok) {
           printServiceError(allRes.error, host);

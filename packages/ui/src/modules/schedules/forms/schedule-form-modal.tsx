@@ -49,8 +49,6 @@ const SESSION_TOOLTIP =
 
 interface Props {
   agentId: string;
-  /** When set, the form edits this schedule (prefilled, calls updateRRule);
-   *  otherwise it creates a new one. */
   existing?: Schedule;
   onClose: () => void;
   onSaved: () => void;
@@ -73,8 +71,6 @@ export function ScheduleFormModal({
     });
   const { errors } = formState;
 
-  // Whole-form watch drives the conditional cadence controls and the live
-  // summary line — the modal re-renders per keystroke either way.
   const values = watch();
   const cadence = buildRRuleParts(values);
 

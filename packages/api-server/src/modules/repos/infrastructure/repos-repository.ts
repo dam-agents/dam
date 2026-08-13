@@ -6,13 +6,6 @@ import { repoSchema } from "api-server-api";
 
 const REPOS_FILE = "git-repos.yaml";
 
-/**
- * The `gitRepos` catalog is chart-shipped config: a single `git-repos.yaml` (a
- * list) mounted from a ConfigMap. It changes only on helm upgrade (which
- * restarts the pod), so load it once at construction. The repository is itself
- * the ReposService — there's no per-id lookup to justify a separate service.
- * An empty/missing `dir` yields an empty catalog.
- */
 export function createReposRepository(dir: string): ReposService {
   const repos = loadRepos(dir);
   return {

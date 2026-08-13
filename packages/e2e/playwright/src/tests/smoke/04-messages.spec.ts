@@ -57,11 +57,6 @@ test("exchange messages with the agent", async ({ page }) => {
 test("background prompt mid-turn keeps the reply paired with the user message (#703)", async ({
   page,
 }) => {
-  // test.fail(
-  //   true,
-  //   "Reproduces #703: a user_message_chunk arriving mid-turn closes the active assistant bubble, so the reply tail lands under the background prompt instead of the user's message. Remove test.fail once fixed.",
-  // );
-
   const token = await getAccessToken();
   const api = createApiClient(token);
 

@@ -10,16 +10,12 @@ import { ArtifactKindBadge } from "./artifact-badges.js";
 
 export const ARTIFACT_LINK_PREFIX = ARTIFACT_INTERNAL_LINK_PREFIX;
 
-/** The id when `href` is an internal artifact link, else null. */
 export function parseArtifactLink(href: string | undefined): string | null {
   if (!href?.startsWith(ARTIFACT_LINK_PREFIX)) return null;
   const id = href.slice(ARTIFACT_LINK_PREFIX.length).trim();
   return id.length > 0 ? id : null;
 }
 
-/** Inline chip rendered wherever markdown carries a `platform://artifacts/…`
- *  link (agents get the link back from the MCP tools and paste it into chat).
- *  Clicking opens the docked live preview beside the chat. */
 export function ArtifactLinkChip({
   artifactId,
   children,

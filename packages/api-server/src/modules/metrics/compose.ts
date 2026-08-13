@@ -4,9 +4,6 @@ import {
 } from "./infrastructure/clickhouse-reader.js";
 import type { MetricsReader } from "./services/metrics-service.js";
 
-/** Startup wiring for the ClickHouse read client (a process-wide connection
- *  pool). Returns `null` when the metrics backend is not configured — the
- *  request path then wires the disabled service. */
 export function composeMetricsReader(config: {
   clickhouseUrl?: string;
   clickhouseUser: string;

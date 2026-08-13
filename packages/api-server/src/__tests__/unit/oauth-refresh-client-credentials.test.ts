@@ -104,7 +104,6 @@ describe("client-credentials re-mint", () => {
     expect(
       deps.putCalls[0].fields[sdsFileKeyForHost("api.example.com")],
     ).toContain("Bearer tok-2");
-    // The client secret is never rewritten by a re-mint.
     expect(deps.putCalls[0].fields.client_secret).toBeUndefined();
 
     expect(deps.dbUpdates).toHaveLength(1);
@@ -122,8 +121,6 @@ describe("client-credentials re-mint", () => {
     expect(deps.dbUpdates).toHaveLength(0);
   });
 
-  // Guards dueConnections' parseRow: an auth shape the schema rejects is
-  // silently dropped from the loop, so the round-trip must stay green.
   it("client-credentials auth round-trips through the wire schema", () => {
     const parsed = connectionAuthConfigSchema.safeParse(AUTH);
     expect(parsed.success).toBe(true);

@@ -25,15 +25,10 @@ export interface TemplateCreateFormProps {
   template: ConnectionTemplateView;
   onCreated: (id: string) => void;
   onCancel: () => void;
-  /** Full-page OAuth return path; defaults to Settings → Connections. */
   oauthReturnView?: string;
-  /** Prefer a popup for OAuth (full-page redirect when blocked). */
   popupOAuth?: boolean;
 }
 
-/** The create form without dialog chrome, embeddable in any pane. `layout`
- *  arranges the two regions; the dialog wrapper maps them onto
- *  DialogBody/DialogFooter. */
 export function TemplateCreateFormBody({
   template,
   onCreated,
@@ -80,8 +75,6 @@ export function TemplateCreateFormBody({
     return typeof v === "string" ? v : undefined;
   };
 
-  // Overridable client creds can come from an operator preset or be reused
-  // from a sibling connection in the same credential family — the copy differs.
   const credentialsFromFamily = template.extras?.credentialsFromFamily === true;
 
   const onSubmit = handleSubmit((values) => {
@@ -93,9 +86,6 @@ export function TemplateCreateFormBody({
     void submit(payload);
   });
 
-  // A GitHub App connection narrows through the installation picker, which
-  // owns these inputs: it renders them as a selection once the installation has
-  // been read, and as plain text fields until then.
   const isGithubApp = template.authKind === "github-app";
   const scopeInputNames = new Set(
     isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
@@ -107,13 +97,9 @@ export function TemplateCreateFormBody({
   );
   const overridable = template.inputs.filter((i) => i.state === "overridable");
 
-  // `repositoryIds` is picker-only — it holds GitHub's numeric ids, which
-  // nobody types by hand; names stay the typeable spelling.
   const scopeFallbackInputs = template.inputs.filter(
     (i) => i.name === "repositories" || i.name === "permissions",
   );
-  // MCP forms tuck their optional OAuth/header fields away (DAM-31); other
-  // templates show them inline.
   const optionalCollapsed = template.category === "mcp";
 
   const fieldsRegion = (

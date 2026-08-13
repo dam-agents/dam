@@ -13,8 +13,6 @@ export interface DocumentStore<T> {
   write(next: T): void;
 }
 
-/** Opens named document stores. The backend owns how a name maps to physical
- * storage — a `.platform/<name>.json` file here, a table elsewhere. */
 export interface DocumentStoreBackend {
   open<T>(
     name: string,
@@ -32,7 +30,6 @@ export function createFileDocumentStoreBackend(
   };
 }
 
-/** A missing, unreadable, or schema-rejected file yields `initial`, never throws. */
 export function openJsonFile<T>(
   path: string,
   { schema, initial }: { schema: ZodType<T>; initial: () => NoInfer<T> },
@@ -60,7 +57,6 @@ export function openJsonFile<T>(
     },
     write(next) {
       mkdirSync(dirname(path), { recursive: true });
-      // Write-then-rename so a crash mid-write can't leave a torn file.
       const tmp = `${path}.tmp`;
       writeFileSync(tmp, JSON.stringify(next, null, 2));
       renameSync(tmp, path);

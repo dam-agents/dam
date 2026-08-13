@@ -1,13 +1,3 @@
-// Per-procedure telemetry for both tRPC instances (t and harnessT): one
-// INTERNAL span per procedure call plus duration/outcome metrics, keyed by
-// procedure path. HTTP-level instrumentation can't see the procedure (all
-// calls share the /api/trpc/* route, batches share one request), so this
-// middleware is what makes "per-operation rate/latency/errors" possible.
-//
-// Depends ONLY on @opentelemetry/api: with no SDK registered (tests, dev, the
-// telemetry-disabled deployment) every call is a no-op on a non-recording
-// span. The SDK is registered process-wide by the api-server's --import
-// bootstrap before this bundle evaluates.
 import {
   context,
   metrics,
@@ -25,9 +15,6 @@ interface Instruments {
   total: Counter;
 }
 
-// Created lazily: unlike tracers (ProxyTracerProvider), a meter obtained
-// before the global MeterProvider is registered stays no-op forever, and this
-// module (bundled into the server) evaluates only after the bootstrap ran.
 let instruments: Instruments | null = null;
 
 function getInstruments(): Instruments {
@@ -46,16 +33,10 @@ function getInstruments(): Instruments {
   return instruments;
 }
 
-/** Drops the memoized instruments so a test can install its own MeterProvider. */
 export function resetTrpcTelemetryForTest(): void {
   instruments = null;
 }
 
-/**
- * Wraps one tRPC procedure invocation in a span and records its metrics.
- * tRPC middlewares surface failures via `result.ok`/`result.error` rather
- * than throwing; the catch branch is defensive only.
- */
 export async function withTrpcTelemetry<R extends { ok: boolean }>(
   path: string,
   type: "query" | "mutation" | "subscription",

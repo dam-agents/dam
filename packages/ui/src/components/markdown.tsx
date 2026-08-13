@@ -16,9 +16,6 @@ import {
   parseArtifactLink,
 } from "../modules/artifacts/components/artifact-link-chip.js";
 
-/** The default transform strips unknown schemes — let the internal
- *  platform:// artifact links through (even malformed ones, so the renderer
- *  can degrade them to plain text instead of a dead anchor). */
 function allowArtifactLinks(url: string): string {
   return url.startsWith(ARTIFACT_LINK_PREFIX) ? url : defaultUrlTransform(url);
 }
@@ -84,8 +81,6 @@ export function Markdown({
     () => ({
       pre: MarkdownCodeBlock,
       a({ href, children }) {
-        // Internal artifact links (platform://artifacts/<id>) render as a
-        // preview chip that opens the docked artifact panel.
         const artifactId = parseArtifactLink(href);
         if (artifactId) {
           return (
@@ -94,8 +89,6 @@ export function Markdown({
             </ArtifactLinkChip>
           );
         }
-        // Malformed artifact link (prefix without an id) — degrade to plain
-        // text; an anchor would be a dead platform:// navigation.
         if (href?.startsWith(ARTIFACT_LINK_PREFIX)) {
           return <span>{children}</span>;
         }

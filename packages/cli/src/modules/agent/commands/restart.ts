@@ -21,7 +21,6 @@ import {
 } from "../../shared/exit-codes.js";
 
 const DEFAULT_TIMEOUT_SECONDS = 120;
-// Grace before first poll so the controller observes pod deletion before we see stale "running".
 const RESTART_GRACE_SECONDS = 2;
 
 export function buildRestartCommand(deps: {

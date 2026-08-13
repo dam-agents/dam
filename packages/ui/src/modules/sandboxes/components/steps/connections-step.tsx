@@ -14,8 +14,6 @@ interface Props {
   update: (patch: Partial<WizardSnapshot>) => void;
 }
 
-/** Grants stage into the wizard draft — the sandbox doesn't exist yet, the
- *  create call applies them. */
 export function ConnectionsStep({ snapshot, update }: Props) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);

@@ -3,14 +3,6 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
-/** Shared chrome for the full-view takeovers that gate an agent's chat: a
- *  centered content column over the whole surface. Desktop needs no back
- *  affordance — the icon rail stays visible beside the takeover, so Home is
- *  always one click away. Mobile has neither rail nor bottom bar in chat, and
- *  the header's own back button sits beneath this overlay, so it keeps an
- *  icon-only escape hatch. That icon is the only way out at the one width where
- *  the target is exclusively touch, hence `icon` sizing rather than the
- *  label-era `inline`, which would collapse the box onto the 14 px glyph. */
 export function OverlayFrame({
   onBack,
   children,

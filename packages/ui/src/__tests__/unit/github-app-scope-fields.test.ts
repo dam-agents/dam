@@ -10,8 +10,6 @@ import {
 } from "@/modules/connections/lib/github-app-scope-fields";
 
 describe("levelsUpTo", () => {
-  // GitHub refuses anything above the installation, so the picker must not
-  // offer write for a permission the app only holds at read.
   it("offers no level above what the installation grants", () => {
     expect(levelsUpTo("read")).toEqual(["read"]);
     expect(levelsUpTo("write")).toEqual(["read", "write"]);
@@ -37,15 +35,12 @@ describe("permission field round-trip", () => {
     });
   });
 
-  // Selecting a permission and clearing it again must leave the field exactly
-  // as it was, rather than reordering the entries around it.
   it("restores the original text after a permission is added then removed", () => {
     const start = "contents:read metadata:read";
     const selection = readPermissions(start);
     expect(writePermissions({ ...selection, issues: "write" })).toBe(
       "contents:read issues:write metadata:read",
     );
-    // Clearing it again is a write of the untouched selection.
     expect(writePermissions(selection)).toBe(start);
   });
 
@@ -80,8 +75,6 @@ describe("repository id field round-trip", () => {
 });
 
 describe("canProbe", () => {
-  // The probe authenticates as the app itself, so it cannot run before the
-  // key is present.
   it("requires the app id, installation id, and private key", () => {
     expect(
       canProbe({ appId: "1", installationId: "2", privateKey: "pem" }),
@@ -93,14 +86,11 @@ describe("canProbe", () => {
     expect(canProbe({})).toBe(false);
   });
 
-  // A GitHub Enterprise template has no REST base to read without its host, so
-  // probing without one would fail server-side instead of staying disabled.
   it("additionally requires the host when the template needs one", () => {
     const withoutHost = { appId: "1", installationId: "2", privateKey: "pem" };
     expect(canProbe(withoutHost, true)).toBe(false);
     expect(canProbe({ ...withoutHost, host: "  " }, true)).toBe(false);
     expect(canProbe({ ...withoutHost, host: "ghe.acme.com" }, true)).toBe(true);
-    // …and never asks for one that the template does not use.
     expect(canProbe(withoutHost, false)).toBe(true);
   });
 });

@@ -1,17 +1,3 @@
-/**
- * HTML shells for the public share host. Ported from slop's renderer: the
- * outer wrapper page is platform chrome (banner, version nav, source button)
- * and the artifact renders inside a sandboxed `srcdoc` iframe. All
- * transformation happens in the visitor's browser — the server never compiles
- * user content.
- *
- * The sandbox attribute mirrors slop (`allow-scripts allow-same-origin
- * allow-popups allow-popups-to-escape-sandbox`): `allow-same-origin` is what
- * gives artifacts working localStorage. With srcdoc that makes the iframe
- * same-origin with the share host, so the *real* isolation boundary is the
- * dedicated share subdomain — the app origin's cookies and tokens never
- * exist here, and the viewer's own cookies are HttpOnly JWTs.
- */
 import type { ArtifactKind } from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
 
@@ -24,15 +10,10 @@ export function escapeHtml(s: string): string {
     .replaceAll("'", "&#39;");
 }
 
-/** Embed arbitrary text into an inline <script> without letting a literal
- *  `</script>` break out of it (U+2028/9 are valid in string literals since
- *  ES2019, so `<` is the only character that needs help). */
 function jsStringLiteral(s: string): string {
   return JSON.stringify(s).replaceAll("<", "\\u003c");
 }
 
-/** Escape user source for embedding in a JS template literal (slop's JSX
- *  embedding scheme). */
 function templateLiteralEscape(s: string): string {
   return s
     .replaceAll("\\", "\\\\")
@@ -67,9 +48,6 @@ function chromePage(title: string, body: string): string {
 <body>${body}</body>
 </html>`;
 }
-
-// ---------------------------------------------------------------------------
-// Outer wrapper
 
 export interface WrapperInput {
   title: string;
@@ -127,12 +105,6 @@ export function renderWrapper(input: WrapperInput): string {
 </html>`;
 }
 
-// ---------------------------------------------------------------------------
-// Inner documents (rendered inside the sandboxed iframe)
-
-/** HTML artifacts are served as-authored, with `<base target="_blank">`
- *  injected so links open a tab instead of navigating the frame (skipped when
- *  the document declares its own <base>). */
 export function renderHtmlInner(content: string): string {
   if (/<base[\s>]/i.test(content)) return content;
   const headMatch = content.match(/<head[^>]*>/i);
@@ -143,9 +115,6 @@ export function renderHtmlInner(content: string): string {
   return `<base target="_blank">${content}`;
 }
 
-/** esm.sh import map, every entry pinned to an exact version — mirrors
- *  Claude's artifact environment. Exact pins matter: a floating major would
- *  let a CDN-published update run new code on the share origin. */
 const JSX_IMPORT_MAP = `{
   "imports": {
     "react": "https://esm.sh/react@18.3.1",
@@ -165,9 +134,6 @@ const JSX_IMPORT_MAP = `{
   }
 }`;
 
-/** JSX pipeline ported from slop: babel-standalone transforms in-browser,
- *  imports resolve dynamically through esm.sh, and the default export mounts
- *  into #root. */
 export function renderJsxInner(source: string, title: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -234,8 +200,6 @@ try {
 </html>`;
 }
 
-/** Markdown renders client-side inside the sandbox: marked → DOMPurify →
- *  innerHTML, so no sanitization decisions live on the server. */
 export function renderMarkdownInner(source: string, title: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -290,8 +254,6 @@ const HLJS_LANG_BY_EXT: Record<string, string> = {
   cs: "csharp",
 };
 
-/** Code renders as highlighted source (highlight.js in-browser); plain text
- *  gets the same shell without a language hint. */
 export function renderCodeInner(
   source: string,
   fileName: string,
@@ -322,10 +284,6 @@ export function renderCodeInner(
 </html>`;
 }
 
-/** One inner document for any text kind — the single renderer behind both
- *  the public share page and the in-app preview iframe, so the two can never
- *  drift. Callers host it in a sandboxed iframe (`srcdoc`); the share page
- *  adds the dedicated-origin layer on top. */
 export function renderTextKindInner(
   kind: Exclude<ArtifactKind, "binary">,
   source: string,
@@ -371,9 +329,6 @@ export function renderDownloadInner(input: {
 </body>
 </html>`;
 }
-
-// ---------------------------------------------------------------------------
-// Chrome pages (served directly, not inside the iframe)
 
 export function renderExpired(input: {
   withinGrace: boolean;

@@ -2,16 +2,10 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-/** Namespace the controller renders agent + gateway workloads into. */
 export const AGENT_NS = process.env.E2E_AGENT_NS ?? "platform-agents";
-/** Namespace the platform components run in. */
 const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
-/** Helm release name. The chart stamps it verbatim onto every workload as the
- *  `app.kubernetes.io/instance` label — how specs target them, without
- *  reconstructing the chart's computed (`platform.fullname`) resource names. */
 const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
 
-/** Resolved the same way the e2e mise tasks do. */
 function kubeconfig(): string {
   if (process.env.KUBECONFIG) return process.env.KUBECONFIG;
   if (process.env.IS_SANDBOX) return "/etc/rancher/k3s/k3s.yaml";
@@ -20,7 +14,6 @@ function kubeconfig(): string {
   return join(limaHome, vm, "copied-from-guest", "kubeconfig.yaml");
 }
 
-/** Only for specs asserting controller behaviour with no API surface. */
 export function kubectl(...args: string[]): string {
   return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
     encoding: "utf8",
@@ -28,7 +21,6 @@ export function kubectl(...args: string[]): string {
   }).trim();
 }
 
-/** Yields "" instead of throwing — for polling resources that come and go. */
 function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);
@@ -57,7 +49,6 @@ export function podField(name: string, jsonpath: string): string {
   return get("pod", name, jsonpath);
 }
 
-/** Filter projection: a `range` without `{end}` silently dumps whole objects. */
 function conditionPath(type: string): string {
   return `.status.conditions[?(@.type=="${type}")].status`;
 }
@@ -70,7 +61,6 @@ export function podIsReady(name: string): boolean {
   return get("pod", name, conditionPath("Ready")) === "True";
 }
 
-/** Reason+message of every event on a pod, newline-separated. */
 export function podEvents(name: string): string {
   return kubectlOrEmpty(
     "-n",
@@ -85,7 +75,6 @@ export function podEvents(name: string): string {
   );
 }
 
-/** Teardown fallback when the API is unusable (e.g. an expired token). */
 export function deleteAgentCr(name: string): void {
   kubectlOrEmpty(
     "-n",
@@ -97,13 +86,7 @@ export function deleteAgentCr(name: string): void {
   );
 }
 
-/** Parking is cluster-wide — always restore in a finally. Scaling to 0 waits
- *  for the pod to go, so no reconcile races what the caller does next. */
 export function scaleController(replicas: 0 | 1): void {
-  // Target the workload by the labels the chart stamps on it rather than
-  // reconstructing `platform.fullname`: `instance` is the raw Helm release
-  // name, `component` pins the controller. Release-scoped, so a namespace
-  // shared with other releases stays unaffected.
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
   kubectl(
     "-n",

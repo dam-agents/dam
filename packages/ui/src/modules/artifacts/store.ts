@@ -3,8 +3,6 @@ import type { StateCreator } from "zustand";
 import type { PlatformStore } from "../../store.js";
 
 export interface ArtifactsSlice {
-  /** Artifact shown in the chat view's right dock; mutually exclusive with
-   *  the docked file viewer (they share the dock area). */
   openArtifactId: string | null;
   artifactsSectionOpen: boolean;
   setOpenArtifactId: (id: string | null) => void;

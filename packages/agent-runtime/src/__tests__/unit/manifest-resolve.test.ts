@@ -16,7 +16,6 @@ const baseManifest = join(
   "../../../../platform-base/runtime-manifest.yaml",
 );
 
-// Build a RuntimeManifest from a plain drivers map (the schema fills defaults).
 const mk = (drivers: Record<string, unknown>) =>
   runtimeManifestSchema.parse({ manifestVersion: 1, drivers });
 
@@ -38,9 +37,6 @@ describe("resolveDrivers", () => {
       impl: "mcp-entry",
       path: "$HOME/.mcp.json",
     });
-    // The one built-in whose impl name differs from its kind, preserved as a
-    // default so older manifests naming it explicitly still resolve. The default
-    // paths are load-bearing — server.ts reads them for the skills service.
     expect(r["skill-ref"]).toMatchObject({
       impl: "skill-install",
       paths: ["$HOME/.agents/skills"],

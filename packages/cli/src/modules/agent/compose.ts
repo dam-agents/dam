@@ -17,25 +17,11 @@ import {
   type AgentService,
 } from "./services/agent-service.js";
 
-/**
- * Composition options for the `agent` module. The host (Active Host URL)
- * is resolved per-command after commander parses `--server`, so the
- * module exposes factories the command actions invoke with the resolved
- * host.
- *
- * The `agent` parent owns the full lifecycle surface that
- * previously split between `agent` (interactive) and `instance`
- * (scripted): create, create-interactive, list, get, delete, restart.
- */
 export interface AgentModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Env var name for the server URL — surfaced in the
-   *  `no server configured` hints in command actions. */
   serverEnvVar: string;
-  /** Per-host factory for the template service (used to fetch the
-   *  template picker's option list and to validate `--template`). */
   templateService: (host: string) => TemplateService;
 }
 

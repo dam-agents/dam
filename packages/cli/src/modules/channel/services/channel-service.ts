@@ -14,9 +14,7 @@ type ChannelResult<T> = Result<T, TransportError | AuthRequiredError>;
 type ChannelList = readonly ChannelConfig[];
 
 export interface ChannelService {
-  /** Host-wide messenger capability flags the operator enabled via Helm. */
   available(): Promise<ChannelResult<Partial<Record<ChannelType, boolean>>>>;
-  /** Bind a Slack channel; returns the Agent's resulting channel set. */
   connectSlack(
     id: string,
     slackChannelId: string,
@@ -31,8 +29,6 @@ export interface ChannelService {
       | ChannelInvalidInputError
     >
   >;
-  /** Unbind one of the Agent's Slack channels, or all of them when
-   *  `slackChannelId` is omitted. Idempotent server-side. */
   disconnectSlack(
     id: string,
     slackChannelId?: string,

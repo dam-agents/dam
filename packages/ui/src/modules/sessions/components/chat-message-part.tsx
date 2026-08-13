@@ -11,15 +11,11 @@ import { ToolChip } from "./tool-chip.js";
 interface Props {
   part: MessagePart;
   role: Role;
-  /** The owning message is still streaming — drives the thought block's
-   *  in-progress state and the typing caret. */
   streaming: boolean;
-  /** Last part of the message: only that one carries the caret. */
   isLast: boolean;
   onFileClick: (path: string) => void;
 }
 
-/** One part of a message, rendered by kind. */
 export function ChatMessagePart({
   part,
   role,

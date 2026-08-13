@@ -47,7 +47,6 @@ interface Props {
   templateSize?: { cpu?: string; memory?: string };
   sizeCpuMilli: number | null;
   sizeMemoryMi: number | null;
-  /** Which providers this starting point offers, and which it steers toward. */
   providers: ReturnType<typeof providerPolicy>;
 }
 

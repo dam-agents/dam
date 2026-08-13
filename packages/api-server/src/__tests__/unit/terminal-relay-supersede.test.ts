@@ -6,7 +6,6 @@ import type { AgentsRepository } from "../../modules/agents/infrastructure/agent
 import type { SessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 
-/** In-process stand-in for Redis pub/sub, shared by both "replicas". */
 function fakeBus(): RedisBus {
   const listeners = new Map<string, Set<BusListener>>();
   return {
@@ -23,8 +22,6 @@ function fakeBus(): RedisBus {
   };
 }
 
-// Never resolves: the upstream agent pod is out of scope here. The client is
-// registered as active before the dial, which is the behaviour under test.
 const repo = {
   ensureReady: () => new Promise<void>(() => {}),
   patchAnnotation: async () => {},
@@ -35,7 +32,6 @@ const presence = { acquire: () => () => {} } as unknown as SessionPresence;
 const servers: Server[] = [];
 const sockets: WebSocket[] = [];
 
-/** A relay behind a real HTTP server — one api-server replica. */
 async function replica(bus?: RedisBus) {
   const relay = createTerminalRelay("ns", repo, presence, bus);
   const server = createServer();
@@ -63,7 +59,6 @@ async function replica(bus?: RedisBus) {
   };
 }
 
-/** Resolves to the close code, or null if the socket is still open. */
 function closedWithin(ws: WebSocket, ms: number): Promise<number | null> {
   return new Promise((resolve) => {
     if (ws.readyState === WebSocket.CLOSED) return resolve(1000);
@@ -88,9 +83,6 @@ describe("terminal relay supersede", () => {
     const b = await replica(bus);
 
     const first = await a.attach("agent-1", "s1");
-    // Nothing pins a browser to the replica its earlier tab used, so the
-    // second attach commonly lands elsewhere. One PTY admits one client — if
-    // this doesn't evict, both tabs interleave input into the same terminal.
     await b.attach("agent-1", "s1");
 
     expect(await closedWithin(first, 1000)).toBe(1000);
@@ -100,8 +92,6 @@ describe("terminal relay supersede", () => {
     const bus = fakeBus();
     const a = await replica(bus);
 
-    // Both default to sessionId "default". Keyed on the session id alone,
-    // agent-2 would knock agent-1's terminal offline.
     const one = await a.attach("agent-1");
     const two = await a.attach("agent-2");
 

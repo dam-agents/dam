@@ -70,11 +70,6 @@ export function buildTokenCreateCommand(deps: TokenCreateCommandDeps): Command {
             ...(opts.expires ? { expiresAt: opts.expires } : {}),
           });
 
-          // Plaintext path is asymmetric on purpose:
-          //   --json: token on stdout inside the JSON payload, for scripts.
-          //   interactive: token on STDERR alongside the warning, so a
-          //     casual `dam auth token create … > file` doesn't capture the
-          //     secret into a file the user didn't realize would hold it.
           if (opts.json) {
             process.stdout.write(
               `${JSON.stringify({ ...result.key, plaintext: result.plaintext })}\n`,

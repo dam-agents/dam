@@ -93,11 +93,6 @@ interface PopupResult {
   message?: string;
 }
 
-/**
- * Self-contained page for the popup OAuth flow: posts the result to the
- * opener and closes. `<` is escaped in the embedded JSON so a provider error
- * message can't break out of the <script> element.
- */
 function renderPopupResult(targetOrigin: string, result: PopupResult): string {
   const payload = JSON.stringify({
     source: "platform-oauth",

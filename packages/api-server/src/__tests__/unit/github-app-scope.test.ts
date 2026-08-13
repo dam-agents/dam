@@ -7,8 +7,6 @@ import {
 } from "../../modules/connections/domain/github-app-scope.js";
 
 describe("parseRepositories", () => {
-  // Blank must stay indistinguishable from unset: both mean the installation's
-  // full reach, which is what every pre-existing connection carries.
   it("treats absent, empty, and whitespace-only input as no narrowing", () => {
     expect(parseRepositories(undefined)).toBeUndefined();
     expect(parseRepositories("")).toBeUndefined();
@@ -38,8 +36,6 @@ describe("parseRepositories", () => {
     ]);
   });
 
-  // `owner/repo` is the likely paste; GitHub would answer 422 an hour later on
-  // a refresh, so it's worth catching at create with the fix spelled out.
   it("rejects owner/name and names the repository to use instead", () => {
     expect(() => parseRepositories("dam-agents/docs")).toThrow(
       /just the repository name.*"docs"/s,
@@ -52,8 +48,6 @@ describe("parseRepositories", () => {
     ).toThrow(/just the repository name.*"docs"/s);
   });
 
-  // Suggesting a value that fails again wastes a round trip; suggesting an
-  // empty one is worse, since blank means "no narrowing" rather than an error.
   it("suggests nothing rather than a replacement that would fail again", () => {
     for (const bad of ["dam-agents/docs/", "docs/", "owner/docs!"]) {
       expect(() => parseRepositories(bad)).toThrow(/without the owner\.$/);
@@ -61,7 +55,7 @@ describe("parseRepositories", () => {
   });
 
   it("rejects a name with characters GitHub does not allow", () => {
-    expect(() => parseRepositories("do cs")).not.toThrow(); // splits into two
+    expect(() => parseRepositories("do cs")).not.toThrow();
     expect(() => parseRepositories("docs!")).toThrow(/not a valid repository/);
   });
 
@@ -134,8 +128,6 @@ describe("parseRepositoryIds", () => {
     expect(parseRepositoryIds("12 34, 12")).toEqual([12, 34]);
   });
 
-  // Number("12abc") is NaN but Number("12 ") is 12 — a partially-numeric entry
-  // must not silently narrow to some other repository.
   it("rejects anything that is not a whole number", () => {
     for (const bad of ["12abc", "1.5", "-3", "0x10", "1e3"]) {
       expect(() => parseRepositoryIds(bad)).toThrow(/whole number/);
@@ -159,8 +151,6 @@ describe("parseGitHubAppScope", () => {
     expect(parseGitHubAppScope({})).toEqual({});
   });
 
-  // Either half narrows on its own — repositories without permissions is the
-  // common "read everything, but only here" shape.
   it("narrows on repositories alone", () => {
     expect(parseGitHubAppScope({ repositories: "docs" })).toEqual({
       repositories: ["docs"],
@@ -188,8 +178,6 @@ describe("parseGitHubAppScope", () => {
     });
   });
 
-  // GitHub rejects a request carrying both spellings, so only one may survive.
-  // Ids win because they outlive a rename.
   it("drops names when ids are also given", () => {
     expect(
       parseGitHubAppScope({ repositories: "docs", repositoryIds: "12" }),
