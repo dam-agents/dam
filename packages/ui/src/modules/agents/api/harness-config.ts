@@ -13,10 +13,6 @@ export function useHarnessConfigStatus(agentId: string | null) {
       agentId ? { agentId } : skipToken,
     ),
     retry: false,
-    refetchInterval: (query) => {
-      const d = query.state.data;
-      return d?.supported && !d.catalog ? 5000 : false;
-    },
   });
 }
 

@@ -4,6 +4,7 @@ import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type {
   E2eService,
+  LiveEventsService,
   ReposService,
   TermsService,
   UserIdentity,
@@ -84,6 +85,7 @@ export interface ApiServerDeps {
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
   artifacts: ArtifactService;
+  liveEvents: LiveEventsService;
 
   k8sClient: K8sClient;
   agentsRepo: AgentsRepository;

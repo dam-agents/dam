@@ -1,4 +1,5 @@
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
+import { emit, EventType } from "../../../events.js";
 import type { ArtifactLibraryRepository } from "../infrastructure/artifact-library-repository.js";
 import { EXPIRATION_GRACE_PERIOD_DAYS } from "./share-viewer-service.js";
 
@@ -25,6 +26,14 @@ export function createArtifactExpirySweeper(deps: {
         );
         if (!deleted) continue;
         deletedCount += 1;
+        emit({
+          type: EventType.ArtifactDeleted,
+          artifactId: row.id,
+          ownerSub: row.owner,
+          ...(deleted.artifact.agentId
+            ? { agentId: deleted.artifact.agentId }
+            : {}),
+        });
         await Promise.allSettled(
           [
             deleted.artifact.storageRef,

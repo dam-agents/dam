@@ -20,7 +20,6 @@ export function fetchSchedulesForAgent(agentId: string) {
 export function useSchedules(agentId: string | null) {
   return useQuery({
     ...trpc.schedules.list.queryOptions(agentId ? { agentId } : skipToken),
-    refetchInterval: 5000,
     staleTime: 5000,
     meta: { errorToast: "Couldn't refresh schedules" },
   });

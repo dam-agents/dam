@@ -18,6 +18,11 @@ export default defineConfig({
     trace: "on",
     screenshot: "only-on-failure",
     video: "on",
+    launchOptions: {
+      args: [
+        "--host-resolver-rules=MAP *.localhost 127.0.0.1, MAP localhost 127.0.0.1",
+      ],
+    },
   },
   projects: [
     {
@@ -64,6 +69,12 @@ export default defineConfig({
     {
       name: "trpc-ws-auth",
       testMatch: /13-.*\.spec\.ts$/,
+      dependencies: ["auth"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "live-events",
+      testMatch: /14-.*\.spec\.ts$/,
       dependencies: ["auth"],
       use: { ...devices["Desktop Chrome"] },
     },

@@ -231,11 +231,22 @@ else
   fi
 fi
 
-# 1c. Traefik :4444 entrypoint — on lima this rides the provision script's
+# 1c. Traefik app entrypoint — on lima this rides the provision script's
 # k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
 # so the app port silently doesn't exist. HelmChartConfig via kubectl apply
-# is idempotent and works on both.
-kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+# is idempotent and works on both. The port follows `--set=port=…` so the
+# ingress listens where the chart's URLs point (dev defaults to 4444, the
+# e2e install passes 5555); the last install wins.
+APP_PORT=4444
+if [ -n "$HELM_VALUES" ]; then
+  APP_PORT="$(yq '.port // 4444' "$HELM_VALUES")"
+fi
+for arg in "${HELM_EXTRA_ARGS[@]}"; do
+  case "$arg" in
+    --set=port=*) APP_PORT="${arg#--set=port=}" ;;
+  esac
+done
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<YAML
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -245,10 +256,10 @@ spec:
   valuesContent: |
     ports:
       platform:
-        port: 4444
+        port: $APP_PORT
         expose:
           default: true
-        exposedPort: 4444
+        exposedPort: $APP_PORT
         protocol: TCP
 YAML
 

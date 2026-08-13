@@ -18,23 +18,17 @@ import { DeferredFrame } from "./deferred-frame.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
 
-const LIVE_POLL_MS = 5000;
-
 export function DockedArtifactPanel() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
-  const { data: artifact } = useArtifact(openArtifactId, {
-    refetchIntervalMs: LIVE_POLL_MS,
-  });
+  const { data: artifact } = useArtifact(openArtifactId);
 
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [showSource, setShowSource] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const showFrame = renderable && !showSource;
 
-  const { data: versions } = useArtifactVersions(openArtifactId, {
-    refetchIntervalMs: LIVE_POLL_MS,
-  });
+  const { data: versions } = useArtifactVersions(openArtifactId);
   const latest = artifact?.version;
   const total = versions?.length ?? latest ?? 1;
   const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);

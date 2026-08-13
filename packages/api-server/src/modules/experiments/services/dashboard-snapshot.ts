@@ -1,3 +1,4 @@
+import { emit, EventType } from "../../../events.js";
 import { experimentFolderName } from "api-server-api";
 import type { Db } from "db";
 import type { ArtifactLibraryServiceImpl } from "../../artifact-library/index.js";
@@ -69,5 +70,11 @@ export function createDashboardSnapshotter(deps: {
       { agentId: row.driverAgentId },
     );
     await repo.patchDashboardArtifact(experimentId, results.id);
+    emit({
+      type: EventType.ExperimentChanged,
+      experimentId,
+      agentId: row.driverAgentId,
+      ownerSub: owner,
+    });
   };
 }

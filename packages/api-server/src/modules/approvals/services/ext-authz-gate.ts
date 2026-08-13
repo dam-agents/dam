@@ -8,6 +8,7 @@ import {
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
+import { emit, EventType } from "../../../events.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -132,6 +133,12 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           payload: { kind: "ext_authz", host, method, path, viaAgentId: via },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
+        emit({
+          type: EventType.ApprovalRequested,
+          approvalId: pendingId,
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+        });
         if (!unattended) {
           const frame = buildExtAuthzSynthFrame({
             approvalId: pendingId,
@@ -171,6 +178,14 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       const { verdict, reason } = await waitForVerdict(deps, pendingId);
+      if (reason === "hold-expired") {
+        emit({
+          type: EventType.ApprovalResolved,
+          approvalId: pendingId,
+          agentId: identity.agentId,
+          ownerSub: identity.ownerSub,
+        });
+      }
       securityLog(verdict === "deny" ? "warn" : "info", "egress.decision", {
         category: "egress",
         actor: identity.ownerSub,

@@ -1,4 +1,4 @@
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
 import { withTrpcTelemetry } from "./trpc-telemetry.js";
@@ -21,9 +21,26 @@ const tBase = initTRPC.context<ApiContext>().create({
   },
 });
 
+const termsProven = new WeakSet<ApiContext>();
+
+export function markTermsProven(ctx: ApiContext): void {
+  termsProven.add(ctx);
+}
+
+const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
+  if (path.startsWith("terms.")) return next();
+  if (!termsProven.has(ctx)) {
+    if (!(await ctx.terms.isAccepted(ctx.user.sub))) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "terms not accepted" });
+    }
+    termsProven.add(ctx);
+  }
+  return next();
+});
+
 export const t = {
   ...tBase,
-  procedure: tBase.procedure.use(({ path, type, next }) =>
-    withTrpcTelemetry(path, type, next),
-  ),
+  procedure: tBase.procedure
+    .use(({ path, type, next }) => withTrpcTelemetry(path, type, next))
+    .use(requireTermsAccepted),
 };

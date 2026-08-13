@@ -65,6 +65,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     reposService,
     connectionsBoot,
     apiKeysModule,
+    liveEvents,
   } = boot;
 
   return (user: UserIdentity): ApiContext => {
@@ -220,6 +221,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
+      ownerSub: user.sub,
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
@@ -266,6 +268,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       features,
       files,
       harnessConfig,
+      liveEvents,
       metrics,
       terms,
       e2e,

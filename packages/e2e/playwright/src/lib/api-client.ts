@@ -1,4 +1,9 @@
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import {
+  createTRPCClient,
+  createWSClient,
+  httpBatchLink,
+  wsLink,
+} from "@trpc/client";
 import type { AppRouter } from "api-server-api";
 import { baseUrl } from "../config.js";
 
@@ -13,4 +18,18 @@ export function createApiClient(token: string): ApiClient {
       }),
     ],
   });
+}
+
+export function createWsApiClient(token: string): {
+  api: ApiClient;
+  close: () => void;
+} {
+  const ws = createWSClient({
+    url: `${baseUrl.replace(/^http/, "ws")}/api/trpc-ws`,
+    connectionParams: { token },
+  });
+  return {
+    api: createTRPCClient<AppRouter>({ links: [wsLink({ client: ws })] }),
+    close: () => ws.close(),
+  };
 }

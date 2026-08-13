@@ -16,3 +16,7 @@ export function onTermsStale(): void {
   rememberReturnPath("terms");
   window.location.assign(routeToPath({ view: "terms" }));
 }
+
+export function isTermsStaleError(error: unknown): boolean {
+  return error instanceof Error && error.message === "terms not accepted";
+}

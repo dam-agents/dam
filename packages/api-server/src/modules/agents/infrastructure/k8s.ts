@@ -25,6 +25,11 @@ export interface K8sClient {
     body: object,
   ): Promise<KubeObject>;
   deleteCustomObject(plural: string, name: string): Promise<void>;
+  watchCustomObjects(
+    plural: string,
+    onEvent: (phase: string, obj: KubeObject) => void,
+    onEnd: (err?: unknown) => void,
+  ): () => void;
 }
 
 export interface KubeObject {
@@ -60,6 +65,7 @@ export function createK8sClient(
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
+  const watcher = new k8s.Watch(kc);
   const crArgs = (plural: string) => ({
     group: CR_GROUP,
     version: CR_VERSION,
@@ -170,6 +176,33 @@ export function createK8sClient(
         if (is404(err)) return;
         throw err;
       }
+    },
+
+    watchCustomObjects(plural, onEvent, onEnd) {
+      let stopped = false;
+      let connection: AbortController | null = null;
+      watcher
+        .watch(
+          `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${plural}`,
+          {},
+          (phase, obj) => {
+            if (!stopped) onEvent(phase, obj as KubeObject);
+          },
+          (err) => {
+            if (!stopped) onEnd(err ?? undefined);
+          },
+        )
+        .then((c) => {
+          if (stopped) c.abort();
+          else connection = c;
+        })
+        .catch((err) => {
+          if (!stopped) onEnd(err);
+        });
+      return () => {
+        stopped = true;
+        connection?.abort();
+      };
     },
   };
 }

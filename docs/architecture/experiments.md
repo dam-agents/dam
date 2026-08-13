@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-07-28
+Last verified: 2026-08-13
 
 ## Overview
 
@@ -122,7 +122,7 @@ sequenceDiagram
   API->>H: runtime-channel event → launch prompt
   H->>S: python exp.py (background process)
   S->>API: run-start, span events (batched), spawns tagged with span ids
-  U->>API: poll Trace Feed (only while running)
+  API-->>U: live hint per event batch → UI refetches Trace Feed
   S->>API: finish (completed | failed)
 ```
 

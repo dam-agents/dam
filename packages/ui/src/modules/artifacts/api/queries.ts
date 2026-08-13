@@ -9,33 +9,21 @@ export interface ArtifactListFilter {
   search?: string;
 }
 
-export function useArtifacts(
-  filter?: ArtifactListFilter | null,
-  opts?: { refetchIntervalMs?: number },
-) {
+export function useArtifacts(filter?: ArtifactListFilter | null) {
   return useQuery({
     ...trpc.artifactLibrary.list.queryOptions(
       filter === null ? skipToken : (filter ?? {}),
     ),
     refetchOnMount: "always",
     staleTime: 0,
-    ...(opts?.refetchIntervalMs
-      ? { refetchInterval: opts.refetchIntervalMs }
-      : {}),
     meta: { errorToast: "Couldn't load artifacts" },
   });
 }
 
-export function useArtifact(
-  id: string | null,
-  opts?: { refetchIntervalMs?: number },
-) {
+export function useArtifact(id: string | null) {
   return useQuery({
     ...trpc.artifactLibrary.get.queryOptions(id ? { id } : skipToken),
     retry: false,
-    ...(opts?.refetchIntervalMs
-      ? { refetchInterval: opts.refetchIntervalMs }
-      : {}),
     meta: { errorToast: "Couldn't load artifact" },
   });
 }
@@ -49,15 +37,9 @@ export function useArtifactFolders() {
   });
 }
 
-export function useArtifactVersions(
-  id: string | null,
-  opts?: { refetchIntervalMs?: number },
-) {
+export function useArtifactVersions(id: string | null) {
   return useQuery({
     ...trpc.artifactLibrary.listVersions.queryOptions(id ? { id } : skipToken),
-    ...(opts?.refetchIntervalMs
-      ? { refetchInterval: opts.refetchIntervalMs }
-      : {}),
     meta: { errorToast: "Couldn't load version history" },
   });
 }

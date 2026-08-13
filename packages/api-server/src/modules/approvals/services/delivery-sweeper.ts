@@ -4,6 +4,7 @@ import {
   buildAcpPermissionResponse,
   pickOptionId,
 } from "../infrastructure/wrapper-response-frames.js";
+import { emit, EventType } from "../../../events.js";
 
 export interface DeliverySweeper {
   tick(): Promise<void>;
@@ -43,7 +44,15 @@ export function createDeliverySweeper(
           await deps.repo.markDelivered(row.id);
         } catch {}
       }
-      await deps.repo.expireOverdue(new Date()).catch(() => {});
+      const expired = await deps.repo.expireOverdue(new Date()).catch(() => []);
+      for (const row of expired) {
+        emit({
+          type: EventType.ApprovalResolved,
+          approvalId: row.id,
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+        });
+      }
     } finally {
       running = false;
     }

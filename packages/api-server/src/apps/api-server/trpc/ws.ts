@@ -5,7 +5,6 @@ import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { IsAcceptedPort } from "../../../modules/terms/index.js";
 import {
   emitUserAuthenticated,
   logWsAttach,
@@ -13,7 +12,6 @@ import {
   type Authenticate,
   type SurfaceAttribution,
 } from "../admission/auth.js";
-import { checkWsTermsAccepted } from "../admission/terms.js";
 import { trpcDenial } from "./mappers.js";
 
 const API_KEY_REAUTH_MS = 5 * 60_000;
@@ -24,7 +22,6 @@ const CLOSE_CREDENTIAL_EXPIRED = 4401;
 export interface TrpcWsDeps {
   authenticate: Authenticate;
   surfaceAttribution: SurfaceAttribution;
-  isTermsAccepted: IsAcceptedPort;
   composeApiContext: (user: UserIdentity) => ApiContext;
 }
 
@@ -73,15 +70,6 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
         throw new TRPCError(trpcDenial[admitted.kind]);
       }
       const { user } = admitted.principal;
-
-      const termsDenied = await checkWsTermsAccepted(
-        deps.isTermsAccepted,
-        user.sub,
-        site,
-      );
-      if (termsDenied) {
-        throw new TRPCError(trpcDenial[termsDenied]);
-      }
 
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);

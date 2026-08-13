@@ -8,6 +8,7 @@ import { channelsRouter } from "./modules/channels/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
+import { eventsRouter } from "./modules/events/router.js";
 import { experimentsRouter } from "./modules/experiments/router.js";
 import { knowledgeBasesRouter } from "./modules/knowledge-bases/router.js";
 import { featuresRouter } from "./modules/features/router.js";
@@ -41,6 +42,7 @@ export const appRouter = t.router({
   apiKeys: apiKeysRouter,
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
+  events: eventsRouter,
 });
 
 export type AppRouter = typeof appRouter;

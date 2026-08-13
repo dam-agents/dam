@@ -25,6 +25,7 @@ function makeService(opts?: {
     merges: [] as MergeCall[],
   };
   const service = createHarnessConfigService({
+    ownerSub: "owner-1",
     runtimeMutator: {
       bump: async (agentId, events) => {
         calls.bumps.push({ agentId, events });

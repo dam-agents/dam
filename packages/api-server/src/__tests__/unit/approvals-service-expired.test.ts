@@ -75,7 +75,6 @@ function makeService(seed: PendingApprovalRow) {
         };
       },
     },
-    notifier: { notifyResolved: async () => {} },
     wrapperFrameSender: { send: async () => {} },
     isAgentOwnedBy: async () => true,
     ownerSub: "owner-1",

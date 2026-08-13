@@ -46,7 +46,9 @@ export interface ApprovalsRepository {
     limit: number;
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string): Promise<void>;
-  expireOverdue(now: Date): Promise<string[]>;
+  expireOverdue(
+    now: Date,
+  ): Promise<Array<{ id: string; agentId: string; ownerSub: string }>>;
   deleteForAgent(agentId: string): Promise<void>;
   listDistinctAgentIds(): Promise<string[]>;
 }
@@ -279,8 +281,12 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             sql`${pendingApprovals.expiresAt} < ${now}`,
           ),
         )
-        .returning({ id: pendingApprovals.id });
-      return rows.map((r) => r.id);
+        .returning({
+          id: pendingApprovals.id,
+          agentId: pendingApprovals.agentId,
+          ownerSub: pendingApprovals.ownerSub,
+        });
+      return rows;
     },
 
     async deleteForAgent(agentId) {

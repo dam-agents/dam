@@ -119,7 +119,6 @@ export function startApiServerApp(deps: ApiServerDeps) {
   const trpcWs = createTrpcWsEndpoint({
     authenticate,
     surfaceAttribution: deps.surfaceAttribution,
-    isTermsAccepted: deps.isTermsAccepted,
     composeApiContext,
   });
   const relayAdmission = createRelayAdmission({

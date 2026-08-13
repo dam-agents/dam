@@ -20,8 +20,6 @@ import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionBadge } from "./version-badge.js";
 
-const LIVE_POLL_MS = 5000;
-
 export function ChatArtifactsPanel({
   agentId,
   open,
@@ -35,10 +33,7 @@ export function ChatArtifactsPanel({
   className?: string;
   style?: CSSProperties;
 }) {
-  const { data: artifacts = [] } = useArtifacts(
-    agentId ? { agentId } : null,
-    open ? { refetchIntervalMs: LIVE_POLL_MS } : undefined,
-  );
+  const { data: artifacts = [] } = useArtifacts(agentId ? { agentId } : null);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
