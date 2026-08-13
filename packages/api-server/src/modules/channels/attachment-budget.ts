@@ -1,49 +1,38 @@
-/** How much attachment memory one channel worker may hold at once.
- *
- *  A per-message cap says nothing about how many messages are in flight, and the
- *  expensive stretch is the wait for a cold pod: bytes are downloaded before the
- *  turn and held until it settles. Nothing limits how many arrive at once — a
- *  messenger delivers each event as it comes — and one process runs the channel
- *  workers for a whole install, so the ceiling has to belong to the worker rather
- *  than to any one message, queue or turn.
- *
- *  Two properties make it a bound rather than a statistic:
- *
- *  - **Admission is the charge.** A caller cannot ask whether bytes fit and then
- *    charge them, because the download sits in between: every concurrent fetch
- *    would pass the same snapshot and only then pay, bounding what has settled
- *    while what is on the wire goes uncounted.
- *  - **Settlement moves both ways.** The true size is discovered after admission
- *    — a messenger's declared size is the uploading client's claim, and can
- *    understate the file — so an adjuster that could only lower would silently
- *    absorb the overrun and stop bounding anything.
- */
+/** How much attachment memory one channel worker may hold at once. Admission is
+ *  the charge (the download sits between a check and a commit), settlement moves
+ *  both ways (a declared size can understate the file), and a released claim is
+ *  terminal (bytes with no owner must not be chargeable again). */
 
-/** One admitted reservation. */
 export interface AttachmentClaim {
-  /** Correct the reservation to what actually arrived, up or down. Going up can
-   *  take the budget over its ceiling: those bytes are already resident, so the
-   *  honest move is to charge them and refuse the *next* admission. */
+  /** Correct the reservation to what arrived, up or down; going up may exceed the
+   *  ceiling, which refuses the next admission. No-op once released. */
   settle(bytes: number): void;
-  /** Give the bytes back. Idempotent — refusal paths and the owning turn's
-   *  `finally` may both run. */
+  /** Idempotent, and terminal. */
   release(): void;
 }
 
 export interface AttachmentBudget {
   /** Reserve before reading, or refuse with null. */
   reserve(bytes: number): AttachmentClaim | null;
-  /** What is held right now. For logging and tests. */
   held(): number;
 }
 
-/** What `bytes` costs once encoded. The budget is denominated in this rather than
- *  in raw bytes because it is the shape the bytes take where they are held: a
- *  picture rides the prompt as base64, and a file is handed to the pod as a
- *  base64 JSON body. Reserving raw and settling encoded would leave the
- *  conversion factor — a third of every attachment — permanently uncharged. */
+const NO_CLAIM: AttachmentClaim = { settle: () => {}, release: () => {} };
+
+/** A picture rides the prompt as base64 and a file reaches the pod as a base64
+ *  JSON body, so this is the unit both are held in. */
 export function encodedFootprint(bytes: number): number {
   return Math.ceil(bytes / 3) * 4;
+}
+
+/** A staged file holds its buffer for the whole turn and builds the encoded copy
+ *  on top of it. */
+export function stagedFootprint(bytes: number): number {
+  return bytes + encodedFootprint(bytes);
+}
+
+function isChargeable(bytes: number): boolean {
+  return Number.isFinite(bytes) && bytes > 0;
 }
 
 export function createAttachmentBudget(capBytes: number): AttachmentBudget {
@@ -51,15 +40,23 @@ export function createAttachmentBudget(capBytes: number): AttachmentBudget {
   return {
     held: () => heldBytes,
     reserve(bytes) {
-      if (bytes > 0 && heldBytes + bytes > capBytes) return null;
+      // NaN in the counter makes every later comparison false, disabling the cap.
+      if (!Number.isFinite(bytes) || bytes < 0) return null;
+      if (!isChargeable(bytes)) return NO_CLAIM;
+      if (heldBytes + bytes > capBytes) return null;
+
       let claimed = bytes;
+      let live = true;
       heldBytes += claimed;
       return {
         settle(actual) {
+          if (!live || !isChargeable(actual)) return;
           heldBytes += actual - claimed;
           claimed = actual;
         },
         release() {
+          if (!live) return;
+          live = false;
           heldBytes = Math.max(0, heldBytes - claimed);
           claimed = 0;
         },

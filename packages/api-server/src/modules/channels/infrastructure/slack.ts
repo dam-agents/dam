@@ -18,7 +18,6 @@ import {
 import {
   inboundFilePath,
   looksLikeSignInPage,
-  mayContainMarkup,
   wasSentAsImage,
   MAX_FILE_BYTES,
   TOTAL_FILE_BYTES_CAP,
@@ -26,6 +25,7 @@ import {
 import {
   createAttachmentBudget,
   encodedFootprint,
+  stagedFootprint,
   type AttachmentBudget,
   type AttachmentClaim,
 } from "../attachment-budget.js";
@@ -250,13 +250,9 @@ function framePrompt(opts: {
   ];
 }
 
-/** A filename as it may appear in anything the platform emits — its own prompt
- *  framing, an ACP link a harness may splice into the model's text, a message
- *  posted into the channel. A name carrying `<`, `>` or a newline could
- *  otherwise close the block it sits in and open a forged one in the same
- *  vocabulary the turn contract uses, or hand Slack a `<!channel>` to act on.
- *  Length-capped for the same reason. Applied once, at {@link attachmentName},
- *  so every reader downstream can take the name as it finds it. */
+/** A filename as it may appear in anything the platform emits: a name carrying
+ *  `<`, `>` or a newline could close the prompt block it sits in, or hand Slack a
+ *  `<!channel>` to act on. Applied once, at {@link attachmentName}. */
 function promptSafeName(name: string): string {
   return (
     name
@@ -267,10 +263,8 @@ function promptSafeName(name: string): string {
   );
 }
 
-/** Names the turn's files and where they landed. The link blocks carry the same
- *  paths, but a Slack turn's prompt is machine-framed: saying it in words is
- *  what ties the files to *this* message, rather than leaving the agent to infer
- *  that a path it was handed is the thing being asked about. */
+/** The link blocks carry the same paths, but saying it in words is what ties the
+ *  files to *this* message. */
 function renderDeliveredFiles(files: DeliveredFile[]): string {
   const list = files.map((f) => `- ${f.name} → ${f.path}`).join("\n");
   return `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`;
@@ -288,21 +282,17 @@ export type FetchedImage = {
   meta: { name: string; size: number };
 };
 
-/** A downloaded attachment the agent is handed as a file. The bytes wait here
- *  until the turn's pod is awake, because writing them is something only a
- *  running pod can do. */
+/** The bytes wait here until the turn's pod is awake — only a running pod can be
+ *  written to. */
 export type FetchedFile = {
   name: string;
   bytes: Buffer;
-  /** Who attached it. Kept on the file, not the turn: a coalesced read-along
-   *  batch carries several people's attachments into one turn, and the audit
-   *  trail answers "who put this in the workspace". */
+  /** Per file, not per turn: a coalesced batch mixes several people's uploads. */
   uploader: string;
   contentType?: string;
 };
 
-/** A file that made it into the agent's workspace: the name the sender knows it
- *  by, and the absolute path it can now be opened from. */
+/** In the workspace: the sender's name for it, and the path it opens from. */
 type DeliveredFile = {
   name: string;
   path: string;
@@ -310,14 +300,11 @@ type DeliveredFile = {
   contentType?: string;
 };
 
-/** The outcome of handing a turn's files over: what the agent can open, and a
- *  note about any that never got there. */
+/** What the agent can open, and a note about any that never got there. */
 type TurnDelivery = { files: DeliveredFile[]; withheldNote: string };
 
-/** A withheld attachment, and why — `kind` picks the noun the sender's notice
- *  uses, since "image" would be wrong for a spreadsheet. `plural` marks the one
- *  case where several are withheld together: a message-level limit is a property
- *  of the message, so it is explained once and names them all. */
+/** `kind` picks the noun the notice uses; `plural` marks a message-level limit,
+ *  explained once for all the attachments it withheld. */
 type FetchedFailure = {
   name: string;
   kind: "image" | "file";
@@ -329,8 +316,7 @@ type FetchAttachmentsResult = {
   images: FetchedImage[];
   files: FetchedFile[];
   failures: FetchedFailure[];
-  /** Releases every byte this fetch charged. The turn carrying the files owns
-   *  it, and must call it on every settlement path. */
+  /** Owned by the turn carrying the files; called on every settlement path. */
   release: () => void;
 };
 
@@ -358,11 +344,8 @@ function createSemaphore(max: number) {
 
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
-/** Why a downloaded attachment never reached the agent, in words the sender can
- *  act on. A rejected attachment is worth explaining rather than dropping: the
- *  harness would otherwise hand the model an unreadable blob and the agent
- *  would answer with an internal resize error (#3008). `noun` is what the
- *  sender sent — a picture the agent looks at, or a file it opens. */
+/** Why an attachment never reached the agent, in words the sender can act on
+ *  (#3008: unexplained, the agent answers with an internal resize error). */
 async function withheldCopy(
   gw: SlackGateway,
   attachment: Exclude<InboundAttachment, { kind: "image" }>,
@@ -383,27 +366,19 @@ async function withheldCopy(
         "this conversation — check that it is still installed and can read files.";
 }
 
-/** Slack's own claims about an attachment, as the shared descriptor the
- *  image/file fork reads. Both fields are typed as present but Slack omits them
- *  on some clients. */
+/** Both fields are typed as present, but Slack omits them on some clients. */
 function describeSlackFile(f: SlackImageFile) {
   return { name: f.name, mimeType: f.mimetype };
 }
 
-/** The attachment's name, as everything downstream may use it. Two problems are
- *  settled once here rather than at each of the many readers: Slack omits `name`
- *  on some clients despite typing it as present, and the name is chosen by the
- *  uploader — who, in a shared channel, is anyone the workspace admits. It
- *  reaches the prompt's file list, the ACP link (which some harnesses splice
- *  straight into the model's text), the withheld note, and messages this bot
- *  posts into the channel, where Slack would act on `<!channel>`. */
+/** Settles two things once, for every reader downstream: Slack omits `name` on
+ *  some clients, and the uploader picks it — in a shared channel, that is anyone
+ *  the workspace admits. */
 function attachmentName(f: SlackImageFile): string {
   return promptSafeName(f.name || "file");
 }
 
-/** Said to the sender when the worker is already holding all the attachment
- *  bytes it will hold at once. Not about this file's size — about how much is in
- *  flight — so it asks for a retry rather than a smaller file. */
+/** About how much is in flight, not this file's size, so it asks for a retry. */
 const OVER_HELD_BUDGET =
   "the agent is already holding as many attachments as it can at once. " +
   "Send it again in a moment.";
@@ -413,16 +388,8 @@ function megabytes(bytes: number): string {
 }
 
 /** Download a message's attachments and sort them into what the agent can be
- *  shown and what it can be handed. Pictures ride the prompt, so they are
- *  bounded by what a model accepts and are dropped when the bytes turn out not
- *  to be a picture at all. Everything else is a file: it is delivered whatever
- *  format it is, and only withheld when the download plainly didn't return the
- *  file (a messenger serves a sign-in page with a 200) or it is too big to
- *  write.
- *
- *  `uploader` is the sender the bytes are attributed to — carried per file
- *  because a coalesced read-along batch mixes several people's attachments into
- *  one turn. */
+ *  shown and what it can be handed. Pictures are bounded by what a model accepts;
+ *  a file is delivered in whatever format it arrives. */
 async function fetchSlackAttachments(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
@@ -444,12 +411,9 @@ async function fetchSlackAttachments(
     const failures: FetchedFailure[] = [];
     const claims: AttachmentClaim[] = [];
 
-    // The picture cap is about what one prompt may carry, so it withholds the
-    // pictures and nothing else: a file on the same message is written to disk,
-    // never sent as bytes, and dropping it here was the silent drop this whole
-    // path exists to end. One notice for the message, not one per picture — the
-    // cap is a property of the message, and a dozen identical ephemerals would
-    // be a wall of copy for the sender and a dozen calls at Slack.
+    // This cap is about what one prompt may carry, so it withholds pictures and
+    // nothing else — a file on the same message is written to disk. One notice for
+    // the message, since the cap is the message's property.
     const pictureBytes = pictures.reduce((sum, f) => sum + (f.size ?? 0), 0);
     const picturesOverCap = pictureBytes > TOTAL_IMAGE_BYTES_CAP;
     if (picturesOverCap) {
@@ -464,18 +428,14 @@ async function fetchSlackAttachments(
       });
     }
 
-    // The declared sizes above are Slack's claim and are sometimes missing, so
-    // the budget is also spent as the bytes actually arrive: each download is
-    // bounded by what is left of it, and pictures past the cap are withheld like
-    // any other unusable attachment rather than swelling one prompt.
+    // Declared sizes are Slack's claim, so the cap is also spent as bytes arrive:
+    // each download is bounded by what is left of it.
     let pictureBytesTaken = 0;
     for (const f of picturesOverCap ? [] : pictures) {
       const remaining = TOTAL_IMAGE_BYTES_CAP - pictureBytesTaken;
-      // A picture costs the worker more than a file, not less: it is held to the
-      // same turn settlement and rides the prompt encoded. Reserved as encoded
-      // bytes, the unit it is actually kept in, so the reservation is an upper
-      // bound on the claim — a sizeless attachment reserves the whole remaining
-      // share, which is what its transfer would be allowed to spend.
+      // Reserved in the unit it is kept in, so the reservation is an upper bound.
+      // A sizeless attachment reserves the whole remaining share — what its
+      // transfer would be allowed to spend.
       const claim = budget.reserve(encodedFootprint(f.size || remaining));
       if (!claim) {
         failures.push({
@@ -513,7 +473,7 @@ async function fetchSlackAttachments(
           continue;
         }
         const data = bytes.toString("base64");
-        // What is retained is the encoded block, not the buffer it came from.
+        // The encoded block is what is retained, not the buffer.
         claim.settle(data.length);
         claims.push(claim);
         images.push({
@@ -525,9 +485,8 @@ async function fetchSlackAttachments(
         failures.push({
           name: attachmentName(f),
           kind: "image",
-          // The ceiling handed to the download is what is *left* of the budget,
-          // so the sender hears the budget itself — a residual would be a
-          // number they cannot act on, and it would move with attachment order.
+          // The download's ceiling is a residual, so the copy names the cap: a
+          // remainder would move with attachment order.
           reason:
             err instanceof FileTooLargeError
               ? `it is over the ${megabytes(TOTAL_IMAGE_BYTES_CAP)} MB of ` +
@@ -538,10 +497,8 @@ async function fetchSlackAttachments(
     }
 
     let stagedBytes = 0;
-    /** Why this file doesn't fit, or null. Asked twice per file: of Slack's
-     *  declared size, so 200 MB is refused before it is pulled into memory, and
-     *  of the bytes that actually arrived, because the declared size is the
-     *  uploading client's claim like everything else on the file. */
+    /** Asked of the declared size, so 200 MB is refused before it is read, and
+     *  again of what arrived, since the declaration is only a claim. */
     const overCap = (size: number): string | null => {
       if (size > MAX_FILE_BYTES) {
         return (
@@ -565,18 +522,15 @@ async function fetchSlackAttachments(
         failures.push({ name, kind: "file", reason: declaredTooBig });
         continue;
       }
-      // Reserved before the download, so bytes the worker has no room for are
-      // never read, and a fetch already on the wire counts against the next one —
-      // which a per-message cap cannot do, nothing limiting how many messages
-      // arrive at once.
-      const claim = budget.reserve(encodedFootprint(f.size || MAX_FILE_BYTES));
+      // Reserved before the download, so a fetch on the wire counts against the
+      // next one — nothing limits how many messages arrive at once.
+      const claim = budget.reserve(stagedFootprint(f.size || MAX_FILE_BYTES));
       if (!claim) {
         failures.push({ name, kind: "file", reason: OVER_HELD_BUDGET });
         continue;
       }
       try {
-        // The declared size is a claim and is sometimes missing, so the transfer
-        // carries the ceiling too — this process holds the bytes.
+        // The transfer carries the ceiling too: a declared size can be missing.
         const bytes = Buffer.from(
           await gateway.downloadFile(f.url_private, MAX_FILE_BYTES),
         );
@@ -586,33 +540,22 @@ async function fetchSlackAttachments(
           failures.push({ name, kind: "file", reason: tooBig });
           continue;
         }
-        const attachment = classifyInboundAttachment(bytes);
-        // A file's format is its own business — the agent opens it with the
-        // tools it opens anything with. Only two verdicts mean the file itself
-        // never arrived: nothing at all, or the markup Slack answers with when
-        // it won't release a file. Markup can *be* the file (an .html, a
-        // transcript), so the declared type is allowed to clear that verdict —
-        // but not when the markup is recognisably a sign-in page, or when the
-        // install is confirmed to lack the scope that downloads files. Both
-        // matter: a login screen written down as `rows.csv` is worse than a
-        // withheld file, because the agent answers from it.
-        // 8 KB, not the 1 KB the classifier sniffs with: a served page's
-        // <title> can sit behind a stylesheet, and the bytes are already here.
+        // What matters is whether the file arrived, not its format: markup is
+        // judged on being recognisably a refusal, since asking whether markup
+        // suited the declared type withheld `.xsl` and `.plist` documents. 8 KB
+        // because a served page's <title> can sit behind a stylesheet.
         const head = bytes.subarray(0, 8192).toString("latin1");
-        const markupIsTheFile =
-          mayContainMarkup(describeSlackFile(f)) &&
-          !looksLikeSignInPage(head) &&
-          (await canReadFiles(gateway));
-        const arrived =
-          bytes.length > 0 &&
-          (attachment.kind !== "web_page" || markupIsTheFile);
-        if (!arrived) {
+        const refused =
+          looksLikeSignInPage(head) ||
+          (classifyInboundAttachment(bytes).kind === "web_page" &&
+            !(await canReadFiles(gateway)));
+        if (bytes.length === 0 || refused) {
           getLogger().warn(
             {
               file: name,
               claimedMimeType: f.mimetype,
               bytes: bytes.length,
-              verdict: bytes.length === 0 ? "empty" : attachment.kind,
+              verdict: bytes.length === 0 ? "empty" : "refused",
             },
             "slack.file.unreadable",
           );
@@ -628,10 +571,9 @@ async function fetchSlackAttachments(
           continue;
         }
         stagedBytes += bytes.length;
-        // Settled in the unit it was reserved in, and upward too when needed: a
-        // declared size that understated the file must still be charged what
-        // arrived, or the ceiling stops bounding anything.
-        claim.settle(encodedFootprint(bytes.length));
+        // Same unit as the reservation, and upward too: a declared size that
+        // understated the file must still be charged what arrived.
+        claim.settle(stagedFootprint(bytes.length));
         claims.push(claim);
         staged.push({
           name,
@@ -1048,10 +990,8 @@ export function createSlackWorker(
    *  whether the marker does anything is the store's own business, decided
    *  where it is built. */
   attendance: ChannelTurnAttendance,
-  /** Writes the files people attach into the agent's own workspace, so it can
-   *  open them. Required, not optional: an unwired factory would silently
-   *  restore the drop this exists to end — a file would arrive and go nowhere,
-   *  which is indistinguishable from the agent ignoring it. */
+  /** Writes attached files into the agent's workspace. Required, not optional: an
+   *  unwired factory would silently restore the drop this exists to end. */
   workspaceFiles: AgentWorkspaceFilesFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
@@ -1504,8 +1444,7 @@ export function createSlackWorker(
       );
     };
 
-    // Delivered once, whichever prompt ends up carrying them and however many
-    // times the turn is re-run.
+    // Delivered once, whichever prompt carries them and however often it re-runs.
     let delivery: Promise<TurnDelivery>;
     const deliverFiles = () =>
       (delivery ??= deliverTurnFiles({
@@ -1640,9 +1579,8 @@ export function createSlackWorker(
       images: FetchedImage[];
     },
     contract: string,
-    /** `deliver` is a thunk, not a value: history injection reads Slack and can
-     *  fail, and a prompt that never gets built should not have left the
-     *  sender's file sitting in the workspace unreferenced. */
+    /** A thunk, not a value: history injection can fail, and a prompt that never
+     *  gets built should not have left a file in the workspace unreferenced. */
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<string | ContentBlock[]> {
     const { lines, hasAgentAuthored } = await getContextMessages(
@@ -1950,14 +1888,9 @@ export function createSlackWorker(
     };
   }
 
-  /** Hand a turn's files to the agent: written into its workspace under the
-   *  conversation they arrived in, then linked from the prompt. This runs inside
-   *  the turn rather than at intake because only a woken pod can be written to,
-   *  and it runs at most once per turn — a resume that fails and re-runs on a
-   *  fresh session must not deliver second copies. A file that can't be
-   *  delivered is reported like an unreadable picture: to the sender where the
-   *  surface has a voice, and always to the agent, so it never answers as though
-   *  it had the file. */
+  /** Write a turn's files into the workspace, to be linked from its prompt. Runs
+   *  inside the turn (only a woken pod can be written to) and at most once, since
+   *  a failed resume re-runs on a fresh session. */
   async function deliverTurnFiles(opts: {
     agentId: string;
     /** The turn's conversation, which the files land in a directory of. */
@@ -1968,9 +1901,8 @@ export function createSlackWorker(
     if (opts.files.length === 0) return { files: [], withheldNote: "" };
     const delivered: DeliveredFile[] = [];
     const failures: FetchedFailure[] = [];
-    // Nothing in here may reject: the prompt is built from what this returns,
-    // so a throw would lose the sender's question along with the file — and the
-    // turn would be re-run as though the harness might already be answering it.
+    // Nothing here may reject: the prompt is built from what it returns, so a
+    // throw would lose the sender's question along with the file.
     try {
       const store = workspaceFiles(opts.agentId);
       for (const f of opts.files) {
@@ -1990,8 +1922,7 @@ export function createSlackWorker(
             size: f.bytes.length,
             ...(f.contentType ? { contentType: f.contentType } : {}),
           });
-          // Anyone the channel admits can hand an agent a file, so who put what
-          // into its workspace belongs in the audit trail.
+          // Anyone the channel admits can do this, so it belongs in the trail.
           securityLog("info", "channel.file.delivered", {
             category: "channel",
             actor: f.uploader,
@@ -2096,8 +2027,7 @@ export function createSlackWorker(
         speakerLabel: !opts.directMessage,
       });
     } finally {
-      // The turn is awaited to settlement, wake included, so this is where these
-      // bytes stop being held — every exit from the relay included.
+      // Awaited to settlement, wake included, so this is where the bytes go.
       fetched.release();
     }
   }
@@ -2207,10 +2137,8 @@ export function createSlackWorker(
     messages: Array<{ text: string; eventTs: string }>;
     images: FetchedImage[];
     files: FetchedFile[];
-    /** Names of attachments this turn could not carry — over the batch's share,
-     *  or dropped at intake. Not delivered, but named to the agent: a file it can
-     *  see in the channel and was never handed is exactly what it must not answer
-     *  as though it had. */
+    /** Named to the agent though never delivered: a file it can see in the channel
+     *  and was not handed is what it must not answer as though it had. */
     droppedFiles: string[];
     externalActorId: string;
   }) {
@@ -2259,9 +2187,8 @@ export function createSlackWorker(
     });
     const guidance = ambientGuidance(brand);
 
-    // Read-along turns post nothing, so a file that can't be delivered is told
-    // only to the agent — nobody summoned it, and an ephemeral would ping
-    // someone who never asked.
+    // Read-along posts nothing, so an undelivered file is told only to the agent:
+    // an ephemeral would ping someone who never asked.
     let delivery: Promise<TurnDelivery>;
     const deliverFiles = () =>
       (delivery ??= deliverTurnFiles({
@@ -2386,11 +2313,8 @@ export function createSlackWorker(
     release: () => void;
   };
 
-  /** The files of a coalesced batch, up to what one turn may carry, plus the
-   *  overflow. Each message was capped on its own way in, but a burst coalesces
-   *  several of them into one prompt. The overflow is named to the agent rather
-   *  than vanishing — a file the sender can see in the channel that the agent was
-   *  never given is the failure this whole path exists to end. */
+  /** A coalesced batch re-applies the per-turn ceiling, after admission: each
+   *  message was capped on its own way in, but a burst arrives as one prompt. */
   function batchFiles(batch: AmbientPendingMessage[]): {
     kept: FetchedFile[];
     dropped: FetchedFile[];
@@ -2413,14 +2337,11 @@ export function createSlackWorker(
     return { kept, dropped };
   }
 
-  /** What this worker may hold in encoded attachment bytes at once, across every
-   *  inbound path — the reasoning is in `attachment-budget.ts`. Past it an
-   *  attachment is withheld and said so; the message itself still relays. */
-  const HELD_BYTES_CAP = encodedFootprint(3 * TOTAL_FILE_BYTES_CAP);
+  /** Across every inbound path; see `attachment-budget.ts`. Past it an attachment
+   *  is withheld and said so, and the message still relays. */
+  const HELD_BYTES_CAP = stagedFootprint(3 * TOTAL_FILE_BYTES_CAP);
 
-  /** This worker's share, reserved on admission and released when the turn that
-   *  holds the bytes settles. Passed into the download loops rather than reached
-   *  for, so a loop stays a function of what it is given. */
+  /** Passed into the download loops rather than reached for. */
   const heldBudget = createAttachmentBudget(HELD_BYTES_CAP);
 
   // Ambient traffic is serialized per session and coalesced: messages that

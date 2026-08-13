@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   inboundFilePath,
   looksLikeSignInPage,
-  mayContainMarkup,
   wasSentAsImage,
 } from "../../modules/channels/inbound-file.js";
 
@@ -42,34 +41,6 @@ describe("wasSentAsImage", () => {
   });
 });
 
-describe("mayContainMarkup", () => {
-  it("is true for the formats whose own contents can be markup", () => {
-    expect(mayContainMarkup({ mimeType: "text/html", name: "p.html" })).toBe(
-      true,
-    );
-    expect(mayContainMarkup({ mimeType: "text/plain", name: "n.txt" })).toBe(
-      true,
-    );
-    expect(mayContainMarkup({ name: "transcript.vtt" })).toBe(true);
-    expect(mayContainMarkup({ name: "data.json" })).toBe(true);
-    expect(mayContainMarkup({ mimeType: "application/xml" })).toBe(true);
-  });
-
-  it("is false for binary documents, where markup means the download failed", () => {
-    expect(
-      mayContainMarkup({ mimeType: "application/pdf", name: "s.pdf" }),
-    ).toBe(false);
-    expect(
-      mayContainMarkup({
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        name: "d.docx",
-      }),
-    ).toBe(false);
-    expect(mayContainMarkup({})).toBe(false);
-  });
-});
-
 describe("looksLikeSignInPage", () => {
   it("recognises the page a messenger serves instead of a file", () => {
     // The real thing names Slack, in its title or its asset URLs.
@@ -82,6 +53,17 @@ describe("looksLikeSignInPage", () => {
     ).toBe(true);
     expect(
       looksLikeSignInPage('<html><form action="https://slack.com/signin">'),
+    ).toBe(true);
+    // Bare values, and a `>` inside an earlier attribute, are the same stub.
+    expect(
+      looksLikeSignInPage(
+        "<html><meta http-equiv=refresh content=0;url=https://slack.com/signin>",
+      ),
+    ).toBe(true);
+    expect(
+      looksLikeSignInPage(
+        '<html><head><meta name="x" content="a>b"><meta http-equiv="refresh" content="0;url=https://slack.com/signin"></head>',
+      ),
     ).toBe(true);
     // HTML attribute order is not significant, so neither is it here.
     expect(

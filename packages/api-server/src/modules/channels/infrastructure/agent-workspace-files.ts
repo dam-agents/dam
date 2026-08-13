@@ -2,15 +2,10 @@ import { createTRPCClient, httpLink } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
-/** Writes a file into a running agent's own workspace, so the agent can open it
- *  by path. A channel worker holds this to hand over the documents people
- *  attach: the prompt carries a picture's bytes, but a file has to *be* a file
- *  before a harness can read it. Same surface the web UI's chat uploads use, so
- *  an attachment arrives the same way whichever surface it came from. */
+/** Writes a file into a running agent's workspace, so the agent can open it by
+ *  path — the same surface the web UI's chat uploads use. */
 export interface AgentWorkspaceFiles {
-  /** Write `bytes` at the workspace-relative `path`, returning the absolute
-   *  on-pod path to reference it by. The pod serves this itself, so the agent
-   *  must already be awake. */
+  /** Returns the absolute on-pod path. The pod serves this, so it must be awake. */
   write(input: {
     path: string;
     bytes: Buffer;
@@ -18,8 +13,7 @@ export interface AgentWorkspaceFiles {
   }): Promise<string>;
 }
 
-/** Bound to the namespace at composition, like the worker's ACP client factory,
- *  so a worker never learns where pods live. */
+/** Namespace-bound at composition, so a worker never learns where pods live. */
 export type AgentWorkspaceFilesFactory = (
   agentId: string,
 ) => AgentWorkspaceFiles;
@@ -42,14 +36,12 @@ export function createAgentWorkspaceFiles(
         path,
         contentBase64: bytes.toString("base64"),
         ...(contentType ? { contentType } : {}),
-        // Every delivered file carries its own random prefix, so a name that
-        // already exists is this same file being written twice.
+        // Each file has a random prefix, so a collision is the same file twice.
         overwrite: true,
       });
       if (!result.absolutePath) {
-        // The bytes landed somewhere, but a path is the whole point: the agent
-        // is handed a `file://` URI or nothing. Guessing one from a default
-        // home directory would point it at a file that may not be there.
+        // The agent is handed a `file://` URI or nothing; a guessed path could
+        // point at a file that is not there.
         throw new Error("the agent did not report where it saved the file");
       }
       return result.absolutePath;

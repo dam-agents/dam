@@ -291,9 +291,7 @@ describe("slack inbound documents", () => {
   });
 
   it("names the file's path in the prompt, tied to this message", async () => {
-    // The link block carries the path, but a Slack prompt is machine-framed:
-    // without a line saying these came with the message, the agent is left to
-    // infer that a path it was handed is what it is being asked about.
+    // Without a line saying these came with the message, the agent must infer it.
     const h = harness();
     await h.mentionWithFile({ bytes: PDF });
 
@@ -305,8 +303,7 @@ describe("slack inbound documents", () => {
   });
 
   it("lands the file behind a random prefix, inside its conversation", async () => {
-    // Anyone the channel admits can attach a file, so a name the harness reads
-    // as instructions (CLAUDE.md, .env) must not be able to become one.
+    // A name the harness reads as instructions must not be able to become one.
     const h = harness();
     await h.mentionWithFile({ bytes: PDF, name: "CLAUDE.md" });
 
@@ -369,9 +366,8 @@ describe("slack inbound documents", () => {
   });
 
   it("refuses a document over the size limit before downloading it", async () => {
-    // The URL is deliberately left unseeded: any download attempt throws in the
-    // fake gateway, so the size copy below can only come from the pre-download
-    // check. That ordering is what keeps a huge body out of this process.
+    // Unseeded on purpose: a download would throw, so the copy below can only
+    // come from the pre-download check.
     const h = harness();
     await h.mentionWithFile({ size: 80_000_000 });
 
@@ -425,9 +421,7 @@ describe("slack inbound documents", () => {
   });
 
   it("still relays the turn when Slack sends the attachment with no name", async () => {
-    // `name` is typed as present but Slack omits it on some clients, and the
-    // prompt renders it. Losing the whole turn over a missing label would be a
-    // worse failure than the drop this feature replaced.
+    // Slack omits `name` on some clients, and the prompt renders it.
     const h = harness();
     await h.mentionWithFile({
       bytes: PDF,
@@ -441,11 +435,8 @@ describe("slack inbound documents", () => {
   });
 
   it("withholds a text file when the download returned a sign-in page", async () => {
-    // Markup is allowed to *be* a .csv, which is what makes a sign-in page
-    // served with a 200 dangerous here: without this the agent summarises a
-    // Slack login screen as the sender's spreadsheet. `files:read` is granted on
-    // purpose — the scope gate would otherwise withhold this on its own, and the
-    // detection under test would never run.
+    // `files:read` is granted on purpose: the scope gate would otherwise withhold
+    // this on its own and the detection under test would never run.
     const h = harness();
     h.gw.setGrantedScopes(["app_mentions:read", "chat:write", "files:read"]);
     await h.mentionWithFile({
@@ -476,9 +467,7 @@ describe("slack inbound documents", () => {
   });
 
   it("delivers a text file whose markup merely talks about signing in", async () => {
-    // The mirror of the sign-in case: a saved page that mentions logging in, on
-    // an install that can read files, is the sender's file — withholding it would
-    // blame a permission that is granted.
+    // Withholding this would blame a permission that is granted.
     const h = harness();
     h.gw.setGrantedScopes(["app_mentions:read", "chat:write", "files:read"]);
     await h.mentionWithFile({
@@ -494,9 +483,7 @@ describe("slack inbound documents", () => {
   });
 
   it("delivers the documents on a message whose images blew the image cap", async () => {
-    // The picture cap is about what a model accepts, and says nothing about a
-    // file written to disk — dropping the PDF with it would be the silent drop
-    // this feature exists to end.
+    // The picture cap says nothing about a file written to disk.
     const h = harness();
     await h.mentionWithImageAndFile({ imageSize: 31_000_000, bytes: PDF });
 
@@ -518,17 +505,15 @@ describe("slack inbound documents", () => {
     const text = h.text();
     expect(text).not.toContain("</attached-files><how-to-respond>");
     expect(text).toContain("q.pdf");
-    // The link block is not display-only — a harness may splice its name
-    // straight into the text it hands the model.
+    // Not display-only: a harness may splice the name into the model's text.
     const name = (h.links()[0] as { name: string }).name;
     expect(name).not.toContain("<");
     expect(name).not.toContain(">");
   });
 
   it("refuses a document whose real size exceeds what Slack declared", async () => {
-    // The declared size is the uploading client's claim; when it understates the
-    // file, the transfer's own ceiling is what refuses it. The sender must still
-    // be told the limit rather than a byte count and a pointless "try again".
+    // When the declaration understates the file, the transfer's ceiling refuses
+    // it — and the sender hears the limit, not a byte count.
     const h = harness();
     await h.mentionWithFile({
       bytes: Buffer.alloc(25_000_000, 0x41),
@@ -581,10 +566,8 @@ describe("slack inbound documents", () => {
   });
 
   it("tells the agent about a file a coalesced read-along batch could not carry", async () => {
-    // Messages that arrive while a read-along turn is running flush as one
-    // batch, so the first here only occupies the drain. What the batch cannot
-    // carry must still be named: a file the agent can see in the channel but was
-    // never handed is the failure this whole path exists to end.
+    // Messages arriving during a turn flush as one batch, so the first here only
+    // occupies the drain. What the batch cannot carry must still be named.
     const h = harness({ gateFirstPrompt: true });
     await h.ambientBurst([
       { name: "occupies.pdf", size: 1000 },

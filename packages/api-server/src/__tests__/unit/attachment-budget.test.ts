@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createAttachmentBudget,
   encodedFootprint,
+  stagedFootprint,
 } from "../../modules/channels/attachment-budget.js";
 
 describe("encodedFootprint", () => {
@@ -10,6 +11,13 @@ describe("encodedFootprint", () => {
     expect(encodedFootprint(3)).toBe(4);
     expect(encodedFootprint(9_000_000)).toBe(12_000_000);
     expect(encodedFootprint(0)).toBe(0);
+  });
+});
+
+describe("stagedFootprint", () => {
+  it("counts the buffer that is held and the encoded copy built on it", () => {
+    expect(stagedFootprint(3)).toBe(7);
+    expect(stagedFootprint(9_000_000)).toBe(21_000_000);
   });
 });
 
@@ -90,11 +98,63 @@ describe("createAttachmentBudget", () => {
     expect(budget.reserve(100)).not.toBeNull();
   });
 
+  it("is inert after release, in either order", () => {
+    // A released claim's bytes have no owner, so nothing may charge them again —
+    // otherwise a settle arriving late shrinks the ceiling for the process's life.
+    const budget = createAttachmentBudget(100);
+    const claim = budget.reserve(50)!;
+
+    claim.release();
+    claim.settle(90);
+
+    expect(budget.held()).toBe(0);
+    expect(budget.reserve(100)).not.toBeNull();
+  });
+
+  it("keeps two claims independent", () => {
+    const budget = createAttachmentBudget(100);
+    const a = budget.reserve(30)!;
+    const b = budget.reserve(30)!;
+
+    a.settle(50);
+    b.release();
+
+    expect(budget.held()).toBe(50);
+    a.release();
+    expect(budget.held()).toBe(0);
+  });
+
+  it("refuses a reservation that is not a size", () => {
+    // NaN would pass a `> cap` test and then make every later one false.
+    const budget = createAttachmentBudget(100);
+
+    expect(budget.reserve(Number.NaN)).toBeNull();
+    expect(budget.reserve(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(budget.reserve(-10)).toBeNull();
+    expect(budget.held()).toBe(0);
+  });
+
+  it("ignores a settlement that is not a size", () => {
+    const budget = createAttachmentBudget(100);
+    const claim = budget.reserve(40)!;
+
+    claim.settle(Number.NaN);
+
+    expect(budget.held()).toBe(40);
+  });
+
   it("never refuses nothing", () => {
     const budget = createAttachmentBudget(10);
     budget.reserve(10);
 
-    // A message with no attachments must not be turned away by a full budget.
-    expect(budget.reserve(0)).not.toBeNull();
+    // A message with no attachments must not be turned away by a full budget —
+    // and the claim it gets back holds nothing, so it cannot settle into a charge
+    // that skipped admission.
+    const nothing = budget.reserve(0)!;
+    expect(nothing).not.toBeNull();
+
+    nothing.settle(80);
+
+    expect(budget.held()).toBe(10);
   });
 });

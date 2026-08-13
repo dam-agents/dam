@@ -87,7 +87,7 @@ Continuing such a conversation here makes a session outlive the surface it start
 | cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
-| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations for the UI — gated per request on owner, `agents:operate` and agent binding |
+| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations for the UI — gated per request on ownership, the operate scope, and the key's agent binding |
 | api-server → agent-runtime | HTTP (tRPC, direct) | A channel worker writing an inbound attachment into the workspace. Not the proxy: no bearer, so the pod's NetworkPolicy is the whole gate, and a woken pod becomes a precondition for building that turn's prompt |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
