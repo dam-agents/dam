@@ -73,7 +73,7 @@ import { composeUsageModule } from "./modules/usage/compose.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
-import { composeLiveEventsModule } from "./modules/live-events/compose.js";
+import { composeLiveEventsModule } from "./modules/live-events/index.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
