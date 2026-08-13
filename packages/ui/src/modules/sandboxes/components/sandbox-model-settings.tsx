@@ -6,6 +6,7 @@ import {
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
 import { ModelSettingsPanel } from "../../sessions/components/model-settings-panel.js";
+import type { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
 import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
 /**
@@ -14,11 +15,21 @@ import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
  * recorded values read-only with a "Start agent to edit" action, and a spinner
  * while the agent is coming up.
  */
-export function SandboxModelSettings({ agentId }: { agentId: string }) {
+export function SandboxModelSettings({
+  agentId,
+  draft,
+}: {
+  agentId: string;
+  draft: ReturnType<typeof useHarnessConfigDraft>;
+}) {
   const { operable, comingUp } = useOperableState(agentId);
-  const { data: status } = useHarnessConfigStatus(agentId);
-  const { origin, hasRun } = useResolvedHarnessConfig(agentId);
+  const { data: status, isPending: statusPending } =
+    useHarnessConfigStatus(agentId);
+  const { origin, hasRun, pending } = useResolvedHarnessConfig(agentId);
   const hasCatalog = !!status?.catalog && status.catalog.options.length > 0;
+
+  // First: every branch below reads what these two queries carry.
+  if (statusPending || pending) return <ModelSettingsSkeleton />;
 
   // Nothing recorded and no pod to ask. Told apart from the case below because
   // "never run" is a complete explanation, while a sandbox that has run and
@@ -44,10 +55,20 @@ export function SandboxModelSettings({ agentId }: { agentId: string }) {
     );
   }
 
+  // `supported` is optimistic while capabilities are unknown, so this wait is
+  // unbounded — name it rather than shimmer forever.
+  if (operable && !hasCatalog && status?.supported === true) {
+    return (
+      <Fallback agentId={agentId} comingUp={comingUp}>
+        Waiting for the sandbox to report which model settings it offers.
+      </Fallback>
+    );
+  }
+
   return (
     <ModelSettingsPanel
       agentId={agentId}
-      variant="page"
+      draft={draft}
       disabled={!operable}
       headerAction={
         operable ? undefined : (
@@ -55,6 +76,33 @@ export function SandboxModelSettings({ agentId }: { agentId: string }) {
         )
       }
     />
+  );
+}
+
+/** Shaped like `OptionGroup`'s page variant so the box doesn't reflow. */
+function ModelSettingsSkeleton() {
+  return (
+    <section
+      className="mb-8"
+      aria-busy="true"
+      aria-label="Model settings loading"
+    >
+      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+        <SectionLabel>Model settings</SectionLabel>
+      </div>
+      <Callout inset>
+        <div className="animate-pulse">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="mb-4 last:mb-0">
+              <SectionLabel className="mb-1.5 block">
+                <span className="inline-block h-[0.7em] w-20 rounded bg-muted align-middle" />
+              </SectionLabel>
+              <div className="h-10 rounded-md border border-input bg-muted/40" />
+            </div>
+          ))}
+        </div>
+      </Callout>
+    </section>
   );
 }
 

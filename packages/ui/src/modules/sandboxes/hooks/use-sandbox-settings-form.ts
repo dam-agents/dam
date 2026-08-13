@@ -19,6 +19,7 @@ import {
   type SettingsValues,
 } from "./sandbox-settings-schema.js";
 import { useEgressPreview } from "./use-egress-preview.js";
+import { useHarnessConfigDraft } from "./use-harness-config-draft.js";
 import { useInheritedEnvs } from "./use-inherited-envs.js";
 import { useProviderStaging } from "./use-provider-staging.js";
 import { useSandboxSettingsSave } from "./use-sandbox-settings-save.js";
@@ -78,6 +79,8 @@ export function useSandboxSettingsForm() {
   // subhook stages them and self-resets on sandbox switch. Save commits them
   // alongside the rest; leaving discards.
   const net = useStagedNetworkAccess(agentId);
+
+  const harnessDraft = useHarnessConfigDraft(agentId);
 
   const [formReady, setFormReady] = useState(false);
   const baselinedRef = useRef(false);
@@ -159,7 +162,7 @@ export function useSandboxSettingsForm() {
     savedConnections: connectionsQuery.data?.connections,
   });
 
-  const dirty = isDirty || net.dirty;
+  const dirty = isDirty || net.dirty || harnessDraft.dirty;
   const isSubmitDisabled = saving || !formReady || !dirty;
 
   // Browser-level guard (tab close, refresh, URL nav).
@@ -170,6 +173,7 @@ export function useSandboxSettingsForm() {
     agent,
     dirty,
     net,
+    harnessDraft,
     providerAppIds,
     savedConnectionIds:
       connectionsQuery.data?.connections.map((c) => c.connectionId) ?? [],
@@ -218,6 +222,7 @@ export function useSandboxSettingsForm() {
     // sleeping sandboxes apply the new Size on their next start.
     sizeRestartsAgent:
       agent !== null && !(agent.state === "hibernated" || agent.overBudget),
+    harnessDraft,
     dirty,
     isSubmitDisabled,
     wildcardHostInScope:
