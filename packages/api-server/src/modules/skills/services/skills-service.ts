@@ -21,7 +21,10 @@ import type {
   SkillSetSkipReason,
 } from "api-server-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
-import type { RuntimeAppliedPort } from "../../agents/index.js";
+import type {
+  ContributionsProgress,
+  RuntimeProgressPort,
+} from "../../agents/index.js";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
@@ -76,11 +79,11 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
-  /** Whether the pod has cleanly applied everything the outbox has asked of it.
-   *  The `state` reconcile is only sound once it has: until then a tracked
+  /** How far the pod has got with what the outbox asked of it. The `state`
+   *  reconcile is only sound once it has cleanly applied: until then a tracked
    *  skill's directory is legitimately absent, because the apply that writes it
    *  hasn't run yet — or ran and failed, and is being retried. */
-  runtimeApplied: RuntimeAppliedPort;
+  runtimeProgress: RuntimeProgressPort;
   owner: string;
   scanSource: (
     scope: ScanScope,
@@ -210,6 +213,53 @@ function asPodVerdict(err: unknown): unknown {
   return err;
 }
 
+/** The reap's gate, fail-soft. A failed read defers the reap instead of failing
+ *  the state read the Skills page cannot do without. */
+async function reapGate(
+  deps: SkillsServiceDeps,
+  agentId: string,
+): Promise<ContributionsProgress | null> {
+  try {
+    return await deps.runtimeProgress.progress(agentId);
+  } catch (err) {
+    getLogger().warn(
+      { err, agentId },
+      "skills state: progress read failed; deferring reconcile",
+    );
+    return null;
+  }
+}
+
+/** Arms the re-delivery a ghost reap needs, and reports whether the reap may
+ *  proceed. The bump is the durable half — a version the pod hasn't settled is
+ *  what the 60s sweep looks for — so only the enqueue is best-effort, and a
+ *  failed bump cancels the reap rather than losing it. */
+async function bumpForReap(
+  deps: SkillsServiceDeps,
+  agentId: string,
+): Promise<boolean> {
+  try {
+    await deps.runtimeMutator.bump(agentId, []);
+  } catch (err) {
+    getLogger().warn(
+      { err, agentId },
+      "skills state: reap deferred — the re-delivery bump failed",
+    );
+    return false;
+  }
+  try {
+    await deps.runtimeMutator.enqueueAfterCommit(agentId);
+  } catch (err) {
+    getLogger().warn(
+      { err, agentId },
+      "skills state: reap re-delivery left to the sweep — enqueue failed",
+    );
+  }
+  return true;
+}
+
+/** On-disk Local Skills minus anything tracked as installed-from-remote (by
+ *  name) — the same subtraction getState performs for its `standalone` view. */
 async function standaloneFor(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -944,54 +994,49 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         ...new Set(instancePublishes.map((p) => p.skillName)),
       ];
 
+      // A ghost row — one whose directory no longer exists — is only evidence
+      // of an out-of-band deletion when nothing else can explain the absence.
+      // Install is declarative: the row is written first and the apply fetches
+      // the files after, so in between every freshly installed skill looks like
+      // a ghost. Reaping then doesn't merely lose the install; the reap
+      // re-delivers, and the pod removes the files it just fetched.
+      // So the gate is read *here*, before the disk list it authorises. Read
+      // after, it could clear a reap for an install that completed since the
+      // list was taken — the files on disk, the list saying otherwise.
+      const gateBefore = await reapGate(deps, agentId);
+
       const local = await deps.runtimeClient.listLocal(agentId, publishedNames);
 
       const onDisk = new Set(local.map((s) => s.name));
 
-      // Drop ghost rows whose directories no longer exist — but only once the
-      // pod has caught up with the outbox. Install is declarative: the row is
-      // written first and the apply worker fetches the files after, so between
-      // those two moments every freshly-installed skill looks like a ghost.
-      // Reaping then doesn't just lose the install — the files still land, and
-      // the skill resurfaces as a Standalone one the user supposedly authored.
-      // One install's window is a single fetch wide; a batch's is N, which is
-      // what makes the guard necessary rather than merely tidy.
-      // Applied, not merely settled: a driver failure settles the version too,
-      // and reaping then would drop the row of the very install that is still
-      // being retried.
-      // A failed read defers reaping rather than failing the whole state read:
-      // this is the one query the Skills page cannot do without.
-      let applied = false;
-      try {
-        applied = await deps.runtimeApplied.isApplied(agentId);
-      } catch (err) {
-        getLogger().warn(
-          { err, agentId },
-          "skills state: applied check failed; deferring reconcile",
-        );
-      }
-      if (applied) {
-        const reaped = await deps.agentSkillsRepo.reconcile(agentId, onDisk);
-        // The pod's applied hash still describes the set that held these, so
-        // re-installing one would reproduce that hash and be skipped as
-        // already-applied. Bumping re-delivers the set it actually has.
-        // Best-effort, like the snapshot write below: this is the read the
-        // Skills page cannot do without, and the 60s sweep re-dispatches a
-        // bumped row on its own, so neither call is worth failing it for.
-        if (reaped.length > 0) {
-          try {
-            await deps.runtimeMutator.bump(agentId, []);
-            await deps.runtimeMutator.enqueueAfterCommit(agentId);
-          } catch (err) {
-            getLogger().warn(
-              { err, agentId },
-              "skills state: re-delivery after reap failed",
-            );
-          }
+      const tracked = await deps.agentSkillsRepo.listSkills(agentId);
+      let installed = tracked;
+      const ghosts =
+        gateBefore?.applied === true
+          ? tracked.filter((s) => !onDisk.has(s.name))
+          : [];
+      if (gateBefore !== null && ghosts.length > 0) {
+        // Close the bracket: the row has to be unchanged across the evidence.
+        // An install landing mid-read has to bump, so a moved version means the
+        // disk list and these rows describe different moments. An unchanged one
+        // also means no dispatch is in flight — the sweep and `hello` only
+        // enqueue a row the agent is behind on, and every other enqueue bumps —
+        // so the pod cannot be part-way through writing a directory we are
+        // about to call missing.
+        const gateAfter = await reapGate(deps, agentId);
+        const stable =
+          gateAfter?.applied === true &&
+          gateAfter.version === gateBefore.version;
+        // The bump comes first: it is the durable half of the re-delivery, so
+        // the sweep re-dispatches even if the enqueue is lost. Bumping after
+        // the delete would strand the pod on an applied hash for a set that no
+        // longer exists — re-installing a reaped skill would reproduce that
+        // hash and be skipped, which is the failure this path exists to break.
+        if (stable && (await bumpForReap(deps, agentId))) {
+          await deps.agentSkillsRepo.reconcile(agentId, onDisk);
+          installed = tracked.filter((s) => onDisk.has(s.name));
         }
       }
-
-      const installed = await deps.agentSkillsRepo.listSkills(agentId);
 
       const trackedNames = new Set(installed.map((s) => s.name));
       const standalone = local.filter((s) => !trackedNames.has(s.name));

@@ -2,8 +2,9 @@ export { composeAgentsModule } from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,
-  ContributionsSettledPort,
-  RuntimeAppliedPort,
+  ContributionsProgressPort,
+  ContributionsProgress,
+  RuntimeProgressPort,
 } from "./services/agents-service.js";
 export {
   createAgentsRepository,

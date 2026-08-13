@@ -51,7 +51,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     agentCleanupHooks,
     secretStores,
     runtimeMutator,
-    contributionsSettled,
+    contributionsProgress,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -131,7 +131,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
-      contributionsSettled,
+      contributionsProgress,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({
@@ -193,7 +193,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       runtimeMutator,
       templatesRepo,
-      runtimeApplied: contributionsSettled,
+      runtimeProgress: contributionsProgress,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
@@ -223,7 +223,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
-      isSettled: contributionsSettled.isSettled,
+      isSettled: (agentId) =>
+        contributionsProgress.progress(agentId).then((p) => p.settled),
     });
     const metrics = metricsReader
       ? createMetricsService({

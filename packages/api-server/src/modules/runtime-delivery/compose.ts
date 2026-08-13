@@ -34,6 +34,10 @@ import {
   createRuntimeMutator,
   type RuntimeMutator,
 } from "./services/runtime-mutator.js";
+import {
+  progressOf,
+  type ContributionsProgress,
+} from "./domain/outbox-progress.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -49,12 +53,8 @@ export interface RuntimeDeliveryComposition {
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
-  /** The agent answered for the current version — cheaper than the full status. */
-  contributionsSettled(agentId: string): Promise<boolean>;
-  /** The agent answered *cleanly*: `lastAppliedVersion >= version`. A driver
-   *  failure advances the settled cursor but not this one, so anything gating
-   *  on "the pod's disk now reflects the spec" asks here. */
-  contributionsApplied(agentId: string): Promise<boolean>;
+  /** The cursors alone — cheaper than the full status, and enough to gate on. */
+  contributionsProgress(agentId: string): Promise<ContributionsProgress>;
 }
 
 export interface ContributionsStatus {
@@ -136,27 +136,15 @@ export function composeRuntimeDelivery(
         outboxRepo.getRow(agentId),
         outboxRepo.seedingAgentIds([agentId]),
       ]);
-      const preparingWorkspace = seeding.has(agentId);
-      if (!row) return { settled: true, failures: [], preparingWorkspace };
-      return {
-        settled: row.lastSettledVersion >= row.version,
-        failures: row.applyFailures,
-        preparingWorkspace,
-      };
+      const { settled, failures } = progressOf(row);
+      return { settled, failures, preparingWorkspace: seeding.has(agentId) };
     },
 
-    // Both bits read the outbox row alone. The full status also probes for a
-    // pending workspace-seed, which a caller gating on one boolean discards —
-    // and the harness-config poller asks every 800ms while a change is in
-    // flight. No row means nothing was ever asked of the agent.
-    async contributionsSettled(agentId): Promise<boolean> {
-      const row = await outboxRepo.getRow(agentId);
-      return row === null || row.lastSettledVersion >= row.version;
-    },
-
-    async contributionsApplied(agentId): Promise<boolean> {
-      const row = await outboxRepo.getRow(agentId);
-      return row === null || row.lastAppliedVersion >= row.version;
+    // The row alone. The full status also probes for a pending workspace-seed,
+    // which a caller that only gates discards — and the harness-config poller
+    // asks every 800ms while a change is in flight.
+    async contributionsProgress(agentId): Promise<ContributionsProgress> {
+      return progressOf(await outboxRepo.getRow(agentId));
     },
 
     async contributionsStatusMany(
@@ -170,18 +158,12 @@ export function composeRuntimeDelivery(
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
-        const row = byId.get(id);
-        const preparingWorkspace = seeding.has(id);
-        result.set(
-          id,
-          row
-            ? {
-                settled: row.lastSettledVersion >= row.version,
-                failures: row.applyFailures,
-                preparingWorkspace,
-              }
-            : { settled: true, failures: [], preparingWorkspace },
-        );
+        const { settled, failures } = progressOf(byId.get(id) ?? null);
+        result.set(id, {
+          settled,
+          failures,
+          preparingWorkspace: seeding.has(id),
+        });
       }
       return result;
     },

@@ -28,9 +28,7 @@ export interface AgentSkillsRepository {
     key: { source: string; name: string },
   ): Promise<void>;
   removeBySource(agentIds: string[], gitUrl: string): Promise<void>;
-  /** Returns the names it dropped — the caller has to re-deliver, since the
-   *  pod's applied hash still describes the set that included them. */
-  reconcile(agentId: string, presentNames: Set<string>): Promise<string[]>;
+  reconcile(agentId: string, presentNames: Set<string>): Promise<void>;
 
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
@@ -138,7 +136,7 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         .from(agentSkills)
         .where(eq(agentSkills.agentId, agentId));
       const ghosts = rows.filter((r) => !presentNames.has(r.name));
-      if (ghosts.length === 0) return [];
+      if (ghosts.length === 0) return;
       await Promise.all(
         ghosts.map((g) =>
           db
@@ -152,7 +150,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
             ),
         ),
       );
-      return ghosts.map((g) => g.name);
     },
 
     async listPublishes(agentId) {

@@ -59,20 +59,31 @@ export interface ContributionsStatus {
   preparingWorkspace: boolean;
 }
 
-export interface ContributionsSettledPort {
-  status(agentId: string): Promise<ContributionsStatus>;
-  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  isSettled(agentId: string): Promise<boolean>;
-  /** Stricter than {@link isSettled}: the pod applied the current version
-   *  *cleanly*. A driver failure settles the version as well, so a consumer
-   *  that acts on "the pod's disk now reflects the spec" has to ask this one. */
-  isApplied(agentId: string): Promise<boolean>;
+/** Outbox-derived delivery cursors, supplied by runtime-delivery. `applied` is
+ *  the stricter one: a driver failure settles the version without applying it,
+ *  so a consumer that acts on "the pod's disk reflects the spec" reads that. */
+export interface ContributionsProgress {
+  /** Carried so a consumer can tell a stable row from one that moved under it
+   *  between two reads. */
+  version: number;
+  settled: boolean;
+  applied: boolean;
+  failures: DriverFailure[];
 }
 
-/** The applied bit alone, for modules that gate on it — one named dependency
- *  instead of a bare function type re-spelled at every wiring hop. See
- *  {@link ContributionsSettledPort.isApplied}. */
-export type RuntimeAppliedPort = Pick<ContributionsSettledPort, "isApplied">;
+/** Port: what runtime-delivery knows about an agent's contribution delivery —
+ *  the failures behind the degraded badge, and the cursors consumers gate on. */
+export interface ContributionsProgressPort {
+  status(agentId: string): Promise<ContributionsStatus>;
+  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+  /** The cursors alone, for consumers that gate rather than report. Cheaper
+   *  than {@link status}, which also probes for a pending workspace-seed. */
+  progress(agentId: string): Promise<ContributionsProgress>;
+}
+
+/** The cursor read alone, for modules that gate on it — one named dependency
+ *  instead of a bare function type re-spelled at every wiring hop. */
+export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
 
 /**
  * Port consumed by `create()` to seed `egress_rules` for a brand-new agent.
@@ -433,7 +444,7 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
@@ -475,7 +486,7 @@ export function createAgentsService(deps: {
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
-      return await deps.contributionsSettled.status(id);
+      return await deps.contributionsProgress.status(id);
     } catch {
       return { settled: true, failures: [], preparingWorkspace: false };
     }
@@ -597,7 +608,7 @@ export function createAgentsService(deps: {
       }
 
       const [failuresMap, envMap] = await Promise.all([
-        deps.contributionsSettled
+        deps.contributionsProgress
           .statusMany([...infraIds])
           .catch(() => new Map<string, ContributionsStatus>()),
         deps.agentEnvRepo.listMany([...infraIds]),

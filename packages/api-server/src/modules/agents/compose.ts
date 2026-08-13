@@ -15,7 +15,7 @@ import {
   createAgentsService,
   type AgentCleanupHook,
   type PresetSeeder,
-  type ContributionsSettledPort,
+  type ContributionsProgressPort,
   type ResizeGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
@@ -52,7 +52,8 @@ export function composeAgentsModule(deps: {
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
+  /** Telegram chat→agent binding flow; omitted system-side. */
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   grantProvisioner?: {
@@ -89,7 +90,7 @@ export function composeAgentsModule(deps: {
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
-      contributionsSettled: deps.contributionsSettled,
+      contributionsProgress: deps.contributionsProgress,
       podStatus: createPodStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
