@@ -98,6 +98,8 @@ export function SkillsSurface({
     ? () => navigateToSandboxHome(agentId, "connections")
     : undefined;
 
+  const ran = hasRun || surface.standaloneSnapshot !== undefined;
+
   const stoppedPanel = (
     <SkillsStoppedPanel
       onCount={snapshotOnCount}
@@ -178,9 +180,9 @@ export function SkillsSurface({
       )}
     >
       {readOnly ? (
-        configPending ? (
+        configPending && !ran ? (
           <SkillSourcesSkeleton />
-        ) : hasRun ? (
+        ) : ran ? (
           stoppedPanel
         ) : (
           neverRunPanel
