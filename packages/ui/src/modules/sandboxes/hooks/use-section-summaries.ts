@@ -86,7 +86,9 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const staleModel = useStaleModel(agent?.id ?? null);
   const sourceCount = useSkillSourceCount(agent?.id ?? null);
-  const { hasRun } = useResolvedHarnessConfig(agent?.id ?? null);
+  const { hasRun, pending: configPending } = useResolvedHarnessConfig(
+    agent?.id ?? null,
+  );
 
   const setup = useMemo(() => {
     if (!agent) return undefined;
@@ -120,6 +122,9 @@ export function useSectionSummaries(agent: AgentView | null): {
   // counts line and its stopped snapshot use, so the number never moves just
   // because the sandbox did.
   const skills = useMemo(() => {
+    // While the read is in flight `hasRun` reads false, so the nav's own
+    // placeholder is the honest answer. Only a settled false earns the claim.
+    if (configPending) return undefined;
     if (!hasRun) return "Not known yet";
     const on = skillsState.data?.installed.length ?? 0;
     const capturedAt = skillsState.data?.standaloneSnapshot?.capturedAt;
@@ -129,7 +134,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     return sourceCount === null
       ? `${on} on`
       : `${on} on across ${plural(sourceCount, "source")}`;
-  }, [hasRun, skillsState.data, sourceCount]);
+  }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
   const channelsSummary = useMemo(() => {

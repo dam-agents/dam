@@ -70,7 +70,9 @@ export interface ResolvedHarnessConfig {
   values: HarnessConfigCurrent | null;
   origin: HarnessConfigOrigin;
   capturedAt: string | null;
-  /** The sandbox has sent `hello` at least once, so a snapshot was possible. */
+  /** The sandbox has sent `hello` at least once, so a snapshot was possible.
+   *  Reads `false` while `pending` — check that before putting the claim that
+   *  a sandbox has never run on screen. */
   hasRun: boolean;
   /** The recorded model list was observed against the model now shown, so the
    *  two can be compared. False once they have drifted — a model applied since

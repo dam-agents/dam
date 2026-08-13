@@ -58,9 +58,10 @@ export function SkillsSurface({
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
-  // `hasRun: false` is the one honest signal that no snapshot is even possible
-  // — distinct from a snapshot that happens to be empty.
-  const { hasRun } = useResolvedHarnessConfig(agentId);
+  // `hasRun` is the one honest signal that no snapshot is even possible —
+  // distinct from a snapshot that happens to be empty. It reads false while
+  // the snapshot query is in flight, hence the `pending` guard below.
+  const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
@@ -179,7 +180,7 @@ export function SkillsSurface({
   // Running with nothing in it is no longer a special page: each group shows
   // its own empty panel, so the image group still renders when the image ships
   // skills. Only the two non-running states replace the surface wholesale.
-  const neverRunPanel = readOnly && hasRun === false && (
+  const neverRunPanel = readOnly && !configPending && !hasRun && (
     <SkillsNeverRunPanel
       sources={sources}
       visibilityBySource={surface.visibilityBySource}
