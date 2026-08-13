@@ -39,7 +39,7 @@ export interface ApprovalsRepository {
     id: string,
     verdict: "allow" | "deny",
     decidedBy: string,
-  ): Promise<void>;
+  ): Promise<boolean>;
   markDelivered(id: string): Promise<void>;
   listResolvedUndelivered(opts: {
     staleMs: number;
@@ -212,7 +212,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async resolveExpired(id, verdict, decidedBy) {
       const now = new Date();
-      await db
+      const rows = await db
         .update(pendingApprovals)
         .set({
           status: "resolved",
@@ -226,7 +226,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "expired"),
           ),
-        );
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async markDelivered(id) {

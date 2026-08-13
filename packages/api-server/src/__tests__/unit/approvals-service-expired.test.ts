@@ -50,12 +50,13 @@ function makeService(seed: PendingApprovalRow) {
     },
     resolveExpired: async (id, verdict, decidedBy) => {
       const row = rows.find((r) => r.id === id && r.status === "expired");
-      if (!row) return;
+      if (!row) return false;
       row.status = "resolved";
       row.verdict = verdict;
       row.decidedBy = decidedBy;
       row.resolvedAt = new Date();
       row.deliveredAt = new Date();
+      return true;
     },
     markDelivered: async () => {},
     listResolvedUndelivered: async () => [],

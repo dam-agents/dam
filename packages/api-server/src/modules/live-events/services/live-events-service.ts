@@ -7,32 +7,42 @@ export interface LiveEventsBus {
   subscribe(ownerSub: string, listener: (event: LiveEvent) => void): () => void;
 }
 
+const MAX_PENDING = 256;
+
 export function createLiveEventsService(deps: {
   bus: LiveEventsBus;
 }): LiveEventsService {
   return {
-    ownerStream(sub, signal) {
-      let unsubscribe = () => {};
-      let end = () => {};
-      return new ReadableStream<LiveEvent>({
-        start(controller) {
-          end = () => {
-            unsubscribe();
-            try {
-              controller.close();
-            } catch {}
-          };
-          controller.enqueue({ topic: "sync" });
-          unsubscribe = deps.bus.subscribe(sub, (event) =>
-            controller.enqueue(event),
-          );
-          signal?.addEventListener("abort", end, { once: true });
-        },
-        cancel() {
-          signal?.removeEventListener("abort", end);
-          unsubscribe();
-        },
+    async *ownerStream(sub, signal) {
+      const pending: LiveEvent[] = [{ topic: "sync" }];
+      let wake: (() => void) | undefined;
+      const unsubscribe = deps.bus.subscribe(sub, (event) => {
+        if (pending.length >= MAX_PENDING) {
+          pending.length = 0;
+          pending.push({ topic: "sync" });
+        } else {
+          pending.push(event);
+        }
+        wake?.();
       });
+      const onAbort = () => wake?.();
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        while (!signal?.aborted) {
+          const next = pending.shift();
+          if (next === undefined) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+            wake = undefined;
+            continue;
+          }
+          yield next;
+        }
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+        unsubscribe();
+      }
     },
   };
 }

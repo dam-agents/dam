@@ -204,7 +204,7 @@ export function createApprovalsService(
           "allow_once",
           deps.ownerSub,
         );
-        emitResolved(row);
+        if (casWon) emitResolved(row);
         auditVerdict(deps, row, "allow", {
           verdict: "allow_once",
           ruleWritten: false,
@@ -250,8 +250,10 @@ export function createApprovalsService(
           "allow",
           deps.ownerSub,
         );
-        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
-        emitResolved(row);
+        const expiredFlipped = casWon
+          ? false
+          : await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
+        if (casWon || expiredFlipped) emitResolved(row);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
           ...auditRuleFields(written),
@@ -296,8 +298,10 @@ export function createApprovalsService(
           "allow",
           deps.ownerSub,
         );
-        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
-        emitResolved(row);
+        const expiredFlipped = casWon
+          ? false
+          : await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
+        if (casWon || expiredFlipped) emitResolved(row);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
           ...auditRuleFields(written),
@@ -345,8 +349,10 @@ export function createApprovalsService(
           "deny",
           deps.ownerSub,
         );
-        if (!casWon) await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
-        emitResolved(row);
+        const expiredFlipped = casWon
+          ? false
+          : await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
+        if (casWon || expiredFlipped) emitResolved(row);
         auditVerdict(deps, row, "deny", {
           verdict: "deny",
           ...auditRuleFields(written),
@@ -369,7 +375,7 @@ export function createApprovalsService(
           "deny_once",
           deps.ownerSub,
         );
-        emitResolved(row);
+        if (casWon) emitResolved(row);
         auditVerdict(deps, row, "deny", {
           verdict: "deny_once",
           ruleWritten: false,
@@ -389,7 +395,7 @@ async function resolveAndDeliverAcpNative(
 ): Promise<boolean> {
   if (row.payload.kind !== "acp_native") return false;
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
-  emitResolved(row);
+  if (casWon) emitResolved(row);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,
     native: true,

@@ -57,8 +57,25 @@ export function hintFor(
           agentId: event.agentId,
         },
       };
-    default:
+    case EventType.UserAuthenticated:
+    case EventType.AgentUpdated:
+    case EventType.AgentDeleted:
+    case EventType.AgentRestarted:
+    case EventType.AgentWoken:
+    case EventType.SlackConnected:
+    case EventType.SlackDisconnected:
+    case EventType.ChannelTurnRelayed:
+    case EventType.ConnectionCreated:
+    case EventType.ConnectionRemoved:
+    case EventType.FilesImported:
+    case EventType.ContributionApplyFailed:
+    case EventType.ContributionRecovered:
+    case EventType.ContributionApplyGaveUp:
       return null;
+    default: {
+      const unhandled: never = event;
+      return unhandled;
+    }
   }
 }
 

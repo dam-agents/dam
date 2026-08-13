@@ -114,6 +114,23 @@ describe("liveEvents.ownerStream", () => {
     });
   });
 
+  // TEST_SCENARIO: A consumer that stops reading must not hold unbounded memory: past the cap the queue collapses to a single sync, and the contract makes sync the full recovery.
+  it("collapses an overflowing queue into one sync hint", async () => {
+    const { bus, module } = harness();
+    const it_ = module.liveEvents.ownerStream("u1")[Symbol.asyncIterator]();
+
+    for (let i = 0; i < 400; i++) {
+      await publish(bus, "u1", { topic: "agents", agentId: `a${i}` });
+    }
+    expect((await it_.next()).value).toEqual({ topic: "sync" });
+
+    await publish(bus, "u1", { topic: "agents", agentId: "after" });
+    expect((await it_.next()).value).toEqual({
+      topic: "agents",
+      agentId: "after",
+    });
+  });
+
   it("ends on abort and releases the channel subscription", async () => {
     const { bus, module, subscribedChannels } = harness();
     const controller = new AbortController();
