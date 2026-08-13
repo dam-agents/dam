@@ -64,17 +64,18 @@ export function AgentRow({
       className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
     >
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-base font-medium text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+          {/* Full width until there is room to share the line, so the pills drop
+              below the name on a narrow screen instead of squeezing it. */}
+          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:hover))_&]:text-primary">
             {agent.name}
           </h2>
-          {/* Beside the name, not with the status pills: the Kind is part of what
-              this sandbox *is*, not something it is currently doing. */}
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
               {kindBadge.label}
             </Badge>
           )}
+          <ContributionFailuresBadge failures={agent.contributionFailures} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">
           {subtitle}
@@ -96,7 +97,6 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <ContributionFailuresBadge failures={agent.contributionFailures} />
         {/* A parked sandbox explains itself: the controller's figures ride
             the badge tooltip — focusable and labelled, so keyboard and
             screen-reader users reach them, not just mouse hover. */}
