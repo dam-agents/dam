@@ -4,9 +4,15 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type SetupStep = "start" | "purpose" | "creating" | "done";
+type SetupStep = "start" | "purpose" | "submitted";
 
-export function WikiSetupCard() {
+interface WikiSetupCardProps {
+  onSubmit?: (
+    payload: { demo: true } | { name: string; purpose: string },
+  ) => void;
+}
+
+export function WikiSetupCard({ onSubmit }: WikiSetupCardProps) {
   const [step, setStep] = useState<SetupStep>("start");
   const [wikiName, setWikiName] = useState("");
   const [nameInput, setNameInput] = useState("");
@@ -20,26 +26,24 @@ export function WikiSetupCard() {
 
   function handlePurposeSubmit() {
     if (!purposeInput.trim()) return;
-    setStep("creating");
-    setTimeout(() => setStep("done"), 1200);
+    setStep("submitted");
+    onSubmit?.({ name: wikiName, purpose: purposeInput.trim() });
   }
 
   function handleLoadDemo() {
     setWikiName("Greek Mythology Demo");
-    setStep("creating");
-    setTimeout(() => setStep("done"), 1200);
+    setStep("submitted");
+    onSubmit?.({ demo: true });
   }
+
+  if (step === "submitted") return null;
 
   return (
     <div className="w-full rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card">
-      {/* Progress dots — only show once user starts the name flow */}
-      {step !== "start" && (
+      {step === "purpose" && (
         <div className="flex items-center gap-1.5 px-5 pt-4">
-          <StepDot done active={step === "purpose"} />
-          <StepDot
-            done={step === "creating" || step === "done"}
-            active={false}
-          />
+          <StepDot done active={false} />
+          <StepDot done={false} active={true} />
         </div>
       )}
 
@@ -109,44 +113,6 @@ export function WikiSetupCard() {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        )}
-
-        {step === "creating" && (
-          <div className="flex items-center gap-3 py-1">
-            <div className="size-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            <span className="text-[14px] text-muted-foreground">
-              Creating <span className="text-foreground">{wikiName}</span>...
-            </span>
-          </div>
-        )}
-
-        {step === "done" && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Checkmark size={16} className="text-success shrink-0" />
-              <span className="text-[14px] text-foreground">
-                <strong>{wikiName}</strong> is ready
-              </span>
-            </div>
-            <p className="text-[14px] text-muted-foreground">
-              Drop files or URLs and I'll ingest them, or ask me to:
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                "Set up a git remote",
-                "Put it on a maintenance schedule",
-                "Ingest a repo",
-              ].map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="rounded-full border border-border px-3 py-1.5 text-[14px] text-muted-foreground transition-colors hover:border-foreground/20 hover:text-foreground"
-                >
-                  {label}
-                </button>
-              ))}
             </div>
           </div>
         )}

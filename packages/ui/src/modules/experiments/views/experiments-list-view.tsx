@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useDemoState } from "../../../mock/demo-state.js";
+import { protoNavigate } from "../../../mock/proto-navigate.js";
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
@@ -24,7 +25,7 @@ export function ExperimentsListView() {
   const { state: demoState } = useDemoState();
 
   const goToSetup = () => {
-    window.location.href = "/experiment-setup";
+    protoNavigate("/experiment-setup");
   };
 
   if (import.meta.env.VITE_MOCK && demoState === "empty") {

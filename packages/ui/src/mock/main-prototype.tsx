@@ -32,60 +32,12 @@ import { schedules } from "./data/schedules.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
-// ─── Patch navigation so it never leaves the page ────────────────────────────
-// The app uses Zustand state for view management. history.pushState is cosmetic.
-// From file://, pushState produces broken URLs and <a href="/..."> would navigate
-// to a non-existent file. Neutralize both.
+// ─── Hash-based routing for file:// support ─────────────────────────────────
+// Intercept ALL clicks in capture phase (fires before React or bubbling).
+// Convert <a href="/..."> to hash navigation so file:// doesn't navigate away.
 
 history.pushState = () => {};
 history.replaceState = () => {};
-
-// Intercept all internal <a href="/..."> clicks
-document.addEventListener(
-  "click",
-  (e) => {
-    const anchor = (e.target as HTMLElement).closest?.(
-      "a[href]",
-    ) as HTMLAnchorElement | null;
-    if (anchor) {
-      const href = anchor.getAttribute("href") ?? "";
-      if (href.startsWith("/") || href === "#") {
-        e.preventDefault();
-      }
-    }
-  },
-  true,
-);
-
-// Patch window.location so `window.location.href = "/..."` doesn't navigate away
-const realLocation = window.location;
-try {
-  Object.defineProperty(window, "location", {
-    get: () =>
-      new Proxy(realLocation, {
-        set(_target, prop, value) {
-          if (
-            prop === "href" &&
-            typeof value === "string" &&
-            value.startsWith("/")
-          ) {
-            return true;
-          }
-          (realLocation as any)[prop] = value;
-          return true;
-        },
-        get(target, prop) {
-          const val = Reflect.get(target, prop);
-          if (typeof val === "function") return val.bind(target);
-          return val;
-        },
-      }),
-    configurable: true,
-  });
-} catch {
-  // Some browsers don't allow overriding window.location — that's OK,
-  // it just means clicking DemoStrip links may navigate away.
-}
 
 // ─── Seed all query caches ───────────────────────────────────────────────────
 
@@ -365,17 +317,31 @@ applyBrand(brand as Parameters<typeof applyBrand>[0]);
 
 async function boot() {
   const { default: App } = await import("../app.js");
-  createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={200}>
-          <App />
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </StrictMode>,
-  );
+  const root = createRoot(document.getElementById("root")!);
+
+  function render() {
+    root.render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <App key={window.location.hash || "home"} />
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+  }
+
+  (window as any).__protoRerender = render;
+  render();
 }
+
+// Also register hashchange at module level in case boot is slow
+window.addEventListener("hashchange", () => {
+  if ((window as any).__protoRerender) {
+    (window as any).__protoRerender();
+  }
+});
 
 boot().catch((err) => {
   document.getElementById("root")!.innerHTML =

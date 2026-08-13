@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
 import { useDemoState } from "../mock/demo-state.js";
+import { protoNavigate, protoPathname } from "../mock/proto-navigate.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
 import { useStore } from "../store.js";
 
@@ -64,7 +65,7 @@ export function IconRail({
       ? 0
       : approvals.filter((r) => r.status === "pending").length;
 
-  const pathname = window.location.pathname;
+  const pathname = protoPathname();
   const onMockRoute = [
     "/agent-setup",
     "/experiment-setup",
@@ -83,7 +84,7 @@ export function IconRail({
     badge: pendingCount,
     navigate: () => {
       if (onMockRoute) {
-        window.location.href = "/";
+        protoNavigate("/");
       } else {
         setView("home");
       }
@@ -96,7 +97,7 @@ export function IconRail({
     badge: 0,
     navigate: () => {
       if (onMockRoute) {
-        window.location.href = "/sandboxes";
+        protoNavigate("/sandboxes");
         return;
       }
       setView("list");
@@ -109,7 +110,7 @@ export function IconRail({
     badge: 0,
     navigate: () => {
       if (onMockRoute) {
-        window.location.href = "/experiments";
+        protoNavigate("/experiments");
         return;
       }
       navigateToExperiments();
@@ -126,7 +127,7 @@ export function IconRail({
     badge: 0,
     navigate: () => {
       if (onMockRoute) {
-        window.location.href = "/knowledge-bases";
+        protoNavigate("/knowledge-bases");
         return;
       }
       navigateToKnowledgeBases();

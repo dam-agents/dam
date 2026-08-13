@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useDemoState } from "../../../mock/demo-state.js";
+import { protoNavigate } from "../../../mock/proto-navigate.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { AgentRow } from "../../agents/components/agent-row.js";
@@ -19,7 +20,7 @@ export function KnowledgeBasesListView() {
   const { state: demoState } = useDemoState();
 
   const goToSetup = () => {
-    window.location.href = "/kb-setup";
+    protoNavigate("/kb-setup");
   };
 
   if (import.meta.env.VITE_MOCK && demoState === "empty") {

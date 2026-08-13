@@ -33,6 +33,7 @@ import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
+import { protoPathname } from "./mock/proto-navigate.js";
 import { useStore } from "./store.js";
 
 class DevErrorBoundary extends Component<
@@ -129,9 +130,10 @@ function MainApp() {
   }, []);
 
   // Temporary mock-only exploration routes — delete after design review
+  const mockPath = protoPathname();
   if (
     import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/explore/configure"
+    mockPath === "/explore/configure"
   ) {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
@@ -146,7 +148,7 @@ function MainApp() {
     );
   }
 
-  if (import.meta.env.VITE_MOCK && window.location.pathname === "/compare") {
+  if (import.meta.env.VITE_MOCK && mockPath === "/compare") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -162,7 +164,7 @@ function MainApp() {
     );
   }
 
-  if (import.meta.env.VITE_MOCK && window.location.pathname === "/layouts") {
+  if (import.meta.env.VITE_MOCK && mockPath === "/layouts") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -178,7 +180,7 @@ function MainApp() {
     );
   }
 
-  if (import.meta.env.VITE_MOCK && window.location.pathname === "/variations") {
+  if (import.meta.env.VITE_MOCK && mockPath === "/variations") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -196,7 +198,7 @@ function MainApp() {
 
   if (
     import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/consistency"
+    mockPath === "/consistency"
   ) {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
@@ -215,7 +217,7 @@ function MainApp() {
 
   if (
     import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/wiki-onboard"
+    mockPath === "/wiki-onboard"
   ) {
     // Set once; consumed (cleared) by ChatView's seeding effect on first mount
     setMockWikiOnboard(true);
@@ -223,7 +225,7 @@ function MainApp() {
 
   if (
     import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/experiment-setup"
+    mockPath === "/experiment-setup"
   ) {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
@@ -238,7 +240,7 @@ function MainApp() {
     );
   }
 
-  if (import.meta.env.VITE_MOCK && window.location.pathname === "/kb-setup") {
+  if (import.meta.env.VITE_MOCK && mockPath === "/kb-setup") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -254,7 +256,7 @@ function MainApp() {
 
   if (
     import.meta.env.VITE_MOCK &&
-    window.location.pathname === "/agent-setup"
+    mockPath === "/agent-setup"
   ) {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">

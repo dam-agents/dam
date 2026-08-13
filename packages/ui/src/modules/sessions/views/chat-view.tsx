@@ -510,6 +510,113 @@ export function ChatView() {
     if (launchPaneActive && sessionId) resetSession();
   }, [launchPaneActive, sessionId, resetSession]);
 
+  // ── Wiki creation simulation (mock mode) ──
+  function simulateWikiCreation(
+    payload: { demo: true } | { name: string; purpose: string },
+  ) {
+    const isDemo = "demo" in payload;
+    const wikiName = isDemo ? "Greek Mythology" : payload.name;
+    const slug = wikiName.toLowerCase().replace(/\s+/g, "-");
+    const assistantId = `mock-wiki-creation-${Date.now()}`;
+
+    const demoPages = [
+      "index",
+      "zeus",
+      "athena",
+      "poseidon",
+      "hercules",
+      "hera",
+      "apollo",
+      "artemis",
+      "ares",
+      "aphrodite",
+      "hephaestus",
+      "hermes",
+      "demeter",
+      "dionysus",
+      "hades",
+      "persephone",
+      "perseus",
+      "medusa",
+      "minotaur",
+      "theseus",
+      "odysseus",
+      "achilles",
+      "helen-of-troy",
+      "trojan-war",
+      "olympus",
+      "underworld",
+      "titans",
+    ];
+    const customPages = ["index", "overview", "getting-started"];
+    const pages = isDemo ? demoPages : customPages;
+
+    const toolParts = [
+      {
+        kind: "tool" as const,
+        title: `bash: mkdir -p wiki/${slug}/pages`,
+        status: "done" as const,
+      },
+      {
+        kind: "tool" as const,
+        title: `bash: git init wiki/${slug}`,
+        status: "done" as const,
+      },
+      ...pages.map((p) => ({
+        kind: "tool" as const,
+        title: `write: wiki/${slug}/pages/${p}.md`,
+        status: "done" as const,
+      })),
+      {
+        kind: "tool" as const,
+        title: `bash: cd wiki/${slug} && git add -A && git commit -m "seed ${pages.length} pages"`,
+        status: "done" as const,
+      },
+    ];
+
+    const demoSummary = `Done — **${wikiName}** wiki is live with ${pages.length} interlinked pages covering the Olympians, key heroes, and major myths.\n\nTwo things I skipped that I can set up whenever you want:\n\n- **Git remote** for backup — the wiki is a local git repo with two commits, but gh isn't authenticated here, so you'd need to supply a PAT or run \`gh auth login\`\n- **Maintenance schedule** for periodic health checks and .raw/ sweeps\n\nFor now — ask me anything about the Olympians or the Perseus myth and I'll answer from the wiki with citations. Or run \`/wiki-graph\` to see how densely these ${pages.length} pages interlink; the Zeus and Athena nodes ended up carrying most of the connections.\n\nWhenever you're ready to create your own knowledge base, just let me know.`;
+
+    const customSummary = `Created **${wikiName}** with ${pages.length} seed pages. Drop files or URLs and I'll ingest them into new wiki pages, or ask me to connect a repo.`;
+
+    setMessages((prev: typeof messages) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: "assistant" as const,
+        streaming: true,
+        parts: [],
+      },
+    ]);
+
+    let cumulative = 0;
+    for (const part of toolParts) {
+      cumulative += 300;
+      const delay = cumulative;
+      setTimeout(() => {
+        setMessages((prev: typeof messages) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, parts: [...m.parts, part] } : m,
+          ),
+        );
+      }, delay);
+    }
+
+    cumulative += 600;
+    setTimeout(() => {
+      const summary = {
+        kind: "text" as const,
+        text: isDemo ? demoSummary : customSummary,
+      };
+      setMessages((prev: typeof messages) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, streaming: false, parts: [...m.parts, summary] }
+            : m,
+        ),
+      );
+    }, cumulative);
+  }
+
   // ── Scroll management ──
   // Single source of truth: `stickRef` — "should we pin to the bottom?".
   // Scroll events are the ONLY thing that flip it (user intent). ResizeObserver
@@ -1078,7 +1185,22 @@ export function ChatView() {
                                   </div>
                                 ) : // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                 (p as any).kind === "wiki-setup" ? (
-                                  <WikiSetupCard key={i} />
+                                  <WikiSetupCard
+                                    key={i}
+                                    onSubmit={(payload) => {
+                                      if (import.meta.env.VITE_MOCK) {
+                                        simulateWikiCreation(payload);
+                                      } else {
+                                        const cmd =
+                                          "demo" in payload
+                                            ? "/wiki-onboard --demo"
+                                            : `/wiki-onboard --name "${payload.name}" --purpose "${payload.purpose}"`;
+                                        void sendPrompt(cmd, undefined, {
+                                          hidden: true,
+                                        });
+                                      }
+                                    }}
+                                  />
                                 ) : (
                                   <ToolChip key={i} chip={p} />
                                 ),

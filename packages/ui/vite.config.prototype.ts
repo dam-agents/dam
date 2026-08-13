@@ -31,6 +31,7 @@ export default defineConfig({
   plugins: [mswBypass(), tailwindcss(), react(), viteSingleFile()],
   define: {
     "import.meta.env.VITE_MOCK": JSON.stringify("true"),
+    "import.meta.env.VITE_PROTOTYPE": JSON.stringify("true"),
   },
   resolve: {
     alias: {

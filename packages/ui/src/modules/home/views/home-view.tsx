@@ -6,6 +6,7 @@ import { ListSkeleton } from "@/components/list-skeleton";
 import { cn } from "@/lib/utils";
 
 import { type DemoState, useDemoState } from "../../../mock/demo-state.js";
+import { useStore } from "../../../store.js";
 import { usePendingApprovals } from "../../approvals/api/queries.js";
 import { HomeHeader } from "../components/home-header.js";
 import { useAgentRows } from "../home-data.js";
@@ -22,7 +23,6 @@ import {
   ScheduleCard,
   SessionFinishedCard,
   SessionRunningCard,
-  SpendPreview,
 } from "./comparison-view.js";
 /* ═══════════════════════════════════════════════════════════════════════════
    Home Page
@@ -34,7 +34,6 @@ export function HomeView() {
   const { data: pendingApprovals } = usePendingApprovals();
   const approvals = useMemo(() => pendingApprovals ?? [], [pendingApprovals]);
   const { state: demoState } = useDemoState();
-
   useEffect(() => {
     return () => {
       markVisitNow();
@@ -578,11 +577,8 @@ function PopulatedHome({
         />
       )}
 
-      {/* Spend + Compute */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <SpendPreview />
-        <ComputePreview />
-      </div>
+      {/* Compute */}
+      <ComputePreview />
 
       {/* Cards in containers — stacked */}
       <div className="space-y-6">
@@ -631,7 +627,24 @@ function PopulatedHome({
           </section>
         )}
       </div>
+
+      {/* Spend — bottom of page, links to usage settings */}
+      <SpendFooter />
     </div>
+  );
+}
+
+function SpendFooter() {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigateToSettings("usage")}
+      className="text-[14px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    >
+      Spend this month: <span className="tabular-nums">$31.57</span>
+    </button>
   );
 }
 
@@ -700,7 +713,7 @@ function EmptyState() {
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
           <a
-            href="/agent-setup"
+            href={import.meta.env.VITE_PROTOTYPE ? "#/agent-setup" : "/agent-setup"}
             className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
           >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
@@ -717,7 +730,7 @@ function EmptyState() {
             </div>
           </a>
           <a
-            href="/experiment-setup"
+            href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-setup" : "/experiment-setup"}
             className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
           >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
@@ -733,7 +746,7 @@ function EmptyState() {
             </div>
           </a>
           <a
-            href="/kb-setup"
+            href={import.meta.env.VITE_PROTOTYPE ? "#/kb-setup" : "/kb-setup"}
             className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
           >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
@@ -763,34 +776,25 @@ function EmptyState() {
         </div>
       </section>
 
-      {/* Spend + Compute — zeroed out */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
-          <p className="text-[14px] text-muted-foreground mb-1">Spend</p>
-          <p className="text-[28px] font-bold tabular-nums text-foreground leading-none tracking-tight mb-5">
-            $0.00
-          </p>
-          <p className="text-[14px] text-muted-foreground">No usage yet</p>
+      {/* Compute — zeroed out */}
+      <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
+        <p className="text-[14px] text-muted-foreground mb-1">
+          Compute resources
+        </p>
+        <p className="text-[28px] font-bold tabular-nums text-foreground leading-none tracking-tight mb-5">
+          0/8 CPU
+        </p>
+        <div className="flex gap-0.5 mb-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-3 flex-1 rounded-full border border-muted-foreground/25 bg-background first:rounded-l-full last:rounded-r-full"
+            />
+          ))}
         </div>
-        <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
-          <p className="text-[14px] text-muted-foreground mb-1">
-            Compute resources
-          </p>
-          <p className="text-[28px] font-bold tabular-nums text-foreground leading-none tracking-tight mb-5">
-            0/8 CPU
-          </p>
-          <div className="flex gap-0.5 mb-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-3 flex-1 rounded-full border border-muted-foreground/25 bg-background first:rounded-l-full last:rounded-r-full"
-              />
-            ))}
-          </div>
-          <p className="text-[14px] text-muted-foreground">
-            8 CPU · 8 Gi available
-          </p>
-        </div>
+        <p className="text-[14px] text-muted-foreground">
+          8 CPU · 8 Gi available
+        </p>
       </div>
     </div>
   );

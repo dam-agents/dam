@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useDemoState } from "../../../mock/demo-state.js";
+import { protoNavigate } from "../../../mock/proto-navigate.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
@@ -32,7 +33,7 @@ export function ListView() {
   const sandboxes = agents.filter((a) => !a.kind);
 
   const goToSetup = () => {
-    window.location.href = "/agent-setup";
+    protoNavigate("/agent-setup");
   };
 
   if (import.meta.env.VITE_MOCK && demoState === "empty") {

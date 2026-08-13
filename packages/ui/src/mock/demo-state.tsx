@@ -2,6 +2,8 @@ import { createContext, type ReactNode, useContext, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { protoNavigate } from "./proto-navigate.js";
+
 export type DemoState =
   | "empty"
   | "active-blockers"
@@ -60,7 +62,7 @@ export function DemoStrip() {
           type="button"
           onClick={() => {
             setState(opt.value);
-            if (onAssetPage) window.location.href = "/";
+            if (onAssetPage) protoNavigate("/");
           }}
           className={cn(
             "px-3 py-1 rounded-full text-[14px] transition-colors",
