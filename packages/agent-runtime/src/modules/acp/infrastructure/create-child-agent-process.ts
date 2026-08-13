@@ -66,7 +66,6 @@ export function createChildAgentProcess(
       handlers.push(handler);
     },
     kill() {
-      // The harness stops its own workers; what *those* started outlives them.
       void supervised.terminate({
         log: (msg) => process.stderr.write(`[agent-process] ${msg}\n`),
       });

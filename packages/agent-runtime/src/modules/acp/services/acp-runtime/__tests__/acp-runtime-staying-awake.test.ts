@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createFileDocumentStoreBackend } from "../../../../../core/document-store.js";
+import { createBackgroundWorkRegistry } from "../../../../background-work.js";
 import { createWorld, frames, IDLE_REAP_DELAY_MS } from "./acp-world.js";
 
 /**
@@ -45,13 +49,25 @@ describe("acp-runtime: staying awake", () => {
     bob.send(frames.loadSession(1, SESSION));
     bob.send(frames.prompt(2, SESSION, "then run the tests"));
 
-    expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: false,
+      engagedChannels: 2,
+      backgroundWork: [],
+    });
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
-    expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: false,
+      engagedChannels: 2,
+      backgroundWork: [],
+    });
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
-    expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: true,
+      engagedChannels: 2,
+      backgroundWork: [],
+    });
   });
 
   /**
@@ -74,7 +90,11 @@ describe("acp-runtime: staying awake", () => {
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
-    expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: false,
+      engagedChannels: 0,
+      backgroundWork: [],
+    });
     expect(world.harness().received("session/close")).toEqual([]);
 
     const bob = world.connect();
@@ -83,7 +103,11 @@ describe("acp-runtime: staying awake", () => {
     bob.send(frames.permissionAnswer(900));
 
     expect(world.harness().answersTo(900)).toHaveLength(1);
-    expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: true,
+      engagedChannels: 1,
+      backgroundWork: [],
+    });
   });
 
   /**
@@ -99,7 +123,11 @@ describe("acp-runtime: staying awake", () => {
    */
   it("should hold the pod awake and the session open for background work, and release both when it ends", () => {
     vi.useFakeTimers();
-    const backgroundWork = createBackgroundWorkRegistry();
+    const backgroundWork = createBackgroundWorkRegistry({
+      stateBackend: createFileDocumentStoreBackend(
+        mkdtempSync(join(tmpdir(), "acp-awake-")),
+      ),
+    });
     const world = createWorld({
       backgroundWork,
       backgroundWorkRecheckMs: 15_000,
@@ -117,16 +145,13 @@ describe("acp-runtime: staying awake", () => {
 
     expect(world.runtime.status()).toEqual({
       idle: false,
+      engagedChannels: 0,
       backgroundWork: [
         {
+          id: "job-1",
+          description: "overnight soak",
+          command: "k6 run soak.js",
           sessionId: SESSION,
-          items: [
-            {
-              id: "job-1",
-              description: "overnight soak",
-              command: "k6 run soak.js",
-            },
-          ],
         },
       ],
     });
@@ -137,7 +162,11 @@ describe("acp-runtime: staying awake", () => {
 
     backgroundWork.report(SESSION, []);
 
-    expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: true,
+      engagedChannels: 0,
+      backgroundWork: [],
+    });
     vi.advanceTimersByTime(15_000);
     expect(
       world
@@ -155,7 +184,11 @@ describe("acp-runtime: staying awake", () => {
    * forever, with a status naming a job that no longer exists.
    */
   it("should drop every background hold when the harness dies", async () => {
-    const backgroundWork = createBackgroundWorkRegistry();
+    const backgroundWork = createBackgroundWorkRegistry({
+      stateBackend: createFileDocumentStoreBackend(
+        mkdtempSync(join(tmpdir(), "acp-awake-")),
+      ),
+    });
     const world = createWorld({ backgroundWork });
 
     const alice = world.connect();
@@ -168,7 +201,11 @@ describe("acp-runtime: staying awake", () => {
     world.harness().exit();
     await flushMicrotasks();
 
-    expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: true,
+      engagedChannels: 0,
+      backgroundWork: [],
+    });
   });
 
   /**
@@ -179,7 +216,11 @@ describe("acp-runtime: staying awake", () => {
    * instead of keeping an empty pod awake for a dead job.
    */
   it("should let a session reset take its background hold down with it", () => {
-    const backgroundWork = createBackgroundWorkRegistry();
+    const backgroundWork = createBackgroundWorkRegistry({
+      stateBackend: createFileDocumentStoreBackend(
+        mkdtempSync(join(tmpdir(), "acp-awake-")),
+      ),
+    });
     const world = createWorld({ backgroundWork });
 
     const alice = world.connect();
@@ -199,6 +240,10 @@ describe("acp-runtime: staying awake", () => {
         .received("session/close")
         .map((frame) => frame.params),
     ).toEqual([{ sessionId: SESSION }]);
-    expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
+    expect(world.runtime.status()).toEqual({
+      idle: true,
+      engagedChannels: 1,
+      backgroundWork: [],
+    });
   });
 });

@@ -42,9 +42,7 @@ const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
-  /** Watchers, not work, so not in `idle`; engagement, not mere attachment. */
   engagedChannels: number;
-  /** Work still running, reported or declared, and what it is. */
   backgroundWork: BackgroundWorkEntry[];
 }
 
@@ -67,7 +65,6 @@ export interface AcpRuntimeDeps {
   warmStartTimeoutMs?: number;
   logBytesCap?: number;
   sessionMetadata?: SessionMetadataStore;
-  /** Omitted, a session is reaped on refcount alone — as in most tests. */
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   isTerminalSessionActive?: (sessionId: string) => boolean;
@@ -410,7 +407,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
       pendingFromAgent.clear();
-      // No session it served can report again; `kill()` handles what it started.
       deps.backgroundWork?.clear();
     });
     return a;
@@ -460,7 +456,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     old.kill();
   }
 
-  /** In-flight work: drives `idle` and bounds a recycle, which declared work escapes. */
   function runtimeBusy(): boolean {
     if (activePromptBySession.size > 0 || pendingFromAgent.size > 0)
       return true;
@@ -529,7 +524,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const cursors of channelCursors.values()) cursors.delete(sessionId);
     activePromptBySession.delete(sessionId);
     promptQueueBySession.delete(sessionId);
-    // Work the worker *detached* outlives this; the reaper catches it.
     deps.backgroundWork?.forget(sessionId);
     maybeRecycleForEnv();
     const reap = idleReapTimers.get(sessionId);

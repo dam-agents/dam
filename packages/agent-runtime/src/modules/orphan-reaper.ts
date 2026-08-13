@@ -1,4 +1,3 @@
-// Reaps work that detached before teardown could reach it; only quiet makes it safe.
 import {
   listeningPids,
   readProcessEntry,
@@ -13,14 +12,11 @@ import {
 } from "../core/supervised-process.js";
 
 export interface OrphanReaper {
-  /** The caller owns the schedule. */
   sweepIfQuiet(): Promise<void>;
 }
 
 export interface OrphanReaperOptions {
-  /** Nothing running at all — see the call site for what composes it. */
   isQuiet: () => boolean;
-  /** Re-read each sweep. */
   spared?: () => Set<number>;
   log?: (msg: string) => void;
 }
@@ -33,18 +29,12 @@ export function createOrphanReaper(opts: OrphanReaperOptions): OrphanReaper {
 
   let sweeping = false;
   let socketsWarned = false;
-  /** Reachable pids already announced, so a daemon is logged once, not hourly. */
   const announced = new Set<number>();
 
-  /** `null` = reachability is unknowable right now, so nothing may be reaped. */
   function candidates(): ProcessEntry[] | null {
     const keep = spared();
     const table = readProcessTable();
 
-    // A declared process leads the session `platform-bg` made for it, so that
-    // session is the work: its children are not orphans, but a grandchild whose
-    // parent exited is. Never a child of ours — the harness and every PTY lead a
-    // session too, and one stray declaration must not shield all of it.
     const keptSessions = new Set(
       table
         .filter(
@@ -58,8 +48,6 @@ export function createOrphanReaper(opts: OrphanReaperOptions): OrphanReaper {
     }).filter((p) => !keep.has(p.pid) && !keptSessions.has(p.sid));
     if (orphans.length === 0) return [];
 
-    // A process still listening is a service something means to come back to;
-    // a leak is what nothing can reach any more.
     const reachable = listeningPids(orphans.map((p) => p.pid));
     if (!reachable) {
       if (!socketsWarned) {
@@ -95,13 +83,11 @@ export function createOrphanReaper(opts: OrphanReaperOptions): OrphanReaper {
 
         await sleep(TEARDOWN_GRACE_MS);
 
-        // Work arriving revokes the premise the sweep started on.
         if (!isQuiet()) {
           log?.("pod became busy during the grace window; not escalating");
           return;
         }
 
-        // A pid that exited during the window may have been reused.
         const recheck = candidates();
         if (!recheck) return;
         const stillOurs = new Map(recheck.map((p) => [p.pid, p.startTime]));

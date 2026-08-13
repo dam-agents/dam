@@ -1,16 +1,8 @@
-// What the reaper spares and what it kills, against a real kernel.
-//
-// The decisions are about /proc semantics — re-parenting to init, a session id
-// surviving its leader's death, SO_ACCEPTCON on a unix listener, TCP st 0A vs 01
-// — so they are exercised in the shipped image rather than against a fake table.
-// pid 1 there is catatonit, as in a pod, which is what makes an abandoned process
-// re-parent to 1 at all.
 import { execFileSync, spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const IMAGE = process.env.REAPER_TEST_IMAGE ?? "platform-base:latest";
 const NAME = `reaper-proc-test-${process.pid}`;
-/** The sweep is on a fixed 60 s timer, so a run costs one interval. */
 const SWEEP_WAIT_MS = 150_000;
 const PROBE_WAIT_MS = 30_000;
 
@@ -21,7 +13,6 @@ const docker = (...args: string[]): string =>
   }).trim();
 const inside = (script: string): string =>
   docker("exec", NAME, "sh", "-c", script);
-/** Both streams: the runtime logs to stderr, which `docker logs` keeps separate. */
 const logs = (): string => {
   const r = spawnSync("docker", ["logs", NAME], { encoding: "utf8" });
   return `${r.stdout ?? ""}${r.stderr ?? ""}`;
@@ -51,7 +42,6 @@ async function until<T>(
   }
 }
 
-/** ppid/sid straight from /proc, or null once the process is gone. */
 function shape(pid: number): { ppid: number; sid: number } | null {
   const out = inside(`cat /proc/${pid}/stat 2>/dev/null || true`);
   if (!out) return null;
@@ -61,8 +51,6 @@ function shape(pid: number): { ppid: number; sid: number } | null {
 
 const alive = (pid: number): boolean => shape(pid) !== null;
 
-/** Plants one process per row and returns their pids. Each is abandoned by its
- *  spawner, so the kernel re-parents it to pid 1 — the shape the sweep judges. */
 const PLANT = String.raw`
 import { spawn } from "node:child_process";
 const detach = (args) => {
@@ -82,6 +70,16 @@ console.log(JSON.stringify({
 }));
 `;
 
+/**
+ * TEST_OVERVIEW: what the orphan reaper spares and what it kills.
+ *
+ * Every decision here is about /proc semantics — a process re-parented to init,
+ * a session id outliving its leader, SO_ACCEPTCON on a unix listener, TCP state
+ * 0A against 01 — so the shapes are built in the shipped image, where pid 1 is
+ * catatonit as in a pod, rather than against a process table we invented. A
+ * reaped row is asserted before any spared row: a reaper that failed closed
+ * would spare everything and pass the rest vacuously.
+ */
 describe("the orphan reaper, against a real /proc", () => {
   let declared = 0;
   let grandchild = 0;
@@ -103,8 +101,6 @@ describe("the orphan reaper, against a real /proc", () => {
     }
 
     docker("rm", "-f", NAME);
-    // API_SERVER_URL is unreachable on purpose: nothing here needs the platform,
-    // and the runtime tolerates a failed hello.
     docker(
       "run",
       "-d",
@@ -125,8 +121,6 @@ describe("the orphan reaper, against a real /proc", () => {
       }
     });
 
-    // A declared leader that stays alive, and a grandchild orphaned when the
-    // middle process exits — it keeps the declared session's id.
     declared = Number(
       inside(
         `platform-bg sh -c '( sleep 901 & ) ; exec sleep 900' 2>/dev/null`,
@@ -143,13 +137,10 @@ describe("the orphan reaper, against a real /proc", () => {
       ),
     );
 
-    // Only a process the kernel has re-parented is a candidate, so wait for that
-    // rather than assuming the spawners have exited.
     await until("every planted process to be orphaned", () => {
       const pids = [declared, grandchild, ...Object.values(planted)];
       return pids.every((p) => shape(p)?.ppid === 1) ? true : null;
     });
-    // The outbound row only means something once the connection is established.
     await until("the outbound connection to establish", () =>
       inside(
         `node -e 'const l=require("fs").readFileSync("/proc/net/tcp","utf8").split("\\n").slice(1);` +
@@ -164,28 +155,35 @@ describe("the orphan reaper, against a real /proc", () => {
   afterAll(() => {
     try {
       docker("rm", "-f", NAME);
-    } catch {
-      /* nothing to clean up */
-    }
+    } catch {}
   });
 
+  /**
+   * TEST_SCENARIO: The rows only mean anything if the kernel produced the shapes
+   * the reaper judges, so the orphan and the declared session are checked first.
+   */
   it("plants each shape the matrix distinguishes", () => {
     expect(shape(declared)).toEqual({ ppid: 1, sid: declared });
-    // The point of the grandchild: orphaned, but still in the declared session.
     expect(shape(grandchild)).toEqual({ ppid: 1, sid: declared });
     expect(shape(planted.leak)?.sid).toBe(planted.leak);
   });
 
+  /**
+   * TEST_SCENARIO: The controller asks one question to decide whether it may
+   * reclaim the pod, so declared work has to reach that answer.
+   */
   it("reports declared work as busy, so hibernation is vetoed", () => {
     const s = status();
     expect(s.idle).toBe(false);
     expect(s.backgroundWork.map((w) => w.pid)).toContain(declared);
   });
 
+  /**
+   * TEST_SCENARIO: Posted straight at the route, because platform-bg truncates
+   * the description itself — driving this through the wrapper would pass even
+   * against a schema that rejects, which is the defect this locks down.
+   */
   it("clamps an over-long description instead of dropping the declaration", () => {
-    // Straight at the route, not through `platform-bg`: the wrapper truncates the
-    // description itself, so driving this through the CLI would pass even against
-    // a schema that rejects — which is the defect this row exists to catch.
     const pid = Number(
       inside(
         `node -e 'const c=require("child_process").spawn("sleep",["904"],{detached:true,stdio:"ignore"});c.unref();console.log(c.pid)'`,
@@ -205,9 +203,11 @@ describe("the orphan reaper, against a real /proc", () => {
     inside(`kill -9 ${pid} 2>/dev/null || true`);
   });
 
+  /**
+   * TEST_SCENARIO: A description is read, so clipping keeps most of its meaning.
+   * A log path is followed: a prefix looks well-formed and opens nothing.
+   */
   it("drops an unusable log path rather than publishing a truncated one", () => {
-    // A description is read, so clipping it keeps most of its meaning. A log path
-    // is followed: a prefix looks well-formed and opens nothing, so it goes.
     const pid = Number(
       inside(
         `node -e 'const c=require("child_process").spawn("sleep",["905"],{detached:true,stdio:"ignore"});c.unref();console.log(c.pid)'`,
@@ -226,6 +226,11 @@ describe("the orphan reaper, against a real /proc", () => {
     expect(entry && "log" in entry).toBe(false);
   });
 
+  /**
+   * TEST_SCENARIO: The matrix itself. A leak with no socket and an orphan holding
+   * only an outbound connection go; a declared process, an orphaned grandchild
+   * of one, and anything still listening stay.
+   */
   it("kills what nothing can reach and spares the rest", async () => {
     const reaped = await until(
       "a sweep",
@@ -236,8 +241,6 @@ describe("the orphan reaper, against a real /proc", () => {
       SWEEP_WAIT_MS,
     );
 
-    // Asserted first and unconditionally: a reaper that failed closed (an
-    // unreadable cgroup, say) would spare everything and pass every row below.
     expect(alive(planted.leak), "a leak with no socket must be reaped").toBe(
       false,
     );
@@ -262,6 +265,10 @@ describe("the orphan reaper, against a real /proc", () => {
     expect(reaped).toContain("keeping " + planted.tcpListener);
   });
 
+  /**
+   * TEST_SCENARIO: Sparing is bounded by the declared process: once it exits, its
+   * session loses cover and the pod reports idle again.
+   */
   it("stops holding the pod once the declared work ends", async () => {
     inside(`kill -9 ${declared} ${grandchild} 2>/dev/null || true`);
     await until("the declaration to be pruned", () =>

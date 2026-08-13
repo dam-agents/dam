@@ -1,4 +1,3 @@
-// Children lead their own session, so teardown has a scope job control can't split.
 import {
   spawn,
   type ChildProcess,
@@ -8,7 +7,6 @@ import {
 } from "node:child_process";
 import { readProcessEntry, readProcessTable } from "./process-table.js";
 
-/** One window for every teardown path. */
 export const TEARDOWN_GRACE_MS = 5_000;
 
 const POLL_MS = 100;
@@ -16,15 +14,12 @@ const POLL_MS = 100;
 export function sendSignal(pid: number, sig: NodeJS.Signals): void {
   try {
     process.kill(pid, sig);
-  } catch {
-    // ESRCH, or not ours to signal.
-  }
+  } catch {}
 }
 
 export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-/** `null` = `/proc` unreadable, so teardown refuses to act (fail-closed). */
 let ownSidCache: number | null | undefined;
 function ownSid(): number | null {
   return (ownSidCache ??= readProcessEntry(process.pid)?.sid ?? null);
@@ -32,11 +27,9 @@ function ownSid(): number | null {
 
 export interface TerminateOptions {
   log?: (msg: string) => void;
-  /** Captured at spawn: by `close`/`exit` the pid is reaped and reusable. */
   leaderStartTime?: number;
 }
 
-/** Leader first so it can stop its own children, then SIGKILL the rest. */
 export async function terminateSession(
   sid: number,
   opts: TerminateOptions = {},
@@ -44,7 +37,6 @@ export async function terminateSession(
   const { log, leaderStartTime } = opts;
 
   const self = ownSid();
-  // init's session, ours, or can't tell — sweeping any of the three is fatal.
   if (!Number.isInteger(sid) || sid <= 1) return;
   if (self === null) {
     log?.("cannot read own session from /proc; refusing to tear down anything");
@@ -55,7 +47,6 @@ export async function terminateSession(
     return;
   }
 
-  // The sweep matches on sid alone, and a reused pid carries the same one.
   const leader = readProcessEntry(sid);
   if (
     leader &&
@@ -96,9 +87,6 @@ export interface SupervisedProcess<C extends ChildProcess = ChildProcess> {
   terminate(opts?: TerminateOptions): Promise<void>;
 }
 
-/** `spawn`, but `detached` for `setsid`: our own session is no usable scope. */
-/** Never through a shell: argv goes straight to `execve`, so a path or url that
- *  reached a command cannot become syntax. Enforced, not merely observed. */
 type NoShell<T> = Omit<T, "shell">;
 
 export function spawnSupervised(
@@ -121,7 +109,6 @@ export function spawnSupervised(
     detached: true,
     shell: false,
   });
-  // While it is certainly alive, so teardown can tell it from a pid reuse.
   const startTime =
     child.pid === undefined
       ? undefined

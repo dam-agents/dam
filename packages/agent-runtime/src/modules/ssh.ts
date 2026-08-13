@@ -173,7 +173,6 @@ export function spawnSshd(
     closeWs();
   });
 
-  // SIGKILL is the one signal sshd can't act on, so it never hung up its shell.
   const killChild = () => {
     void supervised.terminate({ log });
   };

@@ -99,9 +99,6 @@ export function createGitProtocolClient(): GitProtocolClient {
   };
 }
 
-/** Applied where git is spawned, so no call site can miss it: git's
- *  auto-maintenance forks a detached repack that outlives the command and leaves
- *  the reaper to collect it, and nothing these clones do needs maintenance. */
 const gitArgv = (cmd: string, args: string[]): string[] =>
   cmd === "git" ? ["-c", "maintenance.auto=false", ...args] : args;
 
@@ -114,7 +111,6 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     const proc = supervised.child;
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
-      // git's network I/O runs in a helper child that outlives a kill on git.
       void supervised.terminate();
       reject(
         new Error(
@@ -129,7 +125,6 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
-      // git's network helpers outlive a kill on git, inside git's own session.
       void supervised.terminate();
       if (code === 0) {
         resolve();

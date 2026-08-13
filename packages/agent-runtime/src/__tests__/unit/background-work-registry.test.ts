@@ -10,7 +10,6 @@ const job = (id: string, description?: string) => ({ id, description });
 function setup() {
   const logs: string[] = [];
   const registry = createBackgroundWorkRegistry({
-    // Only the declared-process side touches it; these cover reported holds.
     stateBackend: createFileDocumentStoreBackend(
       mkdtempSync(join(tmpdir(), "background-work-")),
     ),

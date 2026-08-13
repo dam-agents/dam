@@ -121,7 +121,6 @@ if (envStore.ready()) podService?.refreshEnv();
 
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
-// Every background job still running in the pod, reported or declared.
 const backgroundWork = createBackgroundWorkRegistry({
   stateBackend,
   log: (msg) => process.stderr.write(`[background] ${msg}\n`),
@@ -173,7 +172,6 @@ const preparedSshd = await prepareSshd(homeDir, (msg) =>
   process.stderr.write(`[ssh] ${msg}\n`),
 );
 
-// Invisible to the ACP idle flag by design, but the reaper must not fire under one.
 let sshConnections = 0;
 
 const ORPHAN_SWEEP_INTERVAL_MS = 60_000;
@@ -210,7 +208,6 @@ function isPtySessionActive(sessionId: string): boolean {
 
 interface PtySlot {
   pty: nodePty.IPty | null;
-  /** Captured at spawn so teardown can tell the pty apart from a pid reuse. */
   ptyStartTime: number | undefined;
   headless: InstanceType<typeof HeadlessTerminal>;
   serialize: InstanceType<typeof SerializeAddon>;
@@ -240,7 +237,6 @@ function killPtySlot(sessionId: string): void {
   if (slot.graceTimer) clearTimeout(slot.graceTimer);
   const ptyPid = slot.pty?.pid;
   try {
-    // node-pty only SIGHUPs the leader; nohup-ed and TERM-ignoring jobs survive.
     slot.pty?.kill();
   } catch {}
   if (ptyPid !== undefined)
@@ -396,7 +392,6 @@ function attachPty(
           slot.client.send(encodeExit(exitCode));
           slot.client.close(1000, "pty exited");
         }
-        // A shell exiting on its own strands background jobs just as a reap does.
         void terminateSession(pty.pid, {
           leaderStartTime: slot.ptyStartTime,
           log: (msg) => ptyLog(sessionId, msg),
@@ -451,11 +446,8 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      // What the controller's busy probe reads, so any work vetoes hibernation.
       idle: acp.idle && ptySlots.size === 0 && acp.backgroundWork.length === 0,
-      // Published so an awake pod is explainable.
       backgroundWork: acp.backgroundWork,
-      // The rest of the reaper's gate, so a no-op sweep is explainable.
       engagedChannels: acp.engagedChannels,
       terminals: ptySlots.size,
       sshConnections,
@@ -480,7 +472,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Pod-local like the reset route above: a session reports its whole in-flight set.
   const backgroundWorkMatch =
     req.method === "POST" &&
     req.url?.match(/^\/api\/sessions\/([^/]+)\/background-work$/);
@@ -508,7 +499,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Pod-local like the routes above: whatever reaches it already runs as the agent.
   if (req.method === "POST" && req.url === "/api/declared-processes") {
     void readJsonBody(req)
       .then((body) => {
@@ -574,7 +564,6 @@ server.on("upgrade", (req, socket, head) => {
     }
     sshWss.handleUpgrade(req, socket, head, (ws) => {
       sshConnections++;
-      // `error` is followed by `close`: a double release would report quiet.
       let released = false;
       const release = (): void => {
         if (released) return;
@@ -665,7 +654,6 @@ setInterval(() => {
   } catch {}
 }, 10_000).unref();
 
-// Not `/api/status`'s `idle`: adds SSH and quiet chats, drops declared (spared anyway).
 const orphanReaper = createOrphanReaper({
   isQuiet: () => {
     const acp = acpRuntime.status();
@@ -694,7 +682,6 @@ function gracefulShutdown(signal: string): void {
   clearInterval(reaperTimer);
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
   acpRuntime.shutdown();
-  // Must outlast the teardown grace, or the force-kill phase never runs.
   setTimeout(() => process.exit(0), TEARDOWN_GRACE_MS + 2_000).unref();
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

@@ -29,7 +29,6 @@ export function createPodServiceSupervisor(opts: {
   let backoffMs = BACKOFF_INITIAL_MS;
 
   process.once("exit", () => {
-    // No time for a graceful sweep here; the kernel tears the namespace down anyway.
     try {
       if (child?.pid !== undefined) process.kill(-child.pid, "SIGKILL");
     } catch {}
@@ -48,7 +47,6 @@ export function createPodServiceSupervisor(opts: {
     proc.stderr?.on("data", (c: Buffer) => log(c.toString().trimEnd()));
 
     const onExit = (code: number | null, signal: string | null): void => {
-      // Before the supersede guard: any exited instance orphans what it started.
       void supervised.terminate({ log: (msg) => log(msg) });
       if (child !== proc) return;
       child = null;
