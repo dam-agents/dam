@@ -123,7 +123,7 @@ export function ListView() {
           <Button
             variant="ghost"
             size="sm"
-            disabled={update.updatingAll}
+            disabled={update.updatingAll || update.updatingId !== null}
             className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
             onClick={() => void update.updateAll(outdated)}
           >

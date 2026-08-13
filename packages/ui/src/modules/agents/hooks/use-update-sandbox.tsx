@@ -155,7 +155,10 @@ export function useUpdateSandbox() {
           });
           updated += 1;
         } catch (err) {
-          failures.push(getErrorMessage(err, `${target.name} failed`));
+          // Named unconditionally: `getErrorMessage` prefers the server's own
+          // wording, which drops the sandbox exactly when there is a reason to
+          // report against it.
+          failures.push(`${target.name}: ${getErrorMessage(err, "failed")}`);
         }
       }
 
@@ -166,11 +169,11 @@ export function useUpdateSandbox() {
         });
         return;
       }
-      // Names the first reason rather than a bare count: every failed sandbox
-      // keeps its own Update, so the point of the toast is why to expect it.
+      // Every failure by name: each failed sandbox keeps its own Update, so the
+      // toast has to say which ones and why.
       emitToast({
         kind: "error",
-        message: `Updated ${updated} of ${pending.length} sandboxes. ${failures.length} failed: ${failures[0]}`,
+        message: `Updated ${updated} of ${pending.length} sandboxes. ${failures.length} failed — ${failures.join("; ")}`,
       });
     },
     [showConfirm, bulkUpgrade],

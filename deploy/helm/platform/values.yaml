@@ -1237,6 +1237,7 @@ agentTemplates:
     enabled: true
     displayName: "Claude Code VM"
     description: "Claude Code in a full VM — docker + k3s inside the sandbox"
+    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     experimental: true
     tags: ["Anthropic", "VM"]
     backend:
