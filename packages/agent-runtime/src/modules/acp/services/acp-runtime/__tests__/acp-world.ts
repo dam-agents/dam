@@ -11,6 +11,21 @@ import {
   type SessionMetadataStore,
 } from "../../../infrastructure/session-metadata-store.js";
 
+/**
+ * TEST_OVERVIEW: Test doubles for the two ports the ACP runtime talks through, plus a world
+ * that wires them to a real runtime.
+ *
+ * These are fakes, not mocks: they implement the port and record what passed
+ * through, and the test asserts afterwards. The runtime reads `isOpen()` on
+ * every fan-out, so a channel double has to model the open/closed transition
+ * rather than stub it.
+ *
+ * **The rule this file exists to enforce:** never reach a frame by its
+ * position. `harness.received("session/prompt")` survives a refactor that
+ * reorders or adds frames; `agent.sent[1]` does not. Every accessor here
+ * resolves by method, never by index.
+ */
+
 export type Frame = Record<string, unknown> & { method?: string; id?: unknown };
 
 export const IDLE_REAP_DELAY_MS = 3_000;

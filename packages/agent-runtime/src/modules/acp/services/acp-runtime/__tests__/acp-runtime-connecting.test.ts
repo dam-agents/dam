@@ -1,6 +1,15 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createWorld, frames } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: connecting to a sandbox.
+ *
+ * Written from the client's side of the socket. A scenario says what someone
+ * did and what they should observe; the harness, the spawn gate, and the
+ * buffering that make it work are implementation detail and are never named
+ * in an assertion.
+ */
+
 const flushMicrotasks = (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
 

@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { createWorld, frames, transcriptOf } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: one client cannot see another's conversation.
+ *
+ * Every client in a sandbox shares one harness and one socket relay, so
+ * keeping conversations apart is the runtime's job, not the harness's. These
+ * scenarios are written as two people using the same sandbox at the same time,
+ * and assert on what each of them saw.
+ *
+ * See `acp-runtime-connecting.test.ts` for the feature that gets them
+ * connected in the first place.
+ */
+
 const ALICE_SESSION = "sess-alice";
 const BOB_SESSION = "sess-bob";
 

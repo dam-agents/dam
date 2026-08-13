@@ -7,6 +7,19 @@ import {
   IDLE_REAP_DELAY_MS,
 } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: leaving.
+ *
+ * Nobody says goodbye. A tab closes, a laptop lid drops, a connection just
+ * dies — and the conversation, the other people in it, and the work in
+ * flight must be exactly as they would have been with the socket still
+ * there. Only what belonged to the leaver alone goes with them, and once
+ * nothing belongs to anyone, the sandbox lets the conversation go.
+ *
+ * See `acp-runtime-joining.test.ts` for the way back in; this feature is
+ * about what a departure may and may not change.
+ */
+
 const SESSION = "sess-shared";
 
 describe("acp-runtime: leaving", () => {

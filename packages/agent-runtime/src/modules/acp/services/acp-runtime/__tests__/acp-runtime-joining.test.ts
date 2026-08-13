@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { createWorld, frames, transcriptOf } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: joining a conversation already in progress.
+ *
+ * A conversation does not pause for latecomers. Someone opens a session while
+ * the agent is mid-answer, and what they should end up with is the
+ * conversation as it stands plus everything still to come — as if they had
+ * been there all along.
+ *
+ * See `acp-runtime-isolation.test.ts` for who may see a session at all; this
+ * feature is about what a permitted joiner sees once they open it.
+ */
+
 const SESSION = "sess-shared";
 
 describe("acp-runtime: joining mid-conversation", () => {

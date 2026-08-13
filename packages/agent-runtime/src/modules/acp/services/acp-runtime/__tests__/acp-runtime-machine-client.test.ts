@@ -7,6 +7,17 @@ import {
   IDLE_REAP_DELAY_MS,
 } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: the machine client.
+ *
+ * Not every turn is typed by a person. Schedules and triggers drive the
+ * sandbox through the same door the UI uses — an in-process channel that
+ * connects, fires one prompt, and hangs up without waiting for the answer.
+ * Everything after that happens in an empty room, and the conversation must
+ * come out the other side exactly as a watched one would, except for the
+ * one thing only eyes can do: reading it.
+ */
+
 const SESSION = "sess-scheduled";
 
 describe("acp-runtime: the machine client", () => {

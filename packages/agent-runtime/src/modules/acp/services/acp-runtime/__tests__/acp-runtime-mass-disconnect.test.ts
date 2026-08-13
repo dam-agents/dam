@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { createWorld, frames, transcriptOf } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: everyone is disconnected at once.
+ *
+ * The other features are about one client arriving or leaving. This one is
+ * about the three moments the sandbox ends every connection itself: the
+ * harness dies underneath it, the sandbox's config changes and the harness
+ * must be restarted to read it, and the pod is told to shut down. From a
+ * client's side of the socket these are indistinguishable — the connection
+ * closes — so the close code has to carry the one decision the client must
+ * now make alone: whether to come back. 1011 says the sandbox will be here
+ * again, reconnect; 1000 says it is leaving on purpose, do not.
+ *
+ * See `acp-runtime-leaving.test.ts` for a single departure; this feature is
+ * the whole room going dark at once.
+ */
+
 const flushMicrotasks = (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
 

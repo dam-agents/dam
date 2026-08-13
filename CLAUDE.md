@@ -22,6 +22,10 @@ ADRs (`docs/adrs/`) are human-first decision history; the agent-facing source of
 
 Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
 
+## Code comments
+
+No untyped comments. Every comment in TS/JS/Go must start with a registered type prefix (currently only `TEST_OVERVIEW:`); tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are exempt. Registry and rules: [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md). Enforced by `mise run common:check:comment-types`.
+
 ## Documentation
 
 Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).

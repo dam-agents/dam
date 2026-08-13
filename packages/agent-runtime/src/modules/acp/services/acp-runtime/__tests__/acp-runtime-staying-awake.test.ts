@@ -2,6 +2,17 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import { createWorld, frames, IDLE_REAP_DELAY_MS } from "./acp-world.js";
 
+/**
+ * TEST_OVERVIEW: staying awake.
+ *
+ * The controller asks one question — `status()` — to decide whether a pod
+ * can hibernate. Anything the answer misses gets killed: a running turn, a
+ * queued question, an unanswered ask from the agent, a background job. Only
+ * the runtime can see these, so these scenarios pin what "busy" means and
+ * the full shape of the answer — a pod that stays awake must be able to say
+ * why.
+ */
+
 const SESSION = "sess-awake";
 
 const flushMicrotasks = (): Promise<void> =>

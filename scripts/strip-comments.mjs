@@ -19,18 +19,25 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 
-const ts = loadTypescript();
+export const ts = loadTypescript();
 
-const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
+export const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 const GO_EXTENSION = '.go';
 
+// Registered comment types (docs/guidelines/comment-guidelines.md). Comments
+// carrying one of these prefixes are the only prose comments allowed to exist,
+// so the stripper keeps them and check-comment-types.mjs requires them.
+export const COMMENT_TYPES = ['TEST_OVERVIEW'];
+const TYPED_COMMENT = new RegExp(`^(?:\\/\\/|\\/\\*+)?\\s*(?:\\*\\s*)?(?:${COMMENT_TYPES.join('|')}):`, 'm');
+
 // Comments matching any of these stay. They are instructions to tools, not prose.
-const PRESERVE_TS = [
+export const PRESERVE_TS = [
+  TYPED_COMMENT,
   /^\/\/\/\s*<(reference|amd-)/, // triple-slash directives
   /@ts-(ignore|expect-error|nocheck|check)/,
   /eslint-(disable|enable|env)|eslint\s/,
@@ -46,7 +53,8 @@ const PRESERVE_TS = [
   /@(license|preserve)/,
   /^\/\*!/,
 ];
-const PRESERVE_GO = [
+export const PRESERVE_GO = [
+  TYPED_COMMENT,
   /^\/\/go:/, // //go:build, //go:generate, //go:embed, ...
   /^\/\/\s*\+/, // k8s-style markers: +kubebuilder:..., +optional, +build, ...
   /^\/\/line /,
@@ -71,7 +79,7 @@ function loadTypescript() {
   }
 }
 
-function listFiles(scopes) {
+export function listFiles(scopes) {
   const args = ['ls-files', '-z', '--', ...(scopes.length ? scopes : ['.'])];
   const out = execFileSync('git', args, { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 });
   return out
@@ -86,12 +94,12 @@ function listFiles(scopes) {
     .filter((f) => f !== 'scripts/strip-comments.mjs');
 }
 
-function isGenerated(text) {
+export function isGenerated(text) {
   const head = text.split('\n', 5).join('\n');
   return GENERATED_MARKERS.some((re) => re.test(head));
 }
 
-function shouldPreserve(commentText, patterns) {
+export function shouldPreserve(commentText, patterns) {
   return patterns.some((re) => re.test(commentText));
 }
 
@@ -108,7 +116,7 @@ function scriptKindFor(file) {
   return ts.ScriptKind.TS;
 }
 
-function parseTs(file, text) {
+export function parseTs(file, text) {
   return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindFor(file));
 }
 
@@ -129,7 +137,7 @@ function leafTokens(sourceFile) {
   return tokens;
 }
 
-function collectTsComments(sourceFile, text) {
+export function collectTsComments(sourceFile, text) {
   // Comments live only in the trivia gaps between consecutive tokens. Scanning
   // gap by gap (instead of per-token leading trivia) catches same-line trailing
   // comments too, and never looks inside JSX text, where "//" is literal.
@@ -164,7 +172,7 @@ function tokenStream(sourceFile, text) {
 // comments, and block comments. That is the complete lexical grammar we need.
 // ---------------------------------------------------------------------------
 
-function collectGoComments(text) {
+export function collectGoComments(text) {
   const ranges = [];
   let i = 0;
   const n = text.length;
@@ -276,6 +284,7 @@ function processGoFile(file, text) {
 // Main
 // ---------------------------------------------------------------------------
 
+function main() {
 const argv = process.argv.slice(2);
 const write = argv.includes('--write');
 const verbose = argv.includes('--verbose');
@@ -333,3 +342,6 @@ if (skipped.length) {
 if (write) {
   console.log('\nNow run the repo format/check tasks (prettier + gofmt) to clean up spacing.');
 }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
