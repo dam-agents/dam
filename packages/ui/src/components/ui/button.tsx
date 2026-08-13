@@ -25,7 +25,7 @@ const buttonVariants = cva(
       // instead of imposing its own.
       size: {
         default: "h-10 px-4 py-2 text-sm font-medium",
-        sm: "h-9 rounded-md px-3 text-sm font-medium",
+        sm: "h-8 rounded-md px-3 text-sm font-normal",
         xs: "h-7 rounded-md px-2.5 text-xs font-medium",
         /** No box and no type of its own — for text inline in a sentence or row. */
         inline: "h-auto p-0",

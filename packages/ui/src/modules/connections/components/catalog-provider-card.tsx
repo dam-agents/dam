@@ -44,7 +44,7 @@ export function CatalogProviderCard({
   const newButton = templates.length > 0 && (
     <Button
       variant="outline"
-      className="h-8 px-3 text-sm font-normal"
+      size="sm"
       onClick={onNew}
       data-testid={`catalog-new-${provider.id}`}
     >

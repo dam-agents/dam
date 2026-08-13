@@ -128,11 +128,7 @@ export function ScheduleCard({
           </div>
         </div>
 
-        <Button
-          variant="outline"
-          className="h-8 px-3 text-sm font-normal"
-          onClick={onViewResults}
-        >
+        <Button variant="outline" size="sm" onClick={onViewResults}>
           <Launch size={14} /> View results
         </Button>
 
