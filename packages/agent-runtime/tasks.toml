@@ -41,6 +41,11 @@ description = "Run agent-runtime unit tests"
 dir = "{{config_root}}"
 run = 'pnpm --filter agent-runtime exec vitest run'
 
+["agent-runtime:test:proc"]
+description = "What the orphan reaper spares and kills, in a container (needs docker + platform-base image; ~2 min)"
+dir = "{{config_root}}"
+run = 'pnpm --filter agent-runtime exec vitest run --config vitest.proc.config.ts'
+
 ["agent-runtime:dev"]
 description = "Run agent-runtime in watch mode (tsx, loads .env)"
 dir = "{{config_root}}/packages/agent-runtime"
