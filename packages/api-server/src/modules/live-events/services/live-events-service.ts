@@ -11,37 +11,28 @@ export function createLiveEventsService(deps: {
   bus: LiveEventsBus;
 }): LiveEventsService {
   return {
-    async *ownerStream(sub, signal) {
-      const pending: LiveEvent[] = [];
-      const queued = new Set<string>();
-      let wake: (() => void) | undefined;
-      const unsubscribe = deps.bus.subscribe(sub, (event) => {
-        const key = JSON.stringify(event);
-        if (queued.has(key)) return;
-        queued.add(key);
-        pending.push(event);
-        wake?.();
+    ownerStream(sub, signal) {
+      let unsubscribe = () => {};
+      let end = () => {};
+      return new ReadableStream<LiveEvent>({
+        start(controller) {
+          end = () => {
+            unsubscribe();
+            try {
+              controller.close();
+            } catch {}
+          };
+          controller.enqueue({ topic: "sync" });
+          unsubscribe = deps.bus.subscribe(sub, (event) =>
+            controller.enqueue(event),
+          );
+          signal?.addEventListener("abort", end, { once: true });
+        },
+        cancel() {
+          signal?.removeEventListener("abort", end);
+          unsubscribe();
+        },
       });
-      const onAbort = () => wake?.();
-      signal?.addEventListener("abort", onAbort, { once: true });
-      try {
-        yield { topic: "sync" } satisfies LiveEvent;
-        while (!signal?.aborted) {
-          const next = pending.shift();
-          if (next === undefined) {
-            await new Promise<void>((resolve) => {
-              wake = resolve;
-            });
-            wake = undefined;
-            continue;
-          }
-          queued.delete(JSON.stringify(next));
-          yield next;
-        }
-      } finally {
-        signal?.removeEventListener("abort", onAbort);
-        unsubscribe();
-      }
     },
   };
 }

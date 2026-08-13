@@ -92,7 +92,7 @@ describe("liveEvents.ownerStream", () => {
     expect(warnings).toHaveLength(2);
   });
 
-  it("coalesces identical pending hints, but re-delivers after a drain", async () => {
+  it("delivers queued hints in FIFO order, duplicates included", async () => {
     const { bus, module } = harness();
     const it_ = module.liveEvents.ownerStream("u1")[Symbol.asyncIterator]();
     await it_.next();
@@ -105,14 +105,12 @@ describe("liveEvents.ownerStream", () => {
       agentId: "a1",
     });
     expect((await it_.next()).value).toEqual({
-      topic: "artifacts",
-      artifactId: "f1",
-    });
-
-    await publish(bus, "u1", { topic: "agents", agentId: "a1" });
-    expect((await it_.next()).value).toEqual({
       topic: "agents",
       agentId: "a1",
+    });
+    expect((await it_.next()).value).toEqual({
+      topic: "artifacts",
+      artifactId: "f1",
     });
   });
 
