@@ -32,7 +32,7 @@ const GO_EXTENSION = '.go';
 // Registered comment types (docs/guidelines/comment-guidelines.md). Comments
 // carrying one of these prefixes are the only prose comments allowed to exist,
 // so the stripper keeps them and check-comment-types.mjs requires them.
-export const COMMENT_TYPES = ['TEST_OVERVIEW'];
+export const COMMENT_TYPES = ['TEST_OVERVIEW', 'TEST_SCENARIO'];
 const TYPED_COMMENT = new RegExp(`^(?:\\/\\/|\\/\\*+)?\\s*(?:\\*\\s*)?(?:${COMMENT_TYPES.join('|')}):`, 'm');
 
 // Comments matching any of these stay. They are instructions to tools, not prose.

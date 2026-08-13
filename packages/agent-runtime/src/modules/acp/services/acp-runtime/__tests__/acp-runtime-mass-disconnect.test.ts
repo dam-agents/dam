@@ -23,6 +23,16 @@ const flushMicrotasks = (): Promise<void> =>
 const SESSION = "sess-live";
 
 describe("acp-runtime: everyone is disconnected at once", () => {
+  /**
+   * TEST_SCENARIO: The harness is a subprocess and it can die at any moment, silently:
+   * clients hear nothing, and a socket left open after it is a lie — it
+   * looks connected while every frame sent down it goes nowhere. The runtime
+   * is the only party that observes the exit, so only it can turn a silent
+   * death into an explicit close on every connection. Every one: a client
+   * that never opened a session is talking to the same dead sandbox, and
+   * left open its next list poll would just hang. The code says reconnect,
+   * because a dead harness is a fault the platform repairs, not a goodbye.
+   */
   it("should close every client with a reconnect code when the harness dies, even one that never opened a session", async () => {
     const world = createWorld();
 
@@ -40,6 +50,18 @@ describe("acp-runtime: everyone is disconnected at once", () => {
     expect(sidebar.closes).toEqual([{ code: 1011, reason: "agent exited" }]);
   });
 
+  /**
+   * TEST_SCENARIO: The harness reads its env once, at spawn. When the config changes on
+   * disk, the running harness is permanently blind to it — the only way to
+   * apply the change is a fresh harness, and every connection goes with the
+   * old one, because each client's picture of the sandbox was built against
+   * the process being retired. With nothing running there is nothing worth
+   * waiting for, so the swap happens now. Clients get the same reconnect
+   * code as a real death — from their side it is the same event with the
+   * same remedy — and the sandbox is recycled rather than closed: the next
+   * client to arrive gets a new harness, which is the whole point, since
+   * that one reads the new env.
+   */
   it("should recycle the harness for a config change when nothing is running, and give the next client a fresh one", () => {
     const world = createWorld();
 
@@ -72,6 +94,15 @@ describe("acp-runtime: everyone is disconnected at once", () => {
     expect(world.harness().receivedMethods()).toEqual(["initialize"]);
   });
 
+  /**
+   * TEST_SCENARIO: The same config change lands while the agent is mid-answer. Recycling
+   * now would kill a turn someone asked for and is watching, to apply a
+   * change nobody needs this second. The runtime is the only party that
+   * knows both facts at once — that a recycle is owed and that a turn is in
+   * flight — so it sits on the change, lets the turn stream to its end as
+   * if nothing had happened, delivers the answer, and only then takes the
+   * connections.
+   */
   it("should hold a mid-turn config change until the turn ends, then disconnect everyone", () => {
     const world = createWorld();
 
@@ -107,6 +138,14 @@ describe("acp-runtime: everyone is disconnected at once", () => {
     expect(world.harness().killed()).toBe(true);
   });
 
+  /**
+   * TEST_SCENARIO: Shutdown is the one ending that is on purpose: the platform is taking
+   * the pod down. A client that treated this close like a harness death
+   * would reconnect into nothing, and a reconnect loop on every open tab is
+   * exactly the storm a rolling restart does not need. The close code is
+   * the only channel the runtime has to say so, and 1000 — a normal
+   * closure — is the one that means finished, not failed.
+   */
   it("should close every client with a do-not-reconnect code on shutdown", () => {
     const world = createWorld();
 

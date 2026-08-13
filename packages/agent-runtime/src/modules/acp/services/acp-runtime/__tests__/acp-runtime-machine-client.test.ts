@@ -25,6 +25,18 @@ describe("acp-runtime: the machine client", () => {
     vi.useRealTimers();
   });
 
+  /**
+   * TEST_SCENARIO: A schedule fires in the middle of the night. The driver connects, sends
+   * the prompt, and is gone before the first token comes back, so the turn
+   * belongs to nobody the whole way through.
+   *
+   * The threat is not the harness, which writes to its stdout whether anyone
+   * reads it or not. It is the runtime itself: as the only party that knows
+   * the room is empty, it is the only one positioned to decide an unwatched
+   * turn is not worth having — cancel it with its departed sender, or report
+   * the pod idle and let the controller hibernate the work mid-flight. A
+   * turn with no audience is still a turn.
+   */
   it("should run a scheduled turn to completion with no human connected", () => {
     const world = createWorld();
 
@@ -47,6 +59,14 @@ describe("acp-runtime: the machine client", () => {
     expect(world.runtime.status().idle).toBe(true);
   });
 
+  /**
+   * TEST_SCENARIO: Unread is a promise to a person: something happened here that nobody has
+   * looked at. The machine client sends the very frames a person would, and
+   * the runtime is the only party that knows which channels are eyes and
+   * which are cron. If machine activity counted as seen, every scheduled run
+   * would mark its own work read at birth, and the badge would stay dark on
+   * exactly the conversations nobody has opened.
+   */
   it("should not mark a scheduled turn's conversation as read", () => {
     const meta = createSessionMetadata();
     const world = createWorld({ sessionMetadata: meta.store });
@@ -66,6 +86,15 @@ describe("acp-runtime: the machine client", () => {
     expect(meta.unread(SESSION)).toBe(false);
   });
 
+  /**
+   * TEST_SCENARIO: Every live session pins a CLI subprocess of roughly 300MB, and every
+   * other release in this suite is set off by a departure — but a scheduled
+   * session's only visitor left before the turn began, so no disconnect is
+   * ever coming. The turn's own end is the one moment left, and only the
+   * runtime is there for it: the harness would hold the session forever, and
+   * a schedule that leaked one subprocess per night would bloat the pod
+   * until it died.
+   */
   it("should release a scheduled turn's session when it finishes", () => {
     vi.useFakeTimers();
     const world = createWorld();

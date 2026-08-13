@@ -21,6 +21,7 @@ Code carries no untyped prose comments. Every comment must start with a register
 | Type | Where | What it carries |
 | --- | --- | --- |
 | `TEST_OVERVIEW` | Top of a spec file (one per file) | The feature under test, written from the user's point of view — what the scenarios cover and the perspective they assert from. |
+| `TEST_SCENARIO` | Directly above an `it(...)` | Why this scenario exists: the behavior it pins and what would go wrong without it. Not a restatement of the test title. |
 
 Adding a type is a deliberate act: extend `COMMENT_TYPES` in [`scripts/strip-comments.mjs`](../../scripts/strip-comments.mjs) and add a row here, in the same PR that introduces the first comment of that type.
 

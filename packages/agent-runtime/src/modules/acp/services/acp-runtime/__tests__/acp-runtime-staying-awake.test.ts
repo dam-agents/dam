@@ -23,6 +23,17 @@ describe("acp-runtime: staying awake", () => {
     vi.useRealTimers();
   });
 
+  /**
+   * TEST_SCENARIO: The active-prompt hold is already pinned in the machine-client feature
+   * (a scheduled turn keeps the pod busy with nobody connected). This file
+   * starts one step later, with the holds that exist next to a turn or
+   * after it.
+   *
+   * A queued question exists only inside the runtime: the harness has never
+   * seen it. If "busy" only counted what the harness is doing, the pod
+   * would look idle between two turns while it still owes an answer — and a
+   * hibernation at that moment would lose the queue.
+   */
   it("should stay busy across the turn boundary while a question is still queued", () => {
     const world = createWorld();
 
@@ -43,6 +54,13 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
   });
 
+  /**
+   * TEST_SCENARIO: The agent asked for permission and the person who could answer is gone.
+   * Anyone who opens the conversation later can still answer, so the pod
+   * must stay up and the session must stay open for them. Sleeping now, or
+   * closing the session because nobody is connected, would silently throw
+   * away a decision someone was asked to make.
+   */
   it("should stay awake on an unanswered question from the agent until someone answers it", () => {
     vi.useFakeTimers();
     const world = createWorld();
@@ -68,6 +86,17 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
   });
 
+  /**
+   * TEST_SCENARIO: A turn can end with work still running: the agent started a job in the
+   * background and answered before the job finished. The harness reports
+   * that work to the pod (the background-work contract), and only the
+   * runtime can act on the report — closing the session would kill the
+   * subprocess that supervises the job, and reporting idle would let the
+   * controller hibernate it. The status payload lists what is held and why,
+   * so a pod that is unexpectedly awake can be explained. When the work
+   * ends, both holds must let go on their own: nobody is connected, so no
+   * disconnect will ever trigger the release.
+   */
   it("should hold the pod awake and the session open for background work, and release both when it ends", () => {
     vi.useFakeTimers();
     const backgroundWork = createBackgroundWorkRegistry();
@@ -119,6 +148,12 @@ describe("acp-runtime: staying awake", () => {
     expect(world.harness().killed()).toBe(false);
   });
 
+  /**
+   * TEST_SCENARIO: A hold protects work running inside the harness's process tree, so when
+   * the harness dies the work dies with it. A hold that survived would be
+   * the worst failure this feature can have: an empty pod kept awake
+   * forever, with a status naming a job that no longer exists.
+   */
   it("should drop every background hold when the harness dies", async () => {
     const backgroundWork = createBackgroundWorkRegistry();
     const world = createWorld({ backgroundWork });
@@ -136,6 +171,13 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({ idle: true, backgroundWork: [] });
   });
 
+  /**
+   * TEST_SCENARIO: A hold is advisory, never final: a reporter may die without ever saying
+   * "done", and the contract accepts that because a hard teardown reclaims
+   * the pod anyway. Resetting the session is that teardown — it kills the
+   * session's subprocess and the work under it, so the hold must go too,
+   * instead of keeping an empty pod awake for a dead job.
+   */
   it("should let a session reset take its background hold down with it", () => {
     const backgroundWork = createBackgroundWorkRegistry();
     const world = createWorld({ backgroundWork });

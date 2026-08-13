@@ -27,6 +27,16 @@ describe("acp-runtime: leaving", () => {
     vi.useRealTimers();
   });
 
+  /**
+   * TEST_SCENARIO: Two people are watching a turn and one of them leaves. The other must
+   * notice nothing, and neither must the agent.
+   *
+   * The harness cannot be trusted with this because it cannot even see it:
+   * it writes to one stdout whether three people are watching or none, and
+   * never learns that a reader existed, let alone left. A departure is an
+   * event on the client side of the relay, and keeping it there — no dropped
+   * turn, no closed sockets, no harness restart — is the runtime's job.
+   */
   it("should let one client leave without disturbing the others or the harness", () => {
     vi.useFakeTimers();
     const world = createWorld();
@@ -57,6 +67,20 @@ describe("acp-runtime: leaving", () => {
     expect(world.harness().received("session/close")).toEqual([]);
   });
 
+  /**
+   * TEST_SCENARIO: The person whose turn is running disconnects while the agent is
+   * mid-answer. The turn is not theirs to take down with them: it belongs to
+   * the conversation, which others may be watching and more messages are
+   * queued behind.
+   *
+   * Tying the turn to the socket that started it would let a flaky wifi
+   * cancel work minutes in. So the runtime lets the turn run, drops the
+   * answer it can no longer deliver, and — the part only it can do — still
+   * treats the turn's end as the queue's cue: the harness learns turns are
+   * over by nothing but its own response arriving, so with the asker gone,
+   * only the runtime is left to notice the slot freed and send in the next
+   * question.
+   */
   it("should finish the turn and run the next queued message when a client disconnects mid-turn", () => {
     const world = createWorld();
 
@@ -83,6 +107,18 @@ describe("acp-runtime: leaving", () => {
     expect(bob.reply(2)?.result).toEqual({ stopReason: "end_turn" });
   });
 
+  /**
+   * TEST_SCENARIO: A queued message has not reached the harness yet; it exists only inside
+   * the runtime. If its sender leaves before its turn comes, running it
+   * anyway would start work whose asker can never see it, answer its
+   * permission prompts, or read its result — so it goes with them. But only
+   * theirs: the queue is the conversation's, not the leaver's, and the
+   * neighbour behind them in line did nothing wrong.
+   *
+   * Only the runtime can make that cut. The harness has never seen either
+   * message, and each client knows only its own — the runtime alone knows
+   * whose message is whose.
+   */
   it("should drop a leaver's queued messages but nobody else's", () => {
     const world = createWorld();
 
@@ -109,6 +145,21 @@ describe("acp-runtime: leaving", () => {
     expect(carol.reply(2)?.result).toEqual({ stopReason: "end_turn" });
   });
 
+  /**
+   * TEST_SCENARIO: The last person closes the tab on a finished conversation. Every open
+   * session pins a CLI subprocess of roughly 300MB inside the harness, so a
+   * sandbox that kept every visited conversation live would bloat until the
+   * pod died — and the harness will not save itself, because it has no idea
+   * whether anyone is reading. Counting readers is the runtime's job, and
+   * zero readers with nothing running means letting the session go.
+   *
+   * Not on the spot, though: the release waits out a short quiescence
+   * window first, so a turn's trailing work can finish and a tab that
+   * reopens right away finds its subprocess still warm. "Released" is
+   * proven by what the harness received; the window is the production
+   * value, and how the runtime keeps it (per-session timers today, one
+   * loop after #3108) is deliberately not pinned.
+   */
   it("should release the session's resources when the last client leaves and nothing is running", () => {
     vi.useFakeTimers();
     const world = createWorld();
@@ -135,6 +186,15 @@ describe("acp-runtime: leaving", () => {
     expect(world.harness().killed()).toBe(false);
   });
 
+  /**
+   * TEST_SCENARIO: The other half of the quiescence window: someone closes the tab and
+   * reopens it moments later. Reloads, laptop sleep, a flaky proxy — brief
+   * disconnects are everyday events, and paying a full subprocess teardown
+   * and cold respawn for each one is exactly what the window exists to
+   * avoid. A departure followed by a quick return must leave no trace: the
+   * session is never released, and the conversation answers from memory as
+   * if the tab had never closed.
+   */
   it("should keep the session warm when the last client comes right back", () => {
     vi.useFakeTimers();
     const world = createWorld();
@@ -168,6 +228,17 @@ describe("acp-runtime: leaving", () => {
     ).toEqual([{ sessionId: SESSION }]);
   });
 
+  /**
+   * TEST_SCENARIO: A connection dies mid-turn and the agent keeps talking to a room with
+   * nobody in it. When the person comes back, everything said into that
+   * silence must be waiting for them.
+   *
+   * The harness said each of those lines once, into a socket nobody held,
+   * and was never told the reader dropped — nothing will make it repeat
+   * itself. Only the runtime kept the conversation while nobody was
+   * listening, and only it knows where the returning client's copy ends, so
+   * handing back precisely the missed span — once — is its job.
+   */
   it("should show a client that drops and comes back what was said while it was gone", () => {
     const world = createWorld();
 
