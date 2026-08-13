@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
-import { createWorld, frames } from "./acp-world.js";
+import { createWorld, frames, IDLE_REAP_DELAY_MS } from "./acp-world.js";
 
 /**
  * Feature: staying awake.
@@ -67,6 +67,7 @@ describe("acp-runtime: staying awake", () => {
    * away a decision someone was asked to make.
    */
   it("should stay awake on an unanswered question from the agent until someone answers it", () => {
+    vi.useFakeTimers();
     const world = createWorld();
 
     // Alice asks, the agent asks for permission, and Alice's connection
@@ -80,7 +81,9 @@ describe("acp-runtime: staying awake", () => {
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
     // Nobody is connected and no turn is running, yet the pod is not idle
-    // and the session is not released: the question is still open.
+    // and the session is not released — even once the quiescence window
+    // that follows an idle turn has passed: the question is still open.
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(world.runtime.status()).toEqual({ idle: false, backgroundWork: [] });
     expect(world.harness().received("session/close")).toEqual([]);
 

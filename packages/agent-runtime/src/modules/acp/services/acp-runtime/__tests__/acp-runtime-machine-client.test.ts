@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   createSessionMetadata,
   createWorld,
   frames,
   promptTextsOf,
+  IDLE_REAP_DELAY_MS,
 } from "./acp-world.js";
 
 /**
@@ -20,6 +21,10 @@ import {
 const SESSION = "sess-scheduled";
 
 describe("acp-runtime: the machine client", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /**
    * A schedule fires in the middle of the night. The driver connects, sends
    * the prompt, and is gone before the first token comes back, so the turn
@@ -101,6 +106,7 @@ describe("acp-runtime: the machine client", () => {
    * until it died.
    */
   it("should release a scheduled turn's session when it finishes", () => {
+    vi.useFakeTimers();
     const world = createWorld();
 
     const machine = world.connect({ viewer: false });
@@ -109,14 +115,17 @@ describe("acp-runtime: the machine client", () => {
     machine.send(frames.prompt(2, SESSION, "rotate the credentials"));
     machine.disconnect();
 
-    // The departure alone releases nothing: the turn is still running, and
-    // closing the session now would cancel it.
+    // The departure alone releases nothing, however long ago it was: the
+    // turn is still running, and closing the session now would cancel it.
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(world.harness().received("session/close")).toEqual([]);
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // The moment it finishes, the session is let go. The harness itself
-    // stays up: releasing a conversation is not stopping the sandbox.
+    // Once it finishes and the quiescence window passes with nobody there,
+    // the session is let go. The harness itself stays up: releasing a
+    // conversation is not stopping the sandbox.
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(
       world
         .harness()

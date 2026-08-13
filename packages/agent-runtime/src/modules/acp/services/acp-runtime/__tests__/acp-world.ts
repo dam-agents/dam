@@ -29,6 +29,16 @@ import {
 /** A decoded JSON-RPC frame. */
 export type Frame = Record<string, unknown> & { method?: string; id?: unknown };
 
+/**
+ * The quiescence window before an idle session is reaped, same value the
+ * composition root injects (`compose.ts`). The world runs at production
+ * values: the library default (0, inline reap) is a configuration the
+ * product never runs, and scenarios that passed against it would prove
+ * nothing. Scenarios that watch a session being released advance fake time
+ * past this window.
+ */
+export const IDLE_REAP_DELAY_MS = 3_000;
+
 export interface Harness {
   /** Frames the runtime forwarded, all of them or just one method's. */
   received(method?: string): Frame[];
@@ -203,6 +213,7 @@ export function createWorld(
 
   const runtime = createAcpRuntime({
     workingDir: "/workspace",
+    idleReapDelayMs: IDLE_REAP_DELAY_MS,
     ...overrides,
     spawnAgent: () => {
       const { harness, process } = createHarness();

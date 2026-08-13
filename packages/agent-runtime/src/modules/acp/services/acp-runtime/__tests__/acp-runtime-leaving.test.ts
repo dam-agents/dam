@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   createWorld,
   frames,
   promptTextsOf,
   transcriptOf,
+  IDLE_REAP_DELAY_MS,
 } from "./acp-world.js";
 
 /**
@@ -22,6 +23,10 @@ import {
 const SESSION = "sess-shared";
 
 describe("acp-runtime: leaving", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /**
    * Two people are watching a turn and one of them leaves. The other must
    * notice nothing, and neither must the agent.
@@ -33,6 +38,7 @@ describe("acp-runtime: leaving", () => {
    * turn, no closed sockets, no harness restart — is the runtime's job.
    */
   it("should let one client leave without disturbing the others or the harness", () => {
+    vi.useFakeTimers();
     const world = createWorld();
 
     // Alice asks, Bob is watching, and the agent is mid-answer.
@@ -59,8 +65,10 @@ describe("acp-runtime: leaving", () => {
       `${SESSION}: with three packages`,
     ]);
 
-    // And the machinery is untouched: the harness was neither stopped nor
-    // told to shed the session — Alice is still in it.
+    // And the machinery is untouched: even well past the quiescence window
+    // that follows any departure, the harness was neither stopped nor told
+    // to shed the session — Alice is still in it.
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(world.harness().killed()).toBe(false);
     expect(world.harness().received("session/close")).toEqual([]);
   });
@@ -166,12 +174,15 @@ describe("acp-runtime: leaving", () => {
    * whether anyone is reading. Counting readers is the runtime's job, and
    * zero readers with nothing running means letting the session go.
    *
-   * "Released" is proven by what the harness received, and deliberately says
-   * nothing about how the runtime decided — a scenario that mentioned timers
-   * would break during the #3108 refactor and lose the safety net it exists
-   * to provide.
+   * Not on the spot, though: the release waits out a short quiescence
+   * window first, so a turn's trailing work can finish and a tab that
+   * reopens right away finds its subprocess still warm. "Released" is
+   * proven by what the harness received; the window is the production
+   * value, and how the runtime keeps it (per-session timers today, one
+   * loop after #3108) is deliberately not pinned.
    */
   it("should release the session's resources when the last client leaves and nothing is running", () => {
+    vi.useFakeTimers();
     const world = createWorld();
 
     // Alice has a complete conversation: asked, answered, turn over.
@@ -186,11 +197,15 @@ describe("acp-runtime: leaving", () => {
     expect(world.harness().received("session/close")).toEqual([]);
 
     // She closes the tab, leaving the sandbox empty with nothing running.
+    // The departure alone releases nothing — she may be back in a second.
     alice.disconnect();
+    expect(world.harness().received("session/close")).toEqual([]);
 
-    // The harness is told to let the conversation go — that is the
-    // subprocess behind it being freed. The harness itself stays up for the
-    // next visitor: releasing a conversation is not stopping the sandbox.
+    // The window passes with nobody back. Now the harness is told to let
+    // the conversation go — that is the subprocess behind it being freed.
+    // The harness itself stays up for the next visitor: releasing a
+    // conversation is not stopping the sandbox.
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(
       world
         .harness()
@@ -198,6 +213,55 @@ describe("acp-runtime: leaving", () => {
         .map((frame) => frame.params),
     ).toEqual([{ sessionId: SESSION }]);
     expect(world.harness().killed()).toBe(false);
+  });
+
+  /**
+   * The other half of the quiescence window: someone closes the tab and
+   * reopens it moments later. Reloads, laptop sleep, a flaky proxy — brief
+   * disconnects are everyday events, and paying a full subprocess teardown
+   * and cold respawn for each one is exactly what the window exists to
+   * avoid. A departure followed by a quick return must leave no trace: the
+   * session is never released, and the conversation answers from memory as
+   * if the tab had never closed.
+   */
+  it("should keep the session warm when the last client comes right back", () => {
+    vi.useFakeTimers();
+    const world = createWorld();
+
+    // A finished conversation, and its only reader closes the tab.
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "tidy the README"));
+    world.harness().emit(frames.agentMessage(SESSION, "done"));
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    alice.disconnect();
+
+    // She is back before the window ends.
+    const aliceAgain = world.connect();
+    aliceAgain.send(frames.loadSession(1, SESSION));
+
+    // Her return cancelled the release: however long she now stays, the
+    // session is never let go, and her reload was answered with the
+    // conversation intact — no cold rebuild.
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS * 3);
+    expect(world.harness().received("session/close")).toEqual([]);
+    expect(aliceAgain.reply(1)).toBeDefined();
+    expect(transcriptOf(aliceAgain)).toEqual([
+      `${SESSION}: tidy the README`,
+      `${SESSION}: done`,
+    ]);
+
+    // Leaving for good still works: once she is gone and the window passes
+    // with nobody back, the session is released.
+    aliceAgain.disconnect();
+    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
+    expect(
+      world
+        .harness()
+        .received("session/close")
+        .map((frame) => frame.params),
+    ).toEqual([{ sessionId: SESSION }]);
   });
 
   /**
