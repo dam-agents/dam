@@ -2,9 +2,23 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 
 export class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
-  constructor() {
-    super("Connection closed while request was in flight");
+  /** What the socket said on the way out, when it said anything. The relay
+   *  reports a real cause here ("agent not ready: …", "instance not found")
+   *  and passes an empty reason through rather than inventing one. */
+  readonly closeReason: string | null;
+  constructor(closeReason: string | null) {
+    super(
+      closeReason
+        ? `Connection closed while request was in flight: ${closeReason}`
+        : "Connection closed while request was in flight",
+    );
+    this.closeReason = closeReason;
   }
+}
+
+/** The socket's parting reason, for a rejection that carries one. */
+export function connectionCloseReason(e: unknown): string | null {
+  return e instanceof ConnectionClosedError ? e.closeReason : null;
 }
 
 /** Whether a rejection is this module's close race rather than an answer from
@@ -27,9 +41,10 @@ export function isConnectionClosed(e: unknown): boolean {
  */
 export function withCloseRace(
   conn: ClientSideConnection,
+  closeReason: () => string | null,
 ): ClientSideConnection {
   const closedThrows = conn.closed.then(() => {
-    throw new ConnectionClosedError();
+    throw new ConnectionClosedError(closeReason());
   });
   return new Proxy(conn, {
     get(target, prop, receiver) {

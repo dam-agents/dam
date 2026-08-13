@@ -456,10 +456,11 @@ excluded — their host is already TLS-terminated by the connection's own
 credential chain. Because each entry is interpolated into the gateway's
 Envoy bootstrap and cert SANs, the CRD constrains list items to DNS
 hostnames, so a rule host cannot inject config into the owner's gateway.
-A one-shot api-server startup migration projects promotions previously
-materialized as owner-scoped credential-less marker Secrets onto the
-Agent resources and retires the markers; the controller consumes both
-signals, so rules stay enforced mid-migration.
+That projection is a second write to the Agent CR that cannot share a
+transaction with the rule write, so a per-agent periodic reconcile
+re-derives it from the rules — converging a host whose patch failed, or
+whose api-server died between the rule commit and the patch, without
+operator action.
 
 A referenced SDS file missing from the mounted Secret is a fatal Envoy
 boot error, so the controller verifies each credential's SDS key against

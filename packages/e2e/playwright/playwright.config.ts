@@ -81,6 +81,15 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      // Pure-API tRPC-WS connection auth — raw WebSocket against the real
+      // endpoint, mints its own JWT, no browser session (no storageState).
+      // Depends on auth only to gate on a healthy cluster.
+      name: "trpc-ws-auth",
+      testMatch: /13-.*\.spec\.ts$/,
+      dependencies: ["auth"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "slack",
       testMatch: /07-.*\.spec\.ts$/,
       dependencies: ["injection"],

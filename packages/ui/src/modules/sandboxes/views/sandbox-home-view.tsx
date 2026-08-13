@@ -60,7 +60,9 @@ export function SandboxHomeView() {
 
   return (
     <SandboxTwoColumnShell
-      footer={f.dirty ? footer : undefined}
+      // Setup is the only section that commits on Submit; other sections keep
+      // the bar only while edits are pending, so leaving can't strand them.
+      footer={section === "setup" || f.dirty ? footer : undefined}
       nav={
         <SandboxSectionNav
           active={section}

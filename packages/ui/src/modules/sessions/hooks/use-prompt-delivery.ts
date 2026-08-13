@@ -2,9 +2,10 @@ import { useCallback, useMemo, useRef } from "react";
 
 import type { AcpUpdate } from "../../acp/types.js";
 
-/** Both delivery deadlines. `sending → accepted` is the true delivery check and
- *  normally resolves in milliseconds; `started → first content` is the
- *  wedged-agent check the original send-anchored watchdog was really after. */
+/** The one delivery deadline: `sending → accepted`, which normally resolves in
+ *  milliseconds. Silence *after* the runtime accepted a prompt is not timed —
+ *  a slow first word and a stalled agent are indistinguishable today, and
+ *  guessing produced a red error on healthy turns (#3058). */
 export const DELIVERY_TIMEOUT_MS = 60_000;
 
 /**
@@ -17,7 +18,8 @@ export const DELIVERY_TIMEOUT_MS = 60_000;
  *   - `queued`   — accepted and parked behind an in-flight turn. Unbounded on
  *     purpose: a prior turn may legitimately run for hours, and waiting is not
  *     a failure (issue #829). Only losing the WebSocket loses the prompt.
- *   - `started`  — handed to the agent process; content is now expected.
+ *   - `started`  — handed to the agent process; content is now expected, but
+ *     not on any deadline.
  */
 export type DeliveryState = "sending" | "accepted" | "queued" | "started";
 
@@ -35,11 +37,11 @@ export interface PromptDelivery {
   beginSend: (promptId: string, fail: () => void) => void;
   /** Feed every session update through; the delivery frames are picked out. */
   handleUpdate: (update: AcpUpdate) => void;
-  /** Stop tracking a prompt, clearing whichever deadline is still pending. */
+  /** Stop tracking a prompt, clearing the deadline if it is still pending. */
   endSend: (promptId: string) => void;
   /** Stop tracking every prompt. For connection loss, which settles the fate of
    *  all of them at once: the projection fails the ones the runtime dropped, so
-   *  no deadline has anything left to decide. */
+   *  the deadline has nothing left to decide. */
   cancelAll: () => void;
 }
 
@@ -50,12 +52,12 @@ export interface PromptDelivery {
  *
  *   sending ──accepted{queued:false}──▶ ──started──▶ started ──content──▶ done
  *   sending ──accepted{queued:true}───▶ queued ─────▶ started
- *      │                                   │              │
- *      └─ no accepted in 60s → fail        └─ no timer    └─ no content in 60s → fail
+ *      │
+ *      └─ no accepted in 60s → fail
  *
  * Deliberately holds no opinion about *why* a prompt is where it is — that is
- * the runtime's business. It only owns the two deadlines and hands failure back
- * to the caller's `fail` callback.
+ * the runtime's business. It only owns the delivery deadline and hands failure
+ * back to the caller's `fail` callback.
  *
  * Records are keyed by `promptId`, so concurrent sends (a queued prompt behind
  * a running turn) each get their own deadline instead of the single shared
@@ -104,10 +106,6 @@ export function usePromptDelivery(): PromptDelivery {
 
       record.state = "started";
       clearTimer(record);
-      record.timer = setTimeout(() => {
-        record.timer = null;
-        record.fail();
-      }, DELIVERY_TIMEOUT_MS);
     },
     [clearTimer],
   );

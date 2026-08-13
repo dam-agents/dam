@@ -104,7 +104,7 @@ export function SandboxSetupSection({ f }: Props) {
         </p>
       </section>
 
-      <SandboxModelSettings agentId={agent.id} />
+      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>

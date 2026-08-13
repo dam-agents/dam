@@ -25,7 +25,7 @@ export function createTelegramOAuthRoutes(deps: {
   const routes = new Hono();
   const bindPage = `${deps.uiBaseUrl}/telegram/bind`;
 
-  routes.get("/api/telegram/oauth/callback", async (c) => {
+  routes.get("/oauth/callback", async (c) => {
     const code = c.req.query("code");
     const state = c.req.query("state");
     const error = c.req.query("error");

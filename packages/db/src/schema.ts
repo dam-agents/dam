@@ -174,6 +174,30 @@ export const skillSources = pgTable(
   ],
 );
 
+/** A reusable, named selection of skills, owned by a user rather than by any
+ *  sandbox. `skills` holds `[{ source, name }]` where `source` is the source's
+ *  **git URL** — the same identity `agent_skills` installs on, so a set survives
+ *  its source row being deleted and re-added. Entries live as jsonb because
+ *  nothing queries by entry, and one row keeps create and delete atomic.
+ *  Names are unique per owner; the name schema forces lowercase, so a plain
+ *  unique index gives case-insensitive uniqueness. */
+export const skillSets = pgTable(
+  "skill_sets",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    skills: jsonb("skills").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("skill_sets_owner_name_idx").on(table.owner, table.name),
+    index("skill_sets_owner_idx").on(table.owner),
+  ],
+);
+
 export const agentSkills = pgTable(
   "agent_skills",
   {

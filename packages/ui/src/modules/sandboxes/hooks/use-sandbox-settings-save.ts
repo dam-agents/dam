@@ -7,6 +7,7 @@ import type {
 import { sanitizeEnvVars } from "../../../components/env-vars-editor.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { useApplyHarnessConfig } from "../../agents/api/harness-config.js";
 import {
   useSetAgentConnections,
   useUpdateAgent,
@@ -19,6 +20,7 @@ import {
 import { splitHostPort } from "../../egress-rules/host-port.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
 import type { SettingsValues } from "./sandbox-settings-schema.js";
+import type { useHarnessConfigDraft } from "./use-harness-config-draft.js";
 import type { useStagedNetworkAccess } from "./use-staged-network-access.js";
 
 interface Args {
@@ -26,6 +28,7 @@ interface Args {
   agent: AgentView | null;
   dirty: boolean;
   net: ReturnType<typeof useStagedNetworkAccess>;
+  harnessDraft: ReturnType<typeof useHarnessConfigDraft>;
   providerAppIds: ReadonlySet<string>;
   /** Server-truth grant ids at render time (grants apply immediately
    *  elsewhere, so the form's copy may be stale while a provider stages). */
@@ -43,6 +46,7 @@ export function useSandboxSettingsSave({
   agent,
   dirty,
   net,
+  harnessDraft,
   providerAppIds,
   savedConnectionIds,
   handleSubmit,
@@ -51,6 +55,7 @@ export function useSandboxSettingsSave({
 }: Args) {
   const showConfirm = useStore((s) => s.showConfirm);
   const updateAgent = useUpdateAgent();
+  const applyHarnessConfig = useApplyHarnessConfig();
   const setAgentConnections = useSetAgentConnections();
   const applyPreset = useApplyEgressPreset();
   const createRule = useCreateEgressRule();
@@ -155,6 +160,9 @@ export function useSandboxSettingsSave({
           connectionIds: savedAppIds,
         });
       }
+      if (harnessDraft.dirty) {
+        await applyHarnessConfig.mutateAsync(harnessDraft.buildInput(agentId));
+      }
       for (const id of net.pendingDeletes) await revokeRule.mutateAsync({ id });
       for (const add of net.pendingAdds) {
         await createRule.mutateAsync({
@@ -166,6 +174,7 @@ export function useSandboxSettingsSave({
         });
       }
       net.reset();
+      harnessDraft.commit();
       // RHF `reset(values)` replaces the value set wholesale — every schema
       // field must be present, or the omitted ones become undefined and all
       // later saves fail validation invisibly.

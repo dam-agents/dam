@@ -21,7 +21,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     Variables: { user: UserIdentity; roles: string[] };
   }>();
 
-  routes.post("/api/artifact-library/upload", async (c) => {
+  routes.post("/upload", async (c) => {
     const user = c.get("user");
     const fileName = c.req.query("filename");
     if (!fileName) return c.json({ error: "filename query is required" }, 400);
@@ -61,7 +61,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     return c.json({ uploadRef: key });
   });
 
-  routes.get("/api/artifact-library/:id/download", async (c) => {
+  routes.get("/:id/download", async (c) => {
     const user = c.get("user");
     const id = c.req.param("id");
     const rawVersion = c.req.query("v");

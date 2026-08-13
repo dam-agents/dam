@@ -20,3 +20,4 @@ export {
   type SpawnInput,
 } from "./services/invocations-service.js";
 export type { InvocationLivenessSweep } from "./services/invocation-liveness.js";
+export { isInvocationTargetName } from "./domain/target-name.js";
