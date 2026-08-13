@@ -23,7 +23,7 @@ export interface LiveEventsModule {
 export function composeLiveEventsModule(deps: {
   bus: RedisBus;
   log: (message: string) => void;
-  k8s?: Pick<K8sClient, "watchCustomObjects">;
+  k8s: Pick<K8sClient, "watchCustomObjects">;
 }): LiveEventsModule {
   const bus = createRedisLiveEventsBus(deps.bus, deps.log);
   let saga: Subscription | null = null;
@@ -38,7 +38,7 @@ export function composeLiveEventsModule(deps: {
       saga = null;
     },
     startAgentWatch() {
-      if (!deps.k8s || watch) return;
+      if (watch) return;
       watch = startAgentWatch(bus, deps.k8s, {
         plural: AGENTS_PLURAL,
         ownerLabel: LABEL_OWNER,

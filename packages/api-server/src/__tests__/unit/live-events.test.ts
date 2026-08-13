@@ -33,6 +33,7 @@ function harness() {
   const module = composeLiveEventsModule({
     bus,
     log: (m) => warnings.push(m),
+    k8s: { watchCustomObjects: () => () => {} },
   });
   return { bus, subscribedChannels, warnings, module };
 }
