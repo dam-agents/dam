@@ -220,6 +220,7 @@ interface SourceScan {
   skills: Skill[];
   scannedAt: number;
   viaPod: boolean;
+  visibility?: "public" | "private";
 }
 
 async function scanForSource(
@@ -283,7 +284,9 @@ async function runScanForSource(
   src: SkillSource,
   agentId?: string,
 ): Promise<SourceScan> {
+  let archiveAsked = false;
   if (detectHost(src.gitUrl)) {
+    archiveAsked = true;
     try {
       const { skills, scannedAt } = await deps.scanSource(
         { kind: "shared" },
@@ -291,7 +294,7 @@ async function runScanForSource(
         src.path,
         (gitUrl) => deps.scanPublic(gitUrl, src.path),
       );
-      return { skills, scannedAt, viaPod: false };
+      return { skills, scannedAt, viaPod: false, visibility: "public" };
     } catch (err) {
       if (!(err instanceof PublicArchiveNotFoundError)) throw err;
     }
@@ -319,7 +322,12 @@ async function runScanForSource(
       src.path,
       (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
     );
-    return { skills, scannedAt, viaPod: true };
+    return {
+      skills,
+      scannedAt,
+      viaPod: true,
+      visibility: archiveAsked ? "private" : undefined,
+    };
   } catch (err) {
     const verdict = await podGithubVerdict(deps, err, agentId);
     if (!verdict) throw err;
@@ -492,8 +500,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      const { skills, scannedAt } = await scanForSource(deps, src, agentId);
-      return { skills, scannedAt: new Date(scannedAt).toISOString() };
+      const { skills, scannedAt, visibility } = await scanForSource(
+        deps,
+        src,
+        agentId,
+      );
+      return {
+        skills,
+        scannedAt: new Date(scannedAt).toISOString(),
+        visibility,
+      };
     },
 
     async getSkillContent(sourceId: string, name: string, agentId?: string) {

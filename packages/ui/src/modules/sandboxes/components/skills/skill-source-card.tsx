@@ -3,12 +3,15 @@ import {
   ChevronUp,
   Launch,
   OverflowMenuHorizontal,
-  Warning,
+  Renew,
+  Time,
+  TrashCan,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -20,11 +23,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
-import { isConnectionFailure } from "@/lib/scan-failure";
 import { cn } from "@/lib/utils";
 
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
+import { SourceError } from "./skill-source-error.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
 function repoLabel(source: SkillSource): string {
@@ -32,32 +35,39 @@ function repoLabel(source: SkillSource): string {
   return source.path ? `${base} · ${source.path}` : base;
 }
 
-function SourceError({
-  failure,
-  onManageConnections,
+function ScanFreshness({
+  scannedAt,
+  scanning,
+  onRescan,
 }: {
-  failure: ScanFailure;
-  onManageConnections?: () => void;
+  scannedAt: string;
+  scanning: boolean;
+  onRescan: () => void;
 }) {
-  const canManage = onManageConnections && isConnectionFailure(failure);
+  if (scanning) {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+        <Spinner size={13} /> Scanning…
+      </span>
+    );
+  }
   return (
-    <div className="flex items-start gap-2 border-t border-border bg-danger-light px-4 py-3 text-sm text-danger">
-      <Warning size={16} className="mt-px shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="font-semibold">{failure.title}</p>
-        <p className="text-muted-foreground">{failure.detail}</p>
-      </div>
-      {canManage && (
-        <Button
-          variant="link"
-          size="inline"
-          onClick={onManageConnections}
-          className="shrink-0 font-semibold text-current underline hover:opacity-80"
-        >
-          Manage connections
-        </Button>
-      )}
-    </div>
+    <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+      <Time size={13} />
+      <span title={formatTimestamp(scannedAt)}>
+        scanned {timeAgo(scannedAt)}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Re-scan this source"
+        tooltip="Re-scan this source"
+        onClick={onRescan}
+        className="text-muted-foreground"
+      >
+        <Renew size={14} />
+      </Button>
+    </span>
   );
 }
 
@@ -67,6 +77,7 @@ export function SkillSourceCard({
   loading,
   error,
   scannedAt,
+  visibility,
   installedRef,
   busyKey,
   disabled,
@@ -88,6 +99,7 @@ export function SkillSourceCard({
   loading: boolean;
   error: ScanFailure | null;
   scannedAt?: string;
+  visibility?: "public" | "private";
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
@@ -101,7 +113,7 @@ export function SkillSourceCard({
   suppressedNames?: ReadonlySet<string>;
   onManageConnections?: () => void;
   filteredNames?: ReadonlySet<string> | null;
-  onToggleAll?: (on: boolean) => void;
+  onToggleAll?: (on: boolean, scope?: Skill[]) => void;
   bulkBusy?: boolean;
 }) {
   const loaded = skills !== undefined;
@@ -126,7 +138,6 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const allEnabled = list.length > 0 && enabled.length === list.length;
   const filtering = filteredNames != null;
   const visible = filtering
     ? sorted.filter((s) => filteredNames.has(s.name))
@@ -134,11 +145,16 @@ export function SkillSourceCard({
       ? enabled
       : sorted;
 
+  const bulkList = filtering ? visible : list;
+  const bulkAllOn =
+    bulkList.length > 0 &&
+    bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
+
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
     <Card className={cn(readOnly && "bg-muted")}>
-      <div className="flex items-center gap-2 px-4 py-3">
+      <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[15px] font-semibold text-foreground">
@@ -149,34 +165,49 @@ export function SkillSourceCard({
                 {enabled.length} of {list.length} on
               </span>
             )}
+            {}
+            {visibility === "private" && (
+              <Badge
+                variant="template"
+                className="shrink-0"
+                title="Only readable through this sandbox's GitHub connection"
+              >
+                Private
+              </Badge>
+            )}
           </div>
-          <p className="truncate text-sm text-muted-foreground">
+          <p className="truncate font-mono text-xs text-muted-foreground">
             {repoLabel(source)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {}
-          {onToggleAll && !readOnly && !filtering && loaded && !error && (
+          {!error && scannedAt && (
+            <ScanFreshness
+              scannedAt={scannedAt}
+              scanning={loading}
+              onRescan={onRescan}
+            />
+          )}
+          {!scannedAt && loading && <Spinner size={15} />}
+          {}
+          {onToggleAll && !readOnly && loaded && !error && (
             <Button
               variant="outline"
               size="sm"
-              disabled={disabled || bulkBusy || list.length === 0}
-              onClick={() => onToggleAll(!allEnabled)}
+              disabled={disabled || bulkBusy || bulkList.length === 0}
+              onClick={() =>
+                onToggleAll(!bulkAllOn, filtering ? visible : undefined)
+              }
             >
               {bulkBusy && <Spinner size={13} />}
-              {allEnabled ? "Disable all" : "Enable all"}
+              {filtering
+                ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
+                : bulkAllOn
+                  ? "Disable all"
+                  : "Enable all"}
             </Button>
           )}
-          {}
-          {!error && scannedAt && (
-            <span
-              className="shrink-0 text-sm text-muted-foreground"
-              title={formatTimestamp(scannedAt)}
-            >
-              scanned {timeAgo(scannedAt)}
-            </span>
-          )}
-          {loading && <Spinner size={15} />}
           {}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -201,7 +232,8 @@ export function SkillSourceCard({
               </DropdownMenuItem>
               {canRemove && (
                 <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                  Remove source
+                  <TrashCan size={14} />
+                  <span className="flex-1">Remove source</span>
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -250,9 +282,11 @@ export function SkillSourceCard({
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}
-          className="flex w-full items-center gap-1 border-t border-border px-4 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="flex w-full items-center justify-center gap-1 border-t border-border px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          {expanded ? "Hide available" : "Expand all"}
+          {expanded
+            ? "Hide available"
+            : `Show ${available.length} more available`}
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}

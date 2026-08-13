@@ -3,6 +3,7 @@ import type { HarnessConfigCurrent } from "agent-runtime-api";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
 import { createAgentTrpc } from "../agent-trpc.js";
 import { useIsAgentOperable } from "./queries.js";
 
@@ -107,6 +108,20 @@ export function useResolvedHarnessConfig(
     modelsPaired: false,
     pending,
   };
+}
+
+export function useStaleModel(agentId: string | null): {
+  stale: boolean;
+  model: string | null;
+} {
+  const operable = useIsAgentOperable(agentId);
+  const { data } = useHarnessConfigSnapshot(agentId);
+  const snapshot = data?.snapshot;
+  const model = snapshot?.model ?? null;
+  if (operable || !snapshot || snapshot.modelAtDiscovery !== model) {
+    return { stale: false, model };
+  }
+  return { stale: unavailableModel(snapshot) !== null, model };
 }
 
 export function useApplyHarnessConfig() {

@@ -1,9 +1,10 @@
 import {
   Download,
-  Launch,
+  Export,
   OverflowMenuHorizontal,
-  PullRequest,
   Renew,
+  TrashCan,
+  View,
 } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
@@ -22,11 +23,11 @@ import { cn } from "@/lib/utils";
 
 const PR_STATE_PILL: Record<
   NonNullable<SkillPublishRecord["prState"]> | "unknown",
-  { label: string; variant: "outline" | "info" | "success" | "muted" }
+  { label: string; variant: "info" | "success" | "muted" }
 > = {
-  draft: { label: "Draft", variant: "outline" },
-  open: { label: "In review", variant: "info" },
-  merged: { label: "Published", variant: "success" },
+  draft: { label: "Draft", variant: "muted" },
+  open: { label: "Open", variant: "info" },
+  merged: { label: "Merged", variant: "success" },
   closed: { label: "Closed", variant: "muted" },
   unknown: { label: "Submitted", variant: "muted" },
 };
@@ -35,6 +36,7 @@ export function StandaloneSkillRow({
   skill,
   publish,
   divided,
+  readOnly,
   canPublish,
   onPublish,
   onDownload,
@@ -46,6 +48,7 @@ export function StandaloneSkillRow({
   skill: LocalSkill;
   publish?: SkillPublishRecord;
   divided: boolean;
+  readOnly: boolean;
   canPublish: boolean;
   onPublish: () => void;
   onDownload: () => void;
@@ -60,7 +63,7 @@ export function StandaloneSkillRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-4 py-3",
+        "flex items-center gap-3 px-4 py-2",
         divided && "border-t border-border",
       )}
     >
@@ -78,14 +81,6 @@ export function StandaloneSkillRow({
             {skill.name}
           </p>
         )}
-        <p
-          className={cn(
-            "truncate text-sm text-muted-foreground",
-            !skill.description && "italic",
-          )}
-        >
-          {skill.description || "No description"}
-        </p>
       </div>
 
       {publish && (
@@ -99,29 +94,13 @@ export function StandaloneSkillRow({
             {...externalLinkProps}
             className={cn(
               badgeVariants({ variant: pill.variant }),
-              "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
+              "shrink-0 font-medium transition-opacity hover:opacity-80",
+              readOnly && "border-border",
             )}
           >
-            <PullRequest size={13} /> {pill.label} · {publish.sourceName}
+            {pill.label}
           </a>
         </Tooltip>
-      )}
-
-      {canRepublish && (
-        <Button
-          variant="outline"
-          size="xs"
-          disabled={!canPublish}
-          onClick={onPublish}
-          tooltip={
-            canPublish
-              ? "Publish this skill as a pull request"
-              : "Add a GitHub source first to publish there"
-          }
-          className="shrink-0 gap-1.5"
-        >
-          {publish ? "Publish again" : "Publish"} <Launch size={13} />
-        </Button>
       )}
 
       <DropdownMenu>
@@ -136,6 +115,12 @@ export function StandaloneSkillRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
+          {onOpen && (
+            <DropdownMenuItem onSelect={onOpen}>
+              <View size={14} />
+              <span className="flex-1">Preview SKILL.md</span>
+            </DropdownMenuItem>
+          )}
           {publish?.prState === "merged" && onTrack && (
             <DropdownMenuItem
               disabled={trackUnavailable}
@@ -150,12 +135,30 @@ export function StandaloneSkillRow({
               <span className="flex-1">Track from {publish.sourceName}</span>
             </DropdownMenuItem>
           )}
+          {}
+          {canRepublish && (
+            <DropdownMenuItem
+              disabled={!canPublish}
+              onSelect={onPublish}
+              title={
+                canPublish
+                  ? undefined
+                  : "Add a GitHub source first to publish there"
+              }
+            >
+              <Export size={14} />
+              <span className="flex-1">
+                {publish ? "Publish again…" : "Publish…"}
+              </span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={onDownload}>
             <Download size={14} />
             <span className="flex-1">Download skill</span>
           </DropdownMenuItem>
           <DropdownMenuItem tone="danger" onSelect={onDelete}>
-            Delete skill
+            <TrashCan size={14} />
+            <span className="flex-1">Delete skill</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

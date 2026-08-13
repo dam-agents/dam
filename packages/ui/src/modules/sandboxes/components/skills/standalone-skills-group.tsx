@@ -1,6 +1,5 @@
-import { Upload } from "@carbon/icons-react";
+import { Document } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
-import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
@@ -9,31 +8,13 @@ import { cn } from "@/lib/utils";
 
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
 
-export function StandaloneSkillsPlaceholder() {
+export function StandaloneSkillsEmptyState() {
   return (
     <section>
-      <div className="mb-3">
-        <SectionLabel>Created in this sandbox</SectionLabel>
-      </div>
-      <div className="rounded-lg border border-border bg-muted px-4 py-6">
-        <p className="text-sm text-muted-foreground">
-          Skills created in this sandbox appear here once it's running.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
-  return (
-    <section>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <SectionLabel>Created in this sandbox</SectionLabel>
-        {action}
-      </div>
+      <SectionLabel spaced>Created in this sandbox</SectionLabel>
       <Callout variant="dashed">
         <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <Upload size={20} className="text-muted-foreground" />
+          <Document size={20} className="text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             No skills created in this sandbox yet. Drop a .md file here, or ask
             the agent to author one.
@@ -66,7 +47,6 @@ export function StandaloneSkillsGroup({
   onTrack,
   onOpenSkill,
   trackUnavailableNames,
-  action,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
@@ -78,15 +58,13 @@ export function StandaloneSkillsGroup({
   onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
   onOpenSkill?: (skill: LocalSkill) => void;
   trackUnavailableNames: ReadonlySet<string>;
-  action?: ReactNode;
 }) {
   const published = latestPublishByName(publishes);
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3">
         <SectionLabel>Created in this sandbox</SectionLabel>
-        {action}
       </div>
       <Card className={cn(readOnly && "bg-muted")}>
         {skills.map((skill, i) => {
@@ -97,6 +75,7 @@ export function StandaloneSkillsGroup({
               skill={skill}
               publish={pub}
               divided={i > 0}
+              readOnly={readOnly}
               canPublish={canPublish}
               onPublish={() => onPublish(skill)}
               onDownload={() => onDownload(skill)}

@@ -5,9 +5,14 @@ import type { AgentView } from "../../../types.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
+  useResolvedHarnessConfig,
+  useStaleModel,
 } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
-import { useSkillsState } from "../../agents/api/skills.js";
+import {
+  useSkillSourceCount,
+  useSkillsState,
+} from "../../agents/api/skills.js";
 import {
   type SandboxSubtitleLookup,
   sandboxSubtitleParts,
@@ -22,6 +27,11 @@ import { useSchedules } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
+type SectionWarnings = Partial<Record<SandboxSection, string>>;
+
+const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function formatNameList(names: string[], max = 2): string | undefined {
   if (names.length === 0) return undefined;
@@ -30,7 +40,10 @@ function formatNameList(names: string[], max = 2): string | undefined {
   return extra > 0 ? `${shown.join(", ")}, +${extra} more` : shown.join(", ");
 }
 
-export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
+export function useSectionSummaries(agent: AgentView | null): {
+  summaries: SectionSummaries;
+  warnings: SectionWarnings;
+} {
   const { data: templates = [] } = useTemplates();
   const { data: apps = [] } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
@@ -58,6 +71,12 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     [apps],
   );
 
+  const staleModel = useStaleModel(agent?.id ?? null);
+  const sourceCount = useSkillSourceCount(agent?.id ?? null);
+  const { hasRun, pending: configPending } = useResolvedHarnessConfig(
+    agent?.id ?? null,
+  );
+
   const setup = useMemo(() => {
     if (!agent) return undefined;
     const lookup: SandboxSubtitleLookup = {
@@ -65,8 +84,9 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
       connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
     };
     const { harness, provider } = sandboxSubtitleParts(agent, lookup);
-    return [harness, provider, modelName].filter(Boolean).join(", ");
-  }, [agent, templates, apps, modelName]);
+    const base = [harness, provider, modelName].filter(Boolean).join(", ");
+    return staleModel.stale ? `${base} · not offered` : base;
+  }, [agent, templates, apps, modelName, staleModel.stale]);
 
   const connections = useMemo(() => {
     if (!connectionsQuery.data) return undefined;
@@ -80,10 +100,17 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   }, [connectionsQuery.data, apps, providerAppIds]);
 
   const skills = useMemo(() => {
-    const standalone = (skillsState.data?.standalone ?? []).map((s) => s.name);
-    const installed = (skillsState.data?.installed ?? []).map((s) => s.name);
-    return formatNameList([...standalone, ...installed]);
-  }, [skillsState.data]);
+    if (configPending) return undefined;
+    if (!hasRun) return "Not known yet";
+    const state = skillsState.data;
+    if (!state) return undefined;
+    const on = state.installed.length;
+    const created = state.standalone.length;
+    if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
+    return sourceCount === null
+      ? `${on} on`
+      : `${on} on across ${plural(sourceCount, "source")}`;
+  }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;
   const channelsSummary = useMemo(() => {
@@ -127,12 +154,15 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   }, [monthSpend]);
 
   return {
-    setup,
-    connections,
-    channels: channelsSummary,
-    skills,
-    schedules: schedulesSummary,
-    artifacts: artifactsSummary,
-    usage: usageSummary,
+    summaries: {
+      setup,
+      connections,
+      channels: channelsSummary,
+      skills,
+      schedules: schedulesSummary,
+      artifacts: artifactsSummary,
+      usage: usageSummary,
+    },
+    warnings: staleModel.stale ? { setup: STALE_MODEL_WARNING } : {},
   };
 }

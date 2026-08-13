@@ -47,7 +47,7 @@ export function GrantedConnectionsPanel({
         <SectionLabel>My connections</SectionLabel>
         <Button
           variant="outline"
-          className="h-8 px-3 text-sm font-normal"
+          size="sm"
           onClick={onOpenCatalog}
           data-testid="open-connection-catalog"
         >

@@ -45,7 +45,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         )}
         <Button
           variant="outline"
-          className="h-8 px-3 text-sm font-normal"
+          size="sm"
           onClick={() => setModalTarget("new")}
           disabled={!agent}
           data-testid="slack-connect"

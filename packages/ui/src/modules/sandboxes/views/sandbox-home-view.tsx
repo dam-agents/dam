@@ -23,7 +23,7 @@ export function SandboxHomeView() {
 
   const display = useResolvedAgentDisplay(f.agent);
 
-  const summaries = useSectionSummaries(f.agent);
+  const { summaries, warnings } = useSectionSummaries(f.agent);
 
   if (f.status !== "ready" || !f.agent || !display) {
     return (
@@ -66,6 +66,7 @@ export function SandboxHomeView() {
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}
+          warnings={warnings}
         />
       }
     >

@@ -2,6 +2,8 @@ import type { LocalSkill, Skill, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useMemo } from "react";
 
+import { repoSlug } from "@/lib/git-source";
+
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
@@ -30,6 +32,8 @@ export interface SkillsDerivations {
   anyInstalled: boolean;
   drifted: Skill[];
   trackUnavailableNames: ReadonlySet<string>;
+  snapshotRows: { label: string; names: string[]; capturedAt?: string }[];
+  snapshotOnCount: number;
 }
 
 export function useSkillsDerivations(
@@ -42,6 +46,7 @@ export function useSkillsDerivations(
     skillsBySource,
     errorBySource,
     standalone,
+    standaloneSnapshot,
     publishes,
     installed,
     installedRef,
@@ -196,6 +201,37 @@ export function useSkillsDerivations(
     return out;
   }, [publishes, skillsBySource]);
 
+  const snapshotRows = useMemo(() => {
+    const rows: { label: string; names: string[]; capturedAt?: string }[] = [];
+    if (createdHere.length > 0) {
+      rows.push({
+        label: "Created here",
+        names: createdHere.map((s) => s.name),
+        ...(standaloneSnapshot
+          ? { capturedAt: standaloneSnapshot.capturedAt }
+          : {}),
+      });
+    }
+    const byUrl = new Map<string, string[]>();
+    for (const ref of installed) {
+      const names = byUrl.get(ref.source);
+      if (names) names.push(ref.name);
+      else byUrl.set(ref.source, [ref.name]);
+    }
+    for (const src of sources) {
+      const names = byUrl.get(src.gitUrl);
+      if (names && names.length > 0) rows.push({ label: src.name, names });
+      byUrl.delete(src.gitUrl);
+    }
+    for (const [gitUrl, names] of byUrl) {
+      rows.push({ label: repoSlug(gitUrl), names });
+    }
+    if (builtIn.length > 0) {
+      rows.push({ label: "With the image", names: builtIn.map((s) => s.name) });
+    }
+    return rows;
+  }, [createdHere, builtIn, installed, sources, standaloneSnapshot]);
+
   return {
     q,
     searching,
@@ -218,5 +254,7 @@ export function useSkillsDerivations(
     anyInstalled: totals.on > 0,
     drifted,
     trackUnavailableNames,
+    snapshotRows,
+    snapshotOnCount: installed.length,
   };
 }

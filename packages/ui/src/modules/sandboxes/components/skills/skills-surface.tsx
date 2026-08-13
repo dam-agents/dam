@@ -1,15 +1,18 @@
-import { Add, Upload } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import type { SkillsState } from "api-server-api";
 import type { DragEvent } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
+import {
+  useResolvedHarnessConfig,
+  useStaleModel,
+} from "../../../agents/api/harness-config.js";
+import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
@@ -18,11 +21,14 @@ import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSetActions } from "./skill-set-actions.js";
 import { SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
+import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
+import { SkillSourcesSkeleton } from "./skills-skeleton.js";
+import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
+import { StaleModelNotice } from "./stale-model-notice.js";
 import {
   StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
-  StandaloneSkillsPlaceholder,
 } from "./standalone-skills-group.js";
 
 export function SkillsSurface({
@@ -40,6 +46,9 @@ export function SkillsSurface({
 }) {
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const wakeAgent = useWakeAgent();
+  const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
+  const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
@@ -56,16 +65,8 @@ export function SkillsSurface({
     toggleAllWithConfirm,
     removeSourceWithConfirm,
   } = useSkillsConfirms(surface, derived);
-  const {
-    sources,
-    sourcesLoaded,
-    stateLoaded,
-    standalone,
-    publishes,
-    updatingAll,
-    updateAll,
-    downloadStandalone,
-  } = surface;
+  const { sources, publishes, updatingAll, updateAll, downloadStandalone } =
+    surface;
   const {
     searching,
     totals,
@@ -77,9 +78,11 @@ export function SkillsSurface({
     anyInstalled,
     drifted,
     trackUnavailableNames,
+    snapshotRows,
+    snapshotOnCount,
   } = derived;
 
-  const addSourceButton = readOnly ? null : (
+  const addSourceButton = (
     <Button
       variant="outline"
       size="sm"
@@ -87,8 +90,46 @@ export function SkillsSurface({
         setOpenModal({ kind: "add-source", tab: "github", files: [] })
       }
     >
-      <Add size={14} /> Add source
+      <Add size={16} /> Add source
     </Button>
+  );
+
+  const manageConnections = agentId
+    ? () => navigateToSandboxHome(agentId, "connections")
+    : undefined;
+
+  const ran = hasRun || surface.standaloneSnapshot !== undefined;
+
+  const stoppedPanel = (
+    <SkillsStoppedPanel
+      onCount={snapshotOnCount}
+      rows={snapshotRows}
+      sources={sources}
+      sourcesLoaded={surface.sourcesLoaded}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      loadingBySource={surface.loadingBySource}
+      errorBySource={surface.errorBySource}
+      addSourceButton={addSourceButton}
+      callout={
+        staleModel.stale && staleModel.model ? (
+          <StaleModelNotice
+            model={staleModel.model}
+            comingUp={!!comingUp}
+            onStartAndFix={() => {
+              if (!agentId) return;
+              wakeAgent.wake(agentId);
+              navigateToSandboxHome(agentId, "setup");
+            }}
+          />
+        ) : undefined
+      }
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+      onManageConnections={manageConnections}
+    />
   );
 
   const dropEnabled = !readOnly && !!agentId;
@@ -113,41 +154,43 @@ export function SkillsSurface({
       }
     : {};
 
-  const isEmpty =
-    !readOnly &&
-    sourcesLoaded &&
-    stateLoaded &&
-    sources.length === 0 &&
-    standalone.length === 0;
+  const neverRunPanel = (
+    <SkillsNeverRunPanel
+      sources={sources}
+      sourcesLoaded={surface.sourcesLoaded}
+      visibilityBySource={surface.visibilityBySource}
+      scannedAtBySource={surface.scannedAtBySource}
+      loadingBySource={surface.loadingBySource}
+      errorBySource={surface.errorBySource}
+      addSourceButton={addSourceButton}
+      comingUp={!!comingUp}
+      onStart={() => agentId && wakeAgent.wake(agentId)}
+      onRescan={(src) => void surface.refreshSource(src.id)}
+      onRemove={(src) => void removeSourceWithConfirm(src)}
+      onManageConnections={manageConnections}
+    />
+  );
 
   return (
     <div
       {...surfaceDropProps}
       className={cn(
-        "flex flex-col gap-8",
-        readOnly && "pointer-events-none",
-        readOnly && (comingUp ? "opacity-60" : "opacity-40"),
+        "flex flex-col",
         pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
       )}
     >
-      {isEmpty ? (
-        <section>
-          <SectionLabel spaced>Skills</SectionLabel>
-          <Callout variant="dashed">
-            <div className="flex flex-col items-center gap-4 py-10 text-center">
-              <Upload size={22} className="text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                Drop a .md file here to create a skill, or add a GitHub repo as
-                a source.
-              </p>
-              {addSourceButton}
-            </div>
-          </Callout>
-        </section>
+      {readOnly ? (
+        configPending && !ran ? (
+          <SkillSourcesSkeleton />
+        ) : ran ? (
+          stoppedPanel
+        ) : (
+          neverRunPanel
+        )
       ) : (
         <>
           {}
-          {!readOnly && (
+          <div className="mb-5">
             <SkillsSearchHeader
               query={query}
               onQueryChange={setQuery}
@@ -171,64 +214,60 @@ export function SkillsSurface({
                 />
               }
             />
-          )}
+          </div>
 
-          {shownCreatedHere.length > 0 ? (
-            <StandaloneSkillsGroup
-              skills={shownCreatedHere}
+          <div className="flex flex-col gap-8">
+            {shownCreatedHere.length > 0 ? (
+              <StandaloneSkillsGroup
+                skills={shownCreatedHere}
+                readOnly={readOnly}
+                publishes={publishes}
+                canPublish={publishableSources.length > 0}
+                onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
+                onDownload={(skill) => void downloadStandalone(skill)}
+                onDelete={(skill, pub) =>
+                  void deleteStandaloneWithConfirm(skill, pub)
+                }
+                onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+                trackUnavailableNames={trackUnavailableNames}
+              />
+            ) : searching ? null : (
+              <StandaloneSkillsEmptyState />
+            )}
+
+            <SkillSourcesSection
               readOnly={readOnly}
-              publishes={publishes}
-              canPublish={publishableSources.length > 0}
-              onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
-              onDownload={(skill) => void downloadStandalone(skill)}
-              onDelete={(skill, pub) =>
-                void deleteStandaloneWithConfirm(skill, pub)
-              }
-              onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
-              onOpenSkill={
-                agentId
-                  ? (skill) => setOpenModal({ kind: "render-local", skill })
-                  : undefined
-              }
-              trackUnavailableNames={trackUnavailableNames}
+              surface={surface}
+              derived={derived}
               action={addSourceButton}
-            />
-          ) : searching ? null : readOnly ? (
-            <StandaloneSkillsPlaceholder />
-          ) : (
-            <StandaloneSkillsEmptyState action={addSourceButton} />
-          )}
-
-          {shownBuiltIn.length > 0 && (
-            <BuiltInSkillsGroup
-              skills={shownBuiltIn}
-              onOpenSkill={
-                agentId
-                  ? (skill) => setOpenModal({ kind: "render-local", skill })
-                  : undefined
+              onOpenSkill={(source, skill) =>
+                setOpenModal({ kind: "render", source, skill })
               }
+              onAddSets={() => setOpenModal({ kind: "add-sets" })}
+              onToggleAll={(src, on, scope) =>
+                void toggleAllWithConfirm(src, on, scope)
+              }
+              onRemove={(src) => void removeSourceWithConfirm(src)}
+              onManageConnections={manageConnections}
             />
-          )}
 
-          <SkillSourcesSection
-            agentId={agentId}
-            readOnly={readOnly}
-            isError={isError}
-            surface={surface}
-            derived={derived}
-            action={addSourceButton}
-            onOpenSkill={(source, skill) =>
-              setOpenModal({ kind: "render", source, skill })
-            }
-            onAddSets={() => setOpenModal({ kind: "add-sets" })}
-            onToggleAll={(src, on) => void toggleAllWithConfirm(src, on)}
-            onRemove={(src) => void removeSourceWithConfirm(src)}
-            onManageConnections={
-              agentId
-                ? () => navigateToSandboxHome(agentId, "connections")
-                : undefined
-            }
-          />
+            {}
+            {shownBuiltIn.length > 0 && (
+              <BuiltInSkillsGroup
+                skills={shownBuiltIn}
+                onOpenSkill={
+                  agentId
+                    ? (skill) => setOpenModal({ kind: "render-local", skill })
+                    : undefined
+                }
+              />
+            )}
+          </div>
         </>
       )}
 
@@ -237,6 +276,10 @@ export function SkillsSurface({
         agentId={agentId}
         surface={surface}
         derived={derived}
+        onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
+        onDeleteLocal={(skill, pub) =>
+          void deleteStandaloneWithConfirm(skill, pub)
+        }
         onClose={() => setOpenModal(null)}
       />
     </div>

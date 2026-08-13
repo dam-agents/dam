@@ -46,9 +46,12 @@ export interface SkillsSurface {
   loadingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   scannedAtBySource: Record<string, string>;
+  visibilityBySource: Record<string, "public" | "private">;
   installed: SkillRef[];
   standalone: LocalSkill[];
+  standaloneSnapshot: SkillsState["standaloneSnapshot"];
   publishes: SkillPublishRecord[];
+  mutationsDisabled: boolean;
   busyKey: string | null;
   busySourceId: string | null;
   updatingAll: boolean;
@@ -117,6 +120,9 @@ export function useSkillsSurface(
   const [scannedAtBySource, setScannedAtBySource] = useState<
     Record<string, string>
   >({});
+  const [visibilityBySource, setVisibilityBySource] = useState<
+    Record<string, "public" | "private">
+  >({});
   const [installed, setInstalled] = useState<SkillRef[]>([]);
   const [standalone, setStandalone] = useState<LocalSkill[]>([]);
   const [standaloneSnapshot, setStandaloneSnapshot] =
@@ -152,12 +158,13 @@ export function useSkillsSurface(
       setLoadingBySource((l) => ({ ...l, [sourceId]: true }));
       setErrorBySource((e) => ({ ...e, [sourceId]: null }));
       try {
-        const { skills, scannedAt } = await api.skills.listWithScan.query({
-          sourceId,
-          agentId,
-        });
+        const { skills, scannedAt, visibility } =
+          await api.skills.listWithScan.query({ sourceId, agentId });
         setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
         setScannedAtBySource((m) => ({ ...m, [sourceId]: scannedAt }));
+        if (visibility) {
+          setVisibilityBySource((m) => ({ ...m, [sourceId]: visibility }));
+        }
       } catch (err) {
         setErrorBySource((e) => ({ ...e, [sourceId]: toScanFailure(err) }));
         setSkillsBySource((s) => ({ ...s, [sourceId]: [] }));
@@ -613,9 +620,12 @@ export function useSkillsSurface(
     loadingBySource,
     errorBySource,
     scannedAtBySource,
+    visibilityBySource,
     installed,
     standalone,
+    standaloneSnapshot,
     publishes,
+    mutationsDisabled: !agentId || isError || readOnly,
     busyKey,
     busySourceId,
     updatingAll,
