@@ -852,7 +852,17 @@ export async function bootstrap() {
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
     agentsFor: harnessAgentsServiceFor,
-    k8s: k8sClient,
+    // The crash signal comes off the Agent CR the controller publishes, not
+    // from pods — the api-server has no pod read anywhere, by design.
+    readTargetRestart: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent
+        ? {
+            podRestarts: agent.podRestarts,
+            podRestartReason: agent.podRestartReason,
+          }
+        : null;
+    },
     batchSize: 200,
   });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>

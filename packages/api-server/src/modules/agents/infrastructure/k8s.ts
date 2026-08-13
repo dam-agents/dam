@@ -3,9 +3,13 @@ import * as k8s from "@kubernetes/client-node";
 export interface K8sClient {
   readonly namespace: string;
 
-  readAgentPodRestart(
-    agentId: string,
-  ): Promise<{ restarts: number; reason: string | null } | null>;
+  // Agents/forks are custom resources and templates are file-mounted now,
+  // so the api-server makes no ConfigMap calls — none are exposed. Pods are
+  // absent for the same reason and deliberately stay that way: readiness is
+  // the Agent's Ready condition and a mid-turn crash is its published
+  // restart count, both controller-written status. A pod read here would also
+  // need an RBAC grant the chart withholds on purpose — see
+  // docs/architecture/platform-topology.md.
 
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
   getSecret(name: string): Promise<k8s.V1Secret | null>;
@@ -75,27 +79,6 @@ export function createK8sClient(
 
   return {
     namespace,
-
-    async readAgentPodRestart(agentId) {
-      const res = await api.listNamespacedPod({
-        namespace,
-        labelSelector: `agent-platform.ai/pair=${agentId},agent-platform.ai/role=agent`,
-      });
-      const pods = res.items ?? [];
-      if (pods.length === 0) return null;
-      let restarts = 0;
-      let reason: string | null = null;
-      for (const pod of pods) {
-        for (const cs of pod.status?.containerStatuses ?? []) {
-          const count = cs.restartCount ?? 0;
-          if (count > restarts) {
-            restarts = count;
-            reason = cs.lastState?.terminated?.reason ?? null;
-          }
-        }
-      }
-      return { restarts, reason };
-    },
 
     async listSecrets(labelSelector) {
       const res = await api.listNamespacedSecret({ namespace, labelSelector });

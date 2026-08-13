@@ -162,6 +162,13 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
+		// The pod the count described is gone, so leaving it set would let a
+		// consumer read a scaled-down agent as having crashed — and the woken
+		// agent's fresh pod starts counting from zero anyway. Cleared here
+		// rather than waiting for the next publishReadiness so no reader sees
+		// the stale value in between.
+		s.AgentPodRestarts = 0
+		s.AgentPodRestartReason = ""
 	})
 }
 

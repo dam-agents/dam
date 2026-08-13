@@ -1,5 +1,4 @@
 import type { AgentsService } from "api-server-api";
-import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 
 export interface InvocationLivenessSweep {
@@ -8,10 +7,23 @@ export interface InvocationLivenessSweep {
 
 const RESULT_RETENTION_MS = 10 * 60 * 1000;
 
+/** The crash signal for one target, as the controller published it on the Agent
+ *  status. Null when the Agent is gone (already reaped, or never created). */
+export interface TargetRestartState {
+  podRestarts: number;
+  podRestartReason?: string;
+}
+
 export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
   agentsFor: (owner: string) => AgentsService;
-  k8s: Pick<K8sClient, "readAgentPodRestart">;
+  /** Reads the target Agent's controller-published restart count, to catch one
+   *  crashed mid-turn. Deliberately the Agent status and not the pod: the
+   *  api-server routes on the Agent's conditions and never inspects pods
+   *  itself (docs/architecture/platform-topology.md), so the controller — which
+   *  already watches pods — is what turns a restart into readable state. */
+  readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
   now?: () => Date;
 }
@@ -54,11 +66,11 @@ export function createInvocationLivenessSweep(
       const stillRunning = await deps.repo.listRunning(deps.batchSize);
       for (const row of stillRunning) {
         try {
-          const restart = await deps.k8s.readAgentPodRestart(row.id);
-          if (restart && restart.restarts > 0) {
+          const restart = await deps.readTargetRestart(row.id);
+          if (restart && restart.podRestarts > 0) {
             await failAndReap(
               row,
-              `target pod restarted${restart.reason ? ` (${restart.reason})` : ""}; one-shot turn cannot resume`,
+              `target pod restarted${restart.podRestartReason ? ` (${restart.podRestartReason})` : ""}; one-shot turn cannot resume`,
             );
           }
         } catch (err) {

@@ -1,6 +1,5 @@
 import type { Db } from "db";
 import type { AgentsService, InvocationsQueryService } from "api-server-api";
-import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import {
@@ -10,6 +9,7 @@ import {
 import {
   createInvocationLivenessSweep,
   type InvocationLivenessSweep,
+  type TargetRestartState,
 } from "./services/invocation-liveness.js";
 import {
   createDriverResolution,
@@ -54,13 +54,13 @@ export function composeInvocationsQueryForOwner(opts: {
 export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
-  k8s: Pick<K8sClient, "readAgentPodRestart">;
+  readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   batchSize: number;
 }): InvocationLivenessSweep {
   return createInvocationLivenessSweep({
     repo: createInvocationsRepository(opts.db),
     agentsFor: opts.agentsFor,
-    k8s: opts.k8s,
+    readTargetRestart: opts.readTargetRestart,
     batchSize: opts.batchSize,
   });
 }

@@ -95,6 +95,27 @@ type AgentStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// AgentPodRestarts is the highest observed restart count among the agent
+	// pod's containers, for the pod currently backing this Agent. Published
+	// because a restart is otherwise invisible once the pod recovers: the
+	// readiness conditions report AgentPodReady=True again and the
+	// termination cause on that condition is cleared. The api-server's
+	// Invocation liveness sweep reads it to fail a one-shot target that
+	// crashed mid-turn, and it must not read pods to learn this — conditions
+	// and status are the whole of what it sees (see
+	// docs/architecture/platform-topology.md).
+	//
+	// Counts container restarts within one pod, so it resets when the pod
+	// itself is replaced rather than restarted; the vm backend has no
+	// container statuses and never reports here.
+	// +optional
+	AgentPodRestarts int32 `json:"agentPodRestarts,omitempty"`
+	// AgentPodRestartReason is the classified cause behind the most recent of
+	// AgentPodRestarts (e.g. OutOfMemory), taken from the container's last
+	// terminated state. Empty when the pod has never restarted, or when the
+	// cause is one the classifier does not name.
+	// +optional
+	AgentPodRestartReason string `json:"agentPodRestartReason,omitempty"`
 }
 
 type Mount struct {
@@ -120,7 +141,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=7
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=8
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

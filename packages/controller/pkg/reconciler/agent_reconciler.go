@@ -264,13 +264,32 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
 	ready := agentReady && gatewayReady
 
+	// One read of the agent pod serves both the termination cause below and the
+	// restart count published further down — the latter is needed even on the
+	// ready path, which is the whole point of publishing it (a recovered
+	// restart leaves no other trace). Deliberately independent of
+	// podCurrentAndReady's own read: that one returns false without fetching a
+	// pod when the StatefulSet is stale, and the termination cause has always
+	// been reported in that case too. (Container backend only — a VM has no
+	// container statuses; its failures surface as PodNotReady until VM-shaped
+	// causes are mapped, and it never reports restarts.)
+	var agentPod *corev1.Pod
+	if !agent.Spec.IsVM() {
+		agentPod = r.getPod(ctx, name)
+	}
+
+	// Name the abnormal-termination cause on AgentPodReady so callers can
+	// surface it.
 	agentFailReason, agentFailMsg := "PodNotReady", ""
-	if !agentReady && !agent.Spec.IsVM() {
-		if reason, msg, ok := terminationReason(r.getPod(ctx, name)); ok {
+	if !agentReady {
+		if reason, msg, ok := terminationReason(agentPod); ok {
 			agentFailReason, agentFailMsg = reason, msg
 		}
 	}
 
+	agentRestarts, agentRestartReason := podRestarts(agentPod)
+
+	// Same for the gateway: wedged must be distinguishable from booting.
 	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
 	if !gatewayReady {
 		gatewayFailReason, gatewayFailMsg = r.gatewayNotReadyCause(ctx, GatewayName(name))
@@ -281,6 +300,8 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", gatewayFailReason, gatewayFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
+		s.AgentPodRestarts = agentRestarts
+		s.AgentPodRestartReason = agentRestartReason
 		s.ObservedGeneration = gen
 	})
 }

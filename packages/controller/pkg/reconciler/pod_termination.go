@@ -39,6 +39,32 @@ func terminationReason(pod *corev1.Pod) (reason, message string, ok bool) {
 	return "", "", false
 }
 
+// podRestarts returns the highest container restart count on the pod, plus the
+// classified cause behind that container's last termination ("" when the
+// classifier does not name it). Unlike terminationReason this survives the
+// pod recovering — a restarted-then-Ready container still reports its count,
+// which is the only trace left that the process was replaced. Zero for a nil
+// pod or one whose containers have never restarted (the vm backend included:
+// it publishes no container statuses).
+func podRestarts(pod *corev1.Pod) (restarts int32, reason string) {
+	if pod == nil {
+		return 0, ""
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.RestartCount <= restarts {
+			continue
+		}
+		restarts = cs.RestartCount
+		reason = ""
+		if t := cs.LastTerminationState.Terminated; t != nil {
+			if r, _, ok := classifyTermination(t); ok {
+				reason = r
+			}
+		}
+	}
+	return restarts, reason
+}
+
 func classifyTermination(t *corev1.ContainerStateTerminated) (reason, message string, ok bool) {
 	if t.Reason == "OOMKilled" {
 		return "OutOfMemory", "out of memory (OOMKilled)", true

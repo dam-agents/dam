@@ -41,6 +41,8 @@ interface AgentStatusObject {
     message?: string;
     lastTransitionTime?: string;
   }>;
+  agentPodRestarts?: number;
+  agentPodRestartReason?: string;
 }
 
 export interface InfraAgent {
@@ -62,6 +64,18 @@ export interface InfraAgent {
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
+  /** Restart count the controller observed on the agent pod currently backing
+   *  this agent (0 when never restarted, or while hibernated). The one crash
+   *  signal that outlives the pod recovering — the conditions go back to
+   *  AgentPodReady=True and drop the termination cause, so a mid-turn crash is
+   *  otherwise untraceable. Read from status, never from pods: the api-server
+   *  does not inspect pods (docs/architecture/platform-topology.md). */
+  podRestarts: number;
+  /** Classified cause behind the most recent restart (e.g. OutOfMemory);
+   *  undefined when there was none or the controller could not name it. */
+  podRestartReason?: string;
+  /** AgentPodReady condition reason token when False (PodNotReady, or a
+   *  termination token like ImagePullFailure / OutOfMemory). */
   agentPodNotReadyReason?: string;
   agentPodReady?: boolean;
   gatewayPodReady?: boolean;
@@ -100,6 +114,25 @@ function agentPodTerminationMessage(obj: KubeObject): string | undefined {
   const status = (obj.status ?? {}) as AgentStatusObject;
   const c = status.conditions?.find((c) => c.type === "AgentPodReady");
   return c?.status === "False" && c.message ? c.message : undefined;
+}
+
+/** The agent pod's restart count as published by the controller. Absent on an
+ *  Agent whose status predates the field (or has never been reconciled) reads
+ *  as 0 — "no crash observed", the same as a healthy pod, so a consumer never
+ *  mistakes a silent controller for a crash. */
+function agentPodRestarts(obj: KubeObject): number {
+  const status = (obj.status ?? {}) as AgentStatusObject;
+  const restarts = status.agentPodRestarts;
+  return typeof restarts === "number" &&
+    Number.isFinite(restarts) &&
+    restarts > 0
+    ? restarts
+    : 0;
+}
+
+function agentPodRestartReason(obj: KubeObject): string | undefined {
+  const status = (obj.status ?? {}) as AgentStatusObject;
+  return status.agentPodRestartReason || undefined;
 }
 
 export function agentOwner(obj: KubeObject): string | undefined {
@@ -163,6 +196,8 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
     podTerminationReason: agentPodTerminationMessage(obj),
+    podRestarts: agentPodRestarts(obj),
+    podRestartReason: agentPodRestartReason(obj),
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,
     agentPodReady: agentPod ? agentPod.status === "True" : undefined,

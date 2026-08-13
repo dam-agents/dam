@@ -72,8 +72,11 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # No persistentvolumeclaims: the controller owns the PVC lifecycle.
-  # No pods: reachability is the Agent's Ready condition, and restart
-  # is a roll-rev annotation patch — the api-server never reads pods.
+  # No pods: reachability is the Agent's Ready condition, a crashed pod is the
+  # restart count the controller publishes on that same status, and restarting
+  # an agent is a roll-rev annotation patch — the api-server never reads pods.
+  # Withheld deliberately: anything the api-server needs to know about an
+  # agent's pods, the controller observes and publishes as Agent status.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
