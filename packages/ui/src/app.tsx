@@ -5,20 +5,29 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLinkHelpIcon } from "./components/docs-link.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
+import { DemoStateProvider, DemoStrip } from "./mock/demo-state.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
+import { ComparisonView } from "./modules/home/views/comparison-view.js";
+import { ConsistencyView } from "./modules/home/views/consistency-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
+import { LayoutsView } from "./modules/home/views/layouts-view.js";
+import { VariationsView } from "./modules/home/views/variations-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { ConfigureExploration } from "./modules/sandboxes/components/configure-exploration.js";
 import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
+import { CodingAgentSetupView } from "./modules/sandboxes/views/coding-agent-setup-view.js";
+import { ExperimentSetupView } from "./modules/sandboxes/views/experiment-setup-view.js";
+import { KnowledgeBaseSetupView } from "./modules/sandboxes/views/knowledge-base-setup-view.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
+import { setMockWikiOnboard } from "./modules/sessions/views/chat-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -80,6 +89,15 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+
+  if (import.meta.env.VITE_MOCK) {
+    return (
+      <DemoStateProvider>
+        <MainApp />
+      </DemoStateProvider>
+    );
+  }
+
   return <MainApp />;
 }
 
@@ -116,11 +134,137 @@ function MainApp() {
     window.location.pathname === "/explore/configure"
   ) {
     return (
-      <div className="flex h-dvh bg-background overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex-1 overflow-y-auto">
-          <ConfigureExploration />
-        </main>
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <ConfigureExploration />
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (import.meta.env.VITE_MOCK && window.location.pathname === "/compare") {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+              <ComparisonView />
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (import.meta.env.VITE_MOCK && window.location.pathname === "/layouts") {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+              <LayoutsView />
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (import.meta.env.VITE_MOCK && window.location.pathname === "/variations") {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+              <VariationsView />
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    import.meta.env.VITE_MOCK &&
+    window.location.pathname === "/consistency"
+  ) {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+              <ConsistencyView />
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    import.meta.env.VITE_MOCK &&
+    window.location.pathname === "/wiki-onboard"
+  ) {
+    // Set once; consumed (cleared) by ChatView's seeding effect on first mount
+    setMockWikiOnboard(true);
+  }
+
+  if (
+    import.meta.env.VITE_MOCK &&
+    window.location.pathname === "/experiment-setup"
+  ) {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <ExperimentSetupView />
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (import.meta.env.VITE_MOCK && window.location.pathname === "/kb-setup") {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <KnowledgeBaseSetupView />
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    import.meta.env.VITE_MOCK &&
+    window.location.pathname === "/agent-setup"
+  ) {
+    return (
+      <div className="flex flex-col h-dvh bg-background overflow-hidden">
+        <DemoStrip />
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <IconRail />
+          <main className="relative z-content flex-1 overflow-y-auto">
+            <CodingAgentSetupView />
+          </main>
+        </div>
       </div>
     );
   }
@@ -145,6 +289,7 @@ function MainApp() {
   // All non-chat views share the icon-rail shell
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+      {import.meta.env.VITE_MOCK && <DemoStrip />}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">

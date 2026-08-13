@@ -22,16 +22,40 @@ function makeFixture(since: string): DigestSummary {
 
   // Scale counts loosely with the window size for more realistic fixtures
   if (hours <= 1) {
-    return { blocked: 1, completed: 0, newArtifacts: 0, newLearnings: 0, running: 3 };
+    return {
+      blocked: 1,
+      completed: 0,
+      newArtifacts: 0,
+      newLearnings: 0,
+      running: 3,
+    };
   }
   if (hours <= 4) {
-    return { blocked: 3, completed: 2, newArtifacts: 1, newLearnings: 0, running: 4 };
+    return {
+      blocked: 3,
+      completed: 2,
+      newArtifacts: 1,
+      newLearnings: 0,
+      running: 4,
+    };
   }
   if (hours <= 12) {
-    return { blocked: 4, completed: 5, newArtifacts: 2, newLearnings: 1, running: 3 };
+    return {
+      blocked: 4,
+      completed: 5,
+      newArtifacts: 2,
+      newLearnings: 1,
+      running: 3,
+    };
   }
   // > 12h (overnight/multi-day)
-  return { blocked: 6, completed: 8, newArtifacts: 4, newLearnings: 2, running: 2 };
+  return {
+    blocked: 6,
+    completed: 8,
+    newArtifacts: 4,
+    newLearnings: 2,
+    running: 2,
+  };
 }
 
 export function useDigestSummary(digestSince: string) {

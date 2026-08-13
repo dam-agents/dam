@@ -31,8 +31,12 @@ export function AgentsSection({ agents }: { agents: AgentView[] }) {
   return (
     <section className="space-y-3" aria-label="Your agents">
       <div className="flex items-center gap-2">
-        <h2 className="text-[18px] font-semibold text-foreground">Your agents</h2>
-        <span className="text-[14px] text-muted-foreground">{agents.length}</span>
+        <h2 className="text-[18px] font-semibold text-foreground">
+          Your agents
+        </h2>
+        <span className="text-[14px] text-muted-foreground">
+          {agents.length}
+        </span>
       </div>
 
       <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-border">

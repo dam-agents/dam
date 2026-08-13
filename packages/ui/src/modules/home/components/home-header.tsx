@@ -12,57 +12,21 @@ import {
   DIGEST_RANGE_OPTIONS,
   type DigestRange,
   useDigestRange,
-  useDigestSince,
 } from "../home-digest-store.js";
-import { useDigestSummary } from "../home-summary-data.js";
-import { formatDigestSince } from "../lib/format-time.js";
 
 export function HomeHeader() {
-  const digestSince = useDigestSince();
   const [range, setRange] = useDigestRange();
-  const { data: summary } = useDigestSummary(digestSince);
-
-  const sinceLabel = formatDigestSince(digestSince);
   const rangeLabel =
-    DIGEST_RANGE_OPTIONS.find((o) => o.value === range)?.label ?? "Since last visit";
-
-  const parts: string[] = [];
-  if (summary) {
-    if (summary.blocked > 0)
-      parts.push(`${summary.blocked} blocked`);
-    if (summary.completed > 0)
-      parts.push(`${summary.completed} completed`);
-    if (summary.newArtifacts > 0)
-      parts.push(
-        `${summary.newArtifacts} new artifact${summary.newArtifacts > 1 ? "s" : ""}`,
-      );
-    if (summary.newLearnings > 0)
-      parts.push(
-        `${summary.newLearnings} new learning${summary.newLearnings > 1 ? "s" : ""}`,
-      );
-    if (summary.running > 0)
-      parts.push(`${summary.running} running`);
-  }
-
-  const summaryLine = parts.length > 0 ? parts.join(", ") : null;
+    DIGEST_RANGE_OPTIONS.find((o) => o.value === range)?.label ??
+    "Since last visit";
 
   return (
-    <header className="space-y-1">
+    <header>
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">
           Home
         </h1>
         <RangeSelector range={range} label={rangeLabel} onSelect={setRange} />
-      </div>
-
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <p className="text-[14px] text-muted-foreground">{sinceLabel}</p>
-        {summaryLine && (
-          <>
-            <span className="text-[14px] text-muted-foreground">—</span>
-            <p className="text-[14px] text-foreground">{summaryLine}</p>
-          </>
-        )}
       </div>
     </header>
   );

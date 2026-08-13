@@ -3,10 +3,8 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 
 import { AGENT_IDS } from "../../mock/data/agents.js";
-import { getActiveScenario, subscribeScenario } from "./home-scenarios.js";
 import { POLL_INTERVAL_MS } from "./home-thresholds.js";
 
 export type ReadyItemType =
@@ -37,33 +35,34 @@ const READY_FIXTURE: ReadyItem[] = [
     id: "rdy-001",
     type: "pr_ready",
     agentId: AGENT_IDS.claudeCodeMain,
-    agentName: "claude-code-main",
-    title: "PR #142: Refactor auth middleware",
-    subtitle: "3 files changed, all tests passing",
+    agentName: "packaging-layouts",
+    title: "Product box dielines — ready for print review",
+    subtitle: "6 packaging variants exported as press-ready PDFs",
     completedAt: hoursAgo(2),
     seenAt: null,
-    actionLabel: "Review PR",
+    actionLabel: "Review files",
     actionUrl: null,
   },
   {
     id: "rdy-002",
     type: "artifact_ready",
     agentId: AGENT_IDS.codexResearch,
-    agentName: "codex-research",
-    title: "Weekly research digest",
-    subtitle: "12 papers summarized, 3 flagged as high-relevance",
+    agentName: "brand-asset-generator",
+    title: "Social media templates — Spring 2025",
+    subtitle: "24 Instagram + 12 LinkedIn templates in brand colors",
     completedAt: hoursAgo(3),
     seenAt: null,
-    actionLabel: "View artifact",
+    actionLabel: "View assets",
     actionUrl: null,
   },
   {
     id: "rdy-003",
     type: "suggestion",
-    agentId: AGENT_IDS.claudeCodeMain,
-    agentName: "claude-code-main",
-    title: "Suggested: Enable streaming in /api/chat",
-    subtitle: "Would reduce TTFB from 2.1s to 340ms based on profiling",
+    agentId: AGENT_IDS.codexResearch,
+    agentName: "brand-asset-generator",
+    title: "Suggestion: Try the secondary palette for CTAs",
+    subtitle:
+      "Warm coral (#E8735A) tested 23% higher click-through on dark backgrounds",
     completedAt: hoursAgo(5),
     seenAt: null,
     actionLabel: "Review",
@@ -73,43 +72,26 @@ const READY_FIXTURE: ReadyItem[] = [
     id: "rdy-004",
     type: "run_complete",
     agentId: AGENT_IDS.geminiPipeline,
-    agentName: "gemini-data-pipeline",
-    title: "Data pipeline refresh completed",
-    subtitle: "Processed 2,847 records in 18m",
+    agentName: "photo-retouching",
+    title: "Product photo batch — retouching complete",
+    subtitle:
+      "48 images processed: background removal, color grading, resize to 3 formats",
     completedAt: hoursAgo(7),
     seenAt: null,
-    actionLabel: "View output",
+    actionLabel: "View photos",
     actionUrl: null,
   },
 ];
 
-function getReadyFixture(since: number): ReadyItem[] {
-  const s = getActiveScenario();
-  switch (s) {
-    case "first-run":
-    case "everything-broken":
-      return [];
-    case "all-clear":
-      return READY_FIXTURE.filter((r) => Date.parse(r.completedAt) >= since);
-    case "single-blocked":
-      return READY_FIXTURE.slice(0, 1).filter((r) => Date.parse(r.completedAt) >= since);
-    case "experiments-only":
-      return [];
-    case "kb-only":
-      return [];
-    case "heavy-load":
-    case "morning-return":
-    default:
-      return READY_FIXTURE.filter((r) => Date.parse(r.completedAt) >= since);
-  }
+function getReadyFixture(): ReadyItem[] {
+  return READY_FIXTURE;
 }
 
 export function useReadyItems(digestSince: string) {
-  const scenario = useSyncExternalStore(subscribeScenario, getActiveScenario, getActiveScenario);
   // STUB: home.readyItems
   return useQuery<ReadyItem[]>({
-    queryKey: ["home", "ready-items", digestSince, scenario],
-    queryFn: () => Promise.resolve(getReadyFixture(Date.parse(digestSince))),
+    queryKey: ["home", "ready-items", digestSince],
+    queryFn: () => Promise.resolve(getReadyFixture()),
     staleTime: POLL_INTERVAL_MS,
     refetchInterval: POLL_INTERVAL_MS,
     placeholderData: (prev) => prev,

@@ -1,5 +1,3 @@
-import { useEffect, useMemo, useState } from "react";
-
 import { Settings, WarningAlt } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import {
@@ -10,6 +8,7 @@ import {
   ShieldOff,
   X,
 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,10 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useAgentDisplayName, useAgentsList } from "../../agents/api/queries.js";
+import {
+  useAgentDisplayName,
+  useAgentsList,
+} from "../../agents/api/queries.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -46,11 +48,15 @@ import {
 import { formatDuration } from "../lib/format-time.js";
 
 export type BlockedLayout = "stacked-cards";
-export const BLOCKED_LAYOUT_OPTIONS: { value: BlockedLayout; label: string }[] = [
-  { value: "stacked-cards", label: "Stacked cards" },
-];
-export function getBlockedLayout(): BlockedLayout { return "stacked-cards"; }
-export function setBlockedLayout(_l: BlockedLayout) { /* no-op */ }
+export const BLOCKED_LAYOUT_OPTIONS: { value: BlockedLayout; label: string }[] =
+  [{ value: "stacked-cards", label: "Stacked cards" }];
+export function getBlockedLayout(): BlockedLayout {
+  return "stacked-cards";
+}
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function setBlockedLayout(_l: BlockedLayout) {
+  /* no-op */
+}
 export function subscribeBlockedLayout(cb: () => void) {
   void cb;
   return () => {};
@@ -112,14 +118,20 @@ export function BlockedSection() {
 
     if (agentFilter !== "all") {
       items = items.filter((i) =>
-        i.source === "approval" ? i.data.agentId === agentFilter : i.data.agentId === agentFilter,
+        i.source === "approval"
+          ? i.data.agentId === agentFilter
+          : i.data.agentId === agentFilter,
       );
     }
 
     if (filter === "network") {
-      items = items.filter((i) => i.source === "approval" && i.data.payload.kind === "ext_authz");
+      items = items.filter(
+        (i) => i.source === "approval" && i.data.payload.kind === "ext_authz",
+      );
     } else if (filter === "tool") {
-      items = items.filter((i) => i.source === "approval" && i.data.payload.kind === "acp_native");
+      items = items.filter(
+        (i) => i.source === "approval" && i.data.payload.kind === "acp_native",
+      );
     } else if (filter === "error") {
       items = items.filter((i) => i.source === "error");
     }
@@ -128,16 +140,27 @@ export function BlockedSection() {
   }, [unified, filter, agentFilter]);
 
   const agentIds = useMemo(() => {
-    const ids = new Set(unified.map((i) => i.source === "approval" ? i.data.agentId : i.data.agentId));
+    const ids = new Set(
+      unified.map((i) =>
+        i.source === "approval" ? i.data.agentId : i.data.agentId,
+      ),
+    );
     return [...ids];
   }, [unified]);
 
   const highestSeverity: SeverityLevel =
     nonApprovalItems.length === 0
-      ? pendingApprovals.length > 0 ? "elevated" : "normal"
+      ? pendingApprovals.length > 0
+        ? "elevated"
+        : "normal"
       : nonApprovalItems.reduce<SeverityLevel>((worst, item) => {
           const s = getSeverity(item.blockedAt);
-          const order: SeverityLevel[] = ["normal", "elevated", "high", "critical"];
+          const order: SeverityLevel[] = [
+            "normal",
+            "elevated",
+            "high",
+            "critical",
+          ];
           return order.indexOf(s) > order.indexOf(worst) ? s : worst;
         }, "normal");
 
@@ -187,10 +210,21 @@ export function BlockedSection() {
             <div className="flex gap-1 border-b border-border">
               {BLOCKED_FILTER_TABS.map((tab) => {
                 const count =
-                  tab.value === "all" ? unified.length
-                  : tab.value === "network" ? unified.filter((i) => i.source === "approval" && i.data.payload.kind === "ext_authz").length
-                  : tab.value === "tool" ? unified.filter((i) => i.source === "approval" && i.data.payload.kind === "acp_native").length
-                  : unified.filter((i) => i.source === "error").length;
+                  tab.value === "all"
+                    ? unified.length
+                    : tab.value === "network"
+                      ? unified.filter(
+                          (i) =>
+                            i.source === "approval" &&
+                            i.data.payload.kind === "ext_authz",
+                        ).length
+                      : tab.value === "tool"
+                        ? unified.filter(
+                            (i) =>
+                              i.source === "approval" &&
+                              i.data.payload.kind === "acp_native",
+                          ).length
+                        : unified.filter((i) => i.source === "error").length;
                 if (tab.value !== "all" && count === 0) return null;
                 return (
                   <button
@@ -206,7 +240,9 @@ export function BlockedSection() {
                   >
                     {tab.label}
                     {count > 0 && (
-                      <span className="ml-1.5 text-muted-foreground">{count}</span>
+                      <span className="ml-1.5 text-muted-foreground">
+                        {count}
+                      </span>
                     )}
                   </button>
                 );
@@ -318,7 +354,7 @@ function useCountdown(expiresAt: string): number | null {
   return remaining;
 }
 
-function ApprovalFullCard({ row }: { row: ApprovalView }) {
+export function ApprovalFullCard({ row }: { row: ApprovalView }) {
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
@@ -412,7 +448,9 @@ function ApprovalFullCard({ row }: { row: ApprovalView }) {
               <CheckCheck size={14} />
               <span>
                 Allow permanently
-                <span className="ml-1 text-muted-foreground">— writes a rule</span>
+                <span className="ml-1 text-muted-foreground">
+                  — writes a rule
+                </span>
               </span>
             </DropdownMenuItem>
             {host && (
@@ -423,7 +461,9 @@ function ApprovalFullCard({ row }: { row: ApprovalView }) {
                 <Globe size={14} />
                 <span>
                   Allow all of {host}
-                  <span className="ml-1 text-muted-foreground">— wildcard rule</span>
+                  <span className="ml-1 text-muted-foreground">
+                    — wildcard rule
+                  </span>
                 </span>
               </DropdownMenuItem>
             )}
@@ -432,7 +472,12 @@ function ApprovalFullCard({ row }: { row: ApprovalView }) {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" tone="danger" size="sm" disabled={inflight}>
+            <Button
+              variant="outline"
+              tone="danger"
+              size="sm"
+              disabled={inflight}
+            >
               <X size={14} />
               Deny
               <ChevronDown size={14} />
@@ -453,7 +498,9 @@ function ApprovalFullCard({ row }: { row: ApprovalView }) {
               <ShieldOff size={14} />
               <span>
                 Deny permanently
-                <span className="ml-1 text-muted-foreground">— writes a rule</span>
+                <span className="ml-1 text-muted-foreground">
+                  — writes a rule
+                </span>
               </span>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -479,14 +526,15 @@ function ApprovalFullCard({ row }: { row: ApprovalView }) {
       )}
       {countdown === null && isNetwork && (
         <p className="text-[14px] text-muted-foreground mt-3">
-          Original request timed out. Permanent rules still apply to future attempts.
+          Original request timed out. Permanent rules still apply to future
+          attempts.
         </p>
       )}
     </div>
   );
 }
 
-function ErrorFullCard({ item }: { item: BlockedItem }) {
+export function ErrorFullCard({ item }: { item: BlockedItem }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const severity = getSeverity(item.blockedAt);
   const blockedMs = Math.max(0, Date.now() - Date.parse(item.blockedAt));
@@ -526,7 +574,9 @@ function ErrorActions({ item }: { item: BlockedItem }) {
       return (
         <div className="flex items-center gap-2">
           <Button size="sm">Retry</Button>
-          <Button size="sm" variant="outline">Logs</Button>
+          <Button size="sm" variant="outline">
+            Logs
+          </Button>
           <button
             type="button"
             className="text-[14px] text-muted-foreground hover:text-foreground transition-colors ml-1"
@@ -540,7 +590,9 @@ function ErrorActions({ item }: { item: BlockedItem }) {
       return (
         <div className="flex items-center gap-2">
           <Button size="sm">Reconnect</Button>
-          <Button size="sm" variant="outline">Logs</Button>
+          <Button size="sm" variant="outline">
+            Logs
+          </Button>
           <button
             type="button"
             className="text-[14px] text-muted-foreground hover:text-foreground transition-colors ml-1"
@@ -554,7 +606,9 @@ function ErrorActions({ item }: { item: BlockedItem }) {
       return (
         <div className="flex items-center gap-2">
           <Button size="sm">Restart</Button>
-          <Button size="sm" variant="outline">Logs</Button>
+          <Button size="sm" variant="outline">
+            Logs
+          </Button>
           <button
             type="button"
             className="text-[14px] text-muted-foreground hover:text-foreground transition-colors ml-1"

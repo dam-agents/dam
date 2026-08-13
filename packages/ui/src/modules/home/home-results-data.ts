@@ -3,11 +3,12 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 
 import { AGENT_IDS } from "../../mock/data/agents.js";
-import { getActiveScenario, subscribeScenario } from "./home-scenarios.js";
-import { POLL_INTERVAL_MS, RESULT_SIGNIFICANT_DELTA } from "./home-thresholds.js";
+import {
+  POLL_INTERVAL_MS,
+  RESULT_SIGNIFICANT_DELTA,
+} from "./home-thresholds.js";
 
 export interface ResultItem {
   id: string;
@@ -74,38 +75,26 @@ const RESULTS_FIXTURE: ResultItem[] = [
   },
 ];
 
-function getResultsFixture(since: number): ResultItem[] {
-  const s = getActiveScenario();
-  switch (s) {
-    case "first-run":
-    case "kb-only":
-    case "everything-broken":
-      return [];
-    case "experiments-only":
-      return RESULTS_FIXTURE.filter((r) => Date.parse(r.completedAt) >= since);
-    case "single-blocked":
-    case "all-clear":
-      return RESULTS_FIXTURE.slice(0, 1).filter((r) => Date.parse(r.completedAt) >= since);
-    case "heavy-load":
-    case "morning-return":
-    default:
-      return RESULTS_FIXTURE.filter((r) => Date.parse(r.completedAt) >= since);
-  }
+function getResultsFixture(): ResultItem[] {
+  return RESULTS_FIXTURE;
 }
 
 export function useResultItems(digestSince: string) {
-  const scenario = useSyncExternalStore(subscribeScenario, getActiveScenario, getActiveScenario);
   // STUB: home.resultItems
   return useQuery<ResultItem[]>({
-    queryKey: ["home", "result-items", digestSince, scenario],
-    queryFn: () => Promise.resolve(getResultsFixture(Date.parse(digestSince))),
+    queryKey: ["home", "result-items", digestSince],
+    queryFn: () => Promise.resolve(getResultsFixture()),
     staleTime: POLL_INTERVAL_MS,
     refetchInterval: POLL_INTERVAL_MS,
     placeholderData: (prev) => prev,
   });
 }
 
-export function formatDelta(baseline: number, result: number, unit: string): string {
+export function formatDelta(
+  baseline: number,
+  result: number,
+  unit: string,
+): string {
   if (baseline === 0) return `${result}${unit}`;
   const diff = result - baseline;
   const pct = ((diff / baseline) * 100).toFixed(0);

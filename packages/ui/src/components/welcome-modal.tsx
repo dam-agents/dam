@@ -12,17 +12,18 @@ interface WelcomeModalProps {
 
 export function WelcomeModal({ onSelect, onClose }: WelcomeModalProps) {
   return (
-    <Modal widthClass="w-[720px]">
+    <Modal>
       <DialogHeader>
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-[20px] font-semibold text-foreground">
-              Welcome to DAM
+              Accelerate research with DAM
             </h2>
             <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">
-              Dam is a platform for running AI agents in isolated environments
-              with credential injection, network isolation, and scheduled
-              execution. Choose how you'd like to get started.
+              Run agents in isolated cloud environments with credentials and
+              tools securely injected. Create knowledge bases, run experiments
+              to compare agent variants, and trigger agents from Slack or on a
+              schedule.
             </p>
           </div>
           <button
@@ -36,30 +37,30 @@ export function WelcomeModal({ onSelect, onClose }: WelcomeModalProps) {
       </DialogHeader>
 
       <DialogBody>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <WelcomeCard
-            icon={<Book size={24} />}
-            title="Start an LLM Wiki"
-            description="Create a knowledge base powered by an LLM that indexes and answers questions about your docs."
-            onClick={() => onSelect("wiki")}
-          />
+        <div className="flex flex-col gap-3">
           <WelcomeCard
             icon={<ContainerSoftware size={24} />}
-            title="Start a Coding Sandbox"
-            description="Spin up an isolated environment with your preferred AI coding agent, credentials, and tools."
+            title="Create a coding agent"
+            description="Work with your preferred coding agent, credentials, and tools in an isolated environment."
             onClick={() => onSelect("sandbox")}
           />
           <WelcomeCard
             icon={<Chemistry size={24} />}
-            title="Start an Experiment"
-            description="Run prompt tuning, evaluations, or research workflows with configurable frameworks."
+            title="Begin an experiment"
+            description="Run one goal across many variants at once and compare results."
             onClick={() => onSelect("experiment")}
+          />
+          <WelcomeCard
+            icon={<Book size={24} />}
+            title="Start a knowledge base"
+            description="Organize and converse with data sourced from repos, documents, and more (LLM wiki)."
+            onClick={() => onSelect("wiki")}
           />
         </div>
 
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 flex justify-end">
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Skip for now
+            Skip
           </Button>
         </div>
       </DialogBody>
@@ -79,24 +80,22 @@ function WelcomeCard({
   onClick: () => void;
 }) {
   return (
-    <div className="relative rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-4 text-left transition-all hover:shadow-lg">
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={title}
-        className="absolute inset-0 rounded-2xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      />
-      <div className="pointer-events-none relative flex flex-col gap-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-4 text-left transition-all hover:shadow-lg flex-1 w-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <div className="flex items-start gap-4">
         <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-[#dde1e6] bg-background/80">
           {icon}
         </div>
-        <div className="min-w-0">
-          <p className="text-[16px] font-semibold text-foreground">{title}</p>
-          <p className="mt-1 text-[14px] leading-snug text-muted-foreground">
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-semibold text-foreground">{title}</p>
+          <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
             {description}
           </p>
         </div>
       </div>
-    </div>
+    </button>
   );
 }

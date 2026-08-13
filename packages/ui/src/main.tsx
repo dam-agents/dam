@@ -21,13 +21,11 @@ async function main() {
     await worker.start({ onUnhandledRequest: "warn" });
     await loadBrand().then(applyBrand);
     const { default: App } = await import("./app.js");
-    const { MockToggle } = await import("./mock/mock-toggle.js");
     createRoot(document.getElementById("root")!).render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={200}>
             <App />
-            <MockToggle />
             <Toaster />
           </TooltipProvider>
         </QueryClientProvider>
@@ -61,5 +59,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  document.getElementById("root")!.innerHTML = `<pre style="padding:32px;color:red;font-size:14px">Boot crash:\n${err?.message}\n${err?.stack}</pre>`;
+  document.getElementById("root")!.innerHTML =
+    `<pre style="padding:32px;color:red;font-size:14px">Boot crash:\n${err?.message}\n${err?.stack}</pre>`;
 });

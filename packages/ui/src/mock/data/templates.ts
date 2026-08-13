@@ -2,22 +2,22 @@ import type { TemplateView } from "../../types.js";
 
 export const templates: TemplateView[] = [
   {
-    id: "bob",
-    name: "IBM Bob",
-    image: "quay.io/dam-agents/bob:latest",
-    description: "Bob shell agent",
-    category: "harness",
-    tags: ["Anthropic", "Mistral", "Granite"],
-    experimental: false,
-    vm: false,
-  },
-  {
     id: "claude-code",
     name: "Claude Code",
     image: "quay.io/dam-agents/claude-code:latest",
     description: "Default Claude Code agent",
     category: "harness",
     tags: ["Anthropic"],
+    experimental: false,
+    vm: false,
+  },
+  {
+    id: "bob",
+    name: "IBM Bob",
+    image: "quay.io/dam-agents/bob:latest",
+    description: "Bob shell agent",
+    category: "harness",
+    tags: ["Anthropic", "Mistral", "Granite"],
     experimental: false,
     vm: false,
   },

@@ -3,10 +3,8 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 
 import { AGENT_IDS } from "../../mock/data/agents.js";
-import { getActiveScenario, subscribeScenario } from "./home-scenarios.js";
 import { POLL_INTERVAL_MS } from "./home-thresholds.js";
 
 export interface LearningItem {
@@ -60,31 +58,15 @@ const LEARNINGS_FIXTURE: LearningItem[] = [
   },
 ];
 
-function getLearningsFixture(since: number): LearningItem[] {
-  const s = getActiveScenario();
-  switch (s) {
-    case "first-run":
-    case "experiments-only":
-    case "everything-broken":
-      return [];
-    case "kb-only":
-      return LEARNINGS_FIXTURE.filter((l) => Date.parse(l.indexedAt) >= since);
-    case "single-blocked":
-    case "all-clear":
-      return LEARNINGS_FIXTURE.slice(0, 1).filter((l) => Date.parse(l.indexedAt) >= since);
-    case "heavy-load":
-    case "morning-return":
-    default:
-      return LEARNINGS_FIXTURE.filter((l) => Date.parse(l.indexedAt) >= since);
-  }
+function getLearningsFixture(): LearningItem[] {
+  return LEARNINGS_FIXTURE;
 }
 
 export function useLearningItems(digestSince: string) {
-  const scenario = useSyncExternalStore(subscribeScenario, getActiveScenario, getActiveScenario);
   // STUB: home.learningItems
   return useQuery<LearningItem[]>({
-    queryKey: ["home", "learning-items", digestSince, scenario],
-    queryFn: () => Promise.resolve(getLearningsFixture(Date.parse(digestSince))),
+    queryKey: ["home", "learning-items", digestSince],
+    queryFn: () => Promise.resolve(getLearningsFixture()),
     staleTime: POLL_INTERVAL_MS,
     refetchInterval: POLL_INTERVAL_MS,
     placeholderData: (prev) => prev,

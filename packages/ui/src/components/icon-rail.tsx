@@ -4,10 +4,8 @@ import {
   Chemistry,
   Close,
   ContainerSoftware,
-  Email as Inbox,
   Folders,
   Home,
-  Meter,
   Settings,
   SidePanelOpen,
 } from "@carbon/icons-react";
@@ -15,16 +13,11 @@ import { useEffect, useState } from "react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
+import { useDemoState } from "../mock/demo-state.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
-import { BudgetMeterCompact } from "../modules/budgets/components/budget-meter-compact.js";
 import { useStore } from "../store.js";
 
 const EMPTY: never[] = [];
@@ -65,28 +58,62 @@ export function IconRail({
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
 
   const { data: approvals = EMPTY } = useApprovalsForOwner();
-  const pendingCount = approvals.filter((r) => r.status === "pending").length;
+  const { state: demoState } = useDemoState();
+  const pendingCount =
+    demoState === "empty"
+      ? 0
+      : approvals.filter((r) => r.status === "pending").length;
 
+  const pathname = window.location.pathname;
+  const onMockRoute = [
+    "/agent-setup",
+    "/experiment-setup",
+    "/kb-setup",
+    "/compare",
+    "/layouts",
+    "/variations",
+    "/consistency",
+    "/wiki-onboard",
+    "/explore/configure",
+  ].includes(pathname);
   const home: Destination = {
     label: "Home",
     icon: Home,
-    active: view === "home",
-    badge: 0,
-    navigate: () => setView("home"),
+    active: view === "home" && !onMockRoute,
+    badge: pendingCount,
+    navigate: () => {
+      if (onMockRoute) {
+        window.location.href = "/";
+      } else {
+        setView("home");
+      }
+    },
   };
   const sandboxes: Destination = {
     label: "Coding agents",
     icon: ContainerSoftware,
-    active: view === "list",
+    active: view === "list" || pathname === "/agent-setup",
     badge: 0,
-    navigate: () => setView("list"),
+    navigate: () => {
+      if (onMockRoute) {
+        window.location.href = "/sandboxes";
+        return;
+      }
+      setView("list");
+    },
   };
   const experiments: Destination = {
     label: "Experiments",
     icon: Chemistry,
-    active: view === "experiments",
+    active: view === "experiments" || pathname === "/experiment-setup",
     badge: 0,
-    navigate: navigateToExperiments,
+    navigate: () => {
+      if (onMockRoute) {
+        window.location.href = "/experiments";
+        return;
+      }
+      navigateToExperiments();
+    },
   };
   const knowledgeBases: Destination = {
     label: "Knowledge bases",
@@ -94,9 +121,16 @@ export function IconRail({
     active:
       view === "knowledge-bases" ||
       view === "knowledge-base-chat" ||
-      view === "knowledge-base-config",
+      view === "knowledge-base-config" ||
+      pathname === "/kb-setup",
     badge: 0,
-    navigate: navigateToKnowledgeBases,
+    navigate: () => {
+      if (onMockRoute) {
+        window.location.href = "/knowledge-bases";
+        return;
+      }
+      navigateToKnowledgeBases();
+    },
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -104,13 +138,6 @@ export function IconRail({
     active: view === "artifacts",
     badge: 0,
     navigate: () => setView("artifacts"),
-  };
-  const inbox: Destination = {
-    label: "Approvals",
-    icon: Inbox,
-    active: view === "inbox",
-    badge: pendingCount,
-    navigate: () => setView("inbox"),
   };
   const settings: Destination = {
     label: "Settings",
@@ -161,12 +188,10 @@ export function IconRail({
               type="button"
               onClick={() => setExpanded(true)}
               title="Expand sidebar"
-              className="group rounded-lg p-1 text-foreground/80 cursor-pointer"
+              className="group relative flex h-[34px] w-[34px] items-center justify-center rounded-lg p-1 text-foreground/80 cursor-pointer"
             >
-              <span className="block group-hover:hidden">
-                <BrandLogo />
-              </span>
-              <span className="hidden group-hover:flex h-[32px] w-[32px] items-center justify-center">
+              <BrandLogo className="group-hover:invisible" />
+              <span className="absolute inset-0 hidden group-hover:flex items-center justify-center text-muted-foreground">
                 <SidePanelOpen size={20} />
               </span>
             </button>
@@ -194,28 +219,18 @@ export function IconRail({
         {/* Bottom items: artifacts, inbox, settings */}
         <div
           className={cn(
-            "flex flex-col gap-0.5",
+            "flex flex-col gap-0.5 pb-3",
             expanded ? "px-2" : "items-center",
           )}
         >
           <NavItem dest={artifacts} expanded={expanded} />
-          <NavItem dest={inbox} expanded={expanded} />
           <NavItem dest={settings} expanded={expanded} />
         </div>
-
-        {/* Budget meter */}
-        {expanded ? (
-          <div className="mt-3 mb-2 px-2">
-            <BudgetMeterCompact />
-          </div>
-        ) : (
-          <BudgetIconCollapsed />
-        )}
       </nav>
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, experiments, knowledgeBases, artifacts, inbox].map(
+          {[sandboxes, experiments, knowledgeBases, artifacts].map(
             (destination) => (
               <BottomBarItem key={destination.label} {...destination} />
             ),
@@ -272,34 +287,6 @@ function NavItem({ dest, expanded }: { dest: Destination; expanded: boolean }) {
         </Badge>
       )}
     </button>
-  );
-}
-
-/* ─── Budget icon (collapsed state) — click to reveal popover ─── */
-
-function BudgetIconCollapsed() {
-  return (
-    <div className="flex items-center justify-center mb-1">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            title="Budget usage"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-foreground/80 transition-colors hover:text-foreground hover:bg-muted"
-          >
-            <Meter size={20} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          side="right"
-          align="end"
-          sideOffset={8}
-          className="w-[220px] p-3"
-        >
-          <BudgetMeterCompact />
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
   );
 }
 

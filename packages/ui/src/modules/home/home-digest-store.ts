@@ -37,6 +37,7 @@ const RANGE_MS: Record<Exclude<DigestRange, "auto">, number> = {
 
 let listeners: Array<() => void> = [];
 function emit() {
+  cachedSnapshot = computeDigestSince();
   for (const l of listeners) l();
 }
 
@@ -58,7 +59,7 @@ function writeStored(iso: string) {
 
 let rangeOverride: DigestRange = "auto";
 
-function getDigestSince(): string {
+function computeDigestSince(): string {
   if (rangeOverride !== "auto") {
     const ms = RANGE_MS[rangeOverride];
     return new Date(Date.now() - ms).toISOString();
@@ -80,8 +81,10 @@ function getDigestSince(): string {
   return new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
 }
 
+let cachedSnapshot = computeDigestSince();
+
 function getSnapshot() {
-  return getDigestSince();
+  return cachedSnapshot;
 }
 
 function subscribe(cb: () => void) {

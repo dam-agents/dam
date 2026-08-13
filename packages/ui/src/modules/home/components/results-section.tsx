@@ -29,7 +29,10 @@ export function ResultsSection() {
     <section className="space-y-3" aria-label="Results">
       <div className="flex items-center gap-2">
         <h2 className="text-[18px] font-semibold text-foreground">Results</h2>
-        <Badge variant="default" className="bg-accent text-white hover:bg-accent">
+        <Badge
+          variant="default"
+          className="bg-accent text-white hover:bg-accent"
+        >
           {list.length}
         </Badge>
       </div>
@@ -78,7 +81,11 @@ function ResultCard({ item }: { item: ResultItem }) {
           {item.agentName}
         </button>
         {item.isSignificant && (
-          <Badge variant="muted" size="sm" className="bg-success/10 text-success">
+          <Badge
+            variant="muted"
+            size="sm"
+            className="bg-success/10 text-success"
+          >
             Significant
           </Badge>
         )}
@@ -92,7 +99,9 @@ function ResultCard({ item }: { item: ResultItem }) {
       </p>
 
       <div className="flex items-baseline gap-3 mt-2">
-        <span className="text-[14px] text-muted-foreground">{item.metric}:</span>
+        <span className="text-[14px] text-muted-foreground">
+          {item.metric}:
+        </span>
         <span
           className={cn(
             "text-[14px] font-medium tabular-nums",

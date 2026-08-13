@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useDemoState } from "../../../mock/demo-state.js";
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
@@ -16,11 +17,19 @@ import { type LineageRow, toSandboxGroups } from "../lib/sandbox-groups.js";
 export function ExperimentsListView() {
   const { data: summaries } = useDriverSummaries();
   const { data: agentsData } = useAgents();
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const selectAgent = useStore((s) => s.selectAgent);
   const setView = useStore((s) => s.setView);
   const deleteExperiment = useDeleteExperiment();
   const [deleteTarget, setDeleteTarget] = useState<LineageRow | null>(null);
+  const { state: demoState } = useDemoState();
+
+  const goToSetup = () => {
+    window.location.href = "/experiment-setup";
+  };
+
+  if (import.meta.env.VITE_MOCK && demoState === "empty") {
+    return <ExperimentsEmptyState onCreate={goToSetup} />;
+  }
 
   const groups = toSandboxGroups(
     summaries ?? [],
@@ -35,20 +44,14 @@ export function ExperimentsListView() {
         <PageHeader
           title="Experiments"
           description="Experiments are grouped by the sandbox running them. Open a sandbox to work with it in chat, where the experiment graph docks beside the conversation."
-          actions={
-            <Button onClick={() => navigateToCreateSandbox("experiment")}>
-              Create experiment
-            </Button>
-          }
+          actions={<Button onClick={goToSetup}>Create experiment</Button>}
         />
       )}
 
       {!initialLoaded && <ListSkeleton rows={3} rowHeight={72} />}
 
       {initialLoaded && groups.length === 0 && (
-        <ExperimentsEmptyState
-          onCreate={() => navigateToCreateSandbox("experiment")}
-        />
+        <ExperimentsEmptyState onCreate={goToSetup} />
       )}
 
       <div className="flex flex-col gap-9">
@@ -104,11 +107,10 @@ export function ExperimentsListView() {
 
 function ExperimentsEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="flex flex-col items-center rounded-xl border border-border py-16 text-center anim-in">
+    <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-8 anim-in">
       <h2 className="text-[20px] font-semibold text-foreground">Experiments</h2>
       <p className="mt-2 max-w-[480px] text-[14px] leading-relaxed text-muted-foreground">
-        An experiment runs one goal across several variants at once and charts
-        each result live, so you can compare approaches side-by-side.
+        Run one goal across many variants at once and compare results.
       </p>
       <Button className="mt-6" onClick={onCreate}>
         Create experiment

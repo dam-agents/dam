@@ -6,35 +6,35 @@ const hoursAgo = (h: number) => new Date(now - h * 3600_000).toISOString();
 export const experiments = [
   {
     id: "exp-001",
-    name: "prompt-temperature-sweep",
+    name: "spring-palette-warm-vs-cool",
     driverAgentId: AGENT_IDS.experiment1,
     status: "running",
     createdAt: hoursAgo(1),
   },
   {
     id: "exp-002",
-    name: "prompt-temperature-sweep",
+    name: "spring-palette-warm-vs-cool",
     driverAgentId: AGENT_IDS.experiment1,
     status: "completed",
     createdAt: hoursAgo(3),
   },
   {
     id: "exp-005",
-    name: "prompt-temperature-sweep",
+    name: "spring-palette-warm-vs-cool",
     driverAgentId: AGENT_IDS.experiment1,
     status: "failed",
     createdAt: hoursAgo(2),
   },
   {
     id: "exp-003",
-    name: "rag-chunking-256-vs-512",
+    name: "serif-vs-sans-hero-text",
     driverAgentId: AGENT_IDS.experiment2,
     status: "completed",
     createdAt: hoursAgo(4),
   },
   {
     id: "exp-004",
-    name: "rag-chunking-256-vs-512",
+    name: "serif-vs-sans-hero-text",
     driverAgentId: AGENT_IDS.experiment2,
     status: "completed",
     createdAt: hoursAgo(6),
@@ -47,19 +47,19 @@ export const driverSummaries = [
     experiments: [
       {
         id: "exp-001",
-        name: "prompt-temperature-sweep",
+        name: "spring-palette-warm-vs-cool",
         status: "running",
         createdAt: hoursAgo(1),
       },
       {
         id: "exp-002",
-        name: "prompt-temperature-sweep",
+        name: "spring-palette-warm-vs-cool",
         status: "completed",
         createdAt: hoursAgo(3),
       },
       {
         id: "exp-005",
-        name: "prompt-temperature-sweep",
+        name: "spring-palette-warm-vs-cool",
         status: "failed",
         createdAt: hoursAgo(2),
       },
@@ -71,13 +71,13 @@ export const driverSummaries = [
     experiments: [
       {
         id: "exp-003",
-        name: "rag-chunking-256-vs-512",
+        name: "serif-vs-sans-hero-text",
         status: "completed",
         createdAt: hoursAgo(4),
       },
       {
         id: "exp-004",
-        name: "rag-chunking-256-vs-512",
+        name: "serif-vs-sans-hero-text",
         status: "completed",
         createdAt: hoursAgo(6),
       },

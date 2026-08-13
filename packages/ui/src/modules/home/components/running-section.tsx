@@ -1,11 +1,26 @@
+import {
+  Chat,
+  Chemistry,
+  DataConnected,
+  OverflowMenuVertical,
+} from "@carbon/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { Book, Chemistry, ContainerSoftware } from "@carbon/icons-react";
-
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
+import { WorkingDots } from "../../sessions/components/working-dots.js";
 import {
   type RunningExperiment,
   type RunningItem,
@@ -41,7 +56,7 @@ export function RunningSection() {
   const list = items ?? [];
 
   const filtered = useMemo(
-    () => filter === "all" ? list : list.filter((i) => i.kind === filter),
+    () => (filter === "all" ? list : list.filter((i) => i.kind === filter)),
     [list, filter],
   );
 
@@ -50,17 +65,23 @@ export function RunningSection() {
   return (
     <section className="space-y-4" aria-label="Running now">
       <div className="flex items-center gap-2">
-        <h2 className="text-[18px] font-semibold text-foreground">Running now</h2>
-        <Badge variant="default" className="bg-success text-white hover:bg-success">
+        <h2 className="text-[18px] font-semibold text-foreground">
+          Running now
+        </h2>
+        <Badge
+          variant="default"
+          className="bg-success text-white hover:bg-success"
+        >
           {list.length}
         </Badge>
       </div>
 
       <div className="flex gap-1 border-b border-border">
         {FILTER_TABS.map((tab) => {
-          const count = tab.value === "all"
-            ? list.length
-            : list.filter((i) => i.kind === tab.value).length;
+          const count =
+            tab.value === "all"
+              ? list.length
+              : list.filter((i) => i.kind === tab.value).length;
           if (tab.value !== "all" && count === 0) return null;
           return (
             <button
@@ -85,7 +106,8 @@ export function RunningSection() {
 
       {filtered.length === 0 ? (
         <p className="text-[14px] text-muted-foreground py-4">
-          No {FILTER_TABS.find((t) => t.value === filter)?.label.toLowerCase()} running.
+          No {FILTER_TABS.find((t) => t.value === filter)?.label.toLowerCase()}{" "}
+          running.
         </p>
       ) : (
         <div className="space-y-2">
@@ -98,7 +120,7 @@ export function RunningSection() {
   );
 }
 
-function RunningCard({ item }: { item: RunningItem }) {
+export function RunningCard({ item }: { item: RunningItem }) {
   switch (item.kind) {
     case "sandbox":
       return <SandboxCard item={item} />;
@@ -111,116 +133,160 @@ function RunningCard({ item }: { item: RunningItem }) {
 
 function SandboxCard({ item }: { item: RunningSandbox }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const elapsed = Math.max(0, Date.now() - Date.parse(item.startedAt));
 
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-success shrink-0 animate-pulse" />
-        <button
-          type="button"
-          onClick={() => navigateToSandboxHome(item.agentId)}
-          className="text-[14px] font-medium text-foreground hover:text-accent transition-colors truncate"
-        >
-          {item.agentName}
-        </button>
-        <Badge variant="muted" size="sm" className="inline-flex items-center gap-1">
-          <ContainerSoftware size={14} />
-          Coding Agent
-        </Badge>
-        <span className="ml-auto text-[14px] tabular-nums text-muted-foreground shrink-0">
-          {formatDuration(elapsed)}
+    <Card
+      onClick={() => navigateToSandboxHome(item.agentId)}
+      className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
+    >
+      <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+        <Chat size={20} className="text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate text-[16px] text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+            {item.agentName}
+          </h3>
+          <WorkingDots className="text-accent shrink-0" size="sm" />
+        </div>
+        <p className="mt-1 truncate text-[14px] text-muted-foreground">
+          {item.harness} · {item.provider}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <span className="text-[14px] tabular-nums text-muted-foreground mr-2">
+          {formatDuration(Math.max(0, Date.now() - Date.parse(item.startedAt)))}
+        </span>
+        <StatusBadge state="running" />
+        <span onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" title="Actions">
+                <OverflowMenuVertical />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem>Restart</DropdownMenuItem>
+              <DropdownMenuItem>Pause — wakes on next use</DropdownMenuItem>
+              <DropdownMenuItem>Stop — until started again</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem tone="danger">Delete sandbox</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </span>
       </div>
-      <p className="text-[14px] text-muted-foreground mt-1.5 truncate">
-        {item.task}
-      </p>
-      <p className="text-[14px] text-muted-foreground/70 mt-0.5">
-        {item.harness} · {item.provider}
-      </p>
-    </div>
+    </Card>
   );
 }
 
 function ExperimentCard({ item }: { item: RunningExperiment }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const elapsed = Math.max(0, Date.now() - Date.parse(item.startedAt));
   const pct = Math.round((item.completedRuns / item.totalRuns) * 100);
 
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-success shrink-0 animate-pulse" />
-        <button
-          type="button"
-          onClick={() => navigateToSandboxHome(item.agentId)}
-          className="text-[14px] font-medium text-foreground hover:text-accent transition-colors truncate"
-        >
-          {item.agentName}
-        </button>
-        <Badge variant="muted" size="sm" className="inline-flex items-center gap-1">
-          <Chemistry size={14} />
-          Experiment
-        </Badge>
-        <span className="ml-auto text-[14px] tabular-nums text-muted-foreground shrink-0">
-          {formatDuration(elapsed)}
-        </span>
+    <Card
+      onClick={() => navigateToSandboxHome(item.agentId)}
+      className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
+    >
+      <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+        <Chemistry size={20} className="text-muted-foreground" />
       </div>
-      <p className="text-[14px] font-medium text-foreground mt-1.5">
-        {item.experimentName}
-      </p>
-      <p className="text-[14px] text-muted-foreground mt-0.5">
-        {item.runLabel}
-      </p>
-      <div className="mt-2 flex items-center gap-3">
-        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full rounded-full bg-accent transition-all"
-            style={{ width: `${pct}%` }}
-          />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate text-[16px] text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+            {item.experimentName}
+          </h3>
+          <Badge variant="accent" className="shrink-0">
+            Experiment
+          </Badge>
         </div>
-        <span className="text-[14px] tabular-nums text-muted-foreground shrink-0">
-          {item.completedRuns}/{item.totalRuns} runs
+        <p className="mt-1 truncate text-[14px] text-muted-foreground">
+          {item.completedRuns}/{item.totalRuns} runs completed
+        </p>
+        <div className="mt-2 flex items-center gap-3">
+          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full bg-accent transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="text-[14px] tabular-nums text-muted-foreground shrink-0">
+            {pct}%
+          </span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <span className="text-[14px] tabular-nums text-muted-foreground mr-2">
+          {formatDuration(Math.max(0, Date.now() - Date.parse(item.startedAt)))}
+        </span>
+        <StatusBadge state="running" />
+        <span onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" title="Actions">
+                <OverflowMenuVertical />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem>Restart</DropdownMenuItem>
+              <DropdownMenuItem>Pause — wakes on next use</DropdownMenuItem>
+              <DropdownMenuItem>Stop — until started again</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem tone="danger">Delete sandbox</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </span>
       </div>
-      {item.runningInvocations > 0 && (
-        <p className="text-[14px] text-muted-foreground/70 mt-1">
-          {item.runningInvocations} invocations active
-        </p>
-      )}
-    </div>
+    </Card>
   );
 }
 
 function KnowledgeBaseCard({ item }: { item: RunningKnowledgeBase }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const elapsed = Math.max(0, Date.now() - Date.parse(item.startedAt));
 
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-success shrink-0 animate-pulse" />
-        <button
-          type="button"
-          onClick={() => navigateToSandboxHome(item.agentId)}
-          className="text-[14px] font-medium text-foreground hover:text-accent transition-colors truncate"
-        >
-          {item.agentName}
-        </button>
-        <Badge variant="muted" size="sm" className="inline-flex items-center gap-1">
-          <Book size={14} />
-          Knowledge Base
-        </Badge>
-        <span className="ml-auto text-[14px] tabular-nums text-muted-foreground shrink-0">
-          {formatDuration(elapsed)}
+    <Card
+      onClick={() => navigateToSandboxHome(item.agentId)}
+      className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
+    >
+      <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+        <DataConnected size={20} className="text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate text-[16px] text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+            {item.agentName}
+          </h3>
+          <Badge variant="template" className="shrink-0">
+            Knowledge base
+          </Badge>
+        </div>
+        <p className="mt-1 truncate text-[14px] text-muted-foreground">
+          {item.templateName} · {item.connectionCount} connections
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <span className="text-[14px] tabular-nums text-muted-foreground mr-2">
+          {formatDuration(Math.max(0, Date.now() - Date.parse(item.startedAt)))}
+        </span>
+        <StatusBadge state="running" />
+        <span onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" title="Actions">
+                <OverflowMenuVertical />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem>Restart</DropdownMenuItem>
+              <DropdownMenuItem>Pause — wakes on next use</DropdownMenuItem>
+              <DropdownMenuItem>Stop — until started again</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem tone="danger">Delete sandbox</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </span>
       </div>
-      <p className="text-[14px] text-muted-foreground mt-1.5 truncate">
-        {item.task}
-      </p>
-      <p className="text-[14px] text-muted-foreground/70 mt-0.5">
-        {item.templateName} · {item.connectionCount} connections · {item.documentsIndexed.toLocaleString()} docs indexed
-      </p>
-    </div>
+    </Card>
   );
 }

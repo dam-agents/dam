@@ -108,7 +108,16 @@ function getFixtures(): Record<string, unknown> {
       ],
       instancePublishes: [],
     },
-    "files.list": [],
+    "files.list": empty
+      ? []
+      : [
+          { path: "src/middleware/auth.ts", type: "file" },
+          { path: "src/middleware/strategies/jwt.ts", type: "file" },
+          { path: "src/middleware/strategies/session.ts", type: "file" },
+          { path: "src/routes/auth.ts", type: "file" },
+          { path: "src/index.ts", type: "file" },
+          { path: "package.json", type: "file" },
+        ],
     "artifactLibrary.list": empty ? [] : artifacts,
     "artifactLibrary.listFolders": empty ? [] : artifactFolders,
     "artifactLibrary.folderShareUrl": null,
@@ -149,22 +158,111 @@ export const handlers = [
     const procedures = pathAfterTrpc.split(",");
     const fixtures = getFixtures();
 
-    const getAgentInput = (idx: number): Record<string, unknown> | undefined => {
+    const getAgentInput = (
+      idx: number,
+    ): Record<string, unknown> | undefined => {
       try {
         const raw = url.searchParams.get("input");
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed[String(idx)]?.json) return parsed[String(idx)].json;
           if (parsed.json && procedures.length === 1) return parsed.json;
-          if (parsed[String(idx)] && !parsed[String(idx)].json) return parsed[String(idx)];
+          if (parsed[String(idx)] && !parsed[String(idx)].json)
+            return parsed[String(idx)];
           if (parsed.id && procedures.length === 1) return parsed;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return undefined;
     };
 
     const results = procedures.map((proc, idx) => {
       const inputObj = getAgentInput(idx);
+
+      if (proc === "files.listDirs") {
+        const paths = (inputObj?.paths as string[] | undefined) ?? [""];
+        const mockTree: Record<
+          string,
+          {
+            path: string;
+            ok: true;
+            entries: { name: string; type: "file" | "dir" }[];
+          }
+        > = {
+          "": {
+            path: "",
+            ok: true,
+            entries: [
+              { name: "src", type: "dir" },
+              { name: "tests", type: "dir" },
+              { name: "package.json", type: "file" },
+              { name: "tsconfig.json", type: "file" },
+              { name: "README.md", type: "file" },
+            ],
+          },
+          src: {
+            path: "src",
+            ok: true,
+            entries: [
+              { name: "middleware", type: "dir" },
+              { name: "routes", type: "dir" },
+              { name: "models", type: "dir" },
+              { name: "index.ts", type: "file" },
+              { name: "config.ts", type: "file" },
+            ],
+          },
+          "src/middleware": {
+            path: "src/middleware",
+            ok: true,
+            entries: [
+              { name: "strategies", type: "dir" },
+              { name: "auth.ts", type: "file" },
+              { name: "rate-limit.ts", type: "file" },
+              { name: "logging.ts", type: "file" },
+            ],
+          },
+          "src/middleware/strategies": {
+            path: "src/middleware/strategies",
+            ok: true,
+            entries: [
+              { name: "jwt.ts", type: "file" },
+              { name: "session.ts", type: "file" },
+              { name: "index.ts", type: "file" },
+            ],
+          },
+          "src/routes": {
+            path: "src/routes",
+            ok: true,
+            entries: [
+              { name: "auth.ts", type: "file" },
+              { name: "users.ts", type: "file" },
+              { name: "health.ts", type: "file" },
+            ],
+          },
+          "src/models": {
+            path: "src/models",
+            ok: true,
+            entries: [
+              { name: "user.ts", type: "file" },
+              { name: "session.ts", type: "file" },
+            ],
+          },
+          tests: {
+            path: "tests",
+            ok: true,
+            entries: [
+              { name: "middleware.test.ts", type: "file" },
+              { name: "routes.test.ts", type: "file" },
+            ],
+          },
+        };
+        const results = paths.map(
+          (p: string) =>
+            mockTree[p] ?? { path: p, ok: false, error: "not-found" },
+        );
+        return { result: { data: { results } } };
+      }
 
       if (proc === "artifactLibrary.get") {
         const id = inputObj?.id as string | undefined;
@@ -212,7 +310,9 @@ export const handlers = [
     const fixtures = getFixtures();
 
     // tRPC batch input: ?input={"0":{"json":{...}}} or per-index ?input[0]=...
-    const getInputForIndex = (idx: number): Record<string, unknown> | undefined => {
+    const getInputForIndex = (
+      idx: number,
+    ): Record<string, unknown> | undefined => {
       try {
         const raw = url.searchParams.get("input");
         if (raw) {
@@ -222,11 +322,14 @@ export const handlers = [
           // Single non-batch: {"json": {...}}
           if (parsed.json && procedures.length === 1) return parsed.json;
           // Direct object (no json wrapper): {"0": {"id": "..."}}
-          if (parsed[String(idx)] && !parsed[String(idx)].json) return parsed[String(idx)];
+          if (parsed[String(idx)] && !parsed[String(idx)].json)
+            return parsed[String(idx)];
           // Direct single: {"id": "..."}
           if (parsed.id && procedures.length === 1) return parsed;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return undefined;
     };
 

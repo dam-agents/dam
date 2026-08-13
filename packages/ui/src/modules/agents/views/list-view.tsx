@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useDemoState } from "../../../mock/demo-state.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
@@ -21,14 +22,22 @@ export function ListView() {
     agentsData?.list ?? [],
   );
 
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const upgrade = useUpgradeAgentMutation();
+  const { state: demoState } = useDemoState();
 
   const [modalAgent, setModalAgent] = useState<AgentView | null>(null);
 
   const sandboxes = agents.filter((a) => !a.kind);
+
+  const goToSetup = () => {
+    window.location.href = "/agent-setup";
+  };
+
+  if (import.meta.env.VITE_MOCK && demoState === "empty") {
+    return <SandboxesEmptyState onCreate={goToSetup} />;
+  }
 
   const stopSandbox = async (agent: AgentView) => {
     const schedules = await fetchSchedulesForAgent(agent.id);
@@ -80,20 +89,16 @@ export function ListView() {
     <div>
       {initialLoaded && sandboxes.length > 0 && (
         <PageHeader
-          title="Sandboxes"
-          description="Sandboxes are isolated environments for running AI agents with their own workspace, credentials, and network access."
-          actions={
-            <Button onClick={() => navigateToCreateSandbox()}>
-              Create sandbox
-            </Button>
-          }
+          title="Coding agents"
+          description="Coding agents run in isolated environments with their own workspace, credentials, and network access."
+          actions={<Button onClick={goToSetup}>Create coding agent</Button>}
         />
       )}
 
       {!initialLoaded && <ListSkeleton rows={3} rowHeight={70} />}
 
       {initialLoaded && sandboxes.length === 0 && (
-        <SandboxesEmptyState onCreate={() => navigateToCreateSandbox()} />
+        <SandboxesEmptyState onCreate={goToSetup} />
       )}
 
       {initialLoaded && sandboxes.length > 0 && (
@@ -137,15 +142,16 @@ export function ListView() {
 
 function SandboxesEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="flex flex-col items-center rounded-xl border border-border py-16 text-center anim-in">
-      <h2 className="text-[20px] font-semibold text-foreground">Sandboxes</h2>
+    <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-8 anim-in">
+      <h2 className="text-[20px] font-semibold text-foreground">
+        Coding Agents
+      </h2>
       <p className="mt-2 max-w-[480px] text-[14px] leading-relaxed text-muted-foreground">
-        A sandbox is an isolated environment for running AI agents with their
-        own workspace, credentials, and network access. Create one and the agent
-        will help you set things up.
+        Work with your preferred coding agent, credentials, and tools in an
+        isolated environment.
       </p>
       <Button className="mt-6" onClick={onCreate}>
-        Create sandbox
+        Create coding agent
       </Button>
     </div>
   );

@@ -1,144 +1,223 @@
 /** Raw content returned by artifactLibrary.getContent */
 export const artifactContents: Record<string, string> = {
-  "art-1": `# Sprint 14 Retrospective
+  "art-1": `# Spring 2025 Campaign Brief
 
-## What went well
-- Shipped credential injection ahead of schedule
-- Zero P0 incidents during the sprint
-- Knowledge base indexing pipeline hit 99.7% uptime
+## Objective
+Launch the Spring collection with a refreshed visual identity that feels warm, organic, and approachable.
 
-## What could improve
-- Experiment result notifications were delayed by ~2h due to queue backpressure
-- Need better visibility into sandbox resource consumption
+## Key Deliverables
+- Hero banner (desktop + mobile)
+- Instagram carousel (6 slides)
+- Email header
+- Product page lifestyle shots
+- Packaging inserts
 
-## Action items
-- [ ] Add resource usage alerts per-sandbox (owner: @jamie)
-- [ ] Investigate queue backpressure root cause (owner: @alex)
-- [ ] Update runbook for KB reindex failures (owner: @sam)
+## Color Direction
+- Primary: Sage (#87A878) + Terracotta (#C4785B)
+- Accent: Warm cream (#F5F0E8)
+- Avoid: Cool blues, neon anything
+
+## Photography Notes
+- Natural light, golden hour preferred
+- Lifestyle over product-on-white
+- Diverse casting — already confirmed with talent agency
 `,
-  "art-2": `#!/usr/bin/env python3
-"""Data pipeline — pulls metrics from Prometheus, transforms, and pushes to warehouse."""
+  "art-2": `# Logo Usage Guidelines
 
-import asyncio
-from datetime import datetime, timedelta
+## Clear Space
+Minimum clear space around the logo equals the height of the logomark "d" character.
 
-import httpx
-import polars as pl
+## Minimum Size
+- Print: 24mm wide minimum
+- Digital: 80px wide minimum
 
+## Don'ts
+- Don't stretch or skew
+- Don't place on busy backgrounds without the container
+- Don't use the old teal version (retired Q4 2024)
+- Don't add drop shadows or effects
 
-async def fetch_metrics(start: datetime, end: datetime) -> pl.DataFrame:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            "http://prometheus:9090/api/v1/query_range",
-            params={
-                "query": 'sum(rate(container_cpu_usage_seconds_total[5m])) by (pod)',
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "step": "60s",
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()["data"]["result"]
-
-    rows = []
-    for series in data:
-        pod = series["metric"]["pod"]
-        for ts, val in series["values"]:
-            rows.append({"pod": pod, "timestamp": ts, "cpu_rate": float(val)})
-    return pl.DataFrame(rows)
-
-
-async def main():
-    end = datetime.utcnow()
-    start = end - timedelta(hours=1)
-    df = await fetch_metrics(start, end)
-    df = df.with_columns(pl.col("timestamp").cast(pl.Datetime))
-    print(f"Fetched {len(df)} rows across {df['pod'].n_unique()} pods")
-    df.write_parquet("/data/metrics_hourly.parquet")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+## File Formats Available
+- SVG (preferred for web)
+- PNG @1x, @2x, @3x (with transparency)
+- PDF (for print)
+- EPS (for vendors)
 `,
-  "art-4": "# REST API Reference\n\n## Authentication\n\nAll requests require a Bearer token in the `Authorization` header.\n\n```\nAuthorization: Bearer <token>\n```\n\n## Endpoints\n\n### GET /api/agents\n\nList all agents in the organization.\n\n| Field | Type | Description |\n|-------|------|-------------|\n| id | string | Agent UUID |\n| name | string | Human-readable name |\n| state | enum | running, hibernated, error |\n| kind | string? | experiment, knowledge-base, or null |\n\n### POST /api/agents\n\nCreate a new agent sandbox.\n\n### GET /api/agents/:id/sessions\n\nList sessions for an agent.\n\n### POST /api/agents/:id/approve\n\nApprove a pending permission request.\n",
-  "art-6": `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: agent-sandbox
-  namespace: platform
-  labels:
-    app: agent-sandbox
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: agent-sandbox
-  template:
-    metadata:
-      labels:
-        app: agent-sandbox
-    spec:
-      serviceAccountName: agent-sa
-      containers:
-        - name: harness
-          image: ghcr.io/acme/platform-harness:latest
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "250m"
-            limits:
-              memory: "512Mi"
-              cpu: "1000m"
-          env:
-            - name: AGENT_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.labels['agent-id']
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-      volumes:
-        - name: workspace
-          emptyDir:
-            sizeLimit: 2Gi
-`,
-  "art-7": `# Sprint 13 Summary
+  "art-4": `# Typography System
 
-**Duration:** Feb 12 – Feb 26, 2024
-**Velocity:** 34 points (target: 32)
+## Primary Typeface: Founders Grotesk
+- Headlines: Medium, -0.02em tracking
+- Body: Regular, 16px/1.5 line-height
+- Captions: Regular, 13px, muted color
 
-## Completed
-- Network isolation policy engine (8pts)
-- Schedule execution MVP — cron triggers (5pts)
-- Artifact versioning backend (5pts)
-- KB incremental reindex (8pts)
-- UI: approval inbox redesign (5pts)
-- Bug fixes & tech debt (3pts)
+## Secondary Typeface: Tiempos Text
+- Used for editorial content, long-form
+- Pull quotes: Light Italic, 24px
 
-## Carried over
-- Experiment comparison view (3pts) — blocked on design
+## Hierarchy
+| Level | Face | Size | Weight |
+|-------|------|------|--------|
+| H1 | Founders | 48px | Medium |
+| H2 | Founders | 32px | Medium |
+| H3 | Founders | 24px | Medium |
+| Body | Founders | 16px | Regular |
+| Caption | Founders | 13px | Regular |
+| Editorial | Tiempos | 18px | Regular |
 `,
-  "art-8": "import React from 'react';\n\ninterface ButtonProps {\n  variant?: 'primary' | 'secondary' | 'ghost';\n  size?: 'sm' | 'md' | 'lg';\n  children: React.ReactNode;\n  onClick?: () => void;\n  disabled?: boolean;\n}\n\nexport function Button({ variant = 'primary', size = 'md', children, onClick, disabled }: ButtonProps) {\n  return (\n    <button\n      className={`btn btn-${variant} btn-${size}`}\n      onClick={onClick}\n      disabled={disabled}\n    >\n      {children}\n    </button>\n  );\n}\n\ninterface CardProps {\n  title: string;\n  children: React.ReactNode;\n  actions?: React.ReactNode;\n}\n\nexport function Card({ title, children, actions }: CardProps) {\n  return (\n    <div className=\"card\">\n      <div className=\"card-header\">\n        <h3>{title}</h3>\n        {actions && <div className=\"card-actions\">{actions}</div>}\n      </div>\n      <div className=\"card-body\">{children}</div>\n    </div>\n  );\n}\n",
-  "art-9": `[2024-03-13T22:01:14Z] ERROR agent=codex-research run=run-morning-sync: context deadline exceeded
-[2024-03-13T22:01:14Z] ERROR agent=codex-research run=run-morning-sync: failed to fetch /repos/acme-org/my-repo/contents
-[2024-03-13T21:45:02Z] WARN  agent=gemini-data-pipeline: memory usage at 95% of limit (486Mi/512Mi)
-[2024-03-13T21:45:03Z] ERROR agent=gemini-data-pipeline run=run-data-pipeline: OOMKilled — container exceeded memory limit
-[2024-03-13T20:12:44Z] ERROR agent=incident-postmortems: git-clone failed: SSH key expired
-[2024-03-13T20:12:44Z] INFO  agent=incident-postmortems: last successful sync was 2024-03-11T18:00:00Z
-[2024-03-13T19:30:01Z] WARN  agent=claude-code-main run=run-nightly-tests: test auth/session.test.ts FAILED
-[2024-03-13T19:30:01Z] WARN  agent=claude-code-main run=run-nightly-tests: Expected token refresh to succeed
-[2024-03-13T19:30:02Z] ERROR agent=claude-code-main run=run-nightly-tests: 3 of 142 tests failed
+  "art-6": `# Brand Color Tokens
+
+## Primary Palette
+$color-sage-50: #f4f7f3;
+$color-sage-100: #e5ede3;
+$color-sage-500: #87A878;
+$color-sage-700: #5c7a50;
+$color-sage-900: #2d3d27;
+
+$color-terracotta-50: #fdf5f2;
+$color-terracotta-100: #f9e8e0;
+$color-terracotta-500: #C4785B;
+$color-terracotta-700: #9e5a3f;
+$color-terracotta-900: #4d2b1e;
+
+## Neutrals
+$color-cream: #F5F0E8;
+$color-warm-white: #FEFDFB;
+$color-charcoal: #2C2926;
+$color-stone-400: #A39E97;
+$color-stone-600: #6B6560;
+
+## Semantic
+$color-success: #4CAF50;
+$color-warning: #F5A623;
+$color-error: #D64545;
 `,
-  "art-12": "import React from 'react';\n\nconst variants = [\n  { name: 'baseline', accuracy: 78.4, latency: 1.2, cost: 0.42 },\n  { name: 'cot-v1', accuracy: 84.1, latency: 2.1, cost: 0.68 },\n  { name: 'cot-v2-concise', accuracy: 83.8, latency: 1.4, cost: 0.51 },\n  { name: 'few-shot-5', accuracy: 81.2, latency: 1.8, cost: 0.73 },\n];\n\nexport function VariantComparison() {\n  const winner = variants.reduce((a, b) => (a.accuracy / a.cost > b.accuracy / b.cost ? a : b));\n\n  return (\n    <div className=\"p-4\">\n      <h2 className=\"text-lg font-semibold mb-4\">Variant Comparison</h2>\n      <div className=\"space-y-2\">\n        {variants.map((v) => (\n          <div key={v.name} className={`flex items-center gap-4 p-3 rounded border ${v.name === winner.name ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}>\n            <span className=\"font-medium w-32\">{v.name}</span>\n            <span className=\"text-sm\">Accuracy: {v.accuracy}%</span>\n            <span className=\"text-sm\">Latency: {v.latency}s</span>\n            <span className=\"text-sm\">Cost: ${v.cost}/1k</span>\n            {v.name === winner.name && <span className=\"ml-auto text-green-600 font-medium\">Best value</span>}\n          </div>\n        ))}\n      </div>\n    </div>\n  );\n}\n",
+  "art-7": `# Q1 2025 Design Review
+
+**Period:** Jan 6 – Mar 28, 2025
+**Projects completed:** 14
+
+## Highlights
+- Spring campaign visual system finalized
+- Packaging redesign shipped to printer
+- Website hero refresh (A/B test winner deployed)
+- Social media template library expanded to 60+ templates
+- Brand guidelines v3.0 published
+
+## What's Next (Q2)
+- Summer campaign concepting
+- Product photography reshoots (new lighting style)
+- Trade show booth design
+- Email template refresh
+`,
+  "art-8": `# Icon Design Specifications
+
+## Grid
+- 24x24px canvas
+- 2px stroke weight
+- 2px corner radius (rounded joins)
+- 2px padding from edge
+
+## Style Rules
+- Outlined style only (no filled variants)
+- Consistent 2px stroke — never thinner
+- Round line caps and joins
+- Optical alignment over mathematical
+
+## Naming Convention
+icon-[category]-[name].svg
+Example: icon-nav-home.svg, icon-action-download.svg
+
+## Export
+- SVG with viewBox="0 0 24 24"
+- No embedded styles (use currentColor)
+- Optimized with SVGO
+`,
+  "art-9": `Photography Direction — Spring 2025
+
+SHOT LIST:
+
+1. Hero banner — model in sage linen, golden hour, outdoor
+2. Product flat-lay — candles + books + ceramic on cream backdrop
+3. Lifestyle — kitchen scene, morning light, warm tones
+4. Detail — texture close-up, fabric grain visible
+5. Editorial — full-page portrait, Tiempos overlay text
+
+LIGHTING:
+- Natural light strongly preferred
+- If studio: warm gels (CTO 1/4), large softbox key
+- Avoid harsh shadows on product
+
+POST-PROCESSING:
+- Lift shadows slightly (+15)
+- Warm white balance (6200K)
+- Desaturate blues by 20%
+- Light grain overlay (Portra 400 emulation)
+- Export: sRGB for web, Adobe RGB for print
+`,
+  "art-12": `# Color Palette Test Results
+
+| Palette | CTR (email) | CTR (social) | Brand recall | Winner |
+|---------|-------------|--------------|--------------|--------|
+| Warm sage + terracotta | 4.2% | 3.8% | 72% | ✓ |
+| Cool mint + navy | 3.1% | 2.9% | 58% | |
+| Warm coral + cream | 3.8% | 4.1% | 65% | |
+| Neutral stone + gold | 2.7% | 2.4% | 51% | |
+
+**Recommendation:** Warm sage + terracotta. Best overall brand recall and strong click-through. The warmth feels approachable while sage differentiates from competitors' blue/teal palettes.
+
+**Runner-up note:** Warm coral performed well on social but felt less distinctive in brand recall testing.
+`,
 };
 
 /** HTML previews returned by artifactLibrary.preview (for renderable kinds) */
 export const artifactPreviews: Record<string, string> = {
+  "art-1": `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spring 2025 Campaign Brief</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px; background: #fff; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+  h2 { font-size: 18px; font-weight: 600; margin-top: 32px; margin-bottom: 12px; color: #333; }
+  ul { padding-left: 20px; margin-bottom: 16px; }
+  li { margin-bottom: 6px; font-size: 15px; }
+  .color-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; vertical-align: middle; margin-right: 8px; border: 1px solid #e5e5e5; }
+</style>
+</head>
+<body>
+<h1>Spring 2025 Campaign Brief</h1>
+<h2>Objective</h2>
+<p>Launch the Spring collection with a refreshed visual identity that feels warm, organic, and approachable.</p>
+<h2>Key Deliverables</h2>
+<ul>
+<li>Hero banner (desktop + mobile)</li>
+<li>Instagram carousel (6 slides)</li>
+<li>Email header</li>
+<li>Product page lifestyle shots</li>
+<li>Packaging inserts</li>
+</ul>
+<h2>Color Direction</h2>
+<ul>
+<li><span class="color-swatch" style="background:#87A878"></span>Primary: Sage (#87A878)</li>
+<li><span class="color-swatch" style="background:#C4785B"></span>Primary: Terracotta (#C4785B)</li>
+<li><span class="color-swatch" style="background:#F5F0E8"></span>Accent: Warm cream (#F5F0E8)</li>
+</ul>
+<p style="margin-top:12px;color:#666;">Avoid: Cool blues, neon anything</p>
+<h2>Photography Notes</h2>
+<ul>
+<li>Natural light, golden hour preferred</li>
+<li>Lifestyle over product-on-white</li>
+<li>Diverse casting — already confirmed with talent agency</li>
+</ul>
+</body>
+</html>`,
   "art-3": `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Agent Usage Dashboard</title>
+<title>Brand Asset Library</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px; background: #fafafa; }
@@ -150,11 +229,11 @@ export const artifactPreviews: Record<string, string> = {
 </style>
 </head>
 <body>
-  <h1>Agent Usage Dashboard</h1>
+  <h1>Brand Asset Overview</h1>
   <div class="grid">
-    <div class="card"><h3>Total Sessions</h3><p class="big">1,247</p></div>
-    <div class="card"><h3>Avg Duration</h3><p class="big">18m</p></div>
-    <div class="card"><h3>Success Rate</h3><p class="big">94.2%</p></div>
+    <div class="card"><h3>Total Assets</h3><p class="big">1,247</p></div>
+    <div class="card"><h3>This Week</h3><p class="big">36 new</p></div>
+    <div class="card"><h3>Shared</h3><p class="big">84 links</p></div>
   </div>
 </body>
 </html>`,
@@ -162,36 +241,32 @@ export const artifactPreviews: Record<string, string> = {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Authentication Flow</title>
+<title>Color Palette Preview</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px; background: white; }
+  .palette { display: flex; gap: 8px; margin: 16px 0; }
+  .swatch { width: 80px; height: 80px; border-radius: 12px; display: flex; align-items: end; padding: 8px; font-size: 11px; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  h2 { font-size: 16px; margin-bottom: 4px; }
+  p { font-size: 13px; color: #666; }
 </style>
 </head>
 <body>
-<svg viewBox="0 0 600 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:600px">
-  <defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#333"/></marker></defs>
-  <rect x="20" y="60" width="100" height="40" rx="6" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
-  <text x="70" y="84" text-anchor="middle" font-size="13" fill="#1a1a1a">User</text>
-  <rect x="220" y="60" width="120" height="40" rx="6" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
-  <text x="280" y="84" text-anchor="middle" font-size="13" fill="#1a1a1a">API Gateway</text>
-  <rect x="440" y="60" width="120" height="40" rx="6" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5"/>
-  <text x="500" y="84" text-anchor="middle" font-size="13" fill="#1a1a1a">Keycloak</text>
-  <line x1="120" y1="80" x2="218" y2="80" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="340" y1="80" x2="438" y2="80" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="170" y="72" text-anchor="middle" font-size="11" fill="#666">POST /login</text>
-  <text x="390" y="72" text-anchor="middle" font-size="11" fill="#666">validate token</text>
-  <line x1="438" y1="105" x2="340" y2="130" stroke="#333" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow)"/>
-  <text x="390" y="125" text-anchor="middle" font-size="11" fill="#666">JWT</text>
-  <line x1="218" y1="130" x2="120" y2="105" stroke="#333" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow)"/>
-  <text x="170" y="125" text-anchor="middle" font-size="11" fill="#666">200 + token</text>
-</svg>
+<h2>Spring 2025 — Primary Palette</h2>
+<p>Warm, organic, approachable</p>
+<div class="palette">
+  <div class="swatch" style="background:#87A878">Sage</div>
+  <div class="swatch" style="background:#C4785B">Terracotta</div>
+  <div class="swatch" style="background:#F5F0E8;color:#666;text-shadow:none">Cream</div>
+  <div class="swatch" style="background:#2C2926">Charcoal</div>
+  <div class="swatch" style="background:#A39E97">Stone</div>
+</div>
 </body>
 </html>`,
   "art-11": `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Prompt Tuning Results</title>
+<title>Font Pairing Results</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 32px; background: white; }
@@ -206,17 +281,17 @@ export const artifactPreviews: Record<string, string> = {
 </style>
 </head>
 <body>
-<h1>Prompt Tuning v2 — Results</h1>
+<h1>Font Pairing Test — Results</h1>
 <table>
-  <thead><tr><th>Variant</th><th>Accuracy</th><th>Latency (p50)</th><th>Cost/1k</th><th>Winner</th></tr></thead>
+  <thead><tr><th>Pairing</th><th>Readability</th><th>Brand Fit</th><th>Preference</th><th>Winner</th></tr></thead>
   <tbody>
-    <tr><td>baseline</td><td>78.4%</td><td>1.2s</td><td>$0.42</td><td></td></tr>
-    <tr><td>cot-v1</td><td>84.1%</td><td>2.1s</td><td>$0.68</td><td></td></tr>
-    <tr class="winner"><td>cot-v2-concise</td><td>83.8%</td><td>1.4s</td><td>$0.51</td><td class="check">✓</td></tr>
-    <tr><td>few-shot-5</td><td>81.2%</td><td>1.8s</td><td>$0.73</td><td></td></tr>
+    <tr><td>Founders + Tiempos</td><td>92%</td><td>88%</td><td>41%</td><td></td></tr>
+    <tr class="winner"><td>Founders + Söhne</td><td>94%</td><td>91%</td><td>47%</td><td class="check">✓</td></tr>
+    <tr><td>Untitled Sans + Tiempos</td><td>89%</td><td>79%</td><td>8%</td><td></td></tr>
+    <tr><td>Inter + Lora</td><td>96%</td><td>62%</td><td>4%</td><td></td></tr>
   </tbody>
 </table>
-<p><strong>Recommendation:</strong> cot-v2-concise — near-best accuracy with minimal latency/cost trade-off.</p>
+<p><strong>Recommendation:</strong> Founders Grotesk + Söhne — highest brand alignment with strong readability. The geometric consistency feels cohesive.</p>
 </body>
 </html>`,
 };
@@ -224,19 +299,19 @@ export const artifactPreviews: Record<string, string> = {
 export const artifactFolders = [
   {
     id: "folder-1",
-    name: "Sprint Reports",
+    name: "Campaign Assets",
     createdAt: "2024-02-01T10:00:00.000Z",
     updatedAt: "2024-03-14T10:00:00.000Z",
   },
   {
     id: "folder-2",
-    name: "API Documentation",
+    name: "Brand System",
     createdAt: "2024-01-20T10:00:00.000Z",
     updatedAt: "2024-03-10T10:00:00.000Z",
   },
   {
     id: "folder-exp-1",
-    name: "Experiments / Prompt Tuning v2",
+    name: "Experiments / Color Palette Testing",
     createdAt: "2024-03-01T10:00:00.000Z",
     updatedAt: "2024-03-13T10:00:00.000Z",
   },
@@ -255,11 +330,11 @@ const hoursAgo = (h: number) => new Date(now - h * 3600_000).toISOString();
 export const artifacts = [
   {
     id: "art-1",
-    title: "Sprint 14 Retrospective",
-    slug: "sprint-14-retro",
+    title: "Spring 2025 Campaign Brief",
+    slug: "spring-2025-brief",
     kind: "markdown",
     contentType: "text/markdown",
-    fileName: "sprint-14-retro.md",
+    fileName: "spring-2025-brief.md",
     sizeBytes: 4200,
     version: 3,
     folderId: "folder-1",
@@ -273,29 +348,29 @@ export const artifacts = [
   },
   {
     id: "art-2",
-    title: "Data Pipeline Script",
-    slug: "data-pipeline",
-    kind: "code",
-    contentType: "text/plain",
-    fileName: "pipeline.py",
+    title: "Logo Usage Guidelines",
+    slug: "logo-usage",
+    kind: "markdown",
+    contentType: "text/markdown",
+    fileName: "logo-usage.md",
     sizeBytes: 8100,
     version: 2,
-    folderId: null,
-    agentId: AGENT_ID_3,
+    folderId: "folder-2",
+    agentId: AGENT_ID_KB,
     visibility: "public",
     expiresAt: null,
     viewCount: 12,
-    shareUrl: "https://share.example.com/abc",
+    shareUrl: "https://share.example.com/logo",
     createdAt: hoursAgo(1),
     updatedAt: hoursAgo(1),
   },
   {
     id: "art-3",
-    title: "Interactive Dashboard",
-    slug: "interactive-dashboard",
+    title: "Brand Asset Overview",
+    slug: "asset-overview",
     kind: "html",
     contentType: "text/html",
-    fileName: "dashboard.html",
+    fileName: "asset-overview.html",
     sizeBytes: 24600,
     version: 5,
     folderId: null,
@@ -303,17 +378,17 @@ export const artifacts = [
     visibility: "public",
     expiresAt: null,
     viewCount: 47,
-    shareUrl: "https://share.example.com/dash",
+    shareUrl: "https://share.example.com/overview",
     createdAt: hoursAgo(3),
     updatedAt: hoursAgo(3),
   },
   {
     id: "art-4",
-    title: "REST API Reference",
-    slug: "api-reference",
+    title: "Typography System",
+    slug: "typography-system",
     kind: "markdown",
     contentType: "text/markdown",
-    fileName: "api-reference.md",
+    fileName: "typography.md",
     sizeBytes: 18400,
     version: 4,
     folderId: "folder-2",
@@ -321,17 +396,17 @@ export const artifacts = [
     visibility: "public",
     expiresAt: null,
     viewCount: 31,
-    shareUrl: "https://share.example.com/api-ref",
+    shareUrl: "https://share.example.com/type",
     createdAt: "2024-02-20T08:00:00.000Z",
     updatedAt: "2024-03-12T11:00:00.000Z",
   },
   {
     id: "art-5",
-    title: "Authentication Flow Diagram",
-    slug: "auth-flow",
+    title: "Color Palette Preview",
+    slug: "color-palette",
     kind: "html",
     contentType: "text/html",
-    fileName: "auth-flow.html",
+    fileName: "color-palette.html",
     sizeBytes: 12300,
     version: 1,
     folderId: "folder-2",
@@ -345,14 +420,14 @@ export const artifacts = [
   },
   {
     id: "art-6",
-    title: "Kubernetes Deploy Config",
-    slug: "k8s-deploy",
+    title: "Brand Color Tokens",
+    slug: "color-tokens",
     kind: "code",
-    contentType: "text/yaml",
-    fileName: "deploy.yaml",
+    contentType: "text/plain",
+    fileName: "color-tokens.scss",
     sizeBytes: 3200,
     version: 1,
-    folderId: null,
+    folderId: "folder-2",
     agentId: null,
     visibility: "private",
     expiresAt: null,
@@ -363,17 +438,17 @@ export const artifacts = [
   },
   {
     id: "art-7",
-    title: "Sprint 13 Summary",
-    slug: "sprint-13-summary",
+    title: "Q1 2025 Design Review",
+    slug: "q1-design-review",
     kind: "markdown",
     contentType: "text/markdown",
-    fileName: "sprint-13.md",
+    fileName: "q1-review.md",
     sizeBytes: 3800,
     version: 2,
     folderId: "folder-1",
     agentId: AGENT_ID,
     visibility: "private",
-    expiresAt: "2024-02-01T00:00:00.000Z",
+    expiresAt: null,
     viewCount: 15,
     shareUrl: null,
     createdAt: "2024-02-28T10:00:00.000Z",
@@ -381,35 +456,35 @@ export const artifacts = [
   },
   {
     id: "art-8",
-    title: "React Component Library",
-    slug: "react-components",
-    kind: "jsx",
-    contentType: "text/jsx",
-    fileName: "components.jsx",
+    title: "Icon Design Specifications",
+    slug: "icon-specs",
+    kind: "markdown",
+    contentType: "text/markdown",
+    fileName: "icon-specs.md",
     sizeBytes: 15700,
     version: 3,
-    folderId: null,
+    folderId: "folder-2",
     agentId: AGENT_ID,
     visibility: "public",
     expiresAt: null,
     viewCount: 22,
-    shareUrl: "https://share.example.com/components",
+    shareUrl: "https://share.example.com/icons",
     createdAt: "2024-03-02T11:00:00.000Z",
     updatedAt: "2024-03-14T08:00:00.000Z",
   },
   {
     id: "art-9",
-    title: "Error Logs Export",
-    slug: "error-logs",
+    title: "Photography Direction",
+    slug: "photo-direction",
     kind: "text",
     contentType: "text/plain",
-    fileName: "errors-2024-03.log",
+    fileName: "photo-direction.txt",
     sizeBytes: 52400,
     version: 1,
-    folderId: null,
+    folderId: "folder-1",
     agentId: AGENT_ID,
     visibility: "private",
-    expiresAt: "2024-04-01T00:00:00.000Z",
+    expiresAt: null,
     viewCount: 4,
     shareUrl: null,
     createdAt: "2024-03-13T22:00:00.000Z",
@@ -417,29 +492,29 @@ export const artifacts = [
   },
   {
     id: "art-10",
-    title: "Architecture Diagram",
-    slug: "arch-diagram",
+    title: "Mood Board — Spring Campaign",
+    slug: "mood-board-spring",
     kind: "binary",
     contentType: "image/png",
-    fileName: "architecture.png",
+    fileName: "mood-board-spring.png",
     sizeBytes: 186000,
     version: 2,
-    folderId: "folder-2",
+    folderId: "folder-1",
     agentId: null,
     visibility: "public",
     expiresAt: null,
     viewCount: 19,
-    shareUrl: "https://share.example.com/arch",
+    shareUrl: "https://share.example.com/mood",
     createdAt: "2024-02-15T14:00:00.000Z",
     updatedAt: "2024-03-10T10:00:00.000Z",
   },
   {
     id: "art-11",
-    title: "Prompt Tuning Results",
-    slug: "prompt-results",
+    title: "Font Pairing Test Results",
+    slug: "font-pairing-results",
     kind: "html",
     contentType: "text/html",
-    fileName: "results.html",
+    fileName: "font-results.html",
     sizeBytes: 9800,
     version: 1,
     folderId: "folder-exp-1",
@@ -453,11 +528,11 @@ export const artifacts = [
   },
   {
     id: "art-12",
-    title: "Variant Comparison Chart",
-    slug: "variant-comparison",
-    kind: "jsx",
-    contentType: "text/jsx",
-    fileName: "comparison.jsx",
+    title: "Color Palette Test Results",
+    slug: "color-test-results",
+    kind: "markdown",
+    contentType: "text/markdown",
+    fileName: "color-results.md",
     sizeBytes: 6400,
     version: 2,
     folderId: "folder-exp-1",

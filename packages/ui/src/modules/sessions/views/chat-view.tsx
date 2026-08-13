@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import { useDemoState } from "../../../mock/demo-state.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -87,9 +88,83 @@ import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import { ThoughtBlock } from "../components/thought-block.js";
 import { ToolChip } from "../components/tool-chip.js";
+import { WikiSetupCard } from "../components/wiki-setup-card.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+
+/** Module-level flag set by experiment setup to distinguish from coding agents */
+let mockCreatedKind: "experiment" | null = null;
+export function setMockCreatedKind(kind: "experiment" | null) {
+  mockCreatedKind = kind;
+}
+
+/** Flag set when navigating from a home page session card */
+let mockFromHomePage = false;
+export function setMockFromHomePage(value: boolean) {
+  mockFromHomePage = value;
+}
+
+/** Flag set when entering wiki onboard demo */
+let mockWikiOnboard = false;
+export function setMockWikiOnboard(value: boolean) {
+  mockWikiOnboard = value;
+}
+
+/** Pre-seed the session list cache so the sidebar shows sessions immediately
+ *  when navigating from a home page card. Must be called BEFORE selectAgent
+ *  so the data is present when the sidebar mounts. */
+export function seedMockSessions(agentId: string) {
+  const mockSessions = [
+    {
+      sessionId: "sess-mock-1",
+      agentId,
+      type: "regular",
+      mode: "code",
+      createdAt: new Date(Date.now() - 15 * 60_000).toISOString(),
+      scheduleId: null,
+      experimentId: null,
+      title: "Refactor auth middleware",
+      updatedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+      running: true,
+    },
+    {
+      sessionId: "sess-mock-2",
+      agentId,
+      type: "regular",
+      mode: "code",
+      createdAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+      scheduleId: null,
+      experimentId: null,
+      title: "Add rate limiting to API routes",
+      updatedAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+      running: false,
+    },
+    {
+      sessionId: "sess-mock-3",
+      agentId,
+      type: "regular",
+      mode: "code",
+      createdAt: new Date(Date.now() - 24 * 3600_000).toISOString(),
+      scheduleId: null,
+      experimentId: null,
+      title: "Set up CI/CD pipeline",
+      updatedAt: new Date(Date.now() - 20 * 3600_000).toISOString(),
+      running: false,
+    },
+  ];
+  for (const include of [
+    { channels: false, scheduled: false },
+    { channels: true, scheduled: false },
+    { channels: false, scheduled: true },
+    { channels: true, scheduled: true },
+  ]) {
+    queryClient.setQueryData(
+      acpSessionsKeys.list(agentId, include),
+      mockSessions,
+    );
+  }
+}
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -117,36 +192,180 @@ export function ChatView() {
   const setMessages = useStore((s) => s.setMessages);
 
   // Seed rich mock messages so formatting options are visible immediately
+  const { state: demoState } = useDemoState();
+  const view = useStore((s) => s.view);
   useEffect(() => {
     if (!import.meta.env.VITE_MOCK) return;
     if (!selectedAgent || messages.length > 0) return;
-    setMessages([
-      {
-        id: "mock-user-1",
-        role: "user",
-        streaming: false,
-        parts: [
-          {
-            kind: "text",
-            text: "How do I change the model for this sandbox?",
-          },
-        ],
-      },
-      {
-        id: "mock-assistant-1",
-        role: "assistant",
-        streaming: false,
-        parts: [
-          {
-            kind: "text",
-            text: `Open the configure panel and update the \`model\` field under **Runtime Settings**. You can set it to any value from \`harnessConfig.status.catalog.options\`, like \`claude-sonnet-4-20250514\` or \`claude-opus-4-20250514\`.
 
-After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true }\`. If the sandbox is \`running\`, the change applies immediately — no restart needed.`,
+    if (demoState === "empty") {
+      if (mockWikiOnboard && view === "knowledge-base-chat") {
+        setMessages([
+          {
+            id: "mock-wiki-setup",
+            role: "assistant",
+            streaming: false,
+            parts: [
+              {
+                kind: "text",
+                text: "I'm your Wiki agent. Point me at sources — repos, docs, URLs, or anything you paste — and I'll ingest them into structured, interlinked wiki pages. When you ask a question, I answer from those pages and cite which ones I used so you can always check my work.\n\nTwo quick things to get started:",
+              },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              { kind: "wiki-setup" } as any,
+            ],
           },
-        ],
-      },
-    ]);
-  }, [selectedAgent, messages.length, setMessages]);
+        ]);
+        mockWikiOnboard = false;
+      } else if (view === "knowledge-base-chat") {
+        setMessages([
+          {
+            id: "mock-kb-greeting",
+            role: "assistant",
+            streaming: false,
+            parts: [
+              {
+                kind: "text",
+                text: "Welcome to your new knowledge base! I'm set up to help you organize and work with information from repos, documents, and other sources.\n\nYou can start by telling me what you'd like to build this knowledge base around — a codebase you want to explore, documentation you need to consolidate, or research material you'd like to make searchable. What would you like to work on?",
+              },
+            ],
+          },
+        ]);
+      } else if (mockCreatedKind === "experiment") {
+        setMessages([
+          {
+            id: "mock-experiment-greeting",
+            role: "assistant",
+            streaming: false,
+            parts: [
+              {
+                kind: "text",
+                text: "This is your experiment sandbox — it runs a design→build→test→learn loop that you write in Python, and the platform watches it live with a graph of stages, per-stage progress, and a chart of whatever score the loop reports. The platform never runs the loop or interprets the score; it's ordinary code reporting its own shape.\n\nWhat would you like to optimize? Some common patterns: evolving a prompt against a scorer, sweeping hyperparameters, benchmarking several approaches against one task, or iterating on code until a test passes. Feel free to describe your own goal in your own words.",
+              },
+            ],
+          },
+        ]);
+        mockCreatedKind = null;
+      }
+      // Coding agents get the blank landing — no seeded messages
+      return;
+    }
+
+    if (mockFromHomePage) {
+      mockFromHomePage = false;
+      setSessionId("sess-mock-1");
+      setMessages([
+        {
+          id: "mock-user-1",
+          role: "user",
+          streaming: false,
+          parts: [
+            {
+              kind: "text",
+              text: "Refactor the authentication middleware to support both JWT and session-based auth. The existing code only handles JWT.",
+            },
+          ],
+        },
+        {
+          id: "mock-assistant-1",
+          role: "assistant",
+          streaming: false,
+          parts: [
+            {
+              kind: "text",
+              text: "I'll refactor the auth middleware to support both strategies. Let me start by examining the existing implementation.",
+            },
+            {
+              kind: "tool",
+              title: "Read src/middleware/auth.ts",
+              status: "done",
+            },
+            {
+              kind: "text",
+              text: "The current middleware only validates JWT tokens. I'll refactor it into a strategy pattern that supports both JWT and session-based auth.\n\nHere's what I'm doing:\n1. Extract a common `AuthStrategy` interface\n2. Implement `JwtStrategy` (existing logic)\n3. Add `SessionStrategy` for cookie-based sessions\n4. Update the middleware to try each strategy in order",
+            },
+            {
+              kind: "tool",
+              title: "Edit src/middleware/auth.ts",
+              status: "done",
+            },
+            {
+              kind: "tool",
+              title: "Write src/middleware/strategies/jwt.ts",
+              status: "done",
+            },
+            {
+              kind: "tool",
+              title: "Write src/middleware/strategies/session.ts",
+              status: "done",
+            },
+            {
+              kind: "text",
+              text: "Done. The middleware now tries JWT first (via `Authorization` header), then falls back to session cookies. Both strategies implement the same `AuthStrategy` interface so you can add more later.\n\nI also updated the tests — run `pnpm test src/middleware` to verify.",
+            },
+          ],
+        },
+        {
+          id: "mock-user-2",
+          role: "user",
+          streaming: false,
+          parts: [
+            {
+              kind: "text",
+              text: "Nice. Can you also add a rate limiter to the session strategy?",
+            },
+          ],
+        },
+        {
+          id: "mock-assistant-2",
+          role: "assistant",
+          streaming: false,
+          parts: [
+            {
+              kind: "tool",
+              title: "Edit src/middleware/strategies/session.ts",
+              status: "done",
+            },
+            {
+              kind: "text",
+              text: "Added a sliding-window rate limiter (100 requests per 15 min per session). It uses the existing Redis connection for distributed state. The limit is configurable via `SESSION_RATE_LIMIT` env var.",
+            },
+          ],
+        },
+      ]);
+    } else {
+      setMessages([
+        {
+          id: "mock-user-1",
+          role: "user",
+          streaming: false,
+          parts: [
+            {
+              kind: "text",
+              text: "What files are in this workspace?",
+            },
+          ],
+        },
+        {
+          id: "mock-assistant-1",
+          role: "assistant",
+          streaming: false,
+          parts: [
+            {
+              kind: "text",
+              text: "This workspace contains a Node.js project with the following structure:\n\n- `src/` — application source code\n- `src/middleware/` — Express middleware (auth, logging, rate limiting)\n- `src/routes/` — API route handlers\n- `src/models/` — database models\n- `tests/` — test suites\n- `package.json` — dependencies and scripts\n\nWhat would you like to work on?",
+            },
+          ],
+        },
+      ]);
+    }
+  }, [
+    selectedAgent,
+    messages.length,
+    setMessages,
+    setSessionId,
+    demoState,
+    view,
+  ]);
 
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -244,7 +463,6 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
 
   // A KB has its own route to key off; an experiment sandbox opens in this
   // ordinary chat, so its greeting keys off the Kind marker.
-  const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
   useKnowledgeBaseGreeting({
     agentId: selectedAgent,
@@ -263,11 +481,7 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
   const [connectionsTipDismissed, setConnectionsTipDismissed] = useState(false);
   const isKbChat = view === "knowledge-base-chat";
   const isExperimentChat = agentView !== null && isExperimentSandbox(agentView);
-  const showConnectionsTip =
-    !connectionsTipDismissed &&
-    (isKbChat || isExperimentChat) &&
-    messages.length > 0 &&
-    !busy;
+  const showConnectionsTip = false;
   const discoveryTooltip = showConnectionsTip
     ? {
         title: "Add connections",
@@ -862,6 +1076,9 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
                                       </span>
                                     )}
                                   </div>
+                                ) : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                (p as any).kind === "wiki-setup" ? (
+                                  <WikiSetupCard key={i} />
                                 ) : (
                                   <ToolChip key={i} chip={p} />
                                 ),
@@ -963,7 +1180,9 @@ After saving, poll \`harnessConfig.settled\` until it returns \`{ settled: true 
             open (mutually exclusive, in that priority); the experiment panel
             docks itself while the agent has a draft or live run. Fullscreen
             takeover on mobile */}
-        {(openFilePath || openArtifactId || dockedExperiment) && (
+        {(openFilePath ||
+          openArtifactId ||
+          (dockedExperiment && demoState !== "empty")) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle

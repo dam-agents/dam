@@ -1,8 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 
 import { AGENT_IDS } from "../../mock/data/agents.js";
-import { getActiveScenario, subscribeScenario } from "./home-scenarios.js";
 
 export type BlockedItemType =
   | "approval"
@@ -120,7 +118,8 @@ const BLOCKED_FIXTURE: BlockedItem[] = [
     runId: "run-data-pipeline",
     runName: "Data pipeline refresh",
     blockedAt: hoursAgo(3),
-    intent: 'gemini-data-pipeline stopped unexpectedly during "Data pipeline refresh"',
+    intent:
+      'gemini-data-pipeline stopped unexpectedly during "Data pipeline refresh"',
     detail: {
       primary: "Container exited with code 137 (OOMKilled)",
       secondary: "Exceeded 512Mi memory limit",
@@ -131,30 +130,13 @@ const BLOCKED_FIXTURE: BlockedItem[] = [
 ];
 
 function getBlockedFixture(): BlockedItem[] {
-  const s = getActiveScenario();
-  switch (s) {
-    case "all-clear":
-    case "first-run":
-    case "experiments-only":
-    case "kb-only":
-      return [];
-    case "single-blocked":
-      return [BLOCKED_FIXTURE[0]!];
-    case "everything-broken":
-      return BLOCKED_FIXTURE;
-    case "heavy-load":
-      return BLOCKED_FIXTURE.slice(0, 3);
-    case "morning-return":
-    default:
-      return BLOCKED_FIXTURE;
-  }
+  return BLOCKED_FIXTURE;
 }
 
 // STUB: home.blockedItems
 export function useBlockedItems() {
-  const scenario = useSyncExternalStore(subscribeScenario, getActiveScenario, getActiveScenario);
   return useQuery<BlockedItem[]>({
-    queryKey: ["home", "blocked-items", scenario],
+    queryKey: ["home", "blocked-items"],
     queryFn: () => Promise.resolve(getBlockedFixture()),
     staleTime: 30_000,
     refetchInterval: 30_000,

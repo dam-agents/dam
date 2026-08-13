@@ -60,44 +60,6 @@ export function OpenInMenu({ agent }: { agent: AgentView }) {
   );
 }
 
-function DialogTitle({
-  title,
-  onClose,
-}: {
-  title: string;
-  onClose: () => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <h2 className="text-[18px] font-bold">{title}</h2>
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="shrink-0 text-muted-foreground hover:text-foreground"
-      >
-        <X size={18} />
-      </button>
-    </div>
-  );
-}
-
-function CliQuickstartNote() {
-  return (
-    <p className="text-[13px] text-muted-foreground">
-      First time? Installing the CLI and logging in is covered in the{" "}
-      <a
-        href={CLI_REFERENCE_URL}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
-      >
-        CLI quickstart <ExternalLink size={13} />
-      </a>
-    </p>
-  );
-}
-
 export function OpenInTerminalDialog({
   agent,
   onClose,
@@ -107,20 +69,48 @@ export function OpenInTerminalDialog({
 }) {
   return (
     <Modal widthClass="w-[480px]">
-      <DialogHeader>
-        <DialogTitle title="Open in Terminal" onClose={onClose} />
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          <code className="font-mono">dam chat</code> connects your terminal to{" "}
-          <strong className="text-foreground">{agent.name}</strong>'s
-          interactive TUI.
-        </p>
+      <DialogHeader className="border-b border-border">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-foreground">
+              Open in Terminal
+            </h2>
+            <p className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
+              dam chat connects your terminal to{" "}
+              <strong className="font-semibold text-foreground">
+                {agent.name}
+              </strong>
+              's interactive TUI.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </DialogHeader>
-      <DialogBody className="flex flex-col gap-3">
-        <span className="text-[13px] font-medium text-foreground">
-          Attach to the sandbox
-        </span>
-        <CopyableCommand command={`dam chat ${agent.id}`} />
-        <CliQuickstartNote />
+      <DialogBody className="flex flex-col gap-5">
+        <div className="space-y-2">
+          <p className="text-[14px] font-medium text-foreground">
+            Attach to the sandbox
+          </p>
+          <CopyableCommand command={`dam chat ${agent.id}`} />
+        </div>
+        <p className="text-[14px] text-muted-foreground">
+          First time? Installing the CLI and logging in is covered in the{" "}
+          <a
+            href={CLI_REFERENCE_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-foreground hover:underline"
+          >
+            CLI quickstart <ExternalLink size={12} className="inline-block" />
+          </a>
+        </p>
       </DialogBody>
     </Modal>
   );
@@ -135,25 +125,52 @@ export function OpenInIdeDialog({
 }) {
   return (
     <Modal widthClass="w-[480px]">
-      <DialogHeader>
-        <DialogTitle title="Open in IDE" onClose={onClose} />
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          <code className="font-mono">dam ssh connect</code> launches your
-          editor against{" "}
-          <strong className="text-foreground">{agent.name}</strong>'s workspace
-          over SSH.
-        </p>
+      <DialogHeader className="border-b border-border">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-[16px] font-bold text-foreground">
+              Open in VS Code / Zed (local)
+            </h2>
+            <p className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
+              dam ssh connect launches your editor against{" "}
+              <strong className="font-semibold text-foreground">
+                {agent.name}
+              </strong>
+              's workspace over SSH.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </DialogHeader>
-      <DialogBody className="flex flex-col gap-3">
-        <span className="text-[13px] font-medium text-foreground">
-          Open in VS Code
-        </span>
-        <CopyableCommand command={`dam ssh connect -x code ${agent.id}`} />
-        <span className="mt-1 text-[13px] font-medium text-foreground">
-          Open in Zed
-        </span>
-        <CopyableCommand command={`dam ssh connect -x zed ${agent.id}`} />
-        <CliQuickstartNote />
+      <DialogBody className="flex flex-col gap-5">
+        <div className="space-y-2">
+          <p className="text-[14px] font-medium text-foreground">
+            Open in VS Code
+          </p>
+          <CopyableCommand command={`dam ssh connect -x code ${agent.id}`} />
+        </div>
+        <div className="space-y-2">
+          <p className="text-[14px] font-medium text-foreground">Open in Zed</p>
+          <CopyableCommand command={`dam ssh connect -x zed ${agent.id}`} />
+        </div>
+        <p className="text-[14px] text-muted-foreground">
+          First time? Installing the CLI and logging in is covered in the{" "}
+          <a
+            href={CLI_REFERENCE_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-semibold text-foreground hover:underline"
+          >
+            CLI quickstart <ExternalLink size={12} className="inline-block" />
+          </a>
+        </p>
       </DialogBody>
     </Modal>
   );

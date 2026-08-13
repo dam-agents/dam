@@ -24,7 +24,10 @@ export function LearningsSection() {
     <section className="space-y-3" aria-label="Learnings">
       <div className="flex items-center gap-2">
         <h2 className="text-[18px] font-semibold text-foreground">Learnings</h2>
-        <Badge variant="default" className="bg-accent text-white hover:bg-accent">
+        <Badge
+          variant="default"
+          className="bg-accent text-white hover:bg-accent"
+        >
           {list.length}
         </Badge>
       </div>
@@ -78,8 +81,12 @@ function LearningCard({ item }: { item: LearningItem }) {
         </span>
       </div>
 
-      <p className="text-[14px] font-medium text-foreground mb-1">{item.title}</p>
-      <p className="text-[14px] text-muted-foreground line-clamp-2">{item.summary}</p>
+      <p className="text-[14px] font-medium text-foreground mb-1">
+        {item.title}
+      </p>
+      <p className="text-[14px] text-muted-foreground line-clamp-2">
+        {item.summary}
+      </p>
     </div>
   );
 }

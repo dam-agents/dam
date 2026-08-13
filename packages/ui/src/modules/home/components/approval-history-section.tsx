@@ -1,7 +1,6 @@
-import { useState } from "react";
-
 import { ArrowRight } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

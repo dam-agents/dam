@@ -4,7 +4,7 @@ const now = Date.now();
 const min = 60_000;
 
 export const approvals = [
-  // Pending: ext_authz network request
+  // Pending: ext_authz network request — Figma API
   {
     id: "apr-0001",
     type: "ext_authz" as const,
@@ -12,9 +12,9 @@ export const approvals = [
     sessionId: "sess-001",
     payload: {
       kind: "ext_authz" as const,
-      host: "api.github.com",
+      host: "api.figma.com",
       method: "GET",
-      path: "/repos/acme-org/my-repo/contents/README.md",
+      path: "/v1/files/spring-campaign-assets",
     },
     createdAt: new Date(now - 2 * min).toISOString(),
     expiresAt: new Date(now + 28_000).toISOString(),
@@ -22,7 +22,7 @@ export const approvals = [
     verdict: null,
     status: "pending" as const,
   },
-  // Pending: ext_authz POST
+  // Pending: ext_authz POST — upload to Dropbox
   {
     id: "apr-0002",
     type: "ext_authz" as const,
@@ -30,9 +30,9 @@ export const approvals = [
     sessionId: "sess-002",
     payload: {
       kind: "ext_authz" as const,
-      host: "registry.npmjs.org",
+      host: "content.dropboxapi.com",
       method: "POST",
-      path: "/v2/@acme/shared-lib",
+      path: "/2/files/upload/packaging-v3-final.pdf",
     },
     createdAt: new Date(now - 5 * min).toISOString(),
     expiresAt: new Date(now + 55_000).toISOString(),
@@ -40,7 +40,7 @@ export const approvals = [
     verdict: null,
     status: "pending" as const,
   },
-  // Pending: acp_native tool request
+  // Pending: acp_native tool request — export high-res
   {
     id: "apr-0003",
     type: "acp_native" as const,
@@ -48,8 +48,8 @@ export const approvals = [
     sessionId: "sess-003",
     payload: {
       kind: "acp_native" as const,
-      toolName: "execute_shell_command",
-      args: { command: "pip install pandas==2.1.0" },
+      toolName: "export_high_resolution",
+      args: { format: "TIFF", dpi: 300, colorSpace: "CMYK" },
     },
     createdAt: new Date(now - 8 * min).toISOString(),
     expiresAt: new Date(now + 52_000).toISOString(),
@@ -57,7 +57,7 @@ export const approvals = [
     verdict: null,
     status: "pending" as const,
   },
-  // Resolved: allowed permanently
+  // Resolved: allowed permanently — Figma read access
   {
     id: "apr-0004",
     type: "ext_authz" as const,
@@ -65,9 +65,9 @@ export const approvals = [
     sessionId: "sess-001",
     payload: {
       kind: "ext_authz" as const,
-      host: "api.github.com",
+      host: "api.figma.com",
       method: "GET",
-      path: "/repos/acme-org/my-repo/pulls",
+      path: "/v1/images/brand-logos",
     },
     createdAt: new Date(now - 12 * min).toISOString(),
     expiresAt: new Date(now - 10 * min).toISOString(),
@@ -75,7 +75,7 @@ export const approvals = [
     verdict: "allow" as const,
     status: "resolved" as const,
   },
-  // Resolved: allowed host-wide
+  // Resolved: allowed host-wide — Dropbox
   {
     id: "apr-0005",
     type: "ext_authz" as const,
@@ -83,7 +83,7 @@ export const approvals = [
     sessionId: "sess-002",
     payload: {
       kind: "ext_authz" as const,
-      host: "registry.npmjs.org",
+      host: "content.dropboxapi.com",
       method: "GET",
       path: "/*",
     },
@@ -93,7 +93,7 @@ export const approvals = [
     verdict: "allow" as const,
     status: "resolved" as const,
   },
-  // Resolved: denied permanently
+  // Resolved: denied — suspicious external upload
   {
     id: "apr-0006",
     type: "ext_authz" as const,
@@ -101,9 +101,9 @@ export const approvals = [
     sessionId: "sess-001",
     payload: {
       kind: "ext_authz" as const,
-      host: "evil-domain.io",
+      host: "free-image-host.xyz",
       method: "POST",
-      path: "/exfiltrate",
+      path: "/upload",
     },
     createdAt: new Date(now - 180 * min).toISOString(),
     expiresAt: new Date(now - 178 * min).toISOString(),
@@ -119,9 +119,9 @@ export const approvals = [
     sessionId: "sess-001",
     payload: {
       kind: "ext_authz" as const,
-      host: "internal-api.corp.net",
+      host: "fonts.adobe.com",
       method: "GET",
-      path: "/v2/secrets",
+      path: "/v1/fonts/founders-grotesk/download",
     },
     createdAt: new Date(now - 24 * 60 * min).toISOString(),
     expiresAt: new Date(now - 24 * 60 * min + 60_000).toISOString(),

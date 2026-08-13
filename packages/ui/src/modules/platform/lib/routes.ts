@@ -91,6 +91,11 @@ export function parseRoute(path: string): Route {
       view: "knowledge-base-config",
       agentId: decodeURIComponent(knowledgeBaseConfigMatch[1]!),
     };
+  if (path === "/wiki-onboard")
+    return {
+      view: "knowledge-base-chat",
+      agent: "a1b2c3d4-0004-4000-8000-000000000004",
+    };
   const knowledgeBaseChatMatch = path.match(/^\/knowledge-bases\/([^/]+)$/);
   if (knowledgeBaseChatMatch)
     return {
