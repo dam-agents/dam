@@ -16,6 +16,9 @@ interface Props {
   onUpdate: () => void;
   /** This sandbox's update is in flight. */
   pending: boolean;
+  /** Any update is in flight, this sandbox's or another's. Updates run one at
+   *  a time, so a second start would queue behind the first with no sign of it. */
+  busy: boolean;
 }
 
 /**
@@ -23,7 +26,12 @@ interface Props {
  * row and in the sandbox header. Hovering explains what the update is; clicking
  * opens the confirmation that applies it.
  */
-export function UpdateAvailableAction({ agent, onUpdate, pending }: Props) {
+export function UpdateAvailableAction({
+  agent,
+  onUpdate,
+  pending,
+  busy,
+}: Props) {
   const whatsNew = useReleaseNotesUrl(agent.templateId);
   const update = agent.templateUpdate;
   if (!update) return null;
@@ -37,7 +45,7 @@ export function UpdateAvailableAction({ agent, onUpdate, pending }: Props) {
           <Button
             variant="ghost"
             size="sm"
-            disabled={pending}
+            disabled={pending || busy}
             className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
             onClick={onUpdate}
           >

@@ -32,6 +32,7 @@ interface Props {
   deletePending: boolean;
   /** This sandbox's template update is in flight. */
   updatePending: boolean;
+  updateBusy: boolean;
   onSelect: () => void;
   onUpdate: () => void;
   onConfigure: () => void;
@@ -50,6 +51,7 @@ export function AgentRow({
   temporaryDraw,
   deletePending,
   updatePending,
+  updateBusy,
   onSelect,
   onUpdate,
   onConfigure,
@@ -106,6 +108,7 @@ export function AgentRow({
         <UpdateAvailableAction
           agent={agent}
           pending={updatePending}
+          busy={updateBusy}
           onUpdate={onUpdate}
         />
         {/* A parked sandbox explains itself: the controller's figures ride

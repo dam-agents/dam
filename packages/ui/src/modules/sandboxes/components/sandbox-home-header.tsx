@@ -36,7 +36,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
-  const { updateOne, updatingId } = useUpdateSandbox();
+  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
 
   const onStop = async () => {
     // Schedules override a stop by design (#1900) — say so before it lands.
@@ -81,6 +81,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
           <UpdateAvailableAction
             agent={agent}
             pending={updatingId === agent.id}
+            busy={updatingId !== null || updatingAll}
             onUpdate={() => void updateOne(agent)}
           />
           <Tooltip content="Open chat">
