@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-08-04
+Last verified: 2026-08-11
 
 ## Overview
 
@@ -61,7 +61,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 
 - **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md).
 - **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use. Owned by [security-and-credentials](security-and-credentials.md).
-- **skills catalog** — connected sources, per-Agent install records, and publish history. Owned by [skills](skills.md).
+- **skills catalog** — connected sources, per-Agent install records, publish history, and the per-user named skill selections a user carries between sandboxes. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 - **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).
 
@@ -109,7 +109,7 @@ The default Claude Code template persists the workspace and `$HOME`. Together th
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained. The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
 
-What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint symlinks it to pod-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. Tools and dependencies the agent relies on must be baked into the image at build time.
+What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`. `$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume. The redirect is best-effort in both directions — on the VM backend the guest pre-creates the link from cloud-init, since the workspace share there refuses a non-root symlink, and a swap that fails anywhere is a performance regression rather than a boot failure, leaving that agent's cache on the workspace volume where it does survive. Tools and dependencies the agent relies on must be baked into the image at build time.
 
 ### Warm PVC pool
 

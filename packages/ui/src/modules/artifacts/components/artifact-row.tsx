@@ -14,7 +14,10 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/hooks/use-copy";
+import { clickableProps } from "@/lib/clickable";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -52,14 +55,9 @@ export function ArtifactRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onPreview(artifact)}
+      {...clickableProps(() => onPreview(artifact))}
       onMouseEnter={warmPreview}
       onFocus={warmPreview}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onPreview(artifact);
-      }}
       className={cn(
         "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/60",
         expiry.state === "expired" && "opacity-55",
@@ -98,14 +96,13 @@ export function ArtifactRow({
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <ArtifactStatusBadge artifact={artifact} />
         <div
-          className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+          className={cn("flex gap-0.5", HOVER_ACTION)}
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
         >
           <ShareLinkButton artifact={artifact} onShare={onShare} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" title="More actions">
+              <Button variant="ghost" size="icon-sm" aria-label="More actions">
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
@@ -130,18 +127,19 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const agentName = useAgentDisplayName(agentId);
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigateToSandboxHome(agentId, "artifacts");
-      }}
-      title={`Open ${agentName}'s artifacts`}
-      className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
-    >
-      <Box size={12} className="shrink-0" />
-      <span className="truncate">{agentName}</span>
-    </button>
+    <Tooltip content={`Open ${agentName}'s artifacts`}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          navigateToSandboxHome(agentId, "artifacts");
+        }}
+        className="inline-flex max-w-40 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent"
+      >
+        <Box size={12} className="shrink-0" />
+        <span className="truncate">{agentName}</span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -160,7 +158,10 @@ function ShareLinkButton({
     <Button
       variant="ghost"
       size="icon-sm"
-      title={copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"}
+      aria-label={url ? "Copy share link" : "Sharing settings"}
+      tooltip={
+        copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
+      }
       onClick={() => (url ? void copy(url) : onShare(artifact))}
     >
       <Link size={16} className={cn(copied && "text-success")} />

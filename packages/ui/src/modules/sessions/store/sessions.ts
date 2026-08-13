@@ -6,6 +6,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import type { PlatformStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
+import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 import {
@@ -13,12 +14,13 @@ import {
   type SessionCategory,
 } from "../lib/session-category.js";
 
-/** A resume-time failure that blocks showing the session chat. Rendered inline. */
+/** A resume-time failure that blocks showing the session chat. Rendered inline.
+ *  The kind picks the wording and the actions — "orphaned" additionally offers
+ *  to delete the session — and is all the card carries: the underlying error
+ *  text is harness wording, not something a reader can act on. */
 export interface SessionError {
   sessionId: string;
-  message: string;
-  /** "not-found" gets the "Delete orphaned session" action; others just show Back. */
-  kind: "not-found" | "connection" | "other";
+  kind: SessionFailureKind;
 }
 
 export interface SessionsSlice {
@@ -31,12 +33,9 @@ export interface SessionsSlice {
   busy: boolean;
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
-  /** Set before entering chat to open a fresh web terminal on arrival. */
-  pendingTerminal: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (id: string | null) => void;
-  setPendingTerminal: (v: boolean) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
@@ -47,14 +46,17 @@ export interface SessionsSlice {
 
   /** Delete a session via the platform API, drop it from the sidebar list
    *  cache immediately, then invalidate to reconcile. Resets the chat context
-   *  if the deleted session was active. */
-  deleteSession: (sessionId: string) => Promise<void>;
+   *  if the deleted session was active. Resolves false when the API refused —
+   *  a toast has already reported it, and the caller keeps whatever it was
+   *  showing rather than acting as if the session were gone. */
+  deleteSession: (sessionId: string) => Promise<boolean>;
 
   /**
    * Wipe all per-chat-session state (active session, messages, file tree,
-   * session config, queued prompt). Callers like `selectInstance`,
-   * `goBack`, and the popstate handler invoke this so every entry point
-   * leaves chat state in the same clean shape.
+   * docked file/artifact panel, session config, queued prompt). Callers like
+   * `selectInstance`, `goBack`, and the popstate handler invoke this so every
+   * entry point leaves chat state in the same clean shape — nothing from a
+   * previously-viewed sandbox survives into the next one.
    */
   resetChatContext: () => void;
 }
@@ -74,11 +76,9 @@ export const createSessionsSlice: StateCreator<
   busy: false,
   terminalPaused: false,
   pendingResumeSessionId: null,
-  pendingTerminal: false,
 
   setSessionId: (id) => set({ sessionId: id }),
   setPendingResumeSessionId: (id) => set({ pendingResumeSessionId: id }),
-  setPendingTerminal: (v) => set({ pendingTerminal: v }),
   setSessionMode: (mode) => set({ sessionMode: mode }),
   setTerminalPaused: (paused) => set({ terminalPaused: paused }),
   setMessages: (updater) =>
@@ -102,21 +102,30 @@ export const createSessionsSlice: StateCreator<
       messages: [],
       sessionError: null,
       terminalPaused: false,
+      // The right dock is scoped to the sandbox that opened it — both of its
+      // occupants clear here so entering any sandbox starts with the dock
+      // closed instead of showing the previous sandbox's file or artifact.
+      // (The third occupant, the experiment panel, is derived per agent and
+      // needs no reset.) The viewer's edit/dirty flags ride along, mirroring
+      // `setOpenFilePath(null)`: leaving a dirty file behind would otherwise
+      // prompt "Discard unsaved changes?" on the next sandbox's first click.
       openFilePath: null,
+      openArtifactId: null,
+      openFileDirty: false,
+      openFileEdit: false,
       pendingPermissions: [],
       queuedMessage: null,
       pendingResumeSessionId: null,
-      pendingTerminal: false,
     }),
 
   deleteSession: async (sessionId) => {
     const agentId = get().selectedAgent;
-    if (!agentId) return;
+    if (!agentId) return false;
     const ok = await runAction(
       () => deleteAgentSession(agentId, sessionId),
       "Failed to delete session",
     );
-    if (ok === ACTION_FAILED) return;
+    if (ok === ACTION_FAILED) return false;
     if (get().sessionId === sessionId) get().resetChatContext();
     // Cancel in-flight list refetches first — then drop the row and reconcile.
     await queryClient.cancelQueries({
@@ -127,5 +136,6 @@ export const createSessionsSlice: StateCreator<
       queryKey: acpSessionsKeys.agentLists(agentId),
     });
     emitToast({ kind: "success", message: "Session deleted" });
+    return true;
   },
 });

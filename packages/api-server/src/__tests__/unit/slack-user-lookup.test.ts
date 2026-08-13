@@ -2,6 +2,7 @@ import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import {
   createFakeSlackGateway,
   type FakeSlackGateway,
@@ -80,6 +81,7 @@ function harness(opts: {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
+    stubTurnAttendance(),
     () => {},
   );
 

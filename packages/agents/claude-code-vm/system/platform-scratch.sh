@@ -17,7 +17,11 @@ blkid "$dev" >/dev/null 2>&1 || mkfs.xfs -q "$dev"
 mkdir -p /var/lib/platform-scratch
 mountpoint -q /var/lib/platform-scratch || mount "$dev" /var/lib/platform-scratch
 
-for d in docker rancher; do
+# containerd too, not just docker: moby uses the containerd image store, so
+# build layers land in /var/lib/containerd — without the bind they fill the
+# small rootfs /var while the scratch disk idles (found via ENOSPC during
+# concurrent image builds in a sandbox).
+for d in docker rancher containerd; do
 	mkdir -p "/var/lib/platform-scratch/$d" "/var/lib/$d"
 	if [ -z "$(ls -A "/var/lib/platform-scratch/$d")" ] && [ -n "$(ls -A "/var/lib/$d" 2>/dev/null)" ]; then
 		rsync -a "/var/lib/$d/" "/var/lib/platform-scratch/$d/"

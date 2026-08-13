@@ -1,5 +1,7 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
+import type { HarnessConfigCurrent } from "agent-runtime-api";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { createAgentTrpc } from "../agent-trpc.js";
 import { useIsAgentOperable } from "./queries.js";
@@ -47,25 +49,103 @@ export function useHarnessConfigCurrent(agentId: string | null) {
   });
 }
 
+// The platform's recorded copy. Unlike useHarnessConfigCurrent this is a plain
+// api-server query, not gated on the agent being operable — answering while the
+// sandbox is stopped is the whole point.
+export function useHarnessConfigSnapshot(agentId: string | null) {
+  return useQuery({
+    ...trpc.harnessConfig.snapshot.queryOptions(
+      agentId ? { agentId } : skipToken,
+    ),
+    retry: false,
+  });
+}
+
+/** Where the values the panel renders came from. `none` means there is nothing
+ *  to show — either the sandbox has never run, or it ran before anything was
+ *  recorded. */
+export type HarnessConfigOrigin = "live" | "snapshot" | "none";
+
+export interface ResolvedHarnessConfig {
+  values: HarnessConfigCurrent | null;
+  origin: HarnessConfigOrigin;
+  capturedAt: string | null;
+  /** The sandbox has sent `hello` at least once, so a snapshot was possible. */
+  hasRun: boolean;
+  /** The recorded model list was observed against the model now shown, so the
+   *  two can be compared. False once they have drifted — a model applied since
+   *  the list was read, or a list that outlived a failed re-read. */
+  modelsPaired: boolean;
+  /** No read has resolved yet, so `values` and `hasRun` are placeholders. */
+  pending: boolean;
+}
+
+/**
+ * The values Model settings should render, and how they were obtained. A live
+ * pod read wins whenever the agent is operable, so a running sandbox behaves
+ * exactly as before; the recorded snapshot fills in otherwise.
+ *
+ * Gated on `operable` rather than on the live query having data: react-query
+ * keeps the last live read cached after the agent stops, and serving that as
+ * "live" would date a stopped sandbox's values wrongly.
+ */
+export function useResolvedHarnessConfig(
+  agentId: string | null,
+): ResolvedHarnessConfig {
+  const operable = useIsAgentOperable(agentId);
+  const { data: live } = useHarnessConfigCurrent(agentId);
+  const { data: recorded, isPending: snapshotPending } =
+    useHarnessConfigSnapshot(agentId);
+  const hasRun = recorded?.hasRun ?? false;
+  const pending = snapshotPending;
+
+  if (operable) {
+    // The live read is a pod round-trip, so it lands after the snapshot query.
+    // Fill the gap with the recorded values rather than empty pickers — but
+    // never as "snapshot", which would claim the sandbox is stopped while it is
+    // visibly running.
+    const values = live ?? recorded?.snapshot ?? null;
+    return {
+      values,
+      origin: values ? "live" : "none",
+      capturedAt: null,
+      hasRun,
+      // A live read takes both from the pod at once; nothing to reconcile.
+      modelsPaired: true,
+      pending,
+    };
+  }
+  const snapshot = recorded?.snapshot;
+  if (snapshot) {
+    return {
+      values: snapshot,
+      origin: "snapshot",
+      capturedAt: snapshot.capturedAt,
+      hasRun,
+      // `undefined` on rows predating the pin, which reads as unpaired — the
+      // conservative direction, since it only withholds a warning.
+      modelsPaired: snapshot.modelAtDiscovery === snapshot.model,
+      pending,
+    };
+  }
+  return {
+    values: null,
+    origin: "none",
+    capturedAt: null,
+    hasRun,
+    modelsPaired: false,
+    pending,
+  };
+}
+
 export function useApplyHarnessConfig() {
   return useMutation({
     ...trpc.harnessConfig.set.mutationOptions(),
     meta: { errorToast: "Failed to apply model settings" },
-  });
-}
-
-// Polls whether the agent has applied all pending runtime state. Enabled only
-// while a change is in flight; polls every 800ms until settled.
-export function useHarnessConfigSettled(
-  agentId: string | null,
-  enabled: boolean,
-) {
-  return useQuery({
-    ...trpc.harnessConfig.settled.queryOptions(
-      agentId && enabled ? { agentId } : skipToken,
-    ),
-    refetchInterval: (query) =>
-      enabled && query.state.data?.settled !== true ? 800 : false,
-    retry: false,
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: harnessConfigCurrentKey(variables.agentId),
+      });
+    },
   });
 }

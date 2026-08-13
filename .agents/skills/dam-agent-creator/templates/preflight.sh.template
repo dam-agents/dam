@@ -31,9 +31,15 @@ log() { LOGS+=("$1"); }
 cfg() { sed -n "s/^- $1:[[:space:]]*//p" "$CONFIG" 2>/dev/null | head -1 \
         | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'; }
 
-# GNU date first, BSD fallback (macOS dev machines); epoch 0 on unparsable input.
+# Rows of a `## <heading>` config table, bounded at the NEXT `## ` heading —
+# an unbounded range would swallow every later table in the file.
+cfg_table() { sed -n "/^## $1\$/,/^## /p" "$CONFIG" 2>/dev/null \
+              | grep '^|' | tail -n +3; }
+
+# GNU date first, BSD fallback (macOS dev machines — `-u` matters: without it the
+# trailing Z is parsed in local time and lock ages skew); epoch 0 on unparsable input.
 iso2epoch() { date -d "$1" +%s 2>/dev/null \
-              || date -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || echo 0; }
+              || date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || echo 0; }
 
 # ---------------------------------------------------------------- config ----
 # TODO(creator): resolve every config key the detection needs, env vars first:
@@ -67,10 +73,16 @@ emit() {  # $1 = jq object body of mode-specific arrays, e.g. '{items_due:$items
 # implement here, each appending {id, status: ok|warn|fail, detail} to a checks array
 # and never fixing anything:
 #   - connectivity: one unauthenticated-failure-proof GET per integration (+ rate limit
-#     headroom where reported)
-#   - state-repo push backlog (local commits ahead of remote, when git-backed)
+#     headroom where reported); token scopes + required CLI commands (both specified
+#     once, in README)
+#   - backup invariants (git-backed state): no work/.git on the volume; count of .nfs*
+#     files under work/ (early concurrency signal)
 #   - run cadence: gaps in each run type's log vs. its registered cadence
-#   - error scan: grep "^.*ERROR:" across the week's work/*.log lines
+#   - error scan: grep "^.*ERROR:" across the week's work/*.log lines; with the events
+#     log, group the week's {level: error} events into failures[] signatures
+#     (event/tool/error, volatile bits normalized, dated first/last) for the agent's
+#     diagnosis pass, and delete events files older than the retention window
+#   - open issues on the definition repo (PRs filtered out)
 #   - stale locks / duplicate tracking rows / leftover /tmp/{{AGENT_NAME}}-* dirs
 #   - disk usage of the volume (warn threshold)
 #   - definition cleanliness (git -C "$HOME" status --porcelain empty) and version

@@ -30,8 +30,33 @@ export const skillPublishInputSchema = z.object({
   path: z.string().optional(),
 });
 
+export const skillListLocalInputSchema = z.object({
+  /** Names to compute `contentHash` for. Hashing walks the whole skill dir on
+   *  an NFS-backed PVC and this runs on every state poll, so the caller asks
+   *  only for the few skills it needs it for (#3019). */
+  hashNames: z.array(z.string()).optional(),
+});
+
 export const skillReadLocalInputSchema = z.object({
   name: z.string().min(1),
+});
+
+// Coordinates, not the pull-request URL: the api-server has already parsed it
+// (and resolves owner/repo the same way for publish), so parsing it a second
+// time in the pod would be a duplicate implementation waiting to drift.
+export const skillReadPullRequestInputSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  number: z.number().int().positive(),
+});
+
+export const skillReadSkillFileInputSchema = z.object({
+  source: z.string().min(1),
+  /** Commit SHA the scan pinned — the preview renders the revision the
+   *  catalog listed. */
+  version: z.string().min(1),
+  /** Repo-relative skill directory from the scan; `SKILL.md` is read inside it. */
+  dir: z.string().min(1),
 });
 
 // No skillPaths: the runtime resolves them from its manifest, same as

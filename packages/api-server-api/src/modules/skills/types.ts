@@ -2,24 +2,37 @@ import type { z } from "zod";
 import type {
   localSkillSchema,
   skillCreateLocalInputSchema,
+  skillApplyBatchInputSchema,
   skillCreateSourceInputSchema,
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,
+  skillListResultSchema,
   skillLocalFilesSchema,
   skillPublishInputSchema,
   skillPublishRecordSchema,
   skillPublishResultSchema,
+  scanFailureSchema,
   skillReadLocalInputSchema,
   skillRefSchema,
   skillSchema,
+  skillSetApplyInputSchema,
+  skillSetApplyResultSchema,
+  skillSetCreateInputSchema,
+  skillSetDeleteInputSchema,
+  skillSetEntrySchema,
+  skillSetSchema,
+  skillSetSkipReasonSchema,
   skillSourceSchema,
   skillStateOutputSchema,
   skillUninstallInputSchema,
 } from "./schemas.js";
 
+export type ScanFailure = z.infer<typeof scanFailureSchema>;
+export type ScanFailureCode = ScanFailure["code"];
 export type SkillRef = z.infer<typeof skillRefSchema>;
 export type SkillSource = z.infer<typeof skillSourceSchema>;
 export type Skill = z.infer<typeof skillSchema>;
+export type SkillListResult = z.infer<typeof skillListResultSchema>;
 export type LocalSkill = z.infer<typeof localSkillSchema>;
 export type SkillOrigin = NonNullable<LocalSkill["origin"]>;
 
@@ -39,6 +52,22 @@ export type SkillInstallInput = z.infer<typeof skillInstallInputSchema>;
 
 export type SkillUninstallInput = z.infer<typeof skillUninstallInputSchema>;
 
+export type SkillApplyBatchInput = z.infer<typeof skillApplyBatchInputSchema>;
+
+export type SkillSetEntry = z.infer<typeof skillSetEntrySchema>;
+
+export type SkillSet = z.infer<typeof skillSetSchema>;
+
+export type SkillSetCreateInput = z.infer<typeof skillSetCreateInputSchema>;
+
+export type SkillSetDeleteInput = z.infer<typeof skillSetDeleteInputSchema>;
+
+export type SkillSetApplyInput = z.infer<typeof skillSetApplyInputSchema>;
+
+export type SkillSetApplyResult = z.infer<typeof skillSetApplyResultSchema>;
+
+export type SkillSetSkipReason = z.infer<typeof skillSetSkipReasonSchema>;
+
 export type SkillPublishInput = z.infer<typeof skillPublishInputSchema>;
 
 export type SkillPublishResult = z.infer<typeof skillPublishResultSchema>;
@@ -53,13 +82,27 @@ export interface SkillsService {
   createSource: (input: SkillCreateSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
-  list: (sourceId: string, agentId?: string) => Promise<Skill[]>;
+  list: (sourceId: string, agentId?: string) => Promise<SkillListResult>;
   getSkillContent: (
     sourceId: string,
     name: string,
+    /** Targets the pod for a private source's read — the only path that can
+     *  reach a repo the api-server cannot see anonymously. */
+    agentId?: string,
   ) => Promise<{ content: string; dir?: string }>;
   install: (input: SkillInstallInput) => Promise<SkillRef[]>;
   uninstall: (input: SkillUninstallInput) => Promise<SkillRef[]>;
+  /** Many changes, one apply cycle. Returns the full installed list, like the
+   *  single-skill paths, so a caller renders from an authoritative result. */
+  applyBatch: (input: SkillApplyBatchInput) => Promise<SkillRef[]>;
+  /** Skill sets belong to the user, not to a sandbox, so these take no agentId. */
+  listSets: () => Promise<SkillSet[]>;
+  createSet: (input: SkillSetCreateInput) => Promise<SkillSet>;
+  deleteSet: (input: SkillSetDeleteInput) => Promise<void>;
+  /** Install every set's skills that this sandbox's sources can serve and that
+   *  aren't on yet. Additive by construction — never uninstalls. Reports what
+   *  it could not apply rather than dropping it. */
+  applySets: (input: SkillSetApplyInput) => Promise<SkillSetApplyResult>;
   createLocal: (input: SkillCreateLocalInput) => Promise<LocalSkill[]>;
   /** Returns the remaining standalone list, so the UI renders from an
    *  authoritative result rather than guessing (mirrors `uninstall`). */

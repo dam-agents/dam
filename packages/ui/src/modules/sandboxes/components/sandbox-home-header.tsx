@@ -1,4 +1,4 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
+import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
@@ -20,7 +21,6 @@ import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
-import { OpenInMenu } from "./open-in-menu.js";
 
 interface Props {
   agent: AgentView;
@@ -29,6 +29,7 @@ interface Props {
 
 export function SandboxHomeHeader({ agent, display }: Props) {
   const setView = useStore((s) => s.setView);
+  const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
@@ -88,10 +89,23 @@ export function SandboxHomeHeader({ agent, display }: Props) {
       }
       actions={
         <>
-          <OpenInMenu agent={agent} />
+          <Tooltip content="Open chat">
+            <Button
+              size="icon"
+              aria-label="Open chat"
+              variant="outline"
+              onClick={() => selectAgent(agent.id)}
+            >
+              <Chat />
+            </Button>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" title="Sandbox actions">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Sandbox actions"
+              >
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>

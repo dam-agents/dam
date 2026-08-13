@@ -15,7 +15,7 @@
       "source": "dam-agents/skills",
       "sourceType": "github",
       "skillPath": "skills/react-ui-engineering/SKILL.md",
-      "computedHash": "b84c8dd313729a13c098067539bf08e60773adcba6479b5cac77a29861478e74"
+      "computedHash": "f7ff90fe2447778593c6d27f7f190034f9101fd8d877753369d27f84cc613e38"
     },
     "typescript-engineering": {
       "source": "dam-agents/skills",

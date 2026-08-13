@@ -13,6 +13,7 @@ import {
 } from "./services/approvals-relay-service.js";
 import {
   createExtAuthzGate,
+  type EgressAttendance,
   type EgressRuleMatcher,
   type ExtAuthzGate,
   type AgentIdentityResolver,
@@ -69,6 +70,7 @@ export interface ComposeApprovalsSystemDeps {
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
+  attendance: EgressAttendance;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedHosts: readonly string[];
@@ -91,6 +93,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     bus: deps.bus,
     identityResolver: deps.identityResolver,
     ruleMatcher: deps.ruleMatcher,
+    attendance: deps.attendance,
     holdSeconds: deps.holdSeconds,
     platformAllowedHosts: deps.platformAllowedHosts,
   });
@@ -126,6 +129,7 @@ export type {
   ExtAuthzGate,
   ExtAuthzGateInput,
   ExtAuthzVerdict,
+  EgressAttendance,
   EgressRuleMatcher,
   AgentIdentityResolver,
 } from "./services/ext-authz-gate.js";

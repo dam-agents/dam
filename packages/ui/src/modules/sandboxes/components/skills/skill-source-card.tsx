@@ -3,8 +3,10 @@ import {
   ChevronUp,
   Launch,
   OverflowMenuHorizontal,
+  Warning,
 } from "@carbon/icons-react";
-import type { Skill, SkillRef, SkillSource } from "api-server-api";
+import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
+import { skillKey } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,11 +18,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
-import { parsePlatformCta } from "@/lib/platform-cta";
+import { isConnectionFailure } from "@/lib/scan-failure";
 import { cn } from "@/lib/utils";
 
-import { skillKey } from "../../hooks/use-skills-surface.js";
+import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
@@ -30,42 +33,38 @@ function repoLabel(source: SkillSource): string {
   return source.path ? `${base} · ${source.path}` : base;
 }
 
-/** Splits a scan/publish error into its message and an optional call-to-action
- *  URL, which the services encode as `\nplatform-cta:<url>` (not connected /
- *  access not granted / repo not allow-listed). When there's no server CTA, an
- *  errored source with sandbox context gets a client-built "Manage connections"
- *  affordance instead — the server owns only the message. */
+/** Why a source's scan failed: the cause on one line, the fix beneath it. Both
+ *  come from the server's verdict, which is closed-set — the card never renders
+ *  a raw error message, so a parser or transport string can't reach the user.
+ *  "Manage connections" appears only where connections are the fix.
+ *
+ *  Only the heading, the icon and the link carry the danger colour; the fix
+ *  beneath reads as body text. Colouring the whole band red makes it shout
+ *  where it should explain, and leaves nothing to draw the eye to the cause. */
 function SourceError({
-  error,
+  failure,
   onManageConnections,
 }: {
-  error: string;
+  failure: ScanFailure;
   onManageConnections?: () => void;
 }) {
-  const { message, cta } = parsePlatformCta(error);
+  const canManage = onManageConnections && isConnectionFailure(failure);
   return (
-    <div className="flex items-center gap-2 border-t border-border bg-danger-light px-4 py-2 text-sm text-danger">
-      <span className="flex-1">{message}</span>
-      {cta ? (
-        <a
-          href={cta}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 font-semibold underline hover:opacity-80"
+    <div className="flex items-start gap-2 border-t border-border bg-danger-light px-4 py-3 text-sm text-danger">
+      <Warning size={16} className="mt-px shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">{failure.title}</p>
+        <p className="text-muted-foreground">{failure.detail}</p>
+      </div>
+      {canManage && (
+        <Button
+          variant="link"
+          size="inline"
+          onClick={onManageConnections}
+          className="shrink-0 font-semibold text-current underline hover:opacity-80"
         >
-          Fix it →
-        </a>
-      ) : (
-        onManageConnections && (
-          <Button
-            variant="link"
-            size="inline"
-            onClick={onManageConnections}
-            className="shrink-0 font-semibold text-current underline hover:opacity-80"
-          >
-            Manage connections
-          </Button>
-        )
+          Manage connections
+        </Button>
       )}
     </div>
   );
@@ -83,6 +82,7 @@ export function SkillSourceCard({
   skills,
   loading,
   error,
+  scannedAt,
   installedRef,
   busyKey,
   disabled,
@@ -94,6 +94,10 @@ export function SkillSourceCard({
   onUpdate,
   onOpenSkill,
   onManageConnections,
+  suppressedNames,
+  filteredNames,
+  onToggleAll,
+  bulkBusy,
 }: {
   source: SkillSource;
   /** `undefined` until this source's scan resolves — distinct from an empty
@@ -101,7 +105,13 @@ export function SkillSourceCard({
    *  "No skills". */
   skills: Skill[] | undefined;
   loading: boolean;
-  error: string | null;
+  /** The server's verdict on the last failed scan, already classified — the
+   *  card renders it verbatim rather than interpreting an error. */
+  error: ScanFailure | null;
+  /** ISO 8601 time this source's list was last read from upstream; absent
+   *  until its first successful scan. Rendered as "scanned X ago", and hidden
+   *  while errored so we never date a list the user can see failed. */
+  scannedAt?: string;
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
@@ -117,12 +127,34 @@ export function SkillSourceCard({
   onUpdate: (skill: Skill) => void;
   /** Open a skill's SKILL.md render modal (05). */
   onOpenSkill: (skill: Skill) => void;
+  /** Scanned skills to leave out of this card entirely — rows *and* the count:
+   *  this source's own copy of a skill published from this sandbox that is still
+   *  byte-identical on disk, so the standalone row above already shows it and a
+   *  second row would claim it is "not installed" (#3019). */
+  suppressedNames?: ReadonlySet<string>;
   /** Navigate to the sandbox's Connections tab — shown as a "Manage
    *  connections" affordance on a scan error with no server CTA. */
   onManageConnections?: () => void;
+  /** Names to show, when a search filter is active — null when it isn't. Rows
+   *  outside the set are dropped and the collapse control goes away, so a match
+   *  can't hide behind "Expand all"; the user's own collapse choice is left
+   *  untouched and returns when the query clears. The header's `N of M on`
+   *  deliberately keeps counting the whole source: it states a fact about the
+   *  source, not about the filter. */
+  filteredNames?: ReadonlySet<string> | null;
+  /** Turn every skill in this source on or off in one action. `on` is what the
+   *  control will do, so the caller never has to re-derive it. */
+  onToggleAll?: (on: boolean) => void;
+  /** A bulk action is in flight for this source — the whole card is working,
+   *  which the per-row `busyKey` cannot express. */
+  bulkBusy?: boolean;
 }) {
   const loaded = skills !== undefined;
-  const list = skills ?? [];
+  // Suppressed entries drop out before anything else derives from the list, so
+  // the `N of M on` count and the collapse decision agree with the rows on
+  // screen. Counting a row the page deliberately hides reads as a bug — "0 of 3
+  // on" above two rows sends the reader looking for a third.
+  const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
   const enabled = list.filter(
     (s) => installedRef(s.source, s.name) !== undefined,
   );
@@ -148,7 +180,13 @@ export function SkillSourceCard({
       ? true
       : !defaultCollapsedRef.current);
 
-  const visible = collapsible && !expanded ? enabled : sorted;
+  const allEnabled = list.length > 0 && enabled.length === list.length;
+  const filtering = filteredNames != null;
+  const visible = filtering
+    ? sorted.filter((s) => filteredNames.has(s.name))
+    : collapsible && !expanded
+      ? enabled
+      : sorted;
 
   // Non-user sources (Seed List / template) are protected from deletion.
   const canRemove = !source.system && !source.fromTemplate;
@@ -172,6 +210,33 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* Names what it will do, never the current state. Hidden while a
+              search filter is active: a control that says "all" beside four
+              visible rows out of twenty-two is a trap, and narrowing it to the
+              matches would be a different, unasked-for action. */}
+          {onToggleAll && !readOnly && !filtering && loaded && !error && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disabled || bulkBusy || list.length === 0}
+              onClick={() => onToggleAll(!allEnabled)}
+            >
+              {bulkBusy && <Spinner size={13} />}
+              {allEnabled ? "Disable all" : "Enable all"}
+            </Button>
+          )}
+          {/* This label re-renders only because the surface's 5s installed-state
+              poll hands back a fresh array identity. Memoizing this card, or
+              moving that poll to react-query with structural sharing, freezes
+              it at whatever it said on mount — give it its own tick first. */}
+          {!error && scannedAt && (
+            <span
+              className="shrink-0 text-sm text-muted-foreground"
+              title={formatTimestamp(scannedAt)}
+            >
+              scanned {timeAgo(scannedAt)}
+            </span>
+          )}
           {loading && <Spinner size={15} />}
           {/* Source administration (re-scan / view repo / remove) is
               account-scoped and pod-independent, so it stays available even
@@ -181,10 +246,10 @@ export function SkillSourceCard({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                title="Source actions"
+                aria-label="Source actions"
                 className="shrink-0 text-muted-foreground"
               >
-                <OverflowMenuHorizontal size={18} />
+                <OverflowMenuHorizontal size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
@@ -209,7 +274,10 @@ export function SkillSourceCard({
 
       {!loaded && !error && <SkillRowsSkeleton />}
       {error && (
-        <SourceError error={error} onManageConnections={onManageConnections} />
+        <SourceError
+          failure={error}
+          onManageConnections={onManageConnections}
+        />
       )}
       {loaded && !error && list.length === 0 && (
         <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
@@ -220,18 +288,13 @@ export function SkillSourceCard({
         !error &&
         visible.map((skill) => {
           const ref = installedRef(skill.source, skill.name);
-          // Drift = installed content differs from the latest scan. contentHash
-          // is absent only for skills installed before it was recorded — skip
-          // drift for those until the next install fills it in.
-          const hasDrift =
-            ref?.contentHash !== undefined &&
-            ref.contentHash !== skill.contentHash;
+          const hasDrift = isDrifted(ref, skill);
           return (
             <SkillRow
-              key={skillKey(skill.source, skill.name)}
+              key={skillKey(skill)}
               skill={skill}
               installed={ref !== undefined}
-              busy={busyKey === skillKey(skill.source, skill.name)}
+              busy={busyKey === skillKey(skill)}
               disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={
@@ -248,7 +311,7 @@ export function SkillSourceCard({
           );
         })}
 
-      {loaded && !error && collapsible && (
+      {loaded && !error && collapsible && !filtering && (
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}

@@ -4,6 +4,7 @@ import type { AgentsService } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
+import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import {
   agentContextBlock,
   formatSlackTs,
@@ -54,6 +55,7 @@ function harness(boundChannelId = "C1") {
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
+    stubTurnAttendance(),
     () => {},
   );
 

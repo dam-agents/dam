@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-import { waitForAgentRunning } from "../../lib/agents.js";
+import { ensureAgentExists, waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { agentName } from "../../lib/fixtures.js";
+import { harnessName } from "../../lib/fixtures.js";
+
+// This project's own mock agent — not the smoke chain's shared `e2e-agent`,
+// which full-tier projects must neither create (03-agent asserts it does not
+// exist yet) nor assume exists (no dependency edge orders the chain first).
+const agentName = "e2e-slack-multi";
 
 // #3086: one agent reachable from several Slack channels at once, each channel
 // its own conversation. Full-tier: two agent turns end to end, minutes long.
@@ -39,6 +44,7 @@ test("one agent serves two Slack channels, each its own conversation (#3086)", a
   const token = await getAccessToken();
   const api = createApiClient(token);
   await acceptTerms(api);
+  await ensureAgentExists(api, agentName, harnessName);
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("both channels bind to the same agent", async () => {

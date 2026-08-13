@@ -1,20 +1,43 @@
-import { useCallback, useEffect, useState } from "react";
+import { SessionMode } from "api-server-api";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { classifyResumeError, extractErrorMessage } from "../../acp/errors.js";
+import {
+  classifyResumeError,
+  resumeFailureKind,
+  type SessionFailureKind,
+  type SessionListing,
+} from "../../acp/errors.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import {
-  deleteAgentSession,
-  listAgentSessions,
-} from "../api/acp-session-ops.js";
-import { acpSessionsKeys, setSessionRunning } from "../api/queries.js";
+import { listAgentSessions } from "../api/acp-session-ops.js";
+import { setSessionRunning } from "../api/queries.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+import { usePromptDelivery } from "./use-prompt-delivery.js";
+
+/**
+ * Which failure the user is looking at. The agent's session list settles
+ * whether the session exists — see `resumeFailureKind`. An agent that never
+ * answered can't be asked, so that verdict comes from the error alone.
+ */
+async function classifyResumeFailure(
+  agentId: string,
+  sid: string,
+  e: unknown,
+): Promise<SessionFailureKind> {
+  const kind = classifyResumeError(e);
+  if (kind === "connection") return kind;
+  let listing: SessionListing = "unknown";
+  try {
+    const sessions = await listAgentSessions(agentId);
+    listing = sessions.some((s) => s.sessionId === sid) ? "listed" : "absent";
+  } catch {}
+  return resumeFailureKind(kind, listing);
+}
 
 /**
  * Thin orchestrator: composes the connection, engagement, history, prompt,
@@ -38,13 +61,17 @@ export function useAcpSession(
   // Derive busy from the projection instead of explicit setBusy calls in
   // sendPrompt / resume / disconnect paths. The projection owns streaming
   // state on every message, so "any streaming assistant" is authoritative.
-  const busy = hasStreamingAssistant(messages);
+  const busy =
+    sessionMode !== SessionMode.Terminal && hasStreamingAssistant(messages);
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
   // Mirror busy into the list cache's `running` so the row keeps its blue dot
   // when it stops being the open session (the poll-fed `running` lags a switch).
+  const prevBusyRef = useRef(busy);
   useEffect(() => {
+    if (prevBusyRef.current === busy) return;
+    prevBusyRef.current = busy;
     if (selectedAgent && sessionId) {
       setSessionRunning(selectedAgent, sessionId, busy);
     }
@@ -57,13 +84,22 @@ export function useAcpSession(
   const {
     engagedSessionIdRef,
     engage,
+    bind: bindEngagement,
     clear: clearEngagement,
   } = useAcpSessionEngagement(selectedAgent);
 
-  const makeUpdateHandler = useAcpUpdateHandler();
+  // Per-prompt delivery deadlines, driven by the runtime's promptAccepted /
+  // promptStarted frames. Sits between the update handler (which feeds it),
+  // sendPrompt (which arms it and supplies the failure callback) and the
+  // connection (whose close stands every deadline down), so it's owned here
+  // rather than by any of them.
+  const delivery = usePromptDelivery();
+
+  const makeUpdateHandler = useAcpUpdateHandler(delivery);
 
   const {
     ensureLive,
+    beginSession,
     connectionRef,
     state: connectionState,
     reset: resetConnection,
@@ -81,19 +117,25 @@ export function useAcpSession(
     agentOperable,
     makeUpdateHandler,
     engage,
+    bindEngagement,
     clearEngagement,
     loadHistory,
     setMessages,
+    delivery,
   });
 
+  /** Leaves whatever session is open. The failure card belongs to that
+   *  session, so it goes with it — otherwise it stays on screen above the
+   *  blank chat the user just asked for. */
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);
     setMessages([]);
+    useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages]);
 
   const resumeSession = useCallback(
-    async (sid: string, opts?: { expectNotFound?: boolean }) => {
+    async (sid: string) => {
       if (!selectedAgent) return;
 
       resetConnection();
@@ -116,40 +158,25 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
-        const kind = classifyResumeError(e);
-        if (kind === "not-found" && opts?.expectNotFound) {
-          setLoadingSession(false);
-          await deleteAgentSession(selectedAgent, sid);
-          queryClient.invalidateQueries({ queryKey: acpSessionsKeys.all });
-          resetSession();
-          return;
-        }
-        useStore.getState().setSessionError({
-          sessionId: sid,
-          message: extractErrorMessage(e),
-          kind,
-        });
+        const kind = await classifyResumeFailure(selectedAgent, sid, e);
+        if (useStore.getState().sessionId !== sid) return;
+        useStore.getState().setSessionError({ sessionId: sid, kind });
       } finally {
         if (useStore.getState().sessionId === sid) setLoadingSession(false);
       }
     },
-    [
-      selectedAgent,
-      loadHistory,
-      resetConnection,
-      resetSession,
-      setMessages,
-      setSessionId,
-    ],
+    [selectedAgent, loadHistory, resetConnection, setMessages, setSessionId],
   );
 
-  const { sendPrompt, stopAgent } = useAcpPrompt(
+  const { sendPrompt, stopAgent } = useAcpPrompt({
     selectedAgent,
-    ensureLive,
+    ensureConnection: ensureLive,
+    beginSession,
     engagedSessionIdRef,
     connectionRef,
     textareaRef,
-  );
+    delivery,
+  });
 
   return {
     resetSession,

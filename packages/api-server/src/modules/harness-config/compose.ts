@@ -1,8 +1,11 @@
+import type { Db } from "db";
 import type { HarnessConfigService } from "api-server-api";
 import { createHarnessConfigService } from "./services/harness-config-service.js";
+import { createHarnessConfigSnapshotRepo } from "./infrastructure/snapshot-repo.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export function composeHarnessConfigModule(deps: {
+  db: Db;
   runtimeMutator: RuntimeMutator;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
@@ -11,6 +14,7 @@ export function composeHarnessConfigModule(deps: {
   return {
     service: createHarnessConfigService({
       runtimeMutator: deps.runtimeMutator,
+      snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
       isOwnedAgent: deps.isOwnedAgent,
       getCapabilities: deps.getCapabilities,
       isSettled: deps.isSettled,

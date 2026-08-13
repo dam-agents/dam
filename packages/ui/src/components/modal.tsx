@@ -71,13 +71,14 @@ interface DialogHeaderProps {
    *  accessible name. */
   titleAccessory?: ReactNode;
   subtitle?: ReactNode;
-  /** Omit for dialogs that exit through the footer. */
+  /** Draws the ✕. Omit only where the dialog exists to force a choice. */
   onClose?: () => void;
   /** Gate the ✕ while an in-flight action would lose something if the dialog
    *  went away — a one-time secret, or a multi-step write mid-way. */
   closeDisabled?: boolean;
   closeTestId?: string;
   truncateTitle?: boolean;
+  divided?: boolean;
 }
 
 /** Top region of a dialog. Picks up the `aria-labelledby` id from
@@ -91,6 +92,7 @@ export function DialogHeader({
   closeDisabled,
   closeTestId,
   truncateTitle,
+  divided = true,
   children,
   className,
 }: DialogHeaderProps) {
@@ -98,7 +100,11 @@ export function DialogHeader({
   return (
     <div
       id={title ? undefined : labelId}
-      className={cn("px-5 pt-5 pb-4 md:px-7 md:pt-7", className)}
+      className={cn(
+        "px-5 pt-5 pb-4 md:px-7 md:pt-7",
+        divided && "border-b border-border",
+        className,
+      )}
     >
       {(title || subtitle || onClose) && (
         <div className="flex items-start justify-between gap-3">

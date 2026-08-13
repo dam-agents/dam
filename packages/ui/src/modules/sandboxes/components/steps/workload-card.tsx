@@ -1,3 +1,5 @@
+import { externalLinkProps } from "@/lib/external-link";
+
 import type { TemplateView } from "../../../../types.js";
 import { CardContent } from "./card-content.js";
 import { SelectableCard } from "./selectable-card.js";
@@ -23,8 +25,7 @@ export function WorkloadCard({
         {template.docsUrl && (
           <a
             href={template.docsUrl}
-            target="_blank"
-            rel="noreferrer"
+            {...externalLinkProps}
             className="pointer-events-auto inline-block w-fit text-sm text-muted-foreground underline underline-offset-2 hover:text-primary"
           >
             Learn more

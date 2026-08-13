@@ -29,7 +29,8 @@ import { securityLog } from "../../../core/security-log.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { refreshOAuthAccessToken } from "./oauth-token.js";
-import { mintGitHubAppToken } from "./github-app.js";
+import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
+import { createXactLock, type XactLock } from "../../../core/xact-lock.js";
 
 export interface OAuthRefreshLoop {
   /** One idempotent refresh pass — scheduled via the shared periodic-jobs
@@ -75,12 +76,15 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
     deps.log ?? ((m) => process.stderr.write(`[oauth-refresh] ${m}\n`));
   let running = false;
 
-  // Per-connection failure backoff. A connection whose token can't be
-  // refreshed (e.g. a revoked refresh token) stays in the due set on every
-  // tick; without this it would be retried on every tick forever. An
-  // entry is cleared on the first success and pruned once its connection
-  // leaves the due set. State is in-memory — a process restart re-attempts.
-  const backoff = new Map<string, { failures: number; nextAttempt: number }>();
+  // Per-connection failure backoff, persisted on the connection's `auth`
+  // (see `refreshBackoff` in api-server-api). A connection whose token can't
+  // be refreshed (e.g. a revoked refresh token) stays in the due set on every
+  // tick; without this it would be retried forever. It lives in Postgres
+  // rather than in-process because the sweep runs as a periodic job on
+  // whichever replica draws the tick — per-replica state would be a different
+  // replica's each time, so the backoff would never actually apply. Cleared
+  // by the first success — every credential write strips it via
+  // `withoutRefreshFailureMarker`.
 
   async function tick(): Promise<{
     refreshed: number;
@@ -95,14 +99,11 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
     const startedAt = now();
     try {
       const due = await dueConnections(deps.db, skewSec);
-      const dueIds = new Set(due.map((c) => c.id));
-      for (const id of backoff.keys()) {
-        if (!dueIds.has(id)) backoff.delete(id);
-      }
       for (const conn of due) {
         if (conn.auth.kind === "oauth" && !conn.auth.refreshTokenRef) continue;
-        const state = backoff.get(conn.id);
-        if (state && startedAt < state.nextAttempt) {
+        const state =
+          "refreshBackoff" in conn.auth ? conn.auth.refreshBackoff : undefined;
+        if (state && startedAt < state.nextAttempt * 1000) {
           skipped++;
           continue;
         }
@@ -116,7 +117,6 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           } else {
             continue;
           }
-          backoff.delete(conn.id);
           refreshed++;
         } catch (err) {
           failed++;
@@ -130,7 +130,11 @@ export function createOAuthRefreshLoop(deps: RefreshDeps): OAuthRefreshLoop {
           }
           const failures = (state?.failures ?? 0) + 1;
           const delay = backoffDelayMs(failures, backoffBaseMs, backoffMaxMs);
-          backoff.set(conn.id, { failures, nextAttempt: startedAt + delay });
+          await recordBackoff(
+            conn,
+            { failures, nextAttempt: Math.floor((startedAt + delay) / 1000) },
+            deps,
+          );
           log(
             `connection ${conn.id} refresh failed (attempt ${failures}, ` +
               `retry in ${Math.round(delay / 1000)}s): ${(err as Error).message}`,
@@ -177,6 +181,36 @@ async function dueConnections(db: Db, skewSec: number): Promise<Connection[]> {
   return rows
     .map((r) => parseRow(r))
     .filter((c): c is Connection => c !== null);
+}
+
+/** Merges the backoff into `auth` server-side, guarded the same way
+ *  {@link markRefreshFailure} is: a successful credential write that landed
+ *  since this tick read the row bumps `expiresAt`/`connectedAt`, and must not
+ *  have a stale backoff written back over it. Best-effort — a lost write only
+ *  means one extra attempt next tick. */
+async function recordBackoff(
+  conn: Connection,
+  backoff: { failures: number; nextAttempt: number },
+  deps: { db: Db },
+): Promise<void> {
+  if (conn.auth.kind === "header" || conn.auth.kind === "none") return;
+  const auth = conn.auth;
+  try {
+    await deps.db
+      .update(connectionsTable)
+      .set({
+        auth: sql`jsonb_set(${connectionsTable.auth}, '{refreshBackoff}', ${JSON.stringify(backoff)}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(connectionsTable.id, conn.id),
+          sql`${connectionsTable.auth} ->> 'expiresAt' IS NOT DISTINCT FROM ${auth.expiresAt === undefined ? null : String(auth.expiresAt)}`,
+          sql`${connectionsTable.auth} ->> 'connectedAt' IS NOT DISTINCT FROM ${auth.connectedAt === undefined ? null : String(auth.connectedAt)}`,
+        ),
+      );
+  } catch {
+    /* backoff is an optimization; a failed write costs one extra attempt */
+  }
 }
 
 function isPermanentAuthFailure(
@@ -371,29 +405,62 @@ export async function remintGitHubAppOne(
     githubAppEngine: GitHubAppEngine;
     secretStore: SecretStore;
     db: Db;
+    /** Defaults to the Postgres advisory lock; injectable for tests. */
+    connectionLock?: XactLock;
   },
 ): Promise<void> {
   const privateKeyPem = await deps.secretStore.getField(auth.privateKeyRef);
   if (!privateKeyPem) {
     throw new Error(`private key missing at ${auth.privateKeyRef.path}`);
   }
+  const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
-  const next = await mintGitHubAppToken(deps.githubAppEngine, {
-    connectionRef: `connection:${conn.id}:${conn.templateId}`,
-    auth,
-    privateKeyPem,
-  });
+  // A github-app connection's scope is editable in place, so this sequence
+  // races an edit doing the same thing to the same connection. Guarding the row
+  // alone cannot settle it: the token lives in a store no database transaction
+  // binds, so the two writes can still land in an order that leaves the stored
+  // scope and the live token describing different authority. Both sides take
+  // the same lock instead, so one finishes before the other starts.
+  await withLock(gitHubAppMintLockKey(conn.id), async () => {
+    // Re-read inside the section: the copy this tick carried in may predate an
+    // edit that has since completed, and minting from it would hand back the
+    // authority that edit removed.
+    const current = (await readGitHubAppAuth(deps.db, conn.id)) ?? auth;
 
-  await deps.secretStore.putFields(auth.accessTokenRef, {
-    access_token: next.accessToken,
-    ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+    const next = await mintGitHubAppToken(deps.githubAppEngine, {
+      connectionRef: `connection:${conn.id}:${conn.templateId}`,
+      auth: current,
+      privateKeyPem,
+    });
+
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      access_token: next.accessToken,
+      ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+    });
+
+    // Merge the two keys this tick owns rather than writing back the whole
+    // `auth` it read: the keys it does not name cannot be clobbered.
+    await deps.db
+      .update(connectionsTable)
+      .set({
+        auth: sql`jsonb_set(${connectionsTable.auth}, '{expiresAt}', to_jsonb(${next.expiresAt}::bigint)) - 'refreshFailedAt'`,
+        updatedAt: new Date(),
+      })
+      .where(eq(connectionsTable.id, conn.id));
   });
-  const updatedAuth: ConnectionAuthConfig = {
-    ...withoutRefreshFailureMarker(auth),
-    expiresAt: next.expiresAt,
-  };
-  await deps.db
-    .update(connectionsTable)
-    .set({ auth: updatedAuth, updatedAt: new Date() })
-    .where(eq(connectionsTable.id, conn.id));
+}
+
+/** The connection's current github-app auth, or null if it is gone or is no
+ *  longer a github-app connection. */
+async function readGitHubAppAuth(
+  db: Db,
+  id: string,
+): Promise<Extract<ConnectionAuthConfig, { kind: "github-app" }> | null> {
+  const rows = (await db
+    .select()
+    .from(connectionsTable)
+    .where(eq(connectionsTable.id, id))) as { auth: unknown }[];
+  const parsed = authConfigSchema.safeParse(rows[0]?.auth);
+  if (!parsed.success || parsed.data.kind !== "github-app") return null;
+  return parsed.data;
 }

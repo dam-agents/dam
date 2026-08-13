@@ -1,3 +1,8 @@
+import {
+  PROMPT_QUEUE_FULL_CODE,
+  PROMPT_QUEUE_FULL_MESSAGE,
+} from "api-server-api";
+
 /**
  * Error extraction and presentation for the ACP session surface. Kept free of
  * imports with browser side effects so node-environment unit tests (and any
@@ -53,6 +58,25 @@ function jsonRpcErrorDetails(e: object): string | null {
   return null;
 }
 
+/** The runtime's queue-full rejection, in words that say what to do. */
+export const QUEUE_FULL_DESCRIPTION: SendErrorDescription = {
+  message: "This conversation already has too many messages waiting.",
+  hint: "The agent works through one message at a time. Wait for it to catch up, then send this again.",
+};
+
+/** Whether the runtime refused the prompt because the session's queue is full.
+ *  The structured cause is version-stable; the shared message stem covers a
+ *  runtime older than that field. */
+export function isQueueFullError(e: unknown): boolean {
+  if (e && typeof e === "object") {
+    const data = (e as { data?: { code?: unknown } }).data;
+    if (data?.code === PROMPT_QUEUE_FULL_CODE) return true;
+  }
+  // Anchored: a message that merely quotes the stem — a relayed close reason,
+  // a harness error echoing it — is not this rejection.
+  return extractErrorMessage(e).startsWith(PROMPT_QUEUE_FULL_MESSAGE);
+}
+
 export interface SendErrorDescription {
   /** What to render as the failure reason. */
   message: string;
@@ -82,6 +106,11 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
  * gets replaced with wording that at least says where to look next.
  */
 export function describeSendError(raw: string): SendErrorDescription {
+  if (
+    raw === QUEUE_FULL_DESCRIPTION.message ||
+    raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
+  )
+    return QUEUE_FULL_DESCRIPTION;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     // agent-runtime already prefixes authentication_error frames with its own
@@ -100,15 +129,15 @@ export function describeSendError(raw: string): SendErrorDescription {
   return { message: raw };
 }
 
+export type ResumeErrorKind = "not-found" | "connection" | "other";
+
 /**
  * Classify a resume-time failure so the inline error card can render the
  * right message and action. Prefers structured error fields (ACP JSON-RPC
  * `code`, tRPC `data.code`) over regexing the human-readable message — the
  * latter breaks the moment server wording changes.
  */
-export function classifyResumeError(
-  e: unknown,
-): "not-found" | "connection" | "other" {
+export function classifyResumeError(e: unknown): ResumeErrorKind {
   if (e && typeof e === "object") {
     const anyE = e as { code?: unknown; data?: { code?: unknown } };
     if (anyE.code === -32002) return "not-found";
@@ -119,4 +148,32 @@ export function classifyResumeError(
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
   return "other";
+}
+
+/** What the session error card renders. `orphaned` is the only kind carrying a
+ *  row the user can act on; `unavailable` names a session the agent doesn't
+ *  advertise at all — deleted, never there, or not theirs to open. */
+export type SessionFailureKind =
+  | "unavailable"
+  | "orphaned"
+  | "connection"
+  | "other";
+
+/** Whether the agent's session list claims the session, when it can be read. */
+export type SessionListing = "listed" | "absent" | "unknown";
+
+/**
+ * The verdict on a resume failure, with the agent's own session list — not the
+ * harness's error prose — deciding whether a session exists. Deleting is
+ * offered on one condition: the list still advertises a session that won't
+ * reopen, so there is a stale row to clear. A session the list doesn't have,
+ * and one it couldn't be asked about, both leave nothing to delete.
+ */
+export function resumeFailureKind(
+  kind: ResumeErrorKind,
+  listing: SessionListing,
+): SessionFailureKind {
+  if (listing === "absent") return "unavailable";
+  if (kind !== "not-found") return kind;
+  return listing === "listed" ? "orphaned" : "unavailable";
 }

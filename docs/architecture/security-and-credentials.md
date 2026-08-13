@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-04
+Last verified: 2026-08-10
 
 ## Overview
 
@@ -269,6 +269,50 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   the client secret above, a rotated private key is pasted in place and proven by
   minting before it is stored.
 
+  A Connection may additionally **narrow the authority of the token it mints**,
+  below what the app installation itself holds — to a chosen set of repositories,
+  to a chosen set of permissions, or both. An installation is an
+  organization-wide grant, typically far broader than any one agent's task, and
+  narrowing is how one broadly-installed app backs many least-privilege
+  Connections without a second app per task. GitHub is the arbiter: it refuses
+  any request exceeding the installation, so the narrowing can only ever reduce
+  authority, never claim it. The chosen subset is **part of the credential's
+  stored identity, not a one-time argument** — every renewal and every key
+  rotation re-mints against the same subset, so a Connection cannot silently
+  widen back to the whole installation between renewals. Narrowing is opt-in:
+  a Connection that names no subset carries the installation's full authority,
+  which is what every Connection made before the capability existed does. Once
+  a subset stops being covered — the organization drops a repository from the
+  installation, or revokes a permission — renewal is *rejected* rather than
+  merely failing, so the Connection reads expired and waits for someone to
+  widen the installation or narrow the Connection, instead of retrying a
+  request that cannot succeed.
+
+  The subset is chosen against **what the installation actually grants, read
+  back from GitHub** before the Connection is created: the api-server
+  authenticates as the app, asks what the installation holds, and offers those
+  repositories and permissions to choose from. So narrowing is a selection
+  rather than a guess, and a permission can be taken at a *lower* level than
+  the installation holds it — the read-only agent on a read-write installation
+  is the case that motivates this, and it cannot be expressed by picking whole
+  permissions alone. Repositories chosen this way are remembered by GitHub's
+  identifier rather than by name, so renaming one does not quietly turn a
+  working Connection into a rejected renewal. The read needs the app's private
+  key and is authenticated the same way minting is; it stores nothing.
+
+  The subset is **editable in place**, which is the one part of a Connection's
+  configuration that is: what an agent should be allowed to do changes as its
+  work does, and rebuilding the Connection to add a repository would mean
+  re-pasting the key and re-granting it to every agent. Editing re-reads the
+  installation using the Connection's own stored key — never asking for it a
+  second time — and re-mints immediately, so the narrower token replaces the
+  live one rather than waiting out the current one's hour. The new subset is
+  proven by that mint before it is stored, so one the installation cannot
+  cover fails the edit instead of parking the Connection at its next renewal.
+  Nothing else moves: the credential, the contributions, and every agent grant
+  are untouched, and because the token is read gateway-side the change lands
+  without an Agent-spec patch or a pod roll.
+
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
 host**, all from one K8s Secret. The Secret carries a JSON
@@ -412,10 +456,11 @@ excluded — their host is already TLS-terminated by the connection's own
 credential chain. Because each entry is interpolated into the gateway's
 Envoy bootstrap and cert SANs, the CRD constrains list items to DNS
 hostnames, so a rule host cannot inject config into the owner's gateway.
-A one-shot api-server startup migration projects promotions previously
-materialized as owner-scoped credential-less marker Secrets onto the
-Agent resources and retires the markers; the controller consumes both
-signals, so rules stay enforced mid-migration.
+That projection is a second write to the Agent CR that cannot share a
+transaction with the rule write, so a per-agent periodic reconcile
+re-derives it from the rules — converging a host whose patch failed, or
+whose api-server died between the rule commit and the patch, without
+operator action.
 
 A referenced SDS file missing from the mounted Secret is a fatal Envoy
 boot error, so the controller verifies each credential's SDS key against
@@ -424,6 +469,21 @@ chain (logged as a warning) rather than emit an unbootable bootstrap.
 Requests to the host then go out uncredentialed — failing upstream auth
 for that host only — instead of crash-looping the whole gateway. Stale
 Secrets written by since-replaced code paths are the known trigger.
+
+That check covers a credential already known to be bad when the gateway is
+rendered. A credential can also be revoked *after* it — disconnecting a
+connection deletes its Secret, and a gateway roll already in flight can
+carry the reference past the deletion. A Secret mount is mandatory, so
+that pod never starts, and Kubernetes will not replace a pod that is not
+ready with the corrected configuration that follows seconds later: the
+gateway would keep its Service and lose all egress until an operator
+deleted the pod. The controller therefore evicts gateway pods left
+running a configuration it has already superseded, whatever wedged them,
+and names that state on the gateway's readiness condition so it reads as
+a failure being repaired rather than a slow start. Recovery costs a
+normal gateway restart. The race itself is not closed — deletion is not
+atomic with the roll — so the eviction, not the ordering, is what bounds
+the harm.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
@@ -484,6 +544,26 @@ header are gone.
 The HTTP filter on TLS-terminated chains sees method/path; the network
 filter on the catch-all chain sees SNI only.
 
+**Unattended requests are refused, not held.** Holding is only worth
+doing where a verdict can be made. A turn driven from a messenger
+([channels](channels.md)) cannot produce one — the owner is not
+necessarily present, and the conversation's other members are not the
+owner — so a hold raised by such a turn would occupy the entire window
+and deny anyway, with the turn silent throughout. So when the gate sees
+a channel turn open on the agent and no interactive session attached to
+answer for it, it records the request and denies at once. The record is
+the point: it stays actionable in the inbox, a permanent verdict there
+writes the rule the agent's next attempt consumes, and retries reuse
+that one row instead of filing a copy each time. No in-session prompt
+is published on this path — the only consumers are the relay clients
+whose absence defines it. Both signals are read across api-server
+replicas (the replica relaying a turn is rarely the one a Check lands
+on) and fail toward *attended*, so losing them degrades to the ordinary
+hold rather than to silent denial. An attached browser or CLI session
+means someone can decide, so a channel turn running alongside one holds
+as usual; and an agent whose rules allow everything never reaches this
+path, because nothing it requests is unmatched.
+
 **Egress Aliasing.** An Invocation target has no egress identity of its
 own: before any decision, the gate resolves the calling agent to its
 driver — recursively for chained Invocations, up to the root non-target
@@ -506,9 +586,11 @@ Binding a conversation surface — a Slack channel/DM or a Telegram
 chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
 relays to the main agent pod and runs under the Agent's own
-credential set, gated by the owner's HITL rules and egress rules
-exactly like any other turn; no per-speaker credential selection
-happens. The binding owner's Terms-of-Use acceptance gates each turn
+credential set, gated by the owner's egress rules exactly like any
+other turn; no per-speaker credential selection happens. What such a
+turn cannot do is raise a *hold* — the decision has nowhere to be made
+from a messenger, so an unmatched request is refused rather than
+waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
 — the terms bind the party whose credentials run it — and the
 security log attributes the allow to the messenger-native sender id
 with basis *place*.

@@ -15,6 +15,9 @@ function makeDeps(): { deps: PublishDeps; treePaths: () => string[] } {
     getRepo: async () => ok({ defaultBranch: "main" }),
     getRef: async () => ok({ sha: "head-sha" }),
     getCommitHead: async () => ok({ sha: "head-sha" }),
+    getPullRequest: async () =>
+      ok({ state: "open" as const, draft: false, mergedAt: null }),
+    getFileContent: async () => ok(""),
     fetchTarball: async () => ok(new Uint8Array()),
     createBlob: async () => ok({ sha: "blob-sha" }),
     createTree: async (_host, body) => {

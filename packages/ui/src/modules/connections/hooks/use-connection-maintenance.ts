@@ -8,7 +8,21 @@ import { useReauthenticateConnection } from "./use-reauthenticate-connection.js"
  *  the surfaces listing connections can't drift on what each auth kind gets. */
 export function useConnectionMaintenance() {
   const [updating, setUpdating] = useState<ConnectionView | null>(null);
+  const [editingScope, setEditingScope] = useState<ConnectionView | null>(null);
   const { reauthenticate, busyId } = useReauthenticateConnection();
+
+  // At most one dialog is open at a time, and opening either clears the other.
+  // Two live slots would let one shadow the other — a stale scope target would
+  // render its editor when a later row asked for the credential dialog, bound
+  // to a connection the user is no longer looking at.
+  const openUpdate = (connection: ConnectionView) => {
+    setEditingScope(null);
+    setUpdating(connection);
+  };
+  const openEditScope = (connection: ConnectionView) => {
+    setUpdating(null);
+    setEditingScope(connection);
+  };
 
   const rowActions = (
     connection: ConnectionView,
@@ -21,13 +35,20 @@ export function useConnectionMaintenance() {
           onReauthenticate: () => void reauthenticate(connection),
           busy: busyId === connection.id,
           ...(connection.hasClientSecret
-            ? { onUpdateCredential: () => setUpdating(connection) }
+            ? { onUpdateCredential: () => openUpdate(connection) }
             : {}),
         };
       case "header":
       case "client-credentials":
+        return { onUpdateCredential: () => openUpdate(connection) };
+      // A GitHub App connection additionally owns which repositories and
+      // permissions it mints against, and that is editable in place — the
+      // credential and every grant stay put.
       case "github-app":
-        return { onUpdateCredential: () => setUpdating(connection) };
+        return {
+          onUpdateCredential: () => openUpdate(connection),
+          onEditScope: () => openEditScope(connection),
+        };
       case "none":
         return undefined;
     }
@@ -37,5 +58,7 @@ export function useConnectionMaintenance() {
     rowActions,
     updating,
     closeUpdate: () => setUpdating(null),
+    editingScope,
+    closeEditScope: () => setEditingScope(null),
   };
 }

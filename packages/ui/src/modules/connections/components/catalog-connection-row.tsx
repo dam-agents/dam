@@ -15,6 +15,9 @@ export interface RowGrantControls {
 export interface RowMaintenanceActions {
   onReauthenticate?: () => void;
   onUpdateCredential?: () => void;
+  /** Change what the connection is allowed to do, where that is a property of
+   *  the connection rather than of the credential (GitHub App scope). */
+  onEditScope?: () => void;
   /** A consent popup for this row is already open. */
   busy?: boolean;
 }

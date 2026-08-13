@@ -3,8 +3,9 @@
  * (installed-skill rows + publish records) from Postgres. Mirrors the
  * channel-cleanup saga.
  *
- * `Skill Source` rows are owner-scoped, not agent-scoped, so they are
- * untouched by agent deletion.
+ * `Skill Source` and `Skill Set` rows are owner-scoped, not agent-scoped, so
+ * they are untouched by agent deletion — a set outlives every sandbox it was
+ * ever applied to, which is the whole point of saving one.
  */
 import type { Subscription } from "rxjs";
 import { mergeMap } from "rxjs/operators";

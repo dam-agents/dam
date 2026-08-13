@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   applyUpdate,
+  failQueuedOnDisconnect,
   finalizeAllStreaming,
   hasStreamingAssistant,
+  mergeLocalFailures,
 } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
 
@@ -268,6 +270,38 @@ describe("applyUpdate — turn boundaries", () => {
     ]);
   });
 
+  test("a system wrapper holding a nested element leaves no orphan closing tag", () => {
+    // The harness injects background-work notifications as a user message
+    // wrapping a nested element. A name-agnostic strip ended the match at
+    // `</task>` and left `</task-notification>` as the entire bubble.
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: '<task-notification>\n<task id="ab12" status="completed">\ndiag run finished\n</task>\n</task-notification>',
+      },
+    });
+    expect(out).toEqual([]);
+  });
+
+  test("a system wrapper with nested elements still closes the active bubble", () => {
+    const start: Message[] = [
+      userMsg("u1", "go"),
+      assistantMsg("a1", "working", true),
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u2",
+      content: {
+        type: "text" as const,
+        text: "<system-reminder>\n<note>heads up</note>\n</system-reminder>",
+      },
+    });
+    expect(out).toHaveLength(2);
+    expect(out[1].streaming).toBe(false);
+  });
+
   test("user_message_chunk extracts binary file reference as file chip", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
@@ -449,6 +483,47 @@ describe("queued prompt scenarios", () => {
     });
     expect(m[3].streaming).toBe(false);
   });
+
+  test("turn boundary after promotion leaves the empty promoted bubble open for its reply", () => {
+    // The real wire order at promotion (#3127 Code Guardian finding): the
+    // sender's bubble for turn 1 is already closed by its own prompt
+    // response, `promptStarted` then strips the queued protection from the
+    // second bubble, and only AFTERWARDS does turn 1's `platform_turn_ended`
+    // fan out. That boundary must not close the just-promoted, still-empty
+    // placeholder — the reply would otherwise open a fresh bubble and orphan
+    // the user's message behind an empty "Agent" ghost.
+    let m: Message[] = [
+      userMsg("u1", "first"),
+      { ...assistantMsg("a1", "done with turn one", false), promptId: "p1" },
+      userMsg("u2", "second"),
+      { ...assistantMsg("a2", "", true, true), promptId: "p2" },
+    ];
+
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_prompt_started",
+      sessionId: "test-sid",
+      promptId: "p2",
+    });
+    expect(m[3].queued).toBe(false);
+
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(m[3].streaming).toBe(true);
+
+    // The reply lands in the promoted bubble, not a fresh one.
+    m = applyUpdate(m, txtChunk("answer to second"));
+    expect(m).toHaveLength(4);
+    expect(firstTextPart(m[3])).toBe("answer to second");
+
+    // Its own turn boundary closes it now that it has content.
+    m = applyUpdate(m, {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    });
+    expect(m[3].streaming).toBe(false);
+  });
 });
 
 describe("finalizeAllStreaming + hasStreamingAssistant", () => {
@@ -471,5 +546,107 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
     expect(hasStreamingAssistant([assistantMsg("a1", "", true, true)])).toBe(
       true,
     );
+  });
+});
+
+describe("failQueuedOnDisconnect", () => {
+  /** The sender's own queued bubble: promptId + stashed retry payload. */
+  function ourQueued(id: string, text: string): Message {
+    return {
+      ...assistantMsg(id, "", true, true),
+      promptId: `p-${id}`,
+      retryWith: { text },
+    };
+  }
+
+  test("fails our queued prompt with a retryable error, finalizing the rest", () => {
+    const out = failQueuedOnDisconnect([
+      userMsg("u1", "first"),
+      assistantMsg("a1", "partial reply", true, false),
+      userMsg("u2", "second"),
+      ourQueued("a2", "second"),
+    ]);
+    // The interrupted turn merely closes — it was delivered, and its partial
+    // content is real.
+    expect(out[1].streaming).toBe(false);
+    expect(out[1].error).toBeUndefined();
+    expect(firstTextPart(out[1])).toBe("partial reply");
+    // The queued one was dropped by the runtime, so it fails with Retry.
+    expect(out[3].streaming).toBe(false);
+    expect(out[3].queued).toBe(false);
+    expect(out[3].error?.message).toMatch(/couldn't deliver/i);
+    expect(out[3].error?.retryWith).toEqual({ text: "second" });
+  });
+
+  test("behaves as finalizeAllStreaming when nothing of ours is queued", () => {
+    const start: Message[] = [
+      userMsg("u1", "hi"),
+      assistantMsg("a1", "reply", true, false),
+    ];
+    expect(failQueuedOnDisconnect(start)).toEqual(finalizeAllStreaming(start));
+  });
+
+  test("drops a hidden queued send instead of failing it", () => {
+    // Hidden sends stash no retry payload — they fail silently everywhere.
+    const hidden: Message = {
+      ...assistantMsg("a1", "", true, true),
+      promptId: "p-a1",
+    };
+    expect(failQueuedOnDisconnect([userMsg("u1", "x"), hidden])).toHaveLength(
+      1,
+    );
+  });
+
+  test("only finalizes a queued bubble that isn't ours to fail", () => {
+    // No promptId: another viewer's parked prompt, or one from replay. Their
+    // channel is still attached, so the runtime hasn't dropped it.
+    const out = failQueuedOnDisconnect([assistantMsg("a1", "", true, true)]);
+    expect(out).toHaveLength(1);
+    expect(out[0].streaming).toBe(false);
+    expect(out[0].error).toBeUndefined();
+  });
+
+  test("finalizes a queued bubble that already has content", () => {
+    // Content beats a stale queued flag: the turn started, so it wasn't dropped.
+    const started: Message = {
+      ...assistantMsg("a1", "already talking", true, true),
+      promptId: "p-a1",
+      retryWith: { text: "x" },
+    };
+    const out = failQueuedOnDisconnect([started]);
+    expect(out[0].error).toBeUndefined();
+    expect(firstTextPart(out[0])).toBe("already talking");
+  });
+});
+
+describe("mergeLocalFailures", () => {
+  const failed: Message = {
+    ...assistantMsg("a1", "", false),
+    error: { message: "Couldn't deliver", retryWith: { text: "dropped" } },
+  };
+
+  test("carries a locally-failed bubble across the reconnect rebuild", () => {
+    // The replayed log holds the dropped prompt's echo but never a reply, so
+    // the failure and its Retry have to survive.
+    const rebuilt = [userMsg("u1", "first"), assistantMsg("a1r", "reply")];
+    const out = mergeLocalFailures(rebuilt, [...rebuilt, failed]);
+    expect(out).toHaveLength(3);
+    expect(out[2]).toBe(failed);
+  });
+
+  test("returns the rebuilt list untouched when nothing failed locally", () => {
+    const rebuilt = [userMsg("u1", "hi"), assistantMsg("a1", "reply")];
+    const previous = [
+      ...rebuilt,
+      // A failure with no retry payload is history, not a live failure —
+      // a later send already stripped its Retry.
+      { ...assistantMsg("a2", "", false), error: { message: "old" } },
+    ];
+    expect(mergeLocalFailures(rebuilt, previous)).toBe(rebuilt);
+  });
+
+  test("does not duplicate a failed bubble the rebuild already contains", () => {
+    const rebuilt = [userMsg("u1", "first"), failed];
+    expect(mergeLocalFailures(rebuilt, [failed])).toBe(rebuilt);
   });
 });

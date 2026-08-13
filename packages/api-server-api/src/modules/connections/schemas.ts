@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { resourceNameSchema } from "../shared.js";
+
 export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
@@ -45,14 +47,7 @@ export const connectionSetAgentConnectionsInputSchema = z.object({
   connectionIds: z.array(z.string().min(1)),
 });
 
-export const connectionNameSchema = z
-  .string()
-  .min(1, "name is required")
-  .max(63, "name must be 63 characters or fewer")
-  .regex(
-    /^[a-z0-9]+(-[a-z0-9]+)*$/,
-    "name must be lowercase letters, digits, and single hyphens (e.g. my-mcp-server)",
-  );
+export const connectionNameSchema = resourceNameSchema("my-mcp-server");
 
 const commonFields = {
   templateId: z.string().min(1),
@@ -128,6 +123,42 @@ const githubAppCreateInput = z.object({
   appId: z.string().min(1),
   installationId: z.string().min(1),
   privateKey: z.string().min(1),
+  // Optional narrowing of the minted token. Space- or comma-separated; the
+  // server parses both. Single strings keep the schema-driven forms all-string,
+  // as client-credentials `scopes` does. Blank leaves the token with the
+  // installation's full authority.
+  repositories: z.string().optional(),
+  permissions: z.string().optional(),
+  // Repository ids, as picked from the installation. Same all-string shape as
+  // the sibling fields; ids take precedence over names when both arrive.
+  repositoryIds: z.string().optional(),
+});
+
+// Reads an installation's granted repositories and permissions before create,
+// so the form can offer them. Carries the private key for one request and
+// stores nothing — the same secret the create call is about to send anyway.
+export const connectionProbeGitHubAppInputSchema = z.object({
+  templateId: z.string().min(1),
+  appId: z.string().min(1),
+  installationId: z.string().min(1),
+  privateKey: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+// The same read for an existing connection, which supplies its own app
+// identity and key — so editing never asks for the private key again.
+export const connectionProbeGitHubAppForConnectionInputSchema = z.object({
+  connectionId: z.string().min(1),
+});
+
+// Replaces a github-app connection's narrowing. Same all-string shape as
+// create; an omitted or blank field clears that half rather than leaving the
+// previous value in place, so the form always states the whole scope.
+export const connectionUpdateGitHubAppScopeInputSchema = z.object({
+  id: z.string().min(1),
+  repositories: z.string().optional(),
+  repositoryIds: z.string().optional(),
+  permissions: z.string().optional(),
 });
 
 const noneCreateInput = z.object({

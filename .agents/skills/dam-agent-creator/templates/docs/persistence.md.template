@@ -1,54 +1,56 @@
 <!-- TODO(creator): adjust the state-repo env var name and the allowlisted paths to the
-     design; delete the commit & push section for local-only designs (keep the version
-     and evolution sections always); delete TODO comments. -->
+     design; delete the backup section for local-only designs (keep the version and
+     evolution sections always); delete TODO comments. -->
 
 # Persisting `work/` & evolving the definition
 
-Read this file when you need the details behind the end-of-run commit, when the operator
+Read this file when you need the details behind the end-of-run backup, when the operator
 asks to update the agent or check its version, or when the operator asks for a change to
 the agent definition itself.
 
-## Two repos, one inside the other
+## Two stores: shared live state + durable backup
 
-| Path | Remote | Tracks |
+| Path | Kind | Holds |
 | --- | --- | --- |
-| `/home/agent` (outer) | `$DEFINITION_REPO` (`origin`) | Definition: `CLAUDE.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
-| `/home/agent/work` (inner) | `$GITHUB_REPO_WORK` | Runtime state. Exists as a repo only when the var is set. |
+| `/home/agent` (outer) | git repo, remote `$DEFINITION_REPO` (`origin`) | Definition: `CLAUDE.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE`. |
+| `/home/agent/work` | **plain data directory** (no `.git`) | Live runtime state. Shared across concurrent runs; the source of truth. |
+| `$GITHUB_REPO_WORK` | git remote | Durable, versioned **backup** of `work/`. Written only via a disposable tmpfs clone (below). |
+
+`work/` is **never** a git repo: the home volume is virtiofs over NFS, and a `.git`
+mutated there under concurrent runs produces `Stale file handle` (ESTALE) and `.nfs*`
+silly-rename corruption. All git plumbing happens off the shared volume, in a tmpfs
+clone under `/dev/shm`; `work/` itself is only ever read.
 
 The outer `.gitignore` is an allowlist (`/*` then re-include the definition files), so
 **all** of `work/` and the HOME secrets (`.ssh`, `.claude`, `.config`) are invisible to
-the outer repo. A fresh volume seeds state files from the templates in `ONBOARDING.md`;
-this keeps a definition update (`git reset --hard origin/main`) from ever colliding with
-live runtime state. Scope commands: inner state → `git -C /home/agent/work`, definition →
-`git -C /home/agent`. **Never run `git clean` in `/home/agent`** and never `git add`
-outside the allowlist.
+the outer repo. A fresh volume seeds state files from the templates in `ONBOARDING.md`
+or restores them from the backup remote; a definition update
+(`git reset --hard origin/main`) never collides with live runtime state. **Never run
+`git clean` in `/home/agent`** and never `git add` outside the allowlist (the backup's
+`git add -A` is confined to the tmpfs clone, never the home tree).
 
-## Commit & push (end of run)
+## Backup & restore (`scripts/work-backup.sh`)
 
-Scripts never commit or push — their local bookkeeping sits uncommitted until the next
-agent-active run. At the end of every run where the agent did work, it commits & pushes
-as the very last action (this sweeps up script bookkeeping too; quiet runs stay durable
-on the volume until then):
+Pre-flight scripts never commit or push — their local bookkeeping is written straight to
+the `work/` files and stays on the volume until backed up. At the end of every run where
+the agent did work, as the very last action and only when `$GITHUB_REPO_WORK` is set:
 
 ```bash
-if [ -n "$GITHUB_REPO_WORK" ] && [ -d /home/agent/work/.git ]; then
-  cd /home/agent/work || exit 1
-  git config user.name  "{{AGENT_NAME}}" 2>/dev/null || true
-  git config user.email "{{AGENT_NAME}}@agents.local" 2>/dev/null || true
-  git add -A
-  if git diff --cached --quiet; then
-    echo "work/: nothing to persist."
-  else
-    git commit -m "chore(work): persist state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    git pull --rebase --autostash origin "$(git rev-parse --abbrev-ref HEAD)" \
-      && git push origin "$(git rev-parse --abbrev-ref HEAD)" \
-      || echo "WARNING: work/ push failed; committed locally, retry next run."
-  fi
-fi
+LOG_JOB=<mode> bash "$HOME/scripts/work-backup.sh" persist
 ```
 
-Never force-push; a lost race or failed push is retried next run and is not a run
-failure.
+The script (full rationale in its header) snapshots the current `work/` files into a
+**disposable tmpfs clone**, commits, and pushes. Nothing authoritative lives on tmpfs —
+live state is `work/`, history is the remote, and the clone is re-seeded whenever
+missing or broken, so a pod restart wiping `/dev/shm` never matters. The persist step is
+serialized by a mkdir lock next to the clone (lock-or-skip: a skipped persist is safe —
+the running one snapshots the same shared `work/` moments later, and the next run sweeps
+up any remainder); a rejected non-fast-forward push re-seeds from the new remote tip and
+retries with a fresh snapshot. Never force-push; a push that fails all retries is logged
+and retried next run — not a run failure, because the data is safe on `work/`.
+
+`restore` is the inverse — remote → `work/` (data only, never a `.git`) — run once on a
+fresh volume (`ONBOARDING.md` Step 2a).
 
 ## Definition version & upgrade
 
@@ -82,7 +84,7 @@ same session. Adopted ≠ checked-out → migrate now. All equal → report "up 
    operator, leave `work/VERSION` unchanged (re-offered at the next check).
 3. Rollback (`to` < `from`) → apply nothing; just write `to`.
 
-Commit & push `work/` afterwards (section above).
+Back up `work/` afterwards (section above).
 
 ## Evolving the agent definition (outer repo)
 

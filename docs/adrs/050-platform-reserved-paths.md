@@ -13,7 +13,7 @@ summary: The agent-runtime file API reserves only .triggers/ and .initialized fr
 
 ## Context
 
-The agent-runtime file API has always exposed a single EXCLUDE set that hid `.triggers/`, `.initialized`, `.git/`, `node_modules/`, `.npm/`, `.DS_Store`, and `.claude.json` from both listing and writes. The set was introduced alongside the trigger-files mechanism in the same commit that created `.triggers/` ([ADR-008](008-trigger-files.md), [DRAFT-file-import](044-file-import.md)), with no ADR. Two distinct concerns were bundled: a correctness invariant the controller relies on, and opportunistic noise filtering bolted on to keep the full-tree poll cheap. Lazy fetch ([ADR-049](049-lazy-workspace-fetch.md)) removes the payload-control argument for noise filtering, surfacing the conflation.
+The agent-runtime file API has always exposed a single EXCLUDE set that hid `.triggers/`, `.initialized`, `.git/`, `node_modules/`, `.npm/`, `.DS_Store`, and `.claude.json` from both listing and writes. The set was introduced alongside the trigger-files mechanism in the same commit that created `.triggers/` ([ADR-008](008-trigger-files.md), [ADR-045](045-file-import.md)), with no ADR. Two distinct concerns were bundled: a correctness invariant the controller relies on, and opportunistic noise filtering bolted on to keep the full-tree poll cheap. Lazy fetch ([ADR-049](049-lazy-workspace-fetch.md)) removes the payload-control argument for noise filtering, surfacing the conflation.
 
 ## Decision
 

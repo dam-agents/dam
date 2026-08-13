@@ -40,6 +40,9 @@ interface ConnectOpts {
   appId?: string;
   installationId?: string;
   privateKey?: string;
+  repositories?: string;
+  repositoryIds?: string;
+  permissions?: string;
   headerName?: string;
   valueFormat?: string;
   envName?: string;
@@ -98,6 +101,18 @@ export function buildConnectCommand(deps: {
       "--private-key <pem>",
       'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
     )
+    .option(
+      "--repositories <names>",
+      "input: limit the minted token to these repository names, space- or comma-separated (GitHub App installation)",
+    )
+    .option(
+      "--repository-ids <ids>",
+      "input: limit the minted token to these numeric repository ids; takes precedence over --repositories (GitHub App installation)",
+    )
+    .option(
+      "--permissions <pairs>",
+      "input: limit the minted token to these name:level permissions, e.g. contents:read (GitHub App installation)",
+    )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
     .option(
@@ -142,7 +157,7 @@ export function buildConnectCommand(deps: {
         '      --private-key "$(cat app.pem)"\n' +
         "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
         '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
-        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=code\n" +
+        "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=agent\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
     )
@@ -321,6 +336,25 @@ async function resolveSlugTemplate(args: {
         "  dam connection connect https://your-mcp-server\n",
     );
     process.exit(EXIT_INVALID_INPUT);
+  }
+
+  // An older server declares no such input, and unknown keys are stripped
+  // server-side, so the flag would vanish and the token be minted with the
+  // installation's *full* authority. Every other stripped input lands in the
+  // safe direction; these two land in the unsafe one, so fail rather than
+  // report success for a connection that was never narrowed.
+  for (const flag of [
+    "repositories",
+    "repositoryIds",
+    "permissions",
+  ] as const) {
+    if (opts[flag] && !template.inputs.some((i) => i.name === flag)) {
+      process.stderr.write(
+        `error: this server does not support --${camelToKebab(flag)} for '${template.id}' — ` +
+          "the token would carry the installation's full authority\n",
+      );
+      process.exit(EXIT_INVALID_INPUT);
+    }
   }
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
@@ -510,6 +544,9 @@ function buildPayload(
         appId,
         installationId,
         privateKey,
+        ...(v("repositories") ? { repositories: v("repositories")! } : {}),
+        ...(v("repositoryIds") ? { repositoryIds: v("repositoryIds")! } : {}),
+        ...(v("permissions") ? { permissions: v("permissions")! } : {}),
       };
     }
     case "header": {

@@ -114,7 +114,8 @@ export function createClickhouseReader(
            sum(${IN("'output_tokens'")}) AS outputTokens,
            sum(${TOK_CACHE_R}) AS cacheReadTokens,
            sum(${TOK_CACHE_C}) AS cacheCreationTokens,
-           sum(${COST_USD}) AS costUsd
+           sum(${COST_USD}) AS costUsd,
+           sum(${IN("'duration_ms'")}) AS durationMs
          FROM otel_logs
          WHERE ${ownedApiRequests(window)}
          GROUP BY model
@@ -129,6 +130,7 @@ export function createClickhouseReader(
         cacheReadTokens: n(x.cacheReadTokens),
         cacheCreationTokens: n(x.cacheCreationTokens),
         costUsd: n(x.costUsd),
+        durationMs: n(x.durationMs),
       })) satisfies TokenSpendByModel[];
     },
 

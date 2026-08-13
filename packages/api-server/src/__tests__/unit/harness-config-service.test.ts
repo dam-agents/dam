@@ -1,15 +1,29 @@
 import { describe, it, expect } from "vitest";
+import type {
+  HarnessConfigSnapshot,
+  HarnessConfigSnapshotPatch,
+} from "api-server-api";
 import { createHarnessConfigService } from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
 
 type BumpCall = { agentId: string; events: unknown[] };
+type MergeCall = {
+  agentId: string;
+  patch: HarnessConfigSnapshotPatch;
+  confirmed: boolean;
+};
 
 function makeService(opts?: {
   owned?: boolean;
   settled?: boolean;
   capabilities?: unknown;
+  snapshot?: HarnessConfigSnapshot | null;
 }) {
-  const calls = { bumps: [] as BumpCall[], enqueues: [] as string[] };
+  const calls = {
+    bumps: [] as BumpCall[],
+    enqueues: [] as string[],
+    merges: [] as MergeCall[],
+  };
   const service = createHarnessConfigService({
     runtimeMutator: {
       bump: async (agentId, events) => {
@@ -18,6 +32,12 @@ function makeService(opts?: {
       },
       enqueueAfterCommit: async (agentId) => {
         calls.enqueues.push(agentId);
+      },
+    },
+    snapshotRepo: {
+      read: async () => opts?.snapshot ?? null,
+      merge: async (agentId, patch, mergeOpts) => {
+        calls.merges.push({ agentId, patch, confirmed: mergeOpts.confirmed });
       },
     },
     isOwnedAgent: async () => opts?.owned ?? true,

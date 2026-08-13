@@ -1,11 +1,19 @@
-import { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import {
+  ClientSideConnection,
+  PROTOCOL_VERSION,
+} from "@agentclientprotocol/sdk/dist/acp.js";
 import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 import type {
   RequestPermissionRequest,
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import { platformTurnEndedParamsSchema } from "api-server-api";
+import {
+  platformPromptAcceptedParamsSchema,
+  platformPromptStartedParamsSchema,
+  platformTurnEndedParamsSchema,
+} from "api-server-api";
+import type { z } from "zod";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
@@ -14,9 +22,14 @@ import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
 
-function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
+function wsStream(url: string): Promise<{
+  stream: Stream;
+  ws: WebSocket;
+  closeReason: () => string | null;
+}> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
+    let closeReason: string | null = null;
     const timer = setTimeout(() => {
       ws.close();
       reject(new Error("WebSocket connect timeout"));
@@ -26,7 +39,11 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
       const readable = new ReadableStream<AnyMessage>({
         start(controller) {
           ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));
-          ws.onclose = () => {
+          ws.onclose = (e) => {
+            // Before `controller.close()`: closing the stream can settle the
+            // connection's `closed` promise, and whoever reads the reason off
+            // that must not find it unset.
+            closeReason = e.reason || null;
             try {
               controller.close();
             } catch {}
@@ -46,7 +63,11 @@ function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
           ws.close();
         },
       });
-      resolve({ stream: { readable, writable }, ws });
+      resolve({
+        stream: { readable, writable },
+        ws,
+        closeReason: () => closeReason,
+      });
     };
     ws.onerror = reject;
   });
@@ -94,12 +115,55 @@ function awaitPermission(
   });
 }
 
+/** `openConnection` plus the `initialize` handshake every caller needs, closing
+ *  the socket if the handshake fails — the one shape in which an un-owned socket
+ *  can leak. */
+export async function openInitializedConnection(
+  agentId: string,
+  onUpdate: UpdateHandler,
+  opts?: { passive?: boolean; clientInfo?: { name: string; version: string } },
+): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
+  const { connection, ws } = await openConnection(agentId, onUpdate, opts);
+  try {
+    await connection.initialize({
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      ...(opts?.clientInfo ? { clientInfo: opts.clientInfo } : {}),
+    });
+  } catch (err) {
+    try {
+      ws.close();
+    } catch {}
+    throw err;
+  }
+  return { connection, ws };
+}
+
+/**
+ * Validate a `platform/*` ext-notification's params, warning and returning
+ * `null` on a mismatch. A server running a variant without our extensions (or
+ * a newer contract) must degrade to "no delivery feedback", never to a thrown
+ * handler that tears down the whole notification stream.
+ */
+function parseExtParams<T>(
+  method: string,
+  schema: z.ZodType<T>,
+  params: Record<string, unknown>,
+): T | null {
+  const parsed = schema.safeParse(params);
+  if (!parsed.success) {
+    console.warn(`[acp] ${method} schema mismatch:`, parsed.error.issues);
+    return null;
+  }
+  return parsed.data;
+}
+
 export async function openConnection(
   agentId: string,
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean },
 ): Promise<{ connection: ClientSideConnection; ws: WebSocket }> {
-  const { stream, ws } = await wsStream(
+  const { stream, ws, closeReason } = await wsStream(
     await wsUrl(agentId, opts?.passive ?? false),
   );
   const raw = new ClientSideConnection(
@@ -108,7 +172,7 @@ export async function openConnection(
         return awaitPermission(params);
       },
       async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update);
+        onUpdate(params.update, params.sessionId);
       },
       async writeTextFile() {
         return {};
@@ -116,25 +180,59 @@ export async function openConnection(
       async readTextFile() {
         return { content: "" };
       },
-      // Our runtime emits a custom `platform/turnEnded` notification on the last
-      // response of each prompt so viewers that didn't originate the prompt
-      // can close their in-progress assistant bubble. Surface it through the
-      // same `onUpdate` channel as a synthetic `sessionUpdate`.
+      // Our runtime emits custom `platform/*` notifications next to the ACP
+      // session updates: `platform/turnEnded` on the last response of each
+      // prompt, so viewers that didn't originate the prompt can close their
+      // in-progress assistant bubble, and `platform/promptAccepted` /
+      // `platform/promptStarted` to tell a prompt's *sender* what the runtime
+      // did with it (queued behind a running turn, or handed to the agent).
+      // All three surface through the same `onUpdate` channel as synthetic
+      // `sessionUpdate`s.
       async extNotification(method: string, params: Record<string, unknown>) {
-        if (method === "platform/turnEnded") {
-          const parsed = platformTurnEndedParamsSchema.safeParse(params);
-          if (!parsed.success) {
-            console.warn(
-              "[acp] platform/turnEnded schema mismatch:",
-              parsed.error.issues,
+        switch (method) {
+          case "platform/turnEnded": {
+            const p = parseExtParams(
+              method,
+              platformTurnEndedParamsSchema,
+              params,
             );
+            if (p)
+              onUpdate(
+                { sessionUpdate: "platform_turn_ended", ...p },
+                p.sessionId,
+              );
             return;
           }
-          onUpdate({ sessionUpdate: "platform_turn_ended", ...parsed.data });
+          case "platform/promptAccepted": {
+            const p = parseExtParams(
+              method,
+              platformPromptAcceptedParamsSchema,
+              params,
+            );
+            if (p)
+              onUpdate(
+                { sessionUpdate: "platform_prompt_accepted", ...p },
+                p.sessionId,
+              );
+            return;
+          }
+          case "platform/promptStarted": {
+            const p = parseExtParams(
+              method,
+              platformPromptStartedParamsSchema,
+              params,
+            );
+            if (p)
+              onUpdate(
+                { sessionUpdate: "platform_prompt_started", ...p },
+                p.sessionId,
+              );
+            return;
+          }
         }
       },
     }),
     stream,
   );
-  return { connection: withCloseRace(raw), ws };
+  return { connection: withCloseRace(raw, closeReason), ws };
 }

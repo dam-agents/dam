@@ -53,7 +53,10 @@ export interface BobModelPins {
   model?: string;
   agentId?: string;
   teamId?: string;
-  maxCoins?: string;
+  // 2.0 renamed the concept coins → cost (`--max-cost`). The env name stays
+  // BOB_MAX_COINS: it is pinned on secrets created before the rename, and the
+  // harness reads either spelling. The identifiers follow the current concept.
+  maxCost?: string;
   chatMode?: string;
 }
 
@@ -72,7 +75,7 @@ export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   push("BOB_SHELL_MODEL", pins.model);
   push("BOB_INSTANCE_ID", pins.agentId);
   push("BOB_TEAM_ID", pins.teamId);
-  push("BOB_MAX_COINS", pins.maxCoins);
+  push("BOB_MAX_COINS", pins.maxCost);
   push("BOB_CHAT_MODE", pins.chatMode);
   return out;
 }
@@ -86,17 +89,34 @@ export function bobPinsFromEnvMappings(
   const model = lookup("BOB_SHELL_MODEL");
   const agentId = lookup("BOB_INSTANCE_ID");
   const teamId = lookup("BOB_TEAM_ID");
-  const maxCoins = lookup("BOB_MAX_COINS");
+  const maxCost = lookup("BOB_MAX_COINS");
   const chatMode = lookup("BOB_CHAT_MODE");
   if (model) pins.model = model;
   if (agentId) pins.agentId = agentId;
   if (teamId) pins.teamId = teamId;
-  if (maxCoins) pins.maxCoins = maxCoins;
-  if (chatMode) pins.chatMode = chatMode;
+  if (maxCost) pins.maxCost = maxCost;
+  // Same normalization as the UI's read path: a stored legacy mode reads back as
+  // the mode it became, so a re-save can't be blocked by it.
+  if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
   return pins;
 }
 
-export const BOB_CHAT_MODES = ["plan", "code", "advanced", "ask"] as const;
+export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
+
+// Bob 2.0 merged the 1.x code/advanced modes into agent. Secrets pinned before
+// the upgrade still carry the old value, so a stored pin must be normalized
+// wherever it is read back — never rejected, or the connection becomes
+// un-editable over a field the runtime itself tolerates. Fresh input stays
+// strict against BOB_CHAT_MODES.
+const BOB_LEGACY_CHAT_MODES: Record<string, (typeof BOB_CHAT_MODES)[number]> = {
+  code: "agent",
+  advanced: "agent",
+};
+
+export function normalizeBobChatMode(mode: string | undefined): string {
+  const trimmed = mode?.trim() ?? "";
+  return BOB_LEGACY_CHAT_MODES[trimmed] ?? trimmed;
+}
 
 export interface ProviderPresetMode {
   key: string;

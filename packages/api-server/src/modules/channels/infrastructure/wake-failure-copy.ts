@@ -51,6 +51,32 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "The agent is still warming up (its network gateway is starting) — " +
         "give it a minute and try again."
       );
+    case "gateway-pod-failed":
+      switch (c.gatewayReason) {
+        // Self-repairing, but read at the deadline — don't promise it's imminent.
+        case "StuckOnSupersededRevision":
+          return (
+            "This agent can't reach the network: its gateway is stuck on an " +
+            "outdated configuration. The platform is replacing it — try again " +
+            "shortly, and tell an admin if this keeps happening."
+          );
+        case "ImagePullFailure":
+        case "InvalidImageName":
+          return (
+            "This agent can't reach the network: its gateway image can't be " +
+            "pulled. Check the agent's page or contact its owner."
+          );
+        case "OutOfMemory":
+          return (
+            "This agent can't reach the network: its gateway ran out of " +
+            "memory. Check the agent's page or contact its owner."
+          );
+        default:
+          return (
+            "This agent can't reach the network: its gateway crashed while " +
+            "starting. Check the agent's page or contact its owner."
+          );
+      }
     case "unknown":
       return "The agent didn't become ready in time — try again in a minute.";
   }

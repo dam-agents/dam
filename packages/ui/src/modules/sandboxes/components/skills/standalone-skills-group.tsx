@@ -1,26 +1,13 @@
-import {
-  Download,
-  Launch,
-  OverflowMenuHorizontal,
-  PullRequest,
-  Upload,
-} from "@carbon/icons-react";
+import { Upload } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 import type { ReactNode } from "react";
 
-import { badgeVariants } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
-import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
+
+import { StandaloneSkillRow } from "./standalone-skill-row.js";
 
 /**
  * Stopped/starting counterpart to {@link StandaloneSkillsGroup}. The standalone
@@ -67,7 +54,7 @@ export function StandaloneSkillsEmptyState({ action }: { action?: ReactNode }) {
   );
 }
 
-/** Latest publish record per skill name — drives the "Published" pill. */
+/** Latest publish record per skill name — drives the publish pill. */
 function latestPublishByName(
   publishes: SkillPublishRecord[],
 ): Map<string, SkillPublishRecord> {
@@ -81,14 +68,14 @@ function latestPublishByName(
 
 /**
  * "Created in this sandbox" — Standalone Local Skills authored in place or
- * uploaded as Markdown. Each row can be published upstream as a PR (or shows a
- * "Published" pill once it has a publish record), and the kebab downloads or
- * deletes it. There is no install toggle: standalone skills are simply present
- * on disk.
+ * uploaded as Markdown. Each row can be published upstream as a PR, shows a pill
+ * reporting that PR's state once it has a publish record, and offers a kebab to
+ * download or delete it. There is no install toggle: standalone skills are
+ * simply present on disk.
  *
- * The pill reports the publish *event*, never the PR's state: nothing here
- * re-reads GitHub, so a state claim would go stale the moment the PR is merged
- * or closed (#3019).
+ * The per-row rendering lives in {@link StandaloneSkillRow}; this component owns
+ * only the section, the header slot, and which publish record belongs to which
+ * skill.
  */
 export function StandaloneSkillsGroup({
   skills,
@@ -98,6 +85,9 @@ export function StandaloneSkillsGroup({
   onPublish,
   onDownload,
   onDelete,
+  onTrack,
+  onOpenSkill,
+  trackUnavailableNames,
   action,
 }: {
   skills: LocalSkill[];
@@ -110,6 +100,13 @@ export function StandaloneSkillsGroup({
   /** The row's latest publish record is passed along so the confirm dialog can
    *  mention the PR without re-deriving it in the parent. */
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
+  /** Hand a merged skill over to its source. */
+  onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
+  /** Open a skill's SKILL.md preview. Absent when there is no pod to read
+   *  the file from, which leaves the names inert. */
+  onOpenSkill?: (skill: LocalSkill) => void;
+  /** Names whose source hasn't been scanned, so tracking can't be offered yet. */
+  trackUnavailableNames: ReadonlySet<string>;
   /** Header-right slot (e.g. the "+ Add source" button). */
   action?: ReactNode;
 }) {
@@ -125,86 +122,19 @@ export function StandaloneSkillsGroup({
         {skills.map((skill, i) => {
           const pub = published.get(skill.name);
           return (
-            <div
+            <StandaloneSkillRow
               key={`${skill.skillPath}::${skill.name}`}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3",
-                i > 0 && "border-t border-border",
-              )}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-medium text-foreground">
-                  {skill.name}
-                </p>
-                <p
-                  className={cn(
-                    "truncate text-sm text-muted-foreground",
-                    !skill.description && "italic",
-                  )}
-                >
-                  {skill.description || "No description"}
-                </p>
-              </div>
-
-              {pub ? (
-                <a
-                  href={pub.prUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    badgeVariants({ variant: "muted" }),
-                    // border-border, because the readOnly card is bg-muted too
-                    // and the pill would otherwise vanish into it.
-                    "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
-                  )}
-                  title={`Published to ${pub.sourceName} on ${formatDateTime(
-                    pub.publishedAt,
-                  )} — opens the pull request`}
-                >
-                  <PullRequest size={13} /> Published · {pub.sourceName}
-                </a>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  disabled={!canPublish}
-                  onClick={() => onPublish(skill)}
-                  title={
-                    canPublish
-                      ? "Publish this skill as a pull request"
-                      : "Add a GitHub source first to publish there"
-                  }
-                  className="shrink-0 gap-1.5"
-                >
-                  Publish <Launch size={13} />
-                </Button>
-              )}
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    title="Skill actions"
-                    className="shrink-0 text-muted-foreground"
-                  >
-                    <OverflowMenuHorizontal size={18} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onSelect={() => onDownload(skill)}>
-                    <Download size={14} />
-                    <span className="flex-1">Download skill</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    tone="danger"
-                    onSelect={() => onDelete(skill, pub)}
-                  >
-                    Delete skill
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+              skill={skill}
+              publish={pub}
+              divided={i > 0}
+              canPublish={canPublish}
+              onPublish={() => onPublish(skill)}
+              onDownload={() => onDownload(skill)}
+              onDelete={() => onDelete(skill, pub)}
+              onTrack={pub ? () => onTrack(skill, pub) : undefined}
+              onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
+              trackUnavailable={trackUnavailableNames.has(skill.name)}
+            />
           );
         })}
       </Card>

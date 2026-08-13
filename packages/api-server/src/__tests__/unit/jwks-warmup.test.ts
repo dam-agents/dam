@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { startJwksWarmup } from "../../apps/api-server/jwks-warmup.js";
+import { startJwksWarmup } from "../../apps/api-server/admission/jwks-warmup.js";
 import { configureLogger } from "../../core/logger.js";
 
 function capture() {

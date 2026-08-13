@@ -25,4 +25,67 @@ function Checkbox({
   );
 }
 
-export { Checkbox };
+interface CheckboxItemProps extends Omit<
+  React.ComponentProps<typeof CheckboxPrimitive.Root>,
+  "children"
+> {
+  label: string;
+  /** Extra classes for the label text, e.g. `font-mono` for an identifier. */
+  labelClassName?: string;
+  description?: string;
+  testId?: string;
+}
+
+/** The multi-select counterpart of `RadioGroupItem`. `className` styles the
+ *  row, not the box. `aria-label` keeps the description out of the accessible
+ *  name, which the wrapping `<label>` would otherwise run together with it. */
+function CheckboxItem({
+  label,
+  labelClassName,
+  description,
+  testId,
+  className,
+  id,
+  "aria-describedby": describedBy,
+  ...props
+}: CheckboxItemProps) {
+  const generatedId = React.useId();
+  const controlId = id ?? generatedId;
+  const descriptionId = `${controlId}-description`;
+  return (
+    <label
+      htmlFor={controlId}
+      className={cn(
+        "flex w-full cursor-pointer items-start gap-2.5 text-left transition-colors has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50",
+        className,
+      )}
+    >
+      <Checkbox
+        id={controlId}
+        className="mt-0.5"
+        aria-label={label}
+        aria-describedby={
+          [description ? descriptionId : null, describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        data-testid={testId}
+        {...props}
+      />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span
+          className={cn("text-sm font-medium text-foreground", labelClassName)}
+        >
+          {label}
+        </span>
+        {description && (
+          <span id={descriptionId} className="text-sm text-muted-foreground">
+            {description}
+          </span>
+        )}
+      </span>
+    </label>
+  );
+}
+
+export { Checkbox, CheckboxItem };

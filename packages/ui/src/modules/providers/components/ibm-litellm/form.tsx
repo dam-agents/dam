@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KEY_GUIDE_URL } from "@/constants.js";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { ProviderFormShell } from "../provider-form-shell.js";
 import { MODES, stripWhitespace } from "./modes.js";
@@ -63,8 +64,7 @@ export function IbmLitellmForm({
     >
       <a
         href={KEY_GUIDE_URL}
-        target="_blank"
-        rel="noopener noreferrer"
+        {...externalLinkProps}
         className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
       >
         <div className="flex flex-col gap-0.5">

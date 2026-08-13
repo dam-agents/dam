@@ -15,6 +15,7 @@ const agent = (id: string, kind?: AgentView["kind"]): AgentView => ({
   hibernationTimeoutMin: 60,
   grantedSecretIds: [],
   grantedConnectionIds: [],
+  stopRequested: false,
   overBudget: false,
   size: {},
   state: "running",

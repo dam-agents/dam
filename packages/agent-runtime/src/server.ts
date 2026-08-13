@@ -157,8 +157,9 @@ const runtimeChannel = await composeRuntimeChannel({
   plugins: [
     createEnvPlugin({
       store: envStore,
-      onChange: () => {
-        acpRuntime.refreshEnv();
+      onChange: ({ namesChanged }) => {
+        // Value-only changes never force-kill an in-flight turn (#3143).
+        acpRuntime.refreshEnv({ force: namesChanged });
         podService?.refreshEnv();
         configureGitCredentialHelper(envStore, (msg) =>
           process.stderr.write(`[git] ${msg}\n`),

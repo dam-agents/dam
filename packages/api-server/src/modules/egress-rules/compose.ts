@@ -15,10 +15,11 @@ import {
 } from "./services/connection-rules-sync.js";
 import { createEgressRuleWriter } from "./services/egress-rule-writer.js";
 import type { EgressRuleWriteOutcome } from "./services/egress-rule-writer.js";
-import { backfillL7Promotions } from "./services/l7-promotion-backfill.js";
 import { createAgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 import type { AgentL7HostsPort } from "./infrastructure/k8s-agent-l7-hosts-port.js";
+import { reconcileL7Promotions } from "./services/l7-promotion-reconcile.js";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import { AGENTS_PLURAL } from "../agents/infrastructure/labels.js";
 
 export interface ComposeEgressRulesDeps {
   db: Db;
@@ -127,28 +128,41 @@ export function createPresetSeederAdapter(
   return createPresetSeeder({ repo, trustedHosts });
 }
 
+/**
+ * System-level periodic reconcile of `spec.l7Hosts` from the rules table.
+ * The application root registers this on the periodic-jobs queue; each tick
+ * re-projects every agent carrying an active narrow rule, healing any drift
+ * a non-transactional per-mutation promotion left behind (patch failure or a
+ * crash between the rule commit and the CR patch). Idempotent — a converged
+ * agent's `set` is a no-op.
+ */
+export function createL7PromotionReconcile(
+  db: Db,
+  k8sClient: K8sClient,
+  log: (message: string) => void,
+): () => Promise<{ scanned: number; drifted: number; failed: number }> {
+  const repo = createEgressRulesRepository(db);
+  const l7Hosts = createAgentL7HostsPort(k8sClient);
+  // One list read per tick; the reconcile diffs in memory and writes only
+  // the agents whose projection drifted.
+  const listAgentL7State = async () => {
+    const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
+    return agents.flatMap((a) => {
+      const id = a.metadata?.name;
+      if (!id) return [];
+      const spec = (a.spec ?? {}) as { l7Hosts?: string[] };
+      return [{ agentId: id, current: spec.l7Hosts ?? [] }];
+    });
+  };
+  return () => reconcileL7Promotions({ repo, listAgentL7State, l7Hosts, log });
+}
+
 export type { ConnectionRulesSync } from "./services/connection-rules-sync.js";
 export type { EgressPreset };
 export {
   createAgentL7HostsPort,
   type AgentL7HostsPort,
 } from "./infrastructure/k8s-agent-l7-hosts-port.js";
-
-/**
- * System-level startup migration (#2865): projects active narrow rules
- * onto each Agent CR's spec.l7Hosts and retires the legacy owner-scoped
- * allow-only marker Secrets. Called once from the application root; the
- * caller owns the retry loop.
- */
-export function createL7PromotionBackfill(
-  db: Db,
-  k8sClient: K8sClient,
-  log: (message: string) => void,
-): () => Promise<{ failed: number }> {
-  const repo = createEgressRulesRepository(db);
-  const l7Hosts = createAgentL7HostsPort(k8sClient);
-  return () => backfillL7Promotions({ repo, l7Hosts, k8sClient, log });
-}
 
 /**
  * System-level connection-rules sync, called from `setAgentConnections` and

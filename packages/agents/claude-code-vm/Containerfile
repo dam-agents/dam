@@ -12,8 +12,10 @@
 #   - platform-scratch mounts the "scratch" disk under docker/k3s image stores.
 #   - platform-ca installs the MITM CA into the OS trust store.
 #   - platform-boot-gate blocks agent-runtime until the paired gateway answers.
-#   - agent-runtime runs as uid 65532 (same as the pod image, so PVC content
-#     ownership carries over), spawning harness-chat/-terminal like in a pod.
+#   - agent-runtime runs as root (unprivileged virtiofsd EPERMs creates from
+#     any other guest uid — see agent-runtime.service), spawning
+#     harness-chat/-terminal like in a pod. The agent user still exists for
+#     SSH sessions and image-baked $HOME content.
 ARG AGENT_IMAGE=platform-claude-code:latest
 FROM ${AGENT_IMAGE} AS agent
 
@@ -26,7 +28,8 @@ FROM quay.io/fedora/fedora-bootc:44
 RUN dnf install -y --setopt=install_weak_deps=False \
       moby-engine docker-compose docker-buildx runc \
       cloud-init qemu-guest-agent openssh-server sudo \
-      git tar gzip xz jq rsync && \
+      git tar gzip xz jq rsync \
+      chromium && \
     dnf clean all
 
 # k3s: binary in /usr (immutable bootc area), unit written by the installer;
@@ -42,9 +45,11 @@ RUN curl -sfL https://get.k3s.io | \
     curl -fL "https://github.com/k3s-io/k3s/releases/download/${ver}/k3s-airgap-images-${arch}.tar.zst" \
       -o /var/lib/rancher/k3s/agent/images/k3s-airgap-images.tar.zst
 
-# Harness content from the pod image. /usr/local resolves to /var/usrlocal on
-# bootc — fine here: the qcow2 seeds /var at deploy and these VMs never
-# bootc-upgrade. /app is agent-runtime (node dist/server.js + node_modules).
+# Harness content from the pod image. /app is agent-runtime (node
+# dist/server.js + node_modules). NOTE: these COPYs replace fedora-bootc's
+# `/usr/local -> ../var/usrlocal` symlink with a real directory under the
+# read-only /usr — the final RUN below restores the symlink so /usr/local
+# (mise installs, agent-added tools) is writable at runtime.
 COPY --from=agent /usr/local/bin/ /usr/local/bin/
 # sbin too, not just bin: the mise shims are symlinks to /usr/local/sbin/mise,
 # so without it every shim dangles — `node` doesn't resolve and agent-runtime
@@ -55,9 +60,35 @@ COPY --from=agent /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=agent /usr/local/share/lazy-tools/ /usr/local/share/lazy-tools/
 COPY --from=agent /etc/mise/ /etc/mise/
 COPY --from=agent /etc/AGENTS.md /etc/AGENTS.md
+# Managed settings carry the Stop/SubagentStop background-work hooks — without
+# them a VM session's running jobs are reaped out from under it.
+COPY --from=agent /etc/claude-code/ /etc/claude-code/
 COPY --from=agent /etc/profile.d/model-gateway.sh /etc/profile.d/model-gateway.sh
 COPY --from=agent /app/ /app/
 COPY --from=agent /opt/ /opt/
+
+# agent-browser CLI, VM-only: MISE_DATA_DIR is /usr/local/share/mise, which
+# exists at build time (unlike $HOME, an unmounted virtiofs share until
+# boot), so a plain `mise install` works here without the pod image's
+# detour. AGENT_BROWSER_EXECUTABLE_PATH (set on agent-runtime.service
+# below) points it at dnf's chromium instead of downloading its own
+# Chrome-for-Testing — dnf resolves chromium's runtime libs automatically,
+# so there's no hand-picked shared-lib list to keep in sync.
+# --mount=type=secret: available only for this RUN's environment, never
+# baked into an image layer. GITHUB_TOKEN raises mise's GitHub API rate
+# limit for the release lookup + download; --build-arg couldn't do this
+# without leaking the token into the image's history.
+# MISE_DATA_DIR/MISE_CACHE_DIR explicitly: root's $HOME (/root ->
+# ../var/roothome) is, like /home, an unrealized bootc symlink at build
+# time, and mise's data/cache/download dirs default under $HOME — mkdir
+# fails with ENOENT there. agent-runtime.service sets MISE_DATA_DIR the
+# same way at runtime; mirrored here so this RUN uses the identical real
+# path, already realized via the COPY above.
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+    MISE_DATA_DIR=/usr/local/share/mise \
+    MISE_CACHE_DIR=/usr/local/share/mise/.cache \
+    mise install "github:vercel-labs/agent-browser@0.33.1" && \
+    test -x /usr/bin/chromium-browser
 
 # The agent user matches the pod image uid so PVC content ownership carries
 # over across backends. A full VM is deliberately root-capable: docker group +
@@ -66,10 +97,17 @@ COPY --from=agent /opt/ /opt/
 # /home is a bootc symlink to /var/home, absent at build time
 RUN mkdir -p /var/home && \
     useradd -u 65532 -d /home/agent -s /bin/bash agent && \
+    # agent-runtime (and the harness) run as root here; anything resolving
+    # home via getpwuid — the JVM's user.home, ~ expansion in tools that
+    # ignore $HOME — must land on the workspace, not /root. sed, not
+    # usermod: usermod refuses a user with live processes, and the build
+    # shell itself runs as root ("user root is currently used by process 1").
+    sed -i 's|^root:\(.*\):/root:|root:\1:/home/agent:|' /etc/passwd && \
+    grep -q '^root:.*:/home/agent:' /etc/passwd && \
     usermod -aG docker agent && \
     echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent && \
     chown -R agent /etc/mise /app /usr/local/share/mise && chown agent /etc/AGENTS.md && \
-    printf '\n## VM sandbox\n\nThis sandbox is a full virtual machine: systemd, `docker` (moby), a preinstalled `k3s` Kubernetes cluster (`kubectl` works out of the box), and passwordless `sudo`. OS state outside your home and workspace is discarded on hibernation.\n' >> /etc/AGENTS.md
+    printf '\n## VM sandbox\n\nThis sandbox is a full virtual machine: systemd, `docker` (moby), a preinstalled `k3s` Kubernetes cluster (`kubectl` works out of the box), and passwordless `sudo`. OS state outside your home and workspace is discarded on hibernation.\n\nThe in-VM k3s cluster is entirely yours: nothing that manages this sandbox runs on it, so you can freely reconfigure, wipe, or reinstall it. The platform managing this sandbox lives outside the VM and is unaffected by anything you do to the inner cluster. The inner k3s deliberately uses non-default CIDRs (`/etc/rancher/k3s/config.yaml`) so it does not clash with the host network — keep those when changing its config, and prefer drop-ins under `/etc/rancher/k3s/config.yaml.d/` over editing the main file.\n\n## Browser Automation\n\nUse `agent-browser` for web automation. Run `agent-browser --help` for all commands.\n\nCore workflow:\n1. `agent-browser open <url>` - Navigate to page\n2. `agent-browser snapshot -i` - Get interactive elements with refs (@e1, @e2)\n3. `agent-browser click @e1` / `fill @e2 "text"` - Interact using refs\n4. Re-snapshot after page changes\n' >> /etc/AGENTS.md
 
 # The guest has no SSH and an ephemeral rootfs, so a boot that fails before
 # agent-runtime leaves the journal unreachable — the serial console (captured
@@ -106,16 +144,32 @@ RUN mkdir -p /usr/lib/systemd/system.conf.d && \
       > /usr/lib/systemd/system.conf.d/platform-timeouts.conf
 
 COPY system/platform-scratch.sh /usr/libexec/platform-scratch.sh
+COPY system/platform-net-config.sh /usr/libexec/platform-net-config.sh
 COPY system/platform-boot-gate.sh /usr/libexec/platform-boot-gate.sh
 COPY system/platform-scratch.service system/platform-ca.service \
      system/platform-boot-gate.service system/agent-runtime.service \
+     system/platform-net-config.service \
      /usr/lib/systemd/system/
+COPY system/vm-no-proxy.env /usr/lib/platform/vm-no-proxy.env
 COPY system/proxy-dropin.conf /usr/lib/systemd/system/docker.service.d/platform.conf
 COPY system/proxy-dropin.conf /usr/lib/systemd/system/k3s.service.d/platform.conf
 COPY system/k3s-config.yaml /etc/rancher/k3s/config.yaml
 COPY system/profile-platform.sh /etc/profile.d/platform-vm.sh
 
-RUN chmod 755 /usr/libexec/platform-scratch.sh /usr/libexec/platform-boot-gate.sh && \
+RUN chmod 755 /usr/libexec/platform-scratch.sh /usr/libexec/platform-boot-gate.sh /usr/libexec/platform-net-config.sh && \
     systemctl enable docker.service k3s.service qemu-guest-agent.service \
       platform-scratch.service platform-ca.service platform-boot-gate.service \
+      platform-net-config.service \
       agent-runtime.service
+
+# Restore fedora-bootc's `/usr/local -> ../var/usrlocal` symlink (the COPYs
+# above materialized a real dir under the immutable /usr, which left
+# MISE_DATA_DIR — and every agent-installed tool — read-only at runtime).
+# /var content is seeded into the deployment by bootc-image-builder, and
+# these VMs never bootc-upgrade, so image-baked /usr/local content survives
+# the move. Keep last: anything COPY'd to /usr/local afterwards would
+# silently recreate the real dir.
+RUN if [ ! -L /usr/local ]; then \
+      mkdir -p /var && mv /usr/local /var/usrlocal && ln -s ../var/usrlocal /usr/local; \
+    fi && \
+    readlink /usr/local && test -d /var/usrlocal/share/mise

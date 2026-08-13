@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
@@ -29,6 +30,8 @@ interface Props {
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   onSelect: () => void;
+  onConfigure: () => void;
+  configureLabel: string;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -43,6 +46,8 @@ export function AgentRow({
   temporaryDraw,
   deletePending,
   onSelect,
+  onConfigure,
+  configureLabel,
   onWake,
   onRestart,
   onPause,
@@ -53,23 +58,24 @@ export function AgentRow({
   return (
     <Card
       data-testid="agent-row"
-      onClick={onSelect}
+      {...clickableProps(onSelect)}
       // The guard keeps the card flat while a nested action is hovered, so the
       // two hover states don't stack.
       className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
     >
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-base font-medium text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+          {/* Full width until there is room to share the line, so the pills drop
+              below the name on a narrow screen instead of squeezing it. */}
+          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:hover))_&]:text-primary">
             {agent.name}
           </h2>
-          {/* Beside the name, not with the status pills: the Kind is part of what
-              this sandbox *is*, not something it is currently doing. */}
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
               {kindBadge.label}
             </Badge>
           )}
+          <ContributionFailuresBadge failures={agent.contributionFailures} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">
           {subtitle}
@@ -91,7 +97,6 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <ContributionFailuresBadge failures={agent.contributionFailures} />
         {/* A parked sandbox explains itself: the controller's figures ride
             the badge tooltip — focusable and labelled, so keyboard and
             screen-reader users reach them, not just mouse hover. */}
@@ -112,11 +117,15 @@ export function AgentRow({
         <span onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" title="Sandbox actions">
+              <Button variant="ghost" size="icon" aria-label="Sandbox actions">
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <DropdownMenuItem onSelect={onConfigure}>
+                {configureLabel}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={onWake}>
                   {/* A parked sandbox was never asleep — it's waiting for

@@ -1,0 +1,29 @@
+# CI for the {{AGENT_NAME}} definition repo — mechanizes the pre-PR validation
+# sweep (docs/self-modification.md §9) so a definition PR cannot merge broken:
+# script syntax, the structural validator (repo shape, VERSION↔CHANGELOG
+# agreement, dead links, leftover placeholders), and the offline test suite.
+# TODO(creator): drop the tests step if the design has no scripts/tests/, then
+# delete the TODO comments.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n all scripts
+        run: |
+          set -e
+          find scripts -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: structural validator
+        run: bash scripts/validate-definition.sh .
+      - name: offline test suite
+        run: |
+          if [ -x scripts/tests/run.sh ] || [ -f scripts/tests/run.sh ]; then
+            bash scripts/tests/run.sh
+          else
+            echo "no scripts/tests/ — skipping"
+          fi

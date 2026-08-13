@@ -7,11 +7,11 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
@@ -39,7 +39,6 @@ export function SessionsSidebar({
   style,
   onResumeSession,
   onNewSession,
-  onNewTerminal,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -47,7 +46,6 @@ export function SessionsSidebar({
   style?: CSSProperties;
   onResumeSession: (sid: string, mode?: SessionMode) => void;
   onNewSession: () => void;
-  onNewTerminal: () => void;
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -139,7 +137,7 @@ export function SessionsSidebar({
       s.mode === SessionMode.Terminal
         ? !!s.running
         : isOpen
-          ? busy
+          ? busy || !!s.running
           : !!s.running;
     // Polled approvals cover all sessions; the live store surfaces the open one instantly.
     const needsApproval =
@@ -202,21 +200,14 @@ export function SessionsSidebar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="xs" className="text-sm">
-            <Add size={12} /> New
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onNewSession}>
-            New chat session
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onNewTerminal}>
-            New terminal session
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button
+        variant="outline"
+        size="xs"
+        className="text-sm"
+        onClick={onNewSession}
+      >
+        <Add size={12} /> New
+      </Button>
     </>
   );
 
@@ -260,17 +251,18 @@ export function SessionsSidebar({
           </SectionLabel>
         )}
         {launchingRun && (
-          <button
-            type="button"
-            onClick={focusPendingLaunch}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
-            title="Show the launch progress"
-          >
-            <Spinner />
-            <span className="min-w-0 flex-1 truncate">
-              Starting run — waking the agent…
-            </span>
-          </button>
+          <Tooltip content="Show the launch progress">
+            <button
+              type="button"
+              onClick={focusPendingLaunch}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
+            >
+              <Spinner />
+              <span className="min-w-0 flex-1 truncate">
+                Starting run — waking the agent…
+              </span>
+            </button>
+          </Tooltip>
         )}
         {runSessions.map(renderRow)}
       </div>

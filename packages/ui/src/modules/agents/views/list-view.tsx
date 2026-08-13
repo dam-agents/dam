@@ -10,6 +10,7 @@ import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
+import { isKnowledgeBase } from "../utils/agent-kind.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 export function ListView() {
@@ -25,6 +26,8 @@ export function ListView() {
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const stopSandbox = async (agent: AgentView) => {
@@ -96,16 +99,23 @@ export function ListView() {
 
       <div className="flex flex-col gap-3">
         {initialLoaded &&
-          agents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              {...rowProps(agent)}
-              temporaryDraw={drawByDriver.get(agent.id)}
-              onSelect={() => navigateToSandboxHome(agent.id)}
-              onStop={() => void stopSandbox(agent)}
-              onDelete={() => void deleteSandbox(agent)}
-            />
-          ))}
+          agents.map((agent) => {
+            const kb = isKnowledgeBase(agent);
+            return (
+              <AgentRow
+                key={agent.id}
+                {...rowProps(agent)}
+                temporaryDraw={drawByDriver.get(agent.id)}
+                onSelect={() =>
+                  kb ? openKnowledgeBase(agent.id) : selectAgent(agent.id)
+                }
+                onConfigure={() => navigateToSandboxHome(agent.id)}
+                configureLabel="Configure sandbox"
+                onStop={() => void stopSandbox(agent)}
+                onDelete={() => void deleteSandbox(agent)}
+              />
+            );
+          })}
       </div>
     </div>
   );

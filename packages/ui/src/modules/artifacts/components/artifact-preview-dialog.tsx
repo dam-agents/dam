@@ -9,6 +9,7 @@ import {
   Modal,
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
+import { externalLinkProps } from "@/lib/external-link";
 import { formatBytes } from "@/lib/format-size";
 
 import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
@@ -86,7 +87,8 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    title="Fullscreen"
+                    aria-label="Fullscreen"
+                    tooltip="Fullscreen"
                     onClick={() => setFullscreen(true)}
                   >
                     <Maximize size={16} />
@@ -127,7 +129,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
         <DialogFooter>
           {artifact.shareUrl && (
             <Button variant="outline" asChild>
-              <a href={artifact.shareUrl} target="_blank" rel="noreferrer">
+              <a href={artifact.shareUrl} {...externalLinkProps}>
                 <Launch size={16} />
                 Open share page
               </a>

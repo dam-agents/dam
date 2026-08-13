@@ -1,5 +1,4 @@
-import { ArrowLeft, Asleep, Play, Renew, Warning } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import { Asleep, Play, Renew, Warning } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,8 @@ import type {
   AgentDisplay,
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
+import { OverlayFrame } from "./overlay-frame.js";
+import { StartupTip } from "./startup-tip.js";
 
 interface OverlayCopy {
   /** Omitted for transient states, where a `Spinner` stands in for the icon. */
@@ -47,37 +48,12 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   },
 };
 
-/** Shared chrome for every overlay variant: full-view takeover, back button,
- *  centered content column. */
-function OverlayFrame({
-  onBack,
-  children,
-}: {
-  onBack: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="absolute inset-0 z-overlay flex flex-col bg-background/95 backdrop-blur-sm">
-      <Button
-        variant="ghost"
-        size="inline"
-        onClick={onBack}
-        className="absolute left-4 top-3 gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
-      >
-        <ArrowLeft size={14} />
-        Sandboxes
-      </Button>
-      <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
-        {children}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Full-view takeover shown whenever the open agent isn't confirmed `running`.
  * Gates the chat/terminal beneath it and surfaces the lifecycle state, plus an
- * explicit Start (hibernated) or Restart (error) — waking is never automatic.
+ * explicit Start (hibernated, or parked retrying the budget gate) or Restart
+ * (error). A hibernated agent is also started once by `useAutoWakeOnOpen` when
+ * its chat opens, so Start is the retry when that wake fails.
  * A null `display` means the agents list hasn't loaded yet (cold reload): show
  * a neutral spinner so we never flash the chat before the state is known.
  */
@@ -103,6 +79,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Loading agent…
         </p>
+        <StartupTip sandbox={name} />
       </OverlayFrame>
     );
   }
@@ -120,6 +97,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
+        <StartupTip sandbox={agent.name} />
       </OverlayFrame>
     );
   }
@@ -143,6 +121,7 @@ export function AgentUnavailableOverlay({
         <StatusBadge state={state} />
       </div>
       <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      {!Icon && <StartupTip sandbox={agent.name} />}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />

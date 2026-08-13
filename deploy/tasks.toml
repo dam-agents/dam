@@ -136,7 +136,14 @@ fi
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
   KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-  if [ ! -d /var/lib/rancher/k3s ]; then
+  # Keyed on the kubeconfig, which k3s writes only once it is actually
+  # serving — not on /var/lib/rancher/k3s, which the provision scripts create
+  # early. An install interrupted mid-provision leaves that directory behind,
+  # and skipping on it wedged every later run: no k3s, no service, and a
+  # 120s wait ending in a misleading "stat k3s.yaml: no such file". The
+  # provision scripts are idempotent, so re-running over a partial state heals
+  # it.
+  if [ ! -f "$KUBECONFIG" ]; then
     echo "Provisioning k3s on host (sandbox mode)..."
     # Lima provision scripts may shell out to apt-get; stub it so the loop
     # below doesn't fail on a non-Debian host. Idempotent.
@@ -196,27 +203,54 @@ kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeo
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
 # path for VMs created before this flag was added). New VMs already have
 # /etc/rancher/k3s/config.yaml from the lima provision script.
+# A config.yaml.d drop-in, never config.yaml itself: k3s merges the
+# directory natively, and overwriting the main file clobbers pre-existing
+# config — inside a VM sandbox it carries the CIDR remap that keeps the
+# inner cluster off the host cluster's ranges, and losing it crash-loops
+# k3s ("cidr ... is out the range of cluster cidr").
+K3S_LOGROT_DROPIN=/etc/rancher/k3s/config.yaml.d/50-container-log-rotation.yaml
 K3S_CONFIG_YAML='kubelet-arg:
   - "container-log-max-size=10Mi"
   - "container-log-max-files=3"
 '
 if [ -n "${IS_SANDBOX:-}" ]; then
-  if ! sudo grep -q container-log-max-size /etc/rancher/k3s/config.yaml 2>/dev/null; then
+  if ! sudo grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
     echo "Configuring k3s container log rotation (issue #244)..."
-    sudo mkdir -p /etc/rancher/k3s
-    printf '%s' "$K3S_CONFIG_YAML" | sudo tee /etc/rancher/k3s/config.yaml >/dev/null
+    sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
+    printf '%s' "$K3S_CONFIG_YAML" | sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
     sudo systemctl restart k3s
     kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
   fi
 else
-  if ! limactl shell "$LIMA_INSTANCE" sudo grep -q container-log-max-size /etc/rancher/k3s/config.yaml 2>/dev/null; then
+  if ! limactl shell "$LIMA_INSTANCE" sudo grep -q container-log-max-size "$K3S_LOGROT_DROPIN" /etc/rancher/k3s/config.yaml 2>/dev/null; then
     echo "Configuring k3s container log rotation (issue #244)..."
-    limactl shell "$LIMA_INSTANCE" sudo mkdir -p /etc/rancher/k3s
-    printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee /etc/rancher/k3s/config.yaml >/dev/null
+    limactl shell "$LIMA_INSTANCE" sudo mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
+    printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
     limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
     kubectl --kubeconfig="$KUBECONFIG" wait --for=condition=Ready node --all --timeout=120s
   fi
 fi
+
+# 1c. Traefik :4444 entrypoint — on lima this rides the provision script's
+# k3s server manifest, but a pre-existing k3s (VM sandbox) never runs that,
+# so the app port silently doesn't exist. HelmChartConfig via kubectl apply
+# is idempotent and works on both.
+kubectl --kubeconfig="$KUBECONFIG" apply -f - <<'YAML'
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |
+    ports:
+      platform:
+        port: 4444
+        expose:
+          default: true
+        exposedPort: 4444
+        protocol: TCP
+YAML
 
 # 2. Install cert-manager
 if ! kubectl --kubeconfig="$KUBECONFIG" get ns cert-manager >/dev/null 2>&1; then
@@ -495,21 +529,30 @@ else
   # names are parsed as arguments to the first task and never built.
   AGENT_TASKS=()
   AGENT_IMAGES=()
+  SEEN_COMPONENTS=()
   while IFS=$'\t' read -r name image; do
     { [ -z "$name" ] || [ "$name" = "---" ]; } && continue
     name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
-    if [ -d "packages/agents/$name" ]; then
+    # Templates can share one image (presets, e.g. adaevolve/evox over the
+    # skydiscover image, or k-search-local over k-search), so resolve the
+    # build component from the image repository basename
+    # ("platform-<component>" locally), not the template key — and dedup so
+    # a shared image builds and loads once.
+    comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+    case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+    SEEN_COMPONENTS+=("$comp")
+    if [ -d "packages/agents/$comp" ]; then
       [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-      AGENT_TASKS+=("agents:$name:image")
+      AGENT_TASKS+=("agents:$comp:image")
       AGENT_IMAGES+=("$image")
-    elif [ -d "packages/e2e/agents/$name" ]; then
+    elif [ -d "packages/e2e/agents/$comp" ]; then
       # e2e fixture agents (the scripted mock) live outside packages/agents/* and
       # have no agents:*:image task — build straight from their Dockerfile, root
       # context so the platform-base FROM resolves. Honors SKIP_IMAGE_BUILD like
       # the per-agent tasks; in CI the image is already in the daemon.
       if [ -z "${SKIP_IMAGE_BUILD:-}" ]; then
         {{ mise_bin }} run platform-base:image
-        docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+        docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
       fi
       AGENT_IMAGES+=("$image")
     else
@@ -762,19 +805,28 @@ DEPLOYED_AGENTS=$(kubectl --kubeconfig="$KUBECONFIG" get configmap -A -o yaml \
 # names are parsed as arguments to the first task and never built.
 AGENT_TASKS=()
 AGENT_IMAGES=()
+SEEN_COMPONENTS=()
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
   name="${name%.yaml}" # data keys are "<name>.yaml" (single CM)
-  if [ -d "packages/agents/$name" ]; then
+  # Templates can share one image (presets, e.g. adaevolve/evox over the
+  # skydiscover image, or k-search-local over k-search), so resolve the
+  # build component from the image repository basename
+  # ("platform-<component>" locally), not the template key — and dedup so
+  # a shared image builds and loads once. Mirrors cluster:install.
+  comp="${image##*/}"; comp="${comp%%:*}"; comp="${comp#platform-}"
+  case " ${SEEN_COMPONENTS[*]:-} " in *" $comp "*) continue ;; esac
+  SEEN_COMPONENTS+=("$comp")
+  if [ -d "packages/agents/$comp" ]; then
     [ -n "${AGENT_TASKS[*]}" ] && AGENT_TASKS+=(":::")
-    AGENT_TASKS+=("agents:$name:image")
+    AGENT_TASKS+=("agents:$comp:image")
     AGENT_IMAGES+=("$image")
-  elif [ -d "packages/e2e/agents/$name" ]; then
+  elif [ -d "packages/e2e/agents/$comp" ]; then
     # e2e fixture agents (the scripted mock) live outside packages/agents/* and
     # have no agents:*:image task — build straight from their Dockerfile, root
-    # context so the platform-base FROM resolves. Mirrors cluster:install.
+    # context so the platform-base FROM resolves.
     {{ mise_bin }} run platform-base:image
-    docker build -f "packages/e2e/agents/$name/Dockerfile" -t "$image" .
+    docker build -f "packages/e2e/agents/$comp/Dockerfile" -t "$image" .
     AGENT_IMAGES+=("$image")
   else
     echo "WARN: no build task for '$name' ($image) — skipping local build" >&2

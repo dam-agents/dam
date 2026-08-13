@@ -147,7 +147,7 @@ export function AnthropicForm({
           variant="outline"
           onClick={test}
           disabled={submitDisabled}
-          title="Verify the credential with Anthropic"
+          tooltip="Verify the credential with Anthropic"
           className="shrink-0"
         >
           {testing ? "..." : "Test"}
@@ -195,7 +195,8 @@ function QuickSetupHint() {
           variant="ghost"
           size="icon-xs"
           onClick={copy}
-          title="Copy command"
+          aria-label="Copy command"
+          tooltip="Copy command"
         >
           {copied ? (
             <Checkmark size={12} className="text-success" />

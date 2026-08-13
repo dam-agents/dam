@@ -9,6 +9,7 @@ import {
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
+import { invocationTargetName } from "../domain/target-name.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type {
   InvocationsRepository,
@@ -231,7 +232,7 @@ export function createInvocationsService(deps: {
       try {
         agent = await deps.agents.create({
           id: targetId,
-          name: `invocation-${randomBytes(6).toString("hex")}`,
+          name: invocationTargetName(randomBytes(6).toString("hex")),
           sweepable: true,
           egressPreset: "none",
           telemetryAttributionId: rootId,

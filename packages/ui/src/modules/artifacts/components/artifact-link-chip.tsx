@@ -2,6 +2,8 @@ import { Box } from "@carbon/icons-react";
 import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
 import type { ReactNode } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
+
 import { useStore } from "../../../store.js";
 import { useArtifact } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
@@ -36,20 +38,23 @@ export function ArtifactLinkChip({
       : "artifact");
 
   return (
-    <button
-      type="button"
-      onClick={() =>
-        setOpenArtifactId(artifactId === openArtifactId ? null : artifactId)
-      }
-      title={artifact ? `Preview “${artifact.title}”` : "Preview artifact"}
-      className="not-prose inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-sm font-medium text-foreground transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
+    <Tooltip
+      content={artifact ? `Preview “${artifact.title}”` : "Preview artifact"}
     >
-      {artifact ? (
-        <ArtifactKindBadge kind={artifact.kind} />
-      ) : (
-        <Box size={13} className="shrink-0 text-muted-foreground" />
-      )}
-      <span className="truncate">{label}</span>
-    </button>
+      <button
+        type="button"
+        onClick={() =>
+          setOpenArtifactId(artifactId === openArtifactId ? null : artifactId)
+        }
+        className="not-prose inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-sm font-medium text-foreground transition-colors hover:border-accent hover:bg-accent-light hover:text-accent"
+      >
+        {artifact ? (
+          <ArtifactKindBadge kind={artifact.kind} />
+        ) : (
+          <Box size={13} className="shrink-0 text-muted-foreground" />
+        )}
+        <span className="truncate">{label}</span>
+      </button>
+    </Tooltip>
   );
 }

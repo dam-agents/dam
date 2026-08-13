@@ -36,6 +36,20 @@ export async function waitForAgentRunning(
   return agentId;
 }
 
+/** Create an agent by name from a template unless one already exists. Lets a
+ *  self-contained full-tier spec stand up the shared mock agent the smoke
+ *  chain would otherwise have created (03-agent, via the UI), while a full run
+ *  — where 03-agent got there first — finds it and creates nothing. */
+export async function ensureAgentExists(
+  api: ApiClient,
+  agentName: string,
+  templateId: string,
+): Promise<void> {
+  const list = await api.agents.list.query();
+  if (list.some((a) => a.name === agentName)) return;
+  await api.agents.create.mutate({ name: agentName, templateId });
+}
+
 // HACK: UI doesn't pick up new agent without a reload (bug)
 export async function reloadUntilAgentVisible(page: Page): Promise<void> {
   await page.reload();
@@ -48,19 +62,13 @@ export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message\.\.\./i);
 }
 
-/** Selecting an agent lands on its sandbox home; chat is behind the
- *  "Open in" launch menu. */
-export async function gotoAgentDetail(
+/** Selecting an agent lands in its chat. */
+export async function gotoAgentChat(
   page: Page,
   agentName: string,
   agentId: string,
 ): Promise<void> {
   await page.getByRole("heading", { name: agentName }).click();
-  await expect(page).toHaveURL(
-    new RegExp(`/sandboxes/${encodeURIComponent(agentId)}`),
-  );
-  await page.getByRole("button", { name: /open in/i }).click();
-  await page.getByRole("menuitem", { name: /chat \(browser\)/i }).click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
@@ -115,6 +123,45 @@ export async function setMockReplyWithFiles(
         },
       ],
       files,
+      stopReason: "end_turn",
+    },
+  });
+}
+
+/** Script a turn that takes `holdMs` to finish: the head chunk streams
+ *  immediately, the tail only after the delay. The delay sits *inside* the
+ *  turn, so the runtime keeps the prompt slot occupied for the whole time and
+ *  parks anything sent meanwhile — which is what makes the delivery-feedback
+ *  scenarios deterministic without a single fixed sleep in the spec. Pass no
+ *  `head` for a turn that emits nothing at all until the delay elapses (a
+ *  wedged agent: the prompt was handed over, then silence). */
+export async function setMockLongTurnReply(
+  api: ApiClient,
+  agentId: string,
+  parts: { head?: string; holdMs: number; tail: string },
+): Promise<void> {
+  await api.e2e.setScript.mutate({
+    agentId,
+    script: {
+      entries: [
+        ...(parts.head === undefined
+          ? []
+          : [
+              {
+                sessionUpdate: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: parts.head },
+                },
+              },
+            ]),
+        {
+          delayMs: parts.holdMs,
+          sessionUpdate: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: parts.tail },
+          },
+        },
+      ],
       stopReason: "end_turn",
     },
   });

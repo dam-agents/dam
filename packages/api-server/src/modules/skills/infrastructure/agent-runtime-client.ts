@@ -2,6 +2,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
+import type { PrDisposition } from "../domain/pr-state.js";
 
 export interface PublishSkillCall {
   name: string;
@@ -36,7 +37,10 @@ export interface UpstreamGatewayError {
 }
 
 export interface AgentRuntimeSkillsClient {
-  listLocal(agentId: string): Promise<LocalSkill[]>;
+  /** `hashNames` asks the pod to also stamp `contentHash` on those skills.
+   *  Hashing is real I/O on an NFS-backed PVC and this runs on every state
+   *  poll, so pass only the few that need it. */
+  listLocal(agentId: string, hashNames?: string[]): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
   writeLocal(
@@ -45,6 +49,19 @@ export interface AgentRuntimeSkillsClient {
   ): Promise<LocalSkill[]>;
   deleteLocal(agentId: string, name: string): Promise<void>;
   readLocal(agentId: string, name: string): Promise<SkillLocalFiles>;
+  /** Raw pull-request disposition, read through the pod so the paired gateway
+   *  can inject the owner's token — the only way a private source resolves. */
+  readPullRequest(
+    agentId: string,
+    coords: { owner: string; repo: string; number: number },
+  ): Promise<PrDisposition>;
+  /** One skill's `SKILL.md` at a pinned commit, read through the pod so the
+   *  paired gateway can inject the owner's token — the only way a private
+   *  source's content resolves. */
+  readSkillFile(
+    agentId: string,
+    input: { source: string; version: string; dir: string },
+  ): Promise<{ content: string }>;
 }
 
 export class AgentRuntimeUpstreamError extends Error {
@@ -175,10 +192,13 @@ export function createAgentRuntimeSkillsClient(
   namespace: string,
 ): AgentRuntimeSkillsClient {
   return {
-    listLocal: async (agentId) => {
+    listLocal: async (agentId, hashNames) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime listLocal ${agentId}`,
-        () => makeClient(agentId, namespace).skills.listLocal.query(),
+        () =>
+          makeClient(agentId, namespace).skills.listLocal.query(
+            hashNames && hashNames.length > 0 ? { hashNames } : undefined,
+          ),
       );
       return skills;
     },
@@ -213,6 +233,14 @@ export function createAgentRuntimeSkillsClient(
     readLocal: (agentId, name) =>
       runWithUpstreamMapping(`agent-runtime readLocal ${agentId}`, () =>
         makeClient(agentId, namespace).skills.readLocal.query({ name }),
+      ),
+    readPullRequest: (agentId, coords) =>
+      runWithUpstreamMapping(`agent-runtime readPullRequest ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.readPullRequest.query(coords),
+      ),
+    readSkillFile: (agentId, input) =>
+      runWithUpstreamMapping(`agent-runtime readSkillFile ${agentId}`, () =>
+        makeClient(agentId, namespace).skills.readSkillFile.query(input),
       ),
   };
 }

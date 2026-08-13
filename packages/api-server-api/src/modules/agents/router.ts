@@ -44,6 +44,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     grantedConnectionIds: agent.spec.grantedConnectionIds ?? [],
     state: agent.state,
     error: agent.error,
+    stopRequested: agent.stopRequested,
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
     size: {

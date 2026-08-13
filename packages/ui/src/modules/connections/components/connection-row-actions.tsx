@@ -109,6 +109,14 @@ export function ConnectionRowActions({
               {reauthLabel}
             </DropdownMenuItem>
           )}
+          {maintenance?.onEditScope && (
+            <DropdownMenuItem
+              onSelect={maintenance.onEditScope}
+              data-testid={`catalog-edit-scope-${connection.id}`}
+            >
+              Edit repositories &amp; permissions
+            </DropdownMenuItem>
+          )}
           {maintenance?.onUpdateCredential && (
             <DropdownMenuItem
               onSelect={maintenance.onUpdateCredential}

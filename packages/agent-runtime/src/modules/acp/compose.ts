@@ -8,7 +8,10 @@ import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
-import { createAcpRuntime, type AcpRuntime } from "./services/acp-runtime.js";
+import {
+  createAcpRuntime,
+  type AcpRuntime,
+} from "./services/acp-runtime/acp-runtime.js";
 import {
   createBackgroundWorkRegistry,
   type BackgroundWorkRegistry,

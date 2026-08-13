@@ -5,12 +5,12 @@ depends = ["experiment-sdk:check:*"]
 # unpinned linter changes its ruleset under CI whenever a release ships.
 ["experiment-sdk:check:lint"]
 dir = "{{config_root}}/packages/experiment-sdk"
-run = "uv run --group dev ruff check src tests"
+run = "uv run --frozen --group dev ruff check src tests"
 sources = ["src/**/*.py", "tests/**/*.py", "pyproject.toml", "uv.lock"]
 
 ["experiment-sdk:check:format"]
 dir = "{{config_root}}/packages/experiment-sdk"
-run = "uv run --group dev ruff format --check src tests"
+run = "uv run --frozen --group dev ruff format --check src tests"
 sources = ["src/**/*.py", "tests/**/*.py", "pyproject.toml", "uv.lock"]
 
 ["experiment-sdk:fix"]
@@ -18,9 +18,9 @@ depends = ["experiment-sdk:fix:*"]
 
 ["experiment-sdk:fix:format"]
 dir = "{{config_root}}/packages/experiment-sdk"
-run = "uv run --group dev ruff format src tests"
+run = "uv run --frozen --group dev ruff format src tests"
 
 ["experiment-sdk:test"]
 description = "Run the experiment SDK pytest suite against a stub platform endpoint"
 dir = "{{config_root}}/packages/experiment-sdk"
-run = "uv run --group dev pytest -q"
+run = "uv run --frozen --group dev pytest -q"

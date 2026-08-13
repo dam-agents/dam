@@ -18,7 +18,11 @@ import {
   JWKSTimeout,
   JWTExpired,
 } from "jose/errors";
-import { createAuth } from "../../apps/api-server/auth.js";
+import {
+  authenticatePrincipal,
+  createAuth,
+} from "../../apps/api-server/admission/auth.js";
+import { createAuthMiddleware } from "../../apps/api-server/admission/auth-middleware.js";
 import { configureLogger } from "../../core/logger.js";
 
 const verifyMock = jwtVerify as unknown as ReturnType<typeof vi.fn>;
@@ -51,6 +55,10 @@ const auth = createAuth({
   uiClientId: "platform-ui",
   cliClientId: "platform-cli",
 });
+const middleware = createAuthMiddleware(
+  (token, site) => authenticatePrincipal(auth.verify, token, site),
+  { uiClientId: "platform-ui", cliClientId: "platform-cli" },
+);
 
 const next = async () => "NEXT" as never;
 
@@ -60,7 +68,7 @@ describe("auth middleware audit", () => {
   it("logs authn.deny with reason=missing-bearer and no token when the header is absent", async () => {
     const cap = capture();
     const { c, responses } = fakeCtx({});
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(401);
     const rec = cap.records().find((r) => r.msg === "authn.deny")!;
     expect(rec.category).toBe("authn");
@@ -76,7 +84,7 @@ describe("auth middleware audit", () => {
     const { c, responses } = fakeCtx({
       authorization: "Bearer SECRET.JWT.VAL",
     });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(401);
     const rec = cap.records().find((r) => r.msg === "authn.deny")!;
     expect(rec.reason).toBe("JWTExpired");
@@ -95,7 +103,7 @@ describe("auth middleware audit", () => {
     const { c, responses } = fakeCtx({
       authorization: "Bearer SECRET.JWT.VAL",
     });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]).toEqual({
       body: { error: "auth unavailable" },
       status: 503,
@@ -118,7 +126,7 @@ describe("auth middleware audit", () => {
       new TypeError("non-ASCII string encountered in encode()"),
     );
     const { c, responses } = fakeCtx({ authorization: "Bearer x" });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(401);
     const rec = cap.records().find((r) => r.msg === "authn.deny")!;
     expect(rec.reason).toBe("TypeError");
@@ -131,7 +139,7 @@ describe("auth middleware audit", () => {
     const cap = capture();
     verifyMock.mockRejectedValueOnce(new JWKSTimeout());
     const { c, responses } = fakeCtx({ authorization: "Bearer x" });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(503);
     const rec = cap.records().find((r) => r.msg === "authn.unavailable")!;
     expect(rec.reason).toBe("jwks-unavailable");
@@ -143,7 +151,7 @@ describe("auth middleware audit", () => {
       new JOSEError("Expected 200 OK from the JSON Web Key Set HTTP response"),
     );
     const { c, responses } = fakeCtx({ authorization: "Bearer x" });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(503);
     expect(cap.records().some((r) => r.msg === "authn.unavailable")).toBe(true);
   });
@@ -154,7 +162,7 @@ describe("auth middleware audit", () => {
       new JWKSInvalid("JSON Web Key Set malformed"),
     );
     const { c, responses } = fakeCtx({ authorization: "Bearer x" });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(503);
     expect(cap.records().some((r) => r.msg === "authn.unavailable")).toBe(true);
   });
@@ -163,7 +171,7 @@ describe("auth middleware audit", () => {
     const cap = capture();
     verifyMock.mockRejectedValueOnce(new JWKSNoMatchingKey());
     const { c, responses } = fakeCtx({ authorization: "Bearer x" });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(401);
     const rec = cap.records().find((r) => r.msg === "authn.deny")!;
     expect(rec.reason).toBe("JWKSNoMatchingKey");
@@ -180,8 +188,12 @@ describe("auth middleware audit", () => {
       },
       { verifyApiKey: async () => ({ ok: false, error: "revoked" }) },
     );
+    const apiKeyMiddleware = createAuthMiddleware(
+      (token, site) => authenticatePrincipal(apiKeyAuth.verify, token, site),
+      { uiClientId: "platform-ui", cliClientId: "platform-cli" },
+    );
     const { c, responses } = fakeCtx({ authorization: "Bearer pk_x" });
-    await apiKeyAuth.middleware(c as any, next as any);
+    await apiKeyMiddleware(c as any, next as any);
     expect(responses[0]!.status).toBe(401);
     const rec = cap.records().find((r) => r.msg === "authn.deny")!;
     expect(rec.reason).toBe("revoked");
@@ -204,7 +216,7 @@ describe("auth middleware audit", () => {
       },
     });
     const { c, responses } = fakeCtx({ authorization: "Bearer x" });
-    await auth.middleware(c as any, next as any);
+    await middleware(c as any, next as any);
     expect(responses[0]!.status).toBe(403);
     const rec = cap.records().find((r) => r.msg === "authz.deny")!;
     expect(rec.category).toBe("authz");
@@ -223,7 +235,7 @@ describe("auth middleware audit", () => {
       },
     });
     const { c } = fakeCtx({ authorization: "Bearer x" });
-    const result = await auth.middleware(c as any, next as any);
+    const result = await middleware(c as any, next as any);
     expect(result).toBe("NEXT");
     expect(cap.records().some((r) => String(r.msg).endsWith(".deny"))).toBe(
       false,

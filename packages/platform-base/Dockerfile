@@ -34,9 +34,9 @@ RUN --mount=type=cache,target=/root/.cache/mise mise install node
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
 RUN --mount=type=cache,target=/root/.cache/mise mise install python
-# mise's CPython bundles pip 26.0.1 (CVE-2026-3219); self-upgrade until a
-# python release bundles pip >= 26.1.
-RUN mise exec python -- python -m pip install --upgrade pip==26.1
+# mise's CPython bundles pip 26.0.1 (CVE-2026-3219, CVE-2026-8643); self-upgrade
+# until a python release bundles pip >= 26.1.2.
+RUN mise exec python -- python -m pip install --upgrade pip==26.1.2
 # node 24.18.0's bundled npm 11.16.0 ships vulnerable undici 6.26.0
 # (CVE-2026-12151) and tar 7.5.15 (CVE-2026-53655); self-upgrade until a
 # node release bundles npm >= 11.17.0.
@@ -101,7 +101,18 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 
 USER root
 WORKDIR /app
+# MISE_PROVENANCE_API_FAILURES_FATAL: the lazy-tools shims (below) run `mise
+# install` on every jq/fd/rg/gh call. mise re-verifies each tool's GitHub
+# artifact attestation against api.github.com, and a long-lived agent doing
+# this thousands of times/hr exhausts the per-token rate limit — every call
+# then loops on 429s (observed on dev: one agent driving ~1k 429/hr). Keeping
+# provenance on but non-fatal makes a rate-limited/unreachable api.github.com
+# fall back to the locked checksums (which still guarantee integrity) instead
+# of failing. MISE_NODE_VERIFY=false is the same story for node. Needs mise
+# >=2026.5 (pinned v2026.6.3 above honors it). Ported from Locki.
 ENV MISE_DATA_DIR=/usr/local/share/mise \
+    MISE_PROVENANCE_API_FAILURES_FATAL=false \
+    MISE_NODE_VERIFY=false \
     PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/

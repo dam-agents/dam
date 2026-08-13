@@ -43,10 +43,21 @@ Consult it whenever you set up a run. This file is the
 
 At the **start of every new conversation**, before anything else, enumerate
 existing runs and offer to act on them. Scan `$SHINKA_OUTPUT_ROOT`
-(`~/shinka-runs`) for run directories (each has a `task/` and a `results/`
+(`~/work/shinka-runs`) for run directories (each has a `task/` and a `results/`
 dir) and classify each as:
 
-- **running** — its `run.pid` names a live process (`kill -0 "$(cat run.pid)"`).
+- **running** — its `run.pid` names a live process **that is actually the
+  run**:
+
+  ```sh
+  pid=$(cat run.pid) && kill -0 "$pid" 2>/dev/null \
+    && tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q shinka_run
+  ```
+
+  The cmdline check is not optional: a pod restart resets the PID namespace,
+  so a stale `run.pid` on persistent `$HOME` can name an unrelated live
+  process — bare `kill -0` would misclassify a dead run as running and
+  silently skip its resume.
 - **not running** — finished, stopped, or paused by a pod hibernation (below).
 
 Present the grouped list, then offer a status pull (tail `run.log`, count
@@ -77,7 +88,8 @@ estimate, but an informed user may pre-authorize it (see below).
    wrong thing.
 4. **You've presented a generation/cost estimate.** State the rough call count
    (≈ generations × models-per-generation, plus evaluations), that it runs
-   autonomously, and the keep-awake tradeoff (below). Then **wait for an
+   autonomously, and that the running work holds the pod awake (no
+   scale-to-zero) until it finishes. Then **wait for an
    explicit go-ahead — unless the user already pre-authorized this run** ("just
    launch it," "don't ask"): pre-authorization waives the *wait*, never the
    estimate — show the numbers, then launch. (Resuming an already-approved run
@@ -85,18 +97,37 @@ estimate, but an informed user may pre-authorize it (see below).
 
 ## Run discipline
 
-- **Launch backgrounded** so you stay conversational and can poll while it
-  runs. Keep the PID and log in the run directory:
+- **First run in this pod:** create the runs root lazily —
+  `mkdir -p "$SHINKA_OUTPUT_ROOT"`. It is deliberately never baked into the
+  image: a pre-seeded folder would make the work dir non-empty and block the
+  platform's repo seed (which clones into the work-dir root and refuses a
+  non-empty dir). If `~/work` is a seeded git repo, also append
+  `shinka-runs/` to `.git/info/exclude` (a local ignore — never touch
+  tracked files) so the checkout stays clean; the run's own target clone
+  lives inside the run directory, so outputs never touch it either way.
+- **Launch as a harness background task** (your backgrounded-Bash facility),
+  never a bare detached `nohup … &`. The platform's background-work contract
+  reports harness-registered tasks to the runtime: the pod is held awake for
+  as long as the run lives, and the finishing task wakes you for a follow-up
+  turn — **report the result to the user then** (best `combined_score`, the
+  objective metric, and where the winner lives in `results/`), don't wait to
+  be asked. A detached `nohup` process is invisible to that contract, so the
+  pod can hibernate mid-run. Still keep the PID and log in the run directory
+  for monitoring and crash recovery:
 
   ```sh
+  # run this script AS a backgrounded harness task (your Bash tool's
+  # run_in_background) — NEVER as a foreground command: the tool's timeout
+  # would SIGTERM the whole process group, run included, mid-flight
   dir="$SHINKA_OUTPUT_ROOT/<run-id>"
   cd "$dir"
-  nohup shinka_run --task-dir "$dir/task" --results_dir "$dir/results" \
+  shinka_run --task-dir "$dir/task" --results_dir "$dir/results" \
     --num_generations <N> \
     --set evo.llm_models='["local/<model>@<url>?api_key_env=OPENAI_API_KEY"]' \
     --set evo.embedding_model=null \
     > run.log 2>&1 &
-  echo $! > run.pid
+  pid=$!; echo "$pid" > run.pid
+  wait "$pid"
   ```
 
 - **Always pass an explicit `--results_dir`** on the **persisted** workspace
@@ -126,13 +157,17 @@ uv cache is on persistent `$HOME`, so reinstall after a restart — it's fast.
 
 ## Surviving hibernation (resume-on-wake)
 
-The pod **scales to zero when the session goes idle** — no active turn, no
-queued prompt, no open terminal/SSH session. That kills any background
-`shinka_run`. The results dir lives on persistent `$HOME`, so the run is
-recoverable but **does not progress while you're not engaged**.
+With the launch discipline above, a running evolution **holds the pod awake**
+(reported background work) and hibernation mid-run is the exception, not the
+rule. It can still happen — a pod restart or eviction, a crash, or a run
+launched the legacy detached way — and then the pod scales to zero once the
+session goes idle. The results dir lives on persistent `$HOME`, so the run is
+recoverable but **does not progress while the pod is down**.
 
 So at the **start of each turn**, check any run you care about: if its
-`run.pid` is dead and it hasn't reached its budget, reinstall the run's deps
+`run.pid` no longer names the live run (the same cmdline-validated check as the
+start-of-conversation scan — a recycled PID after a pod restart must not
+skip the resume) and it hasn't reached its budget, reinstall the run's deps
 (the venv reset) and relaunch the **identical** `shinka_run` command — same
 `--task-dir`, same `--results_dir`, same `--num_generations`. ShinkaEvolve
 detects the existing `results/programs.sqlite`, restores the population, and
@@ -141,12 +176,11 @@ is a **total**, not a per-invocation count, so never inflate it on resume. A
 run that's reached its budget is done; raising the budget is a new, re-gated
 decision, not a resume.
 
-**Keep-awake escape hatch:** for a long evolution that must progress
-continuously (e.g. overnight), tell the user to keep a **terminal or SSH
-session open** to this agent — that pins the pod awake, so a backgrounded run
-completes without hibernation gaps. Genuinely unattended overnight progress is
-a future capability; today a run advances only while you're engaged or a
-session is open.
+**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
+the background-work contract (launched detached, or the report was refused),
+an open **terminal or SSH session** pins the pod awake until it finishes —
+but the primary mechanism is launching as a reported harness task in the
+first place.
 
 ## Hard guardrails
 
@@ -188,9 +222,12 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
 
 ## Where things live
 
-- **Per-run directory** = `$SHINKA_OUTPUT_ROOT/<run-id>/` (`~/shinka-runs`, on
-  persistent `$HOME`). Holds `task/` (`initial.<ext>`, `evaluate.py`), the
-  `repo/` clone, `run.pid`, `run.log`, and `results/`.
+- **Per-run directory** = `$SHINKA_OUTPUT_ROOT/<run-id>/`
+  (`~/work/shinka-runs`, in the work dir — where the UI file browser and the
+  terminal land — on persistent `$HOME`; created lazily, see Run discipline).
+  Holds `task/` (`initial.<ext>`, `evaluate.py`), the `repo/` clone,
+  `run.pid`, `run.log`, and `results/`. Always give the user the full path
+  when reporting.
 - **ShinkaEvolve results** under `results/`: `programs.sqlite` (the population —
   candidates, scores, lineage; the source of truth for "best so far") and
   per-generation folders, each holding the candidate `main.<ext>` and its

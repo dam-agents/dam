@@ -81,6 +81,15 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      // Pure-API tRPC-WS connection auth — raw WebSocket against the real
+      // endpoint, mints its own JWT, no browser session (no storageState).
+      // Depends on auth only to gate on a healthy cluster.
+      name: "trpc-ws-auth",
+      testMatch: /13-.*\.spec\.ts$/,
+      dependencies: ["auth"],
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
       name: "slack",
       testMatch: /07-.*\.spec\.ts$/,
       dependencies: ["injection"],
@@ -168,6 +177,32 @@ export default defineConfig({
             // plus rebinding, minutes long — hence full-only.
             name: "slack-full",
             testMatch: /full\/slack-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+          {
+            // Gateway rollout recovery (#2817): waits out a wedge and a heal,
+            // and parks the controller cluster-wide — must never overlap.
+            name: "gateway-full",
+            testMatch: /full\/gateway-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+          {
+            // Cron firing (#435): waits up to a minute for a `* * * * *`
+            // schedule to fire on its own — hence full-only.
+            name: "schedules-full",
+            testMatch: /full\/schedule-.*\.spec\.ts$/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+          {
+            // Prompt delivery feedback (#829): most of the specs wait
+            // out the UI's 60s delivery deadline on purpose, so this is the
+            // slowest project in the suite (~5 minutes) and never belongs in
+            // the always-on smoke tier. Each spec drives the shared mock agent
+            // through the chat UI and restores its default script afterwards,
+            // so they are safe in any order but must not overlap — `workers:
+            // 1` above already guarantees that.
+            name: "prompt-delivery-full",
+            testMatch: /full\/prompt-delivery\/.*\.spec\.ts$/,
             use: { ...devices["Desktop Chrome"] },
           },
         ]

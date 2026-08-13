@@ -54,12 +54,18 @@ export function tokenRejectionOf(
 // No counterpart setter: the loop writes the marker as a server-side jsonb
 // merge, so a concurrent credential fix is never clobbered.
 
-/** Any successful token write clears the marker. */
+/** Any successful token write clears both failure records: the permanent
+ *  marker (which parks the connection) and the transient retry backoff. Every
+ *  caller spreads the existing `auth` rather than replacing it, so a backoff
+ *  left behind here would outlive the failure that set it and throttle a
+ *  healthy connection for good. */
 export function withoutRefreshFailureMarker<
-  T extends { refreshFailedAt?: number },
+  T extends { refreshFailedAt?: number; refreshBackoff?: unknown },
 >(auth: T): T {
-  if (auth.refreshFailedAt === undefined) return auth;
+  if (auth.refreshFailedAt === undefined && auth.refreshBackoff === undefined)
+    return auth;
   const next = { ...auth };
   delete next.refreshFailedAt;
+  delete next.refreshBackoff;
   return next;
 }

@@ -1,6 +1,8 @@
 import { Badge } from "@/components/ui/badge";
+import { CARD_SURFACE } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CUSTOM_IMAGE_DOCS_URL } from "@/constants";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import type { RegistryCredential } from "../registry-credential-section.js";
@@ -33,7 +35,8 @@ export function CustomImageCard({
   return (
     <div
       className={cn(
-        "rounded-lg border px-4 py-4",
+        CARD_SURFACE,
+        "px-4 py-4 transition-colors",
         selected ? "border-foreground" : "border-border",
       )}
     >
@@ -45,8 +48,7 @@ export function CustomImageCard({
         Bring your own ACP-compatible image{" "}
         <a
           href={CUSTOM_IMAGE_DOCS_URL}
-          target="_blank"
-          rel="noreferrer"
+          {...externalLinkProps}
           className="text-sm text-muted-foreground underline underline-offset-2 hover:text-primary"
         >
           Learn more

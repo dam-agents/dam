@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import type { Contribution, SecretRef } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { templateToView } from "../../modules/connections/domain/connection-template.js";
 import { connectionSecretAnnotations } from "../../modules/connections/domain/connection-sds.js";
 
 const { privateKey: PRIVATE_KEY_PEM } = crypto.generateKeyPairSync("rsa", {
@@ -26,6 +27,9 @@ function build(
     appId: string;
     installationId: string;
     privateKey: string;
+    repositories: string;
+    repositoryIds: string;
+    permissions: string;
   }> = {},
 ) {
   return buildConnection(
@@ -142,5 +146,66 @@ describe("github-app template build", () => {
     await expect(build(override)).rejects.toThrow(
       new RegExp(`missing ${field}`),
     );
+  });
+
+  // Storing the scope on the auth config is what makes it survive every
+  // re-mint; a scope that lived only on the create input would be gone by the
+  // first renewal.
+  it("stores the parsed scope on the auth config", async () => {
+    const built = await build({
+      repositories: "docs, handbook",
+      permissions: "contents:read metadata:read",
+    });
+    if (built.auth.kind !== "github-app") throw new Error("wrong kind");
+    expect(built.auth.repositories).toEqual(["docs", "handbook"]);
+    expect(built.auth.permissions).toEqual({
+      contents: "read",
+      metadata: "read",
+    });
+  });
+
+  it("leaves the scope off entirely when nothing is narrowed", async () => {
+    const built = await build();
+    if (built.auth.kind !== "github-app") throw new Error("wrong kind");
+    expect(built.auth).not.toHaveProperty("repositories");
+    expect(built.auth).not.toHaveProperty("permissions");
+  });
+
+  it("treats a blank scope as no narrowing", async () => {
+    const built = await build({ repositories: "  ", permissions: "" });
+    if (built.auth.kind !== "github-app") throw new Error("wrong kind");
+    expect(built.auth).not.toHaveProperty("repositories");
+    expect(built.auth).not.toHaveProperty("permissions");
+  });
+
+  it("fails the create on an unusable scope rather than storing it", async () => {
+    await expect(build({ repositories: "dam-agents/docs" })).rejects.toThrow(
+      /just the repository name/,
+    );
+    await expect(build({ permissions: "contents" })).rejects.toThrow(
+      /name:level/,
+    );
+  });
+
+  it("stores picked repository ids on the auth config", async () => {
+    const built = await build({ repositoryIds: "12 34" });
+    if (built.auth.kind !== "github-app") throw new Error("wrong kind");
+    expect(built.auth.repositoryIds).toEqual([12, 34]);
+    expect(built.auth).not.toHaveProperty("repositories");
+  });
+
+  it("offers the scope as optional form inputs", () => {
+    const view = templateToView(
+      template(),
+      "https://cb.example/oauth/callback",
+    );
+    const byName = new Map(view.inputs.map((i) => [i.name, i]));
+    expect(byName.get("repositories")?.state).toBe("optional");
+    expect(byName.get("permissions")?.state).toBe("optional");
+    // Optional means a user who ignores both fields still gets a working
+    // connection with the installation's full authority, as before.
+    expect(
+      view.inputs.filter((i) => i.state === "required").map((i) => i.name),
+    ).toEqual(["appId", "installationId", "privateKey"]);
   });
 });

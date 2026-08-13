@@ -15,9 +15,13 @@ drivers:
     impl: mcp-entry
     path: "$HOME/.bob/settings/mcp.json"
     keyPath: mcpServers
-    # Streamable-HTTP servers go under `httpUrl` (exact casing); `url` is SSE,
-    # which 400s against the platform's streamable MCP endpoint.
-    urlKey: httpUrl
+    # 2.0 keys remote servers off `url` + `transportType` (verified against what
+    # `bob mcp add -t http` writes). 1.x's `httpUrl` is not read at all — the
+    # entry then loads with an empty URL and never connects. `transportType` is
+    # required: absent it, 2.0 treats the server as SSE, which 400s against the
+    # platform's streamable MCP endpoint.
+    extraFields:
+      transportType: http
 
   skill-ref:
     impl: skill-install

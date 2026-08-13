@@ -2,6 +2,7 @@ import { t } from "../../trpc.js";
 import {
   harnessConfigApplyInputSchema,
   harnessConfigSettledSchema,
+  harnessConfigSnapshotResultSchema,
   harnessConfigStatusInputSchema,
   harnessConfigStatusSchema,
 } from "./schemas.js";
@@ -18,6 +19,13 @@ export const harnessConfigRouter = t.router({
     .input(harnessConfigStatusInputSchema)
     .output(harnessConfigSettledSchema)
     .query(({ ctx, input }) => ctx.harnessConfig.settled(input.agentId)),
+
+  // The last known values, served straight from Postgres — unlike the pod's
+  // `harnessConfig.current`, this answers while the agent is stopped.
+  snapshot: t.procedure
+    .input(harnessConfigStatusInputSchema)
+    .output(harnessConfigSnapshotResultSchema)
+    .query(({ ctx, input }) => ctx.harnessConfig.snapshot(input.agentId)),
 
   // `set` (not `apply`): `apply` is a tRPC-reserved router key.
   set: t.procedure

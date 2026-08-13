@@ -3,6 +3,7 @@ export type {
   AgentCleanupHook,
   PresetSeeder,
   ContributionsSettledPort,
+  RuntimeSettledPort,
 } from "./services/agents-service.js";
 export {
   createAgentsRepository,
@@ -12,7 +13,6 @@ export {
   createAgentEnvRepository,
   type AgentEnvRepository,
 } from "./infrastructure/agent-env-repository.js";
-export { backfillUserEnv } from "./services/backfill-user-env.js";
 export {
   createAgentRegistrySecretPort,
   type AgentRegistrySecretPort,

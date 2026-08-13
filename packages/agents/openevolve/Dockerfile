@@ -22,7 +22,7 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 
 RUN uv python install 3.11 &&\
     uv venv --python 3.11 "$OPENEVOLVE_VENV" &&\
-    uv pip install --python "$OPENEVOLVE_VENV/bin/python" "openevolve==${OPENEVOLVE_VERSION}" &&\
+    uv pip install --python "$OPENEVOLVE_VENV/bin/python" "openevolve==${OPENEVOLVE_VERSION}" "setuptools>=83.0.0" &&\
     chown -R 65532:0 /opt/openevolve-venv /opt/uv
 
 # Put the venv (and thus `openevolve-run`, `python`) ahead of the base tools.
@@ -32,12 +32,11 @@ ENV PATH="/opt/openevolve-venv/bin:${PATH}"
 # behavioral policy (pre-launch gate, resume-on-wake, guardrails) lives here.
 COPY AGENTS.md /etc/AGENTS.md
 
-# Run outputs (target clones + checkpoints) persist on $HOME. /app/working-dir is
-# ephemeral image content the agent init seeds into $HOME on first boot, so create
-# the dir under the seed and point the env at the persisted path.
-ENV OPENEVOLVE_OUTPUT_ROOT=/home/agent/openevolve-runs
-RUN mkdir -p /app/working-dir/openevolve-runs &&\
-    chown -R 65532:0 /app/working-dir/openevolve-runs
+# Runs live in the work dir (where the UI and terminal look), created lazily
+# by the agent at first run — NEVER pre-baked here: the first-boot seed would
+# make the work dir non-empty and the platform's repo seed (which clones into
+# the work-dir root and refuses a non-empty dir) would fail.
+ENV OPENEVOLVE_OUTPUT_ROOT=/home/agent/work/openevolve-runs
 
 COPY --chown=65532:0 workspace/ /app/working-dir/
 

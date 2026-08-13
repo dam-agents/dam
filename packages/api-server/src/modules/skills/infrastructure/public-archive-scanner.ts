@@ -6,7 +6,7 @@ import * as tar from "tar";
 import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
-import { detectHost } from "./git-host.js";
+import { detectHost } from "../domain/git-host.js";
 
 /**
  * Scan a public GitHub source directly — no Envoy sidecar, no git binary,
@@ -35,6 +35,7 @@ export class PublicArchiveNotFoundError extends Error {
 }
 
 const MAX_TARBALL_BYTES = 50 * 1024 * 1024; // 50 MB cap — catalog repos are ~100-500 KB typical.
+const MAX_SKILL_MD_BYTES = 1024 * 1024; // 1 MB — a SKILL.md is kilobytes; guards the pinned GET, which MAX_TARBALL_BYTES no longer covers.
 
 interface Frontmatter {
   name?: string;
@@ -102,6 +103,12 @@ async function walkFiles(root: string): Promise<string[]> {
  * under the dir in sorted-path order, mixing the relative path and body
  * bytes so both path-level and content-level changes flip the hash. No
  * external git data needed — purely a function of what's on disk.
+ *
+ * Algorithmically identical to agent-runtime's `hashSkillDir`
+ * (local-skill-repository.ts), and values from the two are compared directly —
+ * the merged-row de-dupe (#3019) relies on it. They are duplicate
+ * implementations on purpose: stored `agent_skills.contentHash` values were
+ * produced by them, so changing either mass-triggers phantom drift.
  */
 export async function computeContentHash(absDir: string): Promise<string> {
   const files = (await walkFiles(absDir)).sort();
@@ -231,6 +238,7 @@ export async function scanPublicGithubArchive(
           description: fm.description?.trim() || "",
           version,
           contentHash,
+          dir: rel,
         };
       }),
     );
@@ -248,55 +256,32 @@ export async function scanPublicGithubArchive(
 }
 
 /**
- * Read one skill's raw `SKILL.md` from a public GitHub repo. Mirrors the scan's
- * fetch + Source-Root resolution and name identity (frontmatter `name`, else
- * the directory basename), returning the matching skill's file text plus the
- * source-relative directory it lives in — or null if the source has no skill by
- * that name. Throws `PublicArchiveNotFoundError` on 404 so the caller can
- * distinguish a private repo.
+ * Read one skill's raw `SKILL.md` at a pinned commit, given the repo-relative
+ * directory the scan already reported. One small GET against
+ * `raw.githubusercontent.com` — no tarball, no extraction. Throws
+ * `PublicArchiveNotFoundError` on 404 so the caller can't mistake a private
+ * repo for a missing skill.
  */
-export async function readPublicGithubSkill(
+export async function readPublicGithubSkillFile(
   gitUrl: string,
-  subPath: string | undefined,
-  name: string,
-): Promise<{ content: string; dir: string } | null> {
+  version: string,
+  dir: string,
+): Promise<string> {
   const host = detectHost(gitUrl);
   if (!host)
-    throw new Error(`only GitHub URLs supported for public scan: ${gitUrl}`);
+    throw new Error(`only GitHub URLs supported for public read: ${gitUrl}`);
+  // `dir` is scan-derived today; guard anyway so a stray `..`/absolute segment
+  // can never walk the pinned path out of this repo's tree.
+  if (subPathEscapes(dir)) throw new Error(`skill dir rejected: ${dir}`);
 
-  const archiveUrl = `https://github.com/${host.owner}/${host.repo}/archive/HEAD.tar.gz`;
-  const res = await fetch(archiveUrl, { redirect: "follow" });
+  const rawUrl = `https://raw.githubusercontent.com/${host.owner}/${host.repo}/${version}/${dir}/SKILL.md`;
+  const res = await fetch(rawUrl);
   if (res.status === 404) throw new PublicArchiveNotFoundError(gitUrl);
-  if (!res.ok) throw new Error(`github archive ${res.status} for ${gitUrl}`);
+  if (!res.ok) throw new Error(`github raw ${res.status} for ${gitUrl}`);
 
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "platform-public-read-"));
-  try {
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength > MAX_TARBALL_BYTES) {
-      throw new Error(`tarball too large: ${buf.byteLength} bytes`);
-    }
-    const tgz = path.join(tmp, "src.tgz");
-    await fs.writeFile(tgz, buf);
-    await tar.x({ file: tgz, cwd: tmp });
-    await fs.rm(tgz);
-
-    const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
-      (e) => e.isDirectory(),
-    );
-    if (extracted.length === 0) return null;
-    const repoDir = path.join(tmp, extracted[0].name);
-
-    for (const rel of await findSkillDirs(repoDir, subPath)) {
-      const content = await fs.readFile(
-        path.join(repoDir, rel, "SKILL.md"),
-        "utf8",
-      );
-      const skillName =
-        parseFrontmatter(content).name?.trim() || path.basename(rel);
-      if (skillName === name) return { content, dir: rel };
-    }
-    return null;
-  } finally {
-    await fs.rm(tmp, { recursive: true, force: true });
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength > MAX_SKILL_MD_BYTES) {
+    throw new Error(`SKILL.md too large: ${buf.byteLength} bytes`);
   }
+  return buf.toString("utf8");
 }

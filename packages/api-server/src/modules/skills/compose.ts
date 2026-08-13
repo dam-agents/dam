@@ -1,91 +1,95 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
-import type { Skill, SkillsService } from "api-server-api";
-import { createAgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import type { SkillsService } from "api-server-api";
+import type { RuntimeSettledPort } from "../agents/index.js";
+import {
+  createAgentsRepository,
+  type AgentsRepository,
+} from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
+import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
+import { createGithubCredentialPort } from "./infrastructure/github-credential-port.js";
 import {
-  readPublicGithubSkill,
+  readPublicGithubSkillFile,
   scanPublicGithubArchive,
 } from "./infrastructure/public-archive-scanner.js";
+import { createScanCache } from "./infrastructure/scan-cache.js";
 import { createSkillsRepository } from "./infrastructure/skills-repository.js";
+import { createSkillSetsRepository } from "./infrastructure/skill-sets-repository.js";
 import { createAgentSkillsRepository } from "./infrastructure/agent-skills-repository.js";
+import { createPodPrStateReader } from "./infrastructure/pod-pr-state-reader.js";
+import { createGitHubPrStateReader } from "./infrastructure/pr-state-reader.js";
 import type { SkillSourceSeed } from "./infrastructure/seed-sources.js";
 import { createSkillsService } from "./services/skills-service.js";
+import {
+  createPrStateResolver,
+  type PrStateResolver,
+} from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-interface CacheEntry {
-  skills: Skill[];
-  expiresAt: number;
-}
+/** The service is re-composed per request (context-scoped), so the cache must
+ *  outlive it at module scope to ever hit. */
+const sharedScanCache = createScanCache();
 
 /**
- * Cache shared across all users, keyed by `(gitUrl, path)` — the same repo
- * pointed at different subdirs yields different skills, but the result is
- * independent of who's asking. The service is re-composed per request
- * (context-scoped), so the cache must live at module scope to persist.
+ * The pull-request state resolver, composed for background use. Separate from
+ * {@link composeSkillsModule} because it is owner-agnostic: the skills service
+ * is re-composed per request around one user, while the resolver sweeps every
+ * agent's publish records.
  */
-const sharedScanCache = new Map<string, CacheEntry>();
-
-function cacheKey(gitUrl: string, path: string | undefined): string {
-  // NUL separator can't appear in a URL or a validated path, so the key is
-  // collision-proof across (gitUrl, path) pairs.
-  return `${gitUrl}\0${path ?? ""}`;
+export function composePrStateResolver(deps: {
+  db: Db;
+  agents: AgentsRepository;
+  namespace: string;
+  log: (msg: string) => void;
+}): PrStateResolver {
+  return createPrStateResolver({
+    agentSkills: createAgentSkillsRepository(deps.db),
+    reader: createGitHubPrStateReader(),
+    podReader: createPodPrStateReader({
+      agents: deps.agents,
+      runtimeClient: createAgentRuntimeSkillsClient(deps.namespace),
+      log: deps.log,
+    }),
+    log: deps.log,
+  });
 }
 
-async function scanWithCache(
-  gitUrl: string,
-  path: string | undefined,
-  scanner: (gitUrl: string) => Promise<Skill[]>,
-): Promise<Skill[]> {
-  const key = cacheKey(gitUrl, path);
-  const hit = sharedScanCache.get(key);
-  if (hit && hit.expiresAt > Date.now()) {
-    process.stderr.write(`[skills] cache hit: ${key}\n`);
-    return hit.skills;
-  }
-  process.stderr.write(`[skills] cache miss: ${key}\n`);
-  const skills = await scanner(gitUrl);
-  sharedScanCache.set(key, { skills, expiresAt: Date.now() + CACHE_TTL_MS });
-  return skills;
-}
-
-/** Drop the cached listing for a `(gitUrl, path)` so the next scan hits
- *  upstream. Called on successful publish + manual refresh. */
-function invalidateScanCache(gitUrl: string, path: string | undefined): void {
-  const key = cacheKey(gitUrl, path);
-  if (sharedScanCache.delete(key)) {
-    process.stderr.write(`[skills] cache invalidated: ${key}\n`);
-  }
-}
-
-export function composeSkillsModule(
-  api: k8s.CoreV1Api,
-  namespace: string,
-  owner: string,
-  db: Db,
-  seedSources: SkillSourceSeed[],
-  brandName: string,
-  runtimeMutator: RuntimeMutator,
-  templatesRepo: TemplatesRepository,
-): SkillsService {
-  const k8s = createK8sClient(api, namespace);
+export function composeSkillsModule(deps: {
+  api: k8s.CoreV1Api;
+  namespace: string;
+  owner: string;
+  db: Db;
+  seedSources: SkillSourceSeed[];
+  brandName: string;
+  runtimeMutator: RuntimeMutator;
+  templatesRepo: TemplatesRepository;
+  /** Whether the pod has applied everything the outbox holds — gates the
+   *  `state` reconcile, which would otherwise reap rows mid-apply. */
+  runtimeSettled: RuntimeSettledPort;
+}): SkillsService {
+  const { db, namespace, seedSources } = deps;
+  const k8sClient = createK8sClient(deps.api, namespace);
   return createSkillsService({
     repo: createSkillsRepository(db, seedSources),
+    skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8s),
-    templatesRepo,
+    agentsRepo: createAgentsRepository(k8sClient),
+    templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
-    runtimeMutator,
-    owner,
-    scanSource: scanWithCache,
-    invalidateScan: invalidateScanCache,
+    githubCredential: createGithubCredentialPort(
+      createConnectionsRepository(db),
+    ),
+    runtimeMutator: deps.runtimeMutator,
+    runtimeSettled: deps.runtimeSettled,
+    owner: deps.owner,
+    scanSource: sharedScanCache.scan,
+    invalidateScan: sharedScanCache.invalidate,
     scanPublic: scanPublicGithubArchive,
-    readPublicSkill: readPublicGithubSkill,
-    brandName,
+    readPublicSkillFile: readPublicGithubSkillFile,
+    brandName: deps.brandName,
   });
 }

@@ -12,7 +12,13 @@ After=cloud-init.service cloud-init-network.service platform-ca.service platform
 Requires=platform-boot-gate.service
 
 [Service]
-User=agent
+# root, not the agent user: the workspace is unprivileged virtiofs
+# (virtiofsd runs as the launcher pod's qemu uid with all caps dropped —
+# the OpenShift Virtualization default), which EPERMs every create from
+# any other guest uid. Root creates are accepted (ownership squashes to
+# the daemon's uid). Isolation is the VM boundary itself, same stance as
+# docker/k3s already running as root in this guest.
+User=root
 WorkingDirectory=/app
 EnvironmentFile=/etc/platform/env
 Environment=PORT=8080
@@ -21,6 +27,18 @@ Environment=PATH=/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/b
 Environment=SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 Environment=REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# Parity with the container image's Dockerfile ENV (bootc copies files, not
+# image env) — see packages/agents/claude-code/Dockerfile and
+# packages/platform-base/Dockerfile.
+Environment=DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 DISABLE_FEEDBACK_COMMAND=1 DISABLE_FEEDBACK_SURVEY=1 DISABLE_AUTOUPDATER=1
+Environment=PYTHONPATH=/usr/local/lib/platform-python
+# The runtime (and thus the harness) runs as root here; Claude Code refuses
+# --dangerously-skip-permissions under root unless IS_SANDBOX=1 attests the
+# environment is a sandbox — which this VM is.
+Environment=IS_SANDBOX=1
+# Point agent-browser at dnf's chromium instead of downloading its own
+# Chrome-for-Testing at runtime.
+Environment=AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # agent-entrypoint: CA trust is root-owned here (platform-ca.service) so its
 # own attempt just warns; the ~/.cache→/tmp symlink and mise-pin heal still
 # apply, then it execs the runtime.

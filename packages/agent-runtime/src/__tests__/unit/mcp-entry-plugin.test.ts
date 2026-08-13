@@ -49,13 +49,46 @@ describe("mcp-entry plugin", () => {
     });
   });
 
-  it("keys the URL under `urlKey` when set (Bob's httpUrl dialect)", async () => {
+  it("keys the URL under `urlKey` when set (Bob 1.x's httpUrl dialect)", async () => {
     await bind({ urlKey: "httpUrl" })(
       [entry("outbound", "http://hs/mcp")],
       ctx,
     );
     expect(readConfig(".bob/settings/mcp.json").mcpServers).toEqual({
       outbound: { httpUrl: "http://hs/mcp" },
+    });
+  });
+
+  it("merges `extraFields` into every entry (Bob 2.0's transportType)", async () => {
+    await bind({ extraFields: { transportType: "http" } })(
+      [entry("outbound", "http://hs/mcp")],
+      ctx,
+    );
+    expect(readConfig(".bob/settings/mcp.json").mcpServers).toEqual({
+      outbound: {
+        type: "http",
+        url: "http://hs/mcp",
+        transportType: "http",
+      },
+    });
+  });
+
+  it("rejects an `extraFields` key the driver builds itself", () => {
+    expect(() => bind({ extraFields: { url: "" } })).toThrow(/cannot be set/);
+    expect(() =>
+      bind({ urlKey: "httpUrl", extraFields: { httpUrl: "x" } }),
+    ).toThrow(/cannot be set/);
+  });
+
+  it("reserves only what the active branch builds", async () => {
+    // A urlKey dialect never emits `type`/`url`, so setting them is additive.
+    await bind({ urlKey: "httpUrl", extraFields: { type: "sse" } })(
+      [entry("outbound", "http://hs/mcp")],
+      ctx,
+    );
+    expect(readConfig(".bob/settings/mcp.json").mcpServers.outbound).toEqual({
+      httpUrl: "http://hs/mcp",
+      type: "sse",
     });
   });
 

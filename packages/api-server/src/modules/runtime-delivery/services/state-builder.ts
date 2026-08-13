@@ -1,4 +1,5 @@
 import {
+  asc,
   eq,
   type Db,
   agentEnv,
@@ -78,7 +79,8 @@ async function readUserEnvContributions(
   const rows = await db
     .select({ name: agentEnv.name, value: agentEnv.value })
     .from(agentEnv)
-    .where(eq(agentEnv.agentId, agentId));
+    .where(eq(agentEnv.agentId, agentId))
+    .orderBy(asc(agentEnv.name));
   return rows.map(
     (r): Contribution => ({
       kind: "env",
@@ -92,6 +94,8 @@ async function readGrantedContributions(
   db: Db,
   agentId: string,
 ): Promise<Contribution[]> {
+  // Ordered oldest-first: downstream is order-sensitive and unordered rows
+  // shift on any connection update, reading as a spurious state change (#3143).
   const rows = (await db
     .select({
       contributions: connectionsTable.contributions,
@@ -101,7 +105,8 @@ async function readGrantedContributions(
       connectionsTable,
       eq(connectionGrants.connectionId, connectionsTable.id),
     )
-    .where(eq(connectionGrants.agentId, agentId))) as {
+    .where(eq(connectionGrants.agentId, agentId))
+    .orderBy(asc(connectionsTable.createdAt), asc(connectionsTable.id))) as {
     contributions: unknown;
   }[];
 
@@ -128,7 +133,8 @@ async function readSkillRefContributions(
       path: agentSkills.path,
     })
     .from(agentSkills)
-    .where(eq(agentSkills.agentId, agentId));
+    .where(eq(agentSkills.agentId, agentId))
+    .orderBy(asc(agentSkills.source), asc(agentSkills.name));
   return rows.map(
     (r): Contribution => ({
       kind: "skill-ref",

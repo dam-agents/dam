@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import type { ConnectionsService } from "api-server-api";
+import { createXactLock } from "../../core/xact-lock.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import {
   createOAuthEngine,
@@ -130,5 +131,8 @@ export function composeConnectionsForOwner(opts: {
     githubAppEngine: opts.githubAppEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
+    // Serializes a scope edit against the refresh loop's re-mint of the same
+    // connection, which writes the same token and the same row.
+    connectionLock: createXactLock(opts.db),
   });
 }

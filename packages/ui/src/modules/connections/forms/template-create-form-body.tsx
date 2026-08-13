@@ -14,6 +14,7 @@ import {
   type TemplateFormValues,
 } from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
+import { GithubAppScopePicker } from "./github-app-scope-picker.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
@@ -49,7 +50,7 @@ export function TemplateCreateFormBody({
   layout?: (fields: ReactNode, footer: ReactNode) => ReactNode;
 }) {
   const schema = useMemo(() => buildTemplateFormSchema(template), [template]);
-  const { control, handleSubmit } = useForm<TemplateFormValues>({
+  const { control, handleSubmit, setValue } = useForm<TemplateFormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: templateFormDefaults(template),
@@ -92,9 +93,25 @@ export function TemplateCreateFormBody({
     void submit(payload);
   });
 
+  // A GitHub App connection narrows through the installation picker, which
+  // owns these inputs: it renders them as a selection once the installation has
+  // been read, and as plain text fields until then.
+  const isGithubApp = template.authKind === "github-app";
+  const scopeInputNames = new Set(
+    isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
+  );
+
   const required = template.inputs.filter((i) => i.state === "required");
-  const optional = template.inputs.filter((i) => i.state === "optional");
+  const optional = template.inputs.filter(
+    (i) => i.state === "optional" && !scopeInputNames.has(i.name),
+  );
   const overridable = template.inputs.filter((i) => i.state === "overridable");
+
+  // `repositoryIds` is picker-only — it holds GitHub's numeric ids, which
+  // nobody types by hand; names stay the typeable spelling.
+  const scopeFallbackInputs = template.inputs.filter(
+    (i) => i.name === "repositories" || i.name === "permissions",
+  );
   // MCP forms tuck their optional OAuth/header fields away (DAM-31); other
   // templates show them inline.
   const optionalCollapsed = template.category === "mcp";
@@ -160,6 +177,20 @@ export function TemplateCreateFormBody({
         </DisclosureBox>
       )}
 
+      {isGithubApp && (
+        <GithubAppScopePicker
+          control={control}
+          templateId={template.id}
+          setField={(name, value) =>
+            setValue(`fields.${name}`, value, { shouldDirty: true })
+          }
+          fallbackInputs={scopeFallbackInputs}
+          hostRequired={
+            template.inputs.find((i) => i.name === "host")?.state === "required"
+          }
+        />
+      )}
+
       {overridable.length > 0 && (
         <OverridableSection
           inputs={overridable}
@@ -187,7 +218,7 @@ export function TemplateCreateFormBody({
       <Button
         onClick={awaitingPopup ? refocusPopup : onSubmit}
         disabled={pending && !awaitingPopup}
-        title={
+        tooltip={
           awaitingPopup
             ? "Bring the authorization window back to the front"
             : undefined

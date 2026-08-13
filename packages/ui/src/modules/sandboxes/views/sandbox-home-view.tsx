@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
+import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
@@ -45,7 +46,6 @@ export function SandboxHomeView() {
         <span
           role="alert"
           className="mr-auto inline-flex items-center gap-1.5 text-xs text-warning"
-          title="A wildcard host '*' rule is in scope. Any unmatched egress is allowed."
         >
           <span aria-hidden="true">⚠</span>
           Allow everything is on — narrow with deny rules or remove the
@@ -60,7 +60,9 @@ export function SandboxHomeView() {
 
   return (
     <SandboxTwoColumnShell
-      footer={f.dirty ? footer : undefined}
+      // Setup is the only section that commits on Submit; other sections keep
+      // the bar only while edits are pending, so leaving can't strand them.
+      footer={section === "setup" || f.dirty ? footer : undefined}
       nav={
         <SandboxSectionNav
           active={section}
@@ -80,6 +82,8 @@ export function SandboxHomeView() {
         <SandboxSchedulesSection agentId={agent.id} />
       ) : section === "artifacts" ? (
         <SandboxArtifactsSection agentId={agent.id} />
+      ) : section === "usage" ? (
+        <SandboxUsageSection agentId={agent.id} />
       ) : (
         <ConnectionsSection
           agentId={agent.id}

@@ -11,7 +11,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { DisclosureChevron } from "@/components/ui/disclosure";
+import { DisclosureToggle } from "@/components/ui/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
@@ -74,45 +75,40 @@ export function FolderGroup({
         nested ? "border-t border-border/60" : "anim-in",
       )}
     >
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setCollapsed((c) => !c)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") setCollapsed((c) => !c);
-        }}
-        className="group flex cursor-pointer select-none items-center gap-2.5 px-3.5 py-2.5 transition-colors hover:bg-muted/60"
-      >
-        <DisclosureChevron
+      <div className="group flex select-none items-center pr-3.5 transition-colors hover:bg-muted/60">
+        <DisclosureToggle
           open={!collapsed}
-          className="text-muted-foreground"
-        />
-        {folder && (
-          <Folder size={16} className="shrink-0 text-muted-foreground" />
-        )}
-        <span
-          className={cn(
-            "text-sm font-semibold",
-            folder ? "text-foreground" : "text-muted-foreground",
-          )}
+          onToggle={() => setCollapsed((c) => !c)}
+          chevronClassName="text-muted-foreground"
+          className="min-w-0 flex-1 cursor-pointer gap-2.5 py-2.5 pl-3.5"
         >
-          {displayName ?? folder?.name ?? "Ungrouped"}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
-        </span>
-        {folder && sharedCount > 0 && (
-          <Badge variant="success">{sharedCount} shared</Badge>
-        )}
-        {folder && (
-          <div
-            className="ml-auto opacity-0 transition-opacity group-hover:opacity-100"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
+          {folder && (
+            <Folder size={16} className="shrink-0 text-muted-foreground" />
+          )}
+          <span
+            className={cn(
+              "text-sm font-semibold",
+              folder ? "text-foreground" : "text-muted-foreground",
+            )}
           >
+            {displayName ?? folder?.name ?? "Ungrouped"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
+          </span>
+          {folder && sharedCount > 0 && (
+            <Badge variant="success">{sharedCount} shared</Badge>
+          )}
+        </DisclosureToggle>
+        {folder && (
+          <div className={cn("ml-auto", HOVER_ACTION)}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" title="Folder actions">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Folder actions"
+                >
                   <OverflowMenuVertical size={16} />
                 </Button>
               </DropdownMenuTrigger>

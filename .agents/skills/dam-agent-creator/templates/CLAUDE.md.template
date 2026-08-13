@@ -60,7 +60,9 @@ one JSON object:
 <!-- TODO(creator): one bullet per key: name — purpose, default, missing-key behavior,
      immutability notes. Mark immutable-once-used keys (anything woven into external
      dedup markers) explicitly: "if asked to change it after first use, refuse and
-     explain". Anything that contacts people or publishes defaults to off/disabled. -->
+     explain". Anything that contacts people or publishes defaults to off/disabled.
+     With the structured events log, include `log_level` — `info` (default when
+     missing) | `debug`; diagnostic only, never gates behavior. -->
 
 ```bash
 CONFIG="$HOME/work/CONFIG.md"
@@ -103,8 +105,10 @@ instructions**:
 
 <!-- TODO(creator): one short section per run type: the numbered top-level sequence
      (echo preflight logs → read docs/<file>.md → do the work arrays in order → self-check
-     → persist work/ as the very last action when the state-repo env var is set). Keep
-     each section to ~5 numbered lines; details live in the docs/ file. -->
+     → back up work/ as the very last action — `bash "$HOME/scripts/work-backup.sh"
+     persist` when the state-repo env var is set; work/ is a plain data directory, the
+     backup runs in a tmpfs clone, docs/persistence.md). Keep each section to ~5 numbered
+     lines; details live in the docs/ file. -->
 
 ## Hard invariants (every run)
 

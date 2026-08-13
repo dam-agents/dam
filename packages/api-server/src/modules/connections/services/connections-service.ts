@@ -22,8 +22,10 @@ import {
 } from "../domain/connection-template.js";
 import {
   buildConnection,
+  gitHubAppApiBase,
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
+import { parseGitHubAppScope } from "../domain/github-app-scope.js";
 import {
   tokenRejectionOf,
   withoutRefreshFailureMarker,
@@ -40,7 +42,8 @@ import type { GitHubAppEngine } from "../infrastructure/github-app-engine.js";
 import type { ContributionFanOut } from "./contribution-fanout.js";
 import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
-import { mintGitHubAppToken } from "./github-app.js";
+import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
+import type { XactLock } from "../../../core/xact-lock.js";
 import { refreshOAuthAccessToken } from "./oauth-token.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -57,6 +60,9 @@ export function createConnectionsService(deps: {
   githubAppEngine: GitHubAppEngine;
   oauthCallbackUrl: string;
   brandName: string;
+  /** Serializes a connection's mint → token write → auth write against the
+   *  refresh loop doing the same for the same connection. */
+  connectionLock: XactLock;
 }): ConnectionsService {
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
@@ -88,6 +94,9 @@ export function createConnectionsService(deps: {
                     conn.auth.connectedAt * 1000,
                   ).toISOString(),
                 }
+              : {}),
+            ...(conn.auth.kind === "github-app"
+              ? githubAppScopeView(conn.auth)
               : {}),
           }
         : {};
@@ -274,6 +283,36 @@ export function createConnectionsService(deps: {
   // own rejection is the most useful thing to show, so it rides the BAD_REQUEST.
   // Only the OAuth error code, though — a token-endpoint message embeds the
   // provider's raw body, which could echo credential material.
+  /** Loads a connection the caller owns and narrows it to the github-app
+   *  shape, so the scope endpoints share one ownership and kind check. */
+  async function requireGitHubAppConnection(id: string): Promise<{
+    conn: Connection;
+    auth: Extract<Connection["auth"], { kind: "github-app" }>;
+  }> {
+    const conn = await deps.repo.get(id, deps.ownerId);
+    if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+    if (conn.auth.kind !== "github-app") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "This connection is not a GitHub App installation.",
+      });
+    }
+    return { conn, auth: conn.auth };
+  }
+
+  async function readPrivateKey(
+    auth: Extract<Connection["auth"], { kind: "github-app" }>,
+  ): Promise<string> {
+    const pem = await deps.secretStore.getField(auth.privateKeyRef);
+    if (!pem) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "This connection's private key is missing.",
+      });
+    }
+    return pem;
+  }
+
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
@@ -681,7 +720,137 @@ export function createConnectionsService(deps: {
     probeClusterCa(input) {
       return probeClusterCa(input.host);
     },
+
+    async probeGitHubAppInstallation(input) {
+      const template = deps.templates.get(input.templateId);
+      if (!template || template.authKind !== "github-app") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This template does not use a GitHub App installation.",
+        });
+      }
+      // Inside the wrapper: a missing host and an unusable key are both the
+      // caller's to fix, so they read as bad input rather than as a server
+      // fault carrying an internal message.
+      return rejectIfInvalid(async () => {
+        const { apiBaseUrl } = gitHubAppApiBase(template, input.host);
+        // Same normalization the create path applies, so a key that probes
+        // successfully is one that will also store successfully.
+        const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
+        return deps.githubAppEngine.readInstallation({
+          id: `template:${template.id}`,
+          appId: input.appId,
+          installationId: input.installationId,
+          privateKeyPem,
+          apiBaseUrl,
+        });
+      });
+    },
+
+    async probeGitHubAppInstallationForConnection(input) {
+      const { conn, auth } = await requireGitHubAppConnection(
+        input.connectionId,
+      );
+      const privateKeyPem = await readPrivateKey(auth);
+      return rejectIfInvalid(() =>
+        deps.githubAppEngine.readInstallation({
+          id: `connection:${conn.id}:${conn.templateId}`,
+          appId: auth.appId,
+          installationId: auth.installationId,
+          privateKeyPem,
+          apiBaseUrl: auth.apiBaseUrl,
+        }),
+      );
+    },
+
+    async updateGitHubAppScope(input) {
+      const { conn, auth } = await requireGitHubAppConnection(input.id);
+      const privateKeyPem = await readPrivateKey(auth);
+
+      // Rebuilt rather than merged: the caller states the whole scope, so an
+      // omitted half clears rather than silently keeping the old narrowing.
+      // Rebuilding also drops any refresh-failure marker, which is what we
+      // want — the mint below proves the credential works, and that is exactly
+      // what un-parks a connection everywhere else.
+      const scope = parseGitHubAppScope(input);
+      const nextAuth: Connection["auth"] = {
+        kind: "github-app",
+        appId: auth.appId,
+        installationId: auth.installationId,
+        privateKeyRef: auth.privateKeyRef,
+        accessTokenRef: auth.accessTokenRef,
+        apiBaseUrl: auth.apiBaseUrl,
+        ...(auth.connectedAt ? { connectedAt: auth.connectedAt } : {}),
+        ...(auth.host ? { host: auth.host } : {}),
+        ...(scope.repositories ? { repositories: scope.repositories } : {}),
+        ...(scope.repositoryIds ? { repositoryIds: scope.repositoryIds } : {}),
+        ...(scope.permissions ? { permissions: scope.permissions } : {}),
+      };
+
+      // Mint, token write, and auth write are one critical section against the
+      // refresh loop, which runs the same sequence for the same connection. The
+      // token lives in a store no database transaction can bind, so ordering
+      // the two by hand is what keeps the stored scope and the live token
+      // describing the same authority.
+      await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
+        // Proven before it is stored, exactly as create does: a subset the
+        // installation does not cover fails the edit instead of parking the
+        // connection at its next renewal.
+        const token = await rejectIfInvalid(() =>
+          mintGitHubAppToken(deps.githubAppEngine, {
+            connectionRef: `connection:${conn.id}:${conn.templateId}`,
+            auth: nextAuth as Extract<
+              Connection["auth"],
+              { kind: "github-app" }
+            >,
+            privateKeyPem,
+          }),
+        );
+
+        // The new token replaces the live one, so the narrowing takes effect
+        // now rather than at the next renewal. Contributions are unchanged —
+        // same hosts, same injections — so no Agent spec moves, no pod rolls.
+        await deps.secretStore.putFields(auth.accessTokenRef, {
+          access_token: token.accessToken,
+          ...buildConnectionSdsFields(conn.contributions, token.accessToken),
+        });
+        await deps.repo.updateAuth(conn.id, {
+          ...nextAuth,
+          expiresAt: token.expiresAt,
+        });
+        return token;
+      });
+
+      securityLog("info", "connection.scope_update", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          repositories: scope.repositories?.length ?? 0,
+          repositoryIds: scope.repositoryIds?.length ?? 0,
+          permissions: Object.keys(scope.permissions ?? {}).length,
+        },
+      });
+    },
   };
+}
+
+/** The narrowing a github-app connection mints against, for display and for
+ *  pre-filling its editor. Omitted entirely when nothing is narrowed, so the
+ *  view says "full installation authority" by absence, exactly as the stored
+ *  auth does. */
+function githubAppScopeView(
+  auth: Extract<Connection["auth"], { kind: "github-app" }>,
+): { githubAppScope?: NonNullable<ConnectionView["githubAppScope"]> } {
+  const scope = {
+    ...(auth.repositories ? { repositories: auth.repositories } : {}),
+    ...(auth.repositoryIds ? { repositoryIds: auth.repositoryIds } : {}),
+    ...(auth.permissions ? { permissions: auth.permissions } : {}),
+  };
+  return Object.keys(scope).length > 0 ? { githubAppScope: scope } : {};
 }
 
 // Metadata only: a provider's raw body could echo credential material.

@@ -31,9 +31,21 @@ fi
 # target is (re)created each boot to keep the link from dangling.
 home="${HOME:-/home/agent}"
 mkdir -p /tmp/agent-cache
+# On the VM backend $HOME is unprivileged virtiofs, where a non-root caller
+# cannot create symlinks (virtiofsd lacks CAP_CHOWN, the guest kernel returns
+# EPERM); the VM userdata pre-creates the link as root, and if that ever
+# misses, a real ~/.cache on the share is a perf wart — never a boot failure.
 if [ ! -L "$home/.cache" ]; then
-	rm -rf "$home/.cache"
-	ln -sfn /tmp/agent-cache "$home/.cache"
+	# Probe with a scratch link first so a failing swap (e.g. non-root on
+	# unprivileged virtiofs, which EPERMs symlink creation) leaves any
+	# existing cache directory intact instead of deleting it with no
+	# replacement.
+	if ln -sfn /tmp/agent-cache "$home/.cache.tmp" 2>/dev/null; then
+		rm -rf "$home/.cache" && mv "$home/.cache.tmp" "$home/.cache"
+	else
+		rm -f "$home/.cache.tmp"
+		echo "agent-entrypoint: WARNING: could not swap ~/.cache to local disk; caches stay on the workspace volume" >&2
+	fi
 fi
 
 # Harness tool pins ship in the image's system-level mise config
@@ -63,6 +75,23 @@ if [ -f "$user_mise_cfg" ]; then
 			sed -i "\%^\[\[tools\.\"\{0,1\}${esc}\"\{0,1\}\]\]%,/^[[:space:]]*\$/d" "$user_mise_lock" || true
 		fi
 	done
+fi
+
+# Maven Resolver reads proxies only from settings.xml — neither http_proxy
+# env nor the JVM's -Dhttp.proxyHost reach dependency resolution — so
+# without this every `mvn` dependency fetch bypasses the egress gateway and
+# dies. Absent-only: a user-managed settings.xml wins.
+if [ -n "${HTTPS_PROXY:-}" ] && [ ! -e "$home/.m2/settings.xml" ]; then
+	_hp=${HTTPS_PROXY#http://}
+	_m2_proxy() {
+		printf '<proxy><id>platform-%s</id><active>true</active><protocol>%s</protocol><host>%s</host><port>%s</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy>' \
+			"$1" "$1" "${_hp%:*}" "${_hp##*:}"
+	}
+	if ! { mkdir -p "$home/.m2" &&
+		printf '<settings><proxies>%s%s</proxies></settings>\n' "$(_m2_proxy http)" "$(_m2_proxy https)" \
+			> "$home/.m2/settings.xml"; } 2>/dev/null; then
+		echo "agent-entrypoint: WARNING: could not write ~/.m2/settings.xml; Maven fetches may bypass the gateway" >&2
+	fi
 fi
 
 exec "$@"

@@ -1,10 +1,8 @@
 import {
   ArrowDown,
   ArrowLeft,
-  Document,
   OverflowMenuVertical,
   Renew,
-  Settings,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -29,23 +27,26 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
-import { Markdown } from "../../../components/markdown.js";
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { describeSendError } from "../../acp/errors.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
-import { useAgents, useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useAgents,
+  useIsAgentInaccessible,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
+import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
@@ -72,29 +73,36 @@ import {
   setSessionRunning,
 } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
-import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
-import {
-  PermissionStatusLine,
-  PermissionVerdictLine,
-} from "../components/permission-prompt.js";
+import { ChatMessage } from "../components/chat-message.js";
+import { ModelIndicator } from "../components/model-indicator.js";
+import { NewSessionLauncher } from "../components/new-session-launcher.js";
+import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
-import { ThoughtBlock } from "../components/thought-block.js";
-import { ToolChip } from "../components/tool-chip.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import {
+  pushSessionPath,
+  useSessionUrlSync,
+} from "../hooks/use-session-url-sync.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
+  // A followed link may land anyone here, not just the owner.
+  const agentInaccessible = useIsAgentInaccessible(selectedAgent);
+
+  // The open session rides in the URL, so this chat is linkable as itself.
+  useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
   useAgentReachabilityProbe(selectedAgent);
+  useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -183,7 +191,6 @@ export function ChatView() {
   // Ref (not state) so the chat→terminal toggle propagates to Terminal's mount
   // synchronously — zustand re-renders before useState commits.
   const terminalFreshRef = useRef(false);
-  const ephemeralTerminalIdRef = useRef<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -300,29 +307,25 @@ export function ChatView() {
     resumeSession,
   ]);
 
-  const pendingTerminal = useStore((s) => s.pendingTerminal);
-  const setPendingTerminal = useStore((s) => s.setPendingTerminal);
-  useEffect(() => {
-    if (!selectedAgent || !pendingTerminal) return;
-    setPendingTerminal(false);
-    // Same fresh-terminal spawn as the blank chat → terminal toggle: a
-    // client-side ephemeral PTY session, no server registration.
-    const id = crypto.randomUUID();
-    ephemeralTerminalIdRef.current = id;
-    setSessionId(id);
-    setSessionMode(SessionMode.Terminal);
-  }, [
-    selectedAgent,
-    pendingTerminal,
-    setPendingTerminal,
-    setSessionId,
-    setSessionMode,
-  ]);
+  /** Records a session the user picked as its own history entry, so back and
+   *  forward walk the conversations they opened. Only the plain chat route
+   *  addresses a session — a knowledge base's page has its own route and must
+   *  not be rewritten to `/chat`. */
+  const pushSessionUrl = useCallback(
+    (sid: string | null, mode: SessionMode | null) => {
+      if (view !== "chat" || !selectedAgent) return;
+      pushSessionPath(selectedAgent, sid, mode);
+    },
+    [view, selectedAgent],
+  );
 
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       // Deliberate navigation releases the pending-launch chat takeover.
       unfocusPendingLaunch();
+      // Ahead of the store change: the sync effect then finds the address bar
+      // already right and leaves this entry alone.
+      pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
       // Terminal sessions don't use ACP.
@@ -330,7 +333,9 @@ export function ChatView() {
         setSessionId(sid);
         return;
       }
-      if (sid === sessionId) {
+      // A session showing its failure card has nothing to scroll to — picking
+      // its row again is a retry.
+      if (sid === sessionId && !sessionError) {
         scrollToBottom();
         return;
       }
@@ -338,12 +343,14 @@ export function ChatView() {
     },
     [
       sessionId,
+      sessionError,
       setMobileScreen,
       setSessionMode,
       setSessionId,
       resumeSession,
       scrollToBottom,
       unfocusPendingLaunch,
+      pushSessionUrl,
     ],
   );
 
@@ -354,6 +361,9 @@ export function ChatView() {
       setMobileScreen("chat");
       return;
     }
+    // Leaving a conversation for a blank one is a step of its own: back
+    // returns to the session that was open.
+    pushSessionUrl(null, null);
     setSessionMode(SessionMode.Chat);
     resetSession();
     setMobileScreen("chat");
@@ -364,6 +374,7 @@ export function ChatView() {
     setMobileScreen,
     setSessionMode,
     unfocusPendingLaunch,
+    pushSessionUrl,
   ]);
 
   const showConfirm = useStore((s) => s.showConfirm);
@@ -374,10 +385,9 @@ export function ChatView() {
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
-    ephemeralTerminalIdRef.current = id;
     terminalFreshRef.current = true;
-    setSessionId(id);
     setSessionMode(SessionMode.Terminal);
+    setSessionId(id);
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
@@ -392,13 +402,16 @@ export function ChatView() {
         actionsAria: "Knowledge base actions",
         configure: "Configure knowledge base",
         delete: "Delete Knowledge Base",
-        modelTitle: "Open knowledge base configuration",
+        modelSubject: "knowledge base",
+        // Its config page has no model settings.
+        modelSettings: null,
       }
     : {
         actionsAria: "Sandbox actions",
         configure: "Configure sandbox",
         delete: "Delete Sandbox",
-        modelTitle: "Model — change in sandbox configuration",
+        modelSubject: "sandbox",
+        modelSettings: "Sandbox Setup",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -469,13 +482,13 @@ export function ChatView() {
         <Button
           variant="ghost"
           size="inline"
-          aria-label="Back to sandboxes"
+          aria-label="Back"
           onClick={handleBack}
           className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
         >
           <ArrowLeft size={14} />
         </Button>
-        <div className="group flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <span
             aria-hidden
             className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
@@ -487,11 +500,10 @@ export function ChatView() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 aria-label={surfaceCopy.actionsAria}
-                className="hover-capable:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
-                <OverflowMenuVertical size={14} />
+                <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -540,7 +552,6 @@ export function ChatView() {
             )}
             onResumeSession={mobileResumeSession}
             onNewSession={handleNewSession}
-            onNewTerminal={handleNewTerminal}
           />
           {sessionsOpen && filesSectionOpen && (
             <ResizeHandle
@@ -619,7 +630,7 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8">
+                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -629,15 +640,14 @@ export function ChatView() {
                     {!loadingSession && sessionError && (
                       <SessionErrorCard
                         error={sessionError}
-                        onBack={() => {
-                          setSessionError(null);
-                          resetSession();
-                          if (isMobile()) setMobileScreen("sessions");
-                        }}
+                        onRetry={() => resumeSession(sessionError.sessionId)}
                         onDelete={async () => {
-                          const sid = sessionError.sessionId;
+                          // Hold the card until the delete lands: clearing
+                          // first would drop the reader into an empty chat
+                          // still bound to the session that won't open.
+                          if (!(await deleteSession(sessionError.sessionId)))
+                            return;
                           setSessionError(null);
-                          await deleteSession(sid);
                           if (isMobile()) setMobileScreen("sessions");
                         }}
                       />
@@ -658,141 +668,32 @@ export function ChatView() {
                           </p>
                         </div>
                       ) : (
-                        <div className="py-24 text-center">
+                        <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
-                            Start a conversation
+                            Start a new session
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Send a message to begin a new session with this
-                            agent
+                            Send a message to begin or open a new session in:
                           </p>
-                        </div>
-                      ))}
-                    {messages.map((m, mi) =>
-                      m.notice ? (
-                        <div key={m.id} className="flex justify-center anim-in">
-                          <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
-                            {m.parts.find((p) => p.kind === "text")?.kind ===
-                            "text"
-                              ? (
-                                  m.parts.find((p) => p.kind === "text") as {
-                                    text: string;
-                                  }
-                                ).text
-                              : "…"}
-                          </span>
-                        </div>
-                      ) : (
-                        <div
-                          key={m.id}
-                          data-testid="chat-message"
-                          data-role={m.role}
-                          className={`flex flex-col gap-1 anim-in ${m.role === "user" ? "items-end" : "items-start"}`}
-                        >
-                          <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
-                            {m.role === "user" ? "You" : "Agent"}
-                          </span>
-                          {m.error ? (
-                            <SendErrorCard
-                              rawError={m.error.message}
-                              onRetry={
-                                m.error.retryWith
-                                  ? () =>
-                                      sendPrompt(
-                                        m.error!.retryWith!.text,
-                                        m.error!.retryWith!.attachments,
-                                      )
-                                  : undefined
-                              }
+                          {selectedAgent && (
+                            <NewSessionLauncher
+                              agentId={selectedAgent}
+                              agentName={selectedAgentName ?? ""}
+                              onNewTerminal={handleNewTerminal}
                             />
-                          ) : (
-                            <div
-                              className={
-                                m.role === "user"
-                                  ? "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
-                                  : "flex flex-col gap-4 w-full max-w-full"
-                              }
-                            >
-                              {m.parts.map((p, i) =>
-                                p.kind === "text" ? (
-                                  m.role === "assistant" ? (
-                                    <Markdown
-                                      key={i}
-                                      onFileClick={openFileHandler}
-                                    >
-                                      {p.text}
-                                    </Markdown>
-                                  ) : (
-                                    <span
-                                      key={i}
-                                      className="whitespace-pre-wrap break-words"
-                                    >
-                                      {p.text}
-                                      {m.streaming &&
-                                        i === m.parts.length - 1 && (
-                                          <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
-                                        )}
-                                    </span>
-                                  )
-                                ) : p.kind === "thought" ? (
-                                  <ThoughtBlock
-                                    key={i}
-                                    text={p.text}
-                                    streaming={m.streaming}
-                                  />
-                                ) : p.kind === "image" ? (
-                                  <img
-                                    key={i}
-                                    src={`data:${p.mimeType};base64,${p.data}`}
-                                    alt="image"
-                                    className="max-w-[400px] max-h-[400px] rounded-lg border border-border object-contain"
-                                  />
-                                ) : p.kind === "verdict" ? (
-                                  <PermissionVerdictLine key={i} verdict={p} />
-                                ) : p.kind === "file" ? (
-                                  <div
-                                    key={i}
-                                    className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2"
-                                  >
-                                    <Document
-                                      size={14}
-                                      className="text-muted-foreground shrink-0"
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                      {p.name}
-                                    </span>
-                                    {p.size !== undefined && (
-                                      <span className="text-[10px] text-muted-foreground">
-                                        {formatBytes(p.size)}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <ToolChip key={i} chip={p} />
-                                ),
-                              )}
-                              {m.streaming &&
-                                m.queued &&
-                                m.parts.length === 0 && (
-                                  <span className="text-xs text-muted-foreground italic">
-                                    Waiting for previous prompt…
-                                  </span>
-                                )}
-                              {m.role === "assistant" &&
-                                mi === messages.length - 1 && (
-                                  <PermissionStatusLine />
-                                )}
-                              {m.role === "assistant" &&
-                                m.streaming &&
-                                !m.queued &&
-                                !hasPendingPermission && (
-                                  <BusyIndicator className="py-1" />
-                                )}
-                            </div>
                           )}
                         </div>
-                      ),
-                    )}
+                      ))}
+                    {messages.map((m, mi) => (
+                      <ChatMessage
+                        key={m.id}
+                        message={m}
+                        isLast={mi === messages.length - 1}
+                        hasPendingPermission={hasPendingPermission}
+                        onRetry={sendPrompt}
+                        onFileClick={openFileHandler}
+                      />
+                    ))}
                     {!statusLineInThread && <PermissionStatusLine />}
                   </ChatColumn>
                 </div>
@@ -819,15 +720,18 @@ export function ChatView() {
                 {!hasPendingPermission && harnessCurrent?.model && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <button
-                        type="button"
-                        onClick={handleConfigureSandbox}
-                        title={surfaceCopy.modelTitle}
-                        className="flex items-center gap-1 pl-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {harnessCurrent.model}
-                        <Settings size={12} />
-                      </button>
+                      <ModelIndicator
+                        model={harnessCurrent.model}
+                        subject={surfaceCopy.modelSubject}
+                        settings={
+                          surfaceCopy.modelSettings
+                            ? {
+                                label: surfaceCopy.modelSettings,
+                                onConfigure: handleConfigureSandbox,
+                              }
+                            : undefined
+                        }
+                      />
                     </ChatColumn>
                   </div>
                 )}
@@ -895,14 +799,19 @@ export function ChatView() {
 
       <EgressApprovalToasts agentId={selectedAgent} />
 
-      {selectedAgent && !agentOperable && (
+      {/* Access outranks lifecycle: an agent the user may not open has no
+          lifecycle state to report, and its overlay would otherwise sit on
+          "Loading agent…" for as long as they kept the tab open. */}
+      {selectedAgent && agentInaccessible ? (
+        <AgentInaccessibleOverlay onLeave={goBack} />
+      ) : selectedAgent && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
           name={selectedAgentName ?? ""}
           onBack={handleBack}
         />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -941,21 +850,45 @@ function ChatHeaderStatus({
   );
 }
 
+/** What a failed resume tells the user. Only the unreachable-agent case is
+ *  worth waiting out, so it is the only one that suggests retrying — telling
+ *  someone to retry a session that is gone is advice that can only fail. Nor
+ *  does the copy guess at a cause: a session can be missing because it was
+ *  deleted, because the link was mistyped, or because it belongs to someone
+ *  else. The raw harness message the card used to print says nothing a reader
+ *  can act on. */
+const RESUME_FAILURE_COPY: Record<
+  SessionError["kind"],
+  { title: string; body: string }
+> = {
+  unavailable: {
+    title: "Can't open this conversation",
+    body: "It may have been deleted, or the link may point somewhere you can't open.",
+  },
+  orphaned: {
+    title: "This conversation can't be reopened",
+    body: "The agent still lists it but no longer holds its history. Deleting it clears the leftover entry from the list.",
+  },
+  connection: {
+    title: "Can't reach the agent",
+    body: "The agent didn't answer. It may be waking up or hibernating — try again in a moment.",
+  },
+  other: {
+    title: "Can't open this conversation",
+    body: "The agent still has it, but it wouldn't load.",
+  },
+};
+
 function SessionErrorCard({
   error,
-  onBack,
+  onRetry,
   onDelete,
 }: {
   error: SessionError;
-  onBack: () => void;
+  onRetry: () => void;
   onDelete: () => void;
 }) {
-  const title =
-    error.kind === "not-found"
-      ? "Session not found"
-      : error.kind === "connection"
-        ? "Can't reach the agent"
-        : "Failed to load session";
+  const { title, body } = RESUME_FAILURE_COPY[error.kind];
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
@@ -964,58 +897,26 @@ function SessionErrorCard({
           <h3 className="text-[15px] font-bold text-foreground mb-1">
             {title}
           </h3>
-          <p className="text-sm text-muted-foreground break-words">
-            {error.message}
-          </p>
+          <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button variant="outline" size="sm" onClick={onBack}>
-          <ArrowLeft size={12} /> Back to sessions
-        </Button>
-        {error.kind === "not-found" && (
-          <Button variant="destructive" size="sm" onClick={onDelete}>
-            <TrashCan size={12} /> Delete orphaned session
-          </Button>
-        )}
-      </div>
-    </Callout>
-  );
-}
-
-function SendErrorCard({
-  rawError,
-  onRetry,
-}: {
-  rawError: string;
-  onRetry?: () => void;
-}) {
-  const { message, hint } = describeSendError(rawError);
-  return (
-    <Callout
-      tone="danger"
-      className="flex max-w-[620px] items-start gap-2.5"
-      role="alert"
-    >
-      <Warning size={16} className="text-danger shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <div className="text-sm text-foreground break-words">
-          <span className="font-bold text-danger">Send failed:</span> {message}
+      {/* One action per kind, and only where it can do something: a retry
+          where the agent may yet answer, and a delete where the agent still
+          lists the session — the list is what confirms there is a row to
+          remove. */}
+      {(error.kind === "connection" || error.kind === "orphaned") && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {error.kind === "connection" ? (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <Renew size={12} /> Try again
+            </Button>
+          ) : (
+            <Button variant="destructive" size="sm" onClick={onDelete}>
+              <TrashCan size={12} /> Delete this session
+            </Button>
+          )}
         </div>
-        {hint && (
-          <p className="text-xs text-muted-foreground break-words">{hint}</p>
-        )}
-        {onRetry && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRetry}
-            className="self-start"
-          >
-            <Renew size={11} /> Retry
-          </Button>
-        )}
-      </div>
+      )}
     </Callout>
   );
 }

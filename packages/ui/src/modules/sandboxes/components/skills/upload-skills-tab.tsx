@@ -213,7 +213,8 @@ function StagedSkillRow({
       <Button
         variant="ghost"
         size="icon-xs"
-        title="Rename skill"
+        aria-label="Rename skill"
+        tooltip="Rename skill"
         onClick={onStartRename}
         className="shrink-0 text-muted-foreground"
       >
@@ -222,7 +223,8 @@ function StagedSkillRow({
       <Button
         variant="ghost"
         size="icon-xs"
-        title="Remove skill"
+        aria-label="Remove skill"
+        tooltip="Remove skill"
         onClick={onRemove}
         className="shrink-0 text-muted-foreground"
       >

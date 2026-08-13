@@ -99,7 +99,19 @@ export function SettingsView() {
         variant="pill"
         size="sm"
         orientation="vertical"
-        className="flex-row md:flex-col md:w-[180px] shrink-0"
+        // Mobile lays the strip out as a row. It owns its horizontal overflow
+        // so a long tab set scrolls the strip instead of the whole view, and
+        // the triggers keep their full label instead of shrinking into wraps.
+        // Specifying `overflow-x` makes the strip a scroll container on both
+        // axes, so its clipping region is its padding box — and the triggers'
+        // focus ring paints 4px outside their border box on all four sides.
+        // Hence padding on both axes: without it the first and last triggers'
+        // rings are clipped, and the first tab is the default focus target.
+        // The inline padding clears 4px rather than matching it — fractional
+        // layout leaves the scroll-end edge ~0.06px short of an exact 4px.
+        // `gap-1` already spaces the interior rings. Desktop stays the plain
+        // vertical sidebar.
+        className="flex-row overflow-x-auto px-1.5 py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] shrink-0"
       />
 
       <div className="flex-1 min-w-0">

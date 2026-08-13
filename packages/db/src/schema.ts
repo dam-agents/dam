@@ -174,6 +174,30 @@ export const skillSources = pgTable(
   ],
 );
 
+/** A reusable, named selection of skills, owned by a user rather than by any
+ *  sandbox. `skills` holds `[{ source, name }]` where `source` is the source's
+ *  **git URL** — the same identity `agent_skills` installs on, so a set survives
+ *  its source row being deleted and re-added. Entries live as jsonb because
+ *  nothing queries by entry, and one row keeps create and delete atomic.
+ *  Names are unique per owner; the name schema forces lowercase, so a plain
+ *  unique index gives case-insensitive uniqueness. */
+export const skillSets = pgTable(
+  "skill_sets",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    skills: jsonb("skills").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("skill_sets_owner_name_idx").on(table.owner, table.name),
+    index("skill_sets_owner_idx").on(table.owner),
+  ],
+);
+
 export const agentSkills = pgTable(
   "agent_skills",
   {
@@ -263,6 +287,15 @@ export const agents = pgTable(
       withTimezone: true,
     }),
     runtimeAgentVersion: text("runtime_agent_version"),
+    /** Last known harness-resolved config (model/mode/options + the discovered
+     *  model list). A snapshot, never authoritative: `harness-config` writes the
+     *  harness's file once and never re-asserts, so the file can move underneath. */
+    harnessConfigSnapshot: jsonb("harness_config_snapshot"),
+    /** Last known standalone skills — the ones that live only on the pod's
+     *  disk, so a stopped sandbox has no other way to report them. Its own
+     *  column, not shared with the harness-config snapshot: different modules
+     *  write them on different triggers. */
+    skillsSnapshot: jsonb("skills_snapshot"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
@@ -307,6 +340,19 @@ export const agentSkillPublishes = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    // text, not a pg enum: the value set is GitHub's, so widening it should not
+    // need a migration. The contract's Zod enum is what validates it.
+    prState: text("pr_state"),
+    /** Last resolution *attempt*, not last success — it doubles as the backoff
+     *  clock that keeps unresolvable records off the anonymous rate limit. */
+    prStateCheckedAt: timestamp("pr_state_checked_at", { withTimezone: true }),
+    prEtag: text("pr_etag"),
+    /** Dormant: the resolver neither reads nor writes it — resolution is a
+     *  flat hourly pass with no failure accounting. Kept only because
+     *  migration 0020 already shipped. */
+    prStateCheckFailures: integer("pr_state_check_failures")
+      .notNull()
+      .default(0),
   },
   (table) => [index("agent_skill_publishes_agent_idx").on(table.agentId)],
 );

@@ -29,6 +29,7 @@ import {
 } from "./services/worker-handler.js";
 import { createCronSweep, type CronSweep } from "./services/cron-sweep.js";
 import { createHelloHandler } from "./services/hello-handler.js";
+import type { HarnessConfigSnapshotWriter } from "./services/snapshot-writer.js";
 import {
   createRuntimeMutator,
   type RuntimeMutator,
@@ -63,6 +64,10 @@ export interface ComposeRuntimeDeliveryOpts {
   namespace: string;
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
+  /** Records what a pod reports about its harness config, on `hello` and on
+   *  every apply. Supplied by the root so this module stays independent of
+   *  where the snapshot lives. */
+  snapshotWriter: HarnessConfigSnapshotWriter;
   harnessServerUrl: string;
   log?: (msg: string) => void;
 }
@@ -90,6 +95,7 @@ export function composeRuntimeDelivery(
     agentsRuntimeRepo,
     stateBuilder,
     agentRunningPort: opts.agentRunningPort,
+    snapshotWriter: opts.snapshotWriter,
     clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.namespace),
     log,
   });
@@ -104,7 +110,9 @@ export function composeRuntimeDelivery(
   const hello = createHelloHandler({
     outboxRepo,
     agentsRuntimeRepo,
+    snapshotWriter: opts.snapshotWriter,
     queue,
+    log,
   });
 
   const runtimeMutator = createRuntimeMutator({

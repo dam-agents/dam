@@ -42,6 +42,9 @@ if [ -f .gitignore ]; then
   grep -qxF '!/scripts/' .gitignore || { [ -d scripts ] \
       && fail ".gitignore missing re-include: !/scripts/ (scripts/ exists)" \
       || warn "no !/scripts/ re-include (fine only if the agent has no scripts)"; }
+  grep -qxF '!/.github/' .gitignore || { [ -d .github ] \
+      && fail ".gitignore missing re-include: !/.github/ (.github/ exists)" \
+      || warn "no !/.github/ re-include (fine only if the definition has no CI)"; }
 fi
 
 # ---------------------------------------------------- version & changelog ----
@@ -59,9 +62,9 @@ if [ -f VERSION ]; then
     else
       fail "VERSION ($ver) != newest CHANGELOG heading (${latest:-<none>})"
     fi
-    grep -q '^\*\*Changed:\*\*' CHANGELOG.md && grep -q '^\*\*Upgrade:\*\*' CHANGELOG.md \
-      && pass "CHANGELOG entries carry Changed + Upgrade blocks" \
-      || fail "CHANGELOG must carry '**Changed:**' and '**Upgrade:**' blocks"
+    grep -q '^\*\*Upgrade:\*\*' CHANGELOG.md \
+      && pass "CHANGELOG entries carry Upgrade blocks" \
+      || fail "CHANGELOG must carry an '**Upgrade:**' block per version (migration instructions, not a change log)"
   fi
 fi
 
@@ -96,7 +99,7 @@ grep -rqi 'code-guardian' --include='*.md' --include='*.sh' . 2>/dev/null \
 
 # ------------------------------------------------------------- shell scripts ----
 if [ -d scripts ]; then
-  for s in scripts/*.sh; do
+  for s in scripts/*.sh scripts/tests/*.sh scripts/harness/*/*.sh; do
     [ -e "$s" ] || continue
     if bash -n "$s" 2>/dev/null; then pass "bash -n: $s"; else fail "syntax error: $s (bash -n)"; fi
     # this validator carries the literal 'awk' in its own detection pattern and message —
@@ -104,8 +107,10 @@ if [ -d scripts ]; then
     case "$(basename "$s")" in
       validate-definition.sh) pass "$s awk check skipped (validator itself)"; continue ;;
     esac
-    # comment-only lines don't count ("deliberately awk-free" headers)
-    grep -vE '^[[:space:]]*#' "$s" | grep -qE '(^|[^a-zA-Z0-9_])awk([^a-zA-Z0-9_]|$)' \
+    # comment-only lines don't count ("deliberately awk-free" headers), and an
+    # invocation always has whitespace/EOL after the word — "awk/diff" in a
+    # message string is not a call
+    grep -vE '^[[:space:]]*#' "$s" | grep -qE '(^|[^a-zA-Z0-9_])awk([[:space:]]|$)' \
       && fail "$s uses awk — not available on the pod" \
       || pass "$s is awk-free"
   done

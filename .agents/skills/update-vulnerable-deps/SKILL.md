@@ -2,7 +2,7 @@
 name: update-vulnerable-deps
 description: >
   Fetch open GitHub issues labeled "vulnerability" and open Dependabot alerts,
-  prepare fixes for each, then present to the user for approval before
+  fix all of them, then present to the user for approval before
   committing and opening PRs.
 allowed-tools:
   - Bash
@@ -31,7 +31,7 @@ Present a numbered summary table to the user, sorted by severity:
 | # | Source | Severity | Title | Detail |
 |---|--------|----------|-------|--------|
 
-Ask the user which items to fix. Default suggestion: all of them.
+Fix all items. Do not ask the user which ones to fix.
 
 Note: tools are configured to avoid releases younger than 7 days. Add an exclusion if necessary to install a fixed release. Review exclusions and remove ones that according to `git blame` were added more than 7 days ago.
 

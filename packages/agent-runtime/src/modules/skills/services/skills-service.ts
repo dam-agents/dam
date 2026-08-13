@@ -2,7 +2,10 @@ import type {
   SkillDeleteLocalInput,
   SkillInstallInput,
   SkillPublishInput,
+  SkillListLocalInput,
   SkillReadLocalInput,
+  SkillReadPullRequestInput,
+  SkillReadSkillFileInput,
   Result,
   SkillScanInput,
   SkillsDomainError,
@@ -10,12 +13,14 @@ import type {
   SkillUninstallInput,
   SkillWriteLocalInput,
 } from "agent-runtime-api";
-import { ok } from "agent-runtime-api";
+import { err, ok } from "agent-runtime-api";
 import { makeSkillName, type SkillName } from "../domain/skill-name.js";
 import { makeSkillPaths, type SkillPath } from "../domain/skill-path.js";
 import type { GitHubRestClient } from "../infrastructure/github-rest-client.js";
+import { detectGithubOwnerRepo } from "../infrastructure/github-rest-client.js";
 import type { GitProtocolClient } from "../infrastructure/git-protocol-client.js";
 import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
+import { subPathEscapes } from "../infrastructure/local-skill-repository.js";
 import { runInstall } from "./install.js";
 import { runPublish } from "./publish.js";
 import { runScan } from "./scan.js";
@@ -56,11 +61,18 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
     install: (input: SkillInstallInput) => doInstall(deps, input),
     uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
-    listLocal: () => doListLocal(deps),
+    listLocal: (input?: SkillListLocalInput) => doListLocal(deps, input),
     readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
+    readPullRequest: (input: SkillReadPullRequestInput) =>
+      deps.github.getPullRequest(
+        { owner: input.owner, repo: input.repo },
+        input.number,
+      ),
     deleteLocal: (input: SkillDeleteLocalInput) => doDeleteLocal(deps, input),
     writeLocal: (input: SkillWriteLocalInput) =>
       runWriteLocal(deps, deps.skillPaths, input),
+    readSkillFile: (input: SkillReadSkillFileInput) =>
+      doReadSkillFile(deps, input),
     scan: (input: SkillScanInput) => runScan(deps, input),
     publish: (input: SkillPublishInput) => doPublish(deps, input),
   };
@@ -77,6 +89,41 @@ async function doInstall(deps: SkillsServiceDeps, input: SkillInstallInput) {
   );
 }
 
+/**
+ * One skill's `SKILL.md` at the commit the scan pinned. Not a one-line
+ * delegation like readPullRequest: it resolves the host itself and refuses a
+ * `dir` that would walk out of the repo tree.
+ */
+async function doReadSkillFile(
+  deps: SkillsServiceDeps,
+  input: SkillReadSkillFileInput,
+): Promise<Result<{ content: string }, SkillsDomainError>> {
+  const host = detectGithubOwnerRepo(input.source);
+  // Defense in depth: the api-server's own host gate catches this first, so
+  // reaching here means a non-GitHub source was routed to a GitHub-only read.
+  if (!host) {
+    return err({
+      kind: "SourceFetchFailed",
+      source: input.source,
+      detail: "not a github.com repository",
+    });
+  }
+  if (subPathEscapes(input.dir)) {
+    return err({
+      kind: "SourceFetchFailed",
+      source: input.source,
+      detail: `skill dir rejected: ${input.dir}`,
+    });
+  }
+  const read = await deps.github.getFileContent(
+    host,
+    input.version,
+    `${input.dir}/SKILL.md`,
+  );
+  if (!read.ok) return read;
+  return ok({ content: read.value });
+}
+
 async function doUninstall(
   deps: SkillsServiceDeps,
   input: SkillUninstallInput,
@@ -87,10 +134,14 @@ async function doUninstall(
   return ok(undefined);
 }
 
-async function doListLocal(deps: SkillsServiceDeps) {
+async function doListLocal(
+  deps: SkillsServiceDeps,
+  input?: SkillListLocalInput,
+) {
   const skills = await deps.repo.listLocal(
     deps.skillPaths,
     deps.pristineSkillPaths,
+    input?.hashNames ? new Set(input.hashNames) : undefined,
   );
   return ok(skills);
 }

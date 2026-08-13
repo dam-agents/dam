@@ -38,7 +38,7 @@ To release a different version than what's on main, run `mise run release:set-ve
 Run from the release branch. The task:
 
 1. Tags the current commit (e.g. `v0.3.0-rc1`) and pushes tag + branch atomically.
-2. The `v*` tag triggers the release jobs in [`cd.yml`](.github/workflows/cd.yml): images are built, Helm chart is pushed, CLI is published to npm with `--tag rc`.
+2. The `v*` tag triggers the release jobs in [`cd.yml`](../../.github/workflows/cd.yml): images are built, Helm chart is pushed, CLI is published to npm with `--tag rc`.
 3. Bumps the branch to the next RC (`0.3.0-rc2`).
 
 Repeat as needed — cherry-pick fixes onto the release branch and publish another RC.
@@ -65,6 +65,7 @@ On every `v*` tag push, the release jobs in [`cd.yml`](../../.github/workflows/c
 
 - Builds and pushes container images (platform components + agents) to `quay.io/dam-agents/*`
 - Packages and pushes the Helm chart to `oci://quay.io/dam-agents/charts`
+  - The keycloak image tag is pinned to a content tag (the commit that last touched its inputs) rather than the release version, so upgrading to a release that didn't change the image doesn't restart Keycloak
 - Publishes `@dam-agents/cli` to npm (stable tags get `latest`, RC tags get `rc`)
 
 On every push to `main` (no tag), CD builds images and pushes a dev Helm chart (`0.0.0-main.*`).

@@ -8,6 +8,7 @@ import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
+import { externalLinkProps } from "@/lib/external-link";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
 import { ProviderFormShell } from "../provider-form-shell.js";
@@ -19,10 +20,12 @@ const bobCredentialSchema = z
     model: z.string(),
     agentId: z.string(),
     teamId: z.string(),
-    maxCoins: z.string(),
+    maxCost: z.string(),
     chatMode: z.string(),
   })
   .superRefine((data, ctx) => {
+    // Carries the empty-credential state to `isValid`, which disables submit; no
+    // message is rendered for it, so give any *further* value issue a home first.
     if (stripWhitespace(data.value).length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -30,14 +33,16 @@ const bobCredentialSchema = z
         message: "Required",
       });
     }
+    // Keep in step with the `maxCost` pattern in the server-side catalog: a cost
+    // cap has to be able to sit below a whole unit.
     if (
-      data.maxCoins.trim() !== "" &&
-      !/^[1-9]\d*$/.test(data.maxCoins.trim())
+      data.maxCost.trim() !== "" &&
+      !/^(?:[1-9]\d*(?:\.\d+)?|0?\.\d*[1-9]\d*)$/.test(data.maxCost.trim())
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["maxCoins"],
-        message: "Must be a positive integer",
+        path: ["maxCost"],
+        message: "Must be a positive amount, e.g. 0.50 or 5",
       });
     }
     const cm = data.chatMode.trim();
@@ -67,7 +72,7 @@ export function BobForm({
   onCancel?: () => void;
 }) {
   const pins = initialPins ?? {};
-  const { register, handleSubmit, watch, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(bobCredentialSchema),
     mode: "onChange",
     defaultValues: {
@@ -75,7 +80,7 @@ export function BobForm({
       model: pins.model ?? "",
       agentId: pins.agentId ?? "",
       teamId: pins.teamId ?? "",
-      maxCoins: pins.maxCoins ?? "",
+      maxCost: pins.maxCost ?? "",
       chatMode: pins.chatMode ?? "",
     },
   });
@@ -87,7 +92,6 @@ export function BobForm({
 
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
-  const value = watch("value");
 
   const onSubmit = handleSubmit(async (values) => {
     await onSave({
@@ -96,7 +100,7 @@ export function BobForm({
         model: values.model.trim() || undefined,
         agentId: values.agentId.trim() || undefined,
         teamId: values.teamId.trim() || undefined,
-        maxCoins: values.maxCoins.trim() || undefined,
+        maxCost: values.maxCost.trim() || undefined,
         chatMode: values.chatMode.trim() || undefined,
       },
     });
@@ -113,8 +117,7 @@ export function BobForm({
             : "IBM's AI shell assistant. Paste a Bob API key of type Inference to get started."}{" "}
           <a
             href="https://bob.ibm.com/admin/apikeys"
-            target="_blank"
-            rel="noopener noreferrer"
+            {...externalLinkProps}
             className="text-primary hover:underline inline-flex items-center gap-1"
           >
             Manage keys <Launch size={11} />
@@ -139,14 +142,6 @@ export function BobForm({
         </Button>
       </div>
 
-      {errors.value &&
-        value.length > 0 &&
-        errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-destructive">
-            {errors.value.message}
-          </div>
-        )}
-
       <DisclosureToggle
         open={advancedOpen}
         onToggle={() => setAdvancedOpen((o) => !o)}
@@ -167,7 +162,7 @@ export function BobForm({
           />
           <PinField
             label="Instance ID"
-            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping for outbound API calls."
+            hint="BOB_INSTANCE_ID → --instance-id. IBM tenant scoping; applies to terminal (TUI) sessions, chat sessions ignore it."
             error={errors.agentId?.message}
             register={register("agentId")}
           />
@@ -178,15 +173,15 @@ export function BobForm({
             register={register("teamId")}
           />
           <PinField
-            label="Max coins"
-            hint="BOB_MAX_COINS → --max-coins. Budget cap; Bob exits when exceeded."
+            label="Max cost"
+            hint="BOB_MAX_COINS → --max-cost. Per-task cost cap; Bob stops the task when exceeded."
             placeholder="(no cap)"
-            error={errors.maxCoins?.message}
-            register={register("maxCoins")}
+            error={errors.maxCost?.message}
+            register={register("maxCost")}
           />
           <PinField
-            label="Chat mode"
-            hint={`BOB_CHAT_MODE → --chat-mode. One of: ${BOB_CHAT_MODES.join(", ")}.`}
+            label="Mode"
+            hint={`BOB_CHAT_MODE → --mode. One of: ${BOB_CHAT_MODES.join(", ")}.`}
             placeholder="(Bob default)"
             list="bob-chat-modes"
             error={errors.chatMode?.message}

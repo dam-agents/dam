@@ -79,6 +79,9 @@ export function buildCreatePayload(
         appId,
         installationId,
         privateKey,
+        repositories: submitted("repositories"),
+        repositoryIds: submitted("repositoryIds"),
+        permissions: submitted("permissions"),
       });
     }
     case "header": {

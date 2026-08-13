@@ -16,6 +16,9 @@ export interface BackgroundWorkRegistry {
   forget(sessionId: string): void;
   /** Harness recycled or exited: same, for every session it served. */
   clear(): void;
+  /** Invoked whenever a hold is released, so waiters (e.g. a deferred env
+   * recycle) can re-check. */
+  onRelease(cb: () => void): void;
 }
 
 export interface BackgroundWorkRegistryDeps {
@@ -65,6 +68,11 @@ export function createBackgroundWorkRegistry(
   /** Session → the set it last reported. */
   const holds = new Map<string, BackgroundWorkItem[]>();
 
+  const releaseListeners: (() => void)[] = [];
+  function notifyRelease(): void {
+    for (const cb of releaseListeners) cb();
+  }
+
   function describe(items: BackgroundWorkItem[]): string {
     return items
       .map((i) => i.description ?? i.command ?? i.id)
@@ -79,6 +87,7 @@ export function createBackgroundWorkRegistry(
         if (held) {
           holds.delete(sessionId);
           deps.log?.(`background work in session ${sessionId} is done`);
+          notifyRelease();
         }
         return;
       }
@@ -103,11 +112,17 @@ export function createBackgroundWorkRegistry(
     },
 
     forget(sessionId) {
-      holds.delete(sessionId);
+      if (holds.delete(sessionId)) notifyRelease();
     },
 
     clear() {
+      if (holds.size === 0) return;
       holds.clear();
+      notifyRelease();
+    },
+
+    onRelease(cb) {
+      releaseListeners.push(cb);
     },
   };
 }

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { resourceNameSchema } from "../shared.js";
+
 /** A repo-relative subdirectory to scan for skills: relative, no `..`
  *  traversal, surrounding slashes trimmed so `/foo/` and `foo` are equal. */
 export const skillSourcePathSchema = z
@@ -41,6 +43,44 @@ export const skillSchema = z.object({
   description: z.string(),
   version: z.string(),
   contentHash: z.string(),
+  /** Repo-relative directory the skill was found in, whichever Source Root it
+   *  came from — what a raw-file URL needs. Distinct from `skillSourceSchema.path`,
+   *  which is the source's optional subdir; `dir` is this one skill's actual
+   *  location under it. Optional: the agent-runtime clone scan (private /
+   *  non-GitHub sources) doesn't report it. */
+  dir: z.string().optional(),
+});
+
+/** A source's scanned skill list plus when that scan was read from upstream. */
+export const skillListResultSchema = z.object({
+  skills: z.array(skillSchema),
+  /** ISO 8601 time the source's skill list was last read from upstream. A
+   *  cache hit reports the original read, not the moment of the hit. */
+  scannedAt: z.string().datetime(),
+});
+
+/** Why a source's scan failed, in the user's language. Carried structurally on
+ *  the tRPC error (`data.scanFailure`) rather than inside its message, so a
+ *  client can tell a verdict the server actually reached from a transport
+ *  failure that never got there — the latter arrives with no `scanFailure` at
+ *  all and must never be rendered verbatim.
+ *
+ *  `other` means "classified, but not one of the named causes"; it still
+ *  carries copy the user can act on. The internal error stays server-side. */
+export const scanFailureCodes = [
+  "needs_github_connection",
+  "needs_sandbox",
+  "repo_unreachable",
+  "agent_unreachable",
+  "other",
+] as const;
+
+export const scanFailureSchema = z.object({
+  code: z.enum(scanFailureCodes),
+  /** Single line naming the cause. */
+  title: z.string(),
+  /** Single line naming the fix. */
+  detail: z.string(),
 });
 
 /** An installed skill on an instance, keyed by source + name. Version
@@ -69,13 +109,18 @@ export const localSkillSchema = z.object({
    *  but diverged, or created at runtime. Absent on pre-provenance pods —
    *  treat as `user`. */
   origin: z.enum(["system", "system-modified", "user"]).optional(),
+  /** Deterministic SHA-256 of the skill directory, comparable with a scanned
+   *  skill's `contentHash`. Present only for skills the server asked the pod to
+   *  hash, and absent on pods predating this field (#3019). */
+  contentHash: z.string().optional(),
 });
 
 /** Explicit record of a publish event. Written on a successful
- *  `publish` call into the Postgres `instance_skill_publishes` table.
- *  Drives the `Published` badge + "View PR" link in the UI — the
- *  name-match heuristic it replaces had confusing false positives
- *  when a local skill happened to share a name with a catalog entry.
+ *  `publish` call into the Postgres `agent_skill_publishes` table.
+ *  The record's existence drives the badge's *presence* + "View PR"
+ *  link in the UI — it replaced a name-match heuristic that had
+ *  confusing false positives when a local skill happened to share a
+ *  name with a catalog entry. `prState` drives the badge's *label*.
  *
  *  Source fields are denormalized so the record stays usable after
  *  the source is renamed or deleted. */
@@ -87,22 +132,41 @@ export const skillPublishRecordSchema = z.object({
   prUrl: z.string(),
   /** ISO 8601 timestamp. */
   publishedAt: z.string(),
+  /** Resolved outcome of `prUrl`, or null when it has never been
+   *  resolved — the source is private, the read was rate-limited, the
+   *  pull request is gone. `merged` and `closed` are terminal and are
+   *  never re-read (#3019). */
+  prState: z.enum(["draft", "open", "merged", "closed"]).nullable(),
+  /** ISO 8601 timestamp of the last resolution *attempt*, which is not
+   *  the same as the last success: an attempt that resolved nothing
+   *  still stamps it, because it doubles as the backoff clock. Null
+   *  until the first attempt. */
+  prStateCheckedAt: z.string().nullable(),
 });
 
 /** Reconciled view of an instance's skills: both the installed
- *  (tracked in Postgres `instance_skills` AND present on disk) and
+ *  (tracked in Postgres `agent_skills` AND present on disk) and
  *  the standalone (on disk but not tracked). Computing this in one
  *  pass lets the server drop ghost SkillRefs — entries whose
  *  directories were deleted out-of-band — and persist the cleanup so
  *  the declarative state stops drifting from the filesystem.
  *
  *  `instancePublishes` carries the publish history for this instance
- *  so the UI can light up the "Published" badge on exactly the
- *  skills the user actually pushed. */
+ *  so the UI can badge exactly the skills the user actually pushed —
+ *  each record's resolved `prState` decides what the badge says
+ *  (draft / in review / published / closed, or merely "submitted"
+ *  while unresolved). */
 export const skillStateOutputSchema = z.object({
   installed: z.array(skillRefSchema),
   standalone: z.array(localSkillSchema),
   instancePublishes: z.array(skillPublishRecordSchema),
+  /** Present only when `standalone` came from a recorded snapshot rather than a
+   *  live pod read — the sandbox is stopped. Absent while running, which is what
+   *  lets a reader tell live truth from a snapshot without a second field for
+   *  the running case. */
+  standaloneSnapshot: z
+    .object({ capturedAt: z.string().datetime() })
+    .optional(),
 });
 
 // --- Input schemas ---
@@ -160,6 +224,111 @@ export const skillUninstallInputSchema = z.object({
   source: z.string().url(),
   name: z.string().min(1),
 });
+
+/** One skill inside a set. `source` is the source's **git URL**, not its id —
+ *  the same identity `agent_skills` installs on, so a set survives its source
+ *  row being deleted and re-added, and two sources carrying an `xlsx` stay
+ *  distinguishable. */
+export const skillSetEntrySchema = z.object({
+  source: z.string().url(),
+  name: z.string().min(1),
+});
+
+/** The identity a skill is installed and stored under: its source's git URL
+ *  plus its name. One definition on the contract, because the client's set
+ *  previews are compared against the server's install and skip decisions, and
+ *  a second spelling of this key fails silently rather than loudly. */
+export const skillKey = (e: { source: string; name: string }) =>
+  `${e.source}::${e.name}`;
+
+/** Same rule as every other user-named resource, from the one shared
+ *  definition — so client and server can't drift on what is legal — with a
+ *  skill-set example rather than a Connection's. */
+export const skillSetNameSchema = resourceNameSchema("my-skill-set");
+
+export const skillSetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  skills: z.array(skillSetEntrySchema),
+  createdAt: z.string(),
+});
+
+export const skillSetCreateInputSchema = z.object({
+  name: skillSetNameSchema,
+  skills: z.array(skillSetEntrySchema).min(1).max(500),
+});
+
+export const skillSetDeleteInputSchema = z.object({ id: z.string().min(1) });
+
+export const skillSetApplyInputSchema = z.object({
+  agentId: z.string().min(1),
+  setIds: z.array(z.string().min(1)).min(1).max(50),
+});
+
+/** Why an entry could not be applied. A closed set of verdicts rather than a
+ *  message: the client renders its own copy, so a server-authored sentence
+ *  would be a string the UI has to trust. Mirrors how `ScanFailure` carries a
+ *  code instead of prose. */
+export const skillSetSkipReasonSchema = z.enum([
+  "source-not-connected",
+  /** The source is connected here but could not be read — a credential or
+   *  transport problem. Distinct from the two above because the fix differs:
+   *  connect the source, make it readable, or accept the skill is gone. */
+  "source-unreadable",
+  "not-in-source",
+]);
+
+export const skillSetApplyResultSchema = z.object({
+  /** Full installed list after the apply — authoritative, like every other
+   *  install path's return. */
+  installed: z.array(skillRefSchema),
+  /** How many skills this call actually turned on. Reported rather than left to
+   *  the client, which can only diff its own possibly-stale view. */
+  added: z.number().int().nonnegative(),
+  skipped: z.array(
+    skillSetEntrySchema.extend({ reason: skillSetSkipReasonSchema }),
+  ),
+});
+
+/** Upper bound on the skills one batch may carry, install and uninstall
+ *  combined. Exported so the service can enforce the same number on
+ *  in-process callers that never cross the tRPC boundary (the set-apply
+ *  path). */
+export const MAX_SKILL_BATCH_ENTRIES = 500;
+
+/** Many installs and uninstalls applied under a single outbox bump, so a bulk
+ *  action costs one apply cycle instead of one per skill. The cap bounds the
+ *  work a single call can ask for; a real source sits far below it. */
+export const skillApplyBatchInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    install: z
+      .array(
+        z.object({
+          source: z.string().url(),
+          name: z.string().min(1),
+          version: z.string().min(1),
+          contentHash: z.string().optional(),
+        }),
+      )
+      .max(MAX_SKILL_BATCH_ENTRIES)
+      .default([]),
+    uninstall: z
+      .array(
+        z.object({
+          source: z.string().url(),
+          name: z.string().min(1),
+        }),
+      )
+      .max(MAX_SKILL_BATCH_ENTRIES)
+      .default([]),
+  })
+  .refine(
+    (v) => v.install.length + v.uninstall.length <= MAX_SKILL_BATCH_ENTRIES,
+    {
+      message: `one batch carries at most ${MAX_SKILL_BATCH_ENTRIES} skills, install and uninstall combined`,
+    },
+  );
 
 export const skillListLocalInputSchema = z.object({
   agentId: z.string().min(1),

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# log.sh — structured event logging for {{AGENT_NAME}}. Source this file, then:
+#
+#   logev <level> <event> <message>      # level: debug|info|warn|error
+#
+# One JSONL line per event in $WORK/logs/events-YYYY-MM-DD.jsonl:
+#   {"ts":"…","run":"…","job":"…","level":"…","event":"…","msg":"…"}
+#
+#   run — LOG_RUN_ID env, else the harness session id, else start time + pid.
+#   job — LOG_JOB env (one of the run types), default "session".
+#
+# `debug` lines are written only when work/CONFIG.md has `log_level: debug`.
+# Logging must never break a run: every failure path is swallowed. Retention
+# (delete files older than ~14 days) belongs to the audit-mode pre-flight.
+# TODO(creator): extend MASKS with any credential shapes the design's
+# integrations use, then delete the TODO comments.
+
+LOG_WORK="${WORK_DIR:-${HOME:-/home/agent}/work}"
+LOG_DIR="$LOG_WORK/logs"
+LOG_RUN="${LOG_RUN_ID:-${CLAUDE_CODE_SESSION_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
+LOG_JOB="${LOG_JOB:-session}"
+LOG_LEVEL="$(sed -n 's/^- log_level:[[:space:]]*//p' "$LOG_WORK/CONFIG.md" 2>/dev/null \
+             | head -1 | sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//')"
+LOG_LEVEL="${LOG_LEVEL:-info}"
+
+# best-effort masking of well-known credential shapes before anything is
+# written (invariant: no secrets in any log) — GitHub/Slack tokens, bearer
+# headers. sed -E, applied to the whole message.
+_log_mask() {
+  printf '%s' "$1" | sed -E \
+    -e 's/gh[pousr]_[A-Za-z0-9]{20,}/gh*_MASKED/g' \
+    -e 's/github_pat_[A-Za-z0-9_]{20,}/github_pat_MASKED/g' \
+    -e 's/xox[baprs]-[A-Za-z0-9-]{10,}/xox*-MASKED/g' \
+    -e 's/[Bb]earer[[:space:]]+[A-Za-z0-9._~+/=-]{16,}/Bearer MASKED/g'
+}
+
+logev() {
+  { [ "$1" = "debug" ] && [ "$LOG_LEVEL" != "debug" ]; } && return 0
+  case "$1" in debug|info|warn|error) ;; *) return 0 ;; esac
+  mkdir -p "$LOG_DIR" 2>/dev/null || return 0
+  _msg="$(_log_mask "${3:-}")"
+  jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg run "$LOG_RUN" \
+     --arg job "$LOG_JOB" --arg lvl "$1" --arg ev "${2:-event}" --arg msg "$_msg" \
+     '{ts:$ts, run:$run, job:$job, level:$lvl, event:$ev, msg:$msg}' \
+     >> "$LOG_DIR/events-$(date -u +%Y-%m-%d).jsonl" 2>/dev/null || true
+  return 0
+}

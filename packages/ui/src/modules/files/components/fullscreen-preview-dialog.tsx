@@ -46,7 +46,7 @@ export function FullscreenPreviewDialog({ title, onClose, children }: Props) {
           size="sm"
           className="h-auto px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-primary"
           onClick={onClose}
-          title="Exit fullscreen (Esc)"
+          tooltip="Exit fullscreen (Esc)"
         >
           <Close size={11} /> Close
         </Button>

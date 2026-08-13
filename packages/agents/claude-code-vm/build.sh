@@ -45,7 +45,17 @@ if ! docker run --rm --privileged --entrypoint sh "$SKOPEO_IMAGE" -c \
 	exit 1
 fi
 
-docker build -t "$BOOTC_TAG" -f "$PKG/Containerfile" --build-arg AGENT_IMAGE="$AGENT_IMAGE" "$PKG"
+# --secret, only when set: the Containerfile's agent-browser install mounts
+# it to authenticate mise's GitHub API calls (release lookup + download),
+# which otherwise hit the unauthenticated rate limit — shared across every
+# CI runner's IP, so this isn't hypothetical. An unset --secret env= source
+# hard-fails docker build even when the Dockerfile never mounts it, so this
+# must stay conditional for local builds without GITHUB_TOKEN exported.
+secret_args=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+	secret_args=(--secret id=github_token,env=GITHUB_TOKEN)
+fi
+docker build -t "$BOOTC_TAG" -f "$PKG/Containerfile" --build-arg AGENT_IMAGE="$AGENT_IMAGE" "${secret_args[@]}" "$PKG"
 
 # Key on the rootfs layers, not .Id: buildx stamps a fresh provenance
 # attestation on every run, so the image index digest (.Id) changes even when
