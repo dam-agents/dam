@@ -24,7 +24,12 @@ Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke 
 
 ## Code comments
 
-No untyped comments. Every comment in TS/JS/Go must start with a registered type prefix (`TEST_OVERVIEW:`, `TEST_SCENARIO:`); tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are exempt. Registry and rules: [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md). Enforced by `mise run common:check:comment-types`.
+- No code comments are allowed.
+- Exception: typed comments, prefixed with a registered type (registry: `COMMENT_TYPES` in [`scripts/strip-comments.mjs`](scripts/strip-comments.mjs)):
+  - `TEST_OVERVIEW:` — top of a spec file, the feature under test.
+  - `TEST_SCENARIO:` — above an `it()`, why the scenario exists.
+- Tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are not comments.
+- Always run `mise run common:check:comment-types` after changing code.
 
 ## Documentation
 

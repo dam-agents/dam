@@ -78,7 +78,7 @@ if (violations.length > 0) {
   console.error(
     `\n${violations.length} comment(s) without a registered type prefix.` +
       `\nEvery comment must start with one of: ${COMMENT_TYPES.join(', ')}.` +
-      `\nSee docs/guidelines/comment-guidelines.md.`,
+      `\nSee "Code comments" in CLAUDE.md.`,
   );
   process.exit(1);
 }

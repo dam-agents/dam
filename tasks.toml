@@ -413,7 +413,7 @@ exec pnpm audit --prod
 depends = ["common:check:*"]
 
 ["common:check:comment-types"]
-description = "Every code comment must carry a registered type prefix (docs/guidelines/comment-guidelines.md)"
+description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
 dir = "{{config_root}}"
 run = "node scripts/check-comment-types.mjs"
 

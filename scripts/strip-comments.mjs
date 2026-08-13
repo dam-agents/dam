@@ -29,7 +29,7 @@ export const ts = loadTypescript();
 export const TS_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 const GO_EXTENSION = '.go';
 
-// Registered comment types (docs/guidelines/comment-guidelines.md). Comments
+// Registered comment types (see "Code comments" in CLAUDE.md). Comments
 // carrying one of these prefixes are the only prose comments allowed to exist,
 // so the stripper keeps them and check-comment-types.mjs requires them.
 export const COMMENT_TYPES = ['TEST_OVERVIEW', 'TEST_SCENARIO'];
