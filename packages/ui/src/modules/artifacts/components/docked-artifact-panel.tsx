@@ -21,7 +21,12 @@ import { VersionSwitcher } from "./version-switcher.js";
 export function DockedArtifactPanel() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
-  const { data: artifact } = useArtifact(openArtifactId);
+  const {
+    data: artifact,
+    isPending: artifactPending,
+    isError: artifactError,
+    refetch: refetchArtifact,
+  } = useArtifact(openArtifactId);
 
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
   const [showSource, setShowSource] = useState(false);
@@ -106,7 +111,24 @@ export function DockedArtifactPanel() {
       </div>
 
       <div className="min-h-0 flex-1">
-        {!artifact ? (
+        {artifactError ? (
+          <div className="flex flex-col items-center gap-2 py-6">
+            <p className="text-sm text-muted-foreground">
+              Couldn't load the artifact.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchArtifact()}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : artifactPending ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : !artifact ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             Artifact not found — it may have been deleted.
           </p>

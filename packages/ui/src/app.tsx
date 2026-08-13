@@ -31,8 +31,6 @@ export default function App() {
 
   useBrowserHistory();
 
-  useLiveEvents(view !== "terms");
-
   useEffect(() => {
     const apply = () => {
       const t = useStore.getState().theme;
@@ -57,6 +55,7 @@ export default function App() {
 function MainApp() {
   const view = useStore((s) => s.view);
 
+  useLiveEvents();
   useAgentCrashToasts();
   useFirstRunRedirect();
 

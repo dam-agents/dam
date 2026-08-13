@@ -33,7 +33,9 @@ export function ChatArtifactsPanel({
   className?: string;
   style?: CSSProperties;
 }) {
-  const { data: artifacts = [] } = useArtifacts(agentId ? { agentId } : null);
+  const { data: artifacts = [], isPending } = useArtifacts(
+    open && agentId ? { agentId } : null,
+  );
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
@@ -49,7 +51,7 @@ export function ChatArtifactsPanel({
     >
       {artifacts.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
-          No artifacts yet
+          {isPending ? "Loading\u2026" : "No artifacts yet"}
         </p>
       ) : (
         <div className="overflow-y-auto">

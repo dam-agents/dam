@@ -7,9 +7,8 @@ import {
 } from "../terms/lib/on-terms-stale.js";
 import { invalidateForLiveEvent } from "./invalidation.js";
 
-export function useLiveEvents(enabled: boolean): void {
+export function useLiveEvents(): void {
   useEffect(() => {
-    if (!enabled) return;
     const subscription = api.events.owner.subscribe(undefined, {
       onData: invalidateForLiveEvent,
       onError: (error) => {
@@ -17,5 +16,5 @@ export function useLiveEvents(enabled: boolean): void {
       },
     });
     return () => subscription.unsubscribe();
-  }, [enabled]);
+  }, []);
 }

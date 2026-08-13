@@ -722,7 +722,7 @@ export function ChatView() {
                   onClose={() => setOpenArtifactId(null)}
                 />
               ) : openArtifactId ? (
-                <DockedArtifactPanel />
+                <DockedArtifactPanel key={openArtifactId} />
               ) : dockedExperiment ? (
                 <ExperimentDockPanel
                   experiment={dockedExperiment}
