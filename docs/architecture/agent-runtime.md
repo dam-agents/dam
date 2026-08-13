@@ -109,8 +109,14 @@ orphanhood identifies it.
 
 The sweep runs only when the pod is completely quiet: no engaged chat channel,
 no prompt running or queued, no pending request to the client, no reported
-background work, no open terminal, no open SSH. It is stricter than the `idle`
-flag the controller reads, which excludes SSH on purpose.
+background work, no open terminal, no open SSH. That gate is not the `idle` flag
+the controller reads, and neither implies the other: the sweep also requires no
+SSH and no engaged chat, which `idle` leaves out on purpose, while `idle` also
+counts declared work, which the sweep ignores because a declaration is already
+spared by pid. A pod whose only activity is declared work therefore reads busy to
+the controller and quiet here — the sweep still runs, and still reaps any *other*
+orphan it finds. A declaration shields its own process and its own session, never
+the pod.
 
 Orphanhood alone is too broad to act on — agent-runtime is itself a child of
 init, and on the VM backend init is systemd, parenting the guest's own services.

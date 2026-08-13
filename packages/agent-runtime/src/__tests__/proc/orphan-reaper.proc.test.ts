@@ -205,6 +205,27 @@ describe("the orphan reaper, against a real /proc", () => {
     inside(`kill -9 ${pid} 2>/dev/null || true`);
   });
 
+  it("drops an unusable log path rather than publishing a truncated one", () => {
+    // A description is read, so clipping it keeps most of its meaning. A log path
+    // is followed: a prefix looks well-formed and opens nothing, so it goes.
+    const pid = Number(
+      inside(
+        `node -e 'const c=require("child_process").spawn("sleep",["905"],{detached:true,stdio:"ignore"});c.unref();console.log(c.pid)'`,
+      ),
+    );
+    const code = inside(
+      `curl -s -o /dev/null -w '%{http_code}' --noproxy '*' -X POST ` +
+        `-H 'Content-Type: application/json' ` +
+        `-d '{"pid":${pid},"log":"/tmp/${"d".repeat(1200)}/x.log"}' ` +
+        `http://127.0.0.1:8080/api/declared-processes`,
+    );
+    const entry = status().backgroundWork.find((w) => w.pid === pid);
+    inside(`kill -9 ${pid} 2>/dev/null || true`);
+    expect(code, "an unusable path must not fail the declaration").toBe("204");
+    expect(entry, "the declaration itself must stand").toBeDefined();
+    expect(entry && "log" in entry).toBe(false);
+  });
+
   it("kills what nothing can reach and spares the rest", async () => {
     const reaped = await until(
       "a sweep",

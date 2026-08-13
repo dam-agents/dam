@@ -291,12 +291,18 @@ list (a "channel type … not available" error means it isn't):
      tests whether anything is *listening* (a live bridge answers the empty body
      with 400 — that still means "up"); only a refused connection starts one:
      ```sh
-     curl -s -o /dev/null --max-time 2 -X POST http://127.0.0.1:8765/gate -d '{}' || \
-       nohup nous-channel-bridge > "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1 &
+     curl -s -o /dev/null --max-time 2 -X POST http://127.0.0.1:8765/gate -d '{}' ||
+       platform-bg sh -c 'exec nous-channel-bridge >> "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1'
      ```
-     The bridge needs no `platform-bg`: it listens on a port, and the platform
-     never reaps a process something can still connect to. A race (two launches
-     at once) is harmless: the loser hits the in-use port and exits cleanly.
+     `exec` is load-bearing: without it the declared process is the wrapper
+     shell, which takes the declaration with it and hands the bridge to the
+     reaper. The single quotes are too — the inner shell expands
+     `$NOUS_CAMPAIGN_PARENT` and owns the redirect, which is what keeps the log
+     at `.bridge.log`; read that file, not the path `platform-bg` prints, which
+     stays empty for this shape. A race (two launches at once) is harmless: the
+     loser hits the in-use port and exits cleanly, and if it exits before its
+     declaration lands, `platform-bg` says it could not declare it and exits 1 —
+     that is the no-op, not a failure.
   2. Add a `channels:` block to `campaign.yaml`, with `channel=` set to the bound
      type (`slack` or `telegram`):
      ```yaml

@@ -27,6 +27,15 @@ const advisory = (max: number) =>
     .transform((text) => text.slice(0, max))
     .optional();
 
+/** Bounded like an advisory field but dropped whole, never clipped: a truncated
+ *  path looks well-formed and opens nothing, and this is the durable record of
+ *  where detached output went. */
+const identifier = (max: number) =>
+  z
+    .string()
+    .transform((value) => (value.length > max ? undefined : value))
+    .optional();
+
 const stamp = (): { bootId?: string } => (bootId() ? { bootId: bootId() } : {});
 
 const processSchema = z.object({
@@ -35,12 +44,13 @@ const processSchema = z.object({
   startTime: z.number().int().nonnegative(),
   description: advisory(200),
   /** uuid-named, so only findable from here. */
-  log: advisory(1024),
+  log: identifier(1024),
 });
 
 const stateSchema = z.object({
-  /** `startTime` counts from boot, so it only pins a pid within one boot. */
-  bootId: z.string().max(64).optional(),
+  /** `startTime` counts from boot, so it only pins a pid within one boot. An
+   *  unusable stamp degrades to "no stamp", never to a rejected file. */
+  bootId: z.string().max(64).optional().catch(undefined),
   processes: z.array(processSchema),
 });
 
