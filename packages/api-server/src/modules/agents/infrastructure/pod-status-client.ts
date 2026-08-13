@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { SessionBackgroundWork } from "api-server-api";
 import { podBaseUrl } from "./k8s.js";
 
-// `.catch([])` folds a missing field (older pod image) into "nothing held".
 const statusSchema = z.object({
   backgroundWork: z
     .array(
@@ -20,15 +19,12 @@ const statusSchema = z.object({
     .catch([]),
 });
 
-// The pod answers from memory; this read never waits for a wake.
 const STATUS_TIMEOUT_MS = 3_000;
 
 export interface PodStatusClient {
   backgroundWork(agentId: string): Promise<SessionBackgroundWork[]>;
 }
 
-/** Reads a pod's `/api/status` directly — never pokes activity or waits on
- *  readiness, so polling can't wake a hibernated agent or keep one warm. */
 export function createPodStatusClient(namespace: string): PodStatusClient {
   return {
     async backgroundWork(agentId) {

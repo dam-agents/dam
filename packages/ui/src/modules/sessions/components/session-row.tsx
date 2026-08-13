@@ -269,7 +269,7 @@ function SessionIndicators({
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
-      {/* One activity marker per row, most urgent first. */}
+      {}
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"

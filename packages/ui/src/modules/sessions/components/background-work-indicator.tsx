@@ -12,8 +12,6 @@ export function backgroundWorkLabel(
     .join("\n");
 }
 
-// BusyIndicator's between-turns sibling (#2965): slower cadence, success hue,
-// so "work running behind the session" never reads as "generating".
 export function BackgroundWorkIndicator({
   items,
   className,

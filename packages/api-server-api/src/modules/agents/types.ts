@@ -71,7 +71,6 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
-/** In-flight background work a session reported (#2965); advisory only. */
 export interface BackgroundWorkItemView {
   id: string;
   description?: string;
@@ -142,8 +141,6 @@ export type UnbindTelegramChatResult =
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
-  /** Background work the agent's sessions report (#2965). Passive read —
-   *  never wakes a pod; hibernated/unreachable → `[]`, unknown agent → null. */
   backgroundWork: (id: string) => Promise<SessionBackgroundWork[] | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;
   update: (input: AgentUpdateInput) => Promise<Agent | null>;

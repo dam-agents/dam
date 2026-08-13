@@ -16,15 +16,10 @@ export const backgroundWorkKeys = {
   agent: (agentId: string | null) => ["background-work", agentId] as const,
 };
 
-/** Background work the agent's sessions report (#2965). Polls only while the
- *  agent is `running` (the endpoint never wakes a pod); the same gate hides
- *  cached data once it stops. Consumers share one query. */
 export function useAgentBackgroundWork(
   agentId: string | null,
 ): readonly SessionBackgroundWork[] {
   const awake = useAgentRunState(agentId) === "running";
-  // No errorToast: decorative indicator, and the server already folds an
-  // unreachable pod into []. No retry: a failed tick waits for the next poll.
   const { data } = useQuery({
     queryKey: backgroundWorkKeys.agent(agentId),
     queryFn:

@@ -86,7 +86,6 @@ export const agentsRouter = t.router({
       return toAgentView(agent, driver?.driverAgentId ?? null);
     }),
 
-  // Passive read (#2965): a hibernated pod answers [] without being woken.
   backgroundWork: readAgentProcedure
     .input(agentBackgroundWorkInputSchema)
     .query(async ({ ctx, input }) => {

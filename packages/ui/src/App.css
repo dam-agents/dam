@@ -383,7 +383,6 @@
 .working-dots > span:nth-child(3) {
   animation-delay: 0.3s;
 }
-/* Slower cadence for the background-work indicator. */
 .working-dots-slow > span {
   animation-duration: 2.4s;
 }
