@@ -46,9 +46,6 @@ function verdictLabel(opt: PermissionOption): string {
   }
 }
 
-/** Transcript-side note for a pending approval — rendered at the end of the
- *  agent response while the blocking prompt occupies the input slot. Renders
- *  nothing when the viewed session has no pending request. */
 export function PermissionStatusLine() {
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
@@ -69,7 +66,6 @@ export function PermissionStatusLine() {
   );
 }
 
-/** A resolved verdict, rendered in the transcript where the user decided it. */
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   return (
     <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-11 text-sm anim-in">
@@ -86,26 +82,11 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   );
 }
 
-/**
- * Inline permission prompt. Sits in place of the chat input while the agent
- * is waiting on a tool approval. There is no dismiss/cancel that reaches the
- * agent — closing the tab, reloading, or navigating away just hides the UI
- * locally. The server-side buffer keeps the request pending and re-shows the
- * prompt on the next attach. Only clicking an option (or pressing its number)
- * sends a response to the agent.
- */
 export function PermissionPrompt({
   onResolved,
 }: {
   onResolved?: (verdict: PermissionVerdict, toolCallId: string) => void;
 }) {
-  // Only show requests tied to the session the user is currently viewing.
-  // Other sessions may have pending permissions buffered on the runtime and
-  // replayed into this global list; those belong to their own chat views.
-  // Select the raw array (stable reference) and filter during render — a
-  // selector that returns `.filter(...)` mints a new array per call and
-  // trips React's `getSnapshot should be cached` check, causing an
-  // infinite re-render loop.
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const resolve = useStore((s) => s.resolvePendingPermission);
@@ -120,9 +101,6 @@ export function PermissionPrompt({
 
   useEffect(() => setExpanded(false), [current?.toolCallId]);
 
-  // Show the toggle only when the title actually overflows the clamp. Skip
-  // measuring while expanded (scrollHeight equals clientHeight then), so the
-  // "Show less" affordance doesn't vanish.
   useEffect(() => {
     if (expanded) return;
     const el = titleRef.current;
@@ -150,7 +128,6 @@ export function PermissionPrompt({
   useEffect(() => {
     if (!current) return;
     const onKey = (e: KeyboardEvent) => {
-      // Ignore when typing elsewhere so digit input doesn't select options.
       const target = e.target as HTMLElement | null;
       if (
         target &&

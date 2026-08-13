@@ -20,12 +20,6 @@ import { externalLinkProps } from "@/lib/external-link";
 import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-/**
- * The label answers "is this skill published upstream?", not "what happened to
- * the pull request?" — so a merged one reads `Published`, which is precisely why
- * an unresolved one cannot: it would conflate "definitely in the catalog" with
- * "no idea" (#3019).
- */
 const PR_STATE_PILL: Record<
   NonNullable<SkillPublishRecord["prState"]> | "unknown",
   { label: string; variant: "outline" | "info" | "success" | "muted" }
@@ -37,18 +31,6 @@ const PR_STATE_PILL: Record<
   unknown: { label: "Submitted", variant: "muted" },
 };
 
-/**
- * One Standalone Local Skill: name + description, the publish pill once it has
- * a publish record, and the kebab. The pill's label is a function of the pull
- * request's resolved state, so it stays true after a merge or a close.
- *
- * Publishing is offered when there is no record at all, and again only in the
- * `closed` state — where nothing landed, so the local copy is all there is.
- * Not for `draft`/`open` (a live pull request exists and publish mints a fresh
- * branch rather than updating it), nor `merged` (the next step is tracking it
- * from the source, not maintaining an untracked fork), nor `unknown` (no basis
- * to reason).
- */
 export function StandaloneSkillRow({
   skill,
   publish,
@@ -62,23 +44,14 @@ export function StandaloneSkillRow({
   trackUnavailable,
 }: {
   skill: LocalSkill;
-  /** Latest publish record for this skill, when it has ever been published. */
   publish?: SkillPublishRecord;
-  /** Draw the separator — every row but the first. */
   divided: boolean;
-  /** Whether any publishable (GitHub) source exists to publish into. */
   canPublish: boolean;
   onPublish: () => void;
   onDownload: () => void;
   onDelete: () => void;
-  /** Hand the skill over to its source, so it becomes governed by the normal
-   *  source → install → drift → Update loop. Offered only once merged. */
   onTrack?: () => void;
-  /** Open the skill's SKILL.md render modal. Makes the name clickable; absent
-   *  when there is no pod to read the file from. */
   onOpen?: () => void;
-  /** The source hasn't been scanned yet (or is unreachable), so we can't tell
-   *  whether the local copy diverged — disable rather than guess. */
   trackUnavailable?: boolean;
 }) {
   const pill = PR_STATE_PILL[publish?.prState ?? "unknown"];
@@ -96,8 +69,6 @@ export function StandaloneSkillRow({
           <button
             type="button"
             onClick={onOpen}
-            /* max-w-full, not min-w-0: an inline-block button in a block
-               parent would otherwise size to its nowrap text and overflow. */
             className="max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
           >
             {skill.name}
@@ -128,8 +99,6 @@ export function StandaloneSkillRow({
             {...externalLinkProps}
             className={cn(
               badgeVariants({ variant: pill.variant }),
-              // border-border, because the readOnly card is bg-muted too and the
-              // pill would otherwise vanish into it.
               "shrink-0 gap-1.5 border-border font-medium transition-opacity hover:opacity-80",
             )}
           >

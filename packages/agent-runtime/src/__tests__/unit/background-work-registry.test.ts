@@ -30,7 +30,6 @@ describe("createBackgroundWorkRegistry", () => {
   });
 
   it("treats each report as the whole truth, not a delta", () => {
-    // A reporter that loses track of what it said before must still converge.
     const { registry } = setup();
 
     registry.report("s1", [job("t1"), job("t2")]);
@@ -50,8 +49,6 @@ describe("createBackgroundWorkRegistry", () => {
   });
 
   it("holds for as long as the work is reported, with nothing timing it out", () => {
-    // No bound can tell unfinished work from work that will never finish, so a
-    // hold ends on an empty report or a teardown — never on a clock.
     const { registry } = setup();
 
     for (let report = 0; report < 100; report += 1) {

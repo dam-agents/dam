@@ -4,17 +4,11 @@ import type { BaseSyntheticEvent } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 
-/** Ensure a repo URL has a scheme so it passes the `z.url()` create input —
- *  the field placeholder omits `https://`, so users often will too. */
 function withScheme(url: string): string {
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-/** Shown inline once the user has typed a malformed URL. The empty/"Required"
- *  case is intentionally not surfaced (it would nag an untouched field) — the
- *  disabled Add button already communicates it. Exported so the tab can match
- *  against it to decide whether to render the message. */
 export const INVALID_URL_MESSAGE = "Enter a valid repository URL";
 
 const addSourceSchema = z
@@ -53,13 +47,6 @@ export interface GithubSourceForm {
   onSubmit: (e?: BaseSyntheticEvent) => Promise<void>;
 }
 
-/**
- * GitHub-repository form for the add-skill-source modal. Lives here (called
- * from the modal shell) rather than inside the tab component so the typed
- * name/URL/path survive switching to the Upload tab and back — symmetric with
- * `useUploadStaging`, so switching tabs never discards in-progress work in
- * either tab.
- */
 export function useGithubSourceForm({
   onCreate,
   onClose,
@@ -74,8 +61,6 @@ export function useGithubSourceForm({
   const form = useForm<GithubSourceFormValues>({
     resolver: zodResolver(addSourceSchema),
     mode: "onChange",
-    // Retain field values when the tab (and thus its inputs) unmount on a tab
-    // switch, so switching away and back doesn't clear the form.
     shouldUnregister: false,
     defaultValues: { name: "", gitUrl: "", path: "" },
   });

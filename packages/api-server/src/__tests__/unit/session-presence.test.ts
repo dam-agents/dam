@@ -4,7 +4,6 @@ import { createSessionPresence } from "../../apps/api-server/agent-proxies/sessi
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { ACTIVE_SESSION_KEY } from "../../modules/agents/infrastructure/labels.js";
 
-/** Minimal in-memory Redis: just the commands session-presence uses. */
 function fakeRedis(keys = new Map<string, string>()) {
   const redis = {
     keys,
@@ -17,7 +16,6 @@ function fakeRedis(keys = new Map<string, string>()) {
       return 1;
     },
     async scan(_cursor: string, _m: string, pattern: string) {
-      // Escape all regex metacharacters, then translate the glob "*".
       const re = new RegExp(
         "^" +
           pattern
@@ -94,8 +92,8 @@ describe("session presence", () => {
 
     presence.acquire("a1");
     await vi.advanceTimersByTimeAsync(1);
-    repo.annotated.delete("a1"); // simulate a lost/reverted patch
-    await vi.advanceTimersByTimeAsync(31_000); // heartbeat interval
+    repo.annotated.delete("a1");
+    await vi.advanceTimersByTimeAsync(31_000);
     expect(repo.annotated.has("a1")).toBe(true);
     presence.close();
   });
@@ -118,9 +116,9 @@ describe("session presence", () => {
     const presence = createSessionPresence(repo, redis);
 
     presence.acquire("a1");
-    redis.keys.clear(); // simulate Redis losing all keys
+    redis.keys.clear();
     await presence.reconcile();
-    expect(repo.annotated.has("a1")).toBe(true); // spared
+    expect(repo.annotated.has("a1")).toBe(true);
     presence.close();
   });
 });

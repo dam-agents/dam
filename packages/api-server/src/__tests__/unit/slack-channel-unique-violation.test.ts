@@ -1,16 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { isSlackChannelUniqueViolation } from "../../modules/agents/infrastructure/channel-bindings-repository.js";
 
-// Shape of the postgres.js error raised when the partial unique index
-// `channels_slack_channel_unique_idx` is violated (one Slack channel per agent).
 const driverError = {
   code: "23505",
   constraint_name: "channels_slack_channel_unique_idx",
 };
 
-// Drizzle (>=0.44) re-throws driver failures wrapped in a DrizzleQueryError
-// whose message is `Failed query: ...` and which carries the original error on
-// `.cause`. This is what `connectSlack`'s catch block actually receives.
 class DrizzleQueryErrorLike extends Error {
   cause: unknown;
   constructor(cause: unknown) {

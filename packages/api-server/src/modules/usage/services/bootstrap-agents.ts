@@ -5,11 +5,6 @@ export type BootstrapAgentsDeps = {
   upsertAgent: (row: AgentRegistryRow) => Promise<void>;
 };
 
-/**
- * Backfill the `agents` mirror table from K8s for agents that pre-dated the
- * persist-agents saga. Idempotent via the table's PK + onConflictDoUpdate in
- * the repo.
- */
 export async function bootstrapAgents(
   deps: BootstrapAgentsDeps,
 ): Promise<void> {

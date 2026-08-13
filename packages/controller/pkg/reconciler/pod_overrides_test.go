@@ -14,16 +14,12 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// configWith returns testConfig with `base` stamped onto its AgentBase so
-// tests can swap the chart-level policy without mutating the shared fixture.
 func configWith(base config.AgentBase) *config.Config {
 	c := *testConfig
 	c.AgentBase = base
 	return &c
 }
 
-// fullAgentBase exercises every Layer-A field so the apply helpers don't
-// silently drop any during refactors.
 func fullAgentBase() config.AgentBase {
 	return config.AgentBase{
 		ExtraLabels:      map[string]string{"team": "platform"},
@@ -62,8 +58,6 @@ func fullAgentBase() config.AgentBase {
 	}
 }
 
-// applyAgentBaseMeta + Scheduling cover all of Layer A's pod-shape effects.
-
 func TestApplyAgentBaseMeta_AddsExtraLabelsAndAnnotations(t *testing.T) {
 	meta := &metav1.ObjectMeta{
 		Labels:      map[string]string{LabelAgent: "my-instance"},
@@ -73,7 +67,6 @@ func TestApplyAgentBaseMeta_AddsExtraLabelsAndAnnotations(t *testing.T) {
 	assert.Equal(t, "platform", meta.Labels["team"])
 	assert.Equal(t, "false", meta.Annotations["sidecar.istio.io/inject"])
 
-	// Controller-managed keys must not be overwritten.
 	assert.Equal(t, "my-instance", meta.Labels[LabelAgent])
 	assert.Equal(t, "true", meta.Annotations["agent-platform.ai/gh-token-available"])
 }
@@ -91,8 +84,6 @@ func TestApplyAgentBaseScheduling_StampsAllFields(t *testing.T) {
 }
 
 func TestApplyTemplateScheduling_OverridesBase(t *testing.T) {
-	// Base ran first (kata + workload=agents); the template now opts into a
-	// GPU-passthrough class and adds a GPU node label without losing the base.
 	spec := &corev1.PodSpec{}
 	applyAgentBaseScheduling(spec, fullAgentBase())
 	applyTemplateScheduling(spec, &types.AgentSpec{
@@ -107,7 +98,6 @@ func TestApplyTemplateScheduling_OverridesBase(t *testing.T) {
 }
 
 func TestApplyTemplateScheduling_EmptyKeepsBase(t *testing.T) {
-	// An empty template spec must not clobber chart-level scheduling.
 	spec := &corev1.PodSpec{}
 	applyAgentBaseScheduling(spec, fullAgentBase())
 	applyTemplateScheduling(spec, &types.AgentSpec{})
@@ -116,14 +106,6 @@ func TestApplyTemplateScheduling_EmptyKeepsBase(t *testing.T) {
 	assert.Equal(t, "kata", *spec.RuntimeClassName)
 	assert.Equal(t, "agents", spec.NodeSelector["workload"])
 }
-
-// $HOME substitution lives in the chart (agent-templates.yaml + the
-// controller/deployment.yaml AGENT_TEMPLATE_DEFAULTS replace). The
-// controller and reconciler tests assert resolved paths flow through
-// unchanged; the substitution itself is exercised by `helm template`.
-
-// End-to-end via BuildAgentStatefulSet — chart-level AgentBase fields land
-// on the pod; gateway pod (covered in gateway_test.go) does NOT receive them.
 
 func TestBuildAgentStatefulSet_AgentBase_FullSurface(t *testing.T) {
 	cfg := configWith(fullAgentBase())
@@ -151,8 +133,6 @@ func TestBuildAgentStatefulSet_AgentBase_FullSurface(t *testing.T) {
 	assert.Equal(t, "/custom-startup", agent.StartupProbe.HTTPGet.Path)
 }
 
-// Per-template Layer-B overrides — template values win over chart defaults.
-
 func TestBuildAgentStatefulSet_TemplateOverridesPullPolicyAndResources(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentTemplateDefaults.ImagePullPolicy = "IfNotPresent"
@@ -174,12 +154,7 @@ func TestBuildAgentStatefulSet_TemplateOverridesPullPolicyAndResources(t *testin
 	assert.Equal(t, resource.MustParse("2"), c.Resources.Requests[corev1.ResourceCPU], "template resources win")
 }
 
-// When AgentSpec omits mounts/env, the chart's AgentTemplateDefaults supplies
-// the fallback list (replace semantics — see config.AgentTemplateDefaults).
-
 func TestBuildAgentStatefulSet_FallsBackToTemplateDefaultsMountsAndEnv(t *testing.T) {
-	// AGENT_TEMPLATE_DEFAULTS ships with absolute paths — the chart's
-	// `replace "$HOME"` resolves the placeholder at install time.
 	cfg := *testConfig
 	cfg.AgentTemplateDefaults.Mounts = []config.Mount{
 		{Path: "/home/agent", Persist: true},

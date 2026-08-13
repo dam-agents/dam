@@ -81,7 +81,6 @@ describe("mcp-entry plugin", () => {
   });
 
   it("reserves only what the active branch builds", async () => {
-    // A urlKey dialect never emits `type`/`url`, so setting them is additive.
     await bind({ urlKey: "httpUrl", extraFields: { type: "sse" } })(
       [entry("outbound", "http://hs/mcp")],
       ctx,

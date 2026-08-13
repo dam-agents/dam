@@ -43,7 +43,6 @@ const CC_AUTH: Extract<ConnectionAuthConfig, { kind: "client-credentials" }> = {
   connectedAt: 900,
 };
 
-// The kinds that can carry a refresh-failure marker (header/none never do).
 type MarkableAuth = Extract<
   ConnectionAuthConfig,
   { kind: "oauth" | "client-credentials" | "github-app" }
@@ -77,17 +76,12 @@ type Mode =
   | "ok";
 
 const MODE_RESPONSES: Record<Mode, () => Response> = {
-  // Retryable: the endpoint failed to answer rather than rejecting anything.
   transient: () => new Response("upstream unavailable", { status: 503 }),
-  // What Google returns for a revoked refresh token, form-encoded.
   "revoked-grant": () => new Response("error=invalid_grant", { status: 400 }),
-  // GitHub's shape: the rejection rides a 200 form body, so the code — not the
-  // status — has to classify it.
   "revoked-grant-200": () =>
     new Response("error=bad_refresh_token&error_description=expired", {
       status: 200,
     }),
-  // Client credential rejected: permanent only if the connection owns it.
   "invalid-client": () =>
     new Response(JSON.stringify({ error: "invalid_client" }), {
       status: 401,
@@ -104,8 +98,6 @@ function makeLoop(opts?: {
   baseMs?: number;
   maxMs?: number;
   auth?: ConnectionAuthConfig;
-  /** Simulate a credential fix racing the tick: the guarded marker write
-   *  matches no rows. */
   markerWriteMatches?: boolean;
 }) {
   const auth = opts?.auth ?? AUTH;
@@ -113,9 +105,6 @@ function makeLoop(opts?: {
   let mode: Mode = "transient";
   let fetchCount = 0;
   let rows: RawRow[] = [rowFor("conn-1", auth)];
-  // Whether the rows currently read as due, without discarding them — models
-  // a connection whose expiry moved out and later back in, keeping whatever
-  // the loop persisted on it.
   let due = true;
   const written: ConnectionAuthConfig[] = [];
 
@@ -124,13 +113,6 @@ function makeLoop(opts?: {
     return MODE_RESPONSES[mode]();
   }) as typeof fetch;
 
-  // Two writes arrive as SQL fragments (server-side jsonb merges, so a
-  // concurrent fix isn't clobbered): the permanent-failure marker, and the
-  // transient backoff. Tell them apart by the path they set, and stand in for
-  // Postgres applying each. Success paths write plain auth objects and pass
-  // through.
-  // Read the literal SQL text out of the chunks. Deliberately not
-  // JSON.stringify: a chunk may be a drizzle Column, which is circular.
   const chunkText = (next: unknown): string =>
     ((next as { queryChunks: unknown[] }).queryChunks ?? [])
       .flatMap((c) =>
@@ -153,8 +135,6 @@ function makeLoop(opts?: {
     return null;
   };
 
-  // The backoff value rides the fragment as a JSON-encoded param; pull it back
-  // out so the next tick sees what the loop actually persisted.
   const backoffFromFragment = (next: unknown) => {
     const json = ((next as { queryChunks: unknown[] }).queryChunks ?? []).find(
       (c): c is string => typeof c === "string" && c.includes("nextAttempt"),
@@ -178,8 +158,6 @@ function makeLoop(opts?: {
     }
   };
 
-  // Only the marker clause is reproduced here — "a marked connection is parked"
-  // is what these tests assert. Writes land back on the rows for the next tick.
   const db = {
     select: () => ({
       from: () => ({
@@ -201,8 +179,6 @@ function makeLoop(opts?: {
           for (const r of rows) {
             r.auth = applyAuthWrite(r.auth as MarkableAuth, patch.auth);
           }
-          // Backoff is bookkeeping, not a credential write — keep it out of
-          // the persisted-auth log these tests assert on.
           if (kind !== "backoff") {
             written.push((rows[0]?.auth ?? patch.auth) as ConnectionAuthConfig);
           }
@@ -212,8 +188,6 @@ function makeLoop(opts?: {
     }),
   } as unknown as Db;
 
-  // Every call builds a fresh loop over the same `rows` and clock — a second
-  // api-server replica, sharing Postgres but nothing in memory.
   const makeReplicaLoop = () =>
     createOAuthRefreshLoop({
       db,
@@ -240,18 +214,13 @@ function makeLoop(opts?: {
 
   return {
     loop,
-    /** A second replica's loop over the same rows: shares Postgres, shares no
-     *  in-process state. */
     forkReplica: makeReplicaLoop,
     setClock: (t: number) => (clock = t),
     setMode: (m: Mode) => (mode = m),
     setRows: (ids: string[]) => (rows = ids.map((id) => rowFor(id, auth))),
-    /** Take the rows out of / back into the due set, preserving their auth. */
     setDue: (v: boolean) => (due = v),
     fetchCount: () => fetchCount,
-    /** Auth objects the loop persisted, oldest first. */
     written: () => written,
-    /** Stands in for credential maintenance clearing the marker. */
     clearMarker: () => {
       for (const r of rows) {
         const { refreshFailedAt: _dropped, ...rest } =
@@ -287,7 +256,6 @@ describe("oauth refresh loop backoff", () => {
     });
     expect(h.fetchCount()).toBe(1);
 
-    // Same instant: inside the 60s backoff window → skipped, no network call.
     expect(await h.loop.tickOnce()).toEqual({
       refreshed: 0,
       failed: 0,
@@ -295,12 +263,10 @@ describe("oauth refresh loop backoff", () => {
     });
     expect(h.fetchCount()).toBe(1);
 
-    // Just before the window elapses: still skipped.
     h.setClock(59_999);
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(1);
 
-    // Window elapsed: retry (still failing) → next window doubles to 120s.
     h.setClock(60_000);
     expect(await h.loop.tickOnce()).toEqual({
       refreshed: 0,
@@ -309,38 +275,28 @@ describe("oauth refresh loop backoff", () => {
     });
     expect(h.fetchCount()).toBe(2);
 
-    // 60_000 + 120_000 = 180_000 is the next attempt; 120_000 is still early.
     h.setClock(120_000);
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(2);
 
-    // A transient failure never marks: the backoff above governs the retry.
     expect(h.written()).toEqual([]);
   });
 
   it("resets the failure counter (not just the timer) after a success", async () => {
     const h = makeLoop({ baseMs: 60_000 });
 
-    // First failure → failures=1, nextAttempt = 0 + 60_000.
     h.setClock(0);
     await h.loop.tickOnce();
 
-    // Succeeds once the window elapses → the entry must be fully cleared.
     h.setClock(60_000);
     h.setMode("ok");
     expect((await h.loop.tickOnce()).refreshed).toBe(1);
 
-    // Fails again. If the counter reset this is failures=1 → a 60s window
-    // (nextAttempt = 60_001 + 60_000 = 120_001). Had the entry survived the
-    // success, it would be failures=2 → a 120s window (nextAttempt = 180_001).
     h.setClock(60_001);
     h.setMode("transient");
     expect((await h.loop.tickOnce()).failed).toBe(1);
     const afterSecondFailure = h.fetchCount();
 
-    // At 150_000 the 60s window has elapsed but a doubled 120s window has not:
-    // a retry here is only possible if the success reset the counter to base.
-    // (If the entry had survived, this tick would be skipped instead.)
     h.setClock(150_000);
     expect((await h.loop.tickOnce()).failed).toBe(1);
     expect(h.fetchCount()).toBe(afterSecondFailure + 1);
@@ -357,7 +313,6 @@ describe("oauth refresh loop backoff", () => {
     });
     expect(h.fetchCount()).toBe(1);
 
-    // Inside the backoff window → skipped, no second remint attempt.
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(1);
   });
@@ -368,16 +323,11 @@ describe("oauth refresh loop backoff", () => {
     h.setClock(0);
     expect((await h.loop.tickOnce()).failed).toBe(1);
 
-    // The sweep runs as a periodic job on whichever replica draws the tick, so
-    // the next one is a different process with an empty heap. A second loop
-    // over the same rows stands in for that: it must still honour the window,
-    // which it can only do if the backoff was written to the connection.
     const other = h.forkReplica();
     h.setClock(30_000);
     expect((await other.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(1);
 
-    // ...and still retry once the window has elapsed.
     h.setClock(70_000);
     expect((await other.tickOnce()).failed).toBe(1);
     expect(h.fetchCount()).toBe(2);
@@ -387,12 +337,9 @@ describe("oauth refresh loop backoff", () => {
     const h = makeLoop({ baseMs: 100_000 });
 
     h.setClock(0);
-    await h.loop.tickOnce(); // fail → nextAttempt = 100_000
+    await h.loop.tickOnce();
     expect(h.fetchCount()).toBe(1);
 
-    // Leaves the due set and comes back — same row, so the backoff comes back
-    // with it. The in-memory version pruned here and handed the connection a
-    // free retry; persisted, a still-failing connection stays held.
     h.setDue(false);
     expect((await h.loop.tickOnce()).skipped).toBe(0);
     h.setDue(true);
@@ -401,8 +348,6 @@ describe("oauth refresh loop backoff", () => {
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(1);
 
-    // A success is what clears it — every credential write strips the record,
-    // so the connection is never held on a stale one after it is fixed.
     h.setClock(150_000);
     h.setMode("ok");
     expect((await h.loop.tickOnce()).refreshed).toBe(1);
@@ -427,7 +372,6 @@ describe("oauth refresh permanent failures", () => {
       });
       expect(h.written().at(-1)).toMatchObject({ refreshFailedAt: 5 });
 
-      // Parked, not backed off — gone from the due set, so not even skipped.
       expect(await h.loop.tickOnce()).toEqual({
         refreshed: 0,
         failed: 0,
@@ -438,7 +382,6 @@ describe("oauth refresh permanent failures", () => {
   );
 
   it("marks a rejected client secret only when the connection owns it", async () => {
-    // No clientSecretRef: the operator owns the secret, a redeploy fixes it.
     const operatorBaked = makeLoop();
     operatorBaked.setMode("invalid-client");
     expect((await operatorBaked.loop.tickOnce()).failed).toBe(1);
@@ -467,7 +410,6 @@ describe("oauth refresh permanent failures", () => {
     expect((await h.loop.tickOnce()).failed).toBe(1);
     expect(h.written()).toEqual([]);
 
-    // Not parked: still due, held by the backoff window instead of retried hot.
     expect((await h.loop.tickOnce()).skipped).toBe(1);
     expect(h.fetchCount()).toBe(1);
   });

@@ -2,7 +2,6 @@ import type { Event } from "agent-runtime-api";
 import type { EventDispatcher } from "./event-dispatcher.js";
 import type { StateStore } from "./state-store.js";
 
-/** Apply one-shot events independent of contributions; returns the settled ids (failed ones stay pending). */
 export async function processEvents(
   events: Event[],
   dispatcher: EventDispatcher,
@@ -14,7 +13,6 @@ export async function processEvents(
   for (const e of events) {
     const { key, ts } = splitEventId(e.id);
     const state = stateStore.read();
-    // Already run: settled past this version, or a >= fire for this key ran (dedup/supersede).
     if (
       e.version <= state.lastAppliedVersion ||
       ts <= (state.eventRuns[key] ?? 0)
@@ -48,7 +46,6 @@ export async function processEvents(
   return settled;
 }
 
-/** Split a `kind:scheduleId:timestamp` event id on its last `:` → dedup key + fire ts. */
 function splitEventId(id: string): { key: string; ts: number } {
   const i = id.lastIndexOf(":");
   return { key: id.slice(0, i), ts: Number(id.slice(i + 1)) };

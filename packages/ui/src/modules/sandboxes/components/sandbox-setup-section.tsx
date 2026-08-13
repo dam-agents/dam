@@ -16,8 +16,6 @@ import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
 import { TemplateUpdateNotice } from "./template-update-notice.js";
 
-/** Disabled-input look for create-only values (image, harness) shown as text.
- *  Shared with the KB config page so the read-only field style can't drift. */
 export const READ_ONLY_FIELD =
   "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
 
@@ -67,9 +65,7 @@ export function SandboxSetupSection({ f }: Props) {
       />
 
       <section className="mb-8">
-        {/* Read-only: image/template are create-only — changing them would mean
-            delete+recreate, destroying the workspace PVC. The one sanctioned
-            move is the template-upgrade path below (#1077). */}
+        {}
         <FormField
           label="Image"
           hint={

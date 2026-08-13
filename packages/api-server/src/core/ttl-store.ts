@@ -1,17 +1,8 @@
 import type { Redis } from "ioredis";
 
-/**
- * Cross-replica TTL key-value store for short-lived handoff state (OAuth
- * `state` records, chat→agent bind flows). Values are JSON; expiry is
- * Redis-native TTL. Any replica can serve the callback leg of a flow
- * another replica started.
- */
 export interface TtlStore<T> {
   set(key: string, value: T): Promise<void>;
-  /** Non-consuming read — callers consume only on success, so a
-   *  recoverable failure leaves the flow alive within the TTL. */
   peek(key: string): Promise<T | null>;
-  /** Atomic read-and-delete. */
   consume(key: string): Promise<T | null>;
   delete(key: string): Promise<void>;
 }
@@ -40,7 +31,6 @@ export function createRedisTtlStore<T>(
   };
 }
 
-/** In-memory TtlStore for tests and compositions without Redis. */
 export function createMemoryTtlStore<T>(
   ttlMs: number,
   now: () => number = () => Date.now(),

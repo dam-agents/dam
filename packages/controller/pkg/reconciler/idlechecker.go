@@ -21,12 +21,9 @@ import (
 )
 
 type IdleChecker struct {
-	client  kubernetes.Interface
-	dynamic dynamic.Interface
-	config  *config.Config
-	// busyProbe reports whether an agent's pod is mid-work and must not be
-	// hibernated. Defaults to the live HTTP probe (podIsBusy); overridable in
-	// tests so the busy-guard branch can be exercised without a real pod.
+	client    kubernetes.Interface
+	dynamic   dynamic.Interface
+	config    *config.Config
 	busyProbe func(ctx context.Context, agentName string) bool
 }
 
@@ -36,8 +33,6 @@ func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *con
 	return c
 }
 
-// RunLoop periodically scans running agents and hibernates idle ones.
-// It blocks until ctx is cancelled.
 func (c *IdleChecker) RunLoop(ctx context.Context) {
 	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
 	if timeout <= 0 {
@@ -60,7 +55,6 @@ func (c *IdleChecker) RunLoop(ctx context.Context) {
 	}
 }
 
-// checkInterval returns how often to run idle checks — 1/6 of the timeout, clamped to [30s, 5m].
 func (c *IdleChecker) checkInterval() time.Duration {
 	d := c.config.AgentBase.IdleTimeout.AsDuration() / 6
 	if d < 30*time.Second {
@@ -90,17 +84,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
-		// Active by activity annotations → not an idle candidate. This is the
-		// exact decision the reconciler uses to scale up, so the two
-		// can never disagree about whether an agent is idle.
 		if shouldRun(agent.GetAnnotations(), effectiveIdleTimeout(hibernationOverride(agent), timeout), now) {
 			continue
 		}
 
-		// Probe the pod — a long-running session, trigger, or terminal that
-		// hasn't bumped last-activity must not be hibernated out from under
-		// itself. This guard is why scale-down lives here, not in the
-		// reconciler.
 		if c.busyProbe(ctx, name) {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
@@ -113,13 +100,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 		hibernated++
 	}
-	// Each idle candidate triggers a 3s-timeout busy-probe, so the duration
-	// shows when a sweep over unreachable pods runs long.
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
 }
 
-// hibernationOverride reads the per-agent spec.hibernationTimeout from the unstructured agent; nil when absent or unparseable (inherit the global).
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	s, found, err := unstructured.NestedString(agent.Object, "spec", "hibernationTimeout")
 	if err != nil || !found || s == "" {
@@ -132,21 +116,10 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-// podIsBusy probes the agent runtime's /api/status endpoint. The runtime is
-// authoritative about its own idleness — it reports a single idle flag and the
-// controller does not re-derive busy-ness from raw counters. A runtime too old
-// to report the flag parses as idle=false, i.e. busy, which fails safe.
-// Returns false (not busy) on any error — allows hibernation if the pod is unreachable.
-//
-// Addressed via the headless agent Service (resolves to the single ready
-// backing pod) rather than the StatefulSet's `-0` pod DNS, so the same URL
-// reaches a container pod or a vm backend's virt-launcher pod.
 func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
 	return agentPodIsBusy(ctx, c.config.Namespace, agentName)
 }
 
-// agentPodIsBusy is the probe itself, shared with the budget gate's reclaim
-// pass (#3184) so both scale-down paths ask the runtime the same question.
 func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
@@ -176,38 +149,22 @@ func (c *IdleChecker) hibernate(ctx context.Context, name string, vmBackend bool
 	return hibernateAgentPair(ctx, c.client, c.dynamic, c.config.Namespace, name, vmBackend)
 }
 
-// isVMBackend reads spec.backend.type off the unstructured agent.
 func isVMBackend(agent *unstructured.Unstructured) bool {
 	t, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
 	return t == "vm"
 }
 
-// hibernateAgentPair scales an agent's paired StatefulSets (agent + gateway,
-// both labelled LabelAgent=name) to zero — plus any vm-backend
-// VirtualMachine — and records the Hibernated phase on the Agent status
-// subresource. Scale-down never writes spec — run state is derived from
-// activity, not a stored desiredState. Idempotent: a StatefulSet already at
-// zero is left untouched. Shared by the idle checker (probe-gated idleness)
-// and the reconciler's hard-stop branch (#1900, user intent).
 func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
 	if err := scaleAgentPairToZero(ctx, kube, dyn, namespace, name, vmBackend); err != nil {
 		return err
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
-		// Pods are gone, so the agent is not routable until woken — reflect that
-		// on Ready (the api-server's routing signal). The Hibernated reason lets
-		// consumers tell this from a still-starting agent.
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
 	})
 }
 
-// scaleAgentPairToZero scales an agent's paired StatefulSets to zero without
-// touching status; for a vm-backend agent it also halts the VirtualMachine
-// (the VM analogue of replicas 0 — gated by the flag so container agents
-// never touch the kubevirt API). Idempotent; shared by hibernateAgentPair and
-// the reconciler's parked branch (which stamps OverBudget, not Hibernated).
 func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, namespace, name string, vmBackend bool) error {
 	if vmBackend {
 		if err := haltAgentVMs(ctx, dyn, namespace, name); err != nil {

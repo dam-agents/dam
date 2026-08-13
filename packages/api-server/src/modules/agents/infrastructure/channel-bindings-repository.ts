@@ -36,16 +36,6 @@ export function listChannelsByAgent(db: Db, owner: string) {
   };
 }
 
-/** Write the agent's binding for one Slack conversation, leaving its other
- *  bindings alone — an agent may hold several at once (#3086), so the row
- *  identity is the conversation, not the agent.
- *
- *  The update is scoped to this agent's own row, so it only ever refreshes a
- *  binding the agent already holds (an ambient flip). A conversation bound to a
- *  *different* agent falls through to the insert and trips the unique index,
- *  which the caller reads as `ChannelAlreadyBound` — a bind never silently
- *  takes a conversation away from another agent, including when it races the
- *  caller's pre-check. */
 async function upsertSlackChannel(
   runner: Db | Tx,
   owner: string,
@@ -166,9 +156,6 @@ export function findBySlackChannelId(db: Db) {
   };
 }
 
-/** Flip ambient mode on a Slack binding in place. Keys on the globally-unique
- *  Slack channel id (no owner scope): the in-chat toggle runs system-side and
- *  authorizes the caller itself, like {@link deleteSlackChannelBinding}. */
 export function setSlackChannelAmbient(db: Db) {
   return async (slackChannelId: string, ambient: boolean): Promise<void> => {
     await db
@@ -191,10 +178,6 @@ export function isSlackChannelUniqueViolation(e: unknown): boolean {
   return isUniqueViolation(e, "channels_slack_channel_unique_idx");
 }
 
-/** Delete the Slack binding for a channel id, regardless of owner. The in-chat
- *  unbind runs system-side (it has no owner scope) and authorizes the caller
- *  itself, so — unlike the owner-scoped `deleteChannelByType` — this keys only
- *  on the globally-unique Slack channel id. */
 export function deleteSlackChannelBinding(db: Db) {
   return async (slackChannelId: string): Promise<void> => {
     await db
@@ -208,10 +191,6 @@ export function deleteSlackChannelBinding(db: Db) {
   };
 }
 
-/** Every Slack conversation bound to the agent, oldest binding first so the
- *  order the agent sees (and `describe_channel`'s "home surface" lead) stays
- *  stable across calls. Postgres has no insertion order to sort on here, so the
- *  conversation id is the tiebreaker — arbitrary but deterministic. */
 export function findSlackChannelsByAgent(db: Db) {
   return async (agentId: string): Promise<string[]> => {
     const rows = await db
@@ -230,9 +209,6 @@ export function findSlackChannelsByAgent(db: Db) {
   };
 }
 
-/** Release one of an agent's Slack bindings, owner-scoped — the UI/CLI
- *  disconnect of a single conversation. Returns false when the agent holds no
- *  such binding, so the caller can tell "released" from "never bound". */
 export function deleteSlackChannelByAgent(db: Db, owner: string) {
   return async (agentId: string, slackChannelId: string): Promise<boolean> => {
     const deleted = await db

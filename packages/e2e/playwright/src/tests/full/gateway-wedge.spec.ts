@@ -15,13 +15,6 @@ import {
 } from "../../lib/cluster.js";
 import { harnessName } from "../../lib/fixtures.js";
 
-// Full-suite-only spec (see playwright.config.ts).
-//
-// #2817: a gateway roll can carry a reference to a just-deleted credential
-// Secret, and that pod never starts nor gets replaced — the agent silently
-// loses all egress. The race is not reproducible on demand, so this
-// manufactures the state it produces. Must be e2e: the deadlock is all real-
-// Kubernetes behaviour (mandatory mounts, OrderedReady, revision reuse).
 const agentName = "e2e-gateway-wedge";
 const deadSecret = "platform-conn-deleted";
 
@@ -55,7 +48,6 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
     });
 
     const gw = `${agentId}-gateway`;
-    // Agent state "running" tolerates a gateway that is still rolling.
     await expect
       .poll(() => podIsReady(`${gw}-0`), {
         timeout: 180_000,
@@ -64,11 +56,8 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
       })
       .toBe(true);
 
-    // Parking stands in for the race's render window; without it the controller
-    // restores the good template before the pod is recreated and no wedge forms.
     await test.step("wedge the gateway on a Secret that does not exist", async () => {
       scaleController(0);
-      // Volume *and* mount: an unmounted volume is never resolved by kubelet.
       kubectl(
         "-n",
         AGENT_NS,
@@ -113,7 +102,6 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
         })
         .toContain("FailedMount");
 
-      // Stable while the controller is parked; only an eviction moves it off.
       wedgedRev = podField(
         `${gw}-0`,
         ".metadata.labels.controller-revision-hash",
@@ -136,7 +124,6 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
     });
 
     await test.step("the gateway recovers without operator intervention", async () => {
-      // Before the fix the pod sits Pending forever.
       await expect
         .poll(() => podIsReady(`${gw}-0`), {
           timeout: 300_000,
@@ -144,11 +131,9 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
           message: "wedged gateway never recovered",
         })
         .toBe(true);
-      // Replaced, not revived in place.
       expect(
         podField(`${gw}-0`, ".metadata.labels.controller-revision-hash"),
       ).not.toBe(wedgedRev);
-      // And the platform's own view of the agent is healthy again.
       await expect
         .poll(() => agentConditionStatus(agentId, "Ready"), {
           timeout: 120_000,
@@ -158,13 +143,9 @@ test("a gateway wedged on a deleted credential Secret heals itself (#2817)", asy
         .toBe("True");
     });
   } finally {
-    // Nothing here may throw, or it replaces the real failure. Restoring the
-    // controller matters most: leaving it parked breaks every later spec.
     try {
       scaleController(1);
-    } catch {
-      /* already restored, or the cluster is gone */
-    }
+    } catch {}
     if (agentId) {
       try {
         await api.agents.delete.mutate({ id: agentId });

@@ -36,10 +36,6 @@ export async function waitForAgentRunning(
   return agentId;
 }
 
-/** Create an agent by name from a template unless one already exists. Lets a
- *  self-contained full-tier spec stand up the shared mock agent the smoke
- *  chain would otherwise have created (03-agent, via the UI), while a full run
- *  — where 03-agent got there first — finds it and creates nothing. */
 export async function ensureAgentExists(
   api: ApiClient,
   agentName: string,
@@ -50,19 +46,16 @@ export async function ensureAgentExists(
   await api.agents.create.mutate({ name: agentName, templateId });
 }
 
-// HACK: UI doesn't pick up new agent without a reload (bug)
 export async function reloadUntilAgentVisible(page: Page): Promise<void> {
   await page.reload();
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
   await expect(page.getByText("Running")).toBeVisible();
 }
 
-/** Chat message input; placeholder flips to "Queue a message..." mid-turn. */
 export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message\.\.\./i);
 }
 
-/** Selecting an agent lands in its chat. */
 export async function gotoAgentChat(
   page: Page,
   agentName: string,
@@ -128,13 +121,6 @@ export async function setMockReplyWithFiles(
   });
 }
 
-/** Script a turn that takes `holdMs` to finish: the head chunk streams
- *  immediately, the tail only after the delay. The delay sits *inside* the
- *  turn, so the runtime keeps the prompt slot occupied for the whole time and
- *  parks anything sent meanwhile — which is what makes the delivery-feedback
- *  scenarios deterministic without a single fixed sleep in the spec. Pass no
- *  `head` for a turn that emits nothing at all until the delay elapses (a
- *  wedged agent: the prompt was handed over, then silence). */
 export async function setMockLongTurnReply(
   api: ApiClient,
   agentId: string,

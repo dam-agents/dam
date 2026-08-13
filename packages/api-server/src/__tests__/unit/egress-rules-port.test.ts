@@ -23,9 +23,6 @@ function rowFrom(r: NewEgressRule): EgressRuleRow {
   };
 }
 
-/** Stateful repository fake: `listForAgent` reflects inserts and revokes, so
- *  the reconverge path (which recomputes promoted hosts from active rules)
- *  can be exercised end-to-end. */
 function fakeRepo(
   seed: EgressRuleRow[] = [],
   overrides: Partial<EgressRulesRepository> = {},
@@ -64,7 +61,6 @@ function fakeRepo(
   return { repo: base, rows };
 }
 
-/** Captures the last host set written per agent. */
 function fakeL7Hosts() {
   const sets: Array<{ agentId: string; hosts: readonly string[] }> = [];
   const port: AgentL7HostsPort = {
@@ -96,8 +92,6 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
       verdict: "allow",
     });
 
-    // Port-scoped rule → the L4 catch-all always dials 443, so the host
-    // must be promoted or the port silently never takes effect.
     expect(l7.last()).toEqual({
       agentId: "a1",
       hosts: ["api.cluster.example"],
@@ -151,8 +145,6 @@ describe("egress-rules-service: reconverge projects the rule table onto spec.l7H
 
     await svc.revoke("r1");
 
-    // The only rule that pinned the host to L7 is gone — reconverge clears
-    // it so the gateway stops MITM-terminating a host no rule needs (#2865).
     expect(l7.last()).toEqual({ agentId: "a1", hosts: [] });
   });
 
@@ -236,11 +228,6 @@ describe("egress-rule-writer: inbox verdicts reconverge the same way (#2322)", (
   });
 
   it("never promotes the bare * host, even for a narrowing rule", async () => {
-    // The front door allows host "*" with a narrow method/path, but no
-    // single SNI chain terminates every host and the CRD rejects "*" in
-    // spec.l7Hosts — projecting it would make every reconverge (and the
-    // startup backfill) fail permanently. Such a rule stays enforced at
-    // host granularity on the L4 path, as it always has.
     const { repo } = fakeRepo();
     const l7 = fakeL7Hosts();
     const writer = createEgressRuleWriter({ repo, l7Hosts: l7.port });
@@ -288,8 +275,6 @@ describe("egress-rule-writer: inbox verdicts reconverge the same way (#2322)", (
       source: "manual",
     });
 
-    // The connection host is covered by its own credential chain, so only
-    // the manual narrow rule's host is promoted.
     expect(l7.last()).toEqual({ agentId: "a1", hosts: ["api.example.com"] });
   });
 });

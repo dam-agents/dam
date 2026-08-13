@@ -6,18 +6,11 @@ import {
 } from "../../shared/exit-codes.js";
 import type { ChannelService } from "../services/channel-service.js";
 
-// Mirrors the server's PRECONDITION_FAILED messages so the early exit reads
-// the same as the route would if the precheck were skipped.
 const UNAVAILABLE_MESSAGE: Record<ChannelType, string> = {
   [ChannelType.Slack]: "Slack app token not configured",
   [ChannelType.Telegram]: "Telegram bot not configured",
 };
 
-/**
- * Refuse a connect when the operator didn't enable `provider` on this host,
- * exiting `EXIT_INVALID_INPUT` (2) with the operator-facing hint — rather than
- * letting the mutation round-trip and bounce back PRECONDITION_FAILED.
- */
 export async function ensureProviderAvailable(
   svc: ChannelService,
   provider: ChannelType,

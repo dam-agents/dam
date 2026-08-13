@@ -36,14 +36,11 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
-	// AgentHome falls through from AGENT_HOME (with its env-var default).
 	assert.Equal(t, "/home/agent", cfg.AgentTemplateDefaults.AgentHome)
-	// ext-authz host is per-instance (no shared default).
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
 
 func TestLoadFromEnv_Telemetry(t *testing.T) {
-	// Off by default: no collector host, port defaults to 4318.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
@@ -54,7 +51,6 @@ func TestLoadFromEnv_Telemetry(t *testing.T) {
 	assert.False(t, cfg.TelemetryEnabled())
 	assert.Equal(t, 4318, cfg.TelemetryCollectorPort)
 
-	// Configured by the chart when clickstack is enabled.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":             "platform",
 		"POD_NAME":                          "controller-0",
@@ -68,12 +64,11 @@ func TestLoadFromEnv_Telemetry(t *testing.T) {
 	assert.Equal(t, 4318, cfg.TelemetryCollectorPort)
 }
 
-// LoadFromEnv fails-loud when the chart-required fields are missing.
 func TestLoadFromEnv_RejectsMissingRequiredAgentBase(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{}`, // terminationGracePeriod missing
+		"AGENT_BASE":            `{}`,
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
@@ -84,7 +79,7 @@ func TestLoadFromEnv_RejectsMissingStorageSize(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":   "platform",
 		"POD_NAME":                "controller-0",
-		"AGENT_TEMPLATE_DEFAULTS": `{}`, // storageSize missing
+		"AGENT_TEMPLATE_DEFAULTS": `{}`,
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
@@ -95,15 +90,13 @@ func TestLoadFromEnv_RejectsMissingContainerSecurityContext(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
-		"AGENT_BASE":            `{"terminationGracePeriod": 5}`, // containerSecurityContext missing
+		"AGENT_BASE":            `{"terminationGracePeriod": 5}`,
 	})
 	_, err := LoadFromEnv()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "containerSecurityContext")
 }
 
-// Per-instance ext-authz host derives from release name +
-// instance ID + release namespace.
 func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":      "my-release",
@@ -115,8 +108,6 @@ func TestExtAuthzHostFor_ComposesFQDN(t *testing.T) {
 	assert.Equal(t, "my-release-extauthz-abc.custom-ns.svc.cluster.local", cfg.ExtAuthzHostFor("abc"))
 }
 
-// Principal string follows SPIFFE shape `<td>/ns/<ns>/sa/<sa>`,
-// matching how istiod stamps workload certs.
 func TestPrincipalFor_SPIFFEShape(t *testing.T) {
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":       "platform",
@@ -204,7 +195,6 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 }
 
 func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
-	// "0s" disables the idle checker — must round-trip through JSON cleanly.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
@@ -216,8 +206,6 @@ func TestLoadFromEnv_AgentBase_IdleTimeoutZero(t *testing.T) {
 }
 
 func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
-	// Operators who mistype a field name get a loud startup error rather
-	// than a silently-ignored value.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
@@ -228,10 +216,6 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "AGENT_BASE")
 }
 
-// Minimum AGENT_BASE / AGENT_TEMPLATE_DEFAULTS JSON that satisfies
-// Config.validate. Tests that don't override these inherit the floor;
-// tests that override AGENT_BASE / AGENT_TEMPLATE_DEFAULTS take full
-// responsibility for satisfying validation themselves.
 const (
 	minAgentBaseJSON             = `{"terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
 	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
@@ -265,8 +249,6 @@ func setEnv(t *testing.T, vars map[string]string) {
 }
 
 func TestLoadFromEnv_OTelEnv_Relayed(t *testing.T) {
-	// The controller snapshots its inherited OTEL_* env (operator-injected) for
-	// generic relay onto gateway pods.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":       "platform",
 		"POD_NAME":                    "controller-0",
@@ -281,8 +263,6 @@ func TestLoadFromEnv_OTelEnv_Relayed(t *testing.T) {
 }
 
 func TestLoadFromEnv_OTelEnv_OnlyOtelPrefix(t *testing.T) {
-	// The relay is scoped to the OTEL_ family — unrelated controller env is not
-	// captured and so cannot leak onto gateway pods.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":       "platform",
 		"POD_NAME":                    "controller-0",
@@ -296,7 +276,6 @@ func TestLoadFromEnv_OTelEnv_OnlyOtelPrefix(t *testing.T) {
 }
 
 func TestLoadFromEnv_OTelEnv_DisabledWhenNoEndpoint(t *testing.T) {
-	// No injected endpoint → instrumentation is off and gateways emit nothing.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME": "platform",
 		"POD_NAME":              "controller-0",
@@ -313,11 +292,9 @@ func TestOTelExporter_Parsing(t *testing.T) {
 		ok         bool
 	}{
 		{"", "", OTLPExporter{}, false},
-		// gRPC (default protocol): https → secure; port defaults to 4317.
 		{"http://otel.platform.svc:4317", "", OTLPExporter{Host: "otel.platform.svc", Port: 4317, GRPC: true}, true},
 		{"https://otel.example.com", "grpc", OTLPExporter{Host: "otel.example.com", Port: 4317, Secure: true, GRPC: true}, true},
-		{"otel.platform.svc:4317", "", OTLPExporter{Host: "otel.platform.svc", Port: 4317, GRPC: true}, true}, // bare host:port
-		// OTLP/HTTP: not gRPC; port defaults to 4318.
+		{"otel.platform.svc:4317", "", OTLPExporter{Host: "otel.platform.svc", Port: 4317, GRPC: true}, true},
 		{"http://otel.platform.svc", "http/protobuf", OTLPExporter{Host: "otel.platform.svc", Port: 4318, GRPC: false}, true},
 		{"https://otel.example.com:4318", "http/protobuf", OTLPExporter{Host: "otel.example.com", Port: 4318, Secure: true, GRPC: false}, true},
 	}
@@ -340,14 +317,14 @@ func TestTraceSamplingPercent(t *testing.T) {
 		sampler, arg string
 		want         float64
 	}{
-		{"", "", 100},                            // default: full
-		{"always_on", "", 100},                   //
-		{"parentbased_always_off", "", 0},        //
-		{"traceidratio", "0.1", 10},              // 0.1 ratio → 10%
-		{"parentbased_traceidratio", "0.25", 25}, //
-		{"", "0.5", 50},                          // bare ARG treated as a ratio
-		{"traceidratio", "9", 100},               // clamped: 9×100 → capped at 100
-		{"traceidratio", "bad", 100},             // unparseable → full
+		{"", "", 100},
+		{"always_on", "", 100},
+		{"parentbased_always_off", "", 0},
+		{"traceidratio", "0.1", 10},
+		{"parentbased_traceidratio", "0.25", 25},
+		{"", "0.5", 50},
+		{"traceidratio", "9", 100},
+		{"traceidratio", "bad", 100},
 	}
 	for _, tc := range cases {
 		cfg := &Config{OTelEnv: map[string]string{
@@ -359,9 +336,6 @@ func TestTraceSamplingPercent(t *testing.T) {
 }
 
 func TestOTelExporter_GatewayOverrideWins(t *testing.T) {
-	// The chart points gateways at the collector's gRPC port while the
-	// controller SDK keeps its OTLP/HTTP env — the override must win and
-	// default to gRPC when the protocol var is unset.
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":          "platform",
 		"POD_NAME":                       "controller-0",
@@ -377,7 +351,6 @@ func TestOTelExporter_GatewayOverrideWins(t *testing.T) {
 	assert.True(t, exp.GRPC)
 	assert.Equal(t, 4317, exp.Port)
 
-	// Protocol unset on the override → gRPC (the OTLP spec default).
 	setEnv(t, map[string]string{
 		"PLATFORM_RELEASE_NAME":          "platform",
 		"POD_NAME":                       "controller-0",

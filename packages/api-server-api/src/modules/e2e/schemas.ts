@@ -98,13 +98,10 @@ export const slackFireMentionInputSchema = z
     ts: z.string().min(1),
     threadTs: z.string().optional(),
     text: z.string(),
-    /** Workspace id; present so the fake exercises the live-streaming path. */
     teamId: z.string().optional(),
   })
   .strict();
 
-// A plain (non-mention) channel message for ambient mode — same wire shape
-// as a mention, only the trigger differs.
 export const slackFireMessageInputSchema = slackFireMentionInputSchema;
 
 export const slackFireCommandInputSchema = z

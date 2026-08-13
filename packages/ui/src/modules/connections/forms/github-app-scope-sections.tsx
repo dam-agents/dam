@@ -8,11 +8,6 @@ import {
   type PermissionLevel,
 } from "../lib/github-app-scope-fields.js";
 
-/** The two halves of a GitHub App scope, rendered from a probed installation.
- *  Both take the selection as plain props and report changes back, so the
- *  create form (which keeps the selection in its react-hook-form fields) and
- *  the edit dialog (which keeps it in local state) can share them. */
-
 export function RepositorySection({
   installation,
   selected,

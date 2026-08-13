@@ -1,13 +1,8 @@
-/** Pure helpers for the /slack/bind page — node-testable, no DOM. The brand
- *  short is threaded in (rather than read from getBrand) so these stay pure and
- *  never hardcode the brand. */
-
 export function readFlowIdFromSearch(search: string): string | null {
   const flow = new URLSearchParams(search).get("flow");
   return flow && flow.length > 0 ? flow : null;
 }
 
-/** Error the OAuth callback redirected with (?error=…), if any. */
 export function readCallbackErrorFromSearch(search: string): string | null {
   return new URLSearchParams(search).get("error");
 }
@@ -15,7 +10,6 @@ export function readCallbackErrorFromSearch(search: string): string | null {
 export interface BindErrorCopy {
   title: string;
   hint: string;
-  /** Terminal errors hide the picker — only a fresh bind command recovers. */
   terminal: boolean;
 }
 
@@ -45,7 +39,6 @@ export function callbackErrorCopy(
   }
 }
 
-/** Maps a failed bind mutation's tRPC error code to page copy. */
 export function bindErrorCopy(
   code: string | undefined,
   brandShort: string,

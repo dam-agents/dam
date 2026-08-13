@@ -15,7 +15,6 @@ func isPodReady(pod corev1.Pod) bool {
 	return false
 }
 
-// terminationReason returns a reason token + message for why a pod is abnormally down, whether a container exit (OOM/crash) or a stuck waiting state (image pull failure); ok=false on a clean start.
 func terminationReason(pod *corev1.Pod) (reason, message string, ok bool) {
 	if pod == nil {
 		return "", "", false

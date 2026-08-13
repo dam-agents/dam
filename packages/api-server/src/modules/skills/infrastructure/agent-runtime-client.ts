@@ -18,13 +18,6 @@ export interface PublishSkillResult {
   branch: string;
 }
 
-/**
- * Upstream-error envelope agent-runtime emits via its tRPC `errorFormatter`
- * when an upstream gateway returns a structured error
- * (`app_not_connected` / `access_restricted` / …). The shape mirrors the
- * `data.upstream` field on the wire and is the only thing callers need to
- * extract `connect_url`/`manage_url` for the Connect-GitHub CTA.
- */
 export interface UpstreamGatewayError {
   status: number;
   body?: {
@@ -37,9 +30,6 @@ export interface UpstreamGatewayError {
 }
 
 export interface AgentRuntimeSkillsClient {
-  /** `hashNames` asks the pod to also stamp `contentHash` on those skills.
-   *  Hashing is real I/O on an NFS-backed PVC and this runs on every state
-   *  poll, so pass only the few that need it. */
   listLocal(agentId: string, hashNames?: string[]): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
   scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
@@ -49,15 +39,10 @@ export interface AgentRuntimeSkillsClient {
   ): Promise<LocalSkill[]>;
   deleteLocal(agentId: string, name: string): Promise<void>;
   readLocal(agentId: string, name: string): Promise<SkillLocalFiles>;
-  /** Raw pull-request disposition, read through the pod so the paired gateway
-   *  can inject the owner's token — the only way a private source resolves. */
   readPullRequest(
     agentId: string,
     coords: { owner: string; repo: string; number: number },
   ): Promise<PrDisposition>;
-  /** One skill's `SKILL.md` at a pinned commit, read through the pod so the
-   *  paired gateway can inject the owner's token — the only way a private
-   *  source's content resolves. */
   readSkillFile(
     agentId: string,
     input: { source: string; version: string; dir: string },
@@ -74,10 +59,6 @@ export class AgentRuntimeUpstreamError extends Error {
   }
 }
 
-/** The api-server → pod hop itself failed: no tRPC response ever arrived
- *  (pod restarting, mesh outage). Distinct from errors the pod *returned* —
- *  a transport failure inside the pod (e.g. GitHub egress blocked) comes
- *  back as a structured `upstream_unreachable` envelope, never as this. */
 export class AgentRuntimeUnreachableError extends Error {
   constructor(message: string) {
     super(message);
@@ -85,10 +66,6 @@ export class AgentRuntimeUnreachableError extends Error {
   }
 }
 
-/** The pod returned a tRPC CONFLICT — a writeLocal collision. Carries the
- *  pod's message verbatim (`skill(s) already exist: <names>`, per the
- *  agent-runtime contract) so the api-server can pass it through and the UI
- *  can parse the offending names back out. */
 export class AgentRuntimeConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -96,24 +73,15 @@ export class AgentRuntimeConflictError extends Error {
   }
 }
 
-/** Pod verdicts that describe the *caller's* request, not a server fault, so
- *  they must keep their code on the way out. CONFLICT is deliberately absent —
- *  it has its own class above, which `createLocal` catches by type. */
 const PASSTHROUGH_CODES = new Set([
   "NOT_FOUND",
   "PAYLOAD_TOO_LARGE",
   "BAD_REQUEST",
 ]);
 
-/** The pod returned a client-error verdict (missing skill, cap breach, invalid
- *  name). Carries the code so the service re-throws it with the right status
- *  instead of flattening a user error into a 500. */
 export class AgentRuntimeClientError extends Error {
   constructor(
     label: string,
-    /** The pod's own message, with none of this hop's internals — what a
-     *  caller may safely surface to the user. `message` keeps the labelled
-     *  form so api-server logs still say which call on which agent failed. */
     public readonly podMessage: string,
     public readonly code: "NOT_FOUND" | "PAYLOAD_TOO_LARGE" | "BAD_REQUEST",
   ) {
@@ -122,9 +90,6 @@ export class AgentRuntimeClientError extends Error {
   }
 }
 
-// Auth on the api-server → agent-runtime hop is enforced at the kernel by
-// the agent pod's NetworkPolicy (ingress admitted only from the api-server
-// pod). No Bearer header is sent.
 function makeClient(agentId: string, namespace: string) {
   return createTRPCClient<AppRouter>({
     links: [
@@ -144,14 +109,6 @@ function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
   );
 }
 
-/**
- * Run a tRPC call and translate `data.upstream` (set by agent-runtime's
- * errorFormatter for upstream gateway errors) into an
- * AgentRuntimeUpstreamError so callers can extract the CTA URL. A response
- * with no `data` at all means the pod never answered — the error envelope is
- * built server-side, so its absence is a transport failure on this hop, not
- * something the pod threw. Other tRPC errors propagate as plain Error.
- */
 async function runWithUpstreamMapping<T>(
   label: string,
   fn: () => Promise<T>,
@@ -165,9 +122,6 @@ async function runWithUpstreamMapping<T>(
       if (data === null) {
         throw new AgentRuntimeUnreachableError(`${label}: ${e.message}`);
       }
-      // A pod-side CONFLICT (writeLocal collision) has no `.upstream` envelope
-      // and would otherwise flatten to a plain Error, losing the code. Preserve
-      // it with the message verbatim so the UI can mark the offending rows.
       if (data.code === "CONFLICT") {
         throw new AgentRuntimeConflictError(e.message);
       }

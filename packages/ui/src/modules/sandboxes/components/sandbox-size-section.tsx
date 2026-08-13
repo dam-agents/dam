@@ -5,38 +5,24 @@ import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { formatCores, formatMiAsMemory } from "../../budgets/lib/format.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 
-// Floors mirror the server-side slider validation (agentSizeSchema).
 const CPU_FLOOR_MILLI = 100;
 const MEMORY_FLOOR_MI = 384;
 const CPU_STEP_MILLI = 100;
 const MEMORY_STEP_MI = 128;
 
-// The chart default Size, shown when neither the slider nor the template
-// chooses. Display seed only — an untouched slider sends no `size` and the
-// server applies its own default.
 const FALLBACK_CPU_MILLI = 1000;
 const FALLBACK_MEMORY_MI = 1024;
 
 interface Props {
-  /** The selected template's default Size, when it declares one. */
   templateSize?: { cpu?: string; memory?: string };
   sizeCpuMilli: number | null;
   sizeMemoryMi: number | null;
   onChange: (patch: { sizeCpuMilli?: number; sizeMemoryMi?: number }) => void;
   disabled?: boolean;
-  /** Settings-only: what saving a size change does to this sandbox. */
   restartNote?: string;
-  /** Settings-only: the sandbox's current Size when it is UP — its own
-   *  contribution is already inside `reserved`, so a resize only spends
-   *  the difference. */
   currentSize?: { cpu?: string; memory?: string };
 }
 
-/** CPU/memory sliders for the sandbox's Size — how much it can use while
- *  running. Bounded below by the platform floors and above by the user's
- *  budget Ceiling; defaults to the template's Size. Warns (without blocking)
- *  when the chosen Size exceeds the room currently free — the sandbox would
- *  wait parked until something else stops. */
 export function SandboxSizeSection({
   templateSize,
   sizeCpuMilli,
@@ -60,10 +46,6 @@ export function SandboxSizeSection({
     memory,
   );
 
-  // Headroom from the last poll — advisory only (enforcement is the
-  // controller's); a size past it parks the sandbox rather than failing.
-  // An up sandbox's own Size is already counted in `reserved`, so credit it
-  // back — a resize only spends the difference.
   const ownCpu = parseCpuMilli(currentSize?.cpu) ?? 0;
   const ownMemoryMi = parseMemoryMi(currentSize?.memory) ?? 0;
   const freeCpu = budget

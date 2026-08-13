@@ -23,17 +23,10 @@ export interface InvocationEndpointsDeps {
   templates: TemplatesService;
 }
 
-/** Mounts the driver-facing spawn primitive on the harness surface. Every route
- *  is scoped to the driver's identity — the `:id` the waypoint already
- *  authenticated. Create-then-poll: POST returns an id, GET reports status +
- *  the schema-validated result. The path is `/invocations`, matching the
- *  domain term; the driver SDK is wired to the same path. */
 export function mountInvocationRoutes(
   app: Hono,
   deps: InvocationEndpointsDeps,
 ): void {
-  // Spawn an Invocation as the driver (:id). The driver's own connection grants
-  // are the attenuation ceiling for the requested subset.
   app.post("/api/agents/:id/invocations", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);
@@ -101,7 +94,6 @@ export function mountInvocationRoutes(
     }
   });
 
-  // Poll an Invocation the driver spawned.
   app.get("/api/agents/:id/invocations/:invocationId", async (c) => {
     const driverId = c.req.param("id")!;
     const invocationId = c.req.param("invocationId")!;
@@ -115,7 +107,6 @@ export function mountInvocationRoutes(
     return c.json(view);
   });
 
-  // The driver's own connection grants — the set it may pass to an Invocation.
   app.get("/api/agents/:id/connections", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);
@@ -133,7 +124,6 @@ export function mountInvocationRoutes(
     return c.json({ connections });
   });
 
-  // The image catalog an Invocation target may run.
   app.get("/api/agents/:id/images", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);

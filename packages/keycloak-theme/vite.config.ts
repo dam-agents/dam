@@ -10,8 +10,6 @@ export default defineConfig({
     keycloakify({
       themeName: ["platform"],
       accountThemeImplementation: "none",
-      // Runtime knobs resolved from the Keycloak container environment
-      // (Helm keycloak.login.*) — see kcContext.properties.
       environmentVariables: [
         { name: "PLATFORM_ALLOW_PASSWORD", default: "true" },
         { name: "PLATFORM_REQUEST_ACCESS_URL", default: "" },

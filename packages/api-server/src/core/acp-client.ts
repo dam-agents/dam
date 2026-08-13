@@ -10,17 +10,8 @@ import type {
 import { podBaseUrl } from "../modules/agents/infrastructure/k8s.js";
 import { getLogger } from "./logger.js";
 
-/** How often we ping the agent-runtime ws to prove the socket is alive.
- *  Mirrors the ssh-relay heartbeat. */
 const PING_INTERVAL_MS = 30_000;
-/** Consecutive unanswered pings before the socket is declared dead. A single
- *  GC pause or event-loop stall on a healthy agent-runtime can delay one pong
- *  past a 30s tick; requiring two misses (~90s of silence) rides that out
- *  without killing a live turn, while still catching a real half-open socket
- *  far inside the turn ceiling. */
 const MAX_MISSED_PONGS = 2;
-/** Fallback per-turn ceiling when a caller doesn't supply one (tests, direct
- *  use). Production wires config.acpTurnCeilingSeconds through the factories. */
 const DEFAULT_TURN_CEILING_MS = 60 * 60 * 1000;
 
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
@@ -71,8 +62,6 @@ export interface AcpSessionInfo {
   sessionId: string;
   title?: string | null;
   updatedAt?: string | null;
-  /** Platform metadata round-tripped via `_meta.platform`; null for
-   * harness-internally-minted sessions (e.g. TUI `/clear`). */
   platform?: PlatformSessionMeta | null;
 }
 
@@ -90,22 +79,15 @@ export interface TriggerSessionResult {
   stopReason?: string;
 }
 
-/** How a call binds to its session: resume an existing one, or create a new
- *  one and persist it via the callback. Mutually exclusive by construction. */
 type SessionAttach =
   | { resumeSessionId: string }
   | { onSessionCreated: (sessionId: string) => Promise<void> };
 
-/** Live progress of a running turn, projected onto the narrow surface channel
- *  workers consume. Tool updates carry the human-readable title only. */
 export type PromptUpdate =
   | { kind: "text"; text: string }
   | { kind: "thought" }
   | { kind: "tool"; title: string | null };
 
-/** Projects a raw ACP `session/update` notification onto {@link PromptUpdate}.
- *  Returns null for updates consumers don't care about (plans, mode changes,
- *  user-message echoes, title-less tool patches). */
 export function toPromptUpdate(update: unknown): PromptUpdate | null {
   const u = update as
     | {
@@ -127,7 +109,6 @@ export function toPromptUpdate(update: unknown): PromptUpdate | null {
         title: typeof u.title === "string" ? u.title : null,
       };
     case "tool_call_update":
-      // Status-only patches would spam consumers; only a title change matters.
       return typeof u.title === "string"
         ? { kind: "tool", title: u.title }
         : null;
@@ -136,21 +117,12 @@ export function toPromptUpdate(update: unknown): PromptUpdate | null {
   }
 }
 
-/** Resume an existing session, or start a new one stamping `_meta.platform`
- *  so the agent records it — no server-side persist needed. */
 export type SendPromptOpts = (
   | { resumeSessionId: string }
   | { platformMeta?: PlatformSessionMeta }
 ) & {
-  /** Called when image blocks are stripped because the agent lacks image support. */
   onImagesDropped?: () => Promise<void> | void;
-  /** Live per-notification progress for this turn only — resume replays of
-   *  prior history are withheld. Must not throw; failures are swallowed. */
   onUpdate?: (update: PromptUpdate) => void;
-  /** The session this turn runs on, reported once it is known (resumed or
-   *  freshly minted) and before the prompt is sent. Callers that need to name
-   *  the session outside the turn — a channel worker linking a reply back to
-   *  the UI — have no other way to learn a new session's id. */
   onSession?: (sessionId: string) => void;
 };
 
@@ -183,11 +155,6 @@ async function withAcpConnection<T>(
   const ac = new AbortController();
   let abortReason = "ACP connection aborted";
 
-  // Liveness is a transport signal, not an application one. The agent-runtime's
-  // ws server auto-pongs, so a live-but-silent turn — an egress approval hold, a
-  // long tool, a slow first token — stays connected; only a dead/half-open
-  // socket aborts. Mirrors the ssh-relay heartbeat. A pong resets the miss
-  // counter; MAX_MISSED_PONGS consecutive unanswered pings aborts.
   let missedPongs = 0;
   ws.on("pong", () => {
     missedPongs = 0;
@@ -202,16 +169,10 @@ async function withAcpConnection<T>(
     try {
       ws.ping();
     } catch (err) {
-      // A throw here means the socket is already broken; the next tick will
-      // trip the miss ceiling and abort. Log so a real transport failure
-      // isn't invisible.
       getLogger().debug({ err, clientName }, "acp heartbeat ping failed");
     }
   }, PING_INTERVAL_MS);
 
-  // Absolute backstop against a wedged-but-still-ponging agent. Sized at/above
-  // the egress approval hold (config enforces acpTurnCeilingSeconds >=
-  // approvalHoldSeconds) so a human taking the full approval window never trips it.
   const ceiling = setTimeout(() => {
     abortReason = `ACP turn exceeded the ${Math.round(turnCeilingMs / 1000)}s ceiling`;
     ac.abort();
@@ -259,8 +220,6 @@ async function withAcpConnection<T>(
     });
     return await Promise.race([
       fn(connection, init),
-      // On abort the race settles here regardless of whether fn is hung, so the
-      // finally block runs promptly; no separate abort→cleanup listener needed.
       new Promise<never>((_, reject) => {
         if (ac.signal.aborted) {
           reject(new Error(abortReason));
@@ -278,8 +237,6 @@ async function withAcpConnection<T>(
   }
 }
 
-/** Builds an AcpClient for a resolved agent instance. Bound at the composition
- *  root with the turn ceiling baked in, then injected into the channel workers. */
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
 export function createAcpClient(opts: {
@@ -295,8 +252,6 @@ export function createAcpClient(opts: {
 
 function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
   return {
-    // Throws on connection/RPC failure; callers (the repository and the
-    // channel workers) catch and treat an unreachable agent as "no sessions".
     async listSessions(): Promise<AcpSessionInfo[]> {
       const { stream, ws } = await wsStream(url);
 
@@ -350,8 +305,6 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
       sendOpts: SendPromptOpts,
     ): Promise<string> {
       const responseChunks: string[] = [];
-      // loadSession replays prior history as ordinary notifications before the
-      // live turn starts; hold the caller's onUpdate until the prompt is sent.
       let live = false;
 
       await withAcpConnection(
@@ -384,16 +337,11 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
         async (connection, init) => {
           let sessionId: string;
           if ("resumeSessionId" in sendOpts) {
-            // loadSession (not unstable_resumeSession) survives the agent-runtime's
-            // idle reap — the runtime replays history from its log or cold-bootstraps
-            // the session in the agent subprocess.
             await connection.loadSession({
               sessionId: sendOpts.resumeSessionId,
               cwd: ".",
               mcpServers: [],
             });
-            // History replay arrives as agent_message_chunk notifications; drop them
-            // so the caller only sees this turn's response.
             responseChunks.length = 0;
             sessionId = sendOpts.resumeSessionId;
           } else {
@@ -430,8 +378,6 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
             await sendOpts.onImagesDropped?.();
           }
 
-          // Everything before this point is setup/replay; from here on the
-          // notifications belong to this turn, so start forwarding them.
           live = true;
           await connection.prompt({ sessionId, prompt: finalBlocks });
         },

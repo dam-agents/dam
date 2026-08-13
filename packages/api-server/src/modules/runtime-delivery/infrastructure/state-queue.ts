@@ -5,7 +5,6 @@ export const RUNTIME_STATE_QUEUE = "runtime-state";
 
 export interface StateJob {
   agentId: string;
-  /** Set by `hello`: fast-retry on the queue backoff if not yet Ready, instead of deferring to the sweep. */
   retryUntilReady?: boolean;
 }
 
@@ -14,7 +13,6 @@ export interface StateQueue {
   close(): Promise<void>;
 }
 
-// `retryUntilReady` jobs wait on the Ready condition: re-check on a tight fixed cadence (~wake budget) so the apply lands seconds after Ready, not at the next sparse exponential retry.
 const READY_RECHECK_MS = 1_000;
 const READY_RECHECK_ATTEMPTS = 120;
 
@@ -22,7 +20,6 @@ export function createStateQueue(connection: ConnectionOptions): StateQueue {
   const queue = new Queue<StateJob>(RUNTIME_STATE_QUEUE, { connection });
   return {
     async enqueue(agentId, opts): Promise<void> {
-      // No jobId dedup on purpose: applyState is idempotent, so a prompt redundant apply beats stalling fresh config behind an in-flight job.
       const retry = opts?.retryUntilReady
         ? {
             attempts: READY_RECHECK_ATTEMPTS,

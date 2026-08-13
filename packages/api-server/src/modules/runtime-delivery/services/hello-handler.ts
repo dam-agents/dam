@@ -10,7 +10,6 @@ import type {
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 
-/** Presence ping + worker enqueue when the outbox is ahead of the agent. */
 export function createHelloHandler(deps: {
   outboxRepo: OutboxRepo;
   agentsRuntimeRepo: AgentsRuntimeRepo;
@@ -27,17 +26,12 @@ export function createHelloHandler(deps: {
         agentRuntimeVersion: input.agentRuntimeVersion,
       });
 
-      // The pod read its own file, so this confirms what an apply only declared.
-      // `hello` deliberately carries no model list — it would cost a provider
-      // round-trip on the path that delivers capabilities — and an absent one
-      // leaves whatever an earlier apply established intact.
       if (input.harnessConfigCurrent) {
         try {
           await deps.snapshotWriter.merge(agentId, input.harnessConfigCurrent, {
             confirmed: true,
           });
         } catch (err) {
-          // Display state — never the reason a boot registration fails.
           deps.log(
             `[runtime-hello] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,
           );
@@ -46,7 +40,6 @@ export function createHelloHandler(deps: {
 
       const row = await deps.outboxRepo.getRow(agentId);
       if (row && row.version > (input.lastAppliedVersion ?? 0)) {
-        // Ready is about to flip true; retryUntilReady so a sub-second miss fast-retries, not waits for the sweep.
         await deps.queue.enqueue(agentId, { retryUntilReady: true });
       }
       return { events: [] };

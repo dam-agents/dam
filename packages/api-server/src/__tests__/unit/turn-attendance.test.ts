@@ -5,9 +5,6 @@ import {
   SESSION_PRESENCE_KEY_PREFIX,
 } from "../../core/turn-attendance.js";
 
-/** Minimal in-memory stand-in for the two commands the store uses, plus a
- *  cursor-walking SCAN so the reader's pagination is exercised rather than
- *  short-circuited by a single-page fake. */
 function makeFakeRedis(opts?: { failScan?: boolean }) {
   const keys = new Set<string>();
   const redis = {
@@ -21,14 +18,10 @@ function makeFakeRedis(opts?: { failScan?: boolean }) {
     }),
     scan: vi.fn(async (cursor: string, _m: string, pattern: string) => {
       if (opts?.failScan) throw new Error("redis down");
-      // Every pattern the store issues is a literal prefix plus one trailing
-      // "*", so matching is a prefix test — no glob-to-regex translation to get
-      // subtly wrong. Reject anything else rather than quietly mismatching it.
       if (!pattern.endsWith("*") || pattern.slice(0, -1).includes("*"))
         throw new Error(`fake redis: unsupported scan pattern ${pattern}`);
       const prefix = pattern.slice(0, -1);
       const all = [...keys];
-      // Hand back one key per page so a match on a later page still counts.
       const i = Number(cursor);
       const next = i + 1 >= all.length ? "0" : String(i + 1);
       const page =
@@ -39,7 +32,6 @@ function makeFakeRedis(opts?: { failScan?: boolean }) {
   return { redis: redis as unknown as Redis, keys, spies: redis };
 }
 
-/** Lets the fire-and-forget write chain settle. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
@@ -103,7 +95,6 @@ describe("turn attendance", () => {
     const { redis, keys } = makeFakeRedis();
     const attendance = createTurnAttendance(redis);
 
-    // Written by a different replica id than this instance's.
     keys.add("channel-turn:agent:agent-1:other-replica");
 
     expect(await attendance.hasOpenChannelTurn("agent-1")).toBe(true);
@@ -135,8 +126,6 @@ describe("turn attendance", () => {
     const { redis } = makeFakeRedis({ failScan: true });
     const attendance = createTurnAttendance(redis);
 
-    // Both answers must push the gate onto the ordinary hold path rather than
-    // a fast deny: no channel turn known, and assume someone is watching.
     expect(await attendance.hasOpenChannelTurn("agent-1")).toBe(false);
     expect(await attendance.hasInteractiveSession("agent-1")).toBe(true);
     attendance.close();

@@ -8,8 +8,6 @@ import {
   type View,
 } from "../lib/routes.js";
 
-/** A knowledge base's page is the same ChatView under its own route, so both
- *  views carry their agent in `selectedAgent` and share chat's teardown. */
 const isChatView = (view: View) =>
   view === "chat" || view === "knowledge-base-chat";
 
@@ -18,11 +16,6 @@ const isChatRoute = (
 ): route is Extract<Route, { view: "chat" | "knowledge-base-chat" }> =>
   isChatView(route.view);
 
-/**
- * The UI's only popstate listener. Entering either chat surface always resets
- * chat context and sets `selectedAgent`; leaving one for any other view resets
- * and clears it; non-chat → non-chat transitions touch no chat state.
- */
 export function useBrowserHistory(): void {
   useEffect(() => {
     const applyRoute = () => {
@@ -34,11 +27,6 @@ export function useBrowserHistory(): void {
         useStore.setState({
           ...routeToNavigationState(route),
           selectedAgent: route.agent,
-          // A session in the path is a conversation to re-open — a link
-          // followed from a channel, a reload, or a back/forward step. Set
-          // after the reset, which clears it, exactly like `openAgentSession`;
-          // chat consumes it on arrival. Naming a session also means landing in
-          // it, so mobile opens the chat screen rather than the session list.
           ...("session" in route && route.session
             ? {
                 pendingResumeSessionId: route.session,
@@ -56,10 +44,6 @@ export function useBrowserHistory(): void {
       });
     };
 
-    // Not redundant next to navigation.ts's initializer: this mount-time call
-    // is the only thing that sets `selectedAgent` on a cold load at
-    // /chat/:agent (the agents slice initializes it to null), and it re-parses
-    // the URL after auth.ts restores the post-login return path.
     applyRoute();
     window.addEventListener("popstate", applyRoute);
     return () => window.removeEventListener("popstate", applyRoute);

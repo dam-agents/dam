@@ -1,60 +1,4 @@
 #!/usr/bin/env node
-// ACP bridge for Bob Shell 2.x.
-//
-// Bob 2.0 removed the `--experimental-acp` mode this shim used to translate;
-// the headless surface is now `bob run --format stream-json` plus a native
-// `--resume <task-id>`. The shim is therefore a small ACP *agent* on
-// stdin/stdout: agent-runtime speaks ACP to it, and each prompt turn spawns
-// one `bob run` whose stream-json events are translated to session/update
-// frames.
-//
-// ──────────────────────────────────────────────────────────────────────────
-// Translation table (bob run stream-json → ACP session/update)
-//
-//   message role=user                  → DROP. Echo of the submitted prompt;
-//                                        the client renders its own.
-//   message role=assistant isReasoning → agent_thought_chunk
-//   message role=assistant             → agent_message_chunk
-//   tool_use                           → tool_call (in_progress, kind mapped
-//                                        from the tool name)
-//   tool_result                        → tool_call_update (completed/failed)
-//   result                             → records stats.task_id as the
-//                                        session's bob task id; resolves the
-//                                        prompt with stopReason end_turn.
-//   error                              → surfaced as agent_message_chunk
-//                                        (budget/turn caps land here).
-//
-// `bob run --resume` does NOT re-emit the task's stored messages: the stream
-// starts at the new prompt's echo. Verified against tasks carrying several
-// assistant turns and tool messages. So every event of a turn is live and the
-// translation above needs no gating — if a future release starts replaying, the
-// fix is to bound the replay by the stored message count, not to guess at the
-// first live chunk (any "wait for the first assistant message" heuristic opens
-// mid-replay, since replayed history contains assistant turns of its own).
-//
-// ──────────────────────────────────────────────────────────────────────────
-// Session history (list / load / resume)
-//
-// Bob 2.0 persists tasks in SQLite (`~/.bob/db/bob.db`, tables tasks +
-// messages) on the PVC. The shim serves ACP history straight from it:
-//   session/list → SELECT from tasks, one session per task.
-//   session/load → replay the task's messages as user/agent chunks.
-//   session/prompt → `bob run --resume <taskId>` — native continuation, no
-//     transcript re-injection.
-// ACP session ids issued by session/new are shim-generated; the sessionId ↔
-// taskId mapping is persisted to `~/.bob/platform-shim-sessions.json` so a
-// pod restart keeps loaded sessions resumable.
-//
-// Settings: `bob run` has no yolo/auto-approve flag — approvals ride
-// `~/.bob/settings/settings.json`. ensureSettings() merge-writes the platform
-// posture (license consent, all permission groups approved, wildcard command
-// allowlist, model/mode/cost from the BOB_* env). The trust boundary is the
-// platform's Envoy gateway + K8s isolation, not Bob's approval layer.
-// ensureRules() re-asserts the platform instructions link on every start, which
-// image seeding alone can't do for an agent that predates the 2.0 layout.
-//
-// Set BOB_SHIM_TRACE=1 to log every inbound and outbound frame to stderr.
-// ──────────────────────────────────────────────────────────────────────────
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -89,8 +33,6 @@ const AVAILABLE_MODES = [
   { id: "ask", name: "Ask" },
 ];
 
-// BOB_CHAT_MODE may still carry a 1.x value pinned on an existing provider
-// secret; 2.0 merged code+advanced into agent.
 function normalizeMode(mode) {
   if (mode === "code" || mode === "advanced") return "agent";
   return AVAILABLE_MODES.some((m) => m.id === mode) ? mode : null;
@@ -105,15 +47,12 @@ function trace(dir, line) {
   if (TRACE) process.stderr.write(`[${dir}] ${line}\n`);
 }
 
-// ── settings bootstrap ──────────────────────────────────────────────────────
-// Also runnable standalone (`--settings-only`) so harness-terminal can share it.
 
 export function ensureSettings() {
   let existing = {};
   try {
     existing = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
   } catch {
-    /* first boot */
   }
   const maxCost = Number(process.env.BOB_MAX_COINS ?? process.env.BOB_MAX_COST);
   const settings = {
@@ -139,11 +78,6 @@ export function ensureSettings() {
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
 }
 
-// The image seeds ~/.bob/rules/platform.md, but $HOME is seeded from the image
-// only on first boot (the init script's `.initialized` guard), so an agent
-// created before this layout keeps a 1.x `.bob/AGENTS.md` that 2.0 never reads
-// — it would run with no platform instructions at all. Re-assert the link on
-// every start. Never fatal: no rules is a degraded agent, not a dead one.
 export function ensureRules() {
   try {
     if (!existsSync(PLATFORM_INSTRUCTIONS)) return;
@@ -158,9 +92,6 @@ export function ensureRules() {
     try {
       symlinkSync(PLATFORM_INSTRUCTIONS, PLATFORM_RULE_PATH);
     } catch {
-      // $HOME on the VM backend is unprivileged virtiofs, where a non-root
-      // symlink() EPERMs (same constraint the platform-base entrypoint hits on
-      // ~/.cache). A copy goes stale on image update; rules beat no rules.
       copyFileSync(PLATFORM_INSTRUCTIONS, PLATFORM_RULE_PATH);
     }
   } catch (err) {
@@ -168,7 +99,6 @@ export function ensureRules() {
   }
 }
 
-// ── sessionId ↔ taskId mapping ──────────────────────────────────────────────
 
 const sessionToTask = new Map();
 (() => {
@@ -176,7 +106,6 @@ const sessionToTask = new Map();
     const stored = JSON.parse(readFileSync(SESSION_MAP_PATH, "utf8"));
     for (const [sid, tid] of Object.entries(stored)) sessionToTask.set(sid, tid);
   } catch {
-    /* no mapping yet */
   }
 })();
 
@@ -202,7 +131,6 @@ function sessionIdFor(taskId) {
   return taskId;
 }
 
-// ── task store (bob.db, read-only) ──────────────────────────────────────────
 
 function withDb(fn) {
   let db;
@@ -254,8 +182,6 @@ function taskTitle(task) {
   return raw.length > 120 ? raw.slice(0, 119) + "…" : raw;
 }
 
-// messages.data is Bob's serialized message JSON; content is a string (or
-// block list on some tool messages). Extract user-facing text, or "".
 function messageText(data) {
   let m;
   try {
@@ -281,7 +207,6 @@ function messageRole(data) {
   }
 }
 
-// ── ACP plumbing ────────────────────────────────────────────────────────────
 
 function emitToClient(frame) {
   const line = JSON.stringify(frame);
@@ -309,9 +234,7 @@ function respondError(id, code, message) {
   emitToClient({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
-// ── session state ───────────────────────────────────────────────────────────
 
-// sessionId → { cwd, running: Promise (turn serialization), child, cancelled }
 const sessions = new Map();
 
 function sessionState(sessionId) {
@@ -323,10 +246,6 @@ function sessionState(sessionId) {
   return s;
 }
 
-// ── attachments ─────────────────────────────────────────────────────────────
-// Chat uploads land under ~/.uploads; copy them into the workspace so Bob's
-// read guard can see them, and hand Bob a text pointer (it takes no
-// resource_link blocks).
 
 function stageAttachment(block, cwd) {
   let src = typeof block.uri === "string" ? block.uri : "";
@@ -336,12 +255,10 @@ function stageAttachment(block, cwd) {
     try {
       src = fileURLToPath(src);
     } catch {
-      /* keep the raw uri */
     }
   } else if (/^[a-z][a-z0-9+.-]*:/i.test(src)) {
     return `[Attached link${name}${mime}: ${src}]`;
   }
-  // Resolve before the containment check so `..` can't escape UPLOADS_ROOT.
   src = resolve(src);
   if (src === UPLOADS_ROOT || src.startsWith(UPLOADS_ROOT + sep)) {
     try {
@@ -366,7 +283,6 @@ function promptToText(promptBlocks, cwd) {
   return parts.join("\n\n");
 }
 
-// ── tool kind mapping (bob tool name → ACP tool_call kind) ─────────────────
 
 function toolKind(name) {
   const n = String(name ?? "");
@@ -378,7 +294,6 @@ function toolKind(name) {
   return "other";
 }
 
-// ── prompt turn: spawn bob run and translate its stream ─────────────────────
 
 function buildRunArgs(state, taskId, promptText) {
   const args = [
@@ -396,7 +311,6 @@ function buildRunArgs(state, taskId, promptText) {
   const maxCost = Number(process.env.BOB_MAX_COINS ?? process.env.BOB_MAX_COST);
   if (Number.isFinite(maxCost) && maxCost > 0) args.push("--max-cost", String(maxCost));
   if (taskId) args.push("--resume", taskId);
-  // Positional prompt; `--` keeps a leading-dash prompt out of option parsing.
   args.push("--", promptText);
   return args;
 }
@@ -423,7 +337,7 @@ function runTurn(sessionId, requestId, promptText) {
     const handleEvent = (ev) => {
       switch (ev.type) {
         case "message": {
-          if (ev.role === "user") return; // echo — the client renders its own
+          if (ev.role === "user") return;
           if (ev.role !== "assistant" || typeof ev.content !== "string") return;
           if (ev.isReasoning) emitThoughtChunk(sessionId, ev.content);
           else emitAgentMessage(sessionId, ev.content);
@@ -503,7 +417,6 @@ function runTurn(sessionId, requestId, promptText) {
   });
 }
 
-// ── ACP request handlers ────────────────────────────────────────────────────
 
 function handleInitialize(f) {
   respond(f.id, {
@@ -530,14 +443,9 @@ function handleSessionNew(f) {
 function handleSessionList(f) {
   const sessions = listTasks().map((t) => ({
     sessionId: sessionIdFor(t.id),
-    // `tasks.directory` is always "" — 2.0 binds a task to its workspace via
-    // project_id and inserts an empty string here — so report the workspace the
-    // harness actually runs in rather than a blank.
     cwd: process.cwd(),
     title: taskTitle(t),
     updatedAt: Number.isFinite(t.updated_at) ? new Date(t.updated_at).toISOString() : null,
-    // Tag as chat so agent-runtime's list enrichment doesn't decode a
-    // store-less session as terminal.
     _meta: { platform: { mode: "chat" } },
   }));
   respond(f.id, { sessions });
@@ -552,10 +460,6 @@ function handleSessionLoad(f) {
     return;
   }
   bindTask(sid, taskId);
-  // Deliberately no cwd restore from the task: `tasks.directory` is always "".
-  // The turn keeps the client-supplied cwd (the platform sends "."), which
-  // resolves to the harness's workspace — the one the task belongs to. Running a
-  // --resume from any other directory makes bob reject the task outright.
   for (const row of rows) {
     const role = row.role || messageRole(row.data);
     const text = messageText(row.data);
@@ -598,7 +502,6 @@ function handleSessionPrompt(f) {
     respond(f.id, { stopReason: "end_turn" });
     return;
   }
-  // Serialize turns per session; bob locks the task row while running.
   state.running = state.running.then(() => runTurn(sessionId, f.id, promptText));
 }
 
@@ -612,8 +515,6 @@ function handleSessionCancel(f) {
   if (f.id !== undefined) respond(f.id, null);
 }
 
-// The task lives in bob.db; only the in-memory turn state goes (the persisted
-// sessionId↔taskId binding stays so the session remains loadable).
 function handleSessionClose(f) {
   const sessionId = f.params?.sessionId;
   const state = typeof sessionId === "string" ? sessions.get(sessionId) : null;
@@ -657,7 +558,6 @@ function handleClientLine(line) {
   }
 }
 
-// ── main ────────────────────────────────────────────────────────────────────
 
 const settingsOnly = process.argv.includes("--settings-only");
 ensureSettings();

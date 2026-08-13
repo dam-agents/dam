@@ -22,8 +22,6 @@ function DetailCard({
   );
 }
 
-/** The expandable per-schedule detail: the task prompt plus a grid of
- *  operational status. Read-only — editing happens through the modal. */
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const { task, timezone, sessionMode, enabled, status } = schedule;
   const nextRun =

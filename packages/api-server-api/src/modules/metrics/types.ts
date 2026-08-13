@@ -11,9 +11,6 @@ export type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;
 
-/** Token counts + cost rolled up per model, over the window. `durationMs` sums
- *  per-call request latency, so concurrent calls overlap within it — it measures
- *  how long models spent working, not elapsed wall-clock. */
 export interface TokenSpendByModel {
   model: string;
   calls: number;
@@ -25,31 +22,17 @@ export interface TokenSpendByModel {
   durationMs: number;
 }
 
-/** Spend rolled up per agent over the window. Grouped on the trusted,
- *  gateway-stamped agent id; `agentName` comes from the platform agent registry
- *  for an agent that still exists, and falls back to the latest
- *  `platform.agent.name` the telemetry carried in range so a since-deleted agent
- *  keeps a readable name. The name is display-only — the id stays the key.
- *  Rows that resolve to an Invocation target rather than an agent are left out
- *  entirely; their spend still counts in the other rollups. */
 export interface SpendByAgent {
   agentId: string;
   agentName: string;
   costUsd: number;
 }
 
-/** Spend for one local calendar day. The response is sparse — only days that
- *  carried spend appear, `day` is a `YYYY-MM-DD` wall-clock date in the
- *  client's timezone. Zero-filling the rest of the month is the client's job. */
 export interface SpendByDay {
   day: string;
   costUsd: number;
 }
 
-/** One row per Claude Code session: API-call count, summed request latency,
- *  and token/cost totals. The sessionId is the ACP session id — Claude Code
- *  reuses it as its OTel `session.id`, so it joins with the UI's session list.
- *  Child harness runs are folded into their root session via shared trace. */
 export interface SessionRuntime {
   sessionId: string;
   agentId: string;
@@ -64,8 +47,6 @@ export interface SessionRuntime {
   lastAt: string;
 }
 
-/** One row per LLM API call. `contextTokens` = input + cache-read +
- *  cache-creation — the tokens fed into the model's context that call. */
 export interface CallContext {
   at: string;
   requestId: string;
@@ -80,31 +61,19 @@ export interface CallContext {
   durationMs: number;
 }
 
-/** All metrics stats for the window in one shape: per-model token spend,
- *  per-session runtime, and the most recent per-call context rows. */
 export interface MetricsOverview {
   tokenSpendByModel: TokenSpendByModel[];
   runtimeBySession: SessionRuntime[];
   contextPerCall: CallContext[];
 }
 
-/** The whole Usage tab in one shape: per-model, per-agent, and per-day spend
- *  over the same [from, to) range, resolved under a single ownership scope. */
 export interface SpendBreakdown {
   byModel: TokenSpendByModel[];
   byAgent: SpendByAgent[];
   byDay: SpendByDay[];
 }
 
-/** Read-only, owner-scoped view over agent metrics stored in ClickHouse.
- *  Returns data only for agents the caller owns. */
 export interface MetricsService {
   overview(query: MetricsQuery): Promise<MetricsOverview>;
-  /** The whole Usage tab in one read: per-model, per-agent, and per-day spend
-   *  over [from, to) — across the caller's agents, deleted ones included so
-   *  history doesn't shrink retroactively, or one of them when `agentId` narrows
-   *  it. Per-agent rows are sorted highest cost first; per-day rows are sparse
-   *  (only days with spend) and bucketed into the client's local calendar days.
-   *  Ownership resolves once for all three rollups. */
   spendBreakdown(query: MetricsSpendBreakdownQuery): Promise<SpendBreakdown>;
 }

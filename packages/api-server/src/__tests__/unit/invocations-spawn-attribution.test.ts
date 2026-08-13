@@ -6,12 +6,6 @@ import {
   UnresolvableDriverError,
 } from "../../modules/invocations/services/invocations-service.js";
 
-// The security-load-bearing spawn guarantees (#3041): a target has no spend
-// identity of its own, so spawn resolves the root Driver and stamps it as the
-// target's `telemetryAttributionId`. A chain that cannot resolve fails CLOSED —
-// stamping self would manufacture exactly the orphan spend row this feature
-// eliminates — so spawn refuses before any row or agent exists.
-
 interface Recorder {
   inserted: string[];
   deleted: string[];
@@ -85,7 +79,6 @@ describe("spawn attributes spend to the resolved root Driver", () => {
     await expect(service.spawn(spawnInput)).rejects.toBeInstanceOf(
       UnresolvableDriverError,
     );
-    // Fail at the door: resolution precedes the row, so nothing to clean up.
     expect(rec.inserted).toEqual([]);
     expect(rec.created).toEqual([]);
     expect(rec.deleted).toEqual([]);

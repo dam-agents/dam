@@ -5,7 +5,6 @@ import { templateImageUpdate } from "../../modules/agents/domain/template-update
 import { executeTemplateUpgrade } from "../../modules/agents/services/agents-service.js";
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 
-// Swallow securityLog output from the upgrade path under test.
 configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";

@@ -12,15 +12,12 @@ import { createGitProtocolClient } from "../../skills/infrastructure/git-protoco
 
 const IMPL_NAME = "workspace-seed";
 
-// Clone fn, injectable for tests; defaults to GitProtocolClient (proxy + CA aware).
 export type CloneFn = (
   url: string,
   dest: string,
   ref?: string,
 ) => Promise<Result<void, SkillsDomainError>>;
 
-// Event driver for `workspace-seed`: clone a repo into the work dir once.
-// Dirty-safe — skips if already seeded, refuses a non-empty work dir.
 export function createWorkspaceSeedPlugin(deps: {
   workDir: string;
   clone?: CloneFn;

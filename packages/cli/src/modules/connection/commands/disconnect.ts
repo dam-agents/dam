@@ -44,9 +44,6 @@ export function buildDisconnectCommand(deps: {
 
       const svc = deps.createConnectionService(host);
 
-      // Resolve the ref to a real connection first — the server's delete is
-      // idempotent (an unknown id succeeds), so without this an id-typo or a
-      // name would report a false "Disconnected".
       const listed = await svc.list();
       if (!listed.ok) {
         printServiceError(listed.error, host);

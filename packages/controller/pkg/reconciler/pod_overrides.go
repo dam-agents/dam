@@ -8,10 +8,6 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// applyAgentBaseMeta merges chart-level ExtraLabels / ExtraAnnotations into
-// the pod template metadata. Controller-managed keys already present in
-// `meta` win on collision — load-bearing selectors and the gateway's
-// `envoy-secrets-rev` annotation must not be overwritten.
 func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {
 	for k, v := range base.ExtraLabels {
 		if _, taken := meta.Labels[k]; taken {
@@ -33,8 +29,6 @@ func applyAgentBaseMeta(meta *metav1.ObjectMeta, base config.AgentBase) {
 	}
 }
 
-// applyAgentBaseScheduling stamps chart-level scheduling fields onto agent
-// and Run executor pods. Only non-zero values apply.
 func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	if len(base.NodeSelector) > 0 {
 		spec.NodeSelector = base.NodeSelector
@@ -57,9 +51,6 @@ func applyAgentBaseScheduling(spec *corev1.PodSpec, base config.AgentBase) {
 	}
 }
 
-// applyTemplateScheduling layers per-template RuntimeClassName / NodeSelector
-// over the chart-wide base. NodeSelector keys merge (onto a fresh copy, never
-// the shared config map); RuntimeClassName replaces.
 func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
 	if agentSpec.RuntimeClassName != "" {
 		rc := agentSpec.RuntimeClassName
@@ -77,10 +68,6 @@ func applyTemplateScheduling(spec *corev1.PodSpec, agentSpec *types.AgentSpec) {
 	}
 }
 
-// configMountsToTypes / configEnvToTypes shuttle the chart-side fallback
-// shapes (config.Mount / config.EnvVar) into the per-instance types the
-// reconciler already builds pods from. The shapes are identical bar the
-// package — splitting them keeps `config` independent of `types`.
 func configMountsToTypes(in []config.Mount) []types.Mount {
 	if len(in) == 0 {
 		return nil

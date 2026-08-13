@@ -14,14 +14,10 @@ import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveConnectionRef } from "../domain/connection-ref.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
-/** What `value` means per auth kind — the server dispatches on the same
- *  distinction, so the prompt has to name the right secret. */
 const SECRET_LABELS: Record<Exclude<ConnectionAuthKind, "none">, string> = {
   header: "New credential value",
   "client-credentials": "New client secret",
   "github-app": "New private key (PEM)",
-  // Its own client secret, not its tokens — those come from `reauth`. Only
-  // connections carrying their own qualify; the server rejects the rest.
   oauth: "New OAuth client secret",
 };
 
@@ -89,9 +85,6 @@ export function buildUpdateCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        // The server is the authority on which kinds accept an update (and
-        // rejects the rest with its own message); only "nothing is stored" is
-        // decidable here.
         if (match.authKind === "none") {
           process.stderr.write(
             `error: '${match.name}' stores no credential to update\n`,

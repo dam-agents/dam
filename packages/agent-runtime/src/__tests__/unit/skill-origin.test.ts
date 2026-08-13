@@ -95,7 +95,6 @@ describe("listLocal origin classification", () => {
   });
 
   it("matches on directory name even when frontmatter names differ", async () => {
-    // A frontmatter rename is a content change, not a new identity.
     await writeSkill(pristine[0], "tool", skillMd("tool"));
     await writeSkill(local[0], "tool", skillMd("renamed-tool"));
 
@@ -119,7 +118,6 @@ describe("listLocal origin classification", () => {
   });
 
   it("ignores a pristine dir without a SKILL.md (not a skill counterpart)", async () => {
-    // e.g. the staged kit's `commands/` dir sharing a root with real skills.
     await fs.mkdir(path.join(pristine[0], "commands"), { recursive: true });
     await fs.writeFile(
       path.join(pristine[0], "commands", "foo.md"),

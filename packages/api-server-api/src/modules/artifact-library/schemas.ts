@@ -13,7 +13,6 @@ export const artifactVisibilitySchema = z.enum(["private", "public"]);
 
 const titleSchema = z.string().trim().min(1, "title is required").max(300);
 const fileNameSchema = z.string().trim().min(1).max(255);
-/** Hours; capped at 10 years so `null` stays the only way to say "never". */
 const expiresInHoursSchema = z
   .number()
   .int()
@@ -33,8 +32,6 @@ export const artifactContentInputSchema = z.object({
   version: z.number().int().positive().optional(),
 });
 
-/** Inline content is capped well below the store cap — bigger payloads take
- *  the direct-upload path so blobs never ride tRPC JSON. */
 export const INLINE_CONTENT_MAX_BYTES = 2 * 1024 * 1024;
 
 const contentOrUploadRef = {
@@ -58,8 +55,6 @@ export const artifactCreateInputSchema = z
     path: ["content"],
   });
 
-// No kind: an artifact's format is settled at create and cannot be changed by
-// an update — see ArtifactUpdateInput for why. The file name stays editable.
 export const artifactUpdateInputSchema = z
   .object({
     id: z.string().min(1),

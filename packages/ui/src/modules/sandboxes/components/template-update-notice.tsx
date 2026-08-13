@@ -9,15 +9,12 @@ interface Props {
   agent: AgentView;
 }
 
-/** "Update available" banner under the Image field (#1077): the sandbox's
- *  template now ships a different image than the one captured at create. */
 export function TemplateUpdateNotice({ agent }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const upgrade = useUpgradeAgentMutation();
   const update = agent.templateUpdate;
   if (!update) return null;
 
-  // Mirrors sizeRestartsAgent: only a sandbox that's down applies lazily.
   const restartsOnUpgrade = !(agent.state === "hibernated" || agent.overBudget);
 
   const onUpgrade = async () => {
@@ -34,8 +31,6 @@ export function TemplateUpdateNotice({ agent }: Props) {
       </>
     );
     if (!(await showConfirm(msg, "Upgrade Sandbox"))) return;
-    // expectedToImage binds the confirmation to the diff shown above: if the
-    // template moves meanwhile, the server rejects instead of surprising.
     upgrade.mutate({ id: agent.id, expectedToImage: update.toImage });
   };
 

@@ -5,15 +5,6 @@ import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { agentName } from "../../lib/fixtures.js";
 
-// Path-scoped egress rules over HTTPS on a host the platform holds no
-// credential for (#2322). The rule must promote the host onto the gateway's
-// L7 (MITM) chain — the SNI-only L4 catch-all cannot see method/path, so
-// without promotion the narrow rule is silently ignored, the inbox prompts
-// for the whole site, and approving writes a hidden host-wide allow.
-//
-// postman-echo.com is a public echo service (same external-dependency class
-// as 05-injection's httpbingo.org). It deliberately has NO connection: the
-// gateway starts with no chain for it, which is the broken configuration.
 const host = "postman-echo.com";
 const allowedUrl = `https://${host}/status/204`;
 const uncoveredUrl = `https://${host}/get`;
@@ -37,7 +28,6 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
     await net.getByLabel("Verdict").selectOption("allow");
     await net.getByRole("button", { name: "Add rule" }).click();
     await page.getByRole("button", { name: "Submit changes" }).click();
-    // Path rules roll the gateway; the save flow confirms before committing.
     await page.getByRole("button", { name: "Save & restart" }).click();
     await expect
       .poll(
@@ -51,9 +41,6 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   });
 
   await test.step("a request matching the rule passes without a prompt", async () => {
-    // The poll absorbs the gateway roll (allow-only Secret → leaf cert SAN →
-    // new MITM chain, ≤30s informer resync + pod restart). Before the fix
-    // this never converges: the request holds for a human verdict instead.
     await expect
       .poll(
         async () => {
@@ -77,8 +64,6 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   });
 
   await test.step("an uncovered path prompts with method+path, not the whole site", async () => {
-    // Fire and forget: Envoy holds the request for a verdict; the mock
-    // agent's fetch gives up client-side long before the hold expires.
     void api.e2e.performFetch
       .mutate({ agentId, url: uncoveredUrl })
       .catch(() => {});
@@ -88,8 +73,6 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       .filter({ hasText: `GET ${host}` })
       .first();
     await expect(row).toBeVisible({ timeout: 30_000 });
-    // The L7 chain saw the decrypted request — an SNI-only hold would render
-    // the path as "*" and approving it would open the whole site.
     await expect(row.getByText("/get", { exact: true })).toBeVisible();
     await row.getByRole("button", { name: "Allow permanently" }).click();
   });
@@ -138,8 +121,6 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       "approving a narrow prompt must not write a host-wide rule",
     ).toBe(false);
 
-    // Behavioral double-check: a path outside both rules is still gated
-    // (held → the agent-side fetch times out, or fails closed — never 200).
     const gated = await api.e2e.performFetch
       .mutate({ agentId, url: stillGatedUrl })
       .then(

@@ -2,8 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import type { Redis } from "ioredis";
 import { createLeaderLease } from "../../core/leader-lease.js";
 
-/** Minimal Redis stand-in for SET NX PX + the compare-and-set extend/delete
- *  Lua. One store shared by every lease in a test models one Redis. */
 function fakeRedis(): Redis & { store: Map<string, string> } {
   const store = new Map<string, string>();
   return {
@@ -43,8 +41,6 @@ describe("leader lease", () => {
 
     await Promise.all(leases.map((l) => l.start()));
 
-    // The whole point: two api-server replicas must not both open a Slack
-    // socket / Telegram poller for the same install.
     expect(acquired).toEqual(["a"]);
     expect(leases.filter((l) => l.isLeader())).toHaveLength(1);
 
@@ -69,8 +65,6 @@ describe("leader lease", () => {
     await second.start();
     expect(events).toEqual(["+a"]);
 
-    // Graceful shutdown releases the key rather than making the survivor wait
-    // out the TTL.
     await first.stop();
     expect(redis.store.has("leader:channels")).toBe(false);
 
@@ -92,8 +86,6 @@ describe("leader lease", () => {
     await lease.start();
     expect(lease.isLeader()).toBe(true);
 
-    // A partitioned replica must not keep the workers running — another
-    // replica that can still see Redis will take the lease.
     vi.spyOn(redis, "eval").mockRejectedValue(new Error("ECONNREFUSED"));
     await lease.stop();
     expect(lease.isLeader()).toBe(false);

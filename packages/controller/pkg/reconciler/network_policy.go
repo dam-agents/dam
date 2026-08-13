@@ -15,29 +15,12 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Per-pair agent egress NetworkPolicy. Agent opts out of ambient mesh
-// (`istio.io/dataplane-mode: none`) so NetworkPolicy sees real
-// destinations, not ztunnel-redirected ones. Combined with the
-// chart-rendered namespace-scope deny-all baseline, the agent's only
-// admitted destination is its paired gateway. All other egress —
-// external, harness, ext-authz — flows through the gateway.
-
-// BuildAgentEgressNetworkPolicy renders the per-pair egress NP admitting
-// egress from the pair's agent pod to its gateway pod's Envoy port. Selector
-// pins to the pair's agent pod — the paired gateway pod's egress stays
-// unrestricted.
 func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	selectorPair, gatewayPair := pairKey, pairKey
 	envoyPort := intstr.FromInt(cfg.EnvoyPort)
 	tcp := corev1.ProtocolTCP
 
 	egress := []networkingv1.NetworkPolicyEgressRule{{
-		// Bare PodSelector with no NamespaceSelector implicitly
-		// scopes to the policy's own namespace — correct today
-		// since agent + gateway pods of a pair share
-		// `cfg.Namespace`. If pods ever split across namespaces
-		// this peer must grow a NamespaceSelector or the rule
-		// silently denies the legitimate egress path.
 		To: []networkingv1.NetworkPolicyPeer{{
 			PodSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -76,9 +59,6 @@ func BuildAgentEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef 
 	}
 }
 
-// applyNetworkPolicy creates or updates a NetworkPolicy. Mirrors
-// applyAuthorizationPolicy / applyServiceAccount shape. Shared by the Agent,
-// and Run reconcilers.
 func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {
 	cli := client.NetworkingV1().NetworkPolicies(desired.Namespace)
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {

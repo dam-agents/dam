@@ -8,7 +8,6 @@ import {
 } from "../../modules/agents/services/agents-service.js";
 import { createSlackBindFlowStore } from "../../modules/channels/infrastructure/slack-flows.js";
 
-// Swallow securityLog output from the deny/notify paths under test.
 configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
@@ -64,13 +63,10 @@ describe("slack bind flow", () => {
     const h = await harness();
     const res = await h.run("agent-1", h.flowId);
     expect(res).toEqual({ ok: true, value: { channelTitle: "general" } });
-    // Ambient is off by default: the bind connects shared and passes no ambient
-    // flag, so read-along stays an explicit opt-in via the ambient command.
     expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1");
     expect(await h.store.peek(h.flowId)).toBe(null);
     const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
     expect(text).toContain("my-agent");
-    // The confirmation is a plain connect notice — no ambient copy.
     expect(text).not.toContain("without being mentioned");
   });
 

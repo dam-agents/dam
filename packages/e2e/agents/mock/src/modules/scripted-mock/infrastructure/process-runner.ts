@@ -2,10 +2,6 @@ import { execFile, spawn } from "node:child_process";
 import { openSync } from "node:fs";
 import type { ProcessRunner } from "../services/ports.js";
 
-/** Real subprocess execution for the experiment directives: plan-mode scripts
- *  run to completion (they exit after registering), run-mode scripts start
- *  detached exactly like a real harness backgrounds them — the mock's turn
- *  ends while the loop keeps reporting to the platform on its own. */
 export function createProcessRunner(cwd: string): ProcessRunner {
   return {
     run({ command, args, env, timeoutMs }) {

@@ -8,7 +8,7 @@ import {
 } from "./acp-world.js";
 
 /**
- * Feature: the machine client.
+ * TEST_OVERVIEW: the machine client.
  *
  * Not every turn is typed by a person. Schedules and triggers drive the
  * sandbox through the same door the UI uses — an in-process channel that
@@ -26,7 +26,7 @@ describe("acp-runtime: the machine client", () => {
   });
 
   /**
-   * A schedule fires in the middle of the night. The driver connects, sends
+   * TEST_SCENARIO: A schedule fires in the middle of the night. The driver connects, sends
    * the prompt, and is gone before the first token comes back, so the turn
    * belongs to nobody the whole way through.
    *
@@ -40,23 +40,17 @@ describe("acp-runtime: the machine client", () => {
   it("should run a scheduled turn to completion with no human connected", () => {
     const world = createWorld();
 
-    // The driver's whole visit: connect, create, fire, hang up.
     const machine = world.connect({ viewer: false });
     machine.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
     machine.send(frames.prompt(2, SESSION, "run the nightly dependency audit"));
     machine.disconnect();
 
-    // With nobody connected the pod still reports itself busy — hibernating
-    // now would kill the very work the schedule exists to run.
     expect(world.runtime.status().idle).toBe(false);
 
-    // The agent works into the empty room and finishes on its own terms.
     world.harness().emit(frames.agentMessage(SESSION, "two majors, one CVE"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // The turn was never cut short: the prompt reached the agent, nothing
-    // cancelled it, and the harness outlives it. Only now may the pod idle.
     expect(promptTextsOf(world.harness())).toEqual([
       "run the nightly dependency audit",
     ]);
@@ -66,7 +60,7 @@ describe("acp-runtime: the machine client", () => {
   });
 
   /**
-   * Unread is a promise to a person: something happened here that nobody has
+   * TEST_SCENARIO: Unread is a promise to a person: something happened here that nobody has
    * looked at. The machine client sends the very frames a person would, and
    * the runtime is the only party that knows which channels are eyes and
    * which are cron. If machine activity counted as seen, every scheduled run
@@ -77,7 +71,6 @@ describe("acp-runtime: the machine client", () => {
     const meta = createSessionMetadata();
     const world = createWorld({ sessionMetadata: meta.store });
 
-    // A scheduled run, start to finish, with no human anywhere.
     const machine = world.connect({ viewer: false });
     machine.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -86,18 +79,15 @@ describe("acp-runtime: the machine client", () => {
     world.harness().emit(frames.agentMessage(SESSION, "labelled three"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // The finished turn is activity nobody has seen.
     expect(meta.unread(SESSION)).toBe(true);
 
-    // And it is a person opening the conversation that reads it — the badge
-    // answers to eyes, not to traffic.
     const human = world.connect();
     human.send(frames.loadSession(1, SESSION));
     expect(meta.unread(SESSION)).toBe(false);
   });
 
   /**
-   * Every live session pins a CLI subprocess of roughly 300MB, and every
+   * TEST_SCENARIO: Every live session pins a CLI subprocess of roughly 300MB, and every
    * other release in this suite is set off by a departure — but a scheduled
    * session's only visitor left before the turn began, so no disconnect is
    * ever coming. The turn's own end is the one moment left, and only the
@@ -115,16 +105,11 @@ describe("acp-runtime: the machine client", () => {
     machine.send(frames.prompt(2, SESSION, "rotate the credentials"));
     machine.disconnect();
 
-    // The departure alone releases nothing, however long ago it was: the
-    // turn is still running, and closing the session now would cancel it.
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(world.harness().received("session/close")).toEqual([]);
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Once it finishes and the quiescence window passes with nobody there,
-    // the session is let go. The harness itself stays up: releasing a
-    // conversation is not stopping the sandbox.
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(
       world

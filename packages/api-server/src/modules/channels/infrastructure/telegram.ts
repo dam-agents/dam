@@ -35,8 +35,6 @@ import {
   type TurnOutcome,
 } from "../../../events.js";
 
-/** The chat→Agent binding surface the worker reads on every message. The
- *  telegram-conversations repository satisfies this structurally. */
 export interface TelegramConversationsPort {
   findAgentByConversation(
     conversationId: string,
@@ -55,18 +53,11 @@ export interface ChannelConversation {
   title: string;
 }
 
-/** One platform-wide bot: `start()` runs once at boot (the bot must poll
- *  even with zero bindings so the bind command works in brand-new chats);
- *  per-agent lifecycle does not exist. */
 export interface TelegramWorker {
   type: ChannelType.Telegram;
   start(): Promise<void>;
   stopAll(): Promise<void>;
-  /** Resolve the bot handle without starting the poller. Every replica calls
-   *  this at boot — only the lease holder runs `start`, but the handle is
-   *  read on any replica (it renders in the UI's bind instructions). */
   resolveIdentity(): Promise<void>;
-  /** Handle of the bot (no @), from getMe; null until resolved. */
   botUsername(): string | null;
   listConversations(agentId: string): Promise<ChannelConversation[]>;
   postMessage(
@@ -139,8 +130,6 @@ async function fetchTelegramBotUsername(
   }
 }
 
-/** The slice of a chat-sdk Thread the message handler needs — narrow so
- *  routing is unit-testable without an adapter. */
 export interface ThreadLike {
   id: string;
   isDM: boolean;
@@ -166,8 +155,6 @@ function isCommand(text: string, command: string): boolean {
   );
 }
 
-/** Inbound routing for the platform bot, extracted from the worker for
- *  testability: command handling, the binding gate, and the relay hand-off. */
 export function createTelegramMessageHandler(deps: {
   conversations: TelegramConversationsPort;
   isChatAdmin: (chatId: string, userId: string) => Promise<boolean>;
@@ -177,8 +164,6 @@ export function createTelegramMessageHandler(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
-  /** The install's lowercase slash-command name (e.g. "dam" → `/dam bind`),
-   *  from the brand config — the same command surface Slack uses. */
   brandShort: string;
   relay: (
     agentId: string,
@@ -187,10 +172,6 @@ export function createTelegramMessageHandler(deps: {
     author: TelegramInboundMessage["author"],
   ) => Promise<void>;
 }) {
-  // The connect/disconnect surface: `/dam bind` and `/dam unbind`, mirroring
-  // Slack's subcommand style. `/start` (Telegram's mandatory deep-link and
-  // Start-button command) also triggers a bind; brandShort is assumed not to
-  // collide with `start`.
   const brandCmd = `/${deps.brandShort}`;
 
   async function denyNonAdmin(
@@ -238,9 +219,6 @@ export function createTelegramMessageHandler(deps: {
       createdAt: Date.now(),
     });
     const url = buildAuthorizeUrl(deps.oauthConfig, oauthState, codeChallenge);
-    // A card renders as text + an inline-keyboard URL button, hiding the raw
-    // OAuth URL. Fall back to the bare link if Telegram rejects the button
-    // (e.g. a URL it can't validate) — the login must still be reachable.
     try {
       await thread.post(
         Card({
@@ -288,7 +266,6 @@ export function createTelegramMessageHandler(deps: {
     if (message.author.isMe) return;
     const text = message.text.trim();
 
-    // Unified brand command: `/dam bind`, `/dam unbind`, or bare/unknown → help.
     if (isCommand(text, brandCmd)) {
       const sub =
         text
@@ -310,16 +287,12 @@ export function createTelegramMessageHandler(deps: {
     }
 
     if (isCommand(text, "/start")) {
-      // /start is how deep links and the Start button deliver intent; any
-      // payload reads as bind intent — the group-admin gate still applies.
       await handleBind(thread, message.author.userId);
       return;
     }
 
     const binding = await deps.conversations.findAgentByConversation(thread.id);
     if (!binding) {
-      // A chat no owner has bound attempting to drive an agent. Repeated
-      // hits from the same chat are the probing signal.
       securityLog("warn", "channel.inbound.unauthorized", {
         category: "channel",
         actor: null,
@@ -333,8 +306,6 @@ export function createTelegramMessageHandler(deps: {
           isDM: thread.isDM,
         },
       });
-      // Only prompt in DMs. Staying silent in groups avoids spamming unbound
-      // group chats the bot happens to be in.
       if (thread.isDM) {
         await thread.post(
           `This chat isn't connected to an agent. An admin needs to send \`${brandCmd} bind\`.`,
@@ -343,8 +314,6 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
 
-    // Turns run under the bound Agent's credentials, so the terms gate binds
-    // the owner who lent them.
     if (!(await deps.isTermsAccepted(binding.authorizedBy))) {
       if (thread.isDM) {
         await thread.post(
@@ -360,8 +329,6 @@ export function createTelegramMessageHandler(deps: {
 
 export function createTelegramWorker(deps: {
   botToken: string;
-  /** Operator-configured bot handle (no @). Authoritative when set; the
-   *  worker falls back to getMe at start when it isn't. */
   configuredBotUsername?: string | null;
   makeAcpClient: AcpClientFactory;
   state: StateAdapter;
@@ -371,29 +338,15 @@ export function createTelegramWorker(deps: {
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
   uiBaseUrl: string;
-  /** Lowercase slash-command name for the unified `/dam bind` / `/dam unbind`
-   *  surface; from the brand config, matching the Slack worker. */
   brandShort: string;
-  /** Display brand name, used where the agent is told where its owner acts
-   *  (network-access guidance). */
   brandName: string;
   emit?: (event: DomainEvent) => void;
-  /** Marks the agent as channel-driven for the length of each turn, so the
-   *  egress gate can refuse a request no Telegram participant could approve.
-   *  Required: a missing wiring here would silently restore the stall this
-   *  exists to prevent. */
   attendance: ChannelTurnAttendance;
-  /** Test seam; defaults to the Bot API getChatMember check. */
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
   const { botToken, makeAcpClient, agents, attendance, brandName } = deps;
 
-  // One bot for the install. The poller and the in-memory turn state below
-  // are single-holder: the Bot API admits one getUpdates consumer per token,
-  // so `start` runs only on the replica holding the channel lease
-  // (`core/leader-lease.ts`), and outbound calls from other replicas arrive
-  // over the channel rpc rather than through a second worker.
   let bot: {
     chat: Chat;
     adapter: ReturnType<typeof createTelegramAdapter>;
@@ -402,8 +355,6 @@ export function createTelegramWorker(deps: {
   let username: string | null = deps.configuredBotUsername ?? null;
   const lastThread = new Map<string, Thread>();
 
-  // The conversation's session carries the thread id in
-  // `_meta.platform.threadTs` — resolved off the agent, no server store.
   async function findThreadSession(agentId: string, threadId: string) {
     const acp = makeAcpClient(agentId);
     const sessions = await acp.listSessions().catch((err) => {
@@ -433,9 +384,6 @@ export function createTelegramWorker(deps: {
       `To reply, call the \`mcp__platform-outbound__send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       "To deliberately stay silent — a group message that isn't for you, or one already handled — call `mcp__platform-outbound__no_reply_needed` instead of replying.",
-      // This session can also be continued from the platform UI, where the
-      // line above would have the agent answer the person typing there by
-      // posting into Telegram instead.
       "These instructions apply to messages that arrive from Telegram, not to this conversation as a whole. A message that arrives without them came from somewhere else: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
       channelNetworkAccessGuidance(brandName),
       "",
@@ -444,8 +392,6 @@ export function createTelegramWorker(deps: {
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
-    // Held for the whole turn, resumed sessions included: the egress gate reads
-    // this to tell that a refused host has nobody here who could allow it.
     const releaseAttendance = attendance.openChannelTurn(agentId);
     try {
       await agents().ensureReady(agentId);
@@ -478,8 +424,6 @@ export function createTelegramWorker(deps: {
         { agentId, reason: failureReason, error: String(err) },
         "telegram.turn.failed",
       );
-      // Wake timeouts get a human reply; other errors stay log-only as
-      // before (out of scope here).
       if (isAgentWakeTimeoutError(err)) {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       }
@@ -495,8 +439,6 @@ export function createTelegramWorker(deps: {
     telegramUserId: string,
     reason?: string,
   ) {
-    // Place-scoped access: no platform identity exists on this path — the
-    // Telegram user id is the actor record.
     emit({
       type: EventType.ChannelTurnRelayed,
       channel: "telegram",
@@ -545,17 +487,12 @@ export function createTelegramWorker(deps: {
           relay: relayToInstance,
         });
 
-        // DMs: subscribe so the bot receives every follow-up from this user.
         chat.onDirectMessage((thread, message) =>
           handleMessage(thread, message, true),
         );
-        // Groups: on first @-mention, subscribe so the agent can see the full
-        // conversation as context. The agent — not the worker — decides
-        // whether to actually respond (via the send_channel_message MCP tool).
         chat.onNewMention((thread, message) =>
           handleMessage(thread, message, true),
         );
-        // Follow-ups in any subscribed thread (DM or group).
         chat.onSubscribedMessage((thread, message) =>
           handleMessage(thread, message, false),
         );
@@ -582,7 +519,6 @@ export function createTelegramWorker(deps: {
         } catch {}
         bot = null;
       }
-      // Disconnect the shared state adapter exactly once, at shutdown.
       try {
         await (
           deps.state as unknown as { disconnect?: () => Promise<void> }
@@ -626,8 +562,6 @@ export function createTelegramWorker(deps: {
           }
         : text;
 
-      // One shared bot serves every agent, so outbound shares one Telegram
-      // rate budget (~30 msg/s install-wide); errors surface to the caller.
       if (conversationId) {
         const binding =
           await deps.conversations.findAgentByConversation(conversationId);

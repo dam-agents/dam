@@ -8,7 +8,6 @@ import type { LocalSkillRepository } from "../../modules/skills/infrastructure/l
 import type { SkillName } from "../../modules/skills/domain/skill-name.js";
 import type { SkillPath } from "../../modules/skills/domain/skill-path.js";
 
-/** Capture the tree paths runPublish asks GitHub to create. */
 function makeDeps(): { deps: PublishDeps; treePaths: () => string[] } {
   let captured: string[] = [];
   const github: GitHubRestClient = {

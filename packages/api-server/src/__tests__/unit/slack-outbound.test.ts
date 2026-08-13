@@ -16,13 +16,9 @@ const BOUND = "C-BOUND";
 configureLogger({ level: "error", write: () => {} });
 
 function harness(opts: {
-  /** null = agent has no Slack binding. */
   boundChannelId: string | null;
-  /** Further conversations bound to the same agent (#3086). */
   extraBoundChannelIds?: string[];
-  /** Workspace channel directory; unlisted ids resolve as not found. */
   channels?: FakeSlackChannel[];
-  /** Make the gateway fail to start, so ensureGateway yields null. */
   gatewayDown?: boolean;
 }) {
   const gw = createFakeSlackGateway();
@@ -86,8 +82,6 @@ const workspace: FakeSlackChannel[] = [
   { id: BOUND, name: "agent-home", botIsMember: true },
   { id: "C-GENERAL", name: "general", botIsMember: true },
   { id: "C-ALERTS", name: "alerts", botIsMember: true },
-  // A visible channel the bot is not in (public, not yet invited). Private
-  // channels are invisible to the bot entirely and resolve as not found.
   { id: "C-STAFF", name: "staff", botIsMember: false },
 ];
 
@@ -115,8 +109,6 @@ describe("slack outbound — cross-workspace reach", () => {
   });
 
   it("bound-channel chatId short-circuits — works even when discovery knows nothing", async () => {
-    // Empty directory = conversations.info would fail (e.g. missing scopes);
-    // the bound channel must keep working regardless.
     const h = harness({ boundChannelId: BOUND, channels: [] });
     expect(await h.post("hello", { conversationId: BOUND })).toEqual({
       ok: true,
@@ -269,7 +261,6 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
   });
 
   it("every bound conversation short-circuits discovery, not just the first", async () => {
-    // Empty directory = conversations.info would fail (e.g. missing scopes).
     const h = harness({
       boundChannelId: BOUND,
       extraBoundChannelIds: [SECOND],

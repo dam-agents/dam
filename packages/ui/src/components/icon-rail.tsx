@@ -110,7 +110,7 @@ export function IconRail({
           <RailItem {...artifacts} />
         </div>
         <div className="flex-1" />
-        {/* Email is grouped with Settings at the bottom, per the redesign (Figma 152:4567). */}
+        {}
         <div className="flex flex-col items-center gap-1 mb-2">
           <RailItem {...inbox} />
           <RailItem {...settings} />

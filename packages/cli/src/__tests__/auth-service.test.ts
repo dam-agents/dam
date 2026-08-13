@@ -26,8 +26,6 @@ import type {
 
 const HOST: HostUrl = "http://api-server.test:4444";
 
-// --- Fakes -----------------------------------------------------------------
-
 function emptyStore(): AuthStore {
   const state = new Map();
   return {
@@ -172,8 +170,6 @@ function browserUnused(): BrowserOpener {
     },
   };
 }
-
-// --- Tests -----------------------------------------------------------------
 
 describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => {
   it("server unreachable (probe error) → preflight/server-unreachable", async () => {
@@ -412,7 +408,7 @@ describe("auth-service.status", () => {
     if (r.ok) {
       const active = r.value.entries.find((e) => e.isActive);
       expect(active?.source).toBe("env");
-      expect(r.value.activeHostValid).toBe(true); // env-sourced is considered valid.
+      expect(r.value.activeHostValid).toBe(true);
     }
   });
 
@@ -445,9 +441,6 @@ describe("auth-service.status", () => {
     if (r.ok) {
       const active = r.value.entries.find((e) => e.isActive);
       expect(active?.source).toBe("env");
-      // The env token will be sent on every command; the file-backed
-      // username/issuer/expiry belong to a credential that won't be used,
-      // so the report must not present them as the active identity.
       expect(active?.username).not.toBe("alice");
       expect(active?.issuer).not.toBe("http://idp/realms/platform");
       expect(active?.expiresAt).toBeUndefined();

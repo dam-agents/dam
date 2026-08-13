@@ -122,8 +122,6 @@ function makeService(
     githubAppEngine: createGitHubAppEngine(),
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
-    // The advisory lock is Postgres-side; the section itself is what these
-    // tests exercise, so run it straight through.
     connectionLock: (_key, fn) => fn(),
   });
   return { svc, rows, stored, deleted, tokenCalls };
@@ -193,7 +191,6 @@ describe("client-credentials connection create", () => {
     const after = Math.floor(Date.now() / 1000);
     const auth = rows.get(id)!.auth;
     if (auth.kind !== "client-credentials") throw new Error("wrong kind");
-    // The fallback horizon is stamped from the wall clock, not the engine's.
     expect(auth.expiresAt).toBeGreaterThanOrEqual(before + 3600);
     expect(auth.expiresAt).toBeLessThanOrEqual(after + 3600);
   });
@@ -240,7 +237,6 @@ describe("client-credentials connection create", () => {
     );
     const id = await svc.createFromTemplate(createInput());
 
-    // The rotation must clear the marker, or the revived connection stays parked.
     const created = rows.get(id)!;
     if (created.auth.kind !== "client-credentials") throw new Error("kind");
     rows.set(id, {

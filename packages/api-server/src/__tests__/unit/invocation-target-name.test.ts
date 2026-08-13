@@ -4,9 +4,6 @@ import {
   isInvocationTargetName,
 } from "../../modules/invocations/domain/target-name.js";
 
-// Mint and recognizer must stay in lockstep: the metrics read path uses the
-// recognizer to keep minted target names out of the per-agent spend rollup,
-// so a mint the recognizer misses would leak `invocation-<hex>` bars again.
 describe("invocation target name", () => {
   test("recognizes every minted name", () => {
     expect(isInvocationTargetName(invocationTargetName("7445bdaa11ff"))).toBe(
@@ -16,9 +13,9 @@ describe("invocation target name", () => {
 
   test("mint refuses entropy the recognizer would miss", () => {
     for (const hex of [
-      "7445bdaa11f", // 11 hex chars
-      "7445bdaa11ff00", // 14 hex chars
-      "7445BDAA11FF", // uppercase
+      "7445bdaa11f",
+      "7445bdaa11ff00",
+      "7445BDAA11FF",
       "not-hex-here",
     ]) {
       expect(() => invocationTargetName(hex)).toThrow(/lockstep/);
@@ -30,7 +27,7 @@ describe("invocation target name", () => {
       "stellar-sparrow",
       "",
       "agent-7445bdaa11ff",
-      "invocation-7445bdaa11f", // 11 hex chars
+      "invocation-7445bdaa11f",
       "invocation-7445bdaa11ffx",
       "my-invocation-7445bdaa11ff",
     ]) {

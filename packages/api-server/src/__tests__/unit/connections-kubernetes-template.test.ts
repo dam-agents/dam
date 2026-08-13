@@ -8,7 +8,6 @@ import {
 } from "../../modules/connections/domain/connection-sds.js";
 import { contributionHash } from "../../modules/runtime-delivery/domain/contribution-hash.js";
 
-// Real self-signed X.509 (test-only) so decodeCaData's cert validation passes.
 const CA_PEM = `-----BEGIN CERTIFICATE-----
 MIIDMjCCAhqgAwIBAgIUMiX4bseuRVT+8L+EjCMZs2MIUAMwDQYJKoZIhvcNAQEL
 BQAwIDEeMBwGA1UEAwwVcGxhdGZvcm0tdGVzdC1jbHVzdGVyMB4XDTI2MDcwMjEy
@@ -100,11 +99,7 @@ describe("kubernetes connection template", () => {
       name: "prod-cluster",
     });
     const file = fileOf(built.contributions);
-    // File + context/cluster/user are keyed by the connection name, not the
-    // host (see the same-host-different-port test for why).
     expect(file.path).toBe("$HOME/.kube/connections/prod-cluster.config");
-    // The env driver joins KUBECONFIG across connections, so it must point at
-    // this connection's own file.
     expect(envOf(built.contributions, "KUBECONFIG").placeholder).toBe(
       file.path,
     );
@@ -125,7 +120,6 @@ describe("kubernetes connection template", () => {
     expect(content.clusters[0].cluster["certificate-authority"]).toBe(
       "/etc/platform/ca/ca.crt",
     );
-    // Cluster/user/context all carry the connection name; it's the current one.
     expect(content.clusters[0].name).toBe("prod-cluster");
     expect(content.users[0].name).toBe("prod-cluster");
     expect(content.contexts[0]).toMatchObject({
@@ -133,7 +127,6 @@ describe("kubernetes connection template", () => {
       context: { cluster: "prod-cluster", user: "prod-cluster" },
     });
     expect(content["current-context"]).toBe("prod-cluster");
-    // Real token stays gateway-side; user holds only the placeholder.
     expect(JSON.stringify(content)).not.toContain("sa-token");
     expect(content.users[0].user.token).toBe("injected-by-gateway");
   });
@@ -173,8 +166,6 @@ describe("kubernetes connection template", () => {
     );
     const A = ctxOf(a.path, a.content);
     const B = ctxOf(b.path, b.content);
-    // Same host, different ports — before the fix these collided (context name
-    // dropped the port). Now file paths AND context names are distinct.
     expect(A.path).not.toBe(B.path);
     expect(A.ctx).toBe("shared-a");
     expect(B.ctx).toBe("shared-b");
@@ -267,7 +258,6 @@ describe("kubernetes connection template", () => {
   });
 
   it("rejects a PEM that isn't a certificate (e.g. a private key)", async () => {
-    // A wrong-but-PEM blob would crash-loop the gateway as a bad trusted_ca.
     await expect(
       buildKubernetes({
         host: "api.cluster.example:6443",

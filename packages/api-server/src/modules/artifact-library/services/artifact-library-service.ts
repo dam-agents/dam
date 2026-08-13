@@ -37,30 +37,22 @@ import type {
 import { renderTextKindInner } from "../viewer/renderer.js";
 
 const LIST_LIMIT = 500;
-/** In-app preview ceiling — mirrors the file viewer's 10 MB cap. */
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 
-/** Short-lived direct-download link for the agent surface — the mirror of the
- *  contract's ArtifactUploadTicket, but server-internal: browsers download
- *  through the authenticated app-origin route instead. */
 export interface ArtifactAgentDownloadTicket {
   url: string;
   fileName: string;
   contentType: string;
   sizeBytes: number;
-  /** The version the link serves — the head version when none was asked. */
   version: number;
   expiresSeconds: number;
 }
 
-/** Server-internal surface on top of the contract: the download route and the
- *  MCP layer need the storage ref resolution the tRPC router never sees. */
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
     attribution?: { agentId: string },
   ): Promise<LibraryArtifact>;
-  /** Resolve the stored blob behind an artifact (optionally a past version). */
   resolveContentRef(
     id: string,
     version?: number,
@@ -71,10 +63,6 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
     sizeBytes: number;
     version: number;
   } | null>;
-  /** Mint a short-lived direct-download link signed for the agent-dialed
-   *  store authority (direct transfer — the bytes go store → sandbox without
-   *  transiting the conversation). Fails when no object store is
-   *  configured. */
   createAgentDownloadUrl(
     id: string,
     version?: number,
@@ -83,11 +71,8 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
 
 export interface ArtifactLibraryDeps {
   repo: ArtifactLibraryRepository;
-  /** Shared blob-store service (owner-agnostic) — this module owner-scopes
-   *  every key it hands over. */
   artifacts: ArtifactService;
   owner: string;
-  /** Absolute origin of the public share host, e.g. https://share.example.com */
   shareBaseUrl: string;
 }
 
@@ -159,10 +144,6 @@ export function createArtifactLibraryService(
     return row;
   }
 
-  /** Resolve the stored blob behind an artifact — the head row's own ref, or a
-   *  snapshot from its version history. Name and kind always come from the head
-   *  row: the kind is fixed at create, and the name is a label for the
-   *  artifact rather than for one revision, so both describe every version. */
   async function resolveRef(
     id: string,
     version?: number,
@@ -195,9 +176,6 @@ export function createArtifactLibraryService(
     };
   }
 
-  /** Resolve the incoming bytes: inline utf-8 content is stored by us at
-   *  `key`; a direct upload is verified in place (its staged key becomes the
-   *  version's ref). Returns the stored ref + stat. */
   async function ingestBytes(input: {
     content?: string;
     uploadRef?: string;
@@ -218,8 +196,6 @@ export function createArtifactLibraryService(
       };
     }
     const ref = input.uploadRef!;
-    // A ref outside the caller's own staging prefix reads as unknown — the
-    // upload ticket is the capability, and it was minted owner-scoped.
     if (!isOwnStagingKey(owner, ref))
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -362,9 +338,6 @@ export function createArtifactLibraryService(
       if (input.folderId !== undefined) patch.folderId = input.folderId;
 
       if (input.content != null || input.uploadRef != null) {
-        // The kind is the artifact's, fixed at create: never re-detected from
-        // the incoming bytes or from a new extension, so no revision can turn
-        // an already-shared link into one that executes.
         const kind = row.kind as ArtifactKind;
         const fileName = input.fileName ?? row.fileName;
         const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
@@ -381,8 +354,6 @@ export function createArtifactLibraryService(
         patch.sizeBytes = stored.sizeBytes;
         patch.contentType = stored.contentType;
         patch.fileName = fileName;
-        // Snapshot the outgoing current version and advance the head row in
-        // one transaction.
         const advanced = await repo.advanceVersion(
           id,
           owner,
@@ -422,8 +393,6 @@ export function createArtifactLibraryService(
     async delete(id) {
       const deleted = await repo.deleteArtifactWithVersions(id, owner);
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND" });
-      // Best-effort blob cleanup — a failed delete leaves an orphaned blob;
-      // the rows are already gone (atomically), so nothing resolves it again.
       await Promise.allSettled(
         [
           deleted.artifact.storageRef,

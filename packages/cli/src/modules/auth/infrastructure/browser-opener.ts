@@ -3,10 +3,6 @@ import { err, ok, type Result } from "../../../result.js";
 import type { BrowserOpenError } from "../domain/errors.js";
 
 export interface BrowserOpener {
-  /** Best-effort open the given URL in the user's default browser. The
-   *  Result reflects whether the spawn succeeded — NOT whether the user
-   *  actually authorized. The device flow's polling owns the
-   *  user-action wait. */
   open(url: string): Promise<Result<void, BrowserOpenError>>;
 }
 

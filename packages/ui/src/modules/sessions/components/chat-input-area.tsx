@@ -13,17 +13,10 @@ function ownsToolCall(m: Message, toolCallId: string): boolean {
   return m.parts.some((p) => p.kind === "tool" && p.toolCallId === toolCallId);
 }
 
-/** The slot below the thread: the blocking permission prompt while a
- *  tool-call approval is pending, the chat input otherwise. Resolved verdicts
- *  are appended to the transcript as message parts. */
 export function ChatInputArea(props: ChatInputProps) {
   const hasPending = useHasPendingPermission();
   const setMessages = useStore((s) => s.setMessages);
 
-  // Anchor the verdict on the assistant message owning the approved tool
-  // call, so it stays in place as the response continues streaming below it.
-  // Falls back to the last assistant message when no tool part matches (the
-  // harness may request permission before emitting the tool-call update).
   const appendVerdict = useCallback(
     (verdict: PermissionVerdict, toolCallId: string) => {
       setMessages((prev) => {

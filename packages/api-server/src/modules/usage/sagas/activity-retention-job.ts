@@ -2,8 +2,7 @@ import { ACTIVITY_RETENTION_DAYS } from "../domain/types.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const STARTUP_DELAY_MS = 5 * 60 * 1000;
-// Stable across replicas of the same DB so pg_try_advisory_lock dedups multi-replica runs.
-const ADVISORY_LOCK_KEY = 0x70_6c_61_74_66; // 'platf' in ASCII
+const ADVISORY_LOCK_KEY = 0x70_6c_61_74_66;
 
 export type ActivityRetentionJob = {
   start(): void;
@@ -15,9 +14,6 @@ export type ActivityRetentionDeps = {
   deleteOld: (days: number) => Promise<number>;
 };
 
-/** Weekly bulk DELETE of stale activity_events rows. Multi-replica safe:
- *  competing replicas race an advisory lock and only the winner runs the
- *  DELETE — losers no-op. */
 export function startActivityRetentionJob(
   deps: ActivityRetentionDeps,
 ): ActivityRetentionJob {

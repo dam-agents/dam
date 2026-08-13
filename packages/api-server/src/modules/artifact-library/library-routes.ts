@@ -8,14 +8,10 @@ import { stagingKey } from "./domain/storage-key.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
 export interface ArtifactLibraryRoutesDeps {
-  /** Owner-scoped library service, bound to the request's user. */
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   artifacts: ArtifactService;
 }
 
-/** Non-tRPC library routes on the authenticated app origin: binary upload
- *  (browser → api-server → store, avoiding store CORS) and download
- *  (presigned direct link as JSON, or relay — the candidate-route pattern). */
 export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
   const routes = new Hono<{
     Variables: { user: UserIdentity; roles: string[] };
@@ -26,9 +22,6 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     const fileName = c.req.query("filename");
     if (!fileName) return c.json({ error: "filename query is required" }, 400);
 
-    // Requires Content-Length so a chunked-encoding client can't make us
-    // buffer an unbounded body before the cap check (the import proxy makes
-    // the same call); the post-read check backstops a lying header.
     const lengthHeader = c.req.header("content-length");
     if (!lengthHeader) {
       return c.json({ error: "Content-Length required" }, 411);
@@ -67,8 +60,6 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     const rawVersion = c.req.query("v");
     const version = rawVersion ? Number.parseInt(rawVersion, 10) : undefined;
 
-    // Access to the bytes is audited whichever way it ends — a refusal is the
-    // line worth having, so the agent surface records both outcomes too.
     const audit = (
       result: "success" | "failure",
       detail: Record<string, unknown>,
@@ -100,8 +91,6 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
     }
 
     const filename = downloadFileName(ref.fileName);
-    // Direct link as JSON rather than a 302 — the UI fetches with a bearer
-    // token and a cross-origin redirect inside fetch() would be CORS-blocked.
     const directUrl = await deps.artifacts.createDownloadUrl(
       ref.storageRef,
       filename,

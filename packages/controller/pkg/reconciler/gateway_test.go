@@ -8,8 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// --- Gateway StatefulSet ---
-
 func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
 	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
@@ -54,12 +52,6 @@ func TestBuildGatewayStatefulSet_AutomountSAFalse(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
-	// Gateway is single-replica; default RollingUpdate would deadlock if
-	// pod-0 is in CrashLoopBackOff (it never goes Ready, so K8s never
-	// evicts it to apply the new template). maxUnavailable: 1 unblocks
-	// that path. Without it, the rev-1 → rev-2 transition that happens
-	// when grants land after agent creation would strand the pod in
-	// CrashLoopBackOff indefinitely.
 	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate, "rolling update strategy must be set explicitly")
 	require.NotNil(t, ss.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
@@ -68,9 +60,6 @@ func TestBuildGatewayStatefulSet_RollingUpdateMaxUnavailable(t *testing.T) {
 }
 
 func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
-	// Workspace PVCs and CA-only mounts belong to the agent pod, not the
-	// gateway. The gateway only mounts the bootstrap CM, the leaf TLS
-	// Secret, and per-credential Secrets.
 	ss := BuildGatewayStatefulSet("my-instance", false, testConfig, configMapOwnerRef(testOwnerCM), nil, nil)
 	for _, v := range ss.Spec.Template.Spec.Volumes {
 		assert.NotContains(t, v.Name, "home-agent",
@@ -80,32 +69,18 @@ func TestBuildGatewayStatefulSet_NoAgentVolumes(t *testing.T) {
 	}
 }
 
-// --- Gateway Service ---
-
 func TestBuildGatewayService(t *testing.T) {
 	svc := BuildGatewayService("my-instance", testConfig, configMapOwnerRef(testOwnerCM))
 	assert.Equal(t, "my-instance-gateway", svc.Name)
-	// Not headless ("" means apiserver auto-assigns) — hostAliases /
-	// iptables allow-list need a routable virtual IP.
 	assert.Empty(t, svc.Spec.ClusterIP, "gateway Service must not be headless")
 	require.Len(t, svc.Spec.Ports, 1)
 	assert.Equal(t, "proxy", svc.Spec.Ports[0].Name)
 	assert.Equal(t, int32(10000), svc.Spec.Ports[0].Port)
 
-	// Selector pins to pair + role=gateway.
 	assert.Equal(t, "my-instance", svc.Spec.Selector["agent-platform.ai/pair"])
 	assert.Equal(t, "gateway", svc.Spec.Selector["agent-platform.ai/role"])
 }
 
-// TestBuildGatewayNetworkPolicy removed — pair-key NetworkPolicies are gone,
-// replaced by per-instance mesh AuthorizationPolicies (covered in
-// authorization_policy_test.go).
-
-// TestLabelContract pins the on-the-wire label keys and values that
-// NetworkPolicy selectors and the api-server's pod-IP resolver depend on.
-// The TS side has a mirror test in
-// `packages/api-server/src/__tests__/unit/label-contract.test.ts`. Drift
-// between the two would silently break the credential boundary.
 func TestLabelContract(t *testing.T) {
 	assert.Equal(t, "agent-platform.ai/agent", LabelAgent)
 	assert.Equal(t, "agent-platform.ai/pair", LabelPair)

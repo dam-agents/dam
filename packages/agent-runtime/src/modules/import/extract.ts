@@ -12,19 +12,6 @@ export type ExtractResult = {
   bytes: number;
 };
 
-/**
- * Stream-extract a tar (or tar.gz) bundle into `stagingDir`.
- *
- * Path safety: every entry is validated. Non-file/non-directory entries,
- * absolute paths, paths containing `..`, and paths that resolve outside
- * `stagingDir` return an `InvalidEntry` Err. The caller cleans up
- * `stagingDir` on failure.
- *
- * Permissions: files land at 0o666 and dirs at 0o777 regardless of source
- * mode — the non-root agent shares the PVC with the import landing path,
- * so locked-down source modes would leave imported files un-editable.
- * Mirrors `modules/pod-files/apply.ts`.
- */
 export async function extractBundle(
   stream: Readable,
   stagingDir: string,
@@ -34,10 +21,6 @@ export async function extractBundle(
   let bytes = 0;
   let firstError: ImportDomainError | undefined;
 
-  // tar's `filter` runs synchronously inside the parser — throwing escapes
-  // as an uncaught exception. Skip the bad entry and remember the first
-  // error to return after the pipeline completes; the caller deletes the
-  // staging dir on failure, so any partial extraction is discarded.
   const sink = extract({
     cwd: root,
     onentry: (entry) => {

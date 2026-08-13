@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// dam-run <cmd>: compatibility shim. The remote Run-executor machinery was
-// removed — this now simply runs the command as a regular local process in
-// the current pod, inheriting stdio, cwd, and environment. Kept so scripts
-// and harness prompts that call `dam-run` keep working unchanged.
 
 import { spawn } from "node:child_process";
 

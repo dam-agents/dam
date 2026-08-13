@@ -16,9 +16,6 @@ export type PersistAgentsDeps = {
 
 const STREAM_CONCURRENCY = 8;
 
-/** Keeps the Postgres `agents` mirror table in sync with K8s ConfigMaps so
- *  SQL views and cross-table joins can resolve agent ownership without a CM
- *  round-trip. The bootstrap backfills agents that pre-dated this saga. */
 export function startPersistAgentsSaga(deps: PersistAgentsDeps): Subscription {
   const sub = new Subscription();
 

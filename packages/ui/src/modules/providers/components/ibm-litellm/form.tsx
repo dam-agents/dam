@@ -14,8 +14,6 @@ import { MODES, stripWhitespace } from "./modes.js";
 const ibmLitellmCredentialSchema = z
   .object({ value: z.string() })
   .superRefine((data, ctx) => {
-    // Strip whitespace before checking emptiness: paste-from-terminal newlines
-    // would otherwise satisfy a naive non-empty check while breaking the token.
     if (stripWhitespace(data.value).length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

@@ -10,9 +10,6 @@ interface Props {
   actionTestId?: string;
 }
 
-/** The empty state for a sandbox section: a bordered, gutter-aligned card with
- *  a message and a single "add" action. Shared by Connections, Schedules, and
- *  any section that starts empty. */
 export function EmptyStateCard({
   message,
   actionLabel,

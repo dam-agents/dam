@@ -40,13 +40,6 @@ export function OpenAIIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-/**
- * Official Bob Shell provider mark — a complete tile (white rounded
- * background, hairline border, and the navy Bob figure with a
- * purple→blue gradient antenna), so it renders standalone rather than
- * inside the shared colored {@link CardIcon} tile. Gradient/mask/clip IDs
- * are namespaced per instance to avoid collisions when several render.
- */
 export function BobIcon(props: SVGProps<SVGSVGElement>) {
   const uid = useId();
   const clip = `${uid}-clip`;
@@ -143,12 +136,6 @@ export function BobIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-/**
- * LiteLLM's bullet-train mark (🚅) — rendered as the actual emoji glyph
- * so it picks up the platform's native emoji font (Apple Color Emoji on
- * macOS / Safari). LiteLLM uses the bullet train as its primary visual
- * identity across docs and the project README.
- */
 export function LiteLLMIcon({ className }: { className?: string }) {
   return (
     <span

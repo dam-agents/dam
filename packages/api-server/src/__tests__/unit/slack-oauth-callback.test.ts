@@ -85,7 +85,6 @@ describe("slack oauth callback — bind intent", () => {
       slackUserId: SLACK_USER_ID,
       keycloakSub: KEYCLOAK_SUB,
     });
-    // The binder is identity-linked too, so they can later /unbind in-chat.
     expect(h.link).toHaveBeenCalledWith("slack", SLACK_USER_ID, KEYCLOAK_SUB);
     expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });

@@ -81,7 +81,6 @@ export function buildInstallCommand(deps: {
 
         const svc = deps.createSkillsService(host);
 
-        // Pass the agentId so template sources resolve too.
         const sourcesRes = await svc.listSources(agentId);
         if (!sourcesRes.ok) {
           printServiceError(sourcesRes.error, host);
@@ -98,8 +97,6 @@ export function buildInstallCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        // Scan first — install needs the HEAD version/contentHash the UI passes
-        // through (there is no --version flag).
         const catalogRes = await svc.catalog(source.id, agentId);
         if (!catalogRes.ok) {
           const e = catalogRes.error;
@@ -113,8 +110,6 @@ export function buildInstallCommand(deps: {
                 process.stderr.write(`hint: connect the source — ${e.cta}\n`);
               process.exit(EXIT_INVALID_INPUT);
             case "private-source-needs-agent":
-              // Unreachable: install always sends an agentId. Kept for
-              // exhaustiveness over the catalog error union.
               process.stderr.write(
                 `error: source '${source.name}' could not be scanned\n`,
               );

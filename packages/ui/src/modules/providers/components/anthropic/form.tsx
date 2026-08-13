@@ -30,8 +30,6 @@ export function AnthropicForm({
 }: {
   variant: "wizard" | "edit";
   initialMode: Mode;
-  // Editing a connection rotates its value only — the template (and thus the
-  // mode) can't change, so the toggle is locked to avoid a silent mismatch.
   lockMode?: boolean;
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
@@ -58,11 +56,6 @@ export function AnthropicForm({
   const testAnthropic = useTestAnthropic();
   const testing = testAnthropic.isPending;
 
-  // Watching mode + value clears the test result when either changes — a stale
-  // green check after the user types something different is worse than no
-  // result at all. Switching mode also has to re-trigger value validation: the
-  // mismatch lives on `value` via cross-field refinement, and RHF only clears
-  // errors on the field that actually changed.
   const mode = watch("mode");
   const value = watch("value");
   useEffect(() => {
@@ -157,8 +150,7 @@ export function AnthropicForm({
         </Button>
       </div>
 
-      {/* Mismatch errors live on the value field; "Required" is suppressed
-          until the user actually types so the form doesn't yell on first paint. */}
+      {}
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (

@@ -40,10 +40,6 @@ export interface ConfirmDialogProps {
   onCancel?: () => void;
 }
 
-// Reusable confirm/alert dialog. The destructive variant uses a muted red
-// icon chip and a red action button with a trash glyph (DAM-9). Use this for
-// any "are you sure?" flow — the global DialogOverlay drives it from the
-// store; ad-hoc destructive prompts can render it directly.
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -88,8 +84,6 @@ export function ConfirmDialog({
             <AlertDialogTitle>{title}</AlertDialogTitle>
           </div>
           {description && (
-            // asChild renders a div — the message can carry block elements
-            // (lists, boxes), which are invalid inside the default <p>.
             <AlertDialogDescription asChild>
               <div className="pt-1 text-sm text-muted-foreground">
                 {description}

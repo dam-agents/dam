@@ -22,9 +22,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** Upload flow: bytes go through the authenticated upload route first, then
- *  the artifact is created from the returned uploadRef — the same two-step
- *  direct-transfer shape agents use over MCP. */
 export function UploadArtifactDialog({
   folders,
   defaultFolderId,

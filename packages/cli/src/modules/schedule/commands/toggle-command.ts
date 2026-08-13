@@ -16,12 +16,6 @@ export interface ToggleDeps {
   createScheduleService: (host: string) => ScheduleService;
 }
 
-/**
- * Shared body for `enable`/`disable`. The router exposes a single `toggle`
- * mutation that flips `enabled`, so the CLI reads current state and calls it
- * only when the target differs — idempotent and scriptable. The read-then-
- * toggle race is accepted (solo-CLI assumption).
- */
 export function buildToggleCommand(deps: ToggleDeps, enable: boolean): Command {
   const verb = enable ? "enable" : "disable";
   return new Command(verb)

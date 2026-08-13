@@ -25,8 +25,6 @@ beforeEach(() => {
   logLines.length = 0;
 });
 
-/** A real 8x8 PNG — the worker forwards bytes, so the test must hand it bytes
- *  a harness could actually decode. */
 function png(): Buffer {
   const crcTable: number[] = [];
   for (let n = 0; n < 256; n++) {
@@ -192,9 +190,6 @@ describe("slack inbound images", () => {
   });
 
   it("never sends a web page as an image, and says why (#3008)", async () => {
-    // What a file download returns when the app may not read it: 200 + markup.
-    // Forwarded, the harness fails to decode it and the agent answers with an
-    // internal resize error instead of reading the picture.
     const h = harness();
     await h.mentionWithFile({
       bytes: Buffer.from("<!DOCTYPE html><html>Sign in to Slack</html>"),
@@ -244,8 +239,6 @@ describe("slack inbound images", () => {
   });
 
   it("relays the turn even when the attachment is unusable", async () => {
-    // The text still deserves an answer — dropping the whole turn would lose
-    // the question along with the picture.
     const h = harness();
     await h.mentionWithFile({ bytes: Buffer.from("<html>nope</html>") });
 
@@ -254,8 +247,6 @@ describe("slack inbound images", () => {
   });
 
   it("tells the agent an attachment was withheld, so it does not answer blind", async () => {
-    // The sender's notice is invisible to the agent. Without this the agent is
-    // asked about a picture it never received and guesses (#3008).
     const h = harness();
     await h.mentionWithFile({ bytes: Buffer.from("<html>nope</html>") });
 
@@ -266,10 +257,6 @@ describe("slack inbound images", () => {
   });
 
   it("blames the format, not the permission, for an SVG that arrived intact", async () => {
-    // Slack labels .svg uploads image/svg+xml, so they pass the label gate. An
-    // SVG's `<?xml` prologue looks like the sign-in page a scope problem
-    // returns — telling the sender to reinstall the app would send them after
-    // a permission that is already granted.
     const h = harness();
     h.gw.setGrantedScopes(["app_mentions:read", "chat:write"]);
     await h.mentionWithFile({
@@ -289,8 +276,6 @@ describe("slack inbound images", () => {
   });
 
   it("still reads a screenshot whose label is a generic blob", async () => {
-    // Some clients upload without a usable mimetype. Selecting attachments by
-    // label alone would drop a real screenshot before anything looked at it.
     const h = harness();
     const bytes = png();
     await h.mentionWithFile({
@@ -307,9 +292,6 @@ describe("slack inbound images", () => {
   });
 
   it("names the permissions the install lacks, and what they cost, at startup", async () => {
-    // A withheld permission has no symptom of its own — the capability just
-    // behaves as though it were broken and the agent looks wrong. This is the
-    // one place that says so out loud (#3008).
     const h = harness();
     h.gw.setGrantedScopes(["app_mentions:read", "chat:write"]);
     await h.startOnly();
@@ -321,12 +303,10 @@ describe("slack inbound images", () => {
     expect(String(report!.msg)).toContain("files:read");
     expect(String(report!.msg)).toContain("reading images people attach");
     expect(String(report!.msg)).toContain("Reinstall the app");
-    // Granted ones are not named, and neither is a capability that works.
     expect(String(report!.msg)).not.toContain("chat:write");
   });
 
   it("stays silent at startup when the granted permissions are unknown", async () => {
-    // An unprobed or unreachable app must not be reported as missing anything.
     const h = harness();
     h.gw.setGrantedScopes(null);
     await h.startOnly();
@@ -339,8 +319,6 @@ describe("slack inbound images", () => {
   });
 
   it("leaves a genuine non-image attachment alone", async () => {
-    // Documents are a separate, still-open gap: they are not downloaded at all,
-    // so widening the label gate must not start rejecting them noisily.
     const h = harness();
     await h.mentionWithFile({
       bytes: Buffer.from("%PDF-1.7"),

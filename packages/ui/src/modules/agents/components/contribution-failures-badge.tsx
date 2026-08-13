@@ -2,7 +2,6 @@ import { Badge } from "@/components/ui/badge";
 
 import type { AgentView } from "../../../types.js";
 
-/** Degraded indicator: a running agent whose last settle left contributions unfinished. */
 export function ContributionFailuresBadge({
   failures,
 }: {

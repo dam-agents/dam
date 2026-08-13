@@ -10,7 +10,6 @@ export function ResizeHandle({
 }: {
   side?: "left" | "right";
   orientation?: "horizontal" | "vertical";
-  // Signed delta: horizontal → rightward positive for side="left"; vertical → downward positive.
   onResize: (delta: number) => void;
   onDragEnd?: () => void;
 }) {

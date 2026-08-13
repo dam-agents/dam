@@ -28,7 +28,6 @@ export interface ImportCommandDeps {
   compatService: CompatService;
   configService: ConfigService;
   tokenProvider: TokenProvider;
-  /** Per-host service factory from the agent module's compose. */
   createAgentService: (host: string) => AgentService;
   bundleBuilder: BundleBuilder;
   serverEnvVar: string;
@@ -82,7 +81,6 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
         },
       });
 
-      // Validate args early — cheap, surfaces user typos before the round-trip.
       const resolved = await resolveArgs(paths);
       if (!resolved.ok) {
         process.stderr.write(`error: ${resolved.error.reason}\n`);
@@ -115,7 +113,6 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
         process.stderr.write(
           "This replaces each entry under 'work/' on the agent if present.\n",
         );
-        // Longer timeout than `confirm`'s default — users may scan a long path list.
         const okToProceed = await confirm("Continue?", { timeoutMs: 120_000 });
         if (!okToProceed) {
           if (opts.json) {
@@ -133,9 +130,6 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
         process.exit(EXIT_INVALID_INPUT);
       }
 
-      // Cleanup must run before process.exit — process.exit halts the event
-      // loop before pending microtasks, so a finally-block awaiting cleanup
-      // would leak the tmpdir on every successful import.
       let exitCode = EXIT_RUNTIME_FAILURE;
       try {
         exitCode = await uploadAndReport({
@@ -253,9 +247,7 @@ function extractServerError(body: string): string | null {
   try {
     const obj = JSON.parse(body) as { error?: unknown };
     if (typeof obj.error === "string") return obj.error;
-  } catch {
-    // not JSON; fall through
-  }
+  } catch {}
   return null;
 }
 

@@ -12,8 +12,6 @@ import type {
   ReactionsQuery,
 } from "../../modules/channels/services/channel-manager.js";
 
-// The security log is the audit trail for agent egress; capture it rather than
-// letting it write to stdout, so a test can assert what a post recorded.
 const { auditLines } = vi.hoisted(() => ({
   auditLines: [] as { event: string; detail: Record<string, unknown> }[],
 }));
@@ -27,10 +25,6 @@ vi.mock("../../core/security-log.js", () => ({
   },
 }));
 
-/** Drive the per-Agent MCP endpoint the way a harness does — over a real MCP
- *  client, so the tool's declared input schema is what gets exercised. This is
- *  the layer the outbound tools live at; `channelManager` is stubbed to record
- *  what the tool asked the channel for. */
 async function mcpHarness(opts?: {
   supportsMessageReactions?: boolean;
   reactions?: MessageReactionsResult | { error: string };
@@ -89,7 +83,6 @@ describe("reply MCP tool — broadcast to channel (#2973)", () => {
       | Record<string, { type?: string }>
       | undefined;
     expect(properties?.alsoSendToChannel).toMatchObject({ type: "boolean" });
-    // Off unless asked: nothing about it may be required.
     expect(reply?.inputSchema.required ?? []).not.toContain(
       "alsoSendToChannel",
     );
@@ -222,9 +215,6 @@ describe("describe_message_reactions MCP tool", () => {
   });
 
   it("audits and returns the resolved chat and message even when the call omits both (the common case)", async () => {
-    // The tool's whole point is defaulting to the bound channel and the
-    // current turn's message — the audit trail and the agent-facing result
-    // must still name what was actually inspected, not an empty request.
     const { client } = await mcpHarness({
       reactions: {
         reactions: [{ name: "thumbsup", count: 1, users: ["U9"] }],

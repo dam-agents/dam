@@ -39,14 +39,6 @@ function rowToSource(r: {
   };
 }
 
-/** Postgres-backed user-source repo. System (admin-seeded) sources never live
- *  here — they're injected as in-memory config; see seed-sources.ts. The
- *  service merges both at read time.
- *
- *  System ids reserve a fixed prefix so a user-created row can never shadow
- *  one. Deletes on a system id throw `SkillSourceProtectedError` regardless
- *  of whether the row exists, mirroring the previous ConfigMap-backed
- *  behavior. */
 export function createSkillsRepository(
   db: Db,
   seeds: SkillSourceSeed[] = [],

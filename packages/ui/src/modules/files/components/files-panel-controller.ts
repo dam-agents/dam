@@ -32,9 +32,6 @@ export interface PendingNew {
   dir: string;
 }
 
-/** Internal panel state + handlers shared with every `<DirContents>` and
- *  `<FileRow>` instance. Living in a panel-scoped context avoids drilling
- *  ten handlers through every recursive layer. */
 export interface FilesPanelContextValue {
   agentId: string;
   expandedDirs: ReadonlySet<string>;
@@ -110,8 +107,6 @@ export function useFilesPanelController({
     openFilePath,
   );
 
-  // If the file disappeared (rename, delete, git switch), close the viewer
-  // silently rather than surface the error.
   useEffect(() => {
     if (openFileError) setOpenFilePath(null);
   }, [openFileError, setOpenFilePath]);
@@ -123,8 +118,6 @@ export function useFilesPanelController({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
-  // Stashes the dir the next picker invocation should upload into. Cleared
-  // after onChange fires so subsequent toolbar picks default to root.
   const pickerTargetDirRef = useRef<string>("");
   const folderPickerTargetDirRef = useRef<string>("");
 
@@ -169,13 +162,9 @@ export function useFilesPanelController({
   }, []);
 
   const handleRowDragLeave = useCallback((targetDir: string) => {
-    // A new row's dragenter fires before the previous row's dragleave, so
-    // only clear if we haven't already moved into another row.
     setDragTargetPath((prev) => (prev === targetDir ? null : prev));
   }, []);
 
-  // Drag cancel (Escape / drop outside the window) doesn't reliably fire a
-  // final dragleave, so the source's dragend clears any stuck highlight.
   const handleRowDragEnd = useCallback(() => {
     setDragTargetPath(null);
     setPanelDragActive(false);
@@ -301,8 +290,6 @@ export function useFilesPanelController({
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
     } else if (e.dataTransfer?.types?.includes(MOVE_MIME)) {
-      // In-tree move dropped on empty panel space targets the root; no
-      // upload overlay for these.
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
     }
@@ -320,8 +307,6 @@ export function useFilesPanelController({
       e.preventDefault();
       setPanelDragActive(false);
       setDragTargetPath(null);
-      // Row handlers stopPropagation before this fires, so reaching here
-      // means the drop happened on empty panel space → root.
       const moved = readMoveSource(e);
       if (moved) {
         void moveEntry({ from: moved.path, toDir: "", kind: moved.type });
@@ -388,8 +373,6 @@ export function useFilesPanelController({
     rootSnapshot.data.entries.length === 0 &&
     !pendingNew;
 
-  // Panel-level overlay only when the pointer isn't over a specific row; that
-  // row has its own highlight (see FileRow).
   const showPanelOverlay = panelDragActive && dragTargetPath === null;
 
   return {

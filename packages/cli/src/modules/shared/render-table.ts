@@ -17,25 +17,15 @@ export function renderTable(rows: string[][]): string {
   );
 }
 
-/** renderTable's inter-column gap. */
 const COLUMN_GAP = 3;
-/** Floor for the flex column on narrow terminals. */
 const MIN_FLEX_WIDTH = 20;
 
 const collapse = (s: string): string => s.replace(/\s+/g, " ").trim();
 
-/** Truncate to `max` display columns, appending `…` when clipped. */
 export function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
 }
 
-/**
- * Render a table where one column holds free-form text (a description, a URL,
- * a request line). renderTable doesn't wrap, so a long cell would soft-wrap at
- * the terminal edge and bleed across rows; collapse the flex column to one
- * line and truncate it with `…` to whatever width the other columns leave.
- * `flexCol` defaults to the last column. `--json` paths keep the full text.
- */
 export function renderFittedTable(
   header: readonly string[],
   rows: readonly (readonly string[])[],

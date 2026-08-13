@@ -8,25 +8,6 @@ import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { detectHost } from "../domain/git-host.js";
 
-/**
- * Scan a public GitHub source directly — no Envoy sidecar, no git binary,
- * no auth.
- *
- * api-server has direct internet egress (no NetworkPolicy applies to it),
- * so it can hit `github.com/{owner}/{repo}/archive/HEAD.tar.gz` without
- * going through any agent pod. That endpoint:
- *   - Returns 302 → codeload.github.com/.../tar.gz/{FULL_SHA} on public repos
- *     (full commit SHA in the redirect URL — recoverable from response.url).
- *   - Returns 404 for private repos and nonexistent ones alike — caller
- *     falls back to agent-runtime to distinguish + surface a CTA.
- *   - Has no api.github.com-style rate limit (tarball endpoint is a separate
- *     budget and effectively unlimited for our one-per-5-min cache cadence).
- *
- * The chosen architecture makes public-source scans work in every
- * connection state — no app configured, configured but not Connected,
- * Connected but agent not granted, or fully connected + granted — which
- * is a hard product requirement (see docs/plans/skills/11-scan-in-api-server.md).
- */
 export class PublicArchiveNotFoundError extends Error {
   constructor(gitUrl: string) {
     super(`${gitUrl} is not a public GitHub repo`);
@@ -34,17 +15,14 @@ export class PublicArchiveNotFoundError extends Error {
   }
 }
 
-const MAX_TARBALL_BYTES = 50 * 1024 * 1024; // 50 MB cap — catalog repos are ~100-500 KB typical.
-const MAX_SKILL_MD_BYTES = 1024 * 1024; // 1 MB — a SKILL.md is kilobytes; guards the pinned GET, which MAX_TARBALL_BYTES no longer covers.
+const MAX_TARBALL_BYTES = 50 * 1024 * 1024;
+const MAX_SKILL_MD_BYTES = 1024 * 1024;
 
 interface Frontmatter {
   name?: string;
   description?: string;
 }
 
-/** YAML frontmatter parser — handles plain scalars, `>` folded, and `|`
- *  literal block scalars. Duplicated from agent-runtime's scanner to keep
- *  the two scanners dependency-isolated. */
 export function parseFrontmatter(content: string): Frontmatter {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
@@ -98,18 +76,6 @@ async function walkFiles(root: string): Promise<string[]> {
   return out;
 }
 
-/**
- * Deterministic SHA-256 of a skill directory's contents. Hashes every file
- * under the dir in sorted-path order, mixing the relative path and body
- * bytes so both path-level and content-level changes flip the hash. No
- * external git data needed — purely a function of what's on disk.
- *
- * Algorithmically identical to agent-runtime's `hashSkillDir`
- * (local-skill-repository.ts), and values from the two are compared directly —
- * the merged-row de-dupe (#3019) relies on it. They are duplicate
- * implementations on purpose: stored `agent_skills.contentHash` values were
- * produced by them, so changing either mass-triggers phantom drift.
- */
 export async function computeContentHash(absDir: string): Promise<string> {
   const files = (await walkFiles(absDir)).sort();
   const h = createHash("sha256");
@@ -131,10 +97,6 @@ async function findSkillDirs(
   repoDir: string,
   subPath?: string,
 ): Promise<string[]> {
-  // An explicit subdir is scanned exclusively — no source-root union or root
-  // fallback, so the user gets exactly the directory they pointed at. The path
-  // is api-validated at source creation; guard here too so a stray
-  // `..`/absolute path can never escape the extracted archive.
   if (subPath) {
     if (subPathEscapes(subPath)) {
       throw new Error(`skill source path rejected: ${subPath}`);
@@ -166,18 +128,11 @@ async function skillDirsUnder(
     try {
       await fs.access(path.join(dir, "SKILL.md"));
       out.push(path.relative(repoDir, dir));
-    } catch {
-      /* no SKILL.md → not a skill dir */
-    }
+    } catch {}
   }
   return out;
 }
 
-/**
- * Scan a public GitHub repo via the anonymous archive endpoint.
- * Throws `PublicArchiveNotFoundError` on 404 so the caller can fall through
- * to the authenticated agent-runtime path.
- */
 export async function scanPublicGithubArchive(
   gitUrl: string,
   subPath?: string,
@@ -191,13 +146,8 @@ export async function scanPublicGithubArchive(
   if (res.status === 404) throw new PublicArchiveNotFoundError(gitUrl);
   if (!res.ok) throw new Error(`github archive ${res.status} for ${gitUrl}`);
 
-  // The final URL is `codeload.github.com/{owner}/{repo}/tar.gz/{FULL_SHA}`.
-  // Pick the trailing 40-char hex SHA.
   const shaMatch = res.url.match(/\/([0-9a-f]{40})(?:\?.*)?$/);
   if (!shaMatch) {
-    // Empty repo (no commits): GitHub responds 200 with the repo HTML page
-    // instead of redirecting to a tarball. Treat as "no skills" so the user
-    // sees an empty list rather than a scary error.
     if ((res.headers.get("content-type") ?? "").includes("text/html"))
       return [];
     throw new Error(`unexpected archive redirect: ${res.url}`);
@@ -255,13 +205,6 @@ export async function scanPublicGithubArchive(
   }
 }
 
-/**
- * Read one skill's raw `SKILL.md` at a pinned commit, given the repo-relative
- * directory the scan already reported. One small GET against
- * `raw.githubusercontent.com` — no tarball, no extraction. Throws
- * `PublicArchiveNotFoundError` on 404 so the caller can't mistake a private
- * repo for a missing skill.
- */
 export async function readPublicGithubSkillFile(
   gitUrl: string,
   version: string,
@@ -270,8 +213,6 @@ export async function readPublicGithubSkillFile(
   const host = detectHost(gitUrl);
   if (!host)
     throw new Error(`only GitHub URLs supported for public read: ${gitUrl}`);
-  // `dir` is scan-derived today; guard anyway so a stray `..`/absolute segment
-  // can never walk the pinned path out of this repo's tree.
   if (subPathEscapes(dir)) throw new Error(`skill dir rejected: ${dir}`);
 
   const rawUrl = `https://raw.githubusercontent.com/${host.owner}/${host.repo}/${version}/${dir}/SKILL.md`;

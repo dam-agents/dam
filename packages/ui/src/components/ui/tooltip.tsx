@@ -38,14 +38,6 @@ interface TooltipProps extends Omit<
   className?: string;
 }
 
-/** Announced as a description, not a name — an icon-only trigger still needs
- *  its own `aria-label`.
- *
- *  Transparent to props and ref: when this wraps a `Button` that is itself the
- *  child of an outer `*Trigger asChild`, the outer trigger clones *this*
- *  element, so we forward its ref/handlers/aria onto the wrapped child (via the
- *  Radix trigger's own `asChild` merge). Without it a slotted Button loses its
- *  Popper anchor and its trigger a11y. */
 const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
   function Tooltip(
     { children, content, side = "bottom", className, ...rest },
@@ -54,10 +46,7 @@ const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
     const { onFocus, ...triggerProps } = rest;
     return (
       <TooltipPrimitive.Root>
-        {/* Radix opens on any focus, so restoring focus to a trigger — what a
-            menu or dialog does when it closes — would leave a tooltip stuck
-            open away from the pointer. preventDefault here suppresses only
-            Radix's own handler. */}
+        {}
         <TooltipPrimitive.Trigger
           asChild
           ref={ref}
@@ -83,12 +72,9 @@ const Tooltip = React.forwardRef<HTMLButtonElement, TooltipProps>(
 
 interface HintTooltipProps extends Omit<TooltipProps, "className"> {
   label: string;
-  /** Classes for the focusable wrapper, not for the tooltip. */
   className?: string;
 }
 
-/** For an inert child. The button does nothing but take focus, which a bare
- *  span can't. */
 function HintTooltip({
   children,
   label,

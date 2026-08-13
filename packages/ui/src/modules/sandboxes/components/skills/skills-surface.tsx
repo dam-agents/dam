@@ -25,15 +25,6 @@ import {
   StandaloneSkillsPlaceholder,
 } from "./standalone-skills-group.js";
 
-/**
- * The redesigned skills surface: skills grouped by provenance — user-authored
- * Standalone Local Skills ("Created in this sandbox"), image-shipped ones
- * ("Included with sandbox image"), and Skill Sources ("Sourced from GitHub").
- * Toggles install/uninstall immediately; the "+ Add source" control and the
- * per-source kebab (re-scan / view repo / remove) administer sources. While the
- * agent is stopped/starting the whole surface is a dimmed, non-interactive
- * read-only snapshot; the container renders the wake affordance.
- */
 export function SkillsSurface({
   agentId,
   agentState,
@@ -44,8 +35,6 @@ export function SkillsSurface({
   agentId: string | null;
   agentState: AgentState | undefined;
   readOnly: boolean;
-  /** Agent is coming up (starting) — still read-only, but rendered a touch
-   *  less dimmed than a full stop to signal it's on its way. */
   comingUp?: boolean;
   onStateChange?: (state: SkillsState) => void;
 }) {
@@ -53,9 +42,6 @@ export function SkillsSurface({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
-  // Ephemeral filter over data this component already holds. Not URL-owned:
-  // routing here is path-based (routeToPath) and no route carries a query
-  // param, so a bookmarkable filter would mean new routing infrastructure.
   const [query, setQuery] = useState("");
 
   const surface = useSkillsSurface(agentId, {
@@ -93,9 +79,6 @@ export function SkillsSurface({
     trackUnavailableNames,
   } = derived;
 
-  // Read-only while the agent is stopped/starting (matches the design):
-  // administering sources is a running-agent action, so drop "Add source"
-  // rather than dim a dead control.
   const addSourceButton = readOnly ? null : (
     <Button
       variant="outline"
@@ -108,8 +91,6 @@ export function SkillsSurface({
     </Button>
   );
 
-  // Dropping .md files anywhere on the surface opens the upload tab preloaded.
-  // Only while the agent can actually take the write (running + targetable).
   const dropEnabled = !readOnly && !!agentId;
   const surfaceDropProps = dropEnabled
     ? {
@@ -132,9 +113,6 @@ export function SkillsSurface({
       }
     : {};
 
-  // While stopped, `standalone` is whatever was last recorded — empty for a
-  // sandbox that never ran. Either way it isn't evidence the sandbox is bare,
-  // so don't collapse to the "add a source" empty state then.
   const isEmpty =
     !readOnly &&
     sourcesLoaded &&
@@ -147,8 +125,6 @@ export function SkillsSurface({
       {...surfaceDropProps}
       className={cn(
         "flex flex-col gap-8",
-        // Stopped / starting: a dimmed, non-interactive read-only snapshot.
-        // Per Figma: rows at 40% opacity when stopped, 60% while starting.
         readOnly && "pointer-events-none",
         readOnly && (comingUp ? "opacity-60" : "opacity-40"),
         pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
@@ -170,9 +146,7 @@ export function SkillsSurface({
         </section>
       ) : (
         <>
-          {/* Left out while read-only, matching the design: search and the
-              per-skill toggles need a running sandbox, so a live control on a
-              dead surface is worse than no control. */}
+          {}
           {!readOnly && (
             <SkillsSearchHeader
               query={query}
@@ -220,8 +194,6 @@ export function SkillsSurface({
               action={addSourceButton}
             />
           ) : searching ? null : readOnly ? (
-            // Stopped/starting: the list is on the offline pod, so show the
-            // section with a placeholder instead of dropping it.
             <StandaloneSkillsPlaceholder />
           ) : (
             <StandaloneSkillsEmptyState action={addSourceButton} />

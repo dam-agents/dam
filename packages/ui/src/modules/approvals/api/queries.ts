@@ -11,9 +11,6 @@ export const approvalsKeys = {
     [...approvalsKeys.all, "agent", agentId] as const,
 };
 
-/** Owner-wide pending approvals. Polled — Redis pub/sub fans the synth
- *  frame to the live WS; the inbox itself is a DB read and refetches
- *  enough to surface a new pending without a hard reload. */
 export function useApprovalsForOwner() {
   return useQuery({
     queryKey: approvalsKeys.forOwner(),

@@ -10,11 +10,6 @@ import {
 } from "../../agents/api/queries.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 
-/**
- * Lifecycle gate for settings that need a running pod. `comingUp` also covers
- * the optimistic window right after a wake/restart click, before the poll
- * reports the transition.
- */
 export function useOperableState(agentId: string): {
   operable: boolean;
   comingUp: boolean;
@@ -27,9 +22,6 @@ export function useOperableState(agentId: string): {
   return { operable, comingUp };
 }
 
-/** Header affordance for a read-only section: a spinner while the agent is
- *  coming up, otherwise a "Start agent to edit" wake button. Render only when
- *  the agent isn't operable. */
 export function WakeToEditButton({
   agentId,
   comingUp,
@@ -40,9 +32,6 @@ export function WakeToEditButton({
   const wakeAgent = useWakeAgent();
   if (comingUp)
     return (
-      // Occupies the same box as the "Start agent to edit" button it replaces
-      // (h-9, text-sm font-medium) so the header doesn't jump when the agent
-      // transitions from stopped to starting.
       <span className="flex h-9 items-center gap-1.5 text-sm font-medium text-muted-foreground">
         Agent is starting…
         <Spinner />

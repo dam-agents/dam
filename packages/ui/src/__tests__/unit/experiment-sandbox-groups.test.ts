@@ -128,7 +128,6 @@ describe("toSandboxGroups", () => {
       badge: "running",
       runningInvocations: 4,
     });
-    // Deleting the lineage removes the draft too, not just the runs.
     expect(lineage?.experimentIds).toEqual(["e3", "e2", "e1"]);
   });
 
@@ -143,7 +142,6 @@ describe("toSandboxGroups", () => {
       [agent("a", "experiment")],
       isExperimentSandbox,
     );
-    // Live wins even though the completed lineage is newer.
     expect(live?.rollup).toBe("running");
 
     const [done] = toSandboxGroups(

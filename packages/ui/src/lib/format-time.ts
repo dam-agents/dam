@@ -1,9 +1,5 @@
 type DateInput = string | number | Date | null | undefined;
 
-/** null for an unparseable or absent value, so the formatters fail soft to "—"
- *  rather than render "Invalid Date" — or the 1970 epoch, which is what
- *  `new Date(null)` yields. Nullable timestamps are common in the API types,
- *  and this is the single funnel for every date. */
 function toDate(value: DateInput): Date | null {
   if (value == null) return null;
   const d = new Date(value);
@@ -16,8 +12,6 @@ const UNITS: Array<[label: string, ms: number]> = [
   ["m", 60_000],
 ];
 
-/** The largest whole unit of a duration as a glued abbreviation — "3d", "2h",
- *  "5m" — or "moments" below a minute. */
 export function largestUnit(ms: number): string {
   for (const [label, unitMs] of UNITS) {
     if (ms >= unitMs) return `${Math.floor(ms / unitMs)}${label}`;
@@ -25,8 +19,6 @@ export function largestUnit(ms: number): string {
   return "moments";
 }
 
-/** Past-facing relative time: "just now", "5m ago", "2h ago", "3d ago";
- *  "—" for an unparseable date. */
 export function timeAgo(value: DateInput): string {
   const d = toDate(value);
   if (!d) return "—";
@@ -35,9 +27,6 @@ export function timeAgo(value: DateInput): string {
   return `${largestUnit(delta)} ago`;
 }
 
-/** Future-facing relative time for a next-run glance: "due", "< 1 min",
- *  "in 3 min", "in 2 h", "in 5 d"; "—" for an unparseable date. The absolute
- *  time stays on hover/title. */
 export function timeUntil(value: DateInput, now: Date = new Date()): string {
   const d = toDate(value);
   if (!d) return "—";
@@ -52,10 +41,6 @@ export function timeUntil(value: DateInput, now: Date = new Date()): string {
   return `in ${days} d`;
 }
 
-/** The standard compact date + time — locale-aware like the rest of the module
- *  (24-hour, numeric); "—" for an unparseable date. Reach for this on dense
- *  timestamp lines (session/run rows); use `formatDate` or `formatDateTime`
- *  when you need a different field set. */
 export function formatTimestamp(value: DateInput): string {
   return formatDateTime(value, {
     year: "numeric",
@@ -67,8 +52,6 @@ export function formatTimestamp(value: DateInput): string {
   });
 }
 
-/** `toLocaleDateString` without an inline `new Date(...)`; options pass
- *  through, "—" for an unparseable/absent value. */
 export function formatDate(
   value: DateInput,
   options?: Intl.DateTimeFormatOptions,
@@ -76,7 +59,6 @@ export function formatDate(
   return toDate(value)?.toLocaleDateString(undefined, options) ?? "—";
 }
 
-/** `toLocaleString` (date + time), same guarantees as `formatDate`. */
 export function formatDateTime(
   value: DateInput,
   options?: Intl.DateTimeFormatOptions,

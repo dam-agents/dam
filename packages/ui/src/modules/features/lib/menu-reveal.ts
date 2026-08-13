@@ -1,6 +1,3 @@
-/** The Features settings tab is invisible until revealed by five taps on the
- *  version string. Reveal state is local (per browser) — the flags
- *  themselves live server-side per user. */
 const FEATURES_MENU_STORAGE_KEY = "platform-debug:features-menu";
 
 export function isFeaturesMenuRevealed(): boolean {

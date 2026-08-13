@@ -9,9 +9,6 @@ import {
 
 export interface ConfigSetCommandDeps {
   service: ConfigService;
-  /** Resolved path used purely for the success message — services keep it
-   *  internal otherwise. The command is the only place a user-facing path
-   *  matters. */
   configPath: string;
 }
 

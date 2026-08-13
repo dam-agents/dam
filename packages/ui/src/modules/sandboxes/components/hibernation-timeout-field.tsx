@@ -11,7 +11,6 @@ interface Props {
   disabled?: boolean;
 }
 
-// Per-agent idle-timeout setting: minutes of inactivity before the sandbox hibernates, 0 = never.
 export function HibernationTimeoutField({
   register,
   value,

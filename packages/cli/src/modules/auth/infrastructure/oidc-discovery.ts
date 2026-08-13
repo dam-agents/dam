@@ -2,11 +2,6 @@ import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { OidcDiscoveryError } from "../domain/errors.js";
 
-/**
- * The subset of the OIDC discovery document the CLI consumes. The real
- * payload at `<issuer>/.well-known/openid-configuration` has many more
- * fields; we ignore everything else.
- */
 export interface OidcMetadata {
   deviceAuthorizationEndpoint: string;
   tokenEndpoint: string;
@@ -21,12 +16,6 @@ export interface HttpOidcDiscoveryOpts {
   timeoutMs?: number;
 }
 
-// Tolerate the IdP exposing additional keys (zod's default for objects in
-// v4 is strip, which matches "allow unknown fields"). The two endpoints we
-// need are mandatory; `device_authorization_endpoint` is intentionally
-// optional in the schema so we can surface its absence as a distinct
-// "missing-device-endpoint" rather than a generic missing-field error —
-// it is the "realm not configured for device flow" signal.
 const oidcDiscoverySchema = z.object({
   token_endpoint: z.string().min(1),
   revocation_endpoint: z.string().min(1),

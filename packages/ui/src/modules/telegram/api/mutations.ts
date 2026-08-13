@@ -13,7 +13,6 @@ export function useUnbindTelegramChat() {
   });
 }
 
-/** No errorToast on purpose — the bind page maps failures to inline states. */
 export function useBindTelegramChat() {
   return useMutation({
     ...trpc.agents.bindTelegramChat.mutationOptions(),

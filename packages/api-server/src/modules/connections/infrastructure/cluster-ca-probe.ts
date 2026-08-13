@@ -4,11 +4,6 @@ import { parseClusterEndpoint } from "../domain/kubernetes-contributions.js";
 
 const PROBE_TIMEOUT_MS = 5000;
 
-/** Dial `host[:port]` (default 443) with full TLS validation and report
- *  whether the endpoint is publicly trusted — nothing sent, nothing fetched.
- *  Validation stays on (no `rejectUnauthorized: false`): we don't pin
- *  untrusted certs, so there's nothing to inspect insecurely. See
- *  ClusterCaProbe for the trusted/reachable outcomes. */
 export async function probeClusterCa(host: string): Promise<ClusterCaProbe> {
   const parsed = parseClusterEndpoint(host);
   const hostname = parsed.host;
@@ -28,8 +23,6 @@ export async function probeClusterCa(host: string): Promise<ClusterCaProbe> {
       () => done({ reachable: true, trusted: true }),
     );
 
-    // TCP connect fires before the TLS handshake, so a later error means
-    // reached-but-untrusted rather than a connection-level failure.
     socket.on("connect", () => {
       tcpConnected = true;
     });

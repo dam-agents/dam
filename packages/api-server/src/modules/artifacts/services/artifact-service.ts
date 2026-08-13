@@ -7,14 +7,9 @@ import type {
 } from "../domain/artifact-store.js";
 
 const UPLOAD_URL_TTL_SECONDS = 15 * 60;
-/** Browser download links are fetched the instant they are minted. */
 const DOWNLOAD_URL_TTL_SECONDS = 60;
-/** An agent may run other tool calls between minting and fetching — give it
- *  the same window uploads get. */
 const AGENT_DOWNLOAD_URL_TTL_SECONDS = 15 * 60;
 
-/** Wraps the storage port with the one policy this module owns: the size cap
- *  — enforced up front on the relay path, post-upload on the direct path. */
 export interface ArtifactService {
   put(input: {
     key: string;
@@ -22,24 +17,15 @@ export interface ArtifactService {
     contentType: string;
   }): Promise<void>;
   get(key: string): Promise<Artifact | null>;
-  /** Streaming read for relay paths — bytes never accumulate in the heap. */
   getStream(key: string): ReturnType<ArtifactStore["getStream"]>;
   exists(key: string): Promise<boolean>;
-  /** Missing is not an error. */
   delete(key: string): Promise<void>;
   readonly maxBytes: number;
-  /** null when no object store is configured — callers relay instead. */
   createUploadUrl(
     key: string,
   ): Promise<{ url: string; expiresSeconds: number } | null>;
-  /** Validate a direct upload before it becomes a Candidate; an oversized
-   *  object is deleted and rejected. */
   verifyUpload(key: string): Promise<ArtifactStat>;
-  /** null when the blob can't be served directly — callers relay instead. */
   createDownloadUrl(key: string, filename: string): Promise<string | null>;
-  /** Download link signed for the agent-dialed authority — null only when no
-   *  object store is configured (agents always reach a configured store
-   *  through their gateway, unlike browsers). */
   createAgentDownloadUrl(
     key: string,
     filename: string,
@@ -83,7 +69,6 @@ export function createArtifactService(deps: {
         });
       }
       if (stat.sizeBytes > deps.maxBytes) {
-        // A presigned PUT bounds the key but not the size — enforce here.
         await deps.store.delete(key);
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -101,9 +86,6 @@ export function createArtifactService(deps: {
       });
     },
 
-    // No size policy on either download path: the blob was capped when it was
-    // stored, so a cap here could only reject bytes the platform already
-    // accepted.
     async createAgentDownloadUrl(key, filename) {
       const url = await deps.store.presignDownload(key, {
         filename,

@@ -6,10 +6,6 @@ import { skillSetEntrySchema } from "api-server-api";
 import { z } from "zod";
 import { getLogger } from "../../../core/logger.js";
 
-/** A SkillSet plus one repo-internal fact: the jsonb column failed to parse,
- *  so `skills: []` is a degradation, not what the user saved. Never on the
- *  wire — the router's output schema strips it; the service reads it to
- *  refuse applying such a set instead of applying nothing. */
 export type SkillSetRow = SkillSet & { entriesUnreadable?: true };
 
 export interface SkillSetsRepository {
@@ -28,11 +24,6 @@ function generateId(): string {
 
 const entriesSchema = z.array(skillSetEntrySchema);
 
-/** Parse the jsonb column defensively: a row written by an older shape reads
- *  as an empty set rather than breaking the whole listing, and carries
- *  `entriesUnreadable` so a failed read never masquerades as saved data — the
- *  service refuses to apply such a set, which would otherwise install nothing
- *  and report every entry as already on. */
 function rowToSet(r: {
   id: string;
   name: string;
@@ -55,9 +46,6 @@ function rowToSet(r: {
   };
 }
 
-/** Postgres-backed skill sets. Every method is owner-scoped — there is no
- *  unscoped read, so one user's sets are invisible and undeletable to another
- *  even given the id. */
 export function createSkillSetsRepository(db: Db): SkillSetsRepository {
   return {
     async list(owner) {

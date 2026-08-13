@@ -14,7 +14,6 @@ const ORIGIN = "https://app.example";
 
 interface FakeStore extends ReturnPathStore {
   isEmpty(): boolean;
-  /** Stand-in for a tampered-with sessionStorage, whose slot names the module owns. */
   tamper(value: string): void;
 }
 
@@ -71,7 +70,6 @@ describe("resolveReturnPath", () => {
     expect(resolvePath("/\\evil.example/")).toBe(null);
     expect(resolvePath("javascript:alert(1)")).toBe(null);
     expect(resolvePath("data:text/html,<script>1</script>")).toBe(null);
-    // Same origin, but no hierarchical path to navigate to.
     expect(resolvePath(`blob:${ORIGIN}/9c2f-uuid`)).toBe(null);
   });
 
@@ -80,9 +78,6 @@ describe("resolveReturnPath", () => {
     expect(resolvePath(" ")).toBe("/");
   });
 
-  // The three classes below are all the same defect — text the parser rewrites
-  // before the browser acts on it. They stay as tests because each one reached
-  // a different wrong destination before the parser became the authority.
   it.each(["\t", "\n", "\r"])(
     "sees through an interior %j, dropped mid-URL",
     (control) => {
@@ -119,9 +114,6 @@ describe("resolveReturnPath", () => {
     expect(resolvePath("/settings/./usage")).toBe("/settings/usage");
   });
 
-  // Collapsing dot segments can leave a path that begins with "//" — same origin
-  // once, another origin when the result is used as a reference again. The
-  // returned text has to mean what it was judged to mean.
   it.each([
     "/a/..//evil.example",
     "/..//evil.example",
@@ -133,8 +125,6 @@ describe("resolveReturnPath", () => {
     expect(resolveReturnPathname(value, ORIGIN)).toBe(null);
   });
 
-  // Boot and the Terms-accept navigation both run through here, so an
-  // unparseable value has to read as "no destination", never throw.
   it.each(["//%00evil.example", "/a/..//%00evil.example", "/%00/..//x"])(
     "rejects %j without throwing",
     (value) => {

@@ -25,9 +25,7 @@ export function readStoredTheme(): Theme {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(THEME_STORAGE_KEY);
-  } catch {
-    // localStorage unavailable (private mode, SSR-like contexts) — fall through
-  }
+  } catch {}
   if (raw === null) return "system";
   const parsed = themeSchema.safeParse(raw);
   if (!parsed.success) {

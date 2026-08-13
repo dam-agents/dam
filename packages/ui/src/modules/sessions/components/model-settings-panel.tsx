@@ -27,11 +27,6 @@ interface Choice {
   description?: string | null;
 }
 
-// The agent's persistent model/mode/config default, one picker per option group.
-// Each picker is a compact trigger that opens a menu showing every choice with
-// its description. Hidden when no catalog. `draft` holds the edits; the caller's
-// Submit applies them. `disabled` renders the pickers read-only (agent asleep)
-// and `headerAction` fills the header's right slot ("Start agent to edit").
 export function ModelSettingsPanel({
   agentId,
   disabled = false,
@@ -58,15 +53,12 @@ export function ModelSettingsPanel({
 
   const valueOf = (field: string): string | null => draft.valueOf(field);
 
-  // The displayed model, not the settled one, or one Submit could send a model
-  // with a mode its own constraints exclude.
   const shownModel = valueOf("model");
   const constraints =
     (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
 
   const change = (field: string, value: string | null) => {
     draft.set(field, value);
-    // One Submit sends the batch, so drop staged values this model forbids.
     if (field !== "model") return;
     const allowed = (value && catalog.modelConstraints?.[value]) || {};
     for (const group of catalog.options) {
@@ -78,12 +70,10 @@ export function ModelSettingsPanel({
   };
 
   const groups = catalog.options.map((group) => {
-    // Model group uses live-discovered models when available, else the static catalog.
     const source =
       group.id === "model" && current?.availableModels?.length
         ? current.availableModels
         : group.choices;
-    // Gate non-model groups by the model's allowlist (absent = all; empty = hide).
     const allowed = group.id === "model" ? undefined : constraints?.[group.id];
     const choices: Choice[] = source
       .filter((c) => !allowed || allowed.includes(c.value))
@@ -93,10 +83,6 @@ export function ModelSettingsPanel({
         description: c.description,
       }));
     const cur = valueOf(group.id);
-    // Surface a persisted value that isn't in the (gated) choice list so the
-    // picker shows what's actually set — otherwise a controlled picker with no
-    // matching option would read as "Not set". Covers both a hand-set value
-    // (not in the catalog) and one gated out by the current model.
     if (cur && !choices.some((c) => c.id === cur)) {
       choices.push({
         id: cur,
@@ -127,7 +113,6 @@ export function ModelSettingsPanel({
   );
 
   const fromSnapshot = origin === "snapshot";
-  // Only judge a model against a list observed against that same model.
   const staleModel =
     fromSnapshot && current && modelsPaired ? unavailableModel(current) : null;
   return (
@@ -172,8 +157,6 @@ function OptionGroup({
     <div className="mb-4 last:mb-0">
       <SectionLabel className="mb-1.5 block">{title}</SectionLabel>
       {disabled ? (
-        // Static value while read-only: mounting a real trigger would still open
-        // on click (Radix asChild doesn't honor a native `disabled` reliably).
         <div
           aria-disabled="true"
           className={cn(triggerClass, "cursor-not-allowed opacity-50")}

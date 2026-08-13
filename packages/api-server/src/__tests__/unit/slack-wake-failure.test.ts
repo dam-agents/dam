@@ -89,8 +89,6 @@ describe("slack wake-failure surfacing", () => {
     expect(
       ephemerals.filter((r) => r.text.includes("Waking the agent")),
     ).toHaveLength(1);
-    // The reply itself only lands if the agent calls `reply`; here we just
-    // confirm the turn completed successfully after the wake.
     expect((h.turnEvents().at(-1) as { outcome: string }).outcome).toBe(
       "success",
     );
@@ -126,7 +124,6 @@ describe("slack wake-failure surfacing", () => {
     expect(calls).toBe(2);
     const joined = h.texts().join("\n");
     expect(joined).toContain("still starting");
-    // The retry's onWaking must not re-announce the wake.
     const wakingNotices = h.gw
       .readOutbound()
       .filter((r) => r.kind === "ephemeral" && r.text.includes("Waking"));

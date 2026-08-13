@@ -171,7 +171,6 @@ export function useFileMutations(agentId: string | null) {
   const moveEntry = useCallback(
     async ({ from, toDir, kind }: MoveEntryInput) => {
       if (parentOf(from) === toDir) return;
-      // A folder can't move into itself or its own subtree.
       if (from === toDir || toDir.startsWith(from + "/")) return;
       await relocate(from, joinPath(toDir, nameOf(from)), "Move failed", kind);
     },

@@ -1,14 +1,9 @@
-// Pilot choice: server emits a standalone HTML page that the UI opens in a new
-// tab (via fetch + blob URL — see sidebar.tsx). Trade-off: no UI shell, no
-// shareable URL, no back-button. Upgrade path is a React route at /usage that
-// reads the existing JSON endpoint; this file + the blob trick go away.
 import type { ViewName } from "./services/report-service.js";
 
 export type ViewResult =
   | { kind: "ok"; rows: ReadonlyArray<Record<string, unknown>> }
   | { kind: "error"; reason: string };
 
-/** Render a full HTML page with one table per view. Plain, no JS, no external CSS. */
 export function renderHtmlReport(
   generatedAt: Date,
   views: ReadonlyArray<readonly [ViewName, ViewResult]>,

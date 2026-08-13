@@ -5,12 +5,8 @@ import {
   type HarnessConfigSnapshotPatch,
 } from "api-server-api";
 
-/** The only code that touches `agents.harness_config_snapshot`. */
 export interface HarnessConfigSnapshotRepo {
   read(agentId: string): Promise<HarnessConfigSnapshot | null>;
-  /** Shallow-merges `patch` over what's stored and re-stamps `capturedAt`.
-   *  Merge rather than replace so a report carrying no `availableModels` can't
-   *  null out a list an earlier one established. */
   merge(
     agentId: string,
     patch: HarnessConfigSnapshotPatch,
@@ -35,8 +31,6 @@ export function createHarnessConfigSnapshotRepo(
       .where(eq(agentsTable.id, agentId));
     const raw = rows[0]?.snapshot;
     if (raw == null) return null;
-    // A shape written by an older build degrades to "no snapshot" rather than
-    // breaking the page it feeds.
     const parsed = harnessConfigSnapshotSchema.safeParse(raw);
     return parsed.success ? parsed.data : null;
   }
@@ -53,14 +47,7 @@ export function createHarnessConfigSnapshotRepo(
         capturedAt: at,
         confirmed: opts.confirmed,
       };
-      // Pin the list to the model it was observed against, but only when this
-      // patch actually carried a list. A patch that omits it keeps the older
-      // pin, which is what later tells a reader the two have drifted apart.
       if ("availableModels" in patch) next.modelAtDiscovery = next.model;
-      // Skip the no-op write: `hello` and every apply report the same values on
-      // an unchanged sandbox, and 04's read path is poll-driven. The pin is part
-      // of the comparison — re-observing a list that happens to be identical is
-      // still news, because it re-pairs a snapshot that had drifted.
       if (
         stored &&
         sameSnapshot(stored, next) &&
@@ -76,7 +63,6 @@ export function createHarnessConfigSnapshotRepo(
   };
 }
 
-// Everything but `capturedAt` — a re-stamped timestamp alone is not a change.
 function sameSnapshot(
   a: HarnessConfigSnapshot,
   b: HarnessConfigSnapshot,

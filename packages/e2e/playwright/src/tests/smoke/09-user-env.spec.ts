@@ -8,10 +8,8 @@ import { agentName, envName, placeholder } from "../../lib/fixtures.js";
 const userEnvName = "E2E_USER_ENV";
 const userEnvValue = "user-value-9d2f";
 const userEnvEdited = "user-value-edited-4a7b";
-// A user entry colliding with the granted connection's env (envName).
 const shadowValue = "user-overrides-connection-1c8e";
 
-/** Poll the agent's live process env until the named var converges to `expected`. */
 async function expectAgentEnv(
   api: ApiClient,
   agentId: string,
@@ -33,14 +31,12 @@ async function expectAgentEnv(
     .toBe(expected);
 }
 
-// User env is delivered over the runtime channel, not the controller, so edits apply next turn.
 test("user env rides the contribution rail", async () => {
   test.setTimeout(420_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);
 
-  // getEnv talks to the pod directly, so wake it in case earlier specs let it idle.
   const listed = (await api.agents.list.query()).find(
     (a) => a.name === agentName,
   );
@@ -51,10 +47,6 @@ test("user env rides the contribution rail", async () => {
   await api.agents.wake.mutate({ id: listed!.id });
   const agentId = await waitForAgentRunning(api, agentName);
 
-  // agents.update replaces the whole agent_env list, which also carries the
-  // template-seeded env (e.g. the mock's MOCK_DEFAULT_REPLY). Keep the
-  // baseline in every update and restore it at the end — wiping it strips
-  // the default reply and breaks the Slack specs.
   const baselineEnv = (await api.agents.get.query({ id: agentId })).env ?? [];
 
   await test.step("setting user env reaches the agent — no pod roll", async () => {

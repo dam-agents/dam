@@ -90,8 +90,6 @@ describe("github-enterprise-app template build", () => {
       "api.ghe.acme.com",
       "ghe.acme.com",
     ]);
-    // The apex host uses Basic x-access-token so git-over-HTTPS works, same
-    // as the interactive OAuth GHE connection.
     const git = built.contributions.find(
       (c) => c.kind === "egress-inject" && c.host === "ghe.acme.com",
     );

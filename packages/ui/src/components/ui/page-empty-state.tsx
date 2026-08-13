@@ -11,9 +11,6 @@ interface Props {
   onAction: () => void;
 }
 
-/** The empty state for a whole page: a centered card with a heading, one line
- *  of copy, and a single primary action. Distinct from `EmptyStateCard`, which
- *  is the inline add-affordance used inside a populated sandbox section. */
 export function PageEmptyState({
   title,
   message,

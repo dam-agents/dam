@@ -46,9 +46,6 @@ describe("channel-manager bootstrap", () => {
 
     await manager.bootstrap(new Map());
 
-    // Regression: Slack used to connect lazily on the first bind/post, so on a
-    // fresh install with no bindings the socket never opened and inbound
-    // commands, mentions and DMs were dropped. Both bots must be up at boot.
     expect(slackWorker.connect).toHaveBeenCalledTimes(1);
     expect(telegramWorker.start).toHaveBeenCalledTimes(1);
     expect(slackWorker.start).not.toHaveBeenCalled();

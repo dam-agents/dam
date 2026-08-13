@@ -10,9 +10,6 @@ import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
 
-/** The Knowledge Bases surface: the owner's agents carrying the
- *  `knowledge-base` kind. Rows open the standalone knowledge-base page — the
- *  knowledge base is worked with conversationally, not configured first. */
 export function KnowledgeBasesListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
   const knowledgeBases = (agentsData?.list ?? []).filter(isKnowledgeBase);
@@ -21,7 +18,6 @@ export function KnowledgeBasesListView() {
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
   );
-  // Created in the shared wizard, entered with the KB starting point picked.
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const createKnowledgeBase = () => navigateToCreateSandbox("knowledge-base");
   const showConfirm = useStore((s) => s.showConfirm);

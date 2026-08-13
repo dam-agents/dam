@@ -23,9 +23,7 @@ export interface ConnectionModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Per-host factory the resolver inside agent-scoped commands consumes. */
   createAgentService: (host: string) => AgentService;
-  /** Opens the system browser for the OAuth authorize step of `connect`. */
   browserOpener: BrowserOpener;
 }
 

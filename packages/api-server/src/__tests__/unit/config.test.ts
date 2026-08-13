@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../../config.js";
 
-/** Every config field with no default, set to a valid dummy so loadConfig()
- *  reaches the acpTurnCeilingSeconds >= approvalHoldSeconds refine. Individual
- *  cases layer the two timer knobs on top. */
 const REQUIRED_ENV: Record<string, string> = {
   PLATFORM_RELEASE_NAME: "platform",
   PLATFORM_HARNESS_SERVER_URL: "http://harness.local:8080",
@@ -15,8 +12,6 @@ const REQUIRED_ENV: Record<string, string> = {
   TERMS_TEXT: "terms",
 };
 
-// Only the keys these tests touch are saved/restored, so host env can't
-// satisfy or violate the invariant under test and the suite leaves env pristine.
 const MANAGED_KEYS = [
   ...Object.keys(REQUIRED_ENV),
   "APPROVAL_HOLD_SECONDS",

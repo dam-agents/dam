@@ -1,23 +1,9 @@
-/** Parsing for the optional narrowing a `github-app` Connection may carry.
- *
- *  GitHub mints an installation token with the installation's full authority
- *  unless the request names a narrower set, so the scope is what the user asks
- *  for rather than what they are entitled to — GitHub rejects anything beyond
- *  the installation. Both fields arrive as single strings to keep the
- *  schema-driven forms all-string (same shape as client-credentials `scopes`).
- */
-
-/** GitHub caps one installation-token request at 500 repositories. */
 const MAX_REPOSITORIES = 500;
 
-// Levels GitHub accepts for a fine-grained permission. `admin` is only valid
-// for a handful of them; GitHub is the authority on which, and answers 422.
 const PERMISSION_LEVELS = new Set(["read", "write", "admin"]);
 
-// Repository *names*, not `owner/name` — the installation implies the owner.
 const REPOSITORY_NAME = /^[A-Za-z0-9._-]+$/;
 
-// Permission keys are lower_snake_case in GitHub's schema (contents, pull_requests, …).
 const PERMISSION_NAME = /^[a-z][a-z_]*$/;
 
 export interface GitHubAppScope {
@@ -33,8 +19,6 @@ function split(raw: string): string[] {
     .filter(Boolean);
 }
 
-/** Repository names the token should be limited to. Blank means every
- *  repository the installation can reach. */
 export function parseRepositories(
   raw: string | undefined,
 ): string[] | undefined {
@@ -42,10 +26,6 @@ export function parseRepositories(
   const names = split(raw);
   if (names.length === 0) return undefined;
   for (const name of names) {
-    // The likely pastes are `owner/repo` and the repository's URL; say so
-    // rather than letting GitHub 422. Only name the trailing segment when it
-    // is itself usable — suggesting a value that fails again (or an empty one,
-    // which would silently mean "no narrowing") is worse than not suggesting.
     if (name.includes("/")) {
       const suggestion = name.slice(name.lastIndexOf("/") + 1);
       throw new Error(
@@ -67,9 +47,6 @@ export function parseRepositories(
   return unique;
 }
 
-/** `name:level` pairs — e.g. `contents:read, metadata:read`. Blank means every
- *  permission the installation holds. A later duplicate wins, so re-typing a
- *  permission corrects it rather than erroring. */
 export function parsePermissions(
   raw: string | undefined,
 ): Record<string, string> | undefined {
@@ -99,8 +76,6 @@ export function parsePermissions(
   return permissions;
 }
 
-/** Repositories identified by GitHub's numeric id — what the installation
- *  picker records, since an id survives a repository rename. */
 export function parseRepositoryIds(
   raw: string | undefined,
 ): number[] | undefined {
@@ -109,8 +84,6 @@ export function parseRepositoryIds(
   if (entries.length === 0) return undefined;
   const ids: number[] = [];
   for (const entry of entries) {
-    // Guard the whole string: Number("12abc") is NaN but Number("12 ") is 12,
-    // and a silently-truncated id would narrow to the wrong repository.
     if (!/^\d+$/.test(entry)) {
       throw new Error(`Repository id "${entry}" must be a whole number.`);
     }
@@ -129,11 +102,6 @@ export function parseRepositoryIds(
   return unique;
 }
 
-/** Each half narrows independently — naming only repositories still narrows the
- *  token, and so does naming only permissions. Repositories may arrive as ids
- *  (from the picker) or as names (typed, or from the CLI); GitHub takes one
- *  form or the other, so ids win and the names are dropped rather than sent
- *  alongside them. */
 export function parseGitHubAppScope(input: {
   repositories?: string | undefined;
   repositoryIds?: string | undefined;

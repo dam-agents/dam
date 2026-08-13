@@ -131,8 +131,6 @@ describe("artifact service — direct-transfer links", () => {
       expiresSeconds: download!.expiresSeconds,
       audience: "agent",
     });
-    // Agents may run other tool calls between minting and fetching — the
-    // browser's fetch-immediately TTL would be too tight.
     expect(download!.expiresSeconds).toBeGreaterThan(60);
 
     const none = createArtifactService({ store: stubStore(), maxBytes: MAX });

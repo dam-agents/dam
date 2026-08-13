@@ -10,9 +10,6 @@ interface Props {
   children: ReactNode;
 }
 
-/** Full-viewport modal hosting a file preview at full size. Portaled to <body>
- * so it escapes the file panel's layout; Escape or the close button dismisses
- * it, and body scroll is locked while open. */
 export function FullscreenPreviewDialog({ title, onClose, children }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

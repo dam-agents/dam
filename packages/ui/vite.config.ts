@@ -11,12 +11,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      // No bundled icon assets — the api-server serves icon.svg + rasterized
-      // PNGs at /api/brand/icon* from a Helm-overridable SVG (`brand.icon`).
-      // No bundled manifest — same endpoint serves it dynamically.
       manifest: false,
       workbox: {
-        // Only cache the app shell — API and WebSocket are online-only
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api\//],
