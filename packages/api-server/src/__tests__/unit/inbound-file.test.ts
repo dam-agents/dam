@@ -176,6 +176,18 @@ describe("looksLikeSignInPage", () => {
         '<html><form action="https://notslack.com/signin"><input type="text">',
       ),
     ).toBe(false);
+    // Nor can a sign-in address carried as someone else's parameter: the target
+    // has to *be* the sign-in page, not merely mention one.
+    expect(
+      looksLikeSignInPage(
+        '<html><form action="https://evil.example/?next=https://slack.com/signin">',
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeSignInPage(
+        '<html><head><meta http-equiv="refresh" content="0;url=https://evil.example/?to=https://slack.com/signin"></head>',
+      ),
+    ).toBe(false);
     // Not markup at all.
     expect(looksLikeSignInPage("%PDF-1.7")).toBe(false);
     expect(looksLikeSignInPage("name,total\nsign in,3\n")).toBe(false);
