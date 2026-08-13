@@ -73,7 +73,6 @@ export interface ApiServerDeps {
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
-  /** Reads an agent's advertised runtime capabilities (owned by runtime-delivery). */
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (

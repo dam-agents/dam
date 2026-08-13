@@ -59,38 +59,21 @@ export interface ContributionsStatus {
   preparingWorkspace: boolean;
 }
 
-/** Outbox-derived delivery cursors, supplied by runtime-delivery. `applied` is
- *  the stricter one: a driver failure settles the version without applying it,
- *  so a consumer that acts on "the pod's disk reflects the spec" reads that. */
 export interface ContributionsProgress {
-  /** Carried so a consumer can tell a stable row from one that moved under it
-   *  between two reads. */
   version: number;
   settled: boolean;
   applied: boolean;
   failures: DriverFailure[];
 }
 
-/** Port: what runtime-delivery knows about an agent's contribution delivery —
- *  the failures behind the degraded badge, and the cursors consumers gate on. */
 export interface ContributionsProgressPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  /** The cursors alone, for consumers that gate rather than report. Cheaper
-   *  than {@link status}, which also probes for a pending workspace-seed. */
   progress(agentId: string): Promise<ContributionsProgress>;
 }
 
-/** The cursor read alone, for modules that gate on it — one named dependency
- *  instead of a bare function type re-spelled at every wiring hop. */
 export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
 
-/**
- * Port consumed by `create()` to seed `egress_rules` for a brand-new agent.
- * Declared locally so the agents module doesn't import across
- * module boundaries; the egress-rules module's adapter structurally
- * satisfies this shape.
- */
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
 }

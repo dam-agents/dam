@@ -344,14 +344,6 @@ async function write(
   for (const targetRoot of skillPaths) {
     await fs.mkdir(targetRoot, { recursive: true });
     const dst = path.join(targetRoot, name);
-    // Staged under a dot-prefixed sibling, then swapped in with two renames.
-    // `listEntries` skips dotted entries, so neither the copy nor the delete of
-    // the previous tree is ever visible — the published path is absent only
-    // between the two renames. Writing onto `dst` directly left the skill
-    // missing for the length of a recursive copy, long enough for a reader to
-    // take the absence for an out-of-band deletion. Validating the staged tree
-    // rather than the published one follows from the same rule: a rejected
-    // skill never becomes visible, and the previous copy survives the attempt.
     const staged = path.join(targetRoot, `.${name}.staging`);
     const previous = path.join(targetRoot, `.${name}.previous`);
     let published = false;
@@ -364,18 +356,12 @@ async function write(
       await fs.rename(staged, dst);
       published = true;
     } finally {
-      // Only the restore may affect the outcome. Both sidecars are invisible to
-      // every reader, so failing to remove one leaves nothing the next attempt
-      // won't clear — whereas throwing here would replace the real error, or
-      // fail an install whose files are already published.
       await fs.rm(staged, { recursive: true, force: true }).catch(leaveSidecar);
       if (published) {
         await fs
           .rm(previous, { recursive: true, force: true })
           .catch(leaveSidecar);
       } else {
-        // Failed after the old tree was moved aside — put it back, so a failed
-        // update leaves the skill as it was rather than gone.
         await fs.rename(previous, dst).catch(ignoreMissing);
       }
     }

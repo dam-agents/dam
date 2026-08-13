@@ -40,8 +40,6 @@ export interface HarnessApiServerAppDeps {
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   wakeAgent: (agentId: string) => Promise<void>;
-  /** Whether the pod has applied everything the outbox holds — gates the skills
-   *  `state` reconcile, which would otherwise reap rows mid-apply. */
   runtimeProgress: RuntimeProgressPort;
 }
 

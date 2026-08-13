@@ -58,8 +58,6 @@ export function composeSkillsModule(deps: {
   brandName: string;
   runtimeMutator: RuntimeMutator;
   templatesRepo: TemplatesRepository;
-  /** Whether the pod has applied everything the outbox holds — gates the
-   *  `state` reconcile, which would otherwise reap rows mid-apply. */
   runtimeProgress: RuntimeProgressPort;
 }): SkillsService {
   const { db, namespace, seedSources } = deps;

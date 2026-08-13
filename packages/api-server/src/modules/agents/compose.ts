@@ -53,7 +53,6 @@ export function composeAgentsModule(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
-  /** Telegram chat→agent binding flow; omitted system-side. */
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   grantProvisioner?: {

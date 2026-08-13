@@ -122,11 +122,6 @@ export function createSkillInstallPlugin(deps: {
           }; removed ${toRemove.length}`,
         );
 
-        // Thrown last, so the skills that did land stay managed and the sweep
-        // still runs. Swallowing this instead would let applyState record the
-        // state as applied: the content-addressed hash then matches forever, so
-        // the same install is skipped on every later delivery and the api-server
-        // reaps its row as a ghost.
         if (failed.length > 0) {
           throw new Error(
             `install failed for ${failed.length} skill(s): ${failed.join(", ")}`,

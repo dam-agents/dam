@@ -79,10 +79,6 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
-  /** How far the pod has got with what the outbox asked of it. The `state`
-   *  reconcile is only sound once it has cleanly applied: until then a tracked
-   *  skill's directory is legitimately absent, because the apply that writes it
-   *  hasn't run yet — or ran and failed, and is being retried. */
   runtimeProgress: RuntimeProgressPort;
   owner: string;
   scanSource: (
@@ -213,8 +209,6 @@ function asPodVerdict(err: unknown): unknown {
   return err;
 }
 
-/** The reap's gate, fail-soft. A failed read defers the reap instead of failing
- *  the state read the Skills page cannot do without. */
 async function reapGate(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -230,10 +224,6 @@ async function reapGate(
   }
 }
 
-/** Arms the re-delivery a ghost reap needs, and reports whether the reap may
- *  proceed. The bump is the durable half — a version the pod hasn't settled is
- *  what the 60s sweep looks for — so only the enqueue is best-effort, and a
- *  failed bump cancels the reap rather than losing it. */
 async function bumpForReap(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -258,8 +248,6 @@ async function bumpForReap(
   return true;
 }
 
-/** On-disk Local Skills minus anything tracked as installed-from-remote (by
- *  name) — the same subtraction getState performs for its `standalone` view. */
 async function standaloneFor(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -994,18 +982,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         ...new Set(instancePublishes.map((p) => p.skillName)),
       ];
 
-      // A ghost row — one whose directory no longer exists — is only evidence
-      // of an out-of-band deletion when nothing else can explain the absence.
-      // Install is declarative: the row is written first and the apply fetches
-      // the files after, so in between every freshly installed skill looks like
-      // a ghost. Reaping then doesn't merely lose the install; the reap
-      // re-delivers, and the pod removes the files it just fetched.
-      // So the gate is read *here*, before the disk list it authorises. Read
-      // after, it could clear a reap for an install that completed since the
-      // list was taken — the files on disk, the list saying otherwise.
-      // The gate cannot carry that alone — a row is briefly visible at a
-      // version the pod has already applied — so `listGhosts` holds off on a
-      // row young enough to be in that window.
       const gateBefore = await reapGate(deps, agentId);
 
       const local = await deps.runtimeClient.listLocal(agentId, publishedNames);
@@ -1019,22 +995,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           ? await deps.agentSkillsRepo.listGhosts(agentId, onDisk)
           : [];
       if (gateBefore !== null && ghosts.length > 0) {
-        // Close the bracket: the row has to be unchanged across the evidence.
-        // An install landing mid-read has to bump, so a moved version means the
-        // disk list and these rows describe different moments. An unchanged one
-        // also means no dispatch is in flight — the sweep and `hello` only
-        // enqueue a row the agent is behind on, and every other enqueue bumps —
-        // so the pod cannot be part-way through writing a directory we are
-        // about to call missing.
         const gateAfter = await reapGate(deps, agentId);
         const stable =
           gateAfter?.applied === true &&
           gateAfter.version === gateBefore.version;
-        // The bump comes first: it is the durable half of the re-delivery, so
-        // the sweep re-dispatches even if the enqueue is lost. Bumping after
-        // the delete would strand the pod on an applied hash for a set that no
-        // longer exists — re-installing a reaped skill would reproduce that
-        // hash and be skipped, which is the failure this path exists to break.
         if (stable && (await bumpForReap(deps, agentId))) {
           await deps.agentSkillsRepo.reap(agentId, ghosts);
           const reaped = new Set(ghosts.map(skillKey));

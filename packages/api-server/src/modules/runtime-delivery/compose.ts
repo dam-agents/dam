@@ -53,7 +53,6 @@ export interface RuntimeDeliveryComposition {
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
-  /** The cursors alone — cheaper than the full status, and enough to gate on. */
   contributionsProgress(agentId: string): Promise<ContributionsProgress>;
 }
 
@@ -140,9 +139,6 @@ export function composeRuntimeDelivery(
       return { settled, failures, preparingWorkspace: seeding.has(agentId) };
     },
 
-    // The row alone. The full status also probes for a pending workspace-seed,
-    // which a caller that only gates discards — and the harness-config poller
-    // asks every 800ms while a change is in flight.
     async contributionsProgress(agentId): Promise<ContributionsProgress> {
       return progressOf(await outboxRepo.getRow(agentId));
     },
