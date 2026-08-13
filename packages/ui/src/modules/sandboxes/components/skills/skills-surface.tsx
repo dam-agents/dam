@@ -24,7 +24,7 @@ import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
-import { StaleModelCallout } from "./stale-model-callout.js";
+import { StaleModelNotice } from "./stale-model-notice.js";
 import {
   StandaloneSkillsEmptyState,
   StandaloneSkillsGroup,
@@ -135,7 +135,7 @@ export function SkillsSurface({
       addSourceButton={addSourceButton}
       callout={
         staleModel.stale && staleModel.model ? (
-          <StaleModelCallout
+          <StaleModelNotice
             model={staleModel.model}
             comingUp={!!comingUp}
             onStartAndFix={() => {

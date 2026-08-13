@@ -126,10 +126,14 @@ export function useSectionSummaries(agent: AgentView | null): {
     // placeholder is the honest answer. Only a settled false earns the claim.
     if (configPending) return undefined;
     if (!hasRun) return "Not known yet";
-    const on = skillsState.data?.installed.length ?? 0;
-    const capturedAt = skillsState.data?.standaloneSnapshot?.capturedAt;
+    // No skills read yet, or it failed and won't retry: coalescing that to zero
+    // would render "0 on" as a fact about a sandbox nobody has asked about.
+    const state = skillsState.data;
+    if (!state) return undefined;
+    const on = state.installed.length;
+    const capturedAt = state.standaloneSnapshot?.capturedAt;
     if (capturedAt) return `${on} on · as of ${timeAgo(capturedAt)}`;
-    const created = skillsState.data?.standalone.length ?? 0;
+    const created = state.standalone.length;
     if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
     return sourceCount === null
       ? `${on} on`

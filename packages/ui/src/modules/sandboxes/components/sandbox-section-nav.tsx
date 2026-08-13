@@ -77,10 +77,13 @@ function SectionNavItem({
     >
       <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         {title}
+        {/* aria-hidden: the button names itself from this row and the summary
+            beneath it, so a label here would be concatenated into that name
+            rather than announced as a status. The summary carries the
+            condition in words. */}
         {warning && (
           <span
-            role="img"
-            aria-label={warning}
+            aria-hidden
             title={warning}
             className="size-1.5 shrink-0 rounded-full bg-warning"
           />

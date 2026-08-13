@@ -105,6 +105,7 @@ export function DialogHeader({
   return (
     <div
       id={title ? undefined : labelId}
+      data-dialog-noautofocus
       className={cn(
         "px-5 pt-5 pb-4 md:px-7 md:pt-7",
         divided && "border-b border-border",
@@ -276,9 +277,11 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
  *  `autoFocus` field), focus jumps to the first focusable. Shared by
  *  `Modal` and `DialogOverlay` so global confirms get the same behavior.
  *
- *  `DialogHeader` marks its ✕ with `data-dialog-close` so the initial grab can
- *  skip it — keep that attribute on any other close affordance added here, or
- *  opening the dialog will focus it and the first Enter will dismiss. */
+ *  The initial grab skips anything inside `[data-dialog-noautofocus]`, which
+ *  `DialogHeader` puts on itself: the header is chrome, and its slots hold
+ *  close, drift and on/off controls, so landing there would let the opening
+ *  keystroke dismiss the dialog or fire a mutation. Content owns first focus;
+ *  the header stays reachable by Tab. */
 export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const container = containerRef.current;
@@ -292,12 +295,15 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     const grab = () => {
       if (!container.contains(document.activeElement)) {
         const focusables = focusablesIn(container);
-        // Skip the header's ✕ when there is anything else to land on: it comes
-        // first in the DOM, so focusing it would make the opening keystroke
-        // dismiss the dialog.
+        // Skip the header when there is anything else to land on: it comes
+        // first in the DOM, and its controls close the dialog or mutate the
+        // thing being previewed.
         const target =
-          focusables.find((el) => !el.hasAttribute("data-dialog-close")) ??
-          focusables[0];
+          focusables.find(
+            (el) =>
+              !el.hasAttribute("data-dialog-close") &&
+              el.closest("[data-dialog-noautofocus]") === null,
+          ) ?? focusables[0];
         target?.focus();
       }
       if (performance.now() < reassertUntil)

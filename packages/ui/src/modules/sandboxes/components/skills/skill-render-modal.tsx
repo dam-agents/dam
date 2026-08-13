@@ -86,8 +86,8 @@ export function SkillRenderModal({
           <Switch
             checked={installed}
             onCheckedChange={onToggle}
+            disabled={disabled}
             label={`${installed ? "Uninstall" : "Install"} ${skill.name}`}
-            className={disabled ? "pointer-events-none opacity-50" : undefined}
           />
         </span>
       }

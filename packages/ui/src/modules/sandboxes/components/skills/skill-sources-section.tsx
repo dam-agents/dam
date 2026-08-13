@@ -104,7 +104,11 @@ export function SkillSourcesSection({
               visibility={visibilityBySource[src.id]}
               installedRef={installedRef}
               busyKey={busyKey}
-              disabled={!agentId || isError}
+              // Includes readOnly: the toggle and update handlers early-return
+              // on it, and a stopped sandbox with nothing recorded reaches this
+              // branch — so without it the rows would offer controls whose
+              // mutation is already refused, with no feedback.
+              disabled={!agentId || isError || readOnly}
               stateLoaded={stateLoaded}
               readOnly={readOnly}
               onToggle={surface.toggle}

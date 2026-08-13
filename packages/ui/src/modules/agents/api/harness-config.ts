@@ -3,6 +3,7 @@ import type { HarnessConfigCurrent } from "agent-runtime-api";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
 import { createAgentTrpc } from "../agent-trpc.js";
 import { useIsAgentOperable } from "./queries.js";
 
@@ -143,17 +144,14 @@ export function useResolvedHarnessConfig(
 /**
  * Whether the model this sandbox is set to is provably not offered any more.
  *
- * One place, because two surfaces render it and a second copy of this reasoning
- * would eventually disagree with the first. Deliberately conservative on three
- * counts, each of which withholds a warning rather than risk a false one:
- *
- * - Only while the sandbox is *not* operable. A running pod resolved a model
- *   for itself, so the live read is the truth and this recording is history.
- * - Only when the recorded catalog was observed against the model now saved
- *   (`modelAtDiscovery === model`). Once those drift — a model applied after
- *   the list was read, or a list that outlived a failed re-read — the
- *   comparison proves nothing.
- * - Only when a catalog was recorded at all; a null one is "never asked".
+ * The comparison itself is `unavailableModel`, the same helper the model
+ * settings panel uses — one rule, so two surfaces cannot come to different
+ * conclusions about the same fact. What this adds are the two conditions under
+ * which the recording is admissible evidence at all: the sandbox must not be
+ * running (a live pod resolved a model for itself, so the recording is history),
+ * and the catalog must have been observed against the model now saved. Once
+ * those drift the comparison proves nothing, and a warning nobody can act on is
+ * worse than silence.
  */
 export function useStaleModel(agentId: string | null): {
   stale: boolean;
@@ -163,14 +161,10 @@ export function useStaleModel(agentId: string | null): {
   const { data } = useHarnessConfigSnapshot(agentId);
   const snapshot = data?.snapshot;
   const model = snapshot?.model ?? null;
-  if (operable || !snapshot || !model || !snapshot.availableModels) {
+  if (operable || !snapshot || snapshot.modelAtDiscovery !== model) {
     return { stale: false, model };
   }
-  if (snapshot.modelAtDiscovery !== model) return { stale: false, model };
-  return {
-    stale: !snapshot.availableModels.some((c) => c.value === model),
-    model,
-  };
+  return { stale: unavailableModel(snapshot) !== null, model };
 }
 
 export function useApplyHarnessConfig() {

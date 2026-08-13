@@ -11,8 +11,12 @@ import { Spinner } from "@/components/ui/spinner";
  * change. Names no provider — the display name isn't reliably in reach here,
  * and "the current provider" is true whichever one it is, where a wrong name
  * would be worse than none.
+ *
+ * Says the same thing as the model settings panel's own callout, but carries
+ * the action that gets you there; both read the verdict from `useStaleModel`,
+ * so only the wording lives in two places.
  */
-export function StaleModelCallout({
+export function StaleModelNotice({
   model,
   comingUp,
   onStartAndFix,
