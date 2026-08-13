@@ -92,6 +92,22 @@
   --z-popover: 60;
   --z-tooltip: 70;
   --z-toast: 80;
+
+  /* Sticky submit bar (StickyFooterLayout). The inset is zero until a bar is on
+     screen, so anything fixed to the bottom clears it without knowing which
+     pages have one. */
+  --bottom-bar-h: 52px;
+  --bottom-bar-inset: 0px;
+}
+
+:root[data-bottom-bar] {
+  --bottom-bar-inset: var(--bottom-bar-h);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --bottom-bar-h: 70px;
+  }
 }
 
 @utility z-content {
