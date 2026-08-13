@@ -27,7 +27,7 @@ export function createGitProtocolClient(): GitProtocolClient {
   return {
     async cloneShallow(url, dest, depth = 50, ref) {
       try {
-        await git([
+        await runProc("git", [
           "clone",
           "--quiet",
           "--no-local",
@@ -48,17 +48,25 @@ export function createGitProtocolClient(): GitProtocolClient {
     },
     async fetchAtSha(url, sha, dest) {
       try {
-        await git(["init", "--quiet", dest]);
-        await git(["-C", dest, "remote", "add", "origin", url]);
-        await git(["-C", dest, "fetch", "--depth", "1", "origin", sha]);
-        await git(["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
+        await runProc("git", ["init", "--quiet", dest]);
+        await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "fetch",
+          "--depth",
+          "1",
+          "origin",
+          sha,
+        ]);
+        await runProc("git", ["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
         return ok(undefined);
       } catch {}
       try {
         await fs.rm(dest, { recursive: true, force: true });
         await fs.mkdir(dest, { recursive: true });
-        await git(["clone", "--quiet", "--no-local", url, dest]);
-        await git(["-C", dest, "checkout", "--quiet", sha]);
+        await runProc("git", ["clone", "--quiet", "--no-local", url, dest]);
+        await runProc("git", ["-C", dest, "checkout", "--quiet", sha]);
         return ok(undefined);
       } catch (e) {
         return err({
@@ -91,14 +99,16 @@ export function createGitProtocolClient(): GitProtocolClient {
   };
 }
 
-// Throwaway clones: git's auto-maintenance would fork a detached repack that
-// outlives the command and leaves the reaper to collect it.
-const git = (args: string[]): Promise<void> =>
-  runProc("git", ["-c", "maintenance.auto=false", ...args]);
+/** Applied where git is spawned, so no call site can miss it: git's
+ *  auto-maintenance forks a detached repack that outlives the command and leaves
+ *  the reaper to collect it, and nothing these clones do needs maintenance. */
+const gitArgv = (cmd: string, args: string[]): string[] =>
+  cmd === "git" ? ["-c", "maintenance.auto=false", ...args] : args;
 
 async function runProc(cmd: string, args: string[]): Promise<void> {
+  const argv = gitArgv(cmd, args);
   await new Promise<void>((resolve, reject) => {
-    const supervised = spawnSupervised(cmd, args, {
+    const supervised = spawnSupervised(cmd, argv, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const proc = supervised.child;
@@ -108,7 +118,7 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
       void supervised.terminate();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+          `${cmd} ${argv.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
         ),
       );
     }, COMMAND_TIMEOUT_MS);
@@ -128,7 +138,7 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+          `${cmd} ${argv.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
         ),
       );
     });
@@ -136,8 +146,9 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
 }
 
 async function runCapture(cmd: string, args: string[]): Promise<string> {
+  const argv = gitArgv(cmd, args);
   return await new Promise<string>((resolve, reject) => {
-    const supervised = spawnSupervised(cmd, args, {
+    const supervised = spawnSupervised(cmd, argv, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const proc = supervised.child;
@@ -147,7 +158,7 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
       void supervised.terminate();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+          `${cmd} ${argv.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
         ),
       );
     }, COMMAND_TIMEOUT_MS);
@@ -167,7 +178,7 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+          `${cmd} ${argv.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
         ),
       );
     });
