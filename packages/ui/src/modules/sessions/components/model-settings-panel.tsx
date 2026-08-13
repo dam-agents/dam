@@ -127,6 +127,18 @@ export function ModelSettingsPanel({
   const change = (field: string, value: string | null) => {
     if (draft) {
       draft.set(field, value);
+      // One Submit sends the batch, so drop staged values this model forbids.
+      if (field === "model") {
+        const allowed = (value && catalog.modelConstraints?.[value]) || {};
+        for (const group of catalog.options) {
+          if (group.id === "model") continue;
+          const list = allowed[group.id];
+          const staged = draft.valueOf(group.id);
+          if (list && staged && !list.includes(staged)) {
+            draft.set(group.id, null);
+          }
+        }
+      }
       return;
     }
     setSaving(true);

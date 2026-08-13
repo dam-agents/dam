@@ -1,6 +1,7 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import type { HarnessConfigCurrent } from "agent-runtime-api";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { createAgentTrpc } from "../agent-trpc.js";
 import { useIsAgentOperable } from "./queries.js";
@@ -75,6 +76,8 @@ export interface ResolvedHarnessConfig {
    *  two can be compared. False once they have drifted — a model applied since
    *  the list was read, or a list that outlived a failed re-read. */
   modelsPaired: boolean;
+  /** No read has resolved yet, so `values` and `hasRun` are placeholders. */
+  pending: boolean;
 }
 
 /**
@@ -91,8 +94,10 @@ export function useResolvedHarnessConfig(
 ): ResolvedHarnessConfig {
   const operable = useIsAgentOperable(agentId);
   const { data: live } = useHarnessConfigCurrent(agentId);
-  const { data: recorded } = useHarnessConfigSnapshot(agentId);
+  const { data: recorded, isPending: snapshotPending } =
+    useHarnessConfigSnapshot(agentId);
   const hasRun = recorded?.hasRun ?? false;
+  const pending = snapshotPending;
 
   if (operable) {
     // The live read is a pod round-trip, so it lands after the snapshot query.
@@ -107,6 +112,7 @@ export function useResolvedHarnessConfig(
       hasRun,
       // A live read takes both from the pod at once; nothing to reconcile.
       modelsPaired: true,
+      pending,
     };
   }
   const snapshot = recorded?.snapshot;
@@ -119,6 +125,7 @@ export function useResolvedHarnessConfig(
       // `undefined` on rows predating the pin, which reads as unpaired — the
       // conservative direction, since it only withholds a warning.
       modelsPaired: snapshot.modelAtDiscovery === snapshot.model,
+      pending,
     };
   }
   return {
@@ -127,6 +134,7 @@ export function useResolvedHarnessConfig(
     capturedAt: null,
     hasRun,
     modelsPaired: false,
+    pending,
   };
 }
 
@@ -134,6 +142,11 @@ export function useApplyHarnessConfig() {
   return useMutation({
     ...trpc.harnessConfig.set.mutationOptions(),
     meta: { errorToast: "Failed to apply model settings" },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: harnessConfigCurrentKey(variables.agentId),
+      });
+    },
   });
 }
 

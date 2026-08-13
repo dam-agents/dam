@@ -26,7 +26,7 @@ export function StickyFooterLayout({
   }, [hasFooter]);
 
   return (
-    <div className="flex h-full flex-col pb-[calc(52px_+_env(safe-area-inset-bottom))] md:pb-0">
+    <div className="flex h-full flex-col pb-[calc(var(--bottom-bar-h)_+_env(safe-area-inset-bottom))] md:pb-0">
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       {footer && (
         <div className="border-t border-border bg-background">

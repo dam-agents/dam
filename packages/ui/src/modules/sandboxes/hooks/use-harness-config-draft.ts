@@ -20,13 +20,28 @@ export function useHarnessConfigDraft(agentId: string | null) {
     setSubmitted({});
   }, [agentId]);
 
-  const settledValue = (field: string): string | null => {
-    if (field in submitted) return submitted[field]!;
+  const liveValue = (field: string): string | null => {
     if (field === "model") return live?.model ?? null;
     if (field === "mode") return live?.mode ?? null;
     const v = live?.configOptions[field];
     return typeof v === "string" ? v : null;
   };
+
+  // A pin outliving the sandbox reporting it would mask the next change.
+  useEffect(() => {
+    setSubmitted((prev) => {
+      const keep = Object.entries(prev).filter(
+        ([field, value]) => value !== liveValue(field),
+      );
+      return keep.length === Object.keys(prev).length
+        ? prev
+        : Object.fromEntries(keep);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- liveValue reads `live`
+  }, [live]);
+
+  const settledValue = (field: string): string | null =>
+    field in submitted ? submitted[field]! : liveValue(field);
 
   const set = (field: string, value: string | null) =>
     setEdits((prev) => ({ ...prev, [field]: value }));
@@ -67,6 +82,10 @@ export function useHarnessConfigDraft(agentId: string | null) {
     valueOf,
     buildInput,
     dirty: changed.length > 0,
-    commit: () => setSubmitted((prev) => ({ ...prev, ...edits })),
+    /** Pins what the request carried; an unchanged edit was never sent. */
+    commit: () => {
+      setSubmitted((prev) => ({ ...prev, ...Object.fromEntries(changed) }));
+      setEdits({});
+    },
   };
 }

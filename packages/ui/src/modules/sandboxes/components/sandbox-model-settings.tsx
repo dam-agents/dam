@@ -25,11 +25,11 @@ export function SandboxModelSettings({
   const { operable, comingUp } = useOperableState(agentId);
   const { data: status, isPending: statusPending } =
     useHarnessConfigStatus(agentId);
-  const { origin, hasRun } = useResolvedHarnessConfig(agentId);
+  const { origin, hasRun, pending } = useResolvedHarnessConfig(agentId);
   const hasCatalog = !!status?.catalog && status.catalog.options.length > 0;
-  // Loading, or supported with the catalog still to arrive — the same wait.
-  const awaitingCatalog =
-    statusPending || (status?.supported === true && !hasCatalog);
+
+  // First: every branch below reads what these two queries carry.
+  if (statusPending || pending) return <ModelSettingsSkeleton />;
 
   // Nothing recorded and no pod to ask. Told apart from the case below because
   // "never run" is a complete explanation, while a sandbox that has run and
@@ -55,7 +55,15 @@ export function SandboxModelSettings({
     );
   }
 
-  if (awaitingCatalog) return <ModelSettingsSkeleton />;
+  // `supported` is optimistic while capabilities are unknown, so this wait is
+  // unbounded — name it rather than shimmer forever.
+  if (operable && !hasCatalog && status?.supported === true) {
+    return (
+      <Fallback agentId={agentId} comingUp={comingUp}>
+        Waiting for the sandbox to report which model settings it offers.
+      </Fallback>
+    );
+  }
 
   return (
     <ModelSettingsPanel
@@ -75,7 +83,11 @@ export function SandboxModelSettings({
 /** Shaped like `OptionGroup`'s page variant so the box doesn't reflow. */
 function ModelSettingsSkeleton() {
   return (
-    <section className="mb-8">
+    <section
+      className="mb-8"
+      aria-busy="true"
+      aria-label="Model settings loading"
+    >
       <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
         <SectionLabel>Model settings</SectionLabel>
       </div>
