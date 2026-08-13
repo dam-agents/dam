@@ -7,26 +7,26 @@ import {
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
-import { frameDirectTurn, isDirectSurface } from "../domain/direct-turn.js";
+import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isRequest,
   isResponse,
   parseFrame,
   type JsonRpcId,
-} from "../domain/frames.js";
-import type { AgentProcess } from "../infrastructure/agent-process.js";
-import type { ClientChannel } from "../infrastructure/client-channel.js";
-import { rewriteAuthError, rewriteCwd } from "../infrastructure/mappers.js";
+} from "../../domain/frames.js";
+import type { AgentProcess } from "../../infrastructure/agent-process.js";
+import type { ClientChannel } from "../../infrastructure/client-channel.js";
+import { rewriteAuthError, rewriteCwd } from "../../infrastructure/mappers.js";
 import {
   platformSessionMetaSchema,
   type PlatformSessionMeta,
   type SessionMetaEntry,
   type SessionMetadataStore,
-} from "../infrastructure/session-metadata-store.js";
+} from "../../infrastructure/session-metadata-store.js";
 import type {
   BackgroundWorkRegistry,
   HeldSession,
-} from "./background-work-registry.js";
+} from "../background-work-registry.js";
 
 /** Maximum prompts queued per session before we reject with an error. */
 const PROMPT_QUEUE_CAP = 32;
