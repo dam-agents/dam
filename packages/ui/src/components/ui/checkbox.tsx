@@ -32,8 +32,6 @@ interface CheckboxItemProps extends Omit<
   label: string;
   labelClassName?: string;
   description?: string;
-  /** Extra classes for the description, e.g. `truncate` where a long one would
-   *  otherwise turn a picker into a wall of prose. */
   descriptionClassName?: string;
   testId?: string;
 }

@@ -3,19 +3,6 @@ import { Warning } from "@carbon/icons-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
-/**
- * The saved model is no longer in the provider's catalog, so the next message
- * this sandbox sends will fail.
- *
- * Amber rather than red: nothing is broken or lost, and the fix is a settings
- * change. Names no provider — the display name isn't reliably in reach here,
- * and "the current provider" is true whichever one it is, where a wrong name
- * would be worse than none.
- *
- * Says the same thing as the model settings panel's own callout, but carries
- * the action that gets you there; both read the verdict from `useStaleModel`,
- * so only the wording lives in two places.
- */
 export function StaleModelNotice({
   model,
   comingUp,
@@ -23,7 +10,6 @@ export function StaleModelNotice({
 }: {
   model: string;
   comingUp: boolean;
-  /** Start the sandbox, then land on Sandbox Setup where the model lives. */
   onStartAndFix: () => void;
 }) {
   return (

@@ -47,9 +47,6 @@ export function SkillsSurface({
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
-  // `hasRun` is the one honest signal that no snapshot is even possible —
-  // distinct from a snapshot that happens to be empty. It reads false while
-  // the snapshot query is in flight, hence the `pending` guard below.
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
@@ -91,9 +88,6 @@ export function SkillsSurface({
     snapshotOnCount,
   } = derived;
 
-  // Always offered, in every state: a source is an account-scoped row, so
-  // connecting one needs no pod. It is the one thing you can still do to a
-  // stopped or never-started sandbox's skills.
   const addSourceButton = (
     <Button
       variant="outline"
@@ -106,10 +100,6 @@ export function SkillsSurface({
     </Button>
   );
 
-  // The stopped surface is a different page, not a dimmed copy of this one: a
-  // dated snapshot plus the live source list. Gated on the snapshot existing,
-  // so a sandbox that never ran falls through to its own panel instead of
-  // claiming an empty recording is what it had.
   const stoppedPanel = readOnly && standaloneSnapshot !== undefined && (
     <SkillsStoppedPanel
       capturedAt={standaloneSnapshot.capturedAt}
@@ -139,8 +129,6 @@ export function SkillsSurface({
     />
   );
 
-  // Dropping .md files anywhere on the surface opens the upload tab preloaded.
-  // Only while the agent can actually take the write (running + targetable).
   const dropEnabled = !readOnly && !!agentId;
   const surfaceDropProps = dropEnabled
     ? {
@@ -163,9 +151,6 @@ export function SkillsSurface({
       }
     : {};
 
-  // Running with nothing in it is no longer a special page: each group shows
-  // its own empty panel, so the image group still renders when the image ships
-  // skills. Only the two non-running states replace the surface wholesale.
   const neverRunPanel = readOnly && !configPending && !hasRun && (
     <SkillsNeverRunPanel
       sources={sources}
@@ -184,9 +169,6 @@ export function SkillsSurface({
       {...surfaceDropProps}
       className={cn(
         "flex flex-col",
-        // No dimming while stopped any more: the panel below says what it is
-        // in words and leaves the dead controls out, which a 40%-opacity copy
-        // of the live surface never managed to.
         pageDrag && "rounded-lg ring-2 ring-primary ring-offset-2",
       )}
     >
@@ -198,9 +180,6 @@ export function SkillsSurface({
         <>
           {}
           {!readOnly && (
-            // Sits closer to the first group than the groups sit to each
-            // other: it describes them, so a full group gap would read as a
-            // fourth section rather than as this page's header.
             <div className="mb-5">
               <SkillsSearchHeader
                 query={query}
@@ -249,8 +228,6 @@ export function SkillsSurface({
                 trackUnavailableNames={trackUnavailableNames}
               />
             ) : searching ? null : readOnly ? (
-              // Starting: the list is on a pod that isn't answering yet, so
-              // show the section with a placeholder instead of dropping it.
               <StandaloneSkillsPlaceholder />
             ) : (
               <StandaloneSkillsEmptyState />
@@ -278,8 +255,7 @@ export function SkillsSurface({
               }
             />
 
-            {/* Last, per the design: the image group is the least actionable of
-              the three — nothing in it can be turned off or removed. */}
+            {}
             {shownBuiltIn.length > 0 && (
               <BuiltInSkillsGroup
                 skills={shownBuiltIn}

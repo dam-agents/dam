@@ -9,14 +9,6 @@ import { gitBlobUrl, repoSlug } from "@/lib/git-source";
 import { trpc } from "../../../../trpc.js";
 import { SkillChip, SkillMarkdownModal } from "./skill-markdown-modal.js";
 
-/**
- * Renders a source-backed skill's `SKILL.md` in-product (frontmatter + markdown
- * body) so a user can understand it without leaving for GitHub. The Local Skill
- * counterpart is {@link LocalSkillRenderModal}; both share the modal shell.
- *
- * The state control drives the same mutation as the row's toggle, so the list,
- * the source's bulk button and the counts all follow from one place.
- */
 export function SkillRenderModal({
   source,
   skill,
@@ -32,13 +24,9 @@ export function SkillRenderModal({
   source: SkillSource;
   skill: Skill;
   agentId: string | null;
-  /** Repo visibility, where the scan proved it — absent renders no chip. */
   visibility?: "public" | "private";
   installed: boolean;
-  /** Installed content differs from the latest scan. Shares its predicate with
-   *  the row, so the drawer and the list can never disagree about drift. */
   hasDrift: boolean;
-  /** No pod to write through — the toggle renders but refuses. */
   disabled: boolean;
   onToggle: () => void;
   onUpdate: () => void;

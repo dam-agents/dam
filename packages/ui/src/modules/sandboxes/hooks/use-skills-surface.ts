@@ -46,16 +46,10 @@ export interface SkillsSurface {
   loadingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   scannedAtBySource: Record<string, string>;
-  /** Whether each source's repo is public, where the scan proved it. Absent
-   *  when nothing did (a non-GitHub host is never checked against the public
-   *  archive), and the card must then badge nothing rather than guess. */
   visibilityBySource: Record<string, "public" | "private">;
   installed: SkillRef[];
   standalone: LocalSkill[];
-  /** Present only while `standalone` came from a recording rather than a live
-   *  pod read — which is exactly the stopped case, and what dates its panel. */
   standaloneSnapshot: SkillsState["standaloneSnapshot"];
-  /** Publish records for this agent — drives the "Published" pill. */
   publishes: SkillPublishRecord[];
   busyKey: string | null;
   busySourceId: string | null;
@@ -167,8 +161,6 @@ export function useSkillsSurface(
           await api.skills.listWithScan.query({ sourceId, agentId });
         setSkillsBySource((s) => ({ ...s, [sourceId]: skills }));
         setScannedAtBySource((m) => ({ ...m, [sourceId]: scannedAt }));
-        // Only ever written, never cleared to a default: an unproven
-        // visibility must stay absent so the card badges nothing.
         if (visibility) {
           setVisibilityBySource((m) => ({ ...m, [sourceId]: visibility }));
         }

@@ -36,10 +36,6 @@ function repoLabel(source: SkillSource): string {
   return source.path ? `${base} · ${source.path}` : base;
 }
 
-/** When the list was last read, and the control to read it again. Both live in
- *  one place because the button's only job is to move the timestamp — while a
- *  scan is in flight the pair collapses to a single "Scanning…" line, so the
- *  card never offers a refresh that is already happening. */
 function ScanFreshness({
   scannedAt,
   scanning,
@@ -76,14 +72,6 @@ function ScanFreshness({
   );
 }
 
-/** Why a source's scan failed: the cause on one line, the fix beneath it. Both
- *  come from the server's verdict, which is closed-set — the card never renders
- *  a raw error message, so a parser or transport string can't reach the user.
- *  "Manage connections" appears only where connections are the fix.
- *
- *  Only the heading, the icon and the link carry the danger colour; the fix
- *  beneath reads as body text. Colouring the whole band red makes it shout
- *  where it should explain, and leaves nothing to draw the eye to the cause. */
 function SourceError({
   failure,
   onManageConnections,
@@ -113,14 +101,6 @@ function SourceError({
   );
 }
 
-/**
- * A single Skill Source rendered as a card: header (name · `N of M on` ·
- * visibility · repo URL, then freshness, bulk toggle and kebab) over its skill
- * rows. Enabled skills sort to the top and the available ones collapse under a
- * "Show N more available" / "Hide available" control. The kebab administers the
- * source (re-scan / view repo / remove); a re-scan replaces the timestamp with
- * "Scanning…" while the rows stay put.
- */
 export function SkillSourceCard({
   source,
   skills,
@@ -149,8 +129,6 @@ export function SkillSourceCard({
   loading: boolean;
   error: ScanFailure | null;
   scannedAt?: string;
-  /** Whether the scan proved the repo public or private; absent when nothing
-   *  proved it, which must render no badge rather than an assumed one. */
   visibility?: "public" | "private";
   installedRef: (source: string, name: string) => SkillRef | undefined;
   busyKey: string | null;
@@ -165,12 +143,7 @@ export function SkillSourceCard({
   suppressedNames?: ReadonlySet<string>;
   onManageConnections?: () => void;
   filteredNames?: ReadonlySet<string> | null;
-  /** Turn a set of this source's skills on or off in one action. `on` is what
-   *  the control will do, so the caller never has to re-derive it; `scope` is
-   *  the rows it acts on, absent when that is the whole source. */
   onToggleAll?: (on: boolean, scope?: Skill[]) => void;
-  /** A bulk action is in flight for this source — the whole card is working,
-   *  which the per-row `busyKey` cannot express. */
   bulkBusy?: boolean;
 }) {
   const loaded = skills !== undefined;
@@ -202,15 +175,11 @@ export function SkillSourceCard({
       ? enabled
       : sorted;
 
-  // What the bulk button acts on: the whole source normally, and exactly the
-  // rows a search left on screen while one is active. Its label counts this
-  // list, so the promise and the action can't drift apart.
   const bulkList = filtering ? visible : list;
   const bulkAllOn =
     bulkList.length > 0 &&
     bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
 
-  // Non-user sources (Seed List / template) are protected from deletion.
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
@@ -226,9 +195,7 @@ export function SkillSourceCard({
                 {enabled.length} of {list.length} on
               </span>
             )}
-            {/* Only ever "Private", never "Public": the badge marks the case
-                worth knowing about, and an unproven visibility must stay
-                unlabelled rather than default to reassuring. */}
+            {}
             {visibility === "private" && (
               <Badge
                 variant="template"
@@ -244,10 +211,7 @@ export function SkillSourceCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {/* This label re-renders only because the surface's 5s installed-state
-              poll hands back a fresh array identity. Memoizing this card, or
-              moving that poll to react-query with structural sharing, freezes
-              it at whatever it said on mount — give it its own tick first. */}
+          {}
           {!error && scannedAt && (
             <ScanFreshness
               scannedAt={scannedAt}
@@ -256,9 +220,7 @@ export function SkillSourceCard({
             />
           )}
           {!scannedAt && loading && <Spinner size={15} />}
-          {/* Names what it will do, never the current state — including how
-              many rows it will touch once a search has narrowed the card, so
-              "all" can never mean twenty-two rows beside four visible ones. */}
+          {}
           {onToggleAll && !readOnly && loaded && !error && (
             <Button
               variant="outline"
@@ -276,9 +238,7 @@ export function SkillSourceCard({
                   : "Enable all"}
             </Button>
           )}
-          {/* Source administration (re-scan / view repo / remove) is
-              account-scoped and pod-independent, so it stays available even
-              while the agent is stopped. */}
+          {}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -349,9 +309,6 @@ export function SkillSourceCard({
         })}
 
       {loaded && !error && collapsible && !filtering && (
-        // Counts what it will reveal rather than saying "expand all": the
-        // number is the reason to click, and it is the one thing a collapsed
-        // card cannot show you.
         <button
           type="button"
           onClick={() => setUserExpanded(!expanded)}

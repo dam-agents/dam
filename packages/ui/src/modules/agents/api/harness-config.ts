@@ -63,9 +63,6 @@ export interface ResolvedHarnessConfig {
   values: HarnessConfigCurrent | null;
   origin: HarnessConfigOrigin;
   capturedAt: string | null;
-  /** The sandbox has sent `hello` at least once, so a snapshot was possible.
-   *  Reads `false` while `pending` — check that before putting the claim that
-   *  a sandbox has never run on screen. */
   hasRun: boolean;
   modelsPaired: boolean;
   pending: boolean;
@@ -113,18 +110,6 @@ export function useResolvedHarnessConfig(
   };
 }
 
-/**
- * Whether the model this sandbox is set to is provably not offered any more.
- *
- * The comparison itself is `unavailableModel`, the same helper the model
- * settings panel uses — one rule, so two surfaces cannot come to different
- * conclusions about the same fact. What this adds are the two conditions under
- * which the recording is admissible evidence at all: the sandbox must not be
- * running (a live pod resolved a model for itself, so the recording is history),
- * and the catalog must have been observed against the model now saved. Once
- * those drift the comparison proves nothing, and a warning nobody can act on is
- * worse than silence.
- */
 export function useStaleModel(agentId: string | null): {
   stale: boolean;
   model: string | null;

@@ -10,15 +10,6 @@ import { cn } from "@/lib/utils";
 const DRIFT_HINT =
   "Upstream changed since install — update to the latest version";
 
-/**
- * One skill inside a source card: the name on the left, and on the right the
- * drift "Update" affordance followed by an immediate install/uninstall toggle.
- * Clicking the name opens the SKILL.md preview. A drifted installed skill
- * offers "Update", which re-installs it at the latest version.
- *
- * No description: at twenty-odd rows per source it turned the card into a wall
- * of prose, and the drawer behind the name carries it.
- */
 export function SkillRow({
   skill,
   installed,
@@ -64,15 +55,11 @@ export function SkillRow({
       </div>
       {hasDrift && (
         <Tooltip content={DRIFT_HINT}>
-          {/* A text link, not a pill: it sits in the same right-hand rail as
-              the toggle, where a filled badge would compete with it for the
-              eye on every drifted row. */}
+          {}
           <button
             type="button"
             onClick={onUpdate}
             disabled={disabled}
-            /* A disabled button opens no tooltip, so the hint falls back to
-               `title` exactly where "why can't I click this?" is asked. */
             title={disabled ? DRIFT_HINT : undefined}
             className="shrink-0 text-xs font-medium text-accent transition-colors hover:underline disabled:opacity-50"
           >

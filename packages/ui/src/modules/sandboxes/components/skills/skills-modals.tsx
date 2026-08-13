@@ -17,7 +17,6 @@ import { SaveSkillSetModal } from "./save-skill-set-modal.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
 
-/** Latest publish record for a skill name, or none. */
 function latestPublish(
   publishes: SkillPublishRecord[],
   name: string,
@@ -30,10 +29,6 @@ function latestPublish(
   return latest;
 }
 
-/**
- * Which dialog the surface has open. One value rather than one boolean each:
- * exactly one of these is ever open, and a union is the only shape that says so.
- */
 export type SkillsModal =
   | { kind: "add-source"; tab: "github" | "upload"; files: File[] }
   | { kind: "publish"; skill: LocalSkill }
@@ -55,9 +50,7 @@ export function SkillsModals({
   agentId: string | null;
   surface: SkillsSurface;
   derived: SkillsDerivations;
-  /** Open the publish dialog for a created-here skill. */
   onPublish: (skill: LocalSkill) => void;
-  /** Delete it, behind the surface's confirm. */
   onDeleteLocal: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   onClose: () => void;
 }) {
@@ -124,8 +117,6 @@ export function SkillsModals({
           agentId={agentId}
           visibility={surface.visibilityBySource[open.source.id]}
           installed={ref !== undefined}
-          // The row's own predicate, not a second one: the drawer's Update
-          // button and the row's Update link must never disagree.
           hasDrift={isDrifted(ref, open.skill)}
           disabled={!agentId}
           onToggle={() => surface.toggle(open.skill)}
@@ -136,15 +127,10 @@ export function SkillsModals({
     }
 
     case "render-local": {
-      // The opener is gated on a targetable sandbox; guard rather than assert.
       if (!agentId) return null;
       const skill = open.skill;
       const publish = latestPublish(surface.publishes, skill.name);
-      // Image-shipped skills have nothing to publish or delete — the footer is
-      // dropped rather than rendered with dead controls.
       const createdHere = skill.origin === undefined || skill.origin === "user";
-      // Same gating as the row's kebab: offered with no record, or once the
-      // pull request closed with nothing landed.
       const canRepublish = !publish || publish.prState === "closed";
       const canPublish = derived.publishableSources.length > 0;
       return (

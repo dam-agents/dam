@@ -48,9 +48,6 @@ interface DialogHeaderProps {
   className?: string;
   title?: ReactNode;
   titleAccessory?: ReactNode;
-  /** Right-aligned controls on the title row, immediately left of the ✕ — for
-   *  a control that belongs at eye level with the name rather than in the
-   *  footer, like a preview dialog's on/off state. */
   actions?: ReactNode;
   subtitle?: ReactNode;
   onClose?: () => void;
@@ -118,9 +115,6 @@ export function DialogHeader({
                   aria-label="Close"
                   data-dialog-close
                   data-testid={closeTestId}
-                  /* Pulled out of the header's padding so it sits 16px off the
-                     panel corner at both breakpoints, rather than lining up
-                     with the title. */
                   className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
                 >
                   <Close size={16} />
@@ -218,16 +212,6 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
   ).filter((el) => el.getClientRects().length > 0);
 }
 
-/** Trap Tab inside `containerRef` and restore focus to the previously
- *  focused element on unmount. If nothing inside is focused yet (e.g. no
- *  `autoFocus` field), focus jumps to the first focusable. Shared by
- *  `Modal` and `DialogOverlay` so global confirms get the same behavior.
- *
- *  The initial grab skips anything inside `[data-dialog-noautofocus]`, which
- *  `DialogHeader` puts on itself: the header is chrome, and its slots hold
- *  close, drift and on/off controls, so landing there would let the opening
- *  keystroke dismiss the dialog or fire a mutation. Content owns first focus;
- *  the header stays reachable by Tab. */
 export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const container = containerRef.current;
@@ -239,9 +223,6 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
     const grab = () => {
       if (!container.contains(document.activeElement)) {
         const focusables = focusablesIn(container);
-        // Skip the header when there is anything else to land on: it comes
-        // first in the DOM, and its controls close the dialog or mutate the
-        // thing being previewed.
         const target =
           focusables.find(
             (el) =>

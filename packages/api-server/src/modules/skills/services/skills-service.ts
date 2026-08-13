@@ -220,12 +220,6 @@ interface SourceScan {
   skills: Skill[];
   scannedAt: number;
   viaPod: boolean;
-  /** Whether the repo is public, when the dispatch proves it. The public
-   *  archive serves only public repos, so an answer from it proves `public`,
-   *  and falling through its 404 into the pod proves `private`. Undefined for
-   *  a host the archive was never asked about (non-GitHub): the pod answers
-   *  those regardless of visibility, so `viaPod` alone would report a public
-   *  GitLab repo as private. */
   visibility?: "public" | "private";
 }
 
@@ -290,13 +284,6 @@ async function runScanForSource(
   src: SkillSource,
   agentId?: string,
 ): Promise<SourceScan> {
-  // Fast path: public GitHub repo scanned directly from api-server. This
-  // works in every connection state (no app configured, not Connected,
-  // not granted, fully granted) because api-server has direct internet
-  // egress — it never touches the agent pod's per-grant gating.
-  // Whether the archive was consulted at all — the only thing that makes the
-  // pod branch below evidence of a private repo rather than merely of a host
-  // the archive doesn't serve.
   let archiveAsked = false;
   if (detectHost(src.gitUrl)) {
     archiveAsked = true;

@@ -21,9 +21,6 @@ interface Props {
   active: SandboxSection;
   onNavigate: (section: SandboxSection) => void;
   summaries?: Partial<Record<SandboxSection, string>>;
-  /** Sections needing attention, mapped to why. Renders a marker beside the
-   *  title so a problem is findable from any section, not only the one that
-   *  happens to be open. */
   warnings?: Partial<Record<SandboxSection, string>>;
 }
 
@@ -76,10 +73,7 @@ function SectionNavItem({
     >
       <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         {title}
-        {/* aria-hidden: the button names itself from this row and the summary
-            beneath it, so a label here would be concatenated into that name
-            rather than announced as a status. The summary carries the
-            condition in words. */}
+        {}
         {warning && (
           <span
             aria-hidden

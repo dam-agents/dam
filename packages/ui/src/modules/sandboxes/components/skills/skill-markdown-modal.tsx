@@ -14,9 +14,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
-/** One fact about the skill, as a chip under its name. Provenance reads as a
- *  row of small facts rather than a paragraph, so the eye can skip to the one
- *  it came for. */
 export function SkillChip({
   children,
   className,
@@ -36,9 +33,6 @@ export function SkillChip({
   );
 }
 
-/** Split a leading YAML frontmatter block off the body. Rendered separately
- *  because passing `---`-fenced YAML through a Markdown renderer turns the
- *  opening fence into a horizontal rule and the keys into a paragraph. */
 function splitFrontmatter(raw: string): {
   frontmatter: string | null;
   body: string;
@@ -48,9 +42,6 @@ function splitFrontmatter(raw: string): {
   return { frontmatter: match[1], body: raw.slice(match[0].length) };
 }
 
-/** UTF-8 size of the loaded file. Computed here rather than carried on the
- *  contract: the bytes are already in hand, and a second number from the
- *  server could disagree with the text on screen. */
 function sizeLabel(content: string): string {
   const bytes = new TextEncoder().encode(content).length;
   return bytes < 1024
@@ -58,13 +49,6 @@ function sizeLabel(content: string): string {
     : `${(bytes / 1024).toFixed(1).replace(/\.0$/, "")} KB`;
 }
 
-/**
- * The shell every skill preview renders into: header (name, drift action, state
- * control), provenance chips, the file strip with its Source⇄Preview toggle,
- * the body, and an optional footer. Presentational — each mode owns its own
- * query and hands the result here, so a source-backed skill and a Local Skill
- * share one piece of markup instead of two that drift.
- */
 export function SkillMarkdownModal({
   title,
   chips,
@@ -80,33 +64,18 @@ export function SkillMarkdownModal({
   onClose,
 }: {
   title: string;
-  /** Provenance chips under the title — visibility, source, version, PR. */
   chips?: ReactNode;
-  /** Sits immediately right of the name. Today: "Update to latest" on a
-   *  drifted skill, so the drawer offers the fix where the problem is named. */
   headerAction?: ReactNode;
-  /** Whether the skill is on, as a switch or a static label — right-aligned,
-   *  at eye level with the name. */
   stateControl?: ReactNode;
-  /** Repo- or pod-relative path of the file being shown. */
   path?: string | null;
-  /** GitHub blob URL for the rendered file. A Local Skill has none. */
   linkHref?: string | null;
-  /** Download the whole skill directory. Absent for source-backed skills,
-   *  which have no download path — the GitHub link is the way out. */
   onDownload?: () => void;
   isPending: boolean;
   isError: boolean;
   content?: string | undefined;
-  /** Footer actions. Created-here skills carry publish and delete; every other
-   *  kind has nothing to put there, and the region is dropped rather than
-   *  rendered empty. */
   footer?: ReactNode;
   onClose: () => void;
 }) {
-  // Rendered by default: the point of an in-product preview is not having to
-  // read raw Markdown. The raw file stays one click away for anyone checking
-  // frontmatter or whitespace.
   const [showSource, setShowSource] = useState(false);
   const { frontmatter, body } = content
     ? splitFrontmatter(content)
@@ -166,8 +135,7 @@ export function SkillMarkdownModal({
           )}
         </div>
 
-        {/* Fixed height, so flipping Source⇄Preview or landing a slow read
-            never resizes the dialog under the pointer. */}
+        {}
         <div
           className={cn(
             "h-[52vh] overflow-y-auto rounded-lg border border-border",
@@ -203,8 +171,7 @@ export function SkillMarkdownModal({
         </div>
       </DialogBody>
 
-      {/* Secondary and destructive only. Nothing sits in the primary
-          bottom-right slot, so Delete can't be mistaken for a confirm. */}
+      {}
       {footer && (
         <DialogFooter className="justify-start">{footer}</DialogFooter>
       )}

@@ -11,15 +11,6 @@ export function useSkillsState(agentId: string | null) {
   });
 }
 
-/**
- * How many skill sources are connected, for the sidebar summary's "across N
- * sources". Cheap and pod-independent — sources are account-scoped rows, so
- * this answers whatever the sandbox is doing, including before it first runs.
- *
- * Deliberately not the scan: listing sources costs a query, scanning them
- * reaches upstream (and, for a private source, wakes the pod). A summary line
- * is never worth that.
- */
 export function useSkillSourceCount(agentId: string | null): number | null {
   const { data } = useQuery({
     ...trpc.skills.sources.list.queryOptions(agentId ? { agentId } : skipToken),

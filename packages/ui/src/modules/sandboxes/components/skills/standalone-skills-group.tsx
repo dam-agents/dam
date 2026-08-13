@@ -23,10 +23,6 @@ export function StandaloneSkillsPlaceholder() {
   );
 }
 
-/** Running-agent empty state (#2828): the section keeps its header and an
- *  authoring affordance instead of vanishing when no user skill exists yet.
- *  No button — the panel itself is the drop target, and the only other way in
- *  is asking the agent, which no button can do. */
 export function StandaloneSkillsEmptyState() {
   return (
     <section>

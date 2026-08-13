@@ -43,8 +43,6 @@ function BuiltInSkillRow({
   return (
     <div
       className={cn(
-        // Same rhythm as the other two groups' rows: three lists that read as
-        // one surface, rather than three that were styled on different days.
         "flex items-center gap-3 px-4 py-2",
         withDivider && "border-t border-border",
       )}

@@ -11,9 +11,6 @@ import { cn } from "@/lib/utils";
 
 import { SkillSourceList } from "./skills-source-list.js";
 
-/** How many names a row spells out before it starts counting. A source with
- *  twenty installed skills would otherwise wrap the row four times and bury
- *  the rows under it. */
 const MAX_CHIPS = 8;
 
 function Chip({ children }: { children: ReactNode }) {
@@ -24,7 +21,6 @@ function Chip({ children }: { children: ReactNode }) {
   );
 }
 
-/** One `label — chips` line of the snapshot. */
 function SnapshotRow({
   label,
   divided,
@@ -49,16 +45,6 @@ function SnapshotRow({
   );
 }
 
-/**
- * The Skills surface while the sandbox is stopped: a dated snapshot of what was
- * on at the last run, over the live list of connected sources.
- *
- * Two different kinds of truth, so they are told apart rather than dimmed
- * together. The skills came from a recording and cannot change until the
- * sandbox runs again; the sources are account-scoped rows in Postgres, so they
- * stay accurate and editable. Search, bulk actions and toggles are left out
- * entirely — a greyed-out control on a dead surface still invites the click.
- */
 export function SkillsStoppedPanel({
   capturedAt,
   onCount,
@@ -73,17 +59,13 @@ export function SkillsStoppedPanel({
   onRescan,
   onRemove,
 }: {
-  /** When the snapshot was taken. */
   capturedAt: string;
   onCount: number;
   rows: { label: string; names: string[] }[];
   sources: SkillSource[];
   visibilityBySource: Record<string, "public" | "private">;
   scannedAtBySource: Record<string, string>;
-  /** The "Add source" control — sources stay editable while stopped. */
   addSourceButton: ReactNode;
-  /** Sits above the snapshot notice: a condition of the sandbox itself, which
-   *  outranks a note about how fresh this page's data is. */
   callout?: ReactNode;
   comingUp: boolean;
   onStart: () => void;

@@ -93,13 +93,6 @@ export function useSkillsConfirms(
     }
   };
 
-  /** Enabling adds; disabling removes many skills at once, so only that
-   *  direction asks. Mirrors how a standalone delete and a source removal are
-   *  already gated.
-   *
-   *  `scope` narrows the action to the rows a search left on screen. The
-   *  confirm says which of the two happened, because "disable all" and
-   *  "disable the four you can see" are different promises. */
   const toggleAllWithConfirm = async (
     src: SkillSource,
     on: boolean,

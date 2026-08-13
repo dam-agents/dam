@@ -73,9 +73,7 @@ export function SkillSourcesSection({
               {sets.length > 0 && " — or start from a set you've already built"}
               .
             </p>
-            {/* Sets apply to source-backed skills, which is exactly what this
-                state is missing — so the offer belongs here even though no
-                source is connected yet. */}
+            {}
             <div className="flex items-center gap-2">
               {action}
               {!readOnly && sets.length > 0 && (
@@ -100,10 +98,6 @@ export function SkillSourcesSection({
               visibility={visibilityBySource[src.id]}
               installedRef={installedRef}
               busyKey={busyKey}
-              // Includes readOnly: the toggle and update handlers early-return
-              // on it, and a stopped sandbox with nothing recorded reaches this
-              // branch — so without it the rows would offer controls whose
-              // mutation is already refused, with no feedback.
               disabled={!agentId || isError || readOnly}
               stateLoaded={stateLoaded}
               readOnly={readOnly}

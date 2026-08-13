@@ -9,16 +9,6 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { SkillSourceList } from "./skills-source-list.js";
 
-/**
- * The Skills surface for a sandbox that has never started.
- *
- * Nothing is known about its skills, because they are resolved inside the
- * sandbox and it has never been inside one. Deliberately offers no way to pick
- * skills here: every mutating path wakes the pod, so a picker would either be a
- * lie ("applied on first start" — no such mechanism exists) or would quietly
- * start the sandbox the panel is telling you to start. Sources are the
- * exception, being platform-side.
- */
 export function SkillsNeverRunPanel({
   sources,
   visibilityBySource,

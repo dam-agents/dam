@@ -19,8 +19,6 @@ import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
-/** A connected source shown without its skills: everything the platform knows
- *  about it on its own, and nothing that would need the pod. */
 function SourceListRow({
   source,
   visibility,
@@ -102,14 +100,6 @@ function SourceListRow({
   );
 }
 
-/**
- * The connected sources, listed without their skills.
- *
- * Shared by the two states where the pod can't answer — stopped and never-run.
- * Sources are account-scoped rows in Postgres, so the list and its scan times
- * stay accurate whatever the sandbox is doing, and administering them keeps
- * working: the kebab is live in both states.
- */
 export function SkillSourceList({
   sources,
   visibilityBySource,

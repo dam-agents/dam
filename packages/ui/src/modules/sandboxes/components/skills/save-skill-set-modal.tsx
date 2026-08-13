@@ -103,9 +103,7 @@ export function SaveSkillSetModal({
           if (canCreate) void submit();
         }}
       >
-        {/* Flush, so the counts band and the rows span the dialog. Each region
-            re-adds the gutter; the list would otherwise sit in a column with
-            its hover states clipped short of the edge. */}
+        {}
         <DialogBody flush className="py-0">
           <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-7">
             {omittedCount > 0 && (
@@ -135,9 +133,7 @@ export function SaveSkillSetModal({
             )}
           </div>
 
-          {/* Its own band: it reports the selection and carries the two
-              controls that change it, so it reads as a toolbar over the list
-              rather than another line of body copy. */}
+          {}
           <div className="flex items-center gap-2 border-y border-border bg-muted/40 px-5 py-2.5 text-sm text-muted-foreground md:px-7">
             <span>
               {marked.size} skill{marked.size === 1 ? "" : "s"} selected
@@ -160,8 +156,7 @@ export function SaveSkillSetModal({
           <div className="max-h-[44vh] overflow-y-auto">
             {snapshot.groups.map((group) => (
               <div key={group.source.id}>
-                {/* Sticky: scrolling a long source shouldn't leave you unable
-                    to tell which repo the rows in front of you came from. */}
+                {}
                 <div className="sticky top-0 bg-card px-5 pt-3 pb-1 md:px-7">
                   <SectionLabel>{group.source.name}</SectionLabel>
                 </div>
@@ -173,14 +168,9 @@ export function SaveSkillSetModal({
                       className="flex items-center gap-2 px-5 py-1.5 transition-colors hover:bg-muted md:px-7"
                     >
                       <CheckboxItem
-                        // flex-1 + min-w-0 beat the base `w-full`, which would
-                        // otherwise claim the whole row and push "on here" out
-                        // of it — taking the description's truncation with it.
                         className="min-w-0 flex-1 items-center"
                         label={skill.name}
                         description={skill.description}
-                        // One line: these run to several sentences, and four of
-                        // them turn the picker into a wall of prose.
                         descriptionClassName="truncate"
                         checked={marked.has(key)}
                         onCheckedChange={() => toggle(key)}

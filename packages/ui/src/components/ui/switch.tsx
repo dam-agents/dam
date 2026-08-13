@@ -10,8 +10,6 @@ export function Switch({
 }: {
   checked: boolean;
   onCheckedChange: (v: boolean) => void;
-  /** Native `disabled`, not a pointer-events class: the keyboard and the
-   *  accessibility tree have to hear about it too. */
   disabled?: boolean;
   testId?: string;
   label?: string;

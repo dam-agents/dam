@@ -36,12 +36,6 @@ export const skillSchema = z.object({
 export const skillListResultSchema = z.object({
   skills: z.array(skillSchema),
   scannedAt: z.string().datetime(),
-  /** Whether the repo is public, when the scan dispatch proves it: the public
-   *  archive only serves public repos, so an answer from it means `public`,
-   *  and falling through its 404 to the authenticated pod means `private`.
-   *  Absent when nothing proved it — a non-GitHub host never consults the
-   *  archive, so its visibility is unknown rather than inferred. Readers must
-   *  treat absent as unknown and claim nothing. */
   visibility: z.enum(["public", "private"]).optional(),
 });
 

@@ -5,24 +5,12 @@ import type { ReactNode } from "react";
 import { trpc } from "../../../../trpc.js";
 import { SkillChip, SkillMarkdownModal } from "./skill-markdown-modal.js";
 
-/** What a Local Skill's state control says. Neither kind can be turned off —
- *  a standalone skill is simply present on disk, and an image-shipped one is
- *  baked in — so the control states the fact instead of offering a dead
- *  switch. */
 function stateLabel(skill: LocalSkill): string {
   return skill.origin === "system" || skill.origin === "system-modified"
     ? "Always on · ships with the image"
     : "Always on";
 }
 
-/**
- * Renders a Local Skill's `SKILL.md` — standalone or image-baked — read off the
- * pod's PVC. No GitHub link accessory: a Local Skill has no source, and a
- * published one's pull request is a different thing than this file (the chip
- * links it).
- *
- * `agentId` is non-optional: without a pod there is nothing to read.
- */
 export function LocalSkillRenderModal({
   skill,
   agentId,
@@ -33,11 +21,8 @@ export function LocalSkillRenderModal({
 }: {
   skill: LocalSkill;
   agentId: string;
-  /** Latest publish record, when this skill has ever been published — shown as
-   *  a chip that links its pull request. */
   publish?: SkillPublishRecord;
   onDownload: () => void;
-  /** Publish and delete, for a created-here skill. */
   footer?: ReactNode;
   onClose: () => void;
 }) {

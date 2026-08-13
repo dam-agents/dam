@@ -48,9 +48,6 @@ function SetRow({
         ? "already all on"
         : null;
   return (
-    // items-start, not center: the meta line wraps on a set with many skills,
-    // and centring then floats the box between the two lines instead of
-    // beside the name it belongs to.
     <div className="flex w-full items-start gap-2 px-5 py-3 transition-colors hover:bg-muted/40 md:px-7">
       <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 text-left">
         <Checkbox
@@ -207,8 +204,6 @@ export function AddSkillSetsModal({
             No saved skill sets yet — save one from this sandbox first.
           </p>
         ) : (
-          // Divided rows rather than spaced ones: a set is a row in a list, and
-          // the divider is what makes a long list scannable.
           <div className="divide-y divide-border border-y border-border">
             {previews.map((preview) => (
               <SetRow

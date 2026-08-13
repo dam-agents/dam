@@ -32,13 +32,7 @@ export interface SkillsDerivations {
   anyInstalled: boolean;
   drifted: Skill[];
   trackUnavailableNames: ReadonlySet<string>;
-  /** What was on at the last run, grouped for the stopped snapshot panel:
-   *  created-here, then one row per source, then image-shipped. */
   snapshotRows: { label: string; names: string[] }[];
-  /** How many source-backed skills were installed at the last run. The same
-   *  measure as the running surface's `on`, so the number doesn't jump when a
-   *  sandbox stops — and the same one the per-source rows below it add up to.
-   *  Created-here and image skills are provenance, not toggles. */
   snapshotOnCount: number;
 }
 
@@ -206,9 +200,6 @@ export function useSkillsDerivations(
     return out;
   }, [publishes, skillsBySource]);
 
-  // Reads from `installed` (Postgres, always current) and `standalone` (the
-  // recording, while stopped) — never from a scan, which needs the pod that is
-  // by definition not there.
   const snapshotRows = useMemo(() => {
     const rows: { label: string; names: string[] }[] = [];
     if (createdHere.length > 0) {
@@ -228,9 +219,6 @@ export function useSkillsDerivations(
       if (names && names.length > 0) rows.push({ label: src.name, names });
       byUrl.delete(src.gitUrl);
     }
-    // Installed from a source that has since been disconnected. Listed under
-    // its URL rather than dropped: the skills are still on disk, and a row
-    // that silently vanishes reads as data loss.
     for (const [gitUrl, names] of byUrl) {
       rows.push({ label: repoSlug(gitUrl), names });
     }
