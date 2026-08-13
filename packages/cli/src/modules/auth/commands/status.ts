@@ -52,7 +52,6 @@ function formatEntry(entry: StatusEntry): string {
     entry.expiresAt !== undefined
       ? ` (expires ${entry.expiresAt.toISOString()})`
       : "";
-  // Never prints tokens — per analysis §3.10.
   return `${marker} ${entry.host}  user=${entry.username}  source=${entry.source}  issuer=${entry.issuer}${expires}`;
 }
 

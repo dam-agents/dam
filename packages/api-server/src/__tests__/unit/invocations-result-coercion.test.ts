@@ -93,7 +93,6 @@ describe("recordResult tolerates stringified report_result payloads", () => {
     const { rows, service } = makeService(runningRow({ type: "string" }));
     const outcome = await service.recordResult("agent-1", "42");
     expect(outcome.ok).toBe(true);
-    // Schema is string, so the raw "42" validates first — never JSON-parsed.
     expect(rows.get("agent-1")?.result).toBe("42");
   });
 

@@ -16,9 +16,6 @@ import {
   UsageStaleLabel,
 } from "./usage-notice.js";
 
-// Cache reads dominate agent traffic, so folding them into "in" is what makes
-// the figure reflect what actually entered the context — the same sum the
-// per-model bars' caption shows.
 function totals(rows: TokenSpendByModel[]) {
   return {
     costUsd: totalCostUsd(rows),
@@ -38,9 +35,6 @@ function totals(rows: TokenSpendByModel[]) {
   };
 }
 
-/** Sandbox-home "Usage" section: this sandbox's LLM spend for one calendar
- *  month, headline figures above the same per-model bars and per-day chart the
- *  global Usage tab shows. */
 export function SandboxUsageSection({ agentId }: { agentId: string }) {
   const {
     month,
@@ -73,8 +67,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
         LLM spend for this sandbox, including work it delegated to other agents.
       </p>
 
-      {/* Only when there is nothing to show: a failed refetch keeps the loaded
-          month, and the label by the period control names it as not fresh. */}
+      {}
       {(state === "failed" || state === "unavailable") && (
         <UsageNotice>
           {readFailureMessage(state === "unavailable", label)}
@@ -114,7 +107,6 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
   );
 }
 
-/** Shaped at the final section heights so the layout doesn't jump. */
 function UsageSkeleton() {
   return (
     <div className="space-y-6">

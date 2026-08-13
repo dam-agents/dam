@@ -1,7 +1,6 @@
 import { eq, sql, type Db, userFeatures } from "db";
 
 export interface FeaturesRepository {
-  /** Explicitly toggled features for an owner; absent = default (off). */
   listEnabled(owner: string): Promise<Record<string, boolean>>;
   upsert(owner: string, feature: string, enabled: boolean): Promise<void>;
 }

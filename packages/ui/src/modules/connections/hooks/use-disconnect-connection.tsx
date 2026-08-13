@@ -5,8 +5,6 @@ import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
 import { useDeleteConnection } from "../api/mutations.js";
 
-// No endpoint lists a connection's grantees, so fan out over the (small)
-// agent list; a failed lookup degrades to a dialog without the list.
 async function affectedSandboxNames(connectionId: string): Promise<string[]> {
   try {
     const agents = await api.agents.list.query();
@@ -26,14 +24,6 @@ async function affectedSandboxNames(connectionId: string): Promise<string[]> {
   }
 }
 
-/**
- * Confirm-then-delete a connection. Deleting is global — it removes the
- * connection for every sandbox — so this always confirms first, listing the
- * sandboxes it is granted to. Shared by every surface that offers deletion
- * (the catalogue modal and Settings → Connections). `confirmAndDelete`
- * resolves to whether the user confirmed, so callers can run follow-up work
- * (e.g. drop a staged grant).
- */
 export function useDisconnectConnection() {
   const del = useDeleteConnection();
   const showConfirm = useStore((s) => s.showConfirm);

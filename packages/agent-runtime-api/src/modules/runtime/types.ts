@@ -37,8 +37,6 @@ export const envContribution = z.object({
   placeholder: z.string(),
 });
 
-// Upstream port; omit for 443. Only L7 chains honor it — the L4 catch-all
-// always dials 443 (a CONNECT's authority port is lost at the tunnel handoff).
 const egressPort = z.number().int().min(1).max(65535).optional();
 
 export const egressAllowContribution = z.object({
@@ -55,20 +53,13 @@ export const egressInjectContribution = z.object({
   headerName: z.string().min(1),
   valueFormat: z.string().min(1),
   encoding: z.literal("basic-x-access-token").optional(),
-  // Moves the value into this query param instead of the header; restricted to unreserved chars since the Lua treats it as a trusted literal.
   queryParamName: z
     .string()
     .regex(/^[A-Za-z0-9_.~-]+$/)
     .optional(),
-  // Terminate this host's gateway chain as HTTP/2 so injection lands on a gRPC
-  // stream (e.g. Modal's x-modal-token-* metadata). Flows to the injection-hosts
-  // annotation the controller reads. Omit for HTTP/1.1 REST hosts.
   http2: z.boolean().optional(),
   port: egressPort,
-  // Tunnel WebSocket/SPDY upgrades (kubectl streaming); keeps the chain h1.
   upgrades: z.boolean().optional(),
-  // Validate the upstream against the CA in the connection Secret, not the
-  // system store (self-signed cluster CAs).
   upstreamCa: z.boolean().optional(),
 });
 
@@ -136,12 +127,8 @@ export const scheduleResetEvent = z.object({
   payload: scheduleResetEventPayload,
 });
 
-// One-shot seed of the agent's working directory from a public git repo:
-// fire once at create, clone, forget. Not reconciled state — the clone is the
-// user's mutable workspace, which the platform never re-asserts or removes.
 export const workspaceSeedEventPayload = z.object({
   url: z.string().min(1),
-  /** Branch or tag to clone; omitted = the repo's default branch. */
   ref: z.string().min(1).optional(),
 });
 export type WorkspaceSeedEventPayload = z.infer<
@@ -156,12 +143,6 @@ export const workspaceSeedEvent = z.object({
   payload: workspaceSeedEventPayload,
 });
 
-// One-shot shell command run in the work dir. Like workspace-seed: fire once
-// on create, run, forget — never re-asserted; the command's effects are the
-// user's mutable workspace. The command is composed server-side (e.g. a
-// Knowledge Base's bootstrap installer), never user-supplied free text.
-// Run-to-success at-most-once is enforced in-pod by a sentinel; a failed run
-// stays pending and retries until it succeeds or the event's TTL lapses.
 export const workspaceCommandEventPayload = z.object({
   command: z.string().min(1),
 });
@@ -177,9 +158,6 @@ export const workspaceCommandEvent = z.object({
   payload: workspaceCommandEventPayload,
 });
 
-// Experiments v2 (#2942): the user pressed Execute on a draft Experiment. The
-// payload's task is the composed launch prompt — the harness backgrounds the
-// script and ends its turn; the script reports to the platform on its own.
 export const experimentExecuteEventPayload = z.object({
   experimentId: z.string().min(1),
   task: z.string().min(1),
@@ -196,11 +174,6 @@ export const experimentExecuteEvent = z.object({
   payload: experimentExecuteEventPayload,
 });
 
-// One-shot apply of a per-agent harness config change (model / mode / config
-// options) into the harness's own config file. Like workspace-seed: fire once on
-// a user action, apply, forget — never re-asserted, so the file stays the user's
-// to edit. `unset` lists logical fields to remove (a "Not set" / clear in the
-// UI). The agent's manifest owns the field → file/keyPath mapping.
 export const harnessConfigEventPayload = z.object({
   model: z.string().min(1).optional(),
   mode: z.string().min(1).optional(),
@@ -229,8 +202,6 @@ export const event = z.discriminatedUnion("kind", [
 ]);
 export type Event = z.infer<typeof event>;
 
-// The config catalog a harness offers (model/mode/effort/…), declared in its
-// manifest. Mirrors the ACP select-option shape so the UI renders it unchanged.
 export const harnessConfigChoice = z.object({
   value: z.string().min(1),
   name: z.string().min(1),
@@ -239,11 +210,9 @@ export const harnessConfigChoice = z.object({
 export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
 
 export const harnessConfigOptionGroup = z.object({
-  // "model", "mode", or a configOption id (e.g. "effort").
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
-  // ACP-style category: "model" | "mode" | "thought_level" | …
   category: z.string().min(1),
   choices: z.array(harnessConfigChoice),
 });
@@ -251,25 +220,12 @@ export type HarnessConfigOptionGroup = z.infer<typeof harnessConfigOptionGroup>;
 
 export const harnessConfigCatalog = z.object({
   options: z.array(harnessConfigOptionGroup),
-  // Per-model validity: allowed choice values per gated group. Model absent =
-  // all allowed; empty array = group hidden for that model (e.g. Haiku effort).
   modelConstraints: z
     .record(z.string().min(1), z.record(z.string().min(1), z.array(z.string())))
     .optional(),
 });
 export type HarnessConfigCatalog = z.infer<typeof harnessConfigCatalog>;
 
-/** The harness's own config, as the pod reads it back from the harness's file
- *  plus (when asked) the provider. A `null` model/mode means the key is unset,
- *  so the harness's built-in default applies.
- *
- *  `availableModels` is three-valued on purpose, because the platform stores it
- *  durably and must not lose a good list to a blip:
- *  - **absent** — not resolved on this read. Either the caller didn't ask, or
- *    the attempt failed (no base URL yet, a non-2xx, a timeout). Says nothing
- *    about the provider, so the receiver keeps whatever it already holds.
- *  - **null** — this harness declares no discovery source at all.
- *  - **array** — the provider answered; empty means it offers no chat models. */
 export const harnessConfigCurrent = z.object({
   model: z.string().nullable(),
   mode: z.string().nullable(),
@@ -281,10 +237,7 @@ export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 export const capabilities = z.object({
   contributions: z.array(contributionKind),
   events: z.array(eventKind),
-  // Whether the harness declares a config mapping (gates the UI panel). Optional
-  // for forward-compat with agents that predate it.
   harnessConfig: z.boolean().optional(),
-  // The option catalog from the harness's manifest (absent → UI hides the panel).
   harnessConfigCatalog: harnessConfigCatalog.optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;
@@ -308,20 +261,15 @@ export const driverFailure = z.object({
 });
 export type DriverFailure = z.infer<typeof driverFailure>;
 
-// Discriminated outcome so the worker dispatches on `status`, never on error strings.
 export const applyStateResult = z.discriminatedUnion("status", [
-  // Processed: resulting cursor + any per-driver failures (empty on a fully clean apply).
   z.object({
     status: z.literal("ok"),
     appliedVersion: z.number().int().nonnegative(),
-    appliedHash: z.string().min(1).nullable(), // null until the first clean settle
+    appliedHash: z.string().min(1).nullable(),
     failures: z.array(driverFailure).default([]),
     settledEvents: z.array(z.string()).default([]),
-    // Absent from a pod predating this, or one whose manifest declares no
-    // harness-config driver — the server then keeps whatever it holds.
     harnessConfigCurrent: harnessConfigCurrent.optional(),
   }),
-  // Contributions already at ≥ the requested version; worker reconciles. Events still apply (own version) — settledEvents reports which.
   z.object({
     status: z.literal("stale"),
     appliedVersion: z.number().int().nonnegative(),
@@ -337,10 +285,6 @@ export const helloInput = z.object({
   protocolVersion: z.literal("v1"),
   agentRuntimeVersion: z.string(),
   capabilities,
-  // The config file as it stands at boot, with no discovered model list: `hello`
-  // is what delivers capabilities, and the worker won't dispatch an apply until
-  // they land, so waiting on the provider here delays the first apply after
-  // every boot and wake. The apply reply carries the list instead.
   harnessConfigCurrent: harnessConfigCurrent.optional(),
 });
 export type HelloInput = z.infer<typeof helloInput>;

@@ -2,8 +2,6 @@ import { describe, it, expect } from "vitest";
 import { configureLogger, getLogger } from "../../core/logger.js";
 import { securityLog } from "../../core/security-log.js";
 
-/** Capture sink — each test installs a fresh Pino instance writing here, with
- *  an explicit level so singleton state doesn't leak between cases. */
 function capture(level: "error" | "warn" | "info" | "debug" = "info") {
   const lines: string[] = [];
   configureLogger({ level, write: (line) => lines.push(line) });

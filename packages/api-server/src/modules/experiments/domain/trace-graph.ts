@@ -7,18 +7,9 @@ import type {
   TraceFeedStage,
 } from "api-server-api";
 
-// The trace-graph resolver: pure projections from (skeleton, spans) to the
-// shapes the live view renders. No IO, no clocks — everything derives from
-// the inputs, so the whole lenient-skeleton semantics is unit-testable here.
-
-/** Feed caps: the frame pushed into a dashboard must stay bounded no matter
- *  how many iterations a loop runs. */
 export const RECENT_SPANS_MAX = 200;
 export const SCORE_POINTS_MAX_PER_STAGE = 1000;
 
-/** Stages surfaced by execution that the skeleton never declared, in
- *  first-seen order. `announced` carries stages from explicit stage-declare
- *  events (they precede their first span); span stages fill in the rest. */
 export function discoverDrift(
   declaredStageIds: readonly string[],
   announced: readonly string[],
@@ -35,8 +26,6 @@ export function discoverDrift(
   return drift;
 }
 
-/** Even downsample preserving the first and last point, so a series' shape
- *  survives the cap instead of truncating its tail. */
 export function downsample<T>(points: readonly T[], max: number): T[] {
   if (points.length <= max) return [...points];
   if (max === 1) return [points[0]!];
@@ -47,17 +36,11 @@ export function downsample<T>(points: readonly T[], max: number): T[] {
   return out;
 }
 
-/** Project the bounded Trace Feed — the one contract shared by the stock and
- *  bespoke dashboards, the detail view, and the SDK docs. `spans` must be in
- *  chronological (startedAt ascending) order; the repository's read guarantees
- *  it. */
 export function projectFeed(input: {
   experiment: Experiment;
   spans: readonly ExperimentSpan[];
   invocations: readonly TraceFeedInvocation[];
   custom?: Record<string, unknown> | null;
-  /** Run-attached ids from outside the span flow (driver monitoring /
-   *  invocation-target publishes) — unioned after the span rollup. */
   attachedArtifactIds?: readonly string[];
 }): TraceFeed {
   const { experiment, spans, invocations } = input;
@@ -136,7 +119,6 @@ export function projectFeed(input: {
     experiment: { ...experiment, drift },
     stages,
     scoreSeries,
-    // Newest first: the drill-down shows the latest work without scrolling.
     recentSpans: spans.slice(-RECENT_SPANS_MAX).reverse(),
     invocations: [...invocations],
     artifactIds,

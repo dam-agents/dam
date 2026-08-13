@@ -4,13 +4,11 @@ import type { TokenTransportError } from "../domain/errors.js";
 import type { TokenEndpointResponse } from "../domain/tokens.js";
 
 export interface TokenEndpointClient {
-  /** OAuth 2.0 Device Authorization Grant token exchange. */
   exchangeDeviceCode(input: {
     tokenEndpoint: string;
     clientId: string;
     deviceCode: string;
   }): Promise<Result<TokenEndpointResponse, TokenTransportError>>;
-  /** Refresh-token grant — reused by the TokenProvider (issue 5). */
   refresh(input: {
     tokenEndpoint: string;
     clientId: string;
@@ -41,11 +39,6 @@ function errorMessage(e: unknown): string {
 function classify(
   raw: unknown,
 ): Result<TokenEndpointResponse, TokenTransportError> {
-  // The shapes are disjoint — success bodies carry `access_token`, error
-  // bodies carry `error`. Try success first because the happy path is the
-  // most common; fall through to error parsing otherwise. A response that
-  // matches neither (or is not a JSON object at all) is treated as a
-  // transport-level failure — the state machine never sees it.
   const success = successSchema.safeParse(raw);
   if (success.success) {
     return ok({ kind: "success", ...success.data });
@@ -84,9 +77,6 @@ async function postTokenEndpoint(
     return err({ kind: "token-transport", reason: errorMessage(e) });
   }
 
-  // The token endpoint returns 4xx for OAuth-level errors with a body we
-  // want to forward to the state machine. 5xx and other ranges are real
-  // transport failures — no useful OAuth error body to parse.
   if (res.status >= 500) {
     return err({
       kind: "token-transport",

@@ -2,10 +2,6 @@ import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 
-// ---------------------------------------------------------------------------
-// Domain events — write-side only
-// ---------------------------------------------------------------------------
-
 export type TurnOutcome = "success" | "failure";
 
 export enum EventType {
@@ -30,10 +26,7 @@ export enum EventType {
 export type UserAuthenticated = {
   type: EventType.UserAuthenticated;
   userSub: string;
-  /** Normalized OIDC client: "ui" | "cli" | "other". Stripped from JWT `azp`. */
   surface: string;
-  /** Decoded by the auth middleware from JWT `realm_access.roles`. Kept on the
-   *  event so subscribers don't need to re-parse (or hold) the bearer token. */
   isCore: boolean;
 };
 
@@ -72,8 +65,6 @@ export type SlackConnected = {
 export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
   agentId: string;
-  /** The conversation released. Absent when every one of the agent's Slack
-   *  bindings went at once (agent delete, or a disconnect that named none). */
   slackChannelId?: string;
 };
 
@@ -81,19 +72,9 @@ export type ChannelTurnRelayed = {
   type: EventType.ChannelTurnRelayed;
   channel: "slack" | "telegram";
   agentId: string;
-  /** Null for unauthenticated relays (Telegram: only the owner runs the bind, so guest replies have no Keycloak sub). */
   actorSub: string | null;
-  /** Messenger-native id of the driving user (e.g. Telegram user id) — the
-   *  actor record for relays that carry no platform identity. */
   externalActorId?: string;
-  /** "success" when the ACP turn completed and the reply was posted; "failure"
-   *  on any caught error in the relay path (ACP throw, fork provisioning
-   *  failure, post-back failure). Drives the success/failure breakouts in the
-   *  channel-turn views. */
   outcome: TurnOutcome;
-  /** Low-cardinality failure classifier (e.g.
-   *  "wake-timeout:agent-pod-failed:ImagePullFailure", "acp-error"); absent
-   *  on success. Makes failed turns diagnosable from the audit trail. */
   reason?: string;
 };
 
@@ -144,7 +125,6 @@ export type ContributionRecovered = {
   kind: string;
 };
 
-/** A contribution kind exhausted its retry budget and was abandoned (fires once at the cap). */
 export type ContributionApplyGaveUp = {
   type: EventType.ContributionApplyGaveUp;
   agentId: string;
@@ -169,10 +149,6 @@ export type DomainEvent =
   | ContributionApplyFailed
   | ContributionRecovered
   | ContributionApplyGaveUp;
-
-// ---------------------------------------------------------------------------
-// Event bus
-// ---------------------------------------------------------------------------
 
 const bus$ = new Subject<DomainEvent>();
 

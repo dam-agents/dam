@@ -5,13 +5,6 @@ import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
 
 const MAX_AGE_MS = 60 * 60 * 1000;
 
-/**
- * Remove leftover `.import-staging-*` directories under `homeDir` that
- * are older than 1 hour. Called once at agent-runtime boot to recover
- * from crashes between extract and rename.
- *
- * Best-effort: errors are logged but do not abort boot.
- */
 export async function sweepStaging(
   homeDir: string,
   log: (msg: string) => void,

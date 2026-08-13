@@ -10,7 +10,6 @@ import type { ContextEnv } from "./dispatcher.js";
 import type { PluginRegistry } from "./infrastructure/plugin-registry.js";
 
 export interface EventDispatcher {
-  /** No-ops (logs) when the kind has no active driver. */
   invoke(kind: EventKind, payload: unknown): Promise<void>;
 }
 

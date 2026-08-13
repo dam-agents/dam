@@ -9,9 +9,6 @@ import { createAcpSessionClient } from "./infrastructure/acp-session-client.js";
 import { createChatService } from "./services/chat-service.js";
 import { createSessionsPort } from "./services/sessions-service.js";
 
-// Sessions are agent-owned: the port talks ACP to the agent over
-// the api-server relay, not tRPC. Also used by the metrics module
-// to join session titles onto metrics rows.
 export const buildSessionsPort = (host: string, token: string) =>
   createSessionsPort({ acp: createAcpSessionClient({ host, token }) });
 

@@ -10,26 +10,8 @@ import (
 
 const npGateInitContainerName = "np-gate"
 
-// npGateUser is the non-root uid the probe runs as. The configured image
-// (a hardened curl -builder image) may default to root, but the pod sets
-// RunAsNonRoot, so pin an explicit non-root uid to satisfy admission
-// regardless of the image's USER. curl needs no writable home for the probe.
 const npGateUser int64 = 65532
 
-// buildNPGateInitContainer renders an unprivileged init container that blocks
-// the agent's main container until the egress NetworkPolicy is verifiably
-// enforced — used on runtimes where the in-pod iptables init can't run
-// (Kata/CoCo guest kernels without netfilter).
-//
-// Probe: the kube-apiserver (kubelet-injected env) must stay DROPped, detected
-// by TCP handshake since it answers when reachable; the gateway must 200 on the
-// health path, which the health_check filter serves before ext_authz (#675).
-//
-// Fail-closed: timeout → exit 1 → pod stays in Init:CrashLoopBackOff.
-//
-// Returns nil when the feature is off or inputs aren't ready; the instance and
-// reconcilers requeue until the gateway ClusterIP is assigned, so this
-// never sees an empty IP at steady state.
 func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *corev1.Container {
 	cfgGate := cfg.AgentBase.NPGateInit
 	if cfgGate == nil || !cfgGate.Enabled || cfgGate.Image == "" || gatewayClusterIP == "" {
@@ -41,8 +23,6 @@ func buildNPGateInitContainer(cfg *config.Config, gatewayClusterIP string) *core
 		timeoutSeconds = 30
 	}
 
-	// KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT are auto-injected by
-	// kubelet into every pod — no plumbing needed here.
 	script := `set -u
 deadline=$(($(date +%s) + ${TIMEOUT_SECONDS}))
 echo "np-gate: probing denied=${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT} allowed=${GATEWAY_IP}:${ENVOY_PORT}${HEALTH_PATH}, deadline=${TIMEOUT_SECONDS}s"
@@ -75,7 +55,6 @@ exit 1
 		{Name: "GATEWAY_IP", Value: gatewayClusterIP},
 		{Name: "ENVOY_PORT", Value: fmt.Sprintf("%d", cfg.EnvoyPort)},
 		{Name: "TIMEOUT_SECONDS", Value: fmt.Sprintf("%d", timeoutSeconds)},
-		// Matches the gateway health_check filter path (envoy.go).
 		{Name: "HEALTH_PATH", Value: platformGatewayHealthPath},
 	}
 

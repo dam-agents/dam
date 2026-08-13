@@ -12,8 +12,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Reconcile outcomes, set as the platform.reconcile.outcome attribute on the
-// span and the reconcile metrics.
 const (
 	OutcomeSuccess         = "success"
 	OutcomeError           = "error"
@@ -27,8 +25,6 @@ type reconcileInstruments struct {
 	total    metric.Int64Counter
 }
 
-// Lazy: otel.Meter resolves the global provider at first use, so this works
-// whether or not Setup ran — the disabled path just yields no-op instruments.
 var instruments = sync.OnceValue(func() reconcileInstruments {
 	meter := otel.Meter(ScopeName)
 	duration, err := meter.Float64Histogram("platform.reconcile.duration",
@@ -46,10 +42,6 @@ var instruments = sync.OnceValue(func() reconcileInstruments {
 	return reconcileInstruments{duration: duration, total: total}
 })
 
-// StartReconcile opens the span for one reconcile pass of a work item and
-// returns the span context plus a finish func — the single choke point that
-// stamps the outcome, records the error, and feeds the reconcile metrics.
-// Everything is a no-op when telemetry is disabled.
 func StartReconcile(ctx context.Context, kind, name string) (context.Context, func(outcome string, err error)) {
 	start := time.Now()
 	ctx, span := otel.Tracer(ScopeName).Start(ctx, "reconcile "+kind, trace.WithAttributes(
@@ -78,15 +70,10 @@ func StartReconcile(ctx context.Context, kind, name string) (context.Context, fu
 	}
 }
 
-// SetRequeues stamps the rate-limited retry count on the current reconcile
-// span. No-op outside a span.
 func SetRequeues(ctx context.Context, n int) {
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("platform.reconcile.requeues", n))
 }
 
-// StartPass opens a span for one iteration of a background loop (idle check,
-// warm-pool pass, orphan sweep). The returned finish func records err (if any)
-// and ends the span. No-op when telemetry is disabled.
 func StartPass(ctx context.Context, name string) (context.Context, func(err error)) {
 	ctx, span := otel.Tracer(ScopeName).Start(ctx, name)
 	return ctx, func(err error) {

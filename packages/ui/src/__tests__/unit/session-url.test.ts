@@ -18,7 +18,6 @@ describe("sessionPath", () => {
   });
 
   it("drops a terminal session, which no reload could re-open", () => {
-    // Terminal ids are client-minted PTYs, not resumable conversations.
     expect(sessionPath("agent-1", "pty-1", SessionMode.Terminal)).toBe(
       "/chat/agent-1",
     );
@@ -39,9 +38,6 @@ describe("nextChatUrl", () => {
   });
 
   it("writes nothing for the path already showing", () => {
-    // What stops a re-pick — or a switch between two terminals, which both
-    // collapse onto the agent's path — from stacking a back step that changes
-    // nothing on screen.
     expect(nextChatUrl(at("/chat/agent-1"), "/chat/agent-1")).toBeNull();
   });
 

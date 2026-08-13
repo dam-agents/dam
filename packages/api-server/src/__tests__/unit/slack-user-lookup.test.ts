@@ -40,12 +40,9 @@ const GRACE: SlackUserInfo = {
 };
 
 function harness(opts: {
-  /** null = agent has no Slack binding. */
   boundChannelId: string | null;
   users?: SlackUserInfo[];
-  /** Make the gateway fail to start, so ensureGateway yields null. */
   gatewayDown?: boolean;
-  /** Replace getUserInfo, e.g. to make Slack throw. */
   getUserInfo?: FakeSlackGateway["getUserInfo"];
 }) {
   const gw = createFakeSlackGateway();
@@ -102,7 +99,6 @@ describe("slack user lookup", () => {
     expect(await h.describeUsers(["U024BE7LH"])).toEqual({
       error: "no channel connected",
     });
-    // Nothing reached Slack — no binding, no read.
     expect(h.gw.readUserLookups()).toEqual([]);
   });
 
@@ -168,7 +164,6 @@ describe("slack user lookup", () => {
         GRACE,
       ],
     });
-    // A handle is rejected without asking Slack.
     expect(h.gw.readUserLookups()).toEqual([
       "U024BE7LH",
       "U0GONE123",

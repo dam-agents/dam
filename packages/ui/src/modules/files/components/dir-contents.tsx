@@ -7,10 +7,6 @@ interface Props {
   depth: number;
 }
 
-/** Renders one directory's immediate children. Recurses for any child dir
- *  the user has expanded. Lifecycle = render lifecycle: collapsing a parent
- *  unmounts every `<DirContents>` underneath, which lets React Query garbage
- *  collect the slice subscriptions for free. */
 export function DirContents({ path, depth }: Props) {
   const panel = useFilesPanel();
   const { data: snapshot } = useDirSnapshot(panel.agentId, path);

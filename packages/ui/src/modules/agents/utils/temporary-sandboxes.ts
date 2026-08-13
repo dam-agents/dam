@@ -8,18 +8,10 @@ export interface TemporaryDraw {
 }
 
 export interface TemporarySandboxSplit {
-  /** Everything the user created, in the input order. */
   visible: AgentView[];
-  /** Live compute of hidden targets, keyed by the driver that spawned them. */
   drawByDriver: Map<string, TemporaryDraw>;
 }
 
-/** Split Invocation targets (`spawnedBy` set) out of the agents list and
- *  attribute their compute to the driver that spawned them. Targets are
- *  run-owned and ephemeral — they inherit the driver's config and are reaped
- *  when the run ends — so listing them as peers is noise, but their pods draw
- *  real CPU/memory the list must still explain. Only targets whose pod is up
- *  (or coming up) count toward the draw; hidden either way. */
 export function splitTemporarySandboxes(
   agents: AgentView[],
 ): TemporarySandboxSplit {
@@ -50,7 +42,6 @@ export function splitTemporarySandboxes(
   return { visible, drawByDriver };
 }
 
-/** "using 2.5 cores, 6 Gi" — omitting a dimension nothing reported. */
 export function formatTemporaryDraw(draw: TemporaryDraw): string {
   const parts: string[] = [];
   if (draw.cpuMilli > 0) {

@@ -19,11 +19,6 @@ import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
 import { usePromptDelivery } from "./use-prompt-delivery.js";
 
-/**
- * Which failure the user is looking at. The agent's session list settles
- * whether the session exists — see `resumeFailureKind`. An agent that never
- * answered can't be asked, so that verdict comes from the error alone.
- */
 async function classifyResumeFailure(
   agentId: string,
   sid: string,
@@ -39,13 +34,6 @@ async function classifyResumeFailure(
   return resumeFailureKind(kind, listing);
 }
 
-/**
- * Thin orchestrator: composes the connection, engagement, history, prompt,
- * config-cache, and update-handler hooks into the public surface that
- * chat-view consumes. Lifecycle decisions live in the sub-hooks; this file
- * just wires them up and runs the side effects that don't fit anywhere
- * else (wake-on-entry, busy-from-projection).
- */
 export function useAcpSession(
   selectedAgent: string | null,
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
@@ -58,16 +46,11 @@ export function useAcpSession(
   const setBusy = useStore((s) => s.setBusy);
   const [loadingSession, setLoadingSession] = useState(false);
 
-  // Derive busy from the projection instead of explicit setBusy calls in
-  // sendPrompt / resume / disconnect paths. The projection owns streaming
-  // state on every message, so "any streaming assistant" is authoritative.
   const busy =
     sessionMode !== SessionMode.Terminal && hasStreamingAssistant(messages);
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
-  // Mirror busy into the list cache's `running` so the row keeps its blue dot
-  // when it stops being the open session (the poll-fed `running` lags a switch).
   const prevBusyRef = useRef(busy);
   useEffect(() => {
     if (prevBusyRef.current === busy) return;
@@ -88,11 +71,6 @@ export function useAcpSession(
     clear: clearEngagement,
   } = useAcpSessionEngagement(selectedAgent);
 
-  // Per-prompt delivery deadlines, driven by the runtime's promptAccepted /
-  // promptStarted frames. Sits between the update handler (which feeds it),
-  // sendPrompt (which arms it and supplies the failure callback) and the
-  // connection (whose close stands every deadline down), so it's owned here
-  // rather than by any of them.
   const delivery = usePromptDelivery();
 
   const makeUpdateHandler = useAcpUpdateHandler(delivery);
@@ -107,13 +85,7 @@ export function useAcpSession(
     selectedAgent,
     sessionId,
     sessionMode,
-    // Don't open a live WS while resumeSession's throwaway is still
-    // replaying history — both channels would otherwise receive the replay
-    // stream and the live projection would double-apply every update.
     liveBlocked: loadingSession,
-    // Only the pod can answer ACP. Gating here stops the keep-alive and
-    // reconnect loop from hammering (and re-waking, via the relay's
-    // ensureReady) an agent that's hibernated, starting, or mid-restart.
     agentOperable,
     makeUpdateHandler,
     engage,
@@ -124,9 +96,6 @@ export function useAcpSession(
     delivery,
   });
 
-  /** Leaves whatever session is open. The failure card belongs to that
-   *  session, so it goes with it — otherwise it stays on screen above the
-   *  blank chat the user just asked for. */
   const resetSession = useCallback(() => {
     resetConnection();
     setSessionId(null);

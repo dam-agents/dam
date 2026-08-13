@@ -24,7 +24,6 @@ describe("agent footer", () => {
   });
 
   it("links at the session when the post belongs to a turn", () => {
-    // What a channel reader follows to pick this conversation up in the UI.
     expect(agentFooterMrkdwn({ ...footer, sessionId: "sess-42" })).toBe(
       "<http://ui/chat/agent-8acde0e1a059835a/sess-42|Helper>",
     );
@@ -41,7 +40,6 @@ describe("agent footer", () => {
       ...footer,
       agentName: "a|b <c> & d\nnext",
     });
-    // No stray pipe/newline; & < > all escaped so the link stays intact.
     expect(mrkdwn).toBe(
       "<http://ui/chat/agent-8acde0e1a059835a|a b &lt;c&gt; &amp; d next>",
     );
@@ -67,8 +65,6 @@ describe("agent footer", () => {
   });
 
   it("recovers the author from a footer minted before session links", () => {
-    // Those messages are still in channel history, and history injection has to
-    // keep telling their author apart from the reading agent.
     expect(
       parseAgentFooter({
         blocks: [
@@ -154,8 +150,6 @@ describe("labelHistoryMessage", () => {
 
 describe("formatSlackTs", () => {
   it("renders a Slack ts as a human-readable UTC string", () => {
-    // 1774620000 = 2026-03-27T14:00:00Z (a fixed, DST-adjacent instant so the
-    // test isn't sensitive to the local runner's timezone).
     expect(formatSlackTs("1774620000.123456")).toBe("Fri 2026-03-27 14:00 UTC");
   });
 

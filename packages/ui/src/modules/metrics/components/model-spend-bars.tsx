@@ -5,8 +5,6 @@ import { formatTokens, formatUsd } from "../lib/format.js";
 import { seriesColor } from "../lib/series-color.js";
 import { SpendBar } from "./spend-bar.js";
 
-/** Per-model spend as bars, widest first. Rows arrive sorted highest cost first,
- *  so the first row sets the scale. */
 export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
   const max = rows[0]?.costUsd ?? 0;
   return (
@@ -20,8 +18,7 @@ export function ModelSpendBars({ rows }: { rows: TokenSpendByModel[] }) {
           value={formatUsd(row.costUsd)}
           caption={
             <>
-              {/* Cache reads dominate agent traffic, so "in" folds them in —
-                  the same sum the model table's In column shows. */}
+              {}
               {formatTokens(
                 row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens,
               )}

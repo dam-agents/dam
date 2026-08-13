@@ -7,7 +7,6 @@ import type {
 const runtimeStateSchema = z.object({
   lastAppliedVersion: z.number(),
   lastAppliedHash: z.string().nullable().catch(null),
-  // Latest fired timestamp per `kind:scheduleId` — dedups/supersedes events independently of contributions.
   eventRuns: z.record(z.string(), z.number()).catch({}).default({}),
 });
 

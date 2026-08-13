@@ -26,7 +26,6 @@ export function EgressApprovalToast({
   foreign,
 }: {
   row: ApprovalView;
-  /** Row belongs to a sandbox other than the one being viewed. */
   foreign: boolean;
 }) {
   const agentName = useAgentDisplayName(row.agentId);

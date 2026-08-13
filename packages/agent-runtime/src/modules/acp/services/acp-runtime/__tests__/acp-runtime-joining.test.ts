@@ -1,53 +1,25 @@
 import { describe, it, expect } from "vitest";
 import { createWorld, frames, transcriptOf } from "./acp-world.js";
 
-/**
- * Feature: joining a conversation already in progress.
- *
- * A conversation does not pause for latecomers. Someone opens a session while
- * the agent is mid-answer, and what they should end up with is the
- * conversation as it stands plus everything still to come — as if they had
- * been there all along.
- *
- * See `acp-runtime-isolation.test.ts` for who may see a session at all; this
- * feature is about what a permitted joiner sees once they open it.
- */
-
 const SESSION = "sess-shared";
 
 describe("acp-runtime: joining mid-conversation", () => {
-  /**
-   * Alice asks a question, and the agent is halfway through answering when
-   * Bob opens the same conversation. Everything the agent says from that
-   * moment on must reach Bob as it happens.
-   *
-   * The harness cannot arrange this. It streams the turn to one stdout and
-   * never learns that a second reader arrived partway through, so splicing a
-   * latecomer into an in-flight stream — without stalling the turn or
-   * disturbing the people already watching — is the runtime's job.
-   */
   it("should stream the rest of an in-flight turn to a client that joins mid-turn", () => {
     const world = createWorld();
 
-    // Alice asks, and the agent starts talking.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
     alice.send(frames.prompt(2, SESSION, "summarize this repo"));
     world.harness().emit(frames.agentMessage(SESSION, "it is a monorepo"));
 
-    // Bob opens the conversation mid-answer.
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
 
-    // The agent keeps going, then finishes the turn.
     world.harness().emit(frames.agentMessage(SESSION, "with three packages"));
     world.harness().emit(frames.agentMessage(SESSION, "and a Go module"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Bob's transcript reads as if he had been there from the start: the
-    // question, what was said before he arrived, and — the point here —
-    // every line the agent produced after he joined, live as it was said.
     expect(transcriptOf(bob)).toEqual([
       `${SESSION}: summarize this repo`,
       `${SESSION}: it is a monorepo`,
@@ -55,9 +27,6 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: and a Go module`,
     ]);
 
-    // And his arrival changed nothing for Alice: her view of the turn is what
-    // it would have been had he never joined. Her own question is absent
-    // because she rendered it herself when she typed it.
     expect(transcriptOf(alice)).toEqual([
       `${SESSION}: it is a monorepo`,
       `${SESSION}: with three packages`,
@@ -65,23 +34,9 @@ describe("acp-runtime: joining mid-conversation", () => {
     ]);
   });
 
-  /**
-   * A whole turn has come and gone before Bob opens the conversation. He must
-   * be given everything he missed, and given it once — including when he asks
-   * again, which real clients do every time the user clicks away to the
-   * session list and back.
-   *
-   * The harness said each of these lines exactly once, to whoever was
-   * listening at the time, and it is never told who heard what. Only the
-   * runtime knows where each client's copy of the conversation ends, so
-   * handing a joiner precisely the gap — and handing a repeat request
-   * nothing at all while still answering it — is bookkeeping only the
-   * runtime can do.
-   */
   it("should deliver the history a joiner missed exactly once, even when it asks again", () => {
     const world = createWorld();
 
-    // A full turn happens before Bob shows up.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -90,8 +45,6 @@ describe("acp-runtime: joining mid-conversation", () => {
     world.harness().emit(frames.agentMessage(SESSION, "running on k8s"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Bob opens the conversation and receives the turn he missed, question
-    // included, in the order it happened.
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
     expect(transcriptOf(bob)).toEqual([
@@ -100,23 +53,15 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: running on k8s`,
     ]);
 
-    // The conversation moves on with Bob now live.
     alice.send(frames.prompt(3, SESSION, "how do I run it"));
     world.harness().emit(frames.agentMessage(SESSION, "use mise"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Bob opens the same conversation again, as the UI does when the user
-    // wanders off to the list and comes back.
     bob.send(frames.loadSession(2, SESSION));
 
-    // Both of his requests were answered — dropping the second on the floor
-    // would also avoid duplicates, but it would leave a client hanging.
     expect(bob.reply(1)).toBeDefined();
     expect(bob.reply(2)).toBeDefined();
 
-    // And his transcript holds one copy of everything: the history he was
-    // handed at the join, the turn he then watched live, and nothing said
-    // twice — the second load found he already had it all.
     expect(transcriptOf(bob)).toEqual([
       `${SESSION}: what is this repo`,
       `${SESSION}: an agent platform`,
@@ -125,8 +70,6 @@ describe("acp-runtime: joining mid-conversation", () => {
       `${SESSION}: use mise`,
     ]);
 
-    // Bob's catch-ups were his alone. Alice has one copy of each answer and,
-    // as ever, not her own questions — she rendered those as she typed them.
     expect(transcriptOf(alice)).toEqual([
       `${SESSION}: an agent platform`,
       `${SESSION}: running on k8s`,
@@ -134,69 +77,33 @@ describe("acp-runtime: joining mid-conversation", () => {
     ]);
   });
 
-  /**
-   * The agent has stopped mid-turn to ask before doing something, and the
-   * question is still unanswered when Bob opens the conversation. The whole
-   * turn is blocked on it, so of everything Bob could be shown, the open
-   * prompt matters most — and he may well be the one who came to answer it.
-   *
-   * The harness asked exactly once, on its one stdout, and is now blocked
-   * waiting for the reply. It will not repeat the question for a reader it
-   * never knew arrived. Nor can the question ride in with the history: a
-   * prompt is not transcript, it is a request that is later answered and
-   * withdrawn, and replaying it from history would re-open dialogs long
-   * settled. Only the runtime still holds the open question, so putting it
-   * in front of a latecomer is the runtime's job.
-   */
   it("should show a joiner the permission prompt that is open when it arrives", () => {
     const world = createWorld();
 
-    // Alice asks for something the agent will not do unasked.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
     alice.send(frames.prompt(2, SESSION, "delete the stale branches"));
 
-    // The agent stops to ask, and the question hangs there unanswered.
     world.harness().emit(frames.requestPermission(77, SESSION));
 
-    // Bob opens the conversation while the dialog is up.
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
 
-    // Bob is shown the very question Alice is looking at — same id and same
-    // options, so whichever of them answers, the answer finds its way home.
     expect(bob.saw("session/request_permission")).toEqual([
       frames.requestPermission(77, SESSION),
     ]);
 
-    // The prompt came on top of a normal join, not instead of one: his load
-    // was still answered.
     expect(bob.reply(1)).toBeDefined();
 
-    // And his arrival did not pop the dialog a second time for Alice.
     expect(alice.saw("session/request_permission")).toEqual([
       frames.requestPermission(77, SESSION),
     ]);
   });
 
-  /**
-   * The flip side of the scenario above: the question was answered before Bob
-   * arrived. Showing it to him would ask him to decide something already
-   * decided — at best a dead dialog to dismiss, at worst a second "allow" for
-   * an action that already ran.
-   *
-   * The tempting way to satisfy the scenario above is to treat prompts as
-   * history and replay them to joiners. This scenario is what rules that out:
-   * history never forgets, so every future joiner would be re-asked forever.
-   * A prompt has a lifetime — opened by the harness, closed by whichever
-   * client answers — and the runtime is the only party that sees both ends,
-   * so it alone can tell an open question from a settled one.
-   */
   it("should not show a joiner a prompt that was answered before it arrived", () => {
     const world = createWorld();
 
-    // Alice asks, the agent stops to check, and Alice allows it.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -204,19 +111,13 @@ describe("acp-runtime: joining mid-conversation", () => {
     world.harness().emit(frames.requestPermission(77, SESSION));
     alice.send(frames.permissionAnswer(77));
 
-    // The agent carries on — the question is settled, the turn is not over.
     world.harness().emit(frames.agentMessage(SESSION, "deleting them now"));
 
-    // Bob opens the conversation after the dialog closed.
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
 
-    // No dialog for Bob: the question was asked, answered, and withdrawn
-    // before he arrived.
     expect(bob.saw("session/request_permission")).toEqual([]);
 
-    // And its absence is not a broken join. His load was answered, he got the
-    // conversation so far, and the rest of the turn reaches him live.
     expect(bob.reply(1)).toBeDefined();
     world.harness().emit(frames.agentMessage(SESSION, "done, three removed"));
     expect(transcriptOf(bob)).toEqual([
@@ -226,25 +127,9 @@ describe("acp-runtime: joining mid-conversation", () => {
     ]);
   });
 
-  /**
-   * An open question has more than one possible answerer: everyone looking at
-   * the conversation sees the same dialog, and the inbox can answer it too —
-   * an egress approval comes home on a one-shot connection that never opens
-   * any session. Sooner or later, two of them answer.
-   *
-   * The harness asked once and expects one reply. It reads one stdin, so a
-   * second response to the same id is a conversation it never started —
-   * at best noise, at worst an SDK error. Only the runtime sees every
-   * answerer, so electing the first answer and swallowing the rest is its
-   * job. And "whoever sent it" is load-bearing: requiring the answerer to
-   * have opened the session would silence the inbox, which by construction
-   * never has.
-   */
   it("should honor only the first answer to a permission prompt, whoever sends it", () => {
     const world = createWorld();
 
-    // Alice asks, the agent stops to check, and Bob joins while the dialog
-    // is up — two people are now looking at the same question.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -253,22 +138,15 @@ describe("acp-runtime: joining mid-conversation", () => {
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
 
-    // A third answerer gets there first: the inbox, on a connection that
-    // never opened the session — it only knows the question's id.
     const inbox = world.connect();
     inbox.send(frames.permissionAnswer(77, "allow"));
 
-    // Bob answers the same question a moment later, the other way.
     bob.send(frames.permissionAnswer(77, "reject"));
 
-    // The harness heard exactly one answer: the first one. Bob's reject was
-    // never forwarded — not turned into a second reply, not merged, gone.
     expect(world.harness().answersTo(77)).toEqual([
       frames.permissionAnswer(77, "allow"),
     ]);
 
-    // And the turn proceeds on that answer alone, undisturbed by the loser:
-    // the agent does the thing it was allowed to do, and everyone sees it.
     world.harness().emit(frames.agentMessage(SESSION, "deleting them now"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(transcriptOf(alice)).toEqual([`${SESSION}: deleting them now`]);
@@ -278,22 +156,9 @@ describe("acp-runtime: joining mid-conversation", () => {
     ]);
   });
 
-  /**
-   * A turn ends. Alice, who asked, learns this the natural JSON-RPC way: her
-   * request completes. Bob is watching the same conversation with nothing in
-   * flight, and ACP has no "turn ended" on the wire — left to the protocol
-   * alone, he would watch the reply trail off with nothing to say it is done,
-   * and his composer would stay locked on a turn that ended.
-   *
-   * The harness cannot tell him: completing Alice's request is the only end-
-   * of-turn signal it emits, and only she holds that request. Turning one
-   * party's response into everyone's boundary takes knowing who else is
-   * watching, and only the runtime knows that.
-   */
   it("should tell both clients the turn ended, not just the one who asked", () => {
     const world = createWorld();
 
-    // Alice asks, Bob joins mid-answer, and the turn runs to its end.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -303,11 +168,8 @@ describe("acp-runtime: joining mid-conversation", () => {
     world.harness().emit(frames.agentMessage(SESSION, "it is a monorepo"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Alice's own request completed — that is her answer.
     expect(alice.reply(2)?.result).toEqual({ stopReason: "end_turn" });
 
-    // And both of them — Bob especially, who had nothing in flight — were
-    // told the turn is over, once each, naming the conversation it closed.
     const ended = {
       jsonrpc: "2.0",
       method: "platform/turnEnded",
@@ -317,41 +179,21 @@ describe("acp-runtime: joining mid-conversation", () => {
     expect(bob.saw("platform/turnEnded")).toEqual([ended]);
   });
 
-  /**
-   * Alice's own message must not come back at her: her UI rendered it the
-   * moment she hit send, and an echo would double it on screen. But the
-   * suppression has to be per-connection, not per-person — when her tab
-   * reloads, the optimistic copy died with the old page, and the reconnect
-   * is the one place her own words must come back.
-   *
-   * The runtime is what makes both true at once. It keeps her message in the
-   * conversation's history for everyone — that is how Bob sees it at all —
-   * while remembering, per connection, that hers already has it. Forget the
-   * first half and every send echoes; forget the second and every reload
-   * loses what she said.
-   */
   it("should not echo a message back to its sender, who still sees it after a reconnect", () => {
     const world = createWorld();
 
-    // Alice asks, and the agent starts answering.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
     alice.send(frames.prompt(2, SESSION, "did the tests pass?"));
     world.harness().emit(frames.agentMessage(SESSION, "running them"));
 
-    // No echo: her own question never came back down her connection. Only
-    // what the agent said did.
     expect(transcriptOf(alice)).toEqual([`${SESSION}: running them`]);
 
-    // Her tab reloads mid-turn: the connection drops, taking the optimistic
-    // copy of her question with it, and a fresh one opens the conversation.
     alice.disconnect();
     const aliceAgain = world.connect();
     aliceAgain.send(frames.loadSession(1, SESSION));
 
-    // Now the history is all she has, so her own question is in it — along
-    // with the answer so far, and the rest of the turn arrives live.
     expect(aliceAgain.reply(1)).toBeDefined();
     world.harness().emit(frames.agentMessage(SESSION, "all green"));
     expect(transcriptOf(aliceAgain)).toEqual([

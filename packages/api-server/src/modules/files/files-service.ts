@@ -47,7 +47,6 @@ export function composeFilesModule(
         if (err instanceof TRPCClientError) {
           const code = (err.data as { code?: TRPCError["code"] } | undefined)
             ?.code;
-          // CONFLICT is the overwrite handshake — UI re-issues with overwrite.
           if (code !== "CONFLICT") fire("failure");
           throw new TRPCError({
             code: code ?? "INTERNAL_SERVER_ERROR",

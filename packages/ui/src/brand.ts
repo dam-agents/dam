@@ -1,16 +1,3 @@
-/**
- * Brand config — fetched from the api-server at bootstrap (`GET /api/brand`).
- *
- * Single source of truth for everything user-visible: display name, theme
- * accent colors, slash-command identifier. Sourced from BRAND_* env vars on
- * the api-server pod (Helm values), so a deployment rebrand needs no UI
- * rebuild — `helm upgrade` flips the values and the next page load picks
- * them up.
- *
- * Theme colors are applied via `applyBrand()` as CSS custom properties
- * on `<html>` so light/dark themes already wired through `App.css` keep
- * working unchanged.
- */
 import { type Brand, brandSchema } from "api-server-api";
 
 const FALLBACK: Brand = {
@@ -43,8 +30,6 @@ export async function loadBrand(): Promise<Brand> {
     }
     cached = parsed.data;
   } catch (err) {
-    // Rare path — only fires when the api-server is unreachable on first
-    // paint; the bundled fallback keeps the UI usable.
     console.warn("[brand] failed to load /api/brand, using fallback", err);
   }
   return cached;
@@ -54,17 +39,6 @@ export function getBrand(): Brand {
   return cached;
 }
 
-/** Apply brand to the document — title, theme-color meta, and CSS accent
- *  custom properties. Re-applies when the theme store toggles `.dark` on
- *  `<html>`. Safe to call repeatedly.
- *
- *  Implementation note: theme values reach this function through a fetched
- *  JSON response and are treated as untrusted. We only write them via
- *  `style.setProperty()`, which scopes the input to a CSS *property value*
- *  — even an attacker-shaped string like `"red; } body {"` cannot break
- *  out of the declaration the way it could if we appended a `<style>` tag.
- *  Hex/rgb-shape validation runs on top so a malformed value falls back
- *  silently instead of producing an invalid declaration. */
 const COLOR_RE =
   /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-zA-Z]+)$/;
 
@@ -95,9 +69,6 @@ export function applyBrand(brand: Brand): void {
 
   applyActiveTheme();
 
-  // Re-apply when the theme store flips the `.dark` class on <html>.
-  // Idempotent: re-calling applyBrand replaces the observer instead of
-  // stacking, so listeners don't leak across HMR or repeated bootstraps.
   const prev = (html as { __brandThemeObserver?: MutationObserver })
     .__brandThemeObserver;
   prev?.disconnect();

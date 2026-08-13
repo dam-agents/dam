@@ -9,10 +9,6 @@ import { PublishSkillModal } from "./publish-skill-modal.js";
 import { SaveSkillSetModal } from "./save-skill-set-modal.js";
 import { SkillRenderModal } from "./skill-render-modal.js";
 
-/**
- * Which dialog the surface has open. One value rather than one boolean each:
- * exactly one of these is ever open, and a union is the only shape that says so.
- */
 export type SkillsModal =
   | { kind: "add-source"; tab: "github" | "upload"; files: File[] }
   | { kind: "publish"; skill: LocalSkill }
@@ -21,8 +17,6 @@ export type SkillsModal =
   | { kind: "save-set" }
   | { kind: "add-sets" };
 
-/** The surface's dialog stack. Split out so the surface reads as the page it is,
- *  rather than as a page plus six trailing conditionals. */
 export function SkillsModals({
   open,
   agentId,
@@ -101,7 +95,6 @@ export function SkillsModals({
       );
 
     case "render-local":
-      // The opener is gated on a targetable sandbox; guard rather than assert.
       if (!agentId) return null;
       return (
         <LocalSkillRenderModal

@@ -15,7 +15,6 @@ import { createHarnessConfigPlugin } from "../../modules/runtime-channel/drivers
 import type { ModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifest.js";
 
-// apply needs neither env nor discovery; stub them to construct the driver.
 const noEnv: RuntimeEnvReader = { current: () => ({}), ready: () => true };
 const noDiscovery: ModelDiscovery = async () => ({
   status: "not-configured",
@@ -98,11 +97,9 @@ describe("harness-config event handler", () => {
 
   it("never re-asserts: a user file edit after an apply is left untouched", async () => {
     await apply({ model: "opus" });
-    // User edits the file directly.
     const obj = readSettings();
     obj.model = "sonnet";
     writeFileSync(settingsPath, JSON.stringify(obj));
-    // A later unrelated apply (set mode) does not touch the user's model edit.
     await apply({ mode: "plan" });
     expect(readSettings()).toEqual({
       model: "sonnet",

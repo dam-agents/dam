@@ -16,8 +16,6 @@ import type {
 } from "../../modules/skills/infrastructure/pr-state-reader.js";
 
 describe("derivePrState", () => {
-  // GitHub reports a merged pull request as state:"closed" too, so mergedAt
-  // must win over closed, and draft only matters while open.
   it.each([
     ["merged beats closed", "closed", false, "2026-08-01T00:00:00Z", "merged"],
     ["merged beats draft", "open", true, "2026-08-01T00:00:00Z", "merged"],
@@ -154,7 +152,6 @@ describe("pr-state resolver tick", () => {
     });
 
     await expect(resolver.tick()).resolves.toBe(0);
-    // Every further read this window is certain to fail — one read, no touches.
     expect(read).toHaveBeenCalledTimes(1);
     expect(agentSkills.touchPrState).not.toHaveBeenCalled();
     expect(agentSkills.setPrState).not.toHaveBeenCalled();
@@ -188,8 +185,6 @@ describe("pr-state resolver tick", () => {
       repo: "skills",
       number: 7,
     });
-    // The pod path reads no ETag back; the anonymous validator belongs to a
-    // resource the anonymous read failed to see.
     expect(agentSkills.setPrState).toHaveBeenCalledWith(PR_URL, {
       prState: "merged",
       checkedAt: expect.any(Date),

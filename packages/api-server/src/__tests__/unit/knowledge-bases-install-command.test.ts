@@ -8,7 +8,6 @@ describe("buildKnowledgeBaseInstallCommand", () => {
       const command = buildKnowledgeBaseInstallCommand(id);
       expect(command).toContain("bootstrap.sh");
       expect(command).toContain(id === "llm-wiki" ? "llm-wiki" : "plain-wiki");
-      // pipefail so a failed fetch surfaces instead of silently "succeeding".
       expect(command).toContain("set -o pipefail");
     }
   });

@@ -35,10 +35,6 @@ import {
 } from "../../../modules/channels/infrastructure/telegram-conversations-repository.js";
 import type { ApiServerDeps } from "../deps.js";
 
-/** The per-user service composition behind both tRPC transports: the HTTP
- *  door builds it per request, the WS door once per connection (staleness
- *  there is bounded by the token-exp reconnect). One factory so the two
- *  doors can never drift apart. */
 export function createApiContextFactory(boot: ApiServerDeps) {
   const {
     config,
@@ -71,9 +67,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     apiKeysModule,
   } = boot;
 
-  // One per-user service composition shared by both tRPC transports: the
-  // HTTP handler rebuilds it per request; the events socket calls it once
-  // per connection, where staleness is bounded by the token-exp reconnect.
   return (user: UserIdentity): ApiContext => {
     const { templates, readSpec: readTemplateSpec } =
       composeTemplatesModule(templatesRepo);
@@ -90,9 +83,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
-    // Reserved-vs-Ceiling meter + the live-resize gate (#1900). Composed
-    // before the agents module so the gate can be injected; reads via the
-    // boot-level repo (owner-scoped by the list selector).
     const { budgets, resizeGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
@@ -236,10 +226,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isSettled: (agentId) =>
         contributionsSettled.status(agentId).then((s) => s.settled),
     });
-    // Owner-scoped metrics: resolve this user's agent IDs (narrowed to the
-    // key's binding, mirroring agentsRouter.list) and filter ClickHouse on them.
-    // Live CRs are unioned with the Postgres agent registry so spend history
-    // survives agent deletion instead of shrinking retroactively.
     const metrics = metricsReader
       ? createMetricsService({
           reader: metricsReader,

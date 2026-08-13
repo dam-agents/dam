@@ -8,15 +8,6 @@ import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 
-/**
- * Per-provider brand mark — a small (40×40) tile with the provider's
- * canonical logo and brand color. Used in connected/edit/wizard chrome
- * across the four provider cards. The {@link ProviderPresetType} key
- * picks both the icon and the background tint, so adding a new preset
- * is a single new entry below. Bob ships its own complete tile (white
- * background, border, rounded corners), so it sits on a transparent
- * wrapper and fills it.
- */
 const STYLES: Record<
   ProviderPresetType,
   {
@@ -65,10 +56,6 @@ export function CardIcon({
   size = "md",
 }: {
   provider: ProviderPresetType;
-  /** "lg" = 68×68 (provider connect modal header). "md" = 40×40 (default,
-   *  used in provider cards). "sm" = 28×28 (compact use inside dropdown rows /
-   *  inline labels). The brand mark inside scales proportionally so it stays
-   *  centered. */
   size?: "lg" | "md" | "sm";
 }) {
   const style = STYLES[provider];

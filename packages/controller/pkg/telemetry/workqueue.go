@@ -9,9 +9,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-// workqueueMetricsProvider backs client-go's workqueue metrics hooks with OTel
-// instruments, one attribute set per named queue. client-go skips metrics for
-// unnamed queues, so every queue must be constructed with a Name.
 type workqueueMetricsProvider struct {
 	depth        metric.Int64UpDownCounter
 	adds         metric.Int64Counter
@@ -57,9 +54,6 @@ func newWorkqueueMetricsProvider(meter metric.Meter) *workqueueMetricsProvider {
 		metric.WithDescription("Items re-enqueued rate-limited"))
 	mustInstrument(e)
 	if err != nil {
-		// Instrument creation only fails on invalid names — a programming
-		// error; surface it but keep the controller running with whatever
-		// instruments did register (nil ones are guarded below).
 		slog.Warn("workqueue metrics instrument creation failed", "error", err)
 	}
 	return p
@@ -96,9 +90,6 @@ func (p *workqueueMetricsProvider) NewLongestRunningProcessorSecondsMetric(name 
 func (p *workqueueMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
 	return counter{c: p.retries, opts: p.attrs(name)}
 }
-
-// The workqueue records measurements outside any request, so the adapters use
-// context.Background(); attributes carry the queue identity.
 
 type upDownGauge struct {
 	c    metric.Int64UpDownCounter

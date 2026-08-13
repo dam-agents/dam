@@ -2,24 +2,13 @@ import Redis, { type Redis as RedisClient } from "ioredis";
 
 export type BusListener = (payload: string) => void;
 
-/**
- * Generic Redis pub/sub primitive. Channel names belong to the consumer:
- * approvals use `approval:<id>`, the ACP relay uses `inject:<agentId>`,
- * etc. The bus is on the signal path only — Postgres remains the source of
- * truth for any durable state.
- */
 export interface RedisBus {
   publish(channel: string, payload: string): Promise<void>;
-  /** Returns an `unsubscribe` that callers MUST invoke. Listener sets and
-   *  Redis SUBSCRIBE-state are reference-counted per channel. */
   subscribe(channel: string, listener: BusListener): () => void;
   close(): Promise<void>;
 }
 
 export interface RedisBusOptions {
-  /** Optional AUTH password. Passed separately from the URL so it never
-   *  appears in logs or stack traces (ioredis logs redact options.password
-   *  but happily prints the URL on connect errors). */
   password?: string;
 }
 
@@ -27,8 +16,6 @@ export function createRedisBus(
   url: string,
   options: RedisBusOptions = {},
 ): RedisBus {
-  // Two connections because a connection in subscribe mode can only execute
-  // SUBSCRIBE / UNSUBSCRIBE / PING / QUIT.
   const opts = {
     lazyConnect: false,
     maxRetriesPerRequest: null,
@@ -45,9 +32,7 @@ export function createRedisBus(
     for (const fn of set) {
       try {
         fn(payload);
-      } catch {
-        /* listener errors must not affect siblings or the dispatcher */
-      }
+      } catch {}
     }
   });
 

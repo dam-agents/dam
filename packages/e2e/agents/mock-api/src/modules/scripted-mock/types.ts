@@ -35,7 +35,5 @@ export interface ScriptedMockService {
   reset(): ResetResult;
   getEnv(input: GetEnvInput): GetEnvResult;
   performFetch(input: PerformFetchInput): Promise<PerformFetchResult>;
-  /** Spawn an Invocation as this agent (the driver) via the harness surface —
-   *  the same POST the driver SDK makes from a real agent pod. */
   spawnInvocation(input: SpawnInvocationInput): Promise<SpawnInvocationResult>;
 }

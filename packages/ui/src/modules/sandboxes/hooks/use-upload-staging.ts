@@ -29,9 +29,6 @@ export interface UploadStaging {
   submit: () => Promise<void>;
 }
 
-/** Initial display name for an uploaded file: frontmatter `name:` when present
- *  (mirrors the shape parseFrontmatter matches — no block-scalar support
- *  needed for a name), else the prettified filename stem. */
 function deriveName(fileName: string, content: string): string {
   const block = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   const nameLine = block?.[1].match(/^name:\s*(.+)$/m);
@@ -50,13 +47,6 @@ function deriveName(fileName: string, content: string): string {
     .join(" ");
 }
 
-/**
- * Upload-tab staging state for the add-skill-source modal. Lives here (called
- * from the modal shell) rather than inside the tab component so that switching
- * to the GitHub tab and back — which unmounts the tab — doesn't discard the
- * user's staged files, renames, and removals. The one-shot `initialFiles` seed
- * therefore runs once per modal open, not once per tab visit.
- */
 export function useUploadStaging({
   initialFiles,
   onCreateSkills,

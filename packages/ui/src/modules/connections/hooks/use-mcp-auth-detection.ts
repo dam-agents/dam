@@ -5,9 +5,6 @@ import { validateMcpUrl } from "../lib/mcp-url.js";
 
 const DETECT_DEBOUNCE_MS = 500;
 
-/** Debounced probe of an MCP server URL so the create button can settle on
- *  "Create" vs "Create + Authorize" before submit. `detecting` is true while a
- *  valid URL's probe is in flight; out-of-order results are discarded. */
 export function useMcpAuthDetection(url: string): {
   detected: "oauth" | "none" | null;
   detecting: boolean;
@@ -39,7 +36,6 @@ export function useMcpAuthDetection(url: string): {
         });
     }, DETECT_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-    // discover is a stable mutation handle; only the URL drives re-probing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 

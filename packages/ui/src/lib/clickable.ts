@@ -1,9 +1,5 @@
 import type { KeyboardEvent } from "react";
 
-/** Button semantics for a row that can't be a real `<button>` because it wraps
- *  its own menu or link. Keys are ignored unless they land on the row itself,
- *  so a nested control keeps its own Enter and Space. `undefined` leaves the
- *  element inert, with no stale `role` or tab stop. */
 export function clickableProps(onActivate: (() => void) | undefined) {
   if (!onActivate) return {};
   return {

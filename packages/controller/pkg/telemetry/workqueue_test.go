@@ -70,7 +70,6 @@ func TestWorkqueueMetricsProvider(t *testing.T) {
 func TestStartReconcileRecordsMetricsAndOutcome(t *testing.T) {
 	ctx, finish := StartReconcile(context.Background(), "agent", "my-agent")
 	assert.NotNil(t, ctx)
-	// No telemetry configured — must be a silent no-op.
 	finish(OutcomeSuccess, nil)
 }
 

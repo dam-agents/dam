@@ -23,8 +23,6 @@ import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
 
-/** First `max` names, with a "+N more" tail; undefined when the list is empty
- *  so the nav falls back to its neutral placeholder. */
 function formatNameList(names: string[], max = 2): string | undefined {
   if (names.length === 0) return undefined;
   const shown = names.slice(0, max);
@@ -32,19 +30,12 @@ function formatNameList(names: string[], max = 2): string | undefined {
   return extra > 0 ? `${shown.join(", ")}, +${extra} more` : shown.join(", ");
 }
 
-/**
- * Live one-line summaries for the sandbox section nav. Built from the same
- * cheap list queries used elsewhere — no pod-waking calls, and everything
- * degrades gracefully to an omitted line while the agent is asleep.
- */
 export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   const { data: templates = [] } = useTemplates();
   const { data: apps = [] } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
-  // Catalog is available while asleep; current is operable-gated (never wakes
-  // the pod), so the model segment appears only when the pod is up or cached.
   const { data: configStatus } = useHarnessConfigStatus(agent?.id ?? null);
   const { data: currentConfig } = useHarnessConfigCurrent(agent?.id ?? null);
 
@@ -78,8 +69,6 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   }, [agent, templates, apps, modelName]);
 
   const connections = useMemo(() => {
-    // Providers surface in the Setup line; app grants fold into provider
-    // titles ("GitHub, Custom Headers, +6 more").
     if (!connectionsQuery.data) return undefined;
     const titles = connectionsQuery.data.connections
       .map((c) => c.connectionId)
@@ -91,9 +80,6 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   }, [connectionsQuery.data, apps, providerAppIds]);
 
   const skills = useMemo(() => {
-    // Standalone (authored-in-sandbox) skills are on disk and active just like
-    // installed ones, so the summary lists both — standalone first to mirror
-    // the surface's "Created in this sandbox" group ordering.
     const standalone = (skillsState.data?.standalone ?? []).map((s) => s.name);
     const installed = (skillsState.data?.installed ?? []).map((s) => s.name);
     return formatNameList([...standalone, ...installed]);
@@ -102,8 +88,6 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
   const availableChannels = useAgents().data?.availableChannels;
   const channelsSummary = useMemo(() => {
     if (!agent || !availableChannels) return undefined;
-    // Nothing to connect when the install wired up no messenger — say that
-    // instead of implying an empty list the user could fill.
     if (!availableChannels.slack && !availableChannels.telegram)
       return "No messenger configured";
     const kinds = [
@@ -134,8 +118,6 @@ export function useSectionSummaries(agent: AgentView | null): SectionSummaries {
     return shared > 0 ? `${base} · ${shared} shared` : base;
   }, [agent, agentArtifacts]);
 
-  // Undefined while loading, and on deployments without a telemetry store where
-  // the read fails closed — the nav's placeholder is the right answer to both.
   const { data: monthSpend } = useAgentMonthSpend(agent?.id ?? null);
   const usageSummary = useMemo(() => {
     if (monthSpend === undefined) return undefined;

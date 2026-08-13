@@ -7,8 +7,6 @@ import { useStore } from "@/store";
 const Toaster = (props: ToasterProps) => {
   const theme = useStore((s) => s.theme);
 
-  // Runs after Sonner's own subscribe effect — child effects fire before the
-  // parent's — so buffered toasts have somewhere to land by the time we flush.
   useEffect(onToastHostMounted, []);
   const resolved =
     theme === "dark" ||

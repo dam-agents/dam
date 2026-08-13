@@ -3,30 +3,18 @@ import type { TtlStore } from "../../../core/ttl-store.js";
 
 export interface OAuthProvider {
   id: string;
-  /** Absent for token-endpoint-only grants (client credentials). */
   authorizationUrl?: string;
   tokenEndpoint: string;
   clientId: string;
-  /** Public clients (PKCE-only) omit this. */
   clientSecret?: string;
   scopes?: string[];
-  /**
-   * GitHub's token endpoint returns `application/x-www-form-urlencoded`
-   */
   tokenEndpointAcceptJson?: boolean;
-  /** Provider-specific authorize-URL params (e.g. `allow_signup=false`). */
   extraAuthParams?: Record<string, string>;
 }
 
-/** A token-endpoint rejection. GitHub returns its errors in a **200**
- *  form-encoded body, so `oauthError` — not `status` — is the reliable
- *  discriminator of a dead credential. */
 export class OAuthTokenEndpointError extends Error {
   readonly status: number | undefined;
   readonly oauthError: string | undefined;
-  /** The response body was OAuth-shaped (JSON or form-encoded). False for an
-   *  HTML error page from a proxy/WAF, whose status says nothing about the
-   *  credential. */
   readonly oauthShapedBody: boolean;
 
   constructor(
@@ -45,13 +33,10 @@ export class OAuthTokenEndpointError extends Error {
   }
 }
 
-// RFC 6749 delimits the `scope` response field with spaces; GitHub uses commas.
 function parseScopeList(raw: string | undefined): string[] {
   return raw?.split(/[\s,]+/).filter(Boolean) ?? [];
 }
 
-// A non-2xx body usually still carries the code — JSON for most providers,
-// form-encoded for a few. An unparseable body leaves only the status.
 function parseOAuthErrorCode(body: string): string | undefined {
   try {
     const json = JSON.parse(body) as { error?: unknown };
@@ -73,9 +58,7 @@ export interface PendingFlow<Ctx = unknown> {
 export interface TokenSet {
   accessToken: string;
   refreshToken?: string;
-  /** Unix seconds. Absent when the provider didn't return `expires_in`. */
   expiresAt?: number;
-  /** What the provider granted — a user can decline scopes at consent. */
   scopes?: string[];
 }
 
@@ -111,9 +94,6 @@ interface TokenEndpointResponse {
 export interface CreateOAuthEngineOptions {
   now?: () => number;
   fetchImpl?: typeof fetch;
-  /** Cross-replica store for in-flight flows — the callback may land on a
-   *  different replica than the start. Redis-backed in production,
-   *  `createMemoryTtlStore` in tests. */
   pendingStore: TtlStore<PendingFlow>;
 }
 
@@ -210,8 +190,6 @@ export function createOAuthEngine(opts: CreateOAuthEngineOptions): OAuthEngine {
         .update(codeVerifier)
         .digest("base64url");
       const state = crypto.randomBytes(16).toString("hex");
-      // clientSecret never rests in the store (Redis in production) — the
-      // callback leg re-resolves the provider before exchange().
       const { clientSecret: _omitted, ...storedProvider } = provider;
       await pendingFlows.set(state, {
         provider: storedProvider,

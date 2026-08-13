@@ -10,7 +10,6 @@ import type { HarnessConfigCurrent } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
 
 export interface IsAgentRunning {
-  /** True when the agent is Ready (controller-published condition) — the apply may land. */
   isRunning(agentId: string): Promise<boolean>;
 }
 
@@ -34,7 +33,6 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
 
-    // Not Ready: hello-triggered jobs re-check on a tight cadence until Ready; others defer to the sweep.
     if (!(await deps.agentRunningPort.isRunning(agentId))) {
       if (opts?.retryUntilReady) {
         throw new Error(`${agentId}: not Ready yet — retrying until Ready`);
@@ -78,20 +76,16 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       events: payload.events,
     });
 
-    // Dispatch on the typed outcome; a genuine error (network, bug) just propagates to BullMQ retry.
     let settle: {
       appliedVersion: number;
       appliedHash: string | null;
       failures: DriverFailure[];
       settledEventIds: string[];
     };
-    // Present on both outcomes; absent from a pod predating it or one with no
-    // harness-config driver.
     const reported: HarnessConfigCurrent | undefined =
       outcome.harnessConfigCurrent;
     switch (outcome.status) {
       case "stale":
-        // Contributions already at ≥ this version; reconcile the cursor. Events carry their own version, so settle only the ones the agent reports it actually ran.
         deps.log(
           `[runtime-worker] ${agentId}: agent at v${outcome.appliedVersion} ≥ v${row.version} — reconciling settled cursor`,
         );
@@ -118,12 +112,9 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       }
     }
 
-    // recordOutcome diffs under a row lock and returns the transitions; emit post-commit.
     const { newlyFailed, recovered, gaveUp } =
       await deps.outboxRepo.recordOutcome(agentId, row.version, settle);
 
-    // The pod just read its own config file and resolved the provider's model
-    // list. Display state only — never the reason an apply cycle fails.
     if (reported) {
       try {
         await deps.snapshotWriter.merge(agentId, reported, { confirmed: true });

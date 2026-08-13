@@ -2,19 +2,12 @@ import type { ReactNode } from "react";
 
 interface Props {
   label: string;
-  /** Formatted amount, right-aligned after the track. */
   value: string;
-  /** Share of the widest bar, 0–100. */
   pct: number;
-  /** Series colour for the dot and fill. */
   color: string;
-  /** Secondary line under the amount, e.g. tokens in → out. */
   caption?: ReactNode;
 }
 
-/** One horizontal spend bar: colour dot and name on the left, a proportional
- *  fill on a track, the amount right-aligned. Shared by the per-model and
- *  per-agent breakdowns so both read as the same chart. */
 export function SpendBar({ label, value, pct, color, caption }: Props) {
   return (
     <div className="flex items-center gap-4 text-sm">
@@ -30,18 +23,14 @@ export function SpendBar({ label, value, pct, color, caption }: Props) {
       </span>
       <div
         className="h-5 min-w-0 flex-1 overflow-hidden rounded bg-muted"
-        // Width is the only visual encoding, so state it for anything that
-        // can't see it — matching how the day chart labels each column.
         role="img"
-        // Rounding alone would announce "0%" for a row the 8px floor still draws
-        // — present to the eye, absent to the ear.
         aria-label={
           pct > 0 && pct < 1
             ? "less than 1% of the largest"
             : `${Math.round(pct)}% of the largest`
         }
       >
-        {/* 8px floor so any nonzero spend stays visible; zero stays empty. */}
+        {}
         <div
           className="h-full rounded"
           style={{

@@ -72,8 +72,6 @@ describe("telegram oauth callback", () => {
     expect(location.startsWith(`${UI}/telegram/bind?flow=`)).toBe(true);
 
     const flowId = new URL(location).searchParams.get("flow")!;
-    // The flow pins the AUTHENTICATED sub, not the Telegram user id — the
-    // bind mutation matches it against the UI session's sub.
     expect(await h.bindFlows.peek(flowId)).toMatchObject({
       conversationId: "chat-123",
       telegramUserId: TELEGRAM_USER_ID,

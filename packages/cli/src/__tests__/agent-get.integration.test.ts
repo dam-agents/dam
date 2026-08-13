@@ -40,9 +40,6 @@ async function runDam(
   env: Record<string, string>,
 ): Promise<RunResult> {
   try {
-    // process.execPath, not "node" from PATH: under mise, PATH's node is a
-    // shim that needs mise's own env, which this deliberately stripped env
-    // doesn't carry — the shim then dies silently with exit 1.
     const { stdout, stderr } = await exec(
       process.execPath,
       [BIN_PATH, ...args],
@@ -70,8 +67,6 @@ async function startFixture(opts: {
     get: opts.get ?? (async () => null),
   };
 
-  // agents.list/get join spawn attribution in from the invocations table, so
-  // the fixture must answer that read too.
   const invocationsQuery = { listTargets: async () => [] };
   const ctx = new Proxy(
     { agents, invocationsQuery, user: FIXTURE_USER } as Record<string, unknown>,
@@ -159,8 +154,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
 }
 
 describe("dam agent get (integration)", () => {
-  // `dist/bin.js` is built once by `vitest.config.ts`'s globalSetup.
-
   let home: string;
 
   beforeEach(async () => {
@@ -171,9 +164,7 @@ describe("dam agent get (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  afterAll(async () => {
-    /* dist/ stays */
-  });
+  afterAll(async () => {});
 
   async function configureServer(url: string) {
     const r = await runDam(["config", "set", "server", url], {

@@ -38,16 +38,11 @@ export interface FolderSection {
 }
 
 interface Props extends ArtifactRowActions, Partial<FolderGroupActions> {
-  /** null renders the "Ungrouped" section (no folder actions). */
   folder: ArtifactFolder | null;
   artifacts: LibraryArtifact[];
-  /** Shown instead of the folder's raw name (e.g. with a prefix stripped). */
   displayName?: string;
   defaultCollapsed?: boolean;
-  /** Renders as a borderless row for stacking inside a parent section card. */
   nested?: boolean;
-  /** Subheaded clusters rendered instead of the flat list (a partition of
-   *  `artifacts`, which still drives the header counts). */
   sections?: FolderSection[];
 }
 

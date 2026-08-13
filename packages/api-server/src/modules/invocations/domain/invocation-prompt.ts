@@ -1,11 +1,3 @@
-/** Harness-agnostic framing every Invocation target carries. A target runs
- *  unattended: the one-shot prompt is its only turn and no human will answer
- *  follow-ups, so a harness that pauses for confirmation stalls forever and
- *  never reports. This directive tells any harness to run end to end on its own
- *  and carries the `report_result` reporting contract inline, distilled to
- *  prose. It lives in the prompt (session-scoped, harness-agnostic) rather than
- *  a skill, which would reach only Claude-family harnesses and leak into
- *  agents that are not Invocation targets. */
 function autonomousTargetDirective(schemaJson: string): string {
   return (
     "You are running as an autonomous invocation target: your job is to do the task, then report exactly one result. " +
@@ -18,8 +10,6 @@ function autonomousTargetDirective(schemaJson: string): string {
 
 export function buildInvocationPrompt(input: {
   prompt: string;
-  /** The result JSON Schema, echoed into the contract so the harness knows the
-   *  exact shape to aim for. */
   resultSchema: unknown;
 }): string {
   const schemaJson = JSON.stringify(input.resultSchema, null, 2);

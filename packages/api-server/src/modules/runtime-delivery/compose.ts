@@ -45,9 +45,7 @@ export interface RuntimeDeliveryComposition {
   runtimeMutator: RuntimeMutator;
   stateBuilder: StateBuilder;
   builtin: BuiltinContributions;
-  /** Settled (`lastSettledVersion >= version`, or no row) + the drivers that failed the last settle. */
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
-  /** Batched form; result includes every input id. */
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
@@ -64,9 +62,6 @@ export interface ComposeRuntimeDeliveryOpts {
   namespace: string;
   bullConnection: ConnectionOptions;
   agentRunningPort: IsAgentRunning;
-  /** Records what a pod reports about its harness config, on `hello` and on
-   *  every apply. Supplied by the root so this module stays independent of
-   *  where the snapshot lives. */
   snapshotWriter: HarnessConfigSnapshotWriter;
   harnessServerUrl: string;
   log?: (msg: string) => void;
@@ -75,7 +70,6 @@ export interface ComposeRuntimeDeliveryOpts {
 export function composeRuntimeDelivery(
   opts: ComposeRuntimeDeliveryOpts,
 ): RuntimeDeliveryComposition {
-  // Via Pino so apply/sweep lines carry an ISO timestamp (#695).
   const log = opts.log ?? ((m) => getLogger().info(`[runtime] ${m}`));
 
   const outboxRepo = createOutboxRepo(opts.db);

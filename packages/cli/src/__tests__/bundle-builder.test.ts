@@ -134,9 +134,6 @@ describe("createBundleBuilder().pack", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  // Single fixture exercises every traversal-correctness invariant:
-  // recursion, dir-exclusion (node_modules, __pycache__), file-exclusion
-  // (.DS_Store), symlink skipping, file body streaming, and cleanup.
   it("packs nested trees, excludes excluded names and symlinks, cleanup removes tmp", async () => {
     const dir = join(root, "proj");
     await mkdir(join(dir, "nested"), { recursive: true });

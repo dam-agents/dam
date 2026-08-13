@@ -20,7 +20,6 @@ const SECTIONS: SectionEntry[] = [
 interface Props {
   active: SandboxSection;
   onNavigate: (section: SandboxSection) => void;
-  // Live one-line summary per section, keyed by section id (slice 03).
   summaries?: Partial<Record<SandboxSection, string>>;
 }
 

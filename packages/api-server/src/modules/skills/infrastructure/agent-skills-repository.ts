@@ -33,31 +33,17 @@ export interface AgentSkillsRepository {
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
 
-  /** Records whose pull request is due for a re-read as of `now`, across
-   *  every agent — the resolver is background work, not owner-scoped. Due
-   *  means never attempted, or last attempted over an hour ago. */
   listPrStateCandidates(now: Date, limit: number): Promise<PrStateCandidate[]>;
 
-  /** Persist a resolved state. Terminal states (`merged`, `closed`) are
-   *  written once and the record is never selected for a re-read again, so
-   *  this is the only writer of `prState`. */
   setPrState(
     prUrl: string,
     next: { prState: PrState; checkedAt: Date; etag: string | null },
   ): Promise<void>;
-  /** Stamp an attempt that yielded no new state, so the record waits its
-   *  hour before the next one. Never touches `prState` — a blip must not
-   *  erase a resolved `merged`. */
   touchPrState(prUrl: string, checkedAt: Date): Promise<void>;
 
-  /** The last recorded standalone list, or null when nothing was ever recorded
-   *  — which is a never-run sandbox, not one with no standalone skills. */
   readStandaloneSnapshot(
     agentId: string,
   ): Promise<{ skills: LocalSkill[]; capturedAt: string } | null>;
-  /** Records the list, skipping the write when it matches what's stored. The
-   *  Skills surface polls `state` every few seconds while open, so an
-   *  unconditional write would be one row update per open page per poll. */
   recordStandaloneSnapshot(
     agentId: string,
     skills: LocalSkill[],
@@ -73,10 +59,6 @@ const standaloneSnapshotSchema = z.object({
 
 type PrState = NonNullable<SkillPublishRecord["prState"]>;
 
-/** One candidate row: a pull request the resolver may read, with its
- *  publisher (several agents can carry the same pull request — the service
- *  dedupes by URL, keeping every agentId for the pod escalation) and the
- *  stored validator. */
 export interface PrStateCandidate {
   agentId: string;
   prUrl: string;
@@ -87,9 +69,6 @@ function generatePublishId(): string {
   return `pub-${crypto.randomBytes(8).toString("hex")}`;
 }
 
-/** Postgres-backed installed-refs + publish records, both keyed by
- *  agentId. Lifecycle is bounded by the agent: rows go away when the
- *  agent is deleted, via the AgentDeleted saga in the Skills module. */
 export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
   return {
     async listSkills(agentId) {
@@ -152,9 +131,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
     },
 
     async reconcile(agentId, presentNames) {
-      // Drop tracked refs whose directories vanished from the pod's filesystem
-      // (manual rm, PVC wipe, etc). The filesystem is authoritative for "what
-      // is installed" — spec catches up.
       const rows = await db
         .select({ name: agentSkills.name, source: agentSkills.source })
         .from(agentSkills)
@@ -189,8 +165,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         sourceGitUrl: r.sourceGitUrl,
         prUrl: r.prUrl,
         publishedAt: r.publishedAt.toISOString(),
-        // Cast because the column is `text` (widening the value set should not
-        // need a migration); the Zod schema at the tRPC edge enforces the union.
         prState: r.prState as SkillPublishRecord["prState"],
         prStateCheckedAt: r.prStateCheckedAt?.toISOString() ?? null,
       }));
@@ -210,17 +184,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
     },
 
     async listPrStateCandidates(now, limit) {
-      // Re-check any one record at most hourly. A conditional request is NOT
-      // exempt from the anonymous rate limit — measured against
-      // api.github.com, each 304 decrements x-ratelimit-remaining by one
-      // exactly like a 200 — so an ETag saves bandwidth but buys no budget,
-      // and re-checking on every tick would let ~10 open pull requests
-      // exhaust the instance's whole hourly allowance. A record never
-      // attempted is exempt, so a fresh publish still resolves on the next
-      // tick. The interval math deliberately stays in JS: a Date through the
-      // column mapper is safe, whereas a raw sql`` param skips the mappers
-      // (and drizzle's postgres-js driver disables the driver's own date
-      // serializers), which is what silently killed this query once before.
       const staleBefore = new Date(now.getTime() - 60 * 60 * 1000);
       const rows = await db
         .select({
@@ -231,9 +194,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         .from(agentSkillPublishes)
         .where(
           and(
-            // Terminal states are excluded here, not filtered later: `merged`
-            // and `closed` are immutable, so the working set shrinks with use
-            // instead of growing.
             or(
               isNull(agentSkillPublishes.prState),
               inArray(agentSkillPublishes.prState, ["draft", "open"]),
@@ -244,18 +204,11 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
             ),
           ),
         )
-        // NULLS FIRST, explicitly: Postgres sorts NULL last by default, which
-        // would put never-attempted records — a fresh publish, the case a
-        // user is actually watching — behind every already-attempted one and
-        // starve them whenever the backlog exceeds the per-tick page.
         .orderBy(sql`${agentSkillPublishes.prStateCheckedAt} asc nulls first`)
         .limit(limit);
       return rows;
     },
 
-    // Keyed on prUrl, not (agentId, skillName): the same pull request can be
-    // referenced by records for different agents, and one read should settle
-    // all of them.
     async setPrState(prUrl, next) {
       await db
         .update(agentSkillPublishes)
@@ -268,9 +221,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
     },
 
     async touchPrState(prUrl, checkedAt) {
-      // The validator survives a failed attempt on purpose: an ETag is only
-      // ever written together with the state it validates, so a later 304
-      // always confirms a state we do have.
       await db
         .update(agentSkillPublishes)
         .set({ prStateCheckedAt: checkedAt })
@@ -284,8 +234,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         .where(eq(agentsTable.id, agentId));
       const raw = rows[0]?.snapshot;
       if (raw == null) return null;
-      // A shape written by an older build reads as "nothing recorded" rather
-      // than breaking the panel this feeds.
       const parsed = standaloneSnapshotSchema.safeParse(raw);
       return parsed.success ? parsed.data : null;
     },
@@ -318,8 +266,6 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
   };
 }
 
-/** Compared on the fields that decide what renders, by name rather than by
- *  position — the pod's ordering is not a promise. */
 function sameSkills(a: LocalSkill[], b: LocalSkill[]): boolean {
   if (a.length !== b.length) return false;
   const byName = new Map(a.map((s) => [s.name, s]));

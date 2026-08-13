@@ -5,12 +5,9 @@ import type { ScheduleLock } from "../lib/schedule-lock.js";
 interface Notice {
   title: string;
   body: ReactNode;
-  /** Label for the action that resolves the notice, when one exists. */
   action?: string;
 }
 
-/** What to tell the user in place of the schedule form. Each notice names only
- *  the reason that applies, so the reader knows which schedule they have. */
 export function scheduleLockNotice(
   lock: ScheduleLock,
   sandboxName: string,

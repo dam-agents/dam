@@ -1,10 +1,5 @@
 import { cva } from "class-variance-authority";
 
-/**
- * Shared styling for the dropdown-menu and context-menu primitives. They wrap
- * different Radix packages (trigger-anchored vs pointer-anchored) but render an
- * identical-looking menu, so the surface styling lives here once.
- */
 export const menuContentClassName =
   "z-popover min-w-[160px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95";
 

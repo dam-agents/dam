@@ -47,7 +47,7 @@ describe("workspace-command plugin", () => {
     const runner = vi.fn<RunCommandFn>(async () => {});
     const { run } = setup(runner);
     await run("bootstrap");
-    await run("bootstrap"); // redelivery
+    await run("bootstrap");
     expect(runner).toHaveBeenCalledTimes(1);
   });
 

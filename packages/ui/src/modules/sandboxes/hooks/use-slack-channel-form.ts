@@ -26,10 +26,6 @@ export function findSlackChannels(
   );
 }
 
-/** Drives the connect/edit modal for a single Slack binding: `channel` is the
- *  one being edited, undefined when connecting a new one. Editing reaches only
- *  the ambient flag — the conversation is fixed for the binding's lifetime, and
- *  releasing one is the card's own disconnect. */
 export function useSlackChannelForm(
   agent: AgentView,
   channel: SlackChannel | undefined,

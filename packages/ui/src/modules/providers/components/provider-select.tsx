@@ -17,9 +17,7 @@ interface Props {
   confirmSwitch?: () => Promise<boolean>;
   autoSelectFirst?: boolean;
   disabled?: boolean;
-  /** Restrict the offered providers. Omit to offer all of them. */
   allow?: readonly ProviderPresetType[];
-  /** Offered first and badged; `autoSelectFirst` therefore prefers it. */
   recommended?: ProviderPresetType;
 }
 
@@ -43,15 +41,11 @@ export function ProviderSelect({
     [allow, recommended],
   );
 
-  // A key saved through the dialog isn't in the connections list until it
-  // refetches; until then resolve the selection from the dialog's own result.
   const selectedType = selected
     ? (typeByConnectionId.get(selected.id) ??
       (connected?.id === selected.id ? connected.type : null))
     : null;
 
-  // Only acts while empty so a just-connected provider isn't nulled out during
-  // the list refetch.
   useEffect(() => {
     if (!autoSelectFirst || selected) return;
     const first = rows.map((r) => itemByType.get(r.type)).find(Boolean);
@@ -60,8 +54,6 @@ export function ProviderSelect({
 
   const pick = async (type: ProviderPresetType) => {
     if (type === selectedType) return;
-    // Ask before the key dialog, so nobody enters a credential only to be
-    // asked whether they meant to switch.
     if (selectedType && confirmSwitch && !(await confirmSwitch())) return;
     const item = itemByType.get(type);
     if (!item) {

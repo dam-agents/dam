@@ -16,16 +16,12 @@ export interface FileDesired {
   mergeMode: MergeMode;
   content: unknown;
   keyPath?: string;
-  // key-targeted only: delete `keyPath` (pruning emptied ancestors) instead of set.
   delete?: boolean;
 }
 
 export interface FileOpsContext {
   agentHome: string;
   log: (msg: string) => void;
-  // Unparseable existing file on a merge that reads it: "rewrite-aside" (default)
-  // moves it to a `.broken-*` sidecar and rewrites; "throw" aborts untouched (for
-  // a one-shot apply over a possibly hand-edited file).
   onUnparseable?: "rewrite-aside" | "throw";
 }
 
@@ -262,11 +258,6 @@ export function setNested(
   cur[segs[segs.length - 1]!] = value;
 }
 
-// Deletes the leaf at `segs`, leaving sibling keys intact, and prunes any
-// ancestor object our deletion leaves empty (so removing
-// `permissions.defaultMode` from `{ permissions: { defaultMode } }` drops the
-// whole `permissions` key, but keeps it if the user has other keys under it).
-// No-op if any segment along the way is missing.
 export function deleteNested(
   obj: Record<string, unknown>,
   segs: string[],
@@ -284,9 +275,6 @@ export function deleteNested(
   if (Object.keys(childObj).length === 0) delete obj[head];
 }
 
-// Reads the leaf at `segs`, or undefined if any segment is missing or a
-// non-object is hit along the way. Inverse of setNested — the harness-config
-// read path uses it to map config-file key paths back to logical fields.
 export function getNested(
   obj: Record<string, unknown>,
   segs: string[],

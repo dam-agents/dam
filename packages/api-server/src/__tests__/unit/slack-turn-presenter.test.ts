@@ -9,9 +9,6 @@ import type { SlackGateway } from "../../modules/channels/infrastructure/slack-g
 
 configureLogger({ level: "error", write: () => {} });
 
-/** A spy gateway capturing the status calls the presenter makes. The presenter
- *  never posts messages — the agent does that via the `reply` tool — so a
- *  postMessage spy is kept only to assert it is *not* called. */
 function spyGateway(overrides?: Partial<SlackGateway>) {
   const gw = {
     setStatus: vi.fn(async () => {}),
@@ -97,7 +94,6 @@ describe("turn presenter — assistant text is not delivered", () => {
     await p.clearStatus();
 
     expect(gw.postMessage).not.toHaveBeenCalled();
-    // A pure-text turn drives no status either (only thought/tool do).
     expect(gw.setStatus).not.toHaveBeenCalled();
   });
 });
@@ -114,13 +110,11 @@ describe("turn presenter — status arc", () => {
     expect(gw.setStatus).toHaveBeenCalledTimes(1);
     expect(gw.setStatus.mock.calls[0][0].status).toBe("is thinking…");
 
-    // Same value → deduped (no new call).
     p.onUpdate({ kind: "thought" });
     expect(gw.setStatus).toHaveBeenCalledTimes(1);
 
-    // A tool title within the throttle window is coalesced into a trailing send.
     p.onUpdate({ kind: "tool", title: "Read file" });
-    p.onUpdate({ kind: "tool", title: "Read file" }); // dup, ignored
+    p.onUpdate({ kind: "tool", title: "Read file" });
     expect(gw.setStatus).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(2_000);
     expect(gw.setStatus).toHaveBeenCalledTimes(2);
@@ -136,7 +130,6 @@ describe("turn presenter — status arc", () => {
     const p = createTurnPresenter(gw, baseOpts);
     p.setThinking();
     expect(gw.setStatus).toHaveBeenCalledTimes(1);
-    // Text chunks stream nowhere and don't perturb the status line.
     p.onUpdate({ kind: "text", text: "hello" });
     p.onUpdate({ kind: "text", text: " world" });
     await vi.advanceTimersByTimeAsync(5_000);
@@ -154,7 +147,6 @@ describe("turn presenter — status arc", () => {
     await Promise.resolve();
     p.onUpdate({ kind: "tool", title: "Search" });
     await vi.advanceTimersByTimeAsync(5_000);
-    // Latched off after the first failing call.
     expect(gw.setStatus).toHaveBeenCalledTimes(1);
   });
 });

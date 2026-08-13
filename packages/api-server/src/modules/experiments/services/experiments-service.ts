@@ -30,7 +30,6 @@ import type {
   SpanRow,
 } from "../infrastructure/experiments-repository.js";
 
-/** Artifacts attach to runs, not drafts — a draft has no results yet. */
 export class DraftAttachError extends Error {
   constructor() {
     super(
@@ -40,8 +39,6 @@ export class DraftAttachError extends Error {
   }
 }
 
-/** The caller isn't this experiment's driver, or it doesn't exist — both read
- *  as unknown, mirroring the invocations attribution posture. */
 export class UnknownExperimentError extends Error {
   constructor() {
     super("unknown experiment");
@@ -49,8 +46,6 @@ export class UnknownExperimentError extends Error {
   }
 }
 
-/** The ledger is closed: reports against a non-running experiment (stopped,
- *  finished, or reaped) are rejected so a loop dies on its next call. */
 export class ExperimentClosedError extends Error {
   constructor(status: string) {
     super(`experiment is ${status}; the trace is closed`);
@@ -58,7 +53,6 @@ export class ExperimentClosedError extends Error {
   }
 }
 
-/** run-start announced a new script sha without carrying the source. */
 export class ScriptContentRequiredError extends Error {
   constructor() {
     super(
@@ -68,8 +62,6 @@ export class ScriptContentRequiredError extends Error {
   }
 }
 
-/** The merged custom-data blob outgrew its cap; the event is rejected so the
- *  loop hears about it instead of silently truncating. */
 export class CustomDataTooLargeError extends Error {
   constructor(bytes: number) {
     super(
@@ -83,35 +75,21 @@ export interface ExperimentsServiceDeps {
   owner: string;
   repo: ExperimentsRepository;
   artifactLibrary: ArtifactLibraryServiceImpl;
-  /** Invocations spawned under this experiment's spans (span↔spawn attach). */
   invocationsForExperiment: (
     driverAgentId: string,
     experimentId: string,
   ) => Promise<TraceFeedInvocation[]>;
-  /** `running` Invocation counts per driver — the index's activity signal. */
   runningInvocationsByDriver: () => Promise<Map<string, number>>;
-  /** The experiment an invocation target belongs to (via its invocation's
-   *  span attach), keyed by the target's own agent id — the auto-attribution
-   *  path for attachArtifact. Null when the agent isn't a target. */
   experimentForInvocation?: (targetAgentId: string) => Promise<string | null>;
-  /** Mints the run's results artifact (renderer + final feed baked in) and
-   *  repoints the run at it. Called after every terminal flip; best-effort. */
   snapshotDashboard?: (experimentId: string, owner: string) => Promise<void>;
-  /** Stop's teeth: fail the experiment's running Invocations and reap their
-   *  targets, so blocked spawn() waiters unblock immediately. */
   cancelInvocations?: (
     driverAgentId: string,
     experimentId: string,
   ) => Promise<void>;
-  /** Hibernation pin: set at run start, released when the driver's last running
-   *  experiment goes terminal. Optional — a composition without it (never the
-   *  production apps) just doesn't pin. */
   pin?: {
     set(driverAgentId: string): Promise<void>;
     clear(driverAgentId: string): Promise<void>;
   };
-  /** Delivers the launch prompt over the runtime channel. Required for
-   *  startRun(); the harness REST composition may omit it. */
   launcher?: {
     launch(input: {
       agentId: string;
@@ -119,9 +97,6 @@ export interface ExperimentsServiceDeps {
       task: string;
     }): Promise<void>;
   };
-  /** Mints the experiment sandbox (Agent + `experiment` Kind + authoring-skill
-   *  install). Required for createSandbox(); the harness REST composition omits
-   *  it — an agent never creates sandboxes. */
   createSandbox?: (input: ExperimentSandboxCreateInput) => Promise<Agent>;
   now?: () => Date;
 }
@@ -183,8 +158,6 @@ export function createExperimentsService(
     return (await artifactLibrary.createFolder(folderName)).id;
   }
 
-  /** Terminal bookkeeping, best-effort: mint the results artifact — a
-   *  failure never disturbs the flip. */
   async function snapshotDashboard(experimentId: string): Promise<void> {
     if (!deps.snapshotDashboard) return;
     try {
@@ -196,9 +169,6 @@ export function createExperimentsService(
     }
   }
 
-  /** Release the pin only when the driver has no other running experiment —
-   *  concurrent experiments on one driver share the pin. Best-effort: a
-   *  failed clear is healed by the boot reconciliation. */
   async function releasePin(driverAgentId: string): Promise<void> {
     if (!deps.pin) return;
     try {
@@ -212,10 +182,6 @@ export function createExperimentsService(
     }
   }
 
-  /** The launch rail for a freshly inserted run row (born `running`): pin
-   *  before launch (the wake must never race the idle checker); a failed
-   *  launch lands in `failed` immediately — a run that never started can
-   *  never report or finish. */
   async function launchRun(id: string): Promise<Experiment> {
     const row = await repo.get(id, owner);
     if (!row) throw new TRPCError({ code: "NOT_FOUND" });
@@ -245,8 +211,6 @@ export function createExperimentsService(
     return toView((await repo.get(id, owner))!);
   }
 
-  /** Resolve + attribute in one step: a foreign or missing experiment reads
-   *  the same (unknown), so a driver can't probe other owners' ids. */
   async function requireDriverExperiment(
     driverAgentId: string,
     experimentId: string,
@@ -259,8 +223,6 @@ export function createExperimentsService(
   }
 
   return {
-    // ---- owner surface (tRPC) ------------------------------------------------
-
     async createSandbox(input: ExperimentSandboxCreateInput) {
       if (!deps.createSandbox) {
         throw new TRPCError({
@@ -268,9 +230,6 @@ export function createExperimentsService(
           message: "creating experiment sandboxes is not wired on this surface",
         });
       }
-      // No Experiment row is written here: the sandbox is a venue, and a draft
-      // only ever comes from the script's Plan Registration. So a fresh sandbox
-      // shows on the Experiments destination as an empty container.
       return deps.createSandbox(input);
     },
 
@@ -284,7 +243,6 @@ export function createExperimentsService(
         deps.runningInvocationsByDriver(),
       ]);
       const byDriver = new Map<string, ExperimentDriverSummary>();
-      // repo.list is newest-first, so each summary's experiments stay so.
       for (const row of experiments) {
         let summary = byDriver.get(row.driverAgentId);
         if (!summary) {
@@ -341,13 +299,6 @@ export function createExperimentsService(
           message: "starting runs is not wired on this surface",
         });
       }
-      // Building and running are separate: the draft is source and persists.
-      // A run captures the draft's current state — declaration copied onto a
-      // new row, the script CLONED into the run's own artifact; the run
-      // renders the draft's dashboard while live and the terminal snapshot
-      // mints its own results artifact. Starting from a terminal run
-      // resolves back to the lineage's draft; a deleted draft falls back to
-      // the run itself.
       const source =
         row.status === "draft"
           ? row
@@ -389,11 +340,6 @@ export function createExperimentsService(
         runFolderId,
       );
 
-      // Born running: the lineage draft persists, and the one-draft-per-name
-      // index must stay free for it — a run never passes through draft. The
-      // live run renders the DRAFT's dashboard (the renderer; data arrives
-      // live); its own single-version results artifact is created at the
-      // terminal transition with the final feed baked in.
       await repo.insert({
         id: runId,
         owner,
@@ -424,10 +370,6 @@ export function createExperimentsService(
           message: "only a running experiment can be stopped",
         });
       }
-      // Stop must actually stop: fail the run's in-flight invocations (this
-      // unblocks a loop parked inside spawn()'s poll at once) before the
-      // pin release and snapshot. Best-effort like the rest of the terminal
-      // bookkeeping.
       try {
         await deps.cancelInvocations?.(row.driverAgentId, id);
       } catch (err) {
@@ -452,13 +394,9 @@ export function createExperimentsService(
       await repo.delete(id, owner);
     },
 
-    // ---- agent surface (harness REST, mesh-attributed) ------------------------
-
     async planRegister(driverAgentId, input: PlanRegisterInput) {
       const fileName = scriptFileName(input.script.path);
 
-      /** Inline dashboard capture (SDK dashboard_path): re-version the
-       *  draft's existing dashboard, or create the bespoke artifact. */
       const captureDashboard = async (
         existingId: string | null,
       ): Promise<string | null> => {
@@ -470,9 +408,7 @@ export function createExperimentsService(
               fileName: "dashboard.html",
             });
             return existingId;
-          } catch {
-            // Deleted since — fall through to a fresh artifact.
-          }
+          } catch {}
         }
         const captureFolderId = await lineageFolderId(input.name).catch(
           () => undefined,
@@ -503,12 +439,6 @@ export function createExperimentsService(
         const dashboardArtifactId =
           (await captureDashboard(draft.dashboardArtifactId)) ??
           draft.dashboardArtifactId;
-        // Stock dashboards refresh on re-registration too: a platform-
-        // authored renderer (recognized by its baked feed snapshot — bespoke
-        // captures never carry one) re-bakes against the current stock HTML
-        // and the just-declared skeleton, so a platform redesign or a plan
-        // change lands as the next version, the same build history the
-        // script gets. Best-effort: a failure keeps the old version.
         if (!input.dashboard && dashboardArtifactId) {
           try {
             const stored =
@@ -538,9 +468,7 @@ export function createExperimentsService(
                 });
               }
             }
-          } catch {
-            // Next registration retries.
-          }
+          } catch {}
         }
         await repo.updateDraft(draft.id, {
           skeleton: input.skeleton,
@@ -552,9 +480,6 @@ export function createExperimentsService(
         return { experimentId: draft.id };
       }
 
-      // The draft's artifacts are the build's source of truth: each plan
-      // re-registration re-versions the draft script (build history); runs
-      // clone them at start and never touch these.
       const folderId = await lineageFolderId(input.name);
       const scriptArtifact = await artifactLibrary.create(
         {
@@ -574,8 +499,6 @@ export function createExperimentsService(
         : null;
       if (!dashboardArtifactId) {
         try {
-          // Bake the plan into v1 so even the first version renders the
-          // declared skeleton standalone — never a bare waiting state.
           const draftFeed = projectFeed({
             experiment: {
               id,
@@ -611,11 +534,7 @@ export function createExperimentsService(
             { agentId: driverAgentId },
           );
           dashboardArtifactId = dashboard.id;
-        } catch {
-          // The dashboard is a rendering nicety — the detail view falls back
-          // to its native summary when absent. The script publish above is
-          // the one that must not fail silently.
-        }
+        } catch {}
       }
 
       await repo.insert({
@@ -713,13 +632,10 @@ export function createExperimentsService(
               throw new CustomDataTooLargeError(bytes);
             }
             await repo.patchCustomData(experimentId, merged);
-            // Later events in this batch merge onto the fresh blob.
             experiment.customData = merged;
             break;
           }
           case "heartbeat": {
-            // Pure liveness: nothing to store — the batch-level
-            // bumpActivity below is the whole effect.
             break;
           }
         }
@@ -752,7 +668,6 @@ export function createExperimentsService(
           error: input.error ?? null,
         },
       );
-      // Lost the race to Stop or the sweep — the run is terminal either way.
       if (!flipped) {
         const current = await repo.get(experimentId, owner);
         throw new ExperimentClosedError(current?.status ?? "unknown");
@@ -764,8 +679,6 @@ export function createExperimentsService(
     async attachArtifact(callerAgentId, artifactId, experimentId) {
       let row: ExperimentRow;
       if (experimentId !== undefined) {
-        // Explicit target: only the run's own driver may attach, and a
-        // foreign or missing id reads as unknown (attribution posture).
         row = await requireDriverExperiment(callerAgentId, experimentId);
       } else {
         const viaInvocation =

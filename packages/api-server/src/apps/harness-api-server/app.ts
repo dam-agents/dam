@@ -37,14 +37,9 @@ export interface HarnessApiServerAppDeps {
   schedulesBoot: SchedulesBoot;
   runtimeMutator: RuntimeMutator;
   artifacts: ArtifactService;
-  /** Owner-scoped agents service, for spawning Invocation target agents. */
   agentsServiceFor: (owner: string) => AgentsService;
-  /** Owner-scoped connections service, for the driver's grants + attenuation. */
   connectionsServiceFor: (owner: string) => ConnectionsService;
-  /** Scale a hibernated agent back up so it drains its outbox (prompt delivery). */
   wakeAgent: (agentId: string) => Promise<void>;
-  /** Whether the pod has applied everything the outbox holds — gates the skills
-   *  `state` reconcile, which would otherwise reap rows mid-apply. */
   runtimeSettled: RuntimeSettledPort;
 }
 
@@ -66,7 +61,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
-  // Boot-loaded, file-mounted templates, shared across requests.
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const { templates } = composeTemplatesModule(templatesRepo);
 
@@ -87,8 +81,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary;
 
-  // Pin port for the REST-side experiment finish path (a script's own
-  // completion must release the driver's hibernation pin).
   const harnessAgentsRepo = createAgentsRepository(k8sClient);
   const experimentPin = {
     set: (agentId: string) =>
@@ -138,7 +130,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     },
   );
 
-  // No WebSocket routes remain on the harness port; refuse upgrades.
   server.on("upgrade", (_req, socket) => {
     socket.destroy();
   });

@@ -37,7 +37,6 @@ export interface ArtifactRowActions {
 
 interface Props extends ArtifactRowActions {
   artifact: LibraryArtifact;
-  /** Hide the creating-agent chip when the context already implies it. */
   showAgent?: boolean;
 }
 
@@ -143,8 +142,6 @@ function AgentCreatorChip({ agentId }: { agentId: string }) {
   );
 }
 
-/** Always rendered so the badge column stays aligned across rows: shared
- *  artifacts copy their link, private ones open the sharing dialog. */
 function ShareLinkButton({
   artifact,
   onShare,

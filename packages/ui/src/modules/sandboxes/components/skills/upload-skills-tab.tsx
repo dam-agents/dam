@@ -11,9 +11,6 @@ import type {
   UploadStaging,
 } from "../../hooks/use-upload-staging.js";
 
-/** Mirror of agent-runtime's `makeSkillSlug` so the UI can reject a name that
- *  would reduce to an empty skill id (e.g. emoji- or CJK-only) up front,
- *  instead of surfacing the pod's opaque BAD_REQUEST. */
 function toSlug(name: string): string {
   return name
     .trim()
@@ -24,16 +21,6 @@ function toSlug(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/**
- * "Upload .md files" tab: drop or pick Markdown files, review one staged row
- * per file (inline rename / remove), then create them all as standalone skills.
- * Non-`.md` and oversized files are rejected with an inline notice; a name
- * collision keeps the modal open and marks the offending rows.
- *
- * Presentational: the staging state lives in `useUploadStaging` (owned by the
- * modal shell) so it survives tab switches. Only view-local state (which row is
- * being renamed, the drop-zone highlight) lives here.
- */
 export function UploadSkillsTab({
   staging,
   onClose,
@@ -48,9 +35,6 @@ export function UploadSkillsTab({
 
   const trimmedNames = staged.map((s) => s.name.trim());
   const hasEmpty = trimmedNames.some((n) => n.length === 0);
-  // Compare slugs, not names: the pod keys skills by slug, so "My Skill" and
-  // "my_skill" collide there. Left to the server it comes back as a CONFLICT
-  // that marks both rows "already exists" — true of neither.
   const slugs = staged.map((s) => toSlug(s.name)).filter(Boolean);
   const hasDuplicate = new Set(slugs).size !== slugs.length;
   const hasUnsluggable = staged.some(

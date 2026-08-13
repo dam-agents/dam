@@ -13,23 +13,6 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Per-agent Istio AuthorizationPolicies. The controller writes two per
-// agent, both in the release namespace:
-//
-//   1. `<id>-harness-allow`        — admission via the api-server's waypoint
-//                                    Gateway to path `/api/agents/<id>/*`.
-//   2. `<id>-extauthz-allow`       — admission to the per-agent ext-authz
-//                                    Service. ALLOW principal — same SA.
-//
-// Both pin the principal to the agent's SA — but the principal here is
-// the *gateway pod*'s SPIFFE identity. The agent pod is not a mesh
-// participant (no SPIFFE), so all in-cluster identity work happens on the
-// gateway → api-server hops. App handlers can treat URL `:id` (harness) or
-// gRPC `:authority` (ext-authz) as already authenticated by the time the
-// request reaches them. The agent → gateway hop is gated by the per-pair
-// `<id>-agent-egress` NetworkPolicy at the kernel layer, not by mesh AuthZ
-// — see network_policy.go.
-
 const (
 	istioGroup    = "security.istio.io"
 	istioVersion  = "v1"
@@ -42,14 +25,6 @@ var authzPolicyGVR = schema.GroupVersionResource{
 	Resource: istioResource,
 }
 
-// authzPolicy builds an unstructured AuthorizationPolicy with the given
-// metadata + spec. Centralised so the three Build* helpers stay terse.
-//
-// The ownerRef is attached only when `ownerNamespace` matches the policy's
-// namespace — K8s ownerRef does not carry a namespace and assumes same-
-// namespace, so a cross-namespace ref triggers K8s GC to reap the
-// policy as orphaned. For policies in the release namespace (harness,
-// ext-authz) we omit the ownerRef and clean them up by label in Delete().
 func authzPolicy(name, namespace, ownerNamespace string, ownerRef metav1.OwnerReference, labels map[string]string, spec map[string]interface{}) *unstructured.Unstructured {
 	meta := map[string]interface{}{
 		"name":      name,
@@ -93,13 +68,6 @@ func ownerRefAsMap(r *metav1.OwnerReference) map[string]interface{} {
 	return m
 }
 
-// BuildHarnessAuthorizationPolicy admits traffic via the api-server's
-// waypoint Gateway to path `/api/agents/<id>/*` from the matching SA
-// principal only. Lives in the *release* namespace alongside the waypoint
-// Gateway it targets.
-//
-// `principalAgentID` is the agent ID; this is also the URL `:id`
-// the policy enforces.
 func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
@@ -137,10 +105,6 @@ func BuildHarnessAuthorizationPolicy(principalAgentID string, cfg *config.Config
 	return authzPolicy(principalAgentID+"-harness-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
-// BuildExtAuthzAuthorizationPolicy admits traffic to the per-agent
-// ext-authz Service from the matching SA principal only. Lives in the
-// release namespace alongside the per-agent ext-authz Service it
-// targets.
 func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, ownerNamespace string, ownerRef metav1.OwnerReference) *unstructured.Unstructured {
 	spec := map[string]interface{}{
 		"targetRefs": []interface{}{
@@ -171,8 +135,6 @@ func BuildExtAuthzAuthorizationPolicy(agentName string, cfg *config.Config, owne
 	return authzPolicy(agentName+"-extauthz-allow", cfg.ReleaseNamespace, ownerNamespace, ownerRef, labels, spec)
 }
 
-// applyAuthorizationPolicy creates or updates an Istio AuthorizationPolicy
-// via the dynamic client. Mirrors the applyCertificate pattern.
 func (r *AgentReconciler) applyAuthorizationPolicy(ctx context.Context, desired *unstructured.Unstructured) error {
 	if r.dynamic == nil {
 		return fmt.Errorf("dynamic client not configured (AuthorizationPolicy cannot be applied)")

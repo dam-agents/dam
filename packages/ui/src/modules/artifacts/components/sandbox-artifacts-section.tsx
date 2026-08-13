@@ -19,9 +19,6 @@ function ToolChip({ name }: { name: string }) {
   );
 }
 
-/** The sandbox-home "Artifacts" section: everything this agent has published
- *  to the owner's library, with the same share/preview/delete actions as the
- *  top-level Artifacts page. */
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
@@ -63,7 +60,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          {/* first-row border-t is hidden by the card edge */}
+          {}
           <div className="-mt-px">
             {artifacts.map((artifact) => (
               <ArtifactRow

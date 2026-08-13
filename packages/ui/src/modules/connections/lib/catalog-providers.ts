@@ -14,8 +14,6 @@ export const CATALOG_TAB_LABEL: Record<CatalogTab, string> = {
   "custom-headers": "Custom Headers",
 };
 
-/** A catalogue card: one product a user can connect to, possibly backed by
- *  several templates (e.g. GitHub's OAuth app + personal access token). */
 export interface CatalogProvider {
   id: string;
   title: string;
@@ -25,13 +23,10 @@ export interface CatalogProvider {
 
 export interface CatalogProviderGroup {
   provider: CatalogProvider;
-  /** Offered templates behind `New`; empty when the template is hidden. */
   templates: ConnectionTemplateView[];
   connections: ConnectionView[];
 }
 
-// Curated grouping so sibling templates share one card; any template not
-// listed becomes a singleton provider derived from the template itself.
 const STATIC_PROVIDERS: readonly {
   id: string;
   title: string;
@@ -75,7 +70,6 @@ const STATIC_TITLE_BY_TEMPLATE_ID = new Map(
   STATIC_PROVIDERS.flatMap((p) => p.templateIds.map((id) => [id, p.title])),
 );
 
-/** Curated provider title, e.g. "GitHub" for `github-pat`. */
 export function catalogProviderTitle(templateId: string): string | undefined {
   return STATIC_TITLE_BY_TEMPLATE_ID.get(templateId);
 }
@@ -93,7 +87,6 @@ const METHOD_COPY: Record<string, { title: string; description: string }> = {
   },
 };
 
-/** Auth-method chooser card copy for a template. */
 export function templateMethodCopy(template: ConnectionTemplateView): {
   title: string;
   description: string;
@@ -121,7 +114,6 @@ const CREATE_COPY: Record<string, { title: string; subtitle?: string }> = {
   },
 };
 
-/** Create-pane heading for a template. */
 export function templateCreateHeading(template: ConnectionTemplateView): {
   title: string;
   subtitle?: string;
@@ -133,9 +125,6 @@ const tabForCategory = (
   category: ConnectionTemplateView["category"],
 ): CatalogTab => (category === "mcp" ? "mcp" : "apps");
 
-/** Groups offered templates and existing connections into provider cards per
- *  tab: curated providers first, then singletons in catalog order.
- *  Connections of hidden templates still get a card, without `New`. */
 export function groupCatalog({
   offeredTemplates,
   allTemplates,
@@ -209,8 +198,6 @@ export function catalogTabCounts(
   return counts;
 }
 
-/** One-line row subtitle describing what kind of credential this is —
- *  auth flavor for GitHub, the endpoint for MCP/header connections. */
 export function connectionKindSubtitle(
   connection: ConnectionView,
   template: ConnectionTemplateView | undefined,

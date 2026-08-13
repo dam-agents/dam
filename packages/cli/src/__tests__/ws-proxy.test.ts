@@ -31,7 +31,6 @@ describe("proxyAgentForUrl", () => {
   });
 
   it("does not use HTTP_PROXY for a secure target", () => {
-    // A wss target must not fall back to HTTP_PROXY — only HTTPS_PROXY applies.
     expect(
       proxyAgentForUrl("wss://api.example.com/x", {
         HTTP_PROXY: "http://proxy:10000",

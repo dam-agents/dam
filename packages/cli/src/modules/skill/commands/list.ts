@@ -60,8 +60,6 @@ export function buildListCommand(deps: {
       }
 
       const svc = deps.createSkillsService(host);
-      // Independent reads — the reconciled state and the source list (to
-      // resolve gitUrls to names) have no dependency, so fetch concurrently.
       const [stateRes, sourcesRes] = await Promise.all([
         svc.state(resolved.value.id),
         svc.listSources(resolved.value.id),
@@ -102,8 +100,6 @@ function renderInstalled(
   installed: SkillsState["installed"],
   sources: readonly { gitUrl: string; name: string }[],
 ): string {
-  // Join key is the git URL: an installed ref's `source` is the gitUrl.
-  // Unresolved gitUrls (source deleted) fall back to the raw URL.
   const nameByUrl = new Map(sources.map((s) => [s.gitUrl, s.name]));
   const unresolved = new Set<string>();
   const rows = [...installed].sort(bySourceThenName).map((r) => {
@@ -123,8 +119,6 @@ function renderStandalone(
   standalone: SkillsState["standalone"],
   publishes: SkillsState["instancePublishes"],
 ): string {
-  // skillName → most-recent prUrl. publishedAt is ISO 8601, so lexicographic
-  // max picks the latest when a skill was published more than once.
   const prByName = new Map<string, string>();
   const latestAt = new Map<string, string>();
   for (const p of publishes) {

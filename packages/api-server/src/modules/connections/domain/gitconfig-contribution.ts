@@ -10,8 +10,6 @@ export function buildGitconfigContribution(
     kind: "file",
     path: GITCONFIG_PATH,
     format: "ini",
-    // section-marker is the only remove-safe mode for ini: the file driver's
-    // ini parser returns a raw string, so key-targeted would corrupt the file.
     mergeMode: "section-marker",
     content: { user: { name: identity.name, email: identity.email } },
   };

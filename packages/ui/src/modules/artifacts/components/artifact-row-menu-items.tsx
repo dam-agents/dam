@@ -8,9 +8,6 @@ import {
 import { useArtifactDeletion } from "../hooks/use-artifact-deletion.js";
 import { downloadArtifact } from "../lib/transfer.js";
 
-/** The per-artifact row menu, defined once for every surface that lists
- *  artifacts. Sharing is the only action the surface has to own: the menu
- *  unmounts on select, so it can't host the dialog itself. */
 export function ArtifactRowMenuItems({
   artifact,
   onShare,

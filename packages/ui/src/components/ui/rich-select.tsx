@@ -25,11 +25,8 @@ export interface RichSelectOption<T extends string = string> {
 interface Props<T extends string> {
   options: readonly RichSelectOption<T>[];
   value: T | null;
-  /** Fires for any option, even the selected one — the caller decides
-   *  whether a pick selects, confirms, or opens a side flow. */
   onSelect: (value: T) => void;
   placeholder: string;
-  /** Names what the control picks, read out ahead of the current value. */
   ariaLabel?: string;
   disabled?: boolean;
   testId?: string;
@@ -94,7 +91,6 @@ export function RichSelect<T extends string>({
         {options.map((option) => (
           <DropdownMenuItem
             key={option.value}
-            // Radix's default menuitem role hides which option is selected
             role="menuitemradio"
             aria-checked={option.value === value}
             textValue={option.title}

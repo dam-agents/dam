@@ -74,9 +74,6 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
         }
         const agent = resolved.value;
 
-        // Decide the local target BEFORE the round-trip so we refuse to
-        // clobber without spending bytes on the wire. `cp`-style: if `-o`
-        // resolves to an existing directory, the file lands inside it.
         let localPath: string | undefined;
         if (!opts.stdout) {
           const target = await resolveLocalTarget(
@@ -119,7 +116,6 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
           process.exit(EXIT_SUCCESS);
         }
 
-        // Non-null after the !opts.stdout branch above.
         const target_ = localPath as string;
         await mkdir(dirname(target_), { recursive: true });
         await writeFile(target_, bytes);
@@ -153,9 +149,7 @@ async function resolveLocalTarget(
       }
       return { ok: true, value: join(abs, remoteBasename) };
     }
-  } catch {
-    // path does not exist — treat as the literal target
-  }
+  } catch {}
   return { ok: true, value: abs };
 }
 

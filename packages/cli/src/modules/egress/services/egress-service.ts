@@ -73,7 +73,6 @@ export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
       }
     },
     async revoke(id) {
-      // Server is idempotent on revoke — unknown IDs return without throwing.
       return trpcCall(async () => {
         await deps.trpc.egressRules.revoke.mutate({ id });
       });

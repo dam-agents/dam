@@ -2,9 +2,6 @@ import { useMutation } from "@tanstack/react-query";
 
 import { trpc } from "../../../trpc.js";
 
-// Every artifact mutation can change list rows, folder counts, and the
-// sandbox-section summary, so refetch both collections; `getContent` with no
-// input matches every cached preview after a new version lands.
 const invalidatesLibrary = [
   trpc.artifactLibrary.list.queryKey(),
   trpc.artifactLibrary.listFolders.queryKey(),

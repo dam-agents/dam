@@ -5,7 +5,6 @@ import { createGitHubAppEngine } from "../../modules/connections/infrastructure/
 const NOW_MS = 1_800_000_000_000;
 const NOW_SEC = Math.floor(NOW_MS / 1000);
 
-// A real RSA keypair so the engine signs (and the test verifies) for real.
 const { privateKey: PRIVATE_KEY_PEM, publicKey: PUBLIC_KEY_PEM } =
   crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -90,7 +89,6 @@ describe("github app engine mintInstallationToken", () => {
     expect(jwt.payload.iss).toBe("123456");
     expect(jwt.payload.iat).toBe(NOW_SEC - 60);
     expect(jwt.payload.exp).toBe(NOW_SEC + 600);
-    // The signature verifies against the app's public key.
     expect(
       crypto.verify(
         "RSA-SHA256",
@@ -187,8 +185,6 @@ describe("github app engine token scoping", () => {
       ...scope,
     });
 
-  // Omitting the body is what asks for the installation's full authority, so an
-  // unscoped connection must keep sending no body at all.
   it("sends no body and no content-type when nothing is scoped", async () => {
     const { engine, calls } = makeEngine(() =>
       jsonResponse({ token: "ghs_abc" }),
@@ -240,8 +236,6 @@ describe("github app engine token scoping", () => {
     });
   });
 
-  // A 422 answers a scope the installation no longer covers. Retrying re-sends
-  // the same losing request, so it has to park rather than spin.
   it("marks a 422 on a scoped request as permanently rejected", async () => {
     const { engine } = makeEngine(
       () => new Response("no access to repository", { status: 422 }),
@@ -276,7 +270,6 @@ describe("github app engine token scoping", () => {
     expect(JSON.parse(calls[0].body!)).toEqual({ repository_ids: [12, 34] });
   });
 
-  // GitHub rejects a request carrying both spellings of the repository limit.
   it("sends ids alone when both ids and names are given", async () => {
     const { engine, calls } = makeEngine(() =>
       jsonResponse({ token: "ghs_abc" }),
@@ -345,9 +338,6 @@ describe("github app engine readInstallation", () => {
     expect(info.accountLogin).toBe("dam-agents");
   });
 
-  // A token may name a subset of an account-wide installation exactly as it may
-  // of a hand-picked one, so the repositories must be listed either way —
-  // otherwise the commonest install type could not be narrowed at all.
   it("lists repositories for an all-repositories installation too", async () => {
     const { engine } = makeEngine(respondFor("all"));
     const info = await read(engine);
@@ -376,10 +366,8 @@ describe("github app engine readInstallation", () => {
       { id: 12, name: "docs" },
       { id: 34, name: "handbook" },
     ]);
-    // The listing is authenticated as the installation, not as the app.
     const listing = calls.find((c) => c.url.includes("/installation/repos"));
     expect(listing?.headers["Authorization"]).toBe("Bearer ghs_probe");
-    // …and the token minted to read it is never a narrowed one.
     const mintCall = calls.find((c) => c.url.includes("/access_tokens"));
     expect(mintCall?.body).toBeUndefined();
   });
@@ -410,8 +398,6 @@ describe("github app engine readInstallation", () => {
     ).toHaveLength(2);
   });
 
-  // readInstallation mints a token internally; that must not depend on the
-  // method being called through the engine object.
   it("works when the method is called detached from the engine", async () => {
     const { engine } = makeEngine((call) =>
       call.url.endsWith("/app/installations/987654")
@@ -431,8 +417,6 @@ describe("github app engine readInstallation", () => {
     expect(info.repositories).toEqual([{ id: 12, name: "docs" }]);
   });
 
-  // The grant is read as the app and needs no token; the repository list is a
-  // separate, weaker call. Losing the second must not cost the first.
   it("keeps the permissions when the repository listing fails", async () => {
     const { engine } = makeEngine((call) => {
       if (call.url.endsWith("/app/installations/987654")) {
@@ -463,8 +447,6 @@ describe("github app engine readInstallation", () => {
     expect(info.repositoriesUnavailable).toBeTruthy();
   });
 
-  // Nothing else will ever use the probe's token, so it should not outlive the
-  // probe just because GitHub would have expired it in an hour.
   it("revokes the token it minted for the listing", async () => {
     const { engine, calls } = makeEngine(respondFor("selected"));
     await read(engine);
@@ -485,8 +467,6 @@ describe("github app engine readInstallation", () => {
     expect(info.repositoriesUnavailable).toBeUndefined();
   });
 
-  // A truncated list presented as the whole one would hide repositories the
-  // user cannot then pick, so the cap has to be visible.
   it("flags the list as truncated when the page cap is hit", async () => {
     const full = Array.from({ length: 100 }, (_, i) => ({
       id: i + 1,
@@ -499,7 +479,6 @@ describe("github app engine readInstallation", () => {
       if (call.url.includes("/access_tokens")) {
         return jsonResponse({ token: "ghs_probe" });
       }
-      // Every page comes back full, so GitHub always has more to give.
       return jsonResponse({ repositories: full });
     });
 

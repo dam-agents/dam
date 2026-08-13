@@ -41,16 +41,10 @@ function mapError(c: {
   };
 }
 
-/** Mounts the experiment SDK's reporting surface on the harness port. Every
- *  route is scoped to the driver's identity — the `:id` the waypoint already
- *  authenticated; no experiment may be touched by a driver that isn't its
- *  own. Mirrors invocation-endpoints. */
 export function mountExperimentRoutes(
   app: Hono,
   deps: ExperimentEndpointsDeps,
 ): void {
-  // Plan registration: declarations executed in plan mode post the skeleton
-  // + script capture and create (or refresh) the draft Experiment.
   app.post("/api/agents/:id/experiments/plan", async (c) => {
     const driverId = c.req.param("id")!;
     const verified = await resolveAgent(deps.k8s, driverId);
@@ -69,8 +63,6 @@ export function mountExperimentRoutes(
     return c.json({ experimentId }, 201);
   });
 
-  // Batched trace-event append. Rejected once the experiment is no longer
-  // running — Stop closes the trace and the loop dies on its next call.
   app.post("/api/agents/:id/experiments/:experimentId/events", async (c) => {
     const driverId = c.req.param("id")!;
     const experimentId = c.req.param("experimentId")!;

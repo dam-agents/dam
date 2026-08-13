@@ -2,12 +2,6 @@ import { z } from "zod";
 
 import { MODE_KEYS, MODES, stripWhitespace } from "./modes.js";
 
-/**
- * The credential field reads as raw user input but validates against the
- * whitespace-stripped value (the `claude setup-token` output gets newlines
- * inserted on copy). The cross-field refinement surfaces "wrong tab" mismatches
- * inline, matching the prior bespoke `mismatchError` helper.
- */
 export const anthropicCredentialSchema = z
   .object({
     mode: z.enum(MODE_KEYS),

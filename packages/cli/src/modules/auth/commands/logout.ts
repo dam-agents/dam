@@ -25,8 +25,6 @@ export function buildLogoutCommand(deps: LogoutCommandDeps): Command {
       if (!host) {
         const resolved = await deps.configService.getResolved({});
         if (!resolved.ok) {
-          // Same distinction as login (review §3): a malformed config.toml
-          // needs a different remediation than an unset server.
           if (resolved.error.kind === "malformed-config") {
             process.stderr.write(`error: ${resolved.error.reason}\n`);
           } else {

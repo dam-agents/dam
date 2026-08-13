@@ -11,11 +11,6 @@ import {
 
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
-/** Completes the bind Keycloak roundtrip. The callback writes nothing
- *  durable: it verifies the login, mints a bind flow pinned to the
- *  authenticated sub, and hands the user to the UI agent picker — the bind
- *  mutation does the ownership check and the write. Every human-visible
- *  outcome lands on the one picker page. */
 export function createTelegramOAuthRoutes(deps: {
   pendingFlows: TtlStore<TelegramOAuthPending>;
   bindFlows: TelegramBindFlowStore;
@@ -40,7 +35,6 @@ export function createTelegramOAuthRoutes(deps: {
 
     const pending = await deps.pendingFlows.consume(state);
     if (!pending) {
-      // Unknown and replayed states read the same as expired — no oracle.
       return c.redirect(`${bindPage}?error=expired`);
     }
 

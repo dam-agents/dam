@@ -23,7 +23,6 @@ export interface ScheduleModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Per-host factory the resolver inside agent-scoped commands consumes. */
   createAgentService: (host: string) => AgentService;
 }
 

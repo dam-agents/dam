@@ -1,9 +1,5 @@
 import { Card } from "@/components/ui/card";
 
-/** Placeholder rows shown while a source's skills load, shaped like the real
- *  skill rows so the card doesn't reflow (and never flashes "No skills"). The
- *  bars sit inside `<p>` lines with the same font-sizes as `SkillRow`, so each
- *  row's line-box height matches the real one exactly. */
 export function SkillRowsSkeleton({ rows = 3 }: { rows?: number }) {
   return (
     <div className="animate-pulse">
@@ -27,8 +23,6 @@ export function SkillRowsSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** A whole source-card placeholder, for the initial sources fetch. Header
- *  mirrors `SkillSourceCard`'s two-line header typography. */
 export function SkillSourcesSkeleton({ cards = 2 }: { cards?: number }) {
   return (
     <div className="flex flex-col gap-3">

@@ -9,11 +9,6 @@ import { useApplyThemeScript } from "./hooks/use-apply-theme-script.js";
 import type { I18n } from "./i18n.js";
 import type { KcContext } from "./KcContext.js";
 
-// Brand on the auth screens comes from the realm at runtime: `displayName`
-// (Helm `brand.name`) names the sign-in heading, `displayNameHtml` (Helm
-// `brand.title`, plain text) titles the browser tab like the web app. This
-// is only the fallback for when they're absent — e.g. the local
-// mocked-kcContext dev preview.
 const BRAND_FALLBACK = "Platform";
 
 export default function Template(props: TemplateProps<KcContext, I18n>) {

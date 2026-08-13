@@ -13,51 +13,6 @@ import type {
 } from "../../types.js";
 import type { AcpUpdate } from "./types.js";
 
-/**
- * Unified session projection — applies ACP `sessionUpdate` notifications (and
- * our synthetic `platform_turn_ended`) to a message list. Pure: no DOM, no refs,
- * no side effects. Used by both live streaming and history replay so the two
- * paths can't drift.
- *
- * Routing model: updates flow into the "active" assistant bubble — the last
- * streaming, non-queued assistant after the last user. `sendPrompt` appends
- * an assistant bubble carrying its `promptId`; the runtime's
- * `platform_prompt_accepted { queued: true }` marks it queued behind a prior
- * in-flight turn and `platform_prompt_started` promotes it, so the sender's
- * "Waiting for previous prompt…" indicator is server truth rather than a local
- * guess. Bubbles with no `promptId` (another viewer's prompt, replayed history)
- * are still promoted by the first agent content arriving for them. Turn
- * boundaries (`platform_turn_ended`, or a fresh `user_message_chunk`) close the
- * active bubble, so the next agent content picks the earliest remaining queued
- * bubble (or opens one on demand).
- *
- * Queued background prompts: a `user_message_chunk` carrying
- * `_meta.queued === true` is a prompt the runtime parked behind the active
- * turn (a self-scheduled wakeup, a trigger, or a second viewer's prompt that
- * arrived mid-stream). It is NOT a turn boundary — the active reply is still
- * streaming — so it must not close the active bubble. We append the user
- * message plus a queued (pending) assistant bubble, mirroring `sendPrompt`'s
- * optimistic shape, and let the active reply keep merging. When the active
- * turn finally ends and the agent starts the parked turn, the pending bubble
- * is promoted on its first content. Without the marker, a mid-stream
- * `user_message_chunk` would split the live reply across two bubbles and slot
- * the parked prompt between them (issue #703).
- */
-
-/**
- * Strip system tags like `<context>...</context>` that wrap replayed
- * attachments in user messages. Also trims leading/trailing whitespace —
- * user messages are whole, not streamed, so trimming is safe. Do NOT apply
- * to agent chunks: those arrive piece by piece and trimming would collapse
- * inter-chunk spaces into `"helloworld"`.
- *
- * The closing tag must match the opening one by name (backreference). Without
- * that, the lazy body ends at the *first* closing tag of any name, so a
- * wrapper holding a nested element — the harness's
- * `<task-notification><task …>…</task></task-notification>` — matched
- * `<task-notification>…</task>` and left the orphan `</task-notification>`
- * as the whole visible user bubble (issue: stray closing tag in transcript).
- */
 const SYSTEM_TAG_RE = /<([a-z-]+)>[\s\S]*?<\/\1>/g;
 function stripUserTags(raw: string): string {
   let result = raw;
@@ -84,16 +39,6 @@ function mapToolContent(
     .filter((c) => c.text);
 }
 
-/**
- * Parse a replayed user message into chip + text parts.
- *
- * The Claude SDK round-trips uploaded attachments back as text:
- *   - text files become `<context ref="file:///NAME">FULL_BODY</context>`
- *   - binary files become `[@NAME](file:///PATH)`
- *
- * Both should render as a file chip — we don't want to dump the whole file
- * body into the user bubble.
- */
 function parseUserText(text: string): MessagePart[] {
   const parts: MessagePart[] = [];
   const regex =
@@ -122,8 +67,6 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
       return closeActiveAssistant(messages);
 
     case "platform_prompt_accepted":
-      // `queued: false` means the runtime handed the prompt straight on, which
-      // is the bubble's existing (non-queued) shape — nothing to render.
       return update.queued
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
@@ -154,14 +97,6 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
   }
 }
 
-/**
- * Flip the `queued` flag on the bubble the runtime is reporting about. Only the
- * sender's own optimistic bubble carries a `promptId`, so an unknown id (a
- * notification arriving after the bubble was finalized, or on a reconnected
- * client that rebuilt its list from the log) is a no-op. A bubble that already
- * has content is left alone: content is stronger evidence of "active" than a
- * late `accepted` frame.
- */
 function setQueuedByPromptId(
   messages: Message[],
   promptId: string,
@@ -187,15 +122,6 @@ function appendNotice(messages: Message[], text: string): Message[] {
   ];
 }
 
-/**
- * Mark every streaming assistant bubble as no-longer-streaming. Call this at
- * the end of history replay, or when the user stops the agent, to flush bubbles
- * that won't receive any further updates. Queued bubbles are finalized too —
- * they have no content, so the UI just shows an empty closed bubble.
- *
- * Losing the connection is *not* this case: a queued prompt is genuinely lost
- * then, so that path uses `failQueuedOnDisconnect` instead.
- */
 export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
@@ -206,26 +132,9 @@ function finalizeStreaming(m: Message): Message {
     : m;
 }
 
-/** Shown on a prompt the platform dropped because our channel went away. The
- *  only delivery failure the runtime cannot report — by the time it happens
- *  there is no channel left to report it on. */
 export const QUEUED_LOST_MESSAGE =
   "Couldn't deliver — the connection dropped while this prompt was still waiting in the queue.";
 
-/**
- * Finalize on connection loss, failing the prompts the loss actually destroyed.
- * The runtime drops a channel's queued prompts when it detaches, so a bubble of
- * ours still parked behind an earlier turn will never be answered: it flips to
- * the error card with Retry rather than closing quietly, which is how this loss
- * used to pass unnoticed. Hidden sends fail silently as everywhere else, so
- * theirs is dropped instead.
- *
- * Only bubbles carrying a `promptId` are ours to fail. Another viewer's queued
- * prompt (or a replayed one) belongs to a channel that is still attached, so it
- * merely finalizes — as does any bubble that already holds content, since
- * content is proof the turn started and content already streamed is not
- * something to retract (the same rule the `queued` flag follows elsewhere here).
- */
 export function failQueuedOnDisconnect(messages: Message[]): Message[] {
   return messages.flatMap<Message>((m) => {
     const lost =
@@ -235,7 +144,6 @@ export function failQueuedOnDisconnect(messages: Message[]): Message[] {
       m.promptId !== undefined &&
       m.parts.length === 0;
     if (!lost) return [finalizeStreaming(m)];
-    // Hidden sends stash no payload and never surface a failure.
     if (!m.retryWith) return [];
     return [
       {
@@ -248,14 +156,6 @@ export function failQueuedOnDisconnect(messages: Message[]): Message[] {
   });
 }
 
-/**
- * Rebuild the message list from replayed history while keeping failures the
- * client raised on its own. The runtime's log is authoritative about what the
- * agent did, but it cannot describe a prompt that never ran: it holds the
- * dropped prompt's user-message echo and no reply, so replacing the list
- * wholesale would erase the failure and its Retry and leave the user staring at
- * a question the agent will never answer.
- */
 export function mergeLocalFailures(
   rebuilt: Message[],
   previous: Message[],
@@ -266,14 +166,10 @@ export function mergeLocalFailures(
   return carried.length === 0 ? rebuilt : [...rebuilt, ...carried];
 }
 
-/** True if any assistant bubble is still streaming (either active or queued). */
 export function hasStreamingAssistant(messages: Message[]): boolean {
   return messages.some((m) => m.role === "assistant" && m.streaming);
 }
 
-/** True if the agent actually produced something. Verdict parts are minted by
- *  the client when the user answers a permission prompt — they can land on a
- *  bubble the agent never wrote to, so they don't count as agent output. */
 export function hasAgentContent(m: Message): boolean {
   return m.parts.some((p) => p.kind !== "verdict");
 }
@@ -292,8 +188,6 @@ function handleUserChunk(messages: Message[], u: ContentChunk): Message[] {
     ];
   }
 
-  // Nothing renderable: a real turn boundary still closes the active bubble; a
-  // queued background prompt must leave the live reply untouched.
   if (parts === null) return queued ? messages : closeActiveAssistant(messages);
 
   if (queued) return appendQueuedUser(messages, mid, parts);
@@ -384,20 +278,10 @@ function patchToolChip(
 
 interface ActiveTarget {
   idx: number;
-  /** True if we're promoting a queued bubble to active (first content arrival). */
   promote: boolean;
 }
 
 function findActiveAssistant(messages: Message[]): ActiveTarget | null {
-  // There is at most one active assistant (streaming && !queued) at a time:
-  //   - sendPrompt marks new bubbles `queued: true` whenever one is already
-  //     streaming
-  //   - closeActiveAssistant flips the current active to streaming=false
-  //     before any queued bubble is promoted
-  // So the search is "first streaming, non-queued" with no need to anchor on
-  // user messages. Anchoring by "last user" breaks the moment sendPrompt
-  // appends a second `(user, queued assistant)` pair while the previous
-  // assistant is still streaming.
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued)
@@ -458,14 +342,6 @@ function closeActiveAssistant(messages: Message[]): Message[] {
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === "assistant" && m.streaming && !m.queued) {
-      // Never close an empty sender placeholder. At promotion the runtime
-      // sends `promptStarted` (stripping the bubble's queued protection)
-      // BEFORE it fans out the previous turn's `platform_turn_ended`, and the
-      // sender's own bubble for that turn is already closed by its prompt
-      // response — so this boundary would land on the just-promoted, still
-      // empty bubble, orphaning it: the reply would then open a fresh bubble.
-      // The placeholder's own lifecycle closes it instead: content arriving,
-      // its own prompt response, or the delivery deadline.
       if (m.promptId !== undefined && m.parts.length === 0) continue;
       return messages.map((x, j) => (j === i ? { ...x, streaming: false } : x));
     }
@@ -495,16 +371,6 @@ function appendOrExtendUser(
   return [...messages, newMsg];
 }
 
-/**
- * Append a queued background prompt without disturbing the active reply: a
- * user bubble followed by a `queued` assistant placeholder (the same shape
- * `sendPrompt` writes for a locally-queued prompt). The placeholder is
- * promoted to active once the parked turn starts streaming.
- *
- * Consecutive chunks of the same multi-block prompt arrive back-to-back with
- * no agent content between them; we fold those into the user bubble that sits
- * just before the trailing placeholder instead of stacking a new pair.
- */
 function appendQueuedUser(
   messages: Message[],
   mid: string | null,
@@ -536,8 +402,6 @@ function appendQueuedUser(
     streaming: true,
     queued: true,
   };
-  // On replay the turn this prompt is parked behind has no bubble yet, so its
-  // content would land in this one; `queued` proves that turn existed.
   const parked =
     messages.length > 0 && !hasStreamingAssistant(messages)
       ? [

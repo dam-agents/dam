@@ -25,16 +25,8 @@ export interface ComposeEgressRulesDeps {
   db: Db;
   ownerSub: string;
   isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;
-  /** Promotes a host onto the agent's L7 chain via the Agent CR's
-   *  spec.l7Hosts (#2865). Optional — non-cluster contexts (tests) skip
-   *  the side effect. */
   l7Hosts?: AgentL7HostsPort;
-  /** Bulk-seeder used by `applyPreset`. The application root owns the
-   *  trusted-host list (loaded once from the helm-mounted ConfigMap) and
-   *  passes the seeder in so this module doesn't need filesystem access. */
   presetSeeder?: PresetSeeder;
-  /** Same list the seeder uses. Surfaced through the service so the UI can
-   *  preview a trusted-preset switch before committing. */
   trustedHosts: readonly string[];
 }
 
@@ -53,11 +45,6 @@ export function composeEgressRulesModule(deps: ComposeEgressRulesDeps): {
   return { service };
 }
 
-/**
- * System-level read adapter consumed by the approvals module's ext_authz
- * gate on the egress hot path. Stateless and not owner-scoped — owner
- * scoping is structural via the agent ConfigMap, not a per-query filter.
- */
 export interface EgressRuleMatchAdapter {
   match(
     agentId: string,
@@ -77,15 +64,6 @@ export function createEgressRuleMatchAdapter(db: Db): EgressRuleMatchAdapter {
   };
 }
 
-/**
- * System-level write adapter consumed by the approvals module's
- * approve-permanent / deny-forever paths. Narrow port — only `insert`,
- * matching the `EgressRuleWriter` interface declared on the consumer side.
- * The row's `agentId` keys the L7 promotion when the rule needs it (#2865).
- * The returned outcome tells the caller whether a rule was actually
- * written, no-oped against an equivalent rule, or clashed with the
- * opposite verdict (#2766).
- */
 export interface EgressRuleWriterAdapter {
   insert(input: {
     id: string;
@@ -109,17 +87,6 @@ export function createEgressRuleWriterAdapter(
   });
 }
 
-/**
- * System-level preset-seeder, called from the agent-create flow.
- * `trustedHosts` is loaded once at boot from the helm-mounted ConfigMap
- * and passed in here — the seeder is a thin function that translates
- * `(agentId, preset)` into a batch of inserts.
- */
-/**
- * Returns a `PresetSeeder`-shaped adapter (structurally compatible with
- * the locally-declared port in the agents module). The application root
- * passes this to `composeAgentsModule` — neither module imports the other.
- */
 export function createPresetSeederAdapter(
   db: Db,
   trustedHosts: readonly string[],
@@ -128,14 +95,6 @@ export function createPresetSeederAdapter(
   return createPresetSeeder({ repo, trustedHosts });
 }
 
-/**
- * System-level periodic reconcile of `spec.l7Hosts` from the rules table.
- * The application root registers this on the periodic-jobs queue; each tick
- * re-projects every agent carrying an active narrow rule, healing any drift
- * a non-transactional per-mutation promotion left behind (patch failure or a
- * crash between the rule commit and the CR patch). Idempotent — a converged
- * agent's `set` is a no-op.
- */
 export function createL7PromotionReconcile(
   db: Db,
   k8sClient: K8sClient,
@@ -143,8 +102,6 @@ export function createL7PromotionReconcile(
 ): () => Promise<{ scanned: number; drifted: number; failed: number }> {
   const repo = createEgressRulesRepository(db);
   const l7Hosts = createAgentL7HostsPort(k8sClient);
-  // One list read per tick; the reconcile diffs in memory and writes only
-  // the agents whose projection drifted.
   const listAgentL7State = async () => {
     const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
     return agents.flatMap((a) => {
@@ -164,23 +121,11 @@ export {
   type AgentL7HostsPort,
 } from "./infrastructure/k8s-agent-l7-hosts-port.js";
 
-/**
- * System-level connection-rules sync, called from `setAgentConnections` and
- * the secrets→connections migration. The egress-rules module owns the
- * diff/insert/revoke logic; the caller hands over the desired (agent, granted)
- * state.
- */
 export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);
   return createConnectionRulesSync({ repo });
 }
 
-/**
- * Per-agent cleanup hook registered with `composeAgentsModule`. Hard-deletes
- * every egress_rules row for the agent — both active and revoked — once the
- * agent ConfigMap is gone. Best-effort: throws on DB error and the agents
- * service logs + continues with remaining hooks.
- */
 export function createEgressRulesCleanupHook(
   db: Db,
 ): (agentId: string) => Promise<void> {
@@ -188,10 +133,6 @@ export function createEgressRulesCleanupHook(
   return (agentId) => repo.deleteForAgent(agentId);
 }
 
-/**
- * Read primitive used by the orphan sweeper saga to find agent_ids the DB
- * still references that no longer have a live K8s ConfigMap.
- */
 export function listEgressRuleAgentIds(db: Db): Promise<string[]> {
   return createEgressRulesRepository(db).listDistinctAgentIds();
 }

@@ -25,8 +25,6 @@ func TestBuildNPGateInitContainer_EmptyImageReturnsNil(t *testing.T) {
 	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"), "no image configured — chart sets a default")
 }
 
-// Without a gateway ClusterIP the positive-probe target is unknown.
-// Skip — the reconciler requeues until the IP is assigned.
 func TestBuildNPGateInitContainer_NoGatewayIPReturnsNil(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
@@ -42,8 +40,6 @@ func TestBuildNPGateInitContainer_NoCapsUnprivileged(t *testing.T) {
 	assert.Equal(t, "np-gate", ic.Name)
 	assert.Equal(t, "registry.access.redhat.com/hi/curl:8.20-builder", ic.Image)
 	require.NotNil(t, ic.SecurityContext)
-	// Pure userspace probe — no caps, no root, no writable rootfs. Pin a
-	// non-root uid so RunAsNonRoot admission passes whatever the image's USER.
 	require.NotNil(t, ic.SecurityContext.RunAsNonRoot)
 	assert.True(t, *ic.SecurityContext.RunAsNonRoot, "np-gate must run unprivileged")
 	require.NotNil(t, ic.SecurityContext.RunAsUser)
@@ -69,12 +65,6 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	assert.Equal(t, "/bin/sh", ic.Command[0])
 	script := ic.Command[2]
 
-	// Probe shape: the denied target (kube-apiserver) is a handshake test read
-	// from %{time_connect} — it must be DROPped. The allowed target (gateway)
-	// is an HTTP 200 from the platform health path read from %{http_code} —
-	// that route is answered by the health_check filter before ext_authz, so
-	// the probe never creates a HITL hold for the gateway IP (#675). Both
-	// conditions must hold before exit 0; fail-closed on the deadline.
 	assert.Contains(t, script, `--connect-timeout 2`)
 	assert.Contains(t, script, `%{time_connect}`, "denied target uses TCP-handshake timing")
 	assert.Contains(t, script, `%{http_code}`, "allowed target asserts a 200 from the health endpoint")
@@ -93,10 +83,7 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	assert.Equal(t, "10.96.42.42", envMap["GATEWAY_IP"])
 	assert.Equal(t, "30", envMap["TIMEOUT_SECONDS"])
 	assert.NotEmpty(t, envMap["ENVOY_PORT"])
-	// The probe path is plumbed from the controller and must match the path
-	// the gateway's health_check filter answers (envoy.go).
 	assert.Equal(t, platformGatewayHealthPath, envMap["HEALTH_PATH"])
-	// kube-apiserver isn't plumbed via our env block — kubelet does it.
 	_, kubeHostSet := envMap["KUBERNETES_SERVICE_HOST"]
 	_, kubePortSet := envMap["KUBERNETES_SERVICE_PORT"]
 	assert.False(t, kubeHostSet, "KUBERNETES_SERVICE_HOST comes from kubelet, not the controller")

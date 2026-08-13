@@ -16,9 +16,6 @@ import { fileKeys } from "./keys.js";
 
 const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 
-// Per-agent tRPC clients are cheap but creating a new one per refetch is
-// wasteful churn. Cache by agentId so each polled query reuses the same
-// client for its lifetime.
 const clientCache = new Map<string, ReturnType<typeof createAgentTrpc>>();
 function getAgentTrpc(agentId: string) {
   let client = clientCache.get(agentId);
@@ -48,18 +45,10 @@ function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
   );
 }
 
-/** Sorted, deduped paths to fetch. The sort makes the query key stable
- *  across renders so React Query treats `{a, b}` and `{b, a}` as the same
- *  entry instead of churning two cache rows. */
 function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
   return ["", ...expanded].sort();
 }
 
-/** Subscribe to one directory's slice of the batched poll. The sorted paths
- *  set is part of the key, so an expand/collapse swaps to a new
- *  entry and React Query refetches without any explicit invalidation. Returns null
- *  until the slice is present; null is the right answer for "the user just
- *  expanded this dir and the next poll hasn't arrived yet". */
 export function useDirSnapshot(agentId: string | null, path: string) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
@@ -90,8 +79,6 @@ export function useFileContentQuery(
     enabled: !!agentId && !!path && operable,
     refetchInterval: 2000,
     staleTime: 2000,
-    // No retry — transient errors resolve on the next 2 s poll tick, and we
-    // don't want React Query to mask NOT_FOUND with a delayed close-on-error.
     retry: 0,
   });
 }
@@ -111,10 +98,6 @@ async function readFileContent(
       mtimeMs: result.mtimeMs,
     };
   } catch (e) {
-    // Convert the transport-layer "too large" error back into a typed
-    // placeholder so the viewer can render its "file too large" state.
-    // The query-cache close-on-error path is reserved for genuinely
-    // gone files (rename, delete, NOT_FOUND).
     if (e instanceof TRPCClientError && e.data?.code === "PAYLOAD_TOO_LARGE") {
       return { path, content: "", binary: true, tooLarge: true };
     }
@@ -122,11 +105,6 @@ async function readFileContent(
   }
 }
 
-/**
- * Imperative fetch for user-initiated file opens. Goes through the query
- * cache so the subsequent useFileContentQuery subscription reuses the result
- * instead of refetching.
- */
 export async function fetchFileContent(
   agentId: string,
   path: string,
@@ -149,7 +127,6 @@ function invalidateFiles(
 export function useFileWriteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    // Callers surface errors themselves (conflict confirms, custom toasts).
     meta: { suppressErrorToast: true },
     mutationFn: async (input: {
       path: string;
@@ -168,7 +145,6 @@ export function useFileWriteMutation(agentId: string | null) {
 export function useFileCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    // Callers surface errors themselves (conflict confirms, custom toasts).
     meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string; content?: string }) => {
       const trpc = getAgentTrpc(agentId!);
@@ -186,7 +162,6 @@ export function useFileCreateMutation(agentId: string | null) {
 export function useFolderCreateMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    // Callers surface errors themselves (conflict confirms, custom toasts).
     meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
       const trpc = getAgentTrpc(agentId!);
@@ -201,7 +176,6 @@ export function useFolderCreateMutation(agentId: string | null) {
 export function useFileRenameMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    // Callers surface errors themselves (conflict confirms, custom toasts).
     meta: { suppressErrorToast: true },
     mutationFn: async (input: {
       from: string;
@@ -225,7 +199,6 @@ export function useFileRenameMutation(agentId: string | null) {
 export function useFileDeleteMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    // Callers surface errors themselves (conflict confirms, custom toasts).
     meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
       const trpc = getAgentTrpc(agentId!);
@@ -237,25 +210,14 @@ export function useFileDeleteMutation(agentId: string | null) {
   });
 }
 
-// Client-side pre-flight cap so oversized uploads fail in the UI before
-// hitting the wire. Server-side enforcement lives in agent-runtime and
-// surfaces as PAYLOAD_TOO_LARGE — this value can drift up to but not past it.
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const MESSAGE_UPLOAD_ROOT = ".uploads";
 
 function sanitizeSegment(s: string): string {
-  // Strip path separators, leading dots, and anything that'd make the server
-  // reject the segment. Keep a conservative allowlist.
   return s.replace(/[^A-Za-z0-9._\-]+/g, "_").replace(/^\.+/, "") || "file";
 }
 
-/**
- * Persists a chat-message attachment into the agent pod so the agent can
- * read it by path (`file:///home/agent/.uploads/<sessionId>/<unique>-<name>`).
- * Returns the on-pod absolute path the caller should put into the ACP
- * `resource_link` URI.
- */
 export async function uploadMessageAttachment(
   agentId: string,
   sessionId: string,
@@ -272,8 +234,6 @@ export async function uploadMessageAttachment(
     contentType: attachment.mimeType,
     overwrite: true,
   });
-  // Fallback in case a future server forgets to surface absolutePath — keep
-  // the UI functional, but the canonical path comes from the server.
   const absolutePath = res.absolutePath ?? `/home/agent/${relPath}`;
   return { absolutePath, relPath };
 }
@@ -281,7 +241,6 @@ export async function uploadMessageAttachment(
 export function useFileUploadMutation(agentId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    // Callers surface errors themselves (conflict confirms, custom toasts).
     meta: { suppressErrorToast: true },
     mutationFn: (input: {
       path: string;

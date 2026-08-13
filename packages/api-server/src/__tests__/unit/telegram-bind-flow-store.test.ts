@@ -39,7 +39,6 @@ describe("telegram bind-flow store", () => {
     const id = await store.create(BIND);
     clock += 60_001;
     expect(await store.peek(id)).toBe(null);
-    // Expired entries are deleted on read, not resurrected later.
     clock = 1_000;
     expect(await store.peek(id)).toBe(null);
   });

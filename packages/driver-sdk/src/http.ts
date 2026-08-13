@@ -1,12 +1,5 @@
 import process from "node:process";
 
-// Self-configuration + the create-then-poll HTTP plumbing. Runs inside an agent
-// pod as plain `node` — no dependencies, only global `fetch`. It self-configures
-// from PLATFORM_MCP_URL (the platform sets this to <base>/api/agents/<own-id>/mcp),
-// which encodes both the harness base URL and this agent's own id. That id is the
-// one the mesh waypoint pins, so every call is scoped to and attributed as this
-// driver. There is no token to manage: the mesh proves identity.
-
 const mcpUrl = process.env.PLATFORM_MCP_URL;
 if (!mcpUrl) {
   throw new Error(
@@ -24,7 +17,6 @@ const { base, agentId } = ((): { base: string; agentId: string } => {
   };
 })();
 
-/** This driver's own agent id, derived from PLATFORM_MCP_URL. */
 export { agentId as driverAgentId };
 
 const root = `${base}/api/agents/${encodeURIComponent(agentId)}`;
@@ -49,8 +41,6 @@ export async function req<T>(
 }
 
 export function log(msg: string): void {
-  // Progress goes to stderr so a script's own stdout (e.g. a final result) stays
-  // clean. The harness surfaces both streams to the human watching the turn.
   process.stderr.write(`[invoke] ${msg}\n`);
 }
 

@@ -85,12 +85,9 @@ describe("share viewer app", () => {
     const html = await res.text();
     expect(html).toContain("sandbox=");
     expect(html).toContain("srcdoc=");
-    // User content is escaped into the srcdoc attribute, never inline.
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
-    // The page must NOT be CSP-sandboxed — the srcdoc iframe inherits the
-    // page CSP and a sandbox directive would break user content.
     expect(res.headers.get("Content-Security-Policy")).not.toContain("sandbox");
   });
 
@@ -124,7 +121,6 @@ describe("share viewer app", () => {
     const raw = await app.request("/a/slug-a/raw");
     expect(raw.headers.get("Content-Type")).toBe("application/octet-stream");
     expect(raw.headers.get("Content-Disposition")).toContain("attachment");
-    // The relay streams — consume the body to prove bytes actually arrive.
     expect(await raw.text()).toContain("<h1>hello</h1>");
 
     const imageApp = appWith(
@@ -170,8 +166,6 @@ describe("share viewer app", () => {
       }),
     );
     const raw = await app.request("/a/slug-a/raw");
-    // Served inline (it's an image — <img> embedding must keep working) but
-    // the sandbox directive blocks script execution on direct navigation.
     expect(raw.headers.get("Content-Disposition")).toBeNull();
     expect(raw.headers.get("Content-Security-Policy")).toContain("sandbox");
   });
@@ -187,7 +181,6 @@ describe("share viewer app", () => {
           } satisfies SharedResolution),
         meta: () =>
           Promise.resolve({ contentType: "text/html", sizeBytes: big }),
-        // The real service refuses maxBytes overruns; mirror that here.
         content: (_a, _v, maxBytes) =>
           maxBytes !== undefined && big > maxBytes
             ? Promise.resolve(null)
@@ -208,9 +201,6 @@ describe("share viewer app", () => {
     expect(res.headers.get("Location")).toBe("http://app.localhost");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Host gate — the trust-boundary dispatch between the app and share origins.
 
 describe("share host gate", () => {
   function gatedApp() {
@@ -239,8 +229,6 @@ describe("share host gate", () => {
     const res = await app.request("/api/secret", {
       headers: { host: "share.example.com" },
     });
-    // The viewer app answers (it has no such route) — the app route behind
-    // the gate is unreachable from the share origin.
     expect(res.status).not.toBe(200);
     expect(await res.text()).not.toBe("app-route");
   });

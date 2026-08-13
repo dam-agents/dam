@@ -9,9 +9,6 @@ interface Props {
   onOpenFile: (path: string) => void;
 }
 
-/** Body of the on-demand right file panel: resolves `openFilePath` to content
- *  and hosts the viewer. Closes silently when the file disappears
- *  (rename/delete/git switch); guards a dirty draft on explicit close. */
 export function DockedFilePanel({ onOpenFile }: Props) {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
@@ -24,9 +21,6 @@ export function DockedFilePanel({ onOpenFile }: Props) {
     openFilePath,
   );
 
-  // Auto-close only for genuinely gone files, and never over a dirty draft —
-  // the query polls with no retry, so transient errors also land here and
-  // must not discard unsaved edits.
   useEffect(() => {
     const gone =
       error instanceof TRPCClientError && error.data?.code === "NOT_FOUND";

@@ -39,8 +39,6 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
   );
   const createApiKey = useCreateApiKey();
 
-  // `agents:manage` is wildcard-bound by design; selecting it forces the key to
-  // cover all agents regardless of the picker.
   const manageSelected = selectedScopes.has("agents:manage");
   const showBinding = hasAgentScope(selectedScopes);
 
@@ -79,13 +77,8 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
     createApiKey.isPending;
 
   return (
-    // `contents` keeps the <form> out of the layout box tree so DialogHeader/
-    // Body/Footer sit directly in the Modal's flex column — otherwise the form
-    // wrapper breaks the column and the scrollable body, overflowing the panel.
     <form onSubmit={handleSubmit} className="contents">
-      {/* Both dismissals are gated while the key is being created: the
-          plaintext is shown once on the next step, so leaving mid-flight
-          creates a key the user can never see and must revoke. */}
+      {}
       <DialogHeader
         title="Create API key"
         onClose={onCancel}

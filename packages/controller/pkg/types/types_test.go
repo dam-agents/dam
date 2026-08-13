@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- Agent ---
-
 const fixtureTemplateYAML = `version: agent-platform.ai/v1
 image: ghcr.io/myorg/claude-code:latest
 description: "Persistent agent for repo monitoring"
@@ -50,14 +48,10 @@ func TestParseAgentSpec(t *testing.T) {
 	assert.Equal(t, "ACP_PORT", spec.Env[0].Name)
 	assert.Equal(t, "250m", spec.Resources.Requests["cpu"])
 	assert.Equal(t, "2Gi", spec.Resources.Limits["memory"])
-	// Layer B overrides for AgentTemplateDefaults.
 	assert.Equal(t, "Always", spec.ImagePullPolicy)
 	assert.Equal(t, "5Gi", spec.StorageSize)
 }
 
-// Minimal agent ConfigMap: image only. The controller fills the rest from
-// chart-wide AgentTemplateDefaults at reconcile time. Used for the bare-image
-// agent path the api-server creates.
 func TestParseAgentSpec_BareImage(t *testing.T) {
 	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: foo
@@ -113,11 +107,6 @@ mounts:
 	assert.Contains(t, err.Error(), "valid K8s quantity")
 }
 
-// --- Agent runtime fields ---
-
-// ParseAgentSpec must accept the merged runtime fields (env, secretRef) that
-// formerly lived on InstanceSpec. Legacy fields the CRD dropped (version,
-// desiredState) are tolerated in the YAML and ignored.
 func TestParseAgentSpec_RuntimeFields(t *testing.T) {
 	spec, err := ParseAgentSpec(`version: agent-platform.ai/v1
 image: ghcr.io/myorg/claude-code:latest
@@ -131,8 +120,6 @@ secretRef: cg-team-alpha-secrets
 	assert.Equal(t, "cg-team-alpha-secrets", spec.SecretRef)
 	assert.Len(t, spec.Env, 1)
 }
-
-// --- Helpers ---
 
 func TestSanitizeMountName(t *testing.T) {
 	tests := []struct {

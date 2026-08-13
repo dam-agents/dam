@@ -71,9 +71,6 @@ export function buildUpdateCommand(deps: {
           },
         });
 
-        // Restart check uses only user-passed flags — accept false positives
-        // for rules already on the L7 chain rather than fetch to compute the
-        // merged effective shape.
         const requiresRestart =
           (opts.method !== undefined && opts.method !== "*") ||
           (opts.path !== undefined && opts.path !== "*");

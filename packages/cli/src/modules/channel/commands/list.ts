@@ -22,8 +22,6 @@ function renderHuman(channels: readonly ChannelConfig[]): string {
     : renderTable([
         ["TYPE", "IDENTIFIER", "AMBIENT"],
         ...channels.map((c) =>
-          // Telegram has no readable identifier — the bot token is write-only.
-          // Ambient is Slack-only.
           c.type === ChannelType.Slack
             ? ["slack", c.slackChannelId, c.ambient ? "on" : "off"]
             : ["telegram", "—", "—"],
@@ -59,8 +57,6 @@ export function buildListCommand(deps: {
         },
       });
 
-      // The resolver returns the full AgentView, which already carries
-      // `channels` — no second read needed.
       const resolver = createAgentResolver({
         agentService: deps.createAgentService(host),
       });

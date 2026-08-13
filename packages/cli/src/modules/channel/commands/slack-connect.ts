@@ -53,8 +53,6 @@ export function buildSlackConnectCommand(deps: {
           json?: boolean;
         },
       ) => {
-        // Reject a blank/whitespace channel id before any network call — the
-        // server's min(1) accepts whitespace and a blank value is meaningless.
         const channelId = opts.channelId.trim();
         if (channelId.length === 0) {
           process.stderr.write("error: --channel-id must not be empty\n");
@@ -105,12 +103,6 @@ export function buildSlackConnectCommand(deps: {
         }
 
         if (opts.ambient) {
-          // An older server strips unknown input keys, so a stripped ambient
-          // lands mentions-only — the safe direction (the agent listens less,
-          // not more) — so keep the binding but fail loudly instead of
-          // claiming ambient.
-          // By channel id, not "the" Slack binding: an Agent may hold several,
-          // and the first row is not necessarily the one just connected.
           const slackCh = res.value.find(
             (c) =>
               c.type === ChannelType.Slack && c.slackChannelId === channelId,

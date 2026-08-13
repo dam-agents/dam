@@ -1,10 +1,5 @@
 import { useEffect } from "react";
 
-/**
- * Registers a browser beforeunload prompt while `dirty` is true. Route-level
- * (intra-app) guards are handled by each caller via showConfirm on navigation,
- * since we don't use react-router's history blocking.
- */
 export function useUnsavedGuard(dirty: boolean) {
   useEffect(() => {
     if (!dirty) return;

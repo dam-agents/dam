@@ -18,12 +18,6 @@ import { READ_ONLY_FIELD } from "../../sandboxes/components/sandbox-setup-sectio
 import { useSandboxSettingsForm } from "../../sandboxes/hooks/use-sandbox-settings-form.js";
 import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
 
-/** Lean settings/detail page for a knowledge base. A knowledge base is an
- *  agent, so it reuses the sandbox settings engine ([use-sandbox-settings-form])
- *  for the shared save/dirty machinery — but renders a flush, pared-down set of
- *  fields (no `md:-ml-4` outdent), matching the KB create form. Only the
- *  knobs that make sense for a KB are exposed: name, size, network, and
- *  connections; the harness image is shown read-only (create-only, #2946). */
 export function KnowledgeBaseConfigView() {
   const f = useSandboxSettingsForm();
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
@@ -79,15 +73,14 @@ export function KnowledgeBaseConfigView() {
       />
 
       <section className="mb-8">
-        {/* disableInset: this page is flush (no gutter to outdent into). */}
+        {}
         <FormField label="Name" disableInset error={f.errors.name?.message}>
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
       </section>
 
       <section className="mb-8">
-        {/* Harness image is create-only: changing it means delete + recreate,
-            which would destroy the knowledge base's workspace. */}
+        {}
         <SectionLabel spaced>Harness</SectionLabel>
         <div className={READ_ONLY_FIELD}>
           <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
@@ -96,10 +89,7 @@ export function KnowledgeBaseConfigView() {
         </div>
       </section>
 
-      {/* CPU/Memory are intentionally not exposed: a knowledge base runs on the
-          template/platform defaults, keeping the surface conversational rather
-          than a resource-tuning panel. The settings form leaves size untouched,
-          so it stays at the agent's current values. */}
+      {}
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>

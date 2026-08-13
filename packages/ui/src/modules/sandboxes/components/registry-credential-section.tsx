@@ -17,7 +17,6 @@ export const EMPTY_REGISTRY_CREDENTIAL: RegistryCredential = {
   password: "",
 };
 
-/** server/username/password are all-or-nothing — partial entry is invalid. */
 export function registryFilledCount(value: RegistryCredential): number {
   return [value.server, value.username, value.password].filter(
     (field) => field.trim().length > 0,
@@ -39,12 +38,6 @@ export function RegistryCredentialSection({
   disclosureOverride,
   onDisclosureOverride,
 }: Props) {
-  // The credentials outlive this section, which unmounts on every step change —
-  // so disclosure lives next to them in the wizard and follows whether there is
-  // anything to show unless the user says otherwise (null = follow the fields).
-  // Editing pins it open, or clearing the last field would collapse it mid-edit.
-  // `partial` outranks the user: its hint renders in here, and blocking Continue
-  // with the reason hidden is worse.
   const expanded =
     partial || (disclosureOverride ?? registryFilledCount(value) > 0);
   const set = (key: keyof RegistryCredential, next: string) => {

@@ -30,31 +30,21 @@ interface Props {
   onClose: () => void;
 }
 
-/** In-app preview: rendered by default for HTML/JSX/markdown — the same
- *  inner document the share page serves, hosted in a sandboxed iframe (see
- *  DeferredFrame). Code/text show highlighted source; images inline; other
- *  binaries offer a download. */
 export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
   const renderable = isRenderedKind(artifact.kind);
   const [showSource, setShowSource] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [version, setVersion] = useState(artifact.version);
 
-  // Version history only matters for multi-version artifacts.
   const { data: versions } = useArtifactVersions(
     artifact.version > 1 ? artifact.id : null,
   );
   const total = versions?.length ?? artifact.version;
 
   const preview = useArtifactPreview(renderable ? artifact.id : null, version);
-  // An experiment dashboard viewed here gets the live feed too (see the
-  // chat-dock counterpart); undefined for every other artifact — and only on
-  // the LATEST version, so a pinned older version renders its baked state.
   const latestFeedPost = useDashboardFeedPost(artifact.id);
   const experimentFeedPost =
     version === artifact.version ? latestFeedPost : undefined;
-  // Source is fetched lazily — only for non-renderable kinds, or once the
-  // user flips the toggle.
   const wantSource = !renderable || showSource;
   const content = useArtifactContent(wantSource ? artifact.id : null, version);
 
@@ -99,8 +89,6 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
           </div>
 
           {renderable && !showSource ? (
-            // Fixed-height shell: the dialog never resizes when the frame
-            // arrives, so the open animation has nothing to fight.
             <div className="h-[58vh] w-full overflow-hidden rounded border border-border bg-white">
               {!preview.isLoading && !preview.data ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">

@@ -16,7 +16,6 @@ export interface SchedulerRunnerDeps {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
-  /** Activity poke — starts a hibernated agent's wake without waiting for Ready. */
   wakeAgent: (agentId: string) => Promise<void>;
   log?: (msg: string) => void;
   now?: () => Date;
@@ -56,10 +55,6 @@ export function createSchedulerRunner(
         { id: eventId, kind: "trigger", payload, expiresAt },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
-      // Poke after the commit: a hibernated agent would otherwise let the
-      // trigger sit in the outbox until its TTL expires. The poke doesn't
-      // wait for Ready — the boot-time hello catch-up delivers the event
-      // once the pod is up.
       await deps.wakeAgent(sched.agentId);
       result = "success";
       outcome = "success";
@@ -108,9 +103,6 @@ export function createSchedulerRunner(
       await deps.repo.setNextRun(scheduleId, null);
     },
 
-    // Tell the agent to clear this schedule's session binding. Durable like a
-    // fire: delivered over the runtime outbox so it lands even if the pod is
-    // currently scaled to zero (the agent applies it on wake).
     async resetSession(scheduleId: string): Promise<void> {
       const sched = await deps.repo.getById(scheduleId);
       if (!sched) return;

@@ -11,12 +11,6 @@ import { cn } from "@/lib/utils";
 const DRIFT_HINT =
   "Upstream changed since install — update to the latest version";
 
-/**
- * One skill inside a source card: name (+ drift "Update" affordance) and
- * description on the left, an immediate install/uninstall toggle on the right.
- * Clicking the name opens the SKILL.md render modal (05). A drifted installed
- * skill flags an "Update" pill that re-installs at the latest version (06).
- */
 export function SkillRow({
   skill,
   installed,
@@ -32,13 +26,10 @@ export function SkillRow({
   installed: boolean;
   busy: boolean;
   disabled: boolean;
-  /** Installed content differs from the latest scan (06). */
   hasDrift: boolean;
-  /** GitHub compare view (installed → latest), when drift is on a git host. */
   compareUrl: string | null;
   onToggle: () => void;
   onUpdate: () => void;
-  /** Open the skill's SKILL.md render modal (05). Makes the name clickable. */
   onOpen?: () => void;
 }) {
   return (
@@ -69,8 +60,6 @@ export function SkillRow({
                 type="button"
                 onClick={onUpdate}
                 disabled={disabled}
-                /* A disabled button opens no tooltip, so the hint falls back to
-                   `title` exactly where "why can't I click this?" is asked. */
                 title={disabled ? DRIFT_HINT : undefined}
                 className={cn(
                   badgeVariants({ variant: "info", size: "sm" }),

@@ -9,10 +9,6 @@ import { useSyncPausingAgents } from "./use-suspend-agent.js";
 
 const NO_IDS: ReadonlySet<string> = new Set();
 
-/** Display state for a single agent's page (sandbox home, KB config).
- *  Subscribes to just this agent's transient restart/pause flags — not the
- *  whole store maps — so other agents' transitions don't re-render the page.
- *  List surfaces render many rows and stay on `useAgentRows`. */
 export function useResolvedAgentDisplay(
   agent: AgentView | null | undefined,
 ): AgentDisplay | null {

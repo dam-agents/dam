@@ -18,7 +18,6 @@ import type { StoredChannelConfig } from "../../modules/channels/stored-channel.
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
 
-// Capture securityLog lines (it writes through the process-wide Pino logger).
 const logLines: string[] = [];
 configureLogger({ level: "info", write: (l) => logLines.push(l) });
 beforeEach(() => {
@@ -33,12 +32,9 @@ type Binding = {
 
 function harness(opts: {
   binding: Binding;
-  /** Overrides the registry lookup; defaults to always returning `binding`. */
   resolveBinding?: () => Promise<Binding>;
-  /** identityLinks.resolve result — null = unlinked Slack user. */
   linkedSub?: string | null;
   termsAccepted?: (sub: string) => boolean;
-  /** Per-call assistant response; defaults to "the answer". */
   respond?: (prompt: string | ContentBlock[]) => Promise<string> | string;
   ensureReady?: AgentsService["ensureReady"];
 }) {
@@ -119,8 +115,6 @@ function harness(opts: {
       await start();
       return gw.fireCommand({ text, userId, channelId: "C1" });
     },
-    /** Top-level ambient turns drain on a floating per-channel queue — poll
-     *  until the expectation holds instead of racing it. */
     async settled(done: () => boolean) {
       for (let i = 0; i < 100 && !done(); i++) {
         await new Promise((r) => setTimeout(r, 0));
@@ -180,22 +174,14 @@ describe("slack ambient inbound", () => {
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain("<reading-along>");
     expect(prompt).toContain("<how-to-respond>");
-    // Staying silent is now an explicit tool, not a magic token.
     expect(prompt).toContain("no_reply_needed");
     expect(prompt).toContain(`<@${STRANGER}>: what is our deploy process?`);
-    // The frame announces the server-side bot identity (brand config) and
-    // the answer-when-named contract; the agent's own name is deliberately
-    // absent — that identity belongs to the agent's workspace setup.
     expect(prompt).toContain('the bot "DAM"');
     expect(prompt).toContain("@dam");
     expect(prompt).toContain("answer it as you would a mention");
-    // The read-along frame nudges an early, fitting reaction as a light-touch
-    // acknowledgement — the in-channel signal that replaced the automatic 👀.
     expect(prompt).toContain("open with a fitting emoji reaction");
     expect(prompt).not.toContain("agent-1");
 
-    // Nothing is posted on the agent's behalf: no auto-reply, no ack reaction,
-    // no wake ephemerals. The agent chimes in only by calling reply/react.
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
 
@@ -224,8 +210,6 @@ describe("slack ambient inbound", () => {
 
   it("ambient on: a silent read-along turn does not repoint the proactive reply fallback", async () => {
     const h = harness({ binding: ambient });
-    // The agent stays silent on a drifted-by channel message. A later
-    // proactive id-less reply must not thread under that bystander message.
     await h.message(STRANGER, "random chatter nobody asked about", {
       ts: "7.7",
     });
@@ -266,7 +250,6 @@ describe("slack ambient inbound", () => {
     expect("platformMeta" in opts && opts.platformMeta?.threadTs).toBe(
       slackThreadKey("C1", "5.1"),
     );
-    // A reply threads back into the same thread, not the triggering ts.
     await h.worker.reply("agent-1", { text: "here" });
     expect(h.messages()[0]).toMatchObject({ threadTs: "5.1" });
 
@@ -365,7 +348,6 @@ describe("slack ambient inbound", () => {
 
     expect(calls).toBe(2);
     expect(h.turnEvents()[0]!.outcome).toBe("success");
-    // Ambient never posts a still-starting note or the response itself.
     expect(h.gw.readOutbound()).toHaveLength(0);
   });
 
@@ -384,24 +366,16 @@ describe("slack ambient inbound", () => {
     pending[0]!("");
     await h.settled(() => pending.length === 2);
 
-    // One serialized turn for both queued messages, speaker-labelled lines —
-    // each tagged with its own ts so the agent can name the one it answers.
     expect(h.prompts).toHaveLength(2);
     const batched = String(h.prompts[1]);
     expect(batched).toContain("[ts 2.2] <@U-B>: two");
     expect(batched).toContain("[ts 3.3] <@U-C>: three");
 
-    // A batch has no single send time or permalink to name, so the contract
-    // points at the per-message tags instead of asserting one of each.
     expect(batched).toContain("You're reading 2 messages from");
     expect(batched).not.toContain("You're answering a message sent");
     expect(batched).not.toContain("permalink");
-    // The single-message turn before it still names its own send time.
     expect(String(h.prompts[0])).toContain("You're answering a message sent");
 
-    // Two top-level messages share this turn, so an id-less reply could
-    // thread an answer to one under the other — refuse it; the tagged ts
-    // targets the right message, even the older one.
     const refused = await h.worker.reply("agent-1", { text: "on it" });
     expect(refused).toMatchObject({
       error: expect.stringContaining("more than one"),
@@ -427,7 +401,6 @@ describe("slack ambient inbound", () => {
       respond: () => new Promise<string>((r) => pending.push(r)),
     });
 
-    // A burst of replies in the same thread while the first turn is in flight.
     await h.message("U-A", "one", { ts: "1.1", threadTs: "T.0" });
     await h.settled(() => pending.length === 1);
     await h.message("U-B", "two", { ts: "2.2", threadTs: "T.0" });
@@ -436,32 +409,23 @@ describe("slack ambient inbound", () => {
     pending[0]!("");
     await h.settled(() => pending.length === 2);
 
-    // The two that arrived during the in-flight turn coalesce into a single
-    // serialized turn instead of racing concurrent prompts into the thread's
-    // session — the race the runtime resolves by silently dropping the losers.
     expect(h.prompts).toHaveLength(2);
     const batched = String(h.prompts[1]);
     expect(batched).toContain("[ts 2.2] <@U-B>: two");
     expect(batched).toContain("[ts 3.3] <@U-C>: three");
 
-    // Every turn resumes the thread's own session, never the channel's rolling
-    // ambient one.
     for (const o of h.sendOpts) {
       expect("platformMeta" in o && o.platformMeta?.threadTs).toBe(
         slackThreadKey("C1", "T.0"),
       );
     }
 
-    // The batched messages all live in one thread, so an id-less reply during
-    // the turn is unambiguous and threads back into it.
     await h.worker.reply("agent-1", { text: "on it" });
     expect(h.messages()[0]).toMatchObject({ threadTs: "T.0", text: "on it" });
 
     pending[1]!("on it");
     await h.settled(() => h.turnEvents().length === 2);
 
-    // Engagement recorded the batch's newest message, so a later proactive
-    // id-less react targets it rather than an arbitrary older batch member.
     const reacted = await h.worker.react("agent-1", { emoji: "eyes" });
     expect(reacted).toEqual({ ok: true });
     expect(h.reactions()[0]).toMatchObject({ ts: "3.3" });
@@ -476,9 +440,6 @@ describe("slack ambient inbound", () => {
     await h.message("U-A", "reading along", { ts: "1.1", threadTs: "T.1" });
     await h.settled(() => pending.length === 1);
 
-    // A mention on the same thread resumes the same session — it must wait
-    // for the ambient turn instead of racing a second prompt into the
-    // session's runtime queue, where a dropped relay silently loses it.
     void h.gw.fireMention({
       user: "U-B",
       channel: "C1",
@@ -504,15 +465,11 @@ describe("slack ambient inbound", () => {
     await h.message("U-A", "can someone check the build?", { ts: "9.9" });
     await h.settled(() => pending.length === 1);
 
-    // The agent chimes in during the turn — that engagement, not the turn's
-    // mere existence, makes this thread the last active one.
     await h.worker.reply("agent-1", { text: "on it" });
     pending[0]!("");
     await h.settled(() => h.turnEvents().length === 1);
     h.gw.resetOutbound();
 
-    // A later proactive id-less reply follows the engagement, not whatever
-    // message last drifted by.
     const ok = await h.worker.reply("agent-1", { text: "build is green" });
     expect(ok).toEqual({ ok: true });
     expect(h.messages()[0]).toMatchObject({ threadTs: "9.9" });
@@ -533,9 +490,6 @@ describe("slack ambient inbound", () => {
 
     await h.message("U-A", "in thread one", { ts: "1.1", threadTs: "T.1" });
     await h.settled(() => pending.length === 1);
-    // The relay settles with a transport error; the pod-side harness may still
-    // be working thread T.1 (the runtime keeps a running prompt alive when its
-    // channel drops) and will reply late over the MCP path.
     pending[0]!.reject(new Error("ACP connection lost (agent unreachable)"));
     await h.settled(() => h.turnEvents().length === 1);
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
@@ -543,8 +497,6 @@ describe("slack ambient inbound", () => {
     await h.message("U-B", "in thread two", { ts: "2.1", threadTs: "T.2" });
     await h.settled(() => pending.length === 2);
 
-    // Routing the late id-less reply to the sole live turn would post T.1's
-    // answer into T.2 — refuse instead; the injected id still resolves.
     const refused = await h.worker.reply("agent-1", { text: "late answer" });
     expect(refused).toMatchObject({
       error: expect.stringContaining("more than one"),
@@ -569,14 +521,9 @@ describe("slack ambient inbound", () => {
       respond: () => new Promise<string>((r) => pending.push(r)),
     });
 
-    // One message in each of two different threads; neither turn resolves yet.
     await h.message("U-A", "in thread one", { ts: "1.1", threadTs: "T.1" });
     await h.message("U-B", "in thread two", { ts: "2.1", threadTs: "T.2" });
 
-    // Both turns are in flight at once: distinct threads drain on distinct
-    // queues, so a busy thread never serializes another behind it. Keying the
-    // queue by channel alone — the tempting simplification — would wrongly
-    // block the second turn behind the first.
     await h.settled(() => pending.length === 2);
     expect(h.prompts).toHaveLength(2);
     expect(
@@ -599,10 +546,8 @@ describe("slack ambient inbound", () => {
     await h.message("U-A", "one", { ts: "1.1" });
     await h.settled(() => pending.length === 1);
     await h.message("U-B", "two", { ts: "2.2" });
-    // The gate flips while U-B's message waits behind the in-flight turn
-    // (in production: the binding rebound to an owner who never accepted).
     ownerAccepted = false;
-    pending[0]!(""); // the first turn finishes (its response is not posted)
+    pending[0]!("");
     await h.settled(() => h.turnEvents().length === 1);
 
     expect(h.prompts).toHaveLength(1);
@@ -610,8 +555,6 @@ describe("slack ambient inbound", () => {
   });
 
   it("a drain-time failure resolving the binding is swallowed, not an unhandled rejection", async () => {
-    // The first resolve (inbound gate) succeeds; the second — performed by
-    // the floating drain — fails like a dropped DB connection would.
     let resolveCalls = 0;
     const h = harness({
       binding: ambient,
@@ -627,7 +570,6 @@ describe("slack ambient inbound", () => {
     try {
       await h.message(STRANGER, "hello");
       await h.settled(() => resolveCalls === 2);
-      // Give a would-be unhandled rejection time to surface.
       await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
     } finally {
@@ -648,12 +590,8 @@ describe("slack ambient inbound", () => {
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
-    // A mention is addressed, so it gets the plain contract without the
-    // read-along framing.
     expect(String(h.prompts[0])).not.toContain("<reading-along>");
     expect(String(h.prompts[0])).toContain("<how-to-respond>");
-    // Nothing is posted on the agent's behalf: no auto-reply and no automatic
-    // ack reaction — the agent reaches the channel only via its own tools.
     expect(h.reactions()).toHaveLength(0);
     expect(h.messages()).toHaveLength(0);
   });
@@ -694,12 +632,10 @@ describe("slack ambient command", () => {
     const h = harness({ binding: mentionsOnly, linkedSub: OWNER });
     const ack = await h.command("ambient on");
 
-    // The full description now rides the invoker's ephemeral reply...
     expect(ack).toContain("turned on");
     expect(ack).toContain("reads along");
     expect(ack).toContain("/dam ambient off");
     expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: true }]);
-    // ...and nothing is announced into the channel.
     expect(h.messages()).toHaveLength(0);
 
     const toggles = h

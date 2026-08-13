@@ -39,8 +39,6 @@ export function buildResetSessionCommand(deps: {
       });
       const svc = deps.createScheduleService(host);
 
-      // get() yields both the not-found classification (resetSession never
-      // throws NOT_FOUND) and the fresh-mode no-op below.
       const current = await svc.get(id);
       if (!current.ok) {
         if (current.error.kind === "schedule-not-found") {
@@ -53,8 +51,6 @@ export function buildResetSessionCommand(deps: {
 
       const sessionMode = current.value.sessionMode ?? "fresh";
       if (sessionMode !== "continuous") {
-        // Fresh schedules have no accumulated binding — skip the durable
-        // outbox event entirely.
         if (opts.json) {
           process.stdout.write(
             `${JSON.stringify({ reset: false, id, sessionMode })}\n`,

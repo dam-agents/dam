@@ -15,8 +15,6 @@ export function printServiceError(
     process.stderr.write(formatAuthRejection(error.reason, env));
     return;
   }
-  // serverCode set ⇒ the server was reached and rejected the request; print its
-  // reason. Only a genuine connectivity failure gets "cannot reach server".
   if (error.serverCode) {
     process.stderr.write(`error: ${error.reason}\n`);
     return;
@@ -26,7 +24,6 @@ export function printServiceError(
 
 export function printTrpcError(e: unknown, host: string): void {
   const r = classifyTrpcError(e);
-  // classifyTrpcError never returns ok — this guard only narrows the Result.
   if (r.ok) return;
   printServiceError(r.error, host);
 }

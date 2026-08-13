@@ -1,28 +1,11 @@
 import { z } from "zod";
 
-/**
- * Agent-domain scopes, narrowest first:
- * - `agents:read`    — read-only view of agents and their configuration; no
- *                      mutations, no run.
- * - `agents:operate` — run a live agent (approvals, workspace file upload).
- *                      Running can mutate state through the agent runtime
- *                      (filesystem, schedules via MCP), so this is not a
- *                      read-only scope. Supports wildcard or per-agent binding.
- * - `agents:manage`  — full agent configuration + lifecycle (CRUD, channels,
- *                      schedules, skills, egress rules, credential assignment).
- *                      Wildcard-bound by design; per-agent downscoping is a
- *                      future refinement.
- */
 export const AGENT_SCOPES = [
   "agents:read",
   "agents:operate",
   "agents:manage",
 ] as const;
 
-/**
- * Credential-domain scopes covering both OAuth connections and user-supplied
- * secrets. `credentials:manage` implies `credentials:read`.
- */
 export const CREDENTIAL_SCOPES = [
   "credentials:read",
   "credentials:manage",

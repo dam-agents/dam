@@ -16,11 +16,8 @@ import {
 
 const NO_TEMPLATES: ConnectionTemplateView[] = [];
 
-/** Provider grouping over the offered catalog and the given connections,
- *  with the provider-template and internal-only filters applied. */
 export function useCatalogGroups(connections: readonly ConnectionView[]): {
   byTab: Map<CatalogTab, CatalogProviderGroup[]>;
-  /** Populated groups across all tabs, in tab + registry order. */
   populated: CatalogProviderGroup[];
   templateById: Map<string, ConnectionTemplateView>;
 } {

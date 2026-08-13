@@ -7,7 +7,6 @@ const URL = "https://github.com/acme/skills";
 const SHARED = { kind: "shared" } as const;
 const ALICE = { kind: "agent", owner: "alice", agentId: "agent-a1" } as const;
 const BOB = { kind: "agent", owner: "bob", agentId: "agent-b1" } as const;
-/** Alice's second sandbox — same user, different connection grants. */
 const ALICE_2 = { kind: "agent", owner: "alice", agentId: "agent-a2" } as const;
 
 function skill(name: string): Skill {
@@ -20,7 +19,6 @@ function skill(name: string): Skill {
   };
 }
 
-/** Silences the cache's stderr trace; the calls themselves aren't the contract. */
 const quiet = () => createScanCache(() => {});
 
 describe("skills scan cache", () => {
@@ -130,9 +128,6 @@ describe("skills scan cache", () => {
     expect(res.scannedAt).toBe(1_100_000);
   });
 
-  // Connections are granted per sandbox, so one owner's two sandboxes can see
-  // different repositories. Sharing an entry between them hands a sandbox a
-  // list its own credentials could never fetch.
   it("answers a credentialed scan only to the sandbox that produced it, not to a sibling of the same owner", async () => {
     const cache = quiet();
     vi.setSystemTime(1_000_000);
@@ -158,8 +153,6 @@ describe("skills scan cache", () => {
     expect(bobScan).toHaveBeenCalledTimes(1);
     expect(sharedScan).toHaveBeenCalledTimes(1);
 
-    // Neither reader displaced Alice: a second user of one private source is
-    // not an eviction, or the cache stops hitting for everyone sharing it.
     const rescan = vi.fn(async () => [skill("refetched")]);
     const hit = await cache.scan(ALICE, URL, undefined, rescan);
 

@@ -19,26 +19,11 @@ import { composeTermsModule } from "./modules/terms/compose.js";
 import { createTrpcClient } from "./modules/shared/trpc/trpc-client.js";
 
 export interface ComposeOptions {
-  /** Override for the production config path (resolved via XDG —
-   *  `$XDG_CONFIG_HOME/dam/config.toml`, default
-   *  `~/.config/dam/config.toml`). Used by integration tests. */
   configPath?: string;
-  /** Override for the production auth-state path (resolved via XDG —
-   *  `$XDG_STATE_HOME/dam/auth.toml`, default
-   *  `~/.local/state/dam/auth.toml`). Used by integration tests. */
   authPath?: string;
-  /** Env consulted for path resolution (`XDG_*`). Defaults to
-   *  `process.env`; tests can isolate without monkey-patching. */
   env?: NodeJS.ProcessEnv;
 }
 
-/**
- * Package-level wiring. Each bounded context's `compose()` returns its
- * commands (and any cross-module services); this function stitches them
- * into a single commander program. The auth module receives the
- * compat- and config-services it needs via injection — it never imports
- * cli internals directly.
- */
 export function compose(opts: ComposeOptions = {}): Command {
   const cli = composeCliModule({ configPath: opts.configPath });
   const auth = composeAuthModule({

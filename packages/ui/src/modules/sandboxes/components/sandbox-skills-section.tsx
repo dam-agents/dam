@@ -10,17 +10,7 @@ import type { AgentView } from "../../../types.js";
 import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
 import { SkillsSurface } from "./skills/skills-surface.js";
 
-/** Skills surface on the sandbox home page (#944). */
 export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
-  // Mirror the surface's reconciled state into the summary's query cache so the
-  // sidebar line stays live, without the summary polling the destructive
-  // `skills.state` endpoint (which would clobber an in-flight toggle). The
-  // surface holds the whole state and only reports it once loaded, so this
-  // writes it wholesale — mirroring `installed` alone left the summary stale
-  // after every standalone add/delete.
-  // Only set while the pod is unreachable, so the list on screen came from a
-  // recording rather than a live read. Kept here because the dating belongs in
-  // the same sentence as the read-only notice, not stacked below it.
   const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
 
   const onStateChange = useCallback(
@@ -40,8 +30,7 @@ export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
     <section className="mb-8">
       {!operable && (
         <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-          {/* One flex item for the whole sentence: as separate children the
-              row's gap would break it into columns. */}
+          {}
           <span className="flex items-start gap-1.5 text-sm text-muted-foreground">
             <Locked size={14} className="mt-0.5 shrink-0" />
             <span>

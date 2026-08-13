@@ -1,16 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { reconcileL7Promotions } from "../../modules/egress-rules/services/l7-promotion-reconcile.js";
 
-/**
- * The reconcile's contract: one rule scan + one agent list, diff in memory,
- * write only the agents whose spec.l7Hosts drifted from the projection of
- * their active narrow rules. A converged fleet issues zero writes; an agent
- * whose narrowing was revoked but whose clear-patch failed (present in the
- * agent list, absent from the rule scan) is demoted.
- */
-
-/** A narrow (method-specific) manual rule — the shape
- *  `listActiveForPromotionScan` returns; `promotedHosts` keeps it. */
 function rule(agentId: string, host: string) {
   return {
     agentId,
@@ -81,9 +71,9 @@ describe("reconcileL7Promotions", () => {
     const h = harness({
       rules: [rule("a", "a.example.com"), rule("b", "b.example.com")],
       agents: [
-        { agentId: "a", current: ["a.example.com"] }, // converged
-        { agentId: "b", current: [] }, // drifted (missing)
-        { agentId: "c", current: ["ghost.example.com"] }, // drifted (stale)
+        { agentId: "a", current: ["a.example.com"] },
+        { agentId: "b", current: [] },
+        { agentId: "c", current: ["ghost.example.com"] },
       ],
     });
     const res = await h.run();
@@ -110,7 +100,7 @@ describe("reconcileL7Promotions", () => {
       log: () => {},
     });
     expect(res).toEqual({ scanned: 2, drifted: 2, failed: 1 });
-    expect(sets).toEqual(["b"]); // b still reconciled despite a's failure
+    expect(sets).toEqual(["b"]);
   });
 
   it("reports a failed scan as one failure without touching agents", async () => {

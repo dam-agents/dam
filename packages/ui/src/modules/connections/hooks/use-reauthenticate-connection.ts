@@ -10,12 +10,9 @@ import { type OAuthPopupResult, useOAuthPopup } from "./use-oauth-popup.js";
 
 interface Pending {
   id: string;
-  /** `connectedAt` as it was before consent — how a completion is recognized. */
   connectedAt: string | undefined;
 }
 
-/** Unlike the create flow this never deletes anything on abandon: the
- *  connection keeps working on its old credential. */
 export function useReauthenticateConnection() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const pendingRef = useRef<Pending | null>(null);
@@ -32,18 +29,13 @@ export function useReauthenticateConnection() {
       emitToast({ kind: "success", message: "Connection re-authenticated." });
       return;
     }
-    // A closed popup means cancelled *or* completed — its result message only
-    // reaches the deployed origin. The server decides: a consent that landed
-    // advanced `connectedAt`.
     try {
       const conn = await api.connections.get.query({ id: pending.id });
       if (conn && conn.connectedAt !== pending.connectedAt) {
         emitToast({ kind: "success", message: "Connection re-authenticated." });
         return;
       }
-    } catch {
-      // Status unknown — report the popup's own outcome below.
-    }
+    } catch {}
     emitToast({
       kind: "error",
       message: result.message ?? "Authorization was cancelled.",
@@ -57,13 +49,10 @@ export function useReauthenticateConnection() {
   } = useOAuthPopup((result) => void settle(result));
 
   const reauthenticate = async (connection: ConnectionView) => {
-    // One consent at a time: the popup is a *named* window, so a second flow —
-    // even for another connection — would navigate the first away mid-consent.
     if (busyId !== null) {
       focusPopup();
       return;
     }
-    // Must open synchronously or the browser blocks it; navigated below.
     const popup = openPopup();
     setBusyId(connection.id);
     pendingRef.current = {

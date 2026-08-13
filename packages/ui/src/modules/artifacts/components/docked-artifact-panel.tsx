@@ -18,13 +18,8 @@ import { DeferredFrame } from "./deferred-frame.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
 
-/** How often the docked artifact tracks new versions — an agent publishing
- *  mid-conversation swaps the preview in near-real-time. */
 const LIVE_POLL_MS = 5000;
 
-/** Right-dock artifact preview for the chat view — the artifact counterpart
- *  of DockedFilePanel. Live: polls the artifact and re-renders when a new
- *  version lands (the preview query is keyed by version). */
 export function DockedArtifactPanel() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
@@ -42,7 +37,6 @@ export function DockedArtifactPanel() {
   });
   const latest = artifact?.version;
   const total = versions?.length ?? latest ?? 1;
-  // null = follow the latest version live; a number pins to that version.
   const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);
   const shownVersion = pinnedVersion ?? latest;
 
@@ -55,9 +49,6 @@ export function DockedArtifactPanel() {
     shownVersion,
   );
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
-  // Only the LATEST version gets the live feed: a pinned older version must
-  // render exactly its baked state, or the version history is meaningless
-  // (the live push always outruns the baked replay).
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
 
@@ -128,7 +119,6 @@ export function DockedArtifactPanel() {
         ) : showFrame ? (
           preview.data ? (
             <DeferredFrame
-              // Remount per shown version so a switch/live update swaps cleanly.
               key={`${artifact.id}@${shownVersion}`}
               html={preview.data}
               title={artifact.title}

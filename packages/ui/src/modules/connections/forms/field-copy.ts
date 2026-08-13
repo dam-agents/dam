@@ -42,7 +42,6 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   caData: "certificate-authority-data from your kubeconfig (base64 or PEM)",
 };
 
-// Per-template helper text, keyed by template id then input name.
 const TEMPLATE_FIELD_HINTS: Record<string, Record<string, string>> = {
   "github-pat": {
     value:
@@ -50,8 +49,6 @@ const TEMPLATE_FIELD_HINTS: Record<string, Record<string, string>> = {
   },
 };
 
-/** Names the one secret a connection stores, per auth kind. Single-sourced so
- *  the row's menu item and the dialog it opens can't name it differently. */
 export const CREDENTIAL_COPY: Record<
   Exclude<ConnectionAuthKind, "none">,
   { action: string; label: string; hint: string; multiline?: boolean }
@@ -59,8 +56,6 @@ export const CREDENTIAL_COPY: Record<
   oauth: {
     action: "Update client secret",
     label: "New OAuth client secret",
-    // Even connections that inherited the secret hold their own copy, so say so
-    // here rather than let a half-fixed set of Google connections reveal it.
     hint: "The secret of the OAuth app this connection authenticates through. If the stored refresh token still works the connection revives immediately; otherwise re-authenticate afterwards. Other connections using the same OAuth app keep their own copy — update each of them too.",
   },
   header: {

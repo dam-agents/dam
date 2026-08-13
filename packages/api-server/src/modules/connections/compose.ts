@@ -39,8 +39,6 @@ export interface ConnectionsBootCompose {
 export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
-  /** Cross-replica store for in-flight OAuth flows (Redis in production,
-   *  in-memory in tests) — the provider callback may land on any replica. */
   pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
 }
@@ -95,7 +93,6 @@ export function composeConnectionsForOwner(opts: {
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
-      // Connection grants live in the Agent spec.
       await opts.agentsRepo.patchSpec(agentId, {
         grantedConnectionIds: connectionIds,
       });
@@ -131,8 +128,6 @@ export function composeConnectionsForOwner(opts: {
     githubAppEngine: opts.githubAppEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
-    // Serializes a scope edit against the refresh loop's re-mint of the same
-    // connection, which writes the same token and the same row.
     connectionLock: createXactLock(opts.db),
   });
 }

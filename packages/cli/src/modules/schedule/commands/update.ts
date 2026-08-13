@@ -133,8 +133,6 @@ export function buildUpdateCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
-      // Recurrence is one atomic unit: any recurrence flag rebuilds the whole
-      // rrule; otherwise the current body is kept verbatim.
       let rrule = view.rrule;
       if (recurrenceGiven) {
         try {
@@ -150,8 +148,6 @@ export function buildUpdateCommand(deps: {
           process.stderr.write(`error: ${(e as Error).message}\n`);
           process.exit(EXIT_INVALID_INPUT);
         }
-        // Surface a silently-dropped weekday filter (rebuilding a preset
-        // recurrence without --weekdays clears any prior BYDAY).
         if (opts.weekdays === undefined && opts.rrule === undefined) {
           const old = detectPreset(view.rrule);
           if (old.kind !== "custom" && old.days.length < ALL_DAYS.length) {
@@ -162,7 +158,6 @@ export function buildUpdateCommand(deps: {
         }
       }
 
-      // Quiet windows replace-all: any --quiet-window replaces the set.
       let quietHours = view.quietHours;
       if (quietGiven) {
         try {

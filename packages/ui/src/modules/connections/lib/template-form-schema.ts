@@ -6,17 +6,13 @@ import {
   validateConnectionName,
 } from "./connection-name.js";
 
-/** Mirrors the validation the server enforces on the same template inputs,
- *  so violations surface inline before submit. */
 export function buildTemplateFormSchema(template: ConnectionTemplateView) {
   const patterns = new Map<string, RegExp>();
   for (const input of template.inputs) {
     if (!input.pattern) continue;
     try {
       patterns.set(input.name, new RegExp(input.pattern));
-    } catch {
-      // A malformed template pattern must not take down the form.
-    }
+    } catch {}
   }
   return z
     .object({

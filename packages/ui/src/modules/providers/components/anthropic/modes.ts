@@ -1,6 +1,5 @@
 import { PROVIDERS } from "../../../../types.js";
 
-// Toggle order, Zod enum source, and iteration order.
 export const MODE_KEYS = ["oauth", "api-key"] as const;
 export type Mode = (typeof MODE_KEYS)[number];
 
@@ -18,7 +17,6 @@ function prefixFor(modeKey: Mode): string {
   return prefix;
 }
 
-// `placeholder` is UI-only; everything else derives from the shared registry.
 export const MODES = {
   oauth: {
     label: modeFor("oauth").label,
@@ -42,7 +40,6 @@ export const MODES = {
   }
 >;
 
-// `claude setup-token` output can pick up newlines on copy, so strip all whitespace.
 export function stripWhitespace(value: string): string {
   return value.replace(/\s+/g, "");
 }

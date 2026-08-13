@@ -1,27 +1,10 @@
 import { useInsertScriptTags } from "keycloakify/tools/useInsertScriptTags";
 import { useEffect } from "react";
 
-// STORAGE_KEY + VALID duplicate THEME_STORAGE_KEY + themeSchema in
-// packages/ui/src/modules/platform/store/theme.ts. The duplication is
-// load-bearing: keycloakify pins to React 18 (keycloakify#998) and
-// packages/ui is on React 19, so they can't share a contract package.
-// If you change one side, update the other.
 const STORAGE_KEY = "platform-theme";
 const URL_PARAM = "kc_theme";
 const VALID = ["light", "dark", "system"] as const;
 
-/**
- * Cross-domain dark-mode handoff.
- *
- * The dam UI runs on a different host than Keycloak, so localStorage is not
- * shared. When the UI redirects to Keycloak it appends ?kc_theme=...; this
- * script reads that param (and falls back to Keycloak-domain localStorage,
- * then OS preference) and toggles `.dark` on <html>. The script is inserted
- * inside `useEffect`, so it runs after the first React commit; the body's
- * paintable surface is driven entirely by CSS custom properties, so the
- * worst case is a brief light-palette flash on a dark-mode user's first
- * paint. Matches adk's pattern.
- */
 export function useApplyThemeScript() {
   const script = `
 (() => {
