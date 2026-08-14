@@ -34,6 +34,10 @@ import {
   createRuntimeMutator,
   type RuntimeMutator,
 } from "./services/runtime-mutator.js";
+import {
+  progressOf,
+  type ContributionsProgress,
+} from "./domain/outbox-progress.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -49,6 +53,7 @@ export interface RuntimeDeliveryComposition {
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
+  contributionsProgress(agentId: string): Promise<ContributionsProgress>;
 }
 
 export interface ContributionsStatus {
@@ -130,13 +135,12 @@ export function composeRuntimeDelivery(
         outboxRepo.getRow(agentId),
         outboxRepo.seedingAgentIds([agentId]),
       ]);
-      const preparingWorkspace = seeding.has(agentId);
-      if (!row) return { settled: true, failures: [], preparingWorkspace };
-      return {
-        settled: row.lastSettledVersion >= row.version,
-        failures: row.applyFailures,
-        preparingWorkspace,
-      };
+      const { settled, failures } = progressOf(row);
+      return { settled, failures, preparingWorkspace: seeding.has(agentId) };
+    },
+
+    async contributionsProgress(agentId): Promise<ContributionsProgress> {
+      return progressOf(await outboxRepo.getRow(agentId));
     },
 
     async contributionsStatusMany(
@@ -150,18 +154,12 @@ export function composeRuntimeDelivery(
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
-        const row = byId.get(id);
-        const preparingWorkspace = seeding.has(id);
-        result.set(
-          id,
-          row
-            ? {
-                settled: row.lastSettledVersion >= row.version,
-                failures: row.applyFailures,
-                preparingWorkspace,
-              }
-            : { settled: true, failures: [], preparingWorkspace },
-        );
+        const { settled, failures } = progressOf(byId.get(id) ?? null);
+        result.set(id, {
+          settled,
+          failures,
+          preparingWorkspace: seeding.has(id),
+        });
       }
       return result;
     },

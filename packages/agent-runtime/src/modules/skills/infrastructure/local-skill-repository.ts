@@ -344,13 +344,26 @@ async function write(
   for (const targetRoot of skillPaths) {
     await fs.mkdir(targetRoot, { recursive: true });
     const dst = path.join(targetRoot, name);
-    await fs.rm(dst, { recursive: true, force: true });
-    await fs.cp(srcDir, dst, { recursive: true });
+    const staged = path.join(targetRoot, `.${name}.staging`);
+    const previous = path.join(targetRoot, `.${name}.previous`);
+    let published = false;
     try {
-      await assertNoSymlinks(dst);
-    } catch (e) {
-      await fs.rm(dst, { recursive: true, force: true });
-      throw e;
+      await fs.rm(staged, { recursive: true, force: true });
+      await fs.rm(previous, { recursive: true, force: true });
+      await fs.cp(srcDir, staged, { recursive: true });
+      await assertNoSymlinks(staged);
+      await fs.rename(dst, previous).catch(ignoreMissing);
+      await fs.rename(staged, dst);
+      published = true;
+    } finally {
+      await fs.rm(staged, { recursive: true, force: true }).catch(leaveSidecar);
+      if (published) {
+        await fs
+          .rm(previous, { recursive: true, force: true })
+          .catch(leaveSidecar);
+      } else {
+        await fs.rename(previous, dst).catch(leaveSidecar);
+      }
     }
   }
   const firstTarget = path.join(skillPaths[0], name);
@@ -517,6 +530,12 @@ async function hashSkillDir(absDir: string): Promise<string> {
   }
   return h.digest("hex");
 }
+
+function ignoreMissing(err: unknown): void {
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+}
+
+function leaveSidecar(): void {}
 
 async function assertNoSymlinks(root: string): Promise<void> {
   const stack = [root];

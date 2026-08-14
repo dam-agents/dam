@@ -1,4 +1,4 @@
-import type { Db } from "db";
+import type { Db, DbTx } from "db";
 import type {
   OutboxRepo,
   PendingEventRow,
@@ -9,6 +9,7 @@ export interface RuntimeMutator {
   bump(
     agentId: string,
     events: Omit<PendingEventRow, "agentId" | "version">[],
+    tx?: Db | DbTx,
   ): Promise<number>;
 
   enqueueAfterCommit(agentId: string): Promise<void>;
@@ -20,12 +21,16 @@ export function createRuntimeMutator(deps: {
   queue: StateQueue;
 }): RuntimeMutator {
   return {
-    async bump(agentId, events): Promise<number> {
+    async bump(agentId, events, tx): Promise<number> {
       if (events.length === 0) {
-        return deps.outboxRepo.bumpVersion(agentId);
+        return deps.outboxRepo.bumpVersion(agentId, tx);
       }
-      return deps.db.transaction(async (tx) => {
-        const version = await deps.outboxRepo.bumpVersion(agentId, tx, false);
+      const write = async (scope: Db | DbTx): Promise<number> => {
+        const version = await deps.outboxRepo.bumpVersion(
+          agentId,
+          scope,
+          false,
+        );
         for (const e of events) {
           await deps.outboxRepo.insertEvent(
             {
@@ -36,11 +41,12 @@ export function createRuntimeMutator(deps: {
               version,
               expiresAt: e.expiresAt,
             },
-            tx,
+            scope,
           );
         }
         return version;
-      });
+      };
+      return tx ? write(tx) : deps.db.transaction(write);
     },
 
     async enqueueAfterCommit(agentId): Promise<void> {

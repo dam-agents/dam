@@ -72,6 +72,7 @@ export function createSkillInstallPlugin(deps: {
 
         const desired = new Set<string>();
         const installed = new Set<string>();
+        const failed: string[] = [];
         for (const c of contributions) {
           if (c.kind !== "skill-ref") continue;
           desired.add(c.name);
@@ -90,6 +91,7 @@ export function createSkillInstallPlugin(deps: {
             ctx.log(
               `${c.name}@${c.version} from ${c.sourceUrl}: install failed (${result.error.kind})`,
             );
+            failed.push(`${c.name} (${result.error.kind})`);
             continue;
           }
           ctx.log(`${c.name}@${c.version}: install ok`);
@@ -119,6 +121,12 @@ export function createSkillInstallPlugin(deps: {
             nextManaged.join(", ") || "<none>"
           }; removed ${toRemove.length}`,
         );
+
+        if (failed.length > 0) {
+          throw new Error(
+            `install failed for ${failed.length} skill(s): ${failed.join(", ")}`,
+          );
+        }
       };
     },
   };

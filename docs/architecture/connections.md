@@ -247,10 +247,10 @@ sequenceDiagram
   WK->>RT: runtime.v1.applyState (version, state, events)
   RT->>RT: reconcile contributions per kind
   loop per event in order
-    RT->>RT: per-kind handler — does the work, dedup via local state store
+    RT->>RT: per-kind handler — does the work, dedups locally
   end
   RT-->>WK: apply outcome (cursor, settled events, failures)
-  WK->>PG: UPDATE outbox last_applied and stamp events dispatched_at up to applied cursor
+  WK->>PG: record the outcome, stamp the settled events
 ```
 
 ### `applyState` — state and events delivery (server → agent)
@@ -259,10 +259,10 @@ The server sends a per-agent monotonic `version` cursor, the **full desired stat
 
 The reply is a discriminated outcome, not a bare ack:
 
-- **applied** — the payload was processed. It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**. A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload.
-- **stale** — the agent's contributions were already at or beyond the requested version, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
+- **applied** — the payload was processed. It returns the applied cursor, the resulting state hash (null until the first clean settle), the set of events that settled, and **any per-driver failures**. A failure leaves that driver's slice unsettled for redelivery without blocking the rest of the payload — it advances the answered cursor but not the applied one, so a consumer that needs the pod's disk to match the spec gates on the second.
+- **stale** — the requested version is strictly older than the agent's applied cursor, so state reconciliation was skipped; the agent still applies any events it hasn't seen and reports which settled.
 
-Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+Concurrent dispatches from different replicas race naturally: the agent rejects versions older than its applied cursor (last-version-wins), which is what surfaces as the *stale* outcome. At an equal version the hash decides, not the cursor. The applied hash is recorded on the agent's outbox row for the periodic sweep to compare against. Exact reply shape lives in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
 ### `hello` — agent → api-server catch-up
 
@@ -343,8 +343,8 @@ One outbox surface in Postgres, plus the events table that feeds the payload:
 
 | Table | Shape | Why |
 |---|---|---|
-| `runtime_state_outbox` | One row per agent | Delivery is per-agent and last-write-wins. Coalesce-by-agent. Carries `version`, `last_enqueued_at`, `last_applied_version`, `last_applied_hash`, `last_applied_at`. |
-| `runtime_events` | One row per pending event | Each carries its own `version` (the slot in the agent's monotonic sequence), `expires_at`, and `dispatched_at`. The state-builder reads non-dispatched, non-expired rows when constructing `events[]`. |
+| `runtime_state_outbox` | One row per agent | Delivery is per-agent and last-write-wins. Coalesce-by-agent. Carries the desired version and two cursors: the version the agent last **answered** for, and the one it last **applied cleanly**. |
+| `runtime_events` | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, and a dispatched marker. The state-builder reads the live ones into `events[]`. |
 
 ### Mutation transaction
 
@@ -470,10 +470,10 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 
 | Substrate | What lives there | Notes |
 |---|---|---|
-| Postgres `connections` | Connection records (template id, auth, contributions[], inputs, owner) | New table for the unified model. |
-| Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions (ordered first), replacing the Agent CR's env field, which is retained but no longer read. |
-| Postgres `runtime_state_outbox` | One row per agent — the delivery cursor: current version, what the agent last applied, and when | Compared against the applied hash by the sweep. |
-| Postgres `runtime_events` | One row per pending event — kind, payload, the version slot it occupies, and its ttl | Read by the state-builder; stamped by the worker in the apply-ack transaction. |
+| Postgres `connections` | Connection records | The unified model's own table. |
+| Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions, ordered first. |
+| Postgres `runtime_state_outbox` | One row per agent — the desired version and the two cursors behind it | Compared against the applied hash by the sweep. |
+| Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id. |
 | Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
 | Postgres `egress_rules` | `egress-allow` and `egress-inject` Contributions joined per grant | Existing table; same as today. Both kinds produce the same allow row; `egress-inject`'s credential rides a separate gateway-side rail. |
@@ -487,9 +487,9 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
 - **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path.
-- **State snapshots are idempotent; reapplying the latest snapshot is safe.** Drivers tolerate repeated apply. The agent's `lastAppliedVersion` rejects older state pushes; replay during disconnect/reconnect cannot regress state.
+- **State snapshots are idempotent, and a contribution change always bumps the version.** Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. Only the sweep and `hello` enqueue without a bump, and both fire only for a row the agent is behind — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and version.** The agent's local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
-- **One cursor for both slices.** The worker stamps `dispatched_at` for events with `version <= appliedVersion` in the same transaction that bumps `last_applied_version`. State and events share one ack marker.
+- **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello`.
 - **Every Contribution kind has exactly one rail.** The api-server's fan-out determines which rail per kind; drivers, controller-render, and Envoy never overlap responsibilities on the same kind.
 - **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload.
