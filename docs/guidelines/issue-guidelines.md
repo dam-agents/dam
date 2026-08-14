@@ -29,6 +29,7 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
 - **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
 - **"As a user" always.** A user story's role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow. A narrow role makes the issue read as if it only serves that group, and it narrows how the team scopes the work.
+- **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix. "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer. Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads. A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves. **Goal** states the user-visible outcome, not the mechanism. Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
 
 ## Attribution
 
@@ -60,7 +61,7 @@ This is the one place a real person is named — see **No personal data** above.
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - Expand an artifact to full screen from the chat view`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the person filing is the person who asked — see [Attribution](#attribution).
+Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix (see **State the problem, not the solution** above). Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the person filing is the person who asked — see [Attribution](#attribution).
 
 ### Epic
 
@@ -98,10 +99,10 @@ _Filed by @<github-handle>_
 
 ### Feature
 
-The **Problem** describes what's wrong or missing today from the user's point of view — a concrete scenario if it sharpens it, and why it matters. The **Goal** is what success looks like as user-visible outcome. The **User Stories** break the goal into the concrete things different users want to do and why. Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open.
+The **Problem** describes what's wrong or missing today from the user's point of view — a concrete scenario if it sharpens it, and why it matters. The **Goal** is what success looks like as user-visible outcome. The **User Stories** break the goal into the concrete things different users want to do and why. Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open. A feature is the type most likely to name a solution in its title; write the title from the **Problem**, not from the fix.
 
 ```markdown
-**Title:** <`UI - ` if the web UI; then short, declarative>
+**Title:** <`UI - ` if the web UI; then short, declarative — the problem the user has, not the feature that fixes it>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -150,7 +151,7 @@ _Filed by @<github-handle>_
 A task states the work and what it unblocks. It's the one type where naming engineering work is expected — keep it as plain as the work allows.
 
 ```markdown
-**Title:** <`UI - ` if the web UI; then short, declarative>
+**Title:** <`UI - ` if the web UI; then short, declarative — the work needed, not a chosen implementation>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
