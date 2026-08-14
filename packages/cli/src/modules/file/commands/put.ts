@@ -10,7 +10,7 @@ import {
   printResolveError,
 } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { printTrpcError } from "../../shared/trpc/print.js";
+import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -125,9 +125,10 @@ function printTrpcUploadError(
   remotePath: string,
   host: string,
 ): void {
-  const trpcErr = e instanceof TRPCClientError ? e : undefined;
-  const code = trpcErr?.data?.code as string | undefined;
-  const message = (trpcErr?.data?.message as string | undefined) ?? "";
+  const code =
+    e instanceof TRPCClientError
+      ? (e.data?.code as string | undefined)
+      : undefined;
   if (code === "CONFLICT") {
     process.stderr.write(
       `error: ${remotePath} already exists on the agent; pass --overwrite to clobber\n`,
@@ -135,13 +136,14 @@ function printTrpcUploadError(
     return;
   }
   if (code === "FORBIDDEN") {
-    process.stderr.write(`error: forbidden path: ${message || remotePath}\n`);
+    process.stderr.write(`error: forbidden path: ${remotePath}\n`);
     return;
   }
   if (code === "PAYLOAD_TOO_LARGE") {
+    const detail = serverDetail(e);
     process.stderr.write(
       `error: ${remotePath} exceeds the server's per-file cap` +
-        (message ? ` (${message})` : "") +
+        (detail ? ` (${detail})` : "") +
         `. Streaming transfer for individual large files isn't implemented yet ` +
         `(use \`dam import\` for bulk transfer).\n`,
     );

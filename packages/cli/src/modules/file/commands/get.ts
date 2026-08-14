@@ -11,7 +11,7 @@ import {
   printResolveError,
 } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { printTrpcError } from "../../shared/trpc/print.js";
+import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
   EXIT_BELOW_FLOOR,
@@ -172,10 +172,11 @@ function printTrpcReadError(e: unknown, path: string, host: string): void {
     return;
   }
   if (code === "PAYLOAD_TOO_LARGE") {
+    const detail = serverDetail(e);
     process.stderr.write(
-      `error: ${path} exceeds the 10 MB cap for tRPC-based reads. ` +
-        `Streaming transfer for individual large files isn't implemented yet ` +
-        `(use \`dam import\` for bulk transfer).\n`,
+      `error: ${path} exceeds the server's per-file cap` +
+        (detail ? ` (${detail})` : "") +
+        `. Streaming transfer for individual large files isn't implemented yet.\n`,
     );
     return;
   }
