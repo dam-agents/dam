@@ -16,3 +16,12 @@ export function onTermsStale(): void {
   rememberReturnPath("terms");
   window.location.assign(routeToPath({ view: "terms" }));
 }
+
+export function isTermsStaleError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "data" in error &&
+    !!(error as { data?: { termsStale?: boolean } }).data?.termsStale
+  );
+}

@@ -11,12 +11,14 @@ import type {
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { getLogger } from "../../../core/logger.js";
+import { emit, EventType } from "../../../events.js";
 
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createHarnessConfigService(deps: {
   runtimeMutator: RuntimeMutator;
   snapshotRepo: HarnessConfigSnapshotRepo;
+  ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
   isSettled: (agentId: string) => Promise<boolean>;
@@ -66,6 +68,11 @@ export function createHarnessConfigService(deps: {
         },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
+      emit({
+        type: EventType.HarnessConfigChanged,
+        agentId,
+        ownerSub: deps.ownerSub,
+      });
       try {
         await deps.snapshotRepo.merge(
           agentId,

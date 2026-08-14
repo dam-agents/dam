@@ -16,24 +16,32 @@ fi
 description = "Run the smoke suite (src/tests/smoke/) — the always-on pipeline tier"
 dir = "{{config_root}}/packages/e2e/playwright"
 depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
+# Defensive: the sandbox k3s ingress binds IPv4 only, so the specs' own
+# fetches (Keycloak token mint, tRPC clients) resolve `*.localhost` v4-first
+# instead of depending on happy-eyeballs fallback. The browser side gets the
+# same via --host-resolver-rules in the config.
+env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "pnpm exec playwright test"
 
 ["e2e-playwright:run-full"]
 description = "Run the FULL suite: smoke plus the slow on-demand specs under src/tests/full/"
 dir = "{{config_root}}/packages/e2e/playwright"
 depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
+env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "E2E_FULL=1 pnpm exec playwright test"
 
 ["e2e-playwright:run-headed"]
 description = "Run Playwright with a visible browser window"
 dir = "{{config_root}}/packages/e2e/playwright"
 depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
+env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "pnpm exec playwright test --headed"
 
 ["e2e-playwright:run-ui"]
 description = "Open Playwright UI mode (time-travel debugger, watch mode)"
 dir = "{{config_root}}/packages/e2e/playwright"
 depends = ["common:setup:pnpm", "e2e-playwright:install-browsers"]
+env = { NODE_OPTIONS = "--dns-result-order=ipv4first" }
 run = "pnpm exec playwright test --ui"
 
 ["e2e-playwright:check"]

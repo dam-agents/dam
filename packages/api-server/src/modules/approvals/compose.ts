@@ -3,7 +3,6 @@ import type { ApprovalsService } from "api-server-api";
 import { createApprovalsRepository } from "./infrastructure/approvals-repository.js";
 import {
   createApprovalsService,
-  type ApprovalsNotifier,
   type EgressRuleWriter,
   type WrapperFrameSender,
 } from "./services/approvals-service.js";
@@ -23,6 +22,8 @@ import {
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
 import { createRedisApprovalsBus } from "./infrastructure/redis-approvals-bus.js";
+import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
+import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 
 export interface ComposeApprovalsServiceDeps {
@@ -39,11 +40,9 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
   service: ApprovalsService;
 } {
   const repo = createApprovalsRepository(deps.db);
-  const notifier = createRedisApprovalsBus(deps.bus);
   const service = createApprovalsService({
     repo,
     egressRuleWriter: deps.egressRuleWriter,
-    notifier,
     wrapperFrameSender: deps.wrapperFrameSender,
     isAgentOwnedBy: deps.isAgentOwnedBy,
     ownerSub: deps.ownerSub,
@@ -71,8 +70,10 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   relay: ApprovalsRelayService;
   gate: ExtAuthzGate;
   sweeper: DeliverySweeper;
+  wakeSaga: Subscription;
 } {
   const repo = createApprovalsRepository(deps.db);
+  const wakeSaga = startWakeHeldCallsSaga(createRedisApprovalsBus(deps.bus));
   const relay = createApprovalsRelayService({ repo, bus: deps.bus });
   const gate = createExtAuthzGate({
     repo,
@@ -89,7 +90,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     staleMs: deps.sweep?.staleMs ?? 30_000,
     batchSize: deps.sweep?.batchSize ?? 50,
   });
-  return { relay, gate, sweeper };
+  return { relay, gate, sweeper, wakeSaga };
 }
 
 export function createApprovalsCleanupHook(
@@ -114,7 +115,6 @@ export type {
 } from "./services/ext-authz-gate.js";
 export type { DeliverySweeper } from "./services/delivery-sweeper.js";
 export type {
-  ApprovalsNotifier,
   EgressRuleWriter,
   WrapperFrameSender,
 } from "./services/approvals-service.js";

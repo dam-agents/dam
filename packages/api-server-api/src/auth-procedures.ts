@@ -17,12 +17,12 @@ function requireScope(...scopes: readonly Scope[]) {
   });
 }
 
-const requireWildcardBinding = t.middleware(({ ctx, next }) => {
+export const requireWildcardBinding = t.middleware(({ ctx, next }) => {
   if (ctx.user.agentIds !== "*") {
     throw new TRPCError({
       code: "FORBIDDEN",
       message:
-        "agents:manage requires an unrestricted (wildcard) API key; agent-bound keys cannot manage configuration.",
+        "this operation spans all of the owner's agents and requires an unrestricted (wildcard) principal; agent-bound API keys are refused.",
     });
   }
   return next();

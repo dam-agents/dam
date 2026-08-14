@@ -21,6 +21,17 @@ export enum EventType {
   ContributionApplyFailed = "ContributionApplyFailed",
   ContributionRecovered = "ContributionRecovered",
   ContributionApplyGaveUp = "ContributionApplyGaveUp",
+  ApprovalRequested = "ApprovalRequested",
+  ApprovalResolved = "ApprovalResolved",
+  ScheduleCreated = "ScheduleCreated",
+  ScheduleUpdated = "ScheduleUpdated",
+  ScheduleDeleted = "ScheduleDeleted",
+  HarnessConfigChanged = "HarnessConfigChanged",
+  ArtifactCreated = "ArtifactCreated",
+  ArtifactUpdated = "ArtifactUpdated",
+  ArtifactDeleted = "ArtifactDeleted",
+  ArtifactFolderChanged = "ArtifactFolderChanged",
+  ExperimentChanged = "ExperimentChanged",
 }
 
 export type UserAuthenticated = {
@@ -132,6 +143,81 @@ export type ContributionApplyGaveUp = {
   message: string;
 };
 
+export type ApprovalRequested = {
+  type: EventType.ApprovalRequested;
+  approvalId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ApprovalResolved = {
+  type: EventType.ApprovalResolved;
+  approvalId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ScheduleCreated = {
+  type: EventType.ScheduleCreated;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ScheduleUpdated = {
+  type: EventType.ScheduleUpdated;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ScheduleDeleted = {
+  type: EventType.ScheduleDeleted;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type HarnessConfigChanged = {
+  type: EventType.HarnessConfigChanged;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ArtifactCreated = {
+  type: EventType.ArtifactCreated;
+  artifactId: string;
+  ownerSub: string;
+  agentId?: string;
+};
+
+export type ArtifactUpdated = {
+  type: EventType.ArtifactUpdated;
+  artifactId: string;
+  ownerSub: string;
+  agentId?: string;
+};
+
+export type ArtifactDeleted = {
+  type: EventType.ArtifactDeleted;
+  artifactId: string;
+  ownerSub: string;
+  agentId?: string;
+};
+
+export type ArtifactFolderChanged = {
+  type: EventType.ArtifactFolderChanged;
+  folderId: string;
+  ownerSub: string;
+};
+
+export type ExperimentChanged = {
+  type: EventType.ExperimentChanged;
+  experimentId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -148,7 +234,18 @@ export type DomainEvent =
   | FilesImported
   | ContributionApplyFailed
   | ContributionRecovered
-  | ContributionApplyGaveUp;
+  | ContributionApplyGaveUp
+  | ApprovalRequested
+  | ApprovalResolved
+  | ScheduleCreated
+  | ScheduleUpdated
+  | ScheduleDeleted
+  | HarnessConfigChanged
+  | ArtifactCreated
+  | ArtifactUpdated
+  | ArtifactDeleted
+  | ArtifactFolderChanged
+  | ExperimentChanged;
 
 const bus$ = new Subject<DomainEvent>();
 

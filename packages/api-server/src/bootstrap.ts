@@ -63,7 +63,7 @@ import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
-import { createHarnessConfigSnapshotRepo } from "./modules/harness-config/index.js";
+import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
 import {
   createKubernetesSecretStore,
@@ -73,6 +73,7 @@ import { composeUsageModule } from "./modules/usage/compose.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
+import { composeLiveEventsModule } from "./modules/live-events/index.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
@@ -281,7 +282,11 @@ export async function bootstrap() {
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
     },
-    snapshotWriter: createHarnessConfigSnapshotRepo(db),
+    snapshotWriter: createHarnessConfigSnapshotWriter({
+      db,
+      resolveOwner: async (agentId) =>
+        (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null,
+    }),
     harnessServerUrl: config.harnessServerUrl,
   });
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
@@ -412,6 +417,20 @@ export async function bootstrap() {
 
   const audit = composeAuditModule();
   audit.start();
+
+  const liveEventsModule = composeLiveEventsModule({
+    bus: redisBus,
+    log: (m) => getLogger().warn(`[live-events] ${m}`),
+    k8s: k8sClient,
+  });
+  liveEventsModule.start();
+  const agentWatchLease = createLeaderLease({
+    redis: sharedRedis,
+    name: "live-events-agent-watch",
+    onAcquired: () => liveEventsModule.startAgentWatch(),
+    onLost: () => liveEventsModule.stopAgentWatch(),
+    log: (m) => getLogger().info(`[live-events] ${m}`),
+  });
 
   const { agents: systemAgents } = composeAgentsModule({
     api,
@@ -605,6 +624,7 @@ export async function bootstrap() {
     relay: approvalsRelay,
     gate: extAuthzGate,
     sweeper: deliverySweeper,
+    wakeSaga: approvalsWakeSaga,
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
@@ -865,6 +885,7 @@ export async function bootstrap() {
     isTermsAccepted,
     e2e: e2eService,
     artifacts,
+    liveEvents: liveEventsModule.liveEvents,
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -903,12 +924,16 @@ export async function bootstrap() {
 
   void telegramWorker?.resolveIdentity();
   void channelLease.start();
+  void agentWatchLease.start();
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
+    approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
+    await agentWatchLease.stop();
+    liveEventsModule.stop();
     await periodicJobs.close();
     await channelLease.stop();
     channelRpc.close();

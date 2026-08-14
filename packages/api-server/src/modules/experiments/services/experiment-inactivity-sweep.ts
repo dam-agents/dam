@@ -1,3 +1,4 @@
+import { emit, EventType } from "../../../events.js";
 import { sweepDecision } from "../domain/lifecycle.js";
 import type { ExperimentsRepository } from "../infrastructure/experiments-repository.js";
 
@@ -54,6 +55,14 @@ export function createExperimentInactivitySweep(
             "failed",
             { finishedAt: at, error: "inactivity deadline exceeded" },
           );
+          if (flipped) {
+            emit({
+              type: EventType.ExperimentChanged,
+              experimentId: row.id,
+              agentId: row.driverAgentId,
+              ownerSub: row.owner,
+            });
+          }
           if (flipped && deps.onReaped) {
             await deps.onReaped({
               id: row.id,
