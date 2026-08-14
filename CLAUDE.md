@@ -28,6 +28,7 @@ Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke 
 - Exception: typed comments, prefixed with a registered type (registry: `COMMENT_TYPES` in [`scripts/strip-comments.mjs`](scripts/strip-comments.mjs)):
   - `TEST_OVERVIEW:` — top of a spec file, the feature under test.
   - `TEST_SCENARIO:` — above an `it()`, why the scenario exists.
+  - `UNIT_BOUNDARY_DESCRIPTION:` — above a file's single exported unit, a plain-English description of what it does and why it exists.
 - Tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are not comments.
 - Always run `mise run common:check:comment-types` after changing code.
 

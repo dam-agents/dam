@@ -14,9 +14,9 @@ import {
   parseFrame,
   type JsonRpcId,
 } from "../../domain/frames.js";
+import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
-import { rewriteAuthError, rewriteCwd } from "../../infrastructure/mappers.js";
 import {
   platformSessionMetaSchema,
   type PlatformSessionMeta,
@@ -27,6 +27,7 @@ import type {
   BackgroundWorkRegistry,
   HeldSession,
 } from "../background-work-registry.js";
+import { createSessionTranscript } from "./session-transcript.js";
 
 const PROMPT_QUEUE_CAP = 32;
 
@@ -98,20 +99,6 @@ interface PendingAgentRequest {
   frame: string;
 }
 
-interface LogEntry {
-  seq: number;
-  line: string;
-  bytes: number;
-}
-
-interface SessionLog {
-  entries: LogEntry[];
-  nextSeq: number;
-  totalBytes: number;
-  truncated: boolean;
-  metadata: unknown | null;
-}
-
 type BootstrapWaiter =
   | { kind: "load"; channel: ClientChannel; originalId: JsonRpcId }
   | { kind: "resume"; channel: ClientChannel; originalId: JsonRpcId };
@@ -147,90 +134,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const activePromptBySession = new Map<string, ActivePrompt>();
   const promptQueueBySession = new Map<string, QueuedPrompt[]>();
 
-  const sessionLogs = new Map<string, SessionLog>();
-
-  const channelCursors = new Map<ClientChannel, Map<string, number>>();
+  const transcript = createSessionTranscript({
+    logBytesCap,
+    engagedChannelsFor(sessionId) {
+      const channels: ClientChannel[] = [];
+      for (const [channel, sessions] of engagedSessions) {
+        if (sessions.has(sessionId)) channels.push(channel);
+      }
+      return channels;
+    },
+  });
 
   const bootstrapBySession = new Map<string, BootstrapState>();
 
   let nextOutboundId = 1;
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  function getOrCreateLog(sessionId: string): SessionLog {
-    let log = sessionLogs.get(sessionId);
-    if (!log) {
-      log = {
-        entries: [],
-        nextSeq: 1,
-        totalBytes: 0,
-        truncated: false,
-        metadata: null,
-      };
-      sessionLogs.set(sessionId, log);
-    }
-    return log;
-  }
-
-  function appendToLog(sessionId: string, line: string): number {
-    const log = getOrCreateLog(sessionId);
-    const bytes = line.length;
-    const seq = log.nextSeq++;
-    log.entries.push({ seq, line, bytes });
-    log.totalBytes += bytes;
-    while (log.totalBytes > logBytesCap && log.entries.length > 1) {
-      const evicted = log.entries.shift()!;
-      log.totalBytes -= evicted.bytes;
-      log.truncated = true;
-    }
-    return seq;
-  }
-
-  function cursorFor(channel: ClientChannel, sessionId: string): number {
-    const map = channelCursors.get(channel);
-    return map?.get(sessionId) ?? 0;
-  }
-
-  function setCursor(
-    channel: ClientChannel,
-    sessionId: string,
-    seq: number,
-  ): void {
-    let map = channelCursors.get(channel);
-    if (!map) {
-      map = new Map();
-      channelCursors.set(channel, map);
-    }
-    map.set(sessionId, seq);
-  }
-
-  function truncationSentinel(sessionId: string): string {
-    return JSON.stringify({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: {
-        sessionId,
-        update: { sessionUpdate: "platform_clipped_replay" },
-      },
-    });
-  }
-
-  function catchUp(channel: ClientChannel, sessionId: string): void {
-    const log = sessionLogs.get(sessionId);
-    if (!log) return;
-    const current = cursorFor(channel, sessionId);
-    if (current === 0 && log.truncated && channel.isOpen()) {
-      channel.send(truncationSentinel(sessionId));
-    }
-    let lastSeq = current;
-    for (const entry of log.entries) {
-      if (entry.seq <= current) continue;
-      if (!channel.isOpen()) return;
-      channel.send(rewriteAuthError(entry.line));
-      lastSeq = entry.seq;
-    }
-    if (lastSeq !== current) setCursor(channel, sessionId, lastSeq);
-  }
 
   function engage(channel: ClientChannel, sessionId: string): void {
     const sessions = engagedSessions.get(channel);
@@ -268,33 +187,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  function appendAndFanOut(
-    sessionId: string,
-    line: string,
-    options?: {
-      skipChannel?: ClientChannel;
-      onlyChannel?: ClientChannel | null;
-    },
-  ): void {
-    const seq = appendToLog(sessionId, line);
-    const out = rewriteAuthError(line);
-    const onlyChannelSet = options !== undefined && "onlyChannel" in options;
-    for (const [channel, sessions] of engagedSessions) {
-      if (!sessions.has(sessionId) || !channel.isOpen()) continue;
-      if (cursorFor(channel, sessionId) >= seq) continue;
-      if (onlyChannelSet && channel !== options!.onlyChannel) {
-        setCursor(channel, sessionId, seq);
-        continue;
-      }
-      if (channel === options?.skipChannel) {
-        setCursor(channel, sessionId, seq);
-        continue;
-      }
-      channel.send(out);
-      setCursor(channel, sessionId, seq);
-    }
-  }
-
   function appendUserPromptToLog(
     sessionId: string,
     prompt: unknown,
@@ -314,7 +206,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         method: "session/update",
         params: { sessionId, update },
       });
-      appendAndFanOut(sessionId, line, { skipChannel: originator });
+      transcript.appendEcho(sessionId, line, originator);
     }
   }
 
@@ -398,8 +290,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         channel.close(1011, "agent exited");
       }
       engagedSessions.clear();
-      channelCursors.clear();
-      sessionLogs.clear();
+      transcript.clear();
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();
@@ -440,8 +331,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const channel of engagedSessions.keys())
       channel.close(1011, "agent recycled for env change");
     engagedSessions.clear();
-    channelCursors.clear();
-    sessionLogs.clear();
+    transcript.clear();
     bootstrapBySession.clear();
     for (const t of orphanTimers.values()) clearTimeout(t);
     orphanTimers.clear();
@@ -473,7 +363,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const sessions = engagedSessions.get(channel);
     engagedSessions.delete(channel);
     nonViewerChannels.delete(channel);
-    channelCursors.delete(channel);
+    transcript.dropChannel(channel);
 
     for (const [sid, queue] of promptQueueBySession) {
       const kept = queue.filter((q) => q.channel !== channel);
@@ -519,8 +409,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         params: { sessionId },
       });
     }
-    sessionLogs.delete(sessionId);
-    for (const cursors of channelCursors.values()) cursors.delete(sessionId);
+    transcript.forget(sessionId);
     activePromptBySession.delete(sessionId);
     promptQueueBySession.delete(sessionId);
     deps.backgroundWork?.forget(sessionId);
@@ -652,19 +541,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     channel: ClientChannel,
     originalId: JsonRpcId,
     sessionId: string,
-    log: SessionLog,
   ): void {
-    if (log.metadata === null) {
+    const metadata = transcript.metadataOf(sessionId);
+    if (metadata === null) {
       throw new Error(
         `serveLoadFromLog called for ${sessionId} without cached metadata`,
       );
     }
-    catchUp(channel, sessionId);
+    transcript.catchUp(channel, sessionId);
     engage(channel, sessionId);
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: log.metadata,
+      result: metadata,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -673,21 +562,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     channel: ClientChannel,
     originalId: JsonRpcId,
     sessionId: string,
-    log: SessionLog,
   ): void {
-    if (log.metadata === null) {
+    const metadata = transcript.metadataOf(sessionId);
+    if (metadata === null) {
       throw new Error(
         `serveResumeFromLog called for ${sessionId} without cached metadata`,
       );
     }
     engage(channel, sessionId);
-    const lastSeq =
-      log.entries.length > 0 ? log.entries[log.entries.length - 1].seq : 0;
-    setCursor(channel, sessionId, lastSeq);
+    transcript.advanceToTail(channel, sessionId);
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: log.metadata,
+      result: metadata,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -730,10 +617,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             mapping.method === "session/load";
           const result = (frame as { result?: unknown }).result;
           if (cacheable && result !== undefined) {
-            const log = getOrCreateLog(sidForChannel);
-            if (log.metadata === null) {
-              log.metadata = result;
-            }
+            transcript.cacheMetadata(sidForChannel, result);
           }
           if (
             mapping.method === "session/new" &&
@@ -746,11 +630,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.method === "session/load" && mapping.attachSessionId) {
           const sid = mapping.attachSessionId;
-          const log = getOrCreateLog(sid);
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
-            const loadFailed = log.metadata === null;
+            const loadFailed = transcript.metadataOf(sid) === null;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
               if (loadFailed) {
@@ -762,9 +645,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 continue;
               }
               if (waiter.kind === "load") {
-                serveLoadFromLog(waiter.channel, waiter.originalId, sid, log);
+                serveLoadFromLog(waiter.channel, waiter.originalId, sid);
               } else {
-                serveResumeFromLog(waiter.channel, waiter.originalId, sid, log);
+                serveResumeFromLog(waiter.channel, waiter.originalId, sid);
               }
             }
           }
@@ -800,7 +683,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
-          appendAndFanOut(
+          transcript.append(
             sid,
             JSON.stringify(
               buildPlatformTurnEndedNotification({ sessionId: sid }),
@@ -817,11 +700,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (sessionId) {
       const boot = bootstrapBySession.get(sessionId);
       if (boot) {
-        appendAndFanOut(sessionId, line, {
-          onlyChannel: boot.initiatorChannel,
-        });
+        transcript.appendReplay(sessionId, line, boot.initiatorChannel);
       } else {
-        appendAndFanOut(sessionId, line);
+        transcript.append(sessionId, line);
       }
     } else {
       broadcastToAll(line);
@@ -871,9 +752,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata.set(paramsSid, { ...current, ...incomingMeta });
         }
         engage(channel, paramsSid);
-        const existing = sessionLogs.get(paramsSid);
-        if (existing && existing.metadata !== null) {
-          serveResumeFromLog(channel, frame.id, paramsSid, existing);
+        if (transcript.metadataOf(paramsSid) !== null) {
+          serveResumeFromLog(channel, frame.id, paramsSid);
           return;
         }
         const boot = bootstrapBySession.get(paramsSid);
@@ -906,9 +786,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (method === "session/load" && paramsSid) {
-        const existing = sessionLogs.get(paramsSid);
-        if (existing && existing.metadata !== null) {
-          serveLoadFromLog(channel, frame.id, paramsSid, existing);
+        if (transcript.metadataOf(paramsSid) !== null) {
+          serveLoadFromLog(channel, frame.id, paramsSid);
           return;
         }
         const boot = bootstrapBySession.get(paramsSid);
@@ -1086,8 +965,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const channel of engagedSessions.keys())
         channel.close(1000, "shutdown");
       engagedSessions.clear();
-      channelCursors.clear();
-      sessionLogs.clear();
+      transcript.clear();
       bootstrapBySession.clear();
       for (const t of orphanTimers.values()) clearTimeout(t);
       orphanTimers.clear();

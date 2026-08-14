@@ -30,6 +30,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
 | Backend | *(proposed, VM-sandbox proposal)* The isolation substrate an Agent's workload runs on, selected per-template as `spec.backend` — a discriminated union (`type: container \| vm`, default `container`, variant props in a sub-block named after the variant). `container` reconciles the agent StatefulSet (optionally Kata via `runtimeClassName`); `vm` reconciles a KubeVirt VirtualMachine. Not "Sandbox" (retired domain term) and distinct from `runtimeClassName`, which selects among *container* runtimes and is rejected on the `vm` backend |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
+| Session Transcript | The in-memory record of one Session's messages, kept by agent-runtime. It has a size cap: when full, the oldest lines are dropped and readers are warned. Each attached channel remembers how far it has read, so it only receives what it missed. Not saved to disk — dies with the harness process |
 | Schedule | A time-triggered task attached to an Agent — either cron-based or heartbeat |
 | Desired State | The target lifecycle state of an Agent: running or hibernated |
 | Wake | Transitioning an Agent from hibernated to running |
