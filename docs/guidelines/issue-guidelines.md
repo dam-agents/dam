@@ -29,7 +29,7 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
 - **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
 - **"As a user" always.** A user story's role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow. A narrow role makes the issue read as if it only serves that group, and it narrows how the team scopes the work.
-- **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix. "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer. Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads. A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves. **Goal** states the user-visible outcome, not the mechanism. Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
+- **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix. "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer. Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads. A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves. A **task** is the exception — the work itself is the point, so its title may name the work ("Upgrade the node runtime"); it still must not name a chosen implementation. **Goal** states the user-visible outcome, not the mechanism. Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
 
 ## Attribution
 
@@ -90,7 +90,7 @@ An epic defines the value, not a single fix, and gives enough shape that issues 
 
 <Key decisions or unknowns.>
 
-<omit this footer if you are the person who asked>
+<omit this footer if the account you file as belongs to the person who asked>
 
 ---
 
@@ -139,7 +139,7 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 <optional — links to designs, research, related issues, docs, or other supporting material>
 
-<omit this footer if you are the person who asked>
+<omit this footer if the account you file as belongs to the person who asked>
 
 ---
 
@@ -170,7 +170,7 @@ A task states the work and what it unblocks. It's the one type where naming engi
 
 <The observable end state — how we know it's finished.>
 
-<omit this footer if you are the person who asked>
+<omit this footer if the account you file as belongs to the person who asked>
 
 ---
 
@@ -205,7 +205,7 @@ Lead with observed vs. expected behavior. Reproduction steps should be minimal a
 
 1. <minimal, numbered steps>
 
-<omit this footer if you are the person who asked>
+<omit this footer if the account you file as belongs to the person who asked>
 
 ---
 
@@ -252,7 +252,7 @@ A research task defines what we need to learn and why, before committing to buil
 
 <optional — links to existing research, related issues, docs, or other supporting material>
 
-<omit this footer if you are the person who asked>
+<omit this footer if the account you file as belongs to the person who asked>
 
 ---
 
