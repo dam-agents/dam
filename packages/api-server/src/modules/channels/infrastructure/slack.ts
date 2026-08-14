@@ -111,6 +111,10 @@ function slackTurnContract(ctx: {
    *  is the install's, not the agent's own name — so the id is the only thing
    *  that ties a tag in the text to itself. */
   botUserId: string | null;
+  /** The name the agent's posts are signed with, null when unresolved. The
+   *  platform publishes it to the channel, so it is the name people type — and
+   *  the agent's workspace persona may go by another. */
+  agentName: string | null;
 }): string {
   const batchCount = ctx.batch?.count ?? 1;
   const multi = batchCount > 1;
@@ -135,11 +139,17 @@ function slackTurnContract(ctx: {
       "). " +
       "People address you three ways, all equivalent: by tagging the bot" +
       (ctx.botUserId ? ` (${ctx.botUserId} in the text)` : "") +
-      `, by typing "${ctx.brand.short}" with no tag at all, or by your own ` +
-      "name — the one you know yourself by, which is the name your posts are " +
-      "signed with. Authorship runs the other way: every agent here posts " +
-      "through this one bot, so a post from it is yours only if the name in " +
-      "its footer is yours.",
+      `, by typing "${ctx.brand.short}" with no tag at all, or by name` +
+      (ctx.agentName
+        ? ` — your posts here are signed "${ctx.agentName}", so that is what ` +
+          "people will call you, alongside any name you know yourself by. "
+        : " — the one you know yourself by, which is the name your posts are " +
+          "signed with. ") +
+      "Authorship runs the other way: every agent here posts through this " +
+      "one bot, so a post from it is yours only if " +
+      (ctx.agentName
+        ? `its footer reads "${ctx.agentName}".`
+        : "the name in its footer is yours."),
     "Nothing you write as plain text is delivered to Slack — only tool " +
       "calls reach the channel. To respond, call one of:",
     replyBullet,
@@ -200,12 +210,17 @@ function addressedGuidance(ctx: {
   ].join("\n");
 }
 
-function ambientGuidance(brand: { name: string; short: string }): string {
+function ambientGuidance(
+  brand: { name: string; short: string },
+  agentName: string | null,
+): string {
   return [
     "<reading-along>",
     "You are reading along in a shared Slack channel; the following " +
       "message(s) were not @-mentions. A message that calls you by name — " +
-      `"${brand.name}", "${brand.short}", or the name you know yourself by — ` +
+      `"${brand.name}", "${brand.short}", ` +
+      (agentName ? `"${agentName}", ` : "") +
+      "or the name you know yourself by — " +
       "is addressed to you: answer it as you would a mention. People often " +
       "drop the @ and just type the name. Otherwise chime in only when " +
       "you can clearly help — answer a question you know the answer to, pick " +
@@ -973,6 +988,21 @@ export function createSlackWorker(
     "messageTs shown in your turn instructions so this inspects the message " +
     "you mean.";
 
+  /** The agent's display name — the one its posts are signed with, and so the
+   *  one people in the channel call it by. Null when it can't be resolved: the
+   *  instance id is an internal handle and never belongs in a prompt. */
+  async function resolveAgentDisplayName(
+    instanceName: string,
+  ): Promise<string | null> {
+    try {
+      const agent = await agents().get(instanceName);
+      const name = agent?.name?.trim();
+      return name && name !== instanceName ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function resolveAgentFooter(
     instanceName: string,
     sessionId?: string,
@@ -1137,12 +1167,16 @@ export function createSlackWorker(
     presenter.setThinking();
 
     const isDirectMessage = isDirectMessageId(ctx.channel);
-    const turnContext = await turnContractContext(gw, ctx.channel, ctx.eventTs);
+    const [turnContext, agentName] = await Promise.all([
+      turnContractContext(gw, ctx.channel, ctx.eventTs),
+      resolveAgentDisplayName(instanceName),
+    ]);
     const contract = slackTurnContract({
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
       brand,
       isDirectMessage,
+      agentName,
       ...turnContext,
     });
     const guidance = addressedGuidance({
@@ -1851,17 +1885,19 @@ export function createSlackWorker(
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    const agentName = await resolveAgentDisplayName(args.instanceName);
     const contract = slackTurnContract({
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
       brand,
       batch: { count: args.messages.length, inThread: args.hasThread },
       isDirectMessage: isDirectMessageId(args.channel),
+      agentName,
       ...(await turnContractContext(gw, args.channel, args.eventTs, {
         batched: args.messages.length > 1,
       })),
     });
-    const guidance = ambientGuidance(brand);
+    const guidance = ambientGuidance(brand, agentName);
 
     let delivery: Promise<TurnDelivery>;
     const deliverFiles = () =>

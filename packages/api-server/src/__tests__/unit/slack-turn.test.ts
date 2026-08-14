@@ -45,6 +45,8 @@ function harness(opts: {
   ensureReady?: AgentsService["ensureReady"];
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
+  /** The agent's display name, as the agents service would report it. */
+  agentName?: string;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -55,6 +57,9 @@ function harness(opts: {
   };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),
+    ...(opts.agentName !== undefined
+      ? { get: async () => ({ name: opts.agentName }) }
+      : {}),
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -893,7 +898,7 @@ describe("slack turn — network-access framing and attendance", () => {
     // typed without a tag, and the agent's own name.
     expect(prompt).toContain("by tagging the bot (U-BOT in the text)");
     expect(prompt).toContain('by typing "dam" with no tag at all');
-    expect(prompt).toContain("or by your own name");
+    expect(prompt).toContain("or by name");
     // ...but a tag is not authorship: one bot posts for every agent, so the
     // footer's name is what says which post was this agent's.
     expect(prompt).toContain(
@@ -905,6 +910,46 @@ describe("slack turn — network-access framing and attendance", () => {
     // The read-along framing tells the agent to stay silent when in doubt; an
     // addressed turn must never carry it.
     expect(prompt).not.toContain("<reading-along>");
+  });
+
+  it("delivers the name the agent's posts are signed with, and makes it the authorship test", async () => {
+    let prompt = "";
+    const h = harness({
+      agentName: "Buginator",
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    h.gw.setBotUserId("U-BOT");
+    await h.mention({ text: "Buginator can you look at this" });
+    await tick();
+
+    // The platform publishes this name in every footer, so it is the name
+    // people type — the agent shouldn't have to infer it.
+    expect(prompt).toContain('your posts here are signed "Buginator"');
+    expect(prompt).toContain("so that is what people will call you");
+    // A workspace persona may go by something else; both still address it.
+    expect(prompt).toContain("alongside any name you know yourself by");
+    // Authorship becomes a concrete check against the footer.
+    expect(prompt).toContain('yours only if its footer reads "Buginator"');
+    expect(prompt).not.toContain("agent-1");
+  });
+
+  it("omits the signed name rather than leaking the instance id when it can't be resolved", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain("the one you know yourself by");
+    expect(prompt).toContain("the name in its footer is yours");
+    expect(prompt).not.toContain("agent-1");
   });
 
   it("still frames the turn as addressed when Slack won't say who the bot is", async () => {
