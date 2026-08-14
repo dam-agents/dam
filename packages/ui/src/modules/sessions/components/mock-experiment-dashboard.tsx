@@ -128,7 +128,7 @@ export function MockExperimentDashboard({
             className="flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
             title="Stop"
           >
-            <Pause size={14} />
+            <Pause size={16} />
           </button>
         )}
       </div>
@@ -211,7 +211,7 @@ export function MockExperimentDashboard({
               Live feed
             </p>
             {status === "running" && (
-              <Renew size={12} className="animate-spin text-muted-foreground" />
+              <Renew size={16} className="animate-spin text-muted-foreground" />
             )}
           </div>
           <div className="max-h-[180px] overflow-y-auto space-y-0.5">

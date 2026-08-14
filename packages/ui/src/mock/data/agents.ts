@@ -17,7 +17,7 @@ export const agents = [
     id: AGENT_IDS.codexResearch,
     spawnedBy: null,
     name: "brand-asset-generator",
-    templateId: "tpl-openai-codex",
+    templateId: "codex",
     templateUpdate: null,
     image: "ghcr.io/openai/codex:latest",
     description:
@@ -42,7 +42,7 @@ export const agents = [
     id: AGENT_IDS.claudeCodeMain,
     spawnedBy: null,
     name: "packaging-layouts",
-    templateId: "tpl-anthropic-claude",
+    templateId: "claude-code",
     templateUpdate: {
       fromImage: "ghcr.io/anthropics/claude-code:1.0.18",
       toImage: "ghcr.io/anthropics/claude-code:1.0.21",
@@ -69,7 +69,7 @@ export const agents = [
     id: AGENT_IDS.geminiPipeline,
     spawnedBy: null,
     name: "photo-retouching",
-    templateId: "tpl-google-gemini",
+    templateId: "gemini-cli",
     templateUpdate: {
       fromImage: "ghcr.io/google/gemini-cli:1.2.0",
       toImage: "ghcr.io/google/gemini-cli:1.3.0",

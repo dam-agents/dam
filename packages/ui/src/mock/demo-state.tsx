@@ -51,7 +51,8 @@ export function DemoStrip() {
   const onAssetPage =
     pathname === "/compare" ||
     pathname === "/consistency" ||
-    pathname === "/wiki-onboard";
+    pathname === "/wiki-onboard" ||
+    pathname === "/experiment-onboard";
 
   return (
     <div className="flex items-center gap-1 border-b border-border px-4 py-2">
@@ -108,6 +109,17 @@ export function DemoStrip() {
         )}
       >
         Wiki Onboard
+      </a>
+      <a
+        href="/experiment-onboard"
+        className={cn(
+          "px-3 py-1 rounded-full text-[14px] transition-colors",
+          pathname === "/experiment-onboard"
+            ? "bg-foreground text-background"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+        )}
+      >
+        Experiment Onboard
       </a>
     </div>
   );

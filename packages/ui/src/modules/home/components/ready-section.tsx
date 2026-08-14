@@ -141,7 +141,7 @@ export function ReadyCard({ item }: { item: ReadyItem }) {
       className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
     >
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-        <Icon size={20} className="text-muted-foreground" />
+        <Icon size={16} className="text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">

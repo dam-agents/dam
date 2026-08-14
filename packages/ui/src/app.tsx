@@ -6,6 +6,7 @@ import { DocsLinkHelpIcon } from "./components/docs-link.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { DemoStateProvider, DemoStrip } from "./mock/demo-state.js";
+import { protoPathname } from "./mock/proto-navigate.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
@@ -27,13 +28,15 @@ import { ExperimentSetupView } from "./modules/sandboxes/views/experiment-setup-
 import { KnowledgeBaseSetupView } from "./modules/sandboxes/views/knowledge-base-setup-view.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
-import { setMockWikiOnboard } from "./modules/sessions/views/chat-view.js";
+import {
+  setMockExperimentOnboard,
+  setMockWikiOnboard,
+} from "./modules/sessions/views/chat-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
-import { protoPathname } from "./mock/proto-navigate.js";
 import { useStore } from "./store.js";
 
 class DevErrorBoundary extends Component<
@@ -219,8 +222,14 @@ function MainApp() {
     import.meta.env.VITE_MOCK &&
     mockPath === "/wiki-onboard"
   ) {
-    // Set once; consumed (cleared) by ChatView's seeding effect on first mount
     setMockWikiOnboard(true);
+  }
+
+  if (
+    import.meta.env.VITE_MOCK &&
+    mockPath === "/experiment-onboard"
+  ) {
+    setMockExperimentOnboard(true);
   }
 
   if (

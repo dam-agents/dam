@@ -126,7 +126,7 @@ function StepDot({ done, active }: { done: boolean; active: boolean }) {
 function CompletedField({ value }: { value: string }) {
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1.5">
-      <Checkmark size={14} className="text-success shrink-0" />
+      <Checkmark size={16} className="text-success shrink-0" />
       <span className="text-[14px] font-medium text-foreground">{value}</span>
     </div>
   );

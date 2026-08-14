@@ -1,5 +1,10 @@
-import { Book, Chemistry, ContainerSoftware } from "@carbon/icons-react";
-import { Check, ChevronDown } from "lucide-react";
+import {
+  Book,
+  Checkmark,
+  Chemistry,
+  ChevronDown,
+  ContainerSoftware,
+} from "@carbon/icons-react";
 import { Children, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { ListSkeleton } from "@/components/list-skeleton";
@@ -10,11 +15,7 @@ import { useStore } from "../../../store.js";
 import { usePendingApprovals } from "../../approvals/api/queries.js";
 import { HomeHeader } from "../components/home-header.js";
 import { useAgentRows } from "../home-data.js";
-import {
-  type DigestRange,
-  markVisitNow,
-  useDigestRange,
-} from "../home-digest-store.js";
+import { markVisitNow } from "../home-digest-store.js";
 import {
   ApprovalVariant1,
   ArtifactCard,
@@ -164,7 +165,7 @@ function BlockedTypeFilter({
       >
         {label}
         <ChevronDown
-          size={14}
+          size={16}
           className={cn("transition-transform", open && "rotate-180")}
         />
       </button>
@@ -222,7 +223,7 @@ function BlockedSectionFiltered({
         <h2 className="flex items-center gap-2 text-[16px] font-semibold text-foreground">
           <span className="w-2 h-2 rounded-full bg-destructive shrink-0" />
           <span>
-            Blocked{" "}
+            Needs attention{" "}
             <span className="text-[14px] font-normal text-muted-foreground">
               ({filtered.length})
             </span>
@@ -295,94 +296,86 @@ export const RUNNING_CARDS: MockCard[] = [
       />
     ),
   },
-  {
-    type: "schedule",
-    ageMinutes: 180,
-    element: (
-      <ScheduleCard
-        name="Daily brand audit"
-        cadence="Every weekday at 9:00 AM"
-        nextRun="in 3h"
-        lastResult="success"
-        enabled={true}
-      />
-    ),
-  },
 ];
 
-export const READY_CARDS: MockCard[] = [
+interface ReadyCardData {
+  type: "session" | "experiment" | "schedule" | "artifact";
+  render: (onDismiss: () => void) => ReactNode;
+}
+
+export const READY_CARD_DATA: ReadyCardData[] = [
   {
     type: "session",
-    ageMinutes: 45,
-    element: (
+    render: (onDismiss) => (
       <SessionFinishedCard
         title="Refactor auth middleware"
         agentName="backend-refactor"
         updatedAt="45m ago"
         scheduled={false}
+        onDismiss={onDismiss}
       />
     ),
   },
   {
     type: "artifact",
-    ageMinutes: 120,
-    element: (
+    render: (onDismiss) => (
       <ArtifactCard
         title="Spring campaign hero images"
         agentName="brand-asset-generator"
         updatedAt="2h ago"
+        onDismiss={onDismiss}
       />
     ),
   },
   {
-    type: "schedule",
-    ageMinutes: 360,
-    element: (
+    type: "session",
+    render: (onDismiss) => (
       <SessionFinishedCard
         title="Daily brand audit"
         agentName="brand-asset-generator"
         updatedAt="6h ago"
         scheduled={true}
+        onDismiss={onDismiss}
       />
     ),
   },
   {
     type: "artifact",
-    ageMinutes: 480,
-    element: (
+    render: (onDismiss) => (
       <ArtifactCard
         title="Nightly performance report"
         agentName="reporting-agent"
         updatedAt="8h ago"
+        onDismiss={onDismiss}
       />
     ),
   },
   {
     type: "experiment",
-    ageMinutes: 600,
-    element: (
+    render: (onDismiss) => (
       <ExperimentCard
         agentName="color-palette-testing"
         experimentName="Spring palette — warm vs cool tones"
         status="completed"
         runningInvocations={0}
         completedRuns={5}
+        onDismiss={onDismiss}
       />
     ),
   },
-  {
-    type: "schedule",
-    ageMinutes: 840,
-    element: (
-      <ScheduleCard
-        name="Nightly test suite"
-        cadence="Every day at 2:00 AM"
-        nextRun="in 14h"
-        lastResult="failed: agent exceeded timeout after 45m"
-        enabled={true}
-      />
-    ),
-  },
+];
+
+const SCHEDULED_CARDS = [
+  { name: "Daily brand audit", cadence: "Every weekday at 9:00 AM", nextRun: "in 3h", lastResult: "success" },
+  { name: "Nightly test suite", cadence: "Every day at 2:00 AM", nextRun: "in 14h", lastResult: "failed: agent exceeded timeout after 45m" },
+  { name: "Weekly report generation", cadence: "Every Monday at 8:00 AM", nextRun: "in 2d", lastResult: "success" },
+  { name: "Dependency vulnerability scan", cadence: "Every 6 hours", nextRun: "in 4h", lastResult: "success" },
+  { name: "Performance benchmark", cadence: "Every day at 3:00 AM", nextRun: "in 15h", lastResult: "success" },
+  { name: "Data pipeline sync", cadence: "Every 30 minutes", nextRun: "in 12m", lastResult: "success" },
+  { name: "Slack digest summary", cadence: "Every weekday at 5:00 PM", nextRun: "in 7h", lastResult: "success" },
+  { name: "Model fine-tune checkpoint", cadence: "Every 12 hours", nextRun: "in 8h", lastResult: "success" },
+  { name: "Stale PR cleanup", cadence: "Every Friday at 4:00 PM", nextRun: "in 4d", lastResult: "success" },
+  { name: "Cost anomaly detector", cadence: "Every hour", nextRun: "in 45m", lastResult: "failed: API rate limit exceeded" },
 ];
 
 const CARD_TYPE_OPTIONS: { value: CardType; label: string }[] = [
@@ -413,7 +406,7 @@ function CardTypeFilter({
       >
         {label}
         <ChevronDown
-          size={14}
+          size={16}
           className={cn("transition-transform", open && "rotate-180")}
         />
       </button>
@@ -446,45 +439,32 @@ function CardTypeFilter({
   );
 }
 
-export const RANGE_MINUTES: Record<Exclude<DigestRange, "auto">, number> = {
-  "1h": 60,
-  "4h": 240,
-  "12h": 720,
-  "24h": 1440,
-  "3d": 4320,
-  "7d": 10080,
-};
-
 export function filterCards(
   cards: MockCard[],
   filter: CardType,
-  range: DigestRange,
 ): ReactNode[] {
-  const maxMinutes = range === "auto" ? Infinity : RANGE_MINUTES[range];
-  let filtered = cards.filter((c) => c.ageMinutes <= maxMinutes);
-  if (filter !== "all") {
-    const typeMap: Record<CardType, string> = {
-      all: "",
-      sessions: "session",
-      experiments: "experiment",
-      schedules: "schedule",
-      artifacts: "artifact",
-    };
-    filtered = filtered.filter((c) => c.type === typeMap[filter]);
-  }
-  return filtered.map((c) => c.element);
+  if (filter === "all") return cards.map((c) => c.element);
+  const typeMap: Record<CardType, string> = {
+    all: "",
+    sessions: "session",
+    experiments: "experiment",
+    schedules: "schedule",
+    artifacts: "artifact",
+  };
+  return cards
+    .filter((c) => c.type === typeMap[filter])
+    .map((c) => c.element);
 }
 
 function RunningSection() {
   const [filter, setFilter] = useState<CardType>("all");
-  const [range] = useDigestRange();
-  const filtered = filterCards(RUNNING_CARDS, filter, range);
+  const filtered = filterCards(RUNNING_CARDS, filter);
 
   return (
     <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-[16px] font-semibold text-foreground">
-          Running now{" "}
+          Active{" "}
           <span className="text-[14px] font-normal text-muted-foreground">
             ({filtered.length})
           </span>
@@ -508,24 +488,83 @@ function RunningSection() {
 
 function ReadySection() {
   const [filter, setFilter] = useState<CardType>("all");
-  const [range] = useDigestRange();
-  const filtered = filterCards(READY_CARDS, filter, range);
+  const [dismissedIndices, setDismissedIndices] = useState<Set<number>>(
+    new Set(),
+  );
+
+  const dismiss = (cardIndex: number) => {
+    setDismissedIndices((prev) => {
+      const next = new Set(prev);
+      next.add(cardIndex);
+      return next;
+    });
+  };
+
+  const dismissAll = () => {
+    setDismissedIndices(new Set(READY_CARD_DATA.map((_, i) => i)));
+  };
+
+  const visibleCards = READY_CARD_DATA.filter(
+    (_, i) => !dismissedIndices.has(i),
+  );
+
+  const filteredCards = visibleCards.filter((card) => {
+    if (filter === "all") return true;
+    const typeMap: Record<CardType, string> = {
+      all: "",
+      sessions: "session",
+      experiments: "experiment",
+      schedules: "schedule",
+      artifacts: "artifact",
+    };
+    return card.type === typeMap[filter];
+  });
+
+  if (visibleCards.length === 0) {
+    return (
+      <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
+        <h2 className="text-[16px] font-semibold text-foreground mb-3">
+          Ready for review
+        </h2>
+        <div className="flex items-center gap-2">
+          <Checkmark size={16} className="text-success shrink-0" />
+          <span className="text-[14px] text-muted-foreground">
+            All caught up
+          </span>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-[16px] font-semibold text-foreground">
-          Ready for you{" "}
+          Ready for review{" "}
           <span className="text-[14px] font-normal text-muted-foreground">
-            ({filtered.length})
+            ({filteredCards.length})
           </span>
         </h2>
-        <CardTypeFilter value={filter} onChange={setFilter} />
+        <div className="flex items-center gap-3">
+          <CardTypeFilter value={filter} onChange={setFilter} />
+          <button
+            type="button"
+            onClick={dismissAll}
+            className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Dismiss all
+          </button>
+        </div>
       </div>
-      {filtered.length > 0 ? (
-        <StackedCards label="ready">
-          {filtered.map((el, i) => (
-            <div key={i}>{el}</div>
+      {filteredCards.length > 0 ? (
+        <StackedCards label="items" visibleCount={3}>
+          {filteredCards.map((card, i) => (
+            <div key={i}>
+              {card.render(() => {
+                const originalIndex = READY_CARD_DATA.indexOf(card);
+                dismiss(originalIndex);
+              })}
+            </div>
           ))}
         </StackedCards>
       ) : (
@@ -533,6 +572,34 @@ function ReadySection() {
           No items match filter.
         </p>
       )}
+    </section>
+  );
+}
+
+function ScheduledSection() {
+  return (
+    <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-[16px] font-semibold text-foreground">
+          Scheduled{" "}
+          <span className="text-[14px] font-normal text-muted-foreground">
+            ({SCHEDULED_CARDS.length})
+          </span>
+        </h2>
+      </div>
+      <StackedCards label="schedules" visibleCount={3}>
+        {SCHEDULED_CARDS.map((s, i) => (
+          <div key={i}>
+            <ScheduleCard
+              name={s.name}
+              cadence={s.cadence}
+              nextRun={s.nextRun}
+              lastResult={s.lastResult}
+              enabled={true}
+            />
+          </div>
+        ))}
+      </StackedCards>
     </section>
   );
 }
@@ -583,14 +650,17 @@ function PopulatedHome({
       {/* Cards in containers — stacked */}
       <div className="space-y-6">
         <ReadySection />
-        <RunningSection />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <RunningSection />
+          <ScheduledSection />
+        </div>
 
         {/* Benign blocked section — below running/ready when no active blockers */}
         {state === "just-cleared" && (
           <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-[16px] font-semibold text-foreground">
-                Blocked
+                Needs attention
               </h2>
               <button
                 type="button"
@@ -600,7 +670,7 @@ function PopulatedHome({
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <Check size={14} className="text-success shrink-0" />
+              <Checkmark size={16} className="text-success shrink-0" />
               <span className="text-[14px] text-muted-foreground">
                 All clear · {MOCK_DECISIONS.length} decisions today
               </span>
@@ -612,7 +682,7 @@ function PopulatedHome({
           <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-[16px] font-semibold text-foreground">
-                Blocked
+                Needs attention
               </h2>
               <button
                 type="button"
@@ -717,7 +787,7 @@ function EmptyState() {
             className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
           >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
-              <ContainerSoftware size={24} />
+              <ContainerSoftware size={16} />
             </div>
             <div className="min-w-0">
               <p className="text-[15px] font-semibold text-foreground">
@@ -730,11 +800,11 @@ function EmptyState() {
             </div>
           </a>
           <a
-            href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-setup" : "/experiment-setup"}
+            href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-onboard" : "/experiment-onboard"}
             className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
           >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
-              <Chemistry size={24} />
+              <Chemistry size={16} />
             </div>
             <div className="min-w-0">
               <p className="text-[15px] font-semibold text-foreground">
@@ -750,7 +820,7 @@ function EmptyState() {
             className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
           >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
-              <Book size={24} />
+              <Book size={16} />
             </div>
             <div className="min-w-0">
               <p className="text-[15px] font-semibold text-foreground">

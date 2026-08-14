@@ -146,7 +146,7 @@ function HistoryRow({ row }: { row: ApprovalView }) {
             title="View network rules for this agent"
           >
             View rule
-            <ArrowRight size={14} />
+            <ArrowRight size={16} />
           </Button>
         )}
       </div>

@@ -1,4 +1,9 @@
-import { FilePlus, FolderPlus, FolderUp, Plus, Upload } from "lucide-react";
+import {
+  Add,
+  DocumentAdd,
+  FolderAdd,
+  Upload,
+} from "@carbon/icons-react";
 import type { CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -42,21 +47,21 @@ export function FilesPanel({
           disabled={controller.isUploading}
           title={controller.isUploading ? "Upload in progress…" : "Add"}
         >
-          <Plus size={12} /> Add
+          <Add size={16} /> Add
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => controller.openFilePickerFor("")}>
-          <Upload size={13} /> Upload file
+          <Upload size={16} /> Upload file
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={controller.openFolderPicker}>
-          <FolderUp size={13} /> Upload folder
+          <Upload size={16} /> Upload folder
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
-          <FilePlus size={13} /> New file
+          <DocumentAdd size={16} /> New file
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
-          <FolderPlus size={13} /> New folder
+          <FolderAdd size={16} /> New folder
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

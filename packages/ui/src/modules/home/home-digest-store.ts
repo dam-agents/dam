@@ -12,15 +12,12 @@ import {
 
 const STORAGE_KEY = "home:digestSince";
 
-type DigestRange = "auto" | "1h" | "4h" | "12h" | "24h" | "3d" | "7d";
+type DigestRange = "auto" | "1h" | "24h" | "7d";
 
 export const DIGEST_RANGE_OPTIONS: { value: DigestRange; label: string }[] = [
   { value: "auto", label: "Since last visit" },
   { value: "1h", label: "Last hour" },
-  { value: "4h", label: "Last 4 hours" },
-  { value: "12h", label: "Last 12 hours" },
   { value: "24h", label: "Last 24 hours" },
-  { value: "3d", label: "Last 3 days" },
   { value: "7d", label: "Last 7 days" },
 ];
 
@@ -28,10 +25,7 @@ export type { DigestRange };
 
 const RANGE_MS: Record<Exclude<DigestRange, "auto">, number> = {
   "1h": 1 * 60 * 60 * 1000,
-  "4h": 4 * 60 * 60 * 1000,
-  "12h": 12 * 60 * 60 * 1000,
   "24h": 24 * 60 * 60 * 1000,
-  "3d": 3 * 24 * 60 * 60 * 1000,
   "7d": 7 * 24 * 60 * 60 * 1000,
 };
 

@@ -31,7 +31,7 @@ export function WelcomeModal({ onSelect, onClose }: WelcomeModalProps) {
             onClick={onClose}
             className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <Close size={18} />
+            <Close size={16} />
           </button>
         </div>
       </DialogHeader>
@@ -39,19 +39,19 @@ export function WelcomeModal({ onSelect, onClose }: WelcomeModalProps) {
       <DialogBody>
         <div className="flex flex-col gap-3">
           <WelcomeCard
-            icon={<ContainerSoftware size={24} />}
+            icon={<ContainerSoftware size={16} />}
             title="Create a coding agent"
             description="Work with your preferred coding agent, credentials, and tools in an isolated environment."
             onClick={() => onSelect("sandbox")}
           />
           <WelcomeCard
-            icon={<Chemistry size={24} />}
+            icon={<Chemistry size={16} />}
             title="Begin an experiment"
             description="Run one goal across many variants at once and compare results."
             onClick={() => onSelect("experiment")}
           />
           <WelcomeCard
-            icon={<Book size={24} />}
+            icon={<Book size={16} />}
             title="Start a knowledge base"
             description="Organize and converse with data sourced from repos, documents, and more (LLM wiki)."
             onClick={() => onSelect("wiki")}

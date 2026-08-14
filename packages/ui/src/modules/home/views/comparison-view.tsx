@@ -1,6 +1,8 @@
 import {
   Chat,
+  Checkmark,
   Chemistry,
+  Close,
   Folders,
   Settings,
   Time,
@@ -247,6 +249,13 @@ export function ComparisonView() {
           enabled={true}
         />
       </CardEntry>
+
+      {/* ═══════════════════════════════════════════════════════════════
+         SECTION: READY FOR REVIEW — DISMISS VARIATIONS
+         ═══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Ready for Review — Dismiss Options" />
+
+      <ReadyCardVariants />
 
       {/* ═══════════════════════════════════════════════════════════════
          SECTION: RESOURCE WIDGETS
@@ -528,12 +537,14 @@ export function ExperimentCard({
   status,
   runningInvocations,
   completedRuns,
+  onDismiss,
 }: {
   agentName: string;
   experimentName: string;
   status: "draft" | "running" | "completed" | "failed" | "stopped";
   runningInvocations: number;
   completedRuns?: number;
+  onDismiss?: () => void;
 }) {
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
   const [stopped, setStopped] = useState(false);
@@ -542,7 +553,7 @@ export function ExperimentCard({
     return (
       <Card className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
         <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Chemistry size={20} className="text-muted-foreground" />
+          <Chemistry size={16} className="text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -562,7 +573,7 @@ export function ExperimentCard({
   return (
     <Card className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-        <Chemistry size={20} className="text-muted-foreground" />
+        <Chemistry size={16} className="text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -596,9 +607,16 @@ export function ExperimentCard({
           </>
         )}
         {status === "completed" && (
-          <Button size="sm" variant="outline" onClick={navigateToExperiments}>
-            View results
-          </Button>
+          <>
+            <Button size="sm" variant="outline" onClick={navigateToExperiments}>
+              View results
+            </Button>
+            {onDismiss && (
+              <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+                Dismiss
+              </Button>
+            )}
+          </>
         )}
       </div>
     </Card>
@@ -616,12 +634,14 @@ export function ScheduleCard({
   cadence,
   nextRun,
   lastResult,
+  onDismiss,
 }: {
   name: string;
   cadence: string;
   nextRun: string;
   lastResult: string;
   enabled?: boolean;
+  onDismiss?: () => void;
 }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const isFailed = lastResult.startsWith("failed");
@@ -633,7 +653,7 @@ export function ScheduleCard({
   return (
     <Card className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-        <Time size={20} className="text-muted-foreground" />
+        <Time size={16} className="text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -650,9 +670,16 @@ export function ScheduleCard({
           </p>
         )}
       </div>
-      <Button size="sm" variant="outline" onClick={openSchedule}>
-        Edit schedule
-      </Button>
+      <div className="flex items-center gap-2 shrink-0">
+        <Button size="sm" variant="outline" onClick={openSchedule}>
+          Edit schedule
+        </Button>
+        {onDismiss && (
+          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        )}
+      </div>
     </Card>
   );
 }
@@ -740,11 +767,13 @@ export function SessionFinishedCard({
   agentName,
   updatedAt,
   scheduled,
+  onDismiss,
 }: {
   title: string;
   agentName: string;
   updatedAt: string;
   scheduled: boolean;
+  onDismiss?: () => void;
 }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const open = () => {
@@ -756,9 +785,9 @@ export function SessionFinishedCard({
     <Card className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
         {scheduled ? (
-          <Time size={20} className="text-muted-foreground" />
+          <Time size={16} className="text-muted-foreground" />
         ) : (
-          <Chat size={20} className="text-muted-foreground" />
+          <Chat size={16} className="text-muted-foreground" />
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -769,9 +798,16 @@ export function SessionFinishedCard({
           {agentName} · {updatedAt}
         </p>
       </div>
-      <Button size="sm" variant="outline" onClick={open}>
-        {scheduled ? "View results" : "View session"}
-      </Button>
+      <div className="flex items-center gap-2 shrink-0">
+        <Button size="sm" variant="outline" onClick={open}>
+          {scheduled ? "View results" : "View session"}
+        </Button>
+        {onDismiss && (
+          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        )}
+      </div>
     </Card>
   );
 }
@@ -786,11 +822,13 @@ export function ArtifactCard({
   agentName,
   updatedAt,
   artifactId = "art-1",
+  onDismiss,
 }: {
   title: string;
   agentName: string;
   updatedAt: string;
   artifactId?: string;
+  onDismiss?: () => void;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const mockArtifact = {
@@ -815,7 +853,7 @@ export function ArtifactCard({
     <>
       <Card className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
         <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Folders size={20} className="text-muted-foreground" />
+          <Folders size={16} className="text-muted-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -825,13 +863,20 @@ export function ArtifactCard({
             {agentName} · {updatedAt}
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setPreviewOpen(true)}
-        >
-          View artifact
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPreviewOpen(true)}
+          >
+            View artifact
+          </Button>
+          {onDismiss && (
+            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+              Dismiss
+            </Button>
+          )}
+        </div>
       </Card>
       {previewOpen && (
         <ArtifactPreviewDialog
@@ -1809,6 +1854,369 @@ export function ComputePreview() {
           </span>
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Ready for Review — Dismiss Card Variants
+   5 design explorations for how "ready for review" cards handle dismiss.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function ReadyCardVariants() {
+  const [option, setOption] = useState(1);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-[14px] text-muted-foreground font-medium">
+          Option:
+        </span>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setOption(n)}
+            className={cn(
+              "w-7 h-7 rounded-md text-[14px] font-medium transition-colors",
+              option === n
+                ? "bg-accent text-white"
+                : "bg-muted text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {n}
+          </button>
+        ))}
+        <span className="text-[14px] text-muted-foreground ml-2">
+          {option === 1 && "Swipe-to-dismiss row"}
+          {option === 2 && "Checkbox mark-as-read"}
+          {option === 3 && "Inline dismiss + open"}
+          {option === 4 && "Card with bottom actions bar"}
+          {option === 5 && "Compact row with trailing dismiss"}
+        </span>
+      </div>
+      <p className="text-[14px] text-muted-foreground leading-relaxed max-w-prose">
+        {option === 1 &&
+          "Cards slide right to reveal a dismiss zone. The card itself is the primary action (opens the item). Dismiss is intentional — requires a deliberate swipe or click on the revealed zone."}
+        {option === 2 &&
+          "Each card has a leading checkbox. Checking it marks the item as read/dismissed with a brief strikethrough animation before removal. Supports batch dismiss via a header checkbox."}
+        {option === 3 &&
+          "Two equal-weight buttons at the card's right edge: 'Open' (primary) and a ghost 'Dismiss'. Both always visible, no hover state needed. Clear, explicit, no ambiguity."}
+        {option === 4 &&
+          "Card content above, a thin actions bar below with 'Open' and 'Dismiss' separated by a hairline. The bar is part of the card, keeping spacing tight between cards."}
+        {option === 5 &&
+          "Minimal single-line row: icon + title + agent + time on one line, trailing X to dismiss. The whole row (except X) is clickable to open. Dense, scannable."}
+      </p>
+      <div className="space-y-3">
+        {option === 1 && <ReadyVariant1 />}
+        {option === 2 && <ReadyVariant2 />}
+        {option === 3 && <ReadyVariant3 />}
+        {option === 4 && <ReadyVariant4 />}
+        {option === 5 && <ReadyVariant5 />}
+      </div>
+    </div>
+  );
+}
+
+function ReadyVariant1() {
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+  const [swiped, setSwiped] = useState<number | null>(null);
+
+  const cards = [
+    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
+    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
+    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {cards.map((card, i) => {
+        if (dismissed.has(i)) return null;
+        const isOpen = swiped === i;
+        return (
+          <div key={i} className="relative overflow-hidden rounded-lg">
+            <div
+              className="absolute inset-y-0 left-0 w-[100px] flex items-center justify-center bg-muted"
+              onClick={() => {
+                setDismissed((s) => new Set([...s, i]));
+                setSwiped(null);
+              }}
+            >
+              <span className="text-[14px] font-medium text-muted-foreground">
+                Dismiss
+              </span>
+            </div>
+            <div
+              className={cn(
+                "relative bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-3 cursor-pointer transition-transform duration-200",
+                isOpen && "translate-x-[100px]",
+              )}
+              onClick={() => setSwiped(isOpen ? null : i)}
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+                <Chat size={16} className="text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[16px] text-foreground truncate">{card.title}</h3>
+                <p className="text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+              </div>
+              <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+            </div>
+          </div>
+        );
+      })}
+      {dismissed.size === cards.length && (
+        <div className="flex items-center gap-2 py-3">
+          <Checkmark size={16} className="text-success" />
+          <span className="text-[14px] text-muted-foreground">All caught up</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadyVariant2() {
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+
+  const cards = [
+    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
+    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
+    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+  ];
+
+  const toggleCheck = (i: number) => {
+    const next = new Set(checked);
+    if (next.has(i)) {
+      next.delete(i);
+    } else {
+      next.add(i);
+      setTimeout(() => {
+        setDismissed((s) => new Set([...s, i]));
+        setChecked((s) => {
+          const n = new Set(s);
+          n.delete(i);
+          return n;
+        });
+      }, 600);
+    }
+    setChecked(next);
+  };
+
+  const allChecked = cards.every((_, i) => checked.has(i) || dismissed.has(i));
+
+  return (
+    <div className="space-y-0 rounded-lg border border-border overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/40">
+        <button
+          type="button"
+          onClick={() => {
+            if (!allChecked) {
+              cards.forEach((_, i) => {
+                if (!dismissed.has(i)) toggleCheck(i);
+              });
+            }
+          }}
+          className={cn(
+            "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+            allChecked
+              ? "bg-accent border-accent"
+              : "border-muted-foreground/40 hover:border-foreground",
+          )}
+        >
+          {allChecked && <Checkmark size={16} className="text-white" />}
+        </button>
+        <span className="text-[14px] text-muted-foreground">Mark all as read</span>
+      </div>
+      {cards.map((card, i) => {
+        if (dismissed.has(i)) return null;
+        const isChecked = checked.has(i);
+        return (
+          <div
+            key={i}
+            className={cn(
+              "flex items-center gap-3 px-4 py-3 border-b last:border-b-0 border-border transition-all duration-300",
+              isChecked && "opacity-40",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => toggleCheck(i)}
+              className={cn(
+                "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                isChecked
+                  ? "bg-accent border-accent"
+                  : "border-muted-foreground/40 hover:border-foreground",
+              )}
+            >
+              {isChecked && <Checkmark size={16} className="text-white" />}
+            </button>
+            <div className="flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Chat size={16} className="text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className={cn("text-[15px] text-foreground truncate", isChecked && "line-through")}>
+                {card.title}
+              </h3>
+              <p className="text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+            </div>
+            <Button size="sm" variant="outline" disabled={isChecked}>
+              Open
+            </Button>
+          </div>
+        );
+      })}
+      {dismissed.size === cards.length && (
+        <div className="flex items-center gap-2 px-4 py-3">
+          <Checkmark size={16} className="text-success" />
+          <span className="text-[14px] text-muted-foreground">All caught up</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadyVariant3() {
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+
+  const cards = [
+    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
+    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
+    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {cards.map((card, i) => {
+        if (dismissed.has(i)) return null;
+        return (
+          <Card key={i} className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
+            <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+              <Chat size={16} className="text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-[16px] text-foreground">{card.title}</h3>
+              <p className="mt-1 text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm">Open</Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={() => setDismissed((s) => new Set([...s, i]))}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </Card>
+        );
+      })}
+      {dismissed.size === cards.length && (
+        <div className="flex items-center gap-2 py-3">
+          <Checkmark size={16} className="text-success" />
+          <span className="text-[14px] text-muted-foreground">All caught up</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadyVariant4() {
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+
+  const cards = [
+    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
+    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
+    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {cards.map((card, i) => {
+        if (dismissed.has(i)) return null;
+        return (
+          <div key={i} className="rounded-lg border border-border overflow-hidden">
+            <div className="flex items-start gap-3 p-4 bg-card">
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+                <Chat size={16} className="text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate text-[16px] text-foreground">{card.title}</h3>
+                <p className="mt-1 text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+              </div>
+            </div>
+            <div className="flex items-center border-t border-border bg-muted/30 divide-x divide-border">
+              <button
+                type="button"
+                className="flex-1 px-4 py-2 text-[14px] font-medium text-foreground hover:bg-muted/60 transition-colors"
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissed((s) => new Set([...s, i]))}
+                className="flex-1 px-4 py-2 text-[14px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      {dismissed.size === cards.length && (
+        <div className="flex items-center gap-2 py-3">
+          <Checkmark size={16} className="text-success" />
+          <span className="text-[14px] text-muted-foreground">All caught up</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadyVariant5() {
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+
+  const cards = [
+    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago", icon: Chat },
+    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago", icon: Folders },
+    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago", icon: Time },
+  ];
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
+      {cards.map((card, i) => {
+        if (dismissed.has(i)) return null;
+        const Icon = card.icon;
+        return (
+          <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors group">
+            <Icon size={16} className="text-muted-foreground shrink-0" />
+            <span className="text-[15px] text-foreground truncate min-w-0 flex-1 cursor-pointer">
+              {card.title}
+            </span>
+            <span className="text-[14px] text-muted-foreground shrink-0 hidden sm:inline">
+              {card.agent}
+            </span>
+            <span className="text-[14px] text-muted-foreground shrink-0 tabular-nums">
+              {card.time}
+            </span>
+            <button
+              type="button"
+              onClick={() => setDismissed((s) => new Set([...s, i]))}
+              className="shrink-0 p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
+              title="Dismiss"
+            >
+              <Close size={16} />
+            </button>
+          </div>
+        );
+      })}
+      {dismissed.size === cards.length && (
+        <div className="flex items-center gap-2 px-4 py-3">
+          <Checkmark size={16} className="text-success" />
+          <span className="text-[14px] text-muted-foreground">All caught up</span>
+        </div>
+      )}
     </div>
   );
 }

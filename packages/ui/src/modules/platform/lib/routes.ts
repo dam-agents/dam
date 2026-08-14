@@ -96,6 +96,11 @@ export function parseRoute(path: string): Route {
       view: "knowledge-base-chat",
       agent: "a1b2c3d4-0004-4000-8000-000000000004",
     };
+  if (path === "/experiment-onboard")
+    return {
+      view: "chat",
+      agent: "a1b2c3d4-0005-4000-8000-000000000005",
+    };
   const knowledgeBaseChatMatch = path.match(/^\/knowledge-bases\/([^/]+)$/);
   if (knowledgeBaseChatMatch)
     return {

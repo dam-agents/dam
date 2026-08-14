@@ -17,7 +17,7 @@ const COPY = {
     createDescription: "Define a goal and pick frameworks to run",
     demoTitle: "Load an example",
     demoDescription: "Watch a NOUS experiment evolve a solution live",
-    icon: <Chemistry size={22} />,
+    icon: <Chemistry size={16} />,
   },
   "knowledge-base": {
     headline: "Knowledge Bases",
@@ -27,7 +27,7 @@ const COPY = {
     createDescription: "Name it and tell me what it covers",
     demoTitle: "Load an example",
     demoDescription: "Explore a Greek Mythology wiki to see how it works",
-    icon: <DataBase size={22} />,
+    icon: <DataBase size={16} />,
   },
 };
 
@@ -68,14 +68,14 @@ export function OnboardLanding({ onSelect, variant }: OnboardLandingProps) {
         {/* Choice cards */}
         <div className="space-y-3">
           <LandingCard
-            icon={<Pen size={20} />}
+            icon={<Pen size={16} />}
             title={copy.createTitle}
             description={copy.createDescription}
             selected={selected === "create"}
             onClick={() => handleSelect("create")}
           />
           <LandingCard
-            icon={<Flash size={20} />}
+            icon={<Flash size={16} />}
             title={copy.demoTitle}
             description={copy.demoDescription}
             selected={selected === "demo"}

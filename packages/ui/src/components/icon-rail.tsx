@@ -69,6 +69,7 @@ export function IconRail({
   const onMockRoute = [
     "/agent-setup",
     "/experiment-setup",
+    "/experiment-onboard",
     "/kb-setup",
     "/compare",
     "/layouts",
@@ -106,7 +107,7 @@ export function IconRail({
   const experiments: Destination = {
     label: "Experiments",
     icon: Chemistry,
-    active: view === "experiments" || pathname === "/experiment-setup",
+    active: view === "experiments" || pathname === "/experiment-setup" || pathname === "/experiment-onboard",
     badge: 0,
     navigate: () => {
       if (onMockRoute) {
@@ -193,7 +194,7 @@ export function IconRail({
             >
               <BrandLogo className="group-hover:invisible" />
               <span className="absolute inset-0 hidden group-hover:flex items-center justify-center text-muted-foreground">
-                <SidePanelOpen size={20} />
+                <SidePanelOpen size={16} />
               </span>
             </button>
           )}
@@ -277,7 +278,7 @@ function NavItem({ dest, expanded }: { dest: Destination; expanded: boolean }) {
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
-      <Icon size={18} className="shrink-0" />
+      <Icon size={16} className="shrink-0" />
       <span className="flex-1 truncate text-[14px] font-medium">{label}</span>
       {badge > 0 && (
         <Badge
@@ -324,7 +325,7 @@ function IconWithBadge({
 }) {
   return (
     <span className="relative flex h-5 w-5 items-center justify-center">
-      <Icon size={20} />
+      <Icon size={16} />
       {badge > 0 && (
         <Badge
           variant="default"

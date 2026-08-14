@@ -1,18 +1,15 @@
 import {
   ArrowDown,
+  ArrowLeft,
   Code as CodeIcon,
+  Document,
+  OverflowMenuVertical,
+  Renew,
   Terminal as TerminalIcon,
+  TrashCan,
+  WarningAlt,
 } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import {
-  AlertCircle,
-  ArrowLeft,
-  FileText as FileIcon,
-  Loader2,
-  MoreVertical,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
 import {
   type CSSProperties,
   useCallback,
@@ -203,15 +200,31 @@ export function ChatView() {
   // Seed rich mock messages so formatting options are visible immediately
   const { state: demoState } = useDemoState();
   const view = useStore((s) => s.view);
+  const [onboardLanding, setOnboardLanding] = useState<
+    "experiment" | "knowledge-base" | null
+  >(null);
   useEffect(() => {
     if (!import.meta.env.VITE_MOCK) return;
-    if (!selectedAgent || messages.length > 0) return;
+    if (messages.length > 0) return;
+
+    // Onboard landings don't need selectedAgent — they're pre-chat UI that
+    // doesn't talk to the backend. Check them before the agent guard so they
+    // work even while useBrowserHistory's effect hasn't set selectedAgent yet.
+    if (demoState === "empty" && mockWikiOnboard) {
+      setOnboardLanding("knowledge-base");
+      mockWikiOnboard = false;
+      return;
+    }
+    if (demoState === "empty" && mockExperimentOnboard) {
+      setOnboardLanding("experiment");
+      mockExperimentOnboard = false;
+      return;
+    }
+
+    if (!selectedAgent || onboardLanding) return;
 
     if (demoState === "empty") {
-      if (mockWikiOnboard) {
-        setOnboardLanding("knowledge-base");
-        mockWikiOnboard = false;
-      } else if (view === "knowledge-base-chat") {
+      if (view === "knowledge-base-chat") {
         setMessages([
           {
             id: "mock-kb-greeting",
@@ -225,9 +238,6 @@ export function ChatView() {
             ],
           },
         ]);
-      } else if (mockExperimentOnboard) {
-        setOnboardLanding("experiment");
-        mockExperimentOnboard = false;
       } else if (mockCreatedKind === "experiment") {
         setMessages([
           {
@@ -363,6 +373,7 @@ export function ChatView() {
     setSessionId,
     demoState,
     view,
+    onboardLanding,
   ]);
 
   const sessionError = useStore((s) => s.sessionError);
@@ -423,9 +434,7 @@ export function ChatView() {
     name: string;
     frameworks: string[];
   } | null>(null);
-  const [onboardLanding, setOnboardLanding] = useState<
-    "experiment" | "knowledge-base" | null
-  >(null);
+  const [experimentGoal, setExperimentGoal] = useState<string | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(true);
   const [sessionsH, setSessionsH] = useState(
     () => Number(localStorage.getItem("platform-sessions-h")) || 260,
@@ -954,7 +963,7 @@ export function ChatView() {
           className="md:hidden flex items-center gap-1 text-[13px] font-medium text-text-secondary hover:text-accent transition-colors"
           onClick={handleBack}
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={16} />
         </button>
         <div className="group flex items-center gap-3 min-w-0">
           <span
@@ -972,7 +981,7 @@ export function ChatView() {
                 aria-label={surfaceCopy.actionsAria}
                 className="opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
-                <MoreVertical size={14} />
+                <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
@@ -1147,7 +1156,7 @@ export function ChatView() {
                                     parts: [
                                       {
                                         kind: "text",
-                                        text: "Let's set up your experiment. Tell me what you want to optimize, then pick the frameworks to run it on.",
+                                        text: "Let's set up your experiment.",
                                       },
                                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                       { kind: "experiment-setup" } as any,
@@ -1176,8 +1185,8 @@ export function ChatView() {
                         />
                       ) : launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
-                          <Loader2
-                            size={22}
+                          <Renew
+                            size={16}
                             className="mx-auto mb-3 animate-spin text-text-muted"
                           />
                           <p className="text-[16px] font-bold text-text mb-2">
@@ -1314,8 +1323,8 @@ export function ChatView() {
                                     key={i}
                                     className="inline-flex items-center gap-2 rounded-md border border-border-light bg-surface-raised px-3 py-2"
                                   >
-                                    <FileIcon
-                                      size={14}
+                                    <Document
+                                      size={16}
                                       className="text-text-muted shrink-0"
                                     />
                                     <span className="text-[12px] text-text-secondary">
@@ -1349,14 +1358,69 @@ export function ChatView() {
                                   />
                                 ) : // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                 (p as any).kind === "experiment-setup" ? (
+                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                  (!(p as any).goal && experimentGoal) ? null : (
                                   <ExperimentSetupCard
                                     key={i}
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    goal={(p as any).goal ?? undefined}
+                                    onGoalSelected={(goal) => {
+                                      setExperimentGoal(goal);
+                                      setMessages((prev: typeof messages) => [
+                                        ...prev,
+                                        {
+                                          id: `user-goal-${Date.now()}`,
+                                          role: "user" as const,
+                                          streaming: false,
+                                          parts: [
+                                            { kind: "text" as const, text: goal },
+                                          ],
+                                        },
+                                        {
+                                          id: `assistant-step2-${Date.now()}`,
+                                          role: "assistant" as const,
+                                          streaming: false,
+                                          parts: [
+                                            {
+                                              kind: "text" as const,
+                                              text: "Great choice. Now pick one or more frameworks to run it with:",
+                                            },
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                            { kind: "experiment-setup", goal } as any,
+                                          ],
+                                        },
+                                      ]);
+                                    }}
                                     onSubmit={(payload) => {
+                                      const imageNames: Record<string, string> = {
+                                        nous: "NOUS",
+                                        openevolve: "OpenEvolve",
+                                        shinkaevolve: "ShinkaEvolve",
+                                        gepa: "GEPA",
+                                        "k-search": "K-Search",
+                                      };
+                                      const userText =
+                                        payload.imageIds.length === 0
+                                          ? "Skip frameworks — let the agent decide"
+                                          : payload.imageIds.length === 1
+                                            ? `Use ${imageNames[payload.imageIds[0]!] ?? payload.imageIds[0]}`
+                                            : `Horse race: ${payload.imageIds.map((id) => imageNames[id] ?? id).join(", ")}`;
+                                      setMessages((prev: typeof messages) => [
+                                        ...prev,
+                                        {
+                                          id: `user-frameworks-${Date.now()}`,
+                                          role: "user" as const,
+                                          streaming: false,
+                                          parts: [
+                                            { kind: "text" as const, text: userText },
+                                          ],
+                                        },
+                                      ]);
                                       if (import.meta.env.VITE_MOCK) {
-                                        simulateExperimentCreation(payload);
+                                        setTimeout(() => simulateExperimentCreation(payload), 100);
                                       }
                                     }}
-                                  />
+                                  />)
                                 ) : (
                                   <ToolChip key={i} chip={p} />
                                 ),
@@ -1399,14 +1463,59 @@ export function ChatView() {
               </div>
 
               <div className="pb-[16px]">
+                {/* eslint-disable @typescript-eslint/no-explicit-any */}
+                {!messages.some((m) =>
+                  m.parts.some(
+                    (p) => (p as any).kind === "wiki-setup",
+                  ),
+                ) ? (
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
-                  onSend={sendPrompt}
+                  onSend={(text, attachments) => {
+                    const awaitingGoal =
+                      !experimentGoal &&
+                      messages.some((m) =>
+                        m.parts.some(
+                          (p) =>
+                            (p as any).kind === "experiment-setup" &&
+                            !(p as any).goal,
+                        ),
+                      );
+                    if (awaitingGoal && text.trim()) {
+                      const goal = text.trim();
+                      setExperimentGoal(goal);
+                      setMessages((prev: typeof messages) => [
+                        ...prev,
+                        {
+                          id: `user-goal-${Date.now()}`,
+                          role: "user" as const,
+                          streaming: false,
+                          parts: [{ kind: "text" as const, text: goal }],
+                        },
+                        {
+                          id: `assistant-step2-${Date.now()}`,
+                          role: "assistant" as const,
+                          streaming: false,
+                          parts: [
+                            {
+                              kind: "text" as const,
+                              text: "Great choice. Now pick one or more frameworks to run it with:",
+                            },
+                            { kind: "experiment-setup", goal } as any,
+                          ],
+                        },
+                      ]);
+                      return;
+                    }
+                    sendPrompt(text, attachments);
+                  }}
                   onStop={stopAgent}
                   discoveryTooltip={discoveryTooltip}
                 />
+                ) : null}
+                {/* eslint-enable @typescript-eslint/no-explicit-any */}
                 {!hasPendingPermission && harnessCurrent?.model && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
@@ -1594,7 +1703,7 @@ function SessionErrorCard({
   return (
     <Callout tone="danger" className="my-4 flex flex-col gap-3 anim-in">
       <div className="flex items-start gap-3">
-        <AlertCircle size={20} className="text-danger shrink-0 mt-0.5" />
+        <WarningAlt size={16} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <h3 className="text-[15px] font-bold text-text mb-1">{title}</h3>
           <p className="text-[13px] text-text-secondary break-words">
@@ -1604,11 +1713,11 @@ function SessionErrorCard({
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <Button variant="outline" size="sm" onClick={onBack}>
-          <ArrowLeft size={12} /> Back to sessions
+          <ArrowLeft size={16} /> Back to sessions
         </Button>
         {error.kind === "not-found" && (
           <Button variant="destructive" size="sm" onClick={onDelete}>
-            <Trash2 size={12} /> Delete orphaned session
+            <TrashCan size={16} /> Delete orphaned session
           </Button>
         )}
       </div>
@@ -1629,7 +1738,7 @@ function SendErrorCard({
       className="flex max-w-[620px] items-start gap-2.5"
       role="alert"
     >
-      <AlertCircle size={16} className="text-danger shrink-0 mt-0.5" />
+      <WarningAlt size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="text-[13px] text-text break-words">
           <span className="font-bold text-danger">Send failed:</span> {error}
@@ -1641,7 +1750,7 @@ function SendErrorCard({
             onClick={onRetry}
             className="self-start"
           >
-            <RefreshCw size={11} /> Retry
+            <Renew size={16} /> Retry
           </Button>
         )}
       </div>

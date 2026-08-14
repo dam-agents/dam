@@ -429,9 +429,9 @@ export function ApprovalFullCard({ row }: { row: ApprovalView }) {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" disabled={inflight}>
-              <Check size={14} />
+              <Check size={16} />
               Allow
-              <ChevronDown size={14} />
+              <ChevronDown size={16} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -439,13 +439,13 @@ export function ApprovalFullCard({ row }: { row: ApprovalView }) {
               disabled={isNetwork ? !live : false}
               onSelect={() => approveOnce.mutate({ id: row.id })}
             >
-              <Check size={14} />
+              <Check size={16} />
               <span>Allow this request</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => approvePermanent.mutate({ id: row.id })}
             >
-              <CheckCheck size={14} />
+              <CheckCheck size={16} />
               <span>
                 Allow permanently
                 <span className="ml-1 text-muted-foreground">
@@ -458,7 +458,7 @@ export function ApprovalFullCard({ row }: { row: ApprovalView }) {
                 onSelect={() => approveHost.mutate({ id: row.id })}
                 className="text-warning"
               >
-                <Globe size={14} />
+                <Globe size={16} />
                 <span>
                   Allow all of {host}
                   <span className="ml-1 text-muted-foreground">
@@ -478,9 +478,9 @@ export function ApprovalFullCard({ row }: { row: ApprovalView }) {
               size="sm"
               disabled={inflight}
             >
-              <X size={14} />
+              <X size={16} />
               Deny
-              <ChevronDown size={14} />
+              <ChevronDown size={16} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -488,14 +488,14 @@ export function ApprovalFullCard({ row }: { row: ApprovalView }) {
               disabled={!live}
               onSelect={() => dismiss.mutate({ id: row.id })}
             >
-              <X size={14} />
+              <X size={16} />
               <span>Deny this request</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               tone="danger"
               onSelect={() => denyForever.mutate({ id: row.id })}
             >
-              <ShieldOff size={14} />
+              <ShieldOff size={16} />
               <span>
                 Deny permanently
                 <span className="ml-1 text-muted-foreground">
@@ -520,7 +520,7 @@ export function ApprovalFullCard({ row }: { row: ApprovalView }) {
 
       {countdown !== null && countdown <= 30 && (
         <div className="flex items-center gap-1 text-[14px] text-warning mt-3">
-          <WarningAlt size={14} />
+          <WarningAlt size={16} />
           <span>Expires in {countdown}s</span>
         </div>
       )}

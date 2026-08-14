@@ -1,6 +1,5 @@
-import { Filter } from "@carbon/icons-react";
+import { Add, ArrowLeft, Filter, Renew } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -164,7 +163,7 @@ export function SessionsSidebar({
             size="xs"
             className="text-[14px] font-normal text-muted-foreground"
           >
-            <Filter size={14} />
+            <Filter size={16} />
             {sessionFilter.length === SESSION_CATEGORIES.length
               ? "All"
               : `Filter (${sessionFilter.length})`}
@@ -186,7 +185,7 @@ export function SessionsSidebar({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="xs" className="text-[14px]">
-            <Plus size={12} /> New
+            <Add size={16} /> New
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -208,7 +207,7 @@ export function SessionsSidebar({
       className="md:hidden"
       onClick={goBack}
     >
-      <ArrowLeft size={14} />
+      <ArrowLeft size={16} />
     </Button>
   );
 
@@ -246,7 +245,7 @@ export function SessionsSidebar({
             className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] text-text-muted transition-colors hover:bg-muted/50"
             title="Show the launch progress"
           >
-            <Loader2 size={14} className="shrink-0 animate-spin" />
+            <Renew size={16} className="shrink-0 animate-spin" />
             <span className="min-w-0 flex-1 truncate">
               Starting run — waking the agent…
             </span>

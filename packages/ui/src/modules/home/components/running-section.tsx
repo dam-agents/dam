@@ -140,7 +140,7 @@ function SandboxCard({ item }: { item: RunningSandbox }) {
       className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
     >
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-        <Chat size={20} className="text-muted-foreground" />
+        <Chat size={16} className="text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -189,7 +189,7 @@ function ExperimentCard({ item }: { item: RunningExperiment }) {
       className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
     >
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-        <Chemistry size={20} className="text-muted-foreground" />
+        <Chemistry size={16} className="text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -250,7 +250,7 @@ function KnowledgeBaseCard({ item }: { item: RunningKnowledgeBase }) {
       className="group flex min-h-[76px] cursor-pointer items-start justify-between gap-3 border border-border p-4 transition-shadow hover:not-has-[button:hover]:shadow-md"
     >
       <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-        <DataConnected size={20} className="text-muted-foreground" />
+        <DataConnected size={16} className="text-muted-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">

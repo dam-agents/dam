@@ -1,16 +1,21 @@
-import { Checkmark, Chemistry } from "@carbon/icons-react";
+import { Chemistry } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type SetupStep = "goal" | "images" | "submitted";
-
 interface ExperimentSetupCardProps {
-  onSubmit?: (
-    payload: { demo: true } | { goal: string; imageIds: string[] },
-  ) => void;
+  goal?: string;
+  onGoalSelected?: (goal: string) => void;
+  onSubmit?: (payload: { goal: string; imageIds: string[] }) => void;
 }
+
+const GOAL_SUGGESTIONS = [
+  "Evolve a prompt scorer",
+  "Optimize a sorting algorithm",
+  "Sweep hyperparameters for a model",
+  "Benchmark approaches against a task",
+];
 
 const PRECONFIGURED_IMAGES = [
   {
@@ -45,21 +50,23 @@ const PRECONFIGURED_IMAGES = [
   },
 ];
 
-export function ExperimentSetupCard({ onSubmit }: ExperimentSetupCardProps) {
-  const [step, setStep] = useState<SetupStep>("goal");
-  const [goal, setGoal] = useState("");
-  const [goalInput, setGoalInput] = useState("");
+export function ExperimentSetupCard({
+  goal,
+  onGoalSelected,
+  onSubmit,
+}: ExperimentSetupCardProps) {
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [submitted, setSubmitted] = useState(false);
 
-  function handleGoalSubmit() {
-    if (!goalInput.trim()) return;
-    setGoal(goalInput.trim());
-    setStep("images");
+  const step = goal ? "images" : "goal";
+
+  function handleGoalSelect(value: string) {
+    onGoalSelected?.(value);
   }
 
   function handleStartExperiment() {
-    if (selectedImages.length === 0) return;
-    setStep("submitted");
+    if (!goal) return;
+    setSubmitted(true);
     onSubmit?.({ goal, imageIds: selectedImages });
   }
 
@@ -69,7 +76,7 @@ export function ExperimentSetupCard({ onSubmit }: ExperimentSetupCardProps) {
     );
   }
 
-  if (step === "submitted") return null;
+  if (submitted) return null;
 
   const currentStepIndex = step === "goal" ? 0 : 1;
   const totalSteps = 2;
@@ -101,37 +108,31 @@ export function ExperimentSetupCard({ onSubmit }: ExperimentSetupCardProps) {
                 What do you want to optimize?
               </h3>
               <p className="text-[14px] text-muted-foreground">
-                Describe your goal and we'll match you with the right framework.
+                Pick a common goal or describe your own below.
               </p>
             </div>
 
-            <div className="relative">
-              <input
-                type="text"
-                value={goalInput}
-                onChange={(e) => setGoalInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGoalSubmit()}
-                placeholder="e.g. Evolve a prompt scorer, optimize a sorting algorithm..."
-                className="w-full rounded-xl border border-border/80 bg-card px-4 py-3 text-[14px] text-foreground placeholder:text-muted-foreground/50 outline-none transition-all duration-200 focus:border-foreground/20 focus:ring-1 focus:ring-foreground/5"
-                autoFocus
-              />
-              {goalInput.trim() && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 animate-in fade-in zoom-in-90 duration-200">
-                  <Button size="sm" onClick={handleGoalSubmit}>
-                    Next
-                  </Button>
-                </div>
-              )}
+            <div className="flex flex-wrap gap-2">
+              {GOAL_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => handleGoalSelect(suggestion)}
+                  className={cn(
+                    "rounded-lg border border-border/80 bg-card px-3 py-2 text-[14px] text-foreground transition-all duration-200",
+                    "hover:border-foreground hover:shadow-md",
+                  )}
+                >
+                  {suggestion}
+                </button>
+              ))}
             </div>
-
           </div>
         )}
 
         {step === "images" && (
           <div className="space-y-4 animate-in fade-in slide-in-from-right-3 duration-300">
             <div className="space-y-3">
-              <CompletedGoal value={goal} />
-
               <div className="space-y-1">
                 <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
                   Choose your framework
@@ -159,7 +160,7 @@ export function ExperimentSetupCard({ onSubmit }: ExperimentSetupCardProps) {
                   >
                     <div className="flex items-start">
                       <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <Chemistry size={14} />
+                        <Chemistry size={16} />
                       </div>
                     </div>
                     <div className="space-y-0.5">
@@ -180,32 +181,36 @@ export function ExperimentSetupCard({ onSubmit }: ExperimentSetupCardProps) {
               })}
             </div>
 
-            {selectedImages.length > 0 && (
-              <div className="flex items-center justify-between pt-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                <span className="text-[13px] text-muted-foreground">
-                  {selectedImages.length === 1
-                    ? "1 framework selected"
-                    : `${selectedImages.length} frameworks — horse race mode`}
-                </span>
-                <Button size="sm" onClick={handleStartExperiment}>
-                  {selectedImages.length === 1
-                    ? "Start experiment"
-                    : "Start horse race"}
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center justify-between pt-1">
+              {selectedImages.length > 0 ? (
+                <>
+                  <span className="text-[14px] text-muted-foreground">
+                    {selectedImages.length === 1
+                      ? "1 framework selected"
+                      : `${selectedImages.length} frameworks — horse race mode`}
+                  </span>
+                  <Button size="sm" onClick={handleStartExperiment}>
+                    {selectedImages.length === 1
+                      ? "Start experiment"
+                      : "Start horse race"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span />
+                  <button
+                    type="button"
+                    onClick={handleStartExperiment}
+                    className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Skip — let the agent decide →
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function CompletedGoal({ value }: { value: string }) {
-  return (
-    <div className="inline-flex items-center gap-2 rounded-lg bg-card px-3 py-1.5 border border-border/80">
-      <Checkmark size={12} className="text-foreground/60 shrink-0" />
-      <span className="text-[13px] font-medium text-foreground">{value}</span>
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import {
-  FileText,
+  Document,
   Folder,
   Image as ImageIcon,
-  MoreHorizontal,
-} from "lucide-react";
+  OverflowMenuHorizontal,
+} from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -115,7 +115,7 @@ export function FileRow({
                   onClick={(e) => e.stopPropagation()}
                   title="More actions"
                 >
-                  <MoreHorizontal size={13} />
+                  <OverflowMenuHorizontal size={16} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
@@ -172,7 +172,7 @@ function RowIcons({
       ) : looksLikeImage ? (
         <ImageIcon size={16} className="shrink-0" />
       ) : (
-        <FileText size={16} className="shrink-0" />
+        <Document size={16} className="shrink-0" />
       )}
     </>
   );

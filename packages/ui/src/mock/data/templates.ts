@@ -32,6 +32,16 @@ export const templates: TemplateView[] = [
     vm: false,
   },
   {
+    id: "gemini-cli",
+    name: "Gemini CLI",
+    image: "ghcr.io/google/gemini-cli:latest",
+    description: "Google Gemini coding agent",
+    category: "harness",
+    tags: ["Google"],
+    experimental: false,
+    vm: false,
+  },
+  {
     id: "pi-agent",
     name: "PI Agent",
     image: "quay.io/dam-agents/pi-agent:latest",

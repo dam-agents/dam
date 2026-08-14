@@ -25,7 +25,7 @@ export function ExperimentsListView() {
   const { state: demoState } = useDemoState();
 
   const goToSetup = () => {
-    protoNavigate("/experiment-setup");
+    protoNavigate("/experiment-onboard");
   };
 
   if (import.meta.env.VITE_MOCK && demoState === "empty") {
