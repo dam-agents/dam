@@ -26,8 +26,24 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
 - **Be brief.** One idea per sentence. Active voice. Cut filler, restatement, and any sentence that carries no new fact. A reader should get the problem from the first paragraph. Length is not thoroughness.
-- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Keep source links in the discussion where the ask came from, not in the issue. Check screenshots for names before attaching them.
+- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Keep source links in the discussion where the ask came from, not in the issue. Check screenshots for names before attaching them. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
 - **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
+
+## Attribution
+
+Anyone on the team can ask for an issue and approve it. One explicit approval from the person who asked is enough to file — filing is capture, not prioritization, so it needs no second sign-off.
+
+An agent files under a shared credential, so GitHub credits the credential owner rather than the person who asked. **An agent filing an issue must always end the body with a Filed by footer** naming that person:
+
+```markdown
+---
+
+_Filed by @jamiejabbouribm_
+```
+
+Use the requester's GitHub handle so the footer @-mentions them and they follow the thread. If the handle cannot be resolved, fall back — in order — to any identifier that reaches them: their Slack handle, then their full name. A best-effort footer beats a missing one; never drop the footer because the handle is unknown, and never substitute the credential owner.
+
+This is the one place a real person is named — see **No personal data** above. The footer credits a *team member* who asked for the work. It never names a user, a reporter, or a research participant.
 
 ## Templates
 
@@ -83,9 +99,9 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 ## User Stories
 
-<The value from each user's perspective, in the form "As a <role>, I want <capability> so that <benefit>." One per distinct need. For example: "As an operator, I want to see a schedule's last run status so that I can tell at a glance whether it's healthy.">
+<The value from the user's perspective, in the form "As a user, I want <capability> so that <benefit>." One per distinct need. The role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow, because naming a narrow role makes the issue read as if it only serves that group and narrows how the team scopes it. For example: "As a user, I want to see a schedule's last run status so that I can tell at a glance whether it's healthy.">
 
-- As a <role>, I want <capability> so that <benefit>.
+- As a user, I want <capability> so that <benefit>.
 
 ## Scope
 
