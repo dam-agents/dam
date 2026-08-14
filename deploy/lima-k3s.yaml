@@ -20,7 +20,12 @@ cpus: 8
 #   mise run cluster:stop
 #   limactl edit platform-k3s     # match cpus/memory to this file
 #   limactl start platform-k3s
-memory: 16GiB
+# A single Nous campaign benchmarking a process manager peaked past 4 GiB in
+# one worker (three ~1 GiB pm2 daemons + the SDK harness, OOM-killing the
+# container), and the worker's budget ceiling has to fit inside what the VM
+# can actually schedule — 16 GiB left agent workloads competing with the
+# ~5 GiB platform stack.
+memory: 20GiB
 disk: 200GiB
 
 containerd:

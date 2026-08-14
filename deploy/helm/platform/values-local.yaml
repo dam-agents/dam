@@ -73,6 +73,18 @@ agentTemplates:
     image:
       repository: platform-nous
       tag: latest
+    # A campaign's measurement phase can run several target-system daemons at
+    # once (a pm2 benchmark held three ~1 GiB daemons simultaneously) — the
+    # catalog's 4Gi limit OOM-killed the container mid-iteration. Sized so one
+    # heavy campaign fits; the campaign prompt should still bound its own
+    # parallelism (serial arms) so memory pressure doesn't skew latency numbers.
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
 
   openevolve:
     enabled: false
@@ -161,3 +173,12 @@ keycloak:
 terms:
   version: dev
   text: "Dev placeholder Terms of Use."
+
+# Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
+# (4 CPU / 8Gi) with headroom for a second sandbox. The stock 4 CPU / 8Gi
+# ceiling parked the nous target in OverBudget for hours (the deadline clock
+# kept running) and later couldn't have admitted the resized worker at all.
+# Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml).
+budgets:
+  defaultCpu: "8"
+  defaultMemory: "16Gi"
