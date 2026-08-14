@@ -1,7 +1,7 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillsService } from "api-server-api";
-import type { RuntimeSettledPort } from "../agents/index.js";
+import type { RuntimeProgressPort } from "../agents/index.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
@@ -28,6 +28,7 @@ import {
   type PrStateResolver,
 } from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import { createUnitOfWork } from "../../core/unit-of-work.js";
 
 const sharedScanCache = createScanCache();
 
@@ -58,7 +59,7 @@ export function composeSkillsModule(deps: {
   brandName: string;
   runtimeMutator: RuntimeMutator;
   templatesRepo: TemplatesRepository;
-  runtimeSettled: RuntimeSettledPort;
+  runtimeProgress: RuntimeProgressPort;
 }): SkillsService {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
@@ -74,7 +75,8 @@ export function composeSkillsModule(deps: {
       createConnectionsRepository(db),
     ),
     runtimeMutator: deps.runtimeMutator,
-    runtimeSettled: deps.runtimeSettled,
+    runtimeProgress: deps.runtimeProgress,
+    unitOfWork: createUnitOfWork(db),
     owner: deps.owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,

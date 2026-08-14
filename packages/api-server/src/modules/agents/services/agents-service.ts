@@ -59,13 +59,20 @@ export interface ContributionsStatus {
   preparingWorkspace: boolean;
 }
 
-export interface ContributionsSettledPort {
-  status(agentId: string): Promise<ContributionsStatus>;
-  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  isSettled(agentId: string): Promise<boolean>;
+export interface ContributionsProgress {
+  version: number;
+  settled: boolean;
+  applied: boolean;
+  failures: DriverFailure[];
 }
 
-export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
+export interface ContributionsProgressPort {
+  status(agentId: string): Promise<ContributionsStatus>;
+  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+  progress(agentId: string): Promise<ContributionsProgress>;
+}
+
+export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
@@ -420,7 +427,7 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
@@ -462,7 +469,7 @@ export function createAgentsService(deps: {
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
-      return await deps.contributionsSettled.status(id);
+      return await deps.contributionsProgress.status(id);
     } catch {
       return { settled: true, failures: [], preparingWorkspace: false };
     }
@@ -584,7 +591,7 @@ export function createAgentsService(deps: {
       }
 
       const [failuresMap, envMap] = await Promise.all([
-        deps.contributionsSettled
+        deps.contributionsProgress
           .statusMany([...infraIds])
           .catch(() => new Map<string, ContributionsStatus>()),
         deps.agentEnvRepo.listMany([...infraIds]),

@@ -288,11 +288,10 @@ export async function bootstrap() {
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
   );
-  const contributionsSettledPort = {
+  const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
-    isSettled: async (agentId: string) =>
-      (await runtimeDelivery.contributionsStatus(agentId)).settled,
+    progress: runtimeDelivery.contributionsProgress,
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
@@ -427,7 +426,7 @@ export async function bootstrap() {
     db,
     readTemplateSpec: async () => null,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    contributionsSettled: contributionsSettledPort,
+    contributionsProgress: contributionsProgressPort,
   });
 
   const identityLinkService = createIdentityLinkService({
@@ -806,7 +805,7 @@ export async function bootstrap() {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
-      contributionsSettled: contributionsSettledPort,
+      contributionsProgress: contributionsProgressPort,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({
@@ -858,7 +857,7 @@ export async function bootstrap() {
     agentCleanupHooks,
     secretStores,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    contributionsSettled: contributionsSettledPort,
+    contributionsProgress: contributionsProgressPort,
     getAgentCapabilities: (agentId) =>
       runtimeDelivery.agentsRuntimeRepo
         .get(agentId)
@@ -894,7 +893,7 @@ export async function bootstrap() {
     runtimeHello: runtimeDelivery.hello,
     schedulesBoot,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    runtimeSettled: contributionsSettledPort,
+    runtimeProgress: contributionsProgressPort,
     artifacts,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
