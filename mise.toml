@@ -63,6 +63,7 @@ includes = [
     "packages/agents/tasks.toml",
     "packages/api-server-api/tasks.toml",
     "packages/api-server/tasks.toml",
+    "packages/bench/tasks.toml",
     "packages/cli/tasks.toml",
     "packages/controller/tasks.toml",
     "packages/db/tasks.toml",
