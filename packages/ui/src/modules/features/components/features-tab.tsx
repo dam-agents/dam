@@ -34,6 +34,35 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
 ];
 
+function FeatureRowCard({
+  row,
+  enabled,
+  onToggle,
+}: {
+  row: FeatureRow;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        CARD_SURFACE,
+        "flex cursor-pointer items-start justify-between gap-4 p-4",
+      )}
+    >
+      <span>
+        <span className="block text-sm font-medium text-foreground">
+          {row.label}
+        </span>
+        <span className="mt-0.5 block text-sm text-muted-foreground">
+          {row.description}
+        </span>
+      </span>
+      <Switch checked={enabled} onCheckedChange={onToggle} />
+    </label>
+  );
+}
+
 export function FeaturesTab() {
   const { data: flags } = useFeatures();
   const setFeature = useSetFeature();
@@ -47,28 +76,14 @@ export function FeaturesTab() {
 
       <div className="flex flex-col gap-3">
         {FEATURE_ROWS.map((row) => (
-          <label
+          <FeatureRowCard
             key={row.id}
-            className={cn(
-              CARD_SURFACE,
-              "flex cursor-pointer items-start justify-between gap-4 p-4",
-            )}
-          >
-            <span>
-              <span className="block text-sm font-medium text-foreground">
-                {row.label}
-              </span>
-              <span className="mt-0.5 block text-sm text-muted-foreground">
-                {row.description}
-              </span>
-            </span>
-            <Switch
-              checked={flags?.[row.id] ?? false}
-              onCheckedChange={(enabled) =>
-                setFeature.mutate({ feature: row.id, enabled })
-              }
-            />
-          </label>
+            row={row}
+            enabled={flags?.[row.id] ?? false}
+            onToggle={(enabled) =>
+              setFeature.mutate({ feature: row.id, enabled })
+            }
+          />
         ))}
       </div>
     </div>
