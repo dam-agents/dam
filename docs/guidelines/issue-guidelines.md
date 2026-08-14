@@ -26,7 +26,7 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
 - **Be brief.** One idea per sentence. Active voice. Cut filler, restatement, and any sentence that carries no new fact. A reader should get the problem from the first paragraph. Length is not thoroughness.
-- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Keep source links in the discussion where the ask came from, not in the issue. Check screenshots for names before attaching them. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
+- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. Check screenshots for names before attaching them. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
 - **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
 
 ## Attribution
