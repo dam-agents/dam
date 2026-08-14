@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
@@ -14,6 +15,21 @@ import {
   classifyInboundAttachment,
   type InboundAttachment,
 } from "../inbound-image.js";
+import {
+  inboundFilePath,
+  looksLikeSignInPage,
+  wasSentAsImage,
+  MAX_FILE_BYTES,
+  TOTAL_FILE_BYTES_CAP,
+} from "../inbound-file.js";
+import {
+  createAttachmentBudget,
+  encodedFootprint,
+  stagedFootprint,
+  type AttachmentBudget,
+  type AttachmentClaim,
+} from "../attachment-budget.js";
+import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
   ChannelReaction,
   ChannelReply,
@@ -50,6 +66,7 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackAck,
   SlackChannelInfo,
@@ -168,6 +185,7 @@ function framePrompt(opts: {
   contextLegend?: string;
   text: string;
   images: FetchedImage[];
+  files?: DeliveredFile[];
 }): string | ContentBlock[] {
   const parts: string[] = [opts.contract];
   if (opts.guidance) parts.push(opts.guidance);
@@ -176,9 +194,38 @@ function framePrompt(opts: {
     parts.push(`<context>\n${opts.context.join("\n")}\n</context>`);
   }
   parts.push(opts.text);
+  const delivered = opts.files ?? [];
+  if (delivered.length > 0) parts.push(renderDeliveredFiles(delivered));
   const text = parts.join("\n\n");
-  if (opts.images.length === 0) return text;
-  return [{ type: "text", text }, ...opts.images.map((i) => i.block)];
+  if (opts.images.length === 0 && delivered.length === 0) return text;
+  return [
+    { type: "text", text },
+    ...opts.images.map((i) => i.block),
+    ...delivered.map(
+      (f): ContentBlock => ({
+        type: "resource_link",
+        uri: `file://${f.path}`,
+        name: f.name,
+        size: f.size,
+        ...(f.contentType ? { mimeType: f.contentType } : {}),
+      }),
+    ),
+  ];
+}
+
+function promptSafeName(name: string): string {
+  return (
+    name
+      .replace(/[<>\r\n\t]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "file"
+  );
+}
+
+function renderDeliveredFiles(files: DeliveredFile[]): string {
+  const list = files.map((f) => `- ${f.name} → ${f.path}`).join("\n");
+  return `<attached-files>\nSaved in your workspace, attached to this message:\n${list}\n</attached-files>`;
 }
 
 function isDirectMessageId(channelId: string): boolean {
@@ -190,11 +237,35 @@ export type FetchedImage = {
   meta: { name: string; size: number };
 };
 
-type FetchedFailure = { name: string; reason: string };
+export type FetchedFile = {
+  name: string;
+  bytes: Buffer;
+  uploader: string;
+  contentType?: string;
+};
 
-type FetchImagesResult =
-  | { kind: "ok"; images: FetchedImage[]; failures: FetchedFailure[] }
-  | { kind: "cap_exceeded"; totalBytes: number; count: number };
+type DeliveredFile = {
+  name: string;
+  path: string;
+  size: number;
+  contentType?: string;
+};
+
+type TurnDelivery = { files: DeliveredFile[]; withheldNote: string };
+
+type FetchedFailure = {
+  name: string;
+  kind: "image" | "file";
+  plural?: true;
+  reason: string;
+};
+
+type FetchAttachmentsResult = {
+  images: FetchedImage[];
+  files: FetchedFile[];
+  failures: FetchedFailure[];
+  release: () => void;
+};
 
 const TOTAL_IMAGE_BYTES_CAP = 30 * 1_000_000;
 const CONCURRENT_IMAGE_FETCH_LIMIT = 10;
@@ -220,9 +291,10 @@ function createSemaphore(max: number) {
 
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
-async function unreadableImageCopy(
+async function withheldCopy(
   gw: SlackGateway,
   attachment: Exclude<InboundAttachment, { kind: "image" }>,
+  noun: "image" | "file",
 ): Promise<string> {
   if (attachment.kind === "unreadable") {
     return attachment.retryable
@@ -233,76 +305,226 @@ async function unreadableImageCopy(
   return scopes && !scopes.has("files:read")
     ? "Slack returned a web page instead of the file — this install lacks the " +
         "`files:read` permission, so it cannot download attachments. Reinstall " +
-        "the app with that scope and send the image again."
+        `the app with that scope and send the ${noun} again.`
     : "Slack returned a web page instead of the file, so the agent never saw " +
-        "the image. That usually means the app cannot download attachments in " +
+        `the ${noun}. That usually means the app cannot download attachments in ` +
         "this conversation — check that it is still installed and can read files.";
 }
 
-const GENERIC_MIME_TYPES = ["application/octet-stream", "binary/octet-stream"];
-
-function mayBeImageAttachment(f: SlackImageFile): boolean {
-  if (f.mimetype?.startsWith("image/")) return true;
-  if (f.mimetype && !GENERIC_MIME_TYPES.includes(f.mimetype)) return false;
-  return /\.(png|jpe?g|gif|webp)$/i.test(f.name ?? "");
+function describeSlackFile(f: SlackImageFile) {
+  return { name: f.name, mimeType: f.mimetype };
 }
 
-async function fetchSlackImages(
+function attachmentName(f: SlackImageFile): string {
+  return promptSafeName(f.name || "file");
+}
+
+const OVER_HELD_BUDGET =
+  "the agent is already holding as many attachments as it can at once. " +
+  "Send it again in a moment.";
+
+function megabytes(bytes: number): string {
+  return (bytes / 1_000_000).toFixed(1);
+}
+
+async function fetchSlackAttachments(
   gateway: SlackGateway,
   files: SlackImageFile[] | undefined,
-): Promise<FetchImagesResult> {
-  const imageFiles = (files ?? []).filter(mayBeImageAttachment);
-  const totalBytes = imageFiles.reduce((sum, f) => sum + (f.size ?? 0), 0);
-  if (totalBytes > TOTAL_IMAGE_BYTES_CAP) {
-    return { kind: "cap_exceeded", totalBytes, count: imageFiles.length };
-  }
+  uploader: string,
+  budget: AttachmentBudget,
+): Promise<FetchAttachmentsResult> {
+  const attachments = files ?? [];
+  const pictures = attachments.filter((f) =>
+    wasSentAsImage(describeSlackFile(f)),
+  );
+  const documents = attachments.filter(
+    (f) => !wasSentAsImage(describeSlackFile(f)),
+  );
 
   const release = await imageFetchSemaphore.acquire();
   try {
     const images: FetchedImage[] = [];
+    const staged: FetchedFile[] = [];
     const failures: FetchedFailure[] = [];
-    for (const f of imageFiles) {
+    const claims: AttachmentClaim[] = [];
+
+    const pictureBytes = pictures.reduce((sum, f) => sum + (f.size ?? 0), 0);
+    const picturesOverCap = pictureBytes > TOTAL_IMAGE_BYTES_CAP;
+    if (picturesOverCap) {
+      failures.push({
+        name: pictures.map(attachmentName).join(", "),
+        kind: "image",
+        plural: true,
+        reason:
+          `they total ${megabytes(pictureBytes)} MB, over the ` +
+          `${(TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0)} MB of images a ` +
+          "single message can carry. Send smaller images or fewer at once.",
+      });
+    }
+
+    let pictureBytesTaken = 0;
+    for (const f of picturesOverCap ? [] : pictures) {
+      const remaining = TOTAL_IMAGE_BYTES_CAP - pictureBytesTaken;
+      const claim = budget.reserve(encodedFootprint(f.size || remaining));
+      if (!claim) {
+        failures.push({
+          name: attachmentName(f),
+          kind: "image",
+          reason: OVER_HELD_BUDGET,
+        });
+        continue;
+      }
       try {
-        const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
+        const bytes = Buffer.from(
+          await gateway.downloadFile(f.url_private, remaining),
+        );
+        pictureBytesTaken += bytes.length;
         const attachment = classifyInboundAttachment(bytes);
         if (attachment.kind !== "image") {
           getLogger().warn(
             {
-              file: f.name,
+              file: attachmentName(f),
               claimedMimeType: f.mimetype,
               bytes: bytes.length,
               verdict: attachment.kind,
             },
             "slack.image.unreadable",
           );
+          claim.release();
           failures.push({
-            name: f.name,
-            reason: await unreadableImageCopy(gateway, attachment),
+            name: attachmentName(f),
+            kind: "image",
+            reason: await withheldCopy(gateway, attachment, "image"),
           });
           continue;
         }
+        const data = bytes.toString("base64");
+        claim.settle(data.length);
+        claims.push(claim);
         images.push({
-          block: {
-            type: "image",
-            data: bytes.toString("base64"),
-            mimeType: attachment.mimeType,
-          },
-          meta: { name: f.name, size: f.size },
+          block: { type: "image", data, mimeType: attachment.mimeType },
+          meta: { name: attachmentName(f), size: f.size ?? bytes.length },
         });
       } catch (err) {
+        claim.release();
         failures.push({
-          name: f.name,
-          reason: `${formatError(err)}. Try resending.`,
+          name: attachmentName(f),
+          kind: "image",
+          reason:
+            err instanceof FileTooLargeError
+              ? `it is over the ${megabytes(TOTAL_IMAGE_BYTES_CAP)} MB of ` +
+                "images a single message can carry."
+              : `${formatError(err)}. Try resending.`,
         });
       }
     }
-    return { kind: "ok", images, failures };
+
+    let stagedBytes = 0;
+    const overCap = (size: number): string | null => {
+      if (size > MAX_FILE_BYTES) {
+        return (
+          `it is ${megabytes(size)} MB, over the ` +
+          `${megabytes(MAX_FILE_BYTES)} MB limit for a file the agent can be handed.`
+        );
+      }
+      if (stagedBytes + size > TOTAL_FILE_BYTES_CAP) {
+        return (
+          `the files on this message add up to more than ` +
+          `${megabytes(TOTAL_FILE_BYTES_CAP)} MB. Send them a few at a time.`
+        );
+      }
+      return null;
+    };
+
+    for (const f of documents) {
+      const name = attachmentName(f);
+      const declaredTooBig = overCap(f.size ?? 0);
+      if (declaredTooBig) {
+        failures.push({ name, kind: "file", reason: declaredTooBig });
+        continue;
+      }
+      const claim = budget.reserve(stagedFootprint(f.size || MAX_FILE_BYTES));
+      if (!claim) {
+        failures.push({ name, kind: "file", reason: OVER_HELD_BUDGET });
+        continue;
+      }
+      try {
+        const bytes = Buffer.from(
+          await gateway.downloadFile(f.url_private, MAX_FILE_BYTES),
+        );
+        const tooBig = overCap(bytes.length);
+        if (tooBig) {
+          claim.release();
+          failures.push({ name, kind: "file", reason: tooBig });
+          continue;
+        }
+        const head = bytes.subarray(0, 8192).toString("latin1");
+        const refused =
+          looksLikeSignInPage(head) ||
+          (classifyInboundAttachment(bytes).kind === "web_page" &&
+            !(await canReadFiles(gateway)));
+        if (bytes.length === 0 || refused) {
+          getLogger().warn(
+            {
+              file: name,
+              claimedMimeType: f.mimetype,
+              bytes: bytes.length,
+              verdict: bytes.length === 0 ? "empty" : "refused",
+            },
+            "slack.file.unreadable",
+          );
+          claim.release();
+          failures.push({
+            name,
+            kind: "file",
+            reason:
+              bytes.length === 0
+                ? "it arrived empty, so the upload didn't complete. Try resending."
+                : await withheldCopy(gateway, { kind: "web_page" }, "file"),
+          });
+          continue;
+        }
+        stagedBytes += bytes.length;
+        claim.settle(stagedFootprint(bytes.length));
+        claims.push(claim);
+        staged.push({
+          name,
+          bytes,
+          uploader,
+          ...(f.mimetype ? { contentType: f.mimetype } : {}),
+        });
+      } catch (err) {
+        claim.release();
+        failures.push({
+          name,
+          kind: "file",
+          reason:
+            err instanceof FileTooLargeError
+              ? `it is over the ${megabytes(MAX_FILE_BYTES)} MB limit for a ` +
+                "file the agent can be handed."
+              : `${formatError(err)}. Try resending.`,
+        });
+      }
+    }
+    return {
+      images,
+      files: staged,
+      failures,
+      release: () => {
+        for (const claim of claims) claim.release();
+      },
+    };
   } finally {
     release();
   }
 }
 
-type TurnImages = { images: FetchedImage[]; withheldNote: string };
+type TurnAttachments = {
+  images: FetchedImage[];
+  files: FetchedFile[];
+  withheldNote: string;
+  release: () => void;
+};
 
 function renderWithheldNote(failures: FetchedFailure[]): string {
   if (failures.length === 0) return "";
@@ -314,12 +536,20 @@ function renderWithheldNote(failures: FetchedFailure[]): string {
   );
 }
 
-function renderTurnFiles(images: FetchedImage[]): string {
-  if (images.length === 0) return "";
-  const list = images
-    .map((i) => `${i.meta.name} (${(i.meta.size / 1_000_000).toFixed(1)} MB)`)
-    .join(", ");
-  return `\nTurn included: ${list}.`;
+function renderTurnFiles(attachments: {
+  images: FetchedImage[];
+  files: FetchedFile[];
+}): string {
+  const list = [
+    ...attachments.images.map(
+      (i) => `${i.meta.name} (${megabytes(i.meta.size)} MB)`,
+    ),
+    ...attachments.files.map(
+      (f) => `${f.name} (${megabytes(f.bytes.length)} MB)`,
+    ),
+  ];
+  if (list.length === 0) return "";
+  return `\nTurn included: ${list.join(", ")}.`;
 }
 
 async function getContextMessages(
@@ -470,6 +700,11 @@ async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
   return !scopes || scopes.has("users:read");
 }
 
+async function canReadFiles(gw: SlackGateway): Promise<boolean> {
+  const scopes = await grantedScopes(gw);
+  return !scopes || scopes.has("files:read");
+}
+
 async function canReadReactions(gw: SlackGateway): Promise<boolean> {
   const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("reactions:read");
@@ -478,7 +713,7 @@ async function canReadReactions(gw: SlackGateway): Promise<boolean> {
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "app_mentions:read", backs: "answering mentions" },
   { scope: "chat:write", backs: "posting replies" },
-  { scope: "files:read", backs: "reading images people attach" },
+  { scope: "files:read", backs: "reading the files people attach" },
   { scope: "files:write", backs: "sending files into a channel" },
   { scope: "channels:history", backs: "reading channel history for context" },
   { scope: "im:history", backs: "answering direct messages" },
@@ -540,6 +775,7 @@ export function createSlackWorker(
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
   attendance: ChannelTurnAttendance,
+  workspaceFiles: AgentWorkspaceFilesFactory,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   const brandShort = brand.short;
@@ -759,7 +995,7 @@ export function createSlackWorker(
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
-    resumePrompt: string | ContentBlock[];
+    buildResumePrompt: () => Promise<string | ContentBlock[]>;
     buildFreshPrompt: () => Promise<string | ContentBlock[]>;
     onWaking?: () => void;
     onImagesDropped?: () => void;
@@ -788,8 +1024,9 @@ export function createSlackWorker(
         onSession: args.onSession,
       };
       if (existing) {
+        const resumePrompt = await args.buildResumePrompt();
         try {
-          return await acp.sendPrompt(args.resumePrompt, {
+          return await acp.sendPrompt(resumePrompt, {
             resumeSessionId: existing.sessionId,
             ...sendOpts,
           });
@@ -820,10 +1057,12 @@ export function createSlackWorker(
     slackUserId: string;
     teamId?: string;
     images: FetchedImage[];
+    files: FetchedFile[];
   }) {
     if (!gateway) return;
     const gw = gateway;
     const { instanceName } = ctx;
+    const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
 
     const turnRef: TurnRef = {
       channel: ctx.channel,
@@ -869,19 +1108,38 @@ export function createSlackWorker(
       );
     };
 
+    let delivery: Promise<TurnDelivery>;
+    const deliverFiles = () =>
+      (delivery ??= deliverTurnFiles({
+        agentId: instanceName,
+        conversation: threadKey,
+        files: ctx.files,
+        onWithheld: (f) =>
+          ephemeral(
+            ctx.channel,
+            ctx.slackUserId,
+            ctx.hasThread ? ctx.threadTs : undefined,
+            `Couldn't use attached file '${f.name}': ${f.reason}`,
+          ),
+      }));
+
     let ghostTurn = false;
     const runTurn = async () => {
-      const resumePrompt = framePrompt({
-        contract,
-        text: ctx.text,
-        images: ctx.images,
-      });
       await runSessionTurn({
         instanceName,
-        threadKey: slackThreadKey(ctx.channel, ctx.threadTs),
+        threadKey,
         legacyThreadKey: ctx.threadTs,
-        resumePrompt,
-        buildFreshPrompt: () => buildThreadPrompt(gw, ctx, contract),
+        buildResumePrompt: async () => {
+          const delivered = await deliverFiles();
+          return framePrompt({
+            contract,
+            text: ctx.text + delivered.withheldNote,
+            images: ctx.images,
+            files: delivered.files,
+          });
+        },
+        buildFreshPrompt: () =>
+          buildThreadPrompt(gw, ctx, contract, { deliver: deliverFiles }),
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
@@ -910,10 +1168,10 @@ export function createSlackWorker(
         "slack.turn.failed",
       );
       const text = isAgentStoppedError(err)
-        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx.images)}`
+        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
         : isAgentWakeTimeoutError(err)
-          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx.images)}`
-          : `Error: ${formatError(err)}.${renderTurnFiles(ctx.images)}`;
+          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
+          : `Error: ${formatError(err)}.${renderTurnFiles(ctx)}`;
       await gw.postMessage({
         channel: ctx.channel,
         threadTs: ctx.threadTs,
@@ -972,7 +1230,7 @@ export function createSlackWorker(
       images: FetchedImage[];
     },
     contract: string,
-    guidance?: string,
+    opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<string | ContentBlock[]> {
     const { lines, hasAgentAuthored } = await getContextMessages(
       gw,
@@ -981,15 +1239,18 @@ export function createSlackWorker(
       ctx.instanceName,
       ctx.hasThread ? ctx.threadTs : undefined,
     );
+    const legend = hasAgentAuthored
+      ? historyLegend(await canLookupUsers(gw))
+      : undefined;
+    const delivered = await opts?.deliver?.();
     return framePrompt({
       contract,
-      guidance,
+      guidance: opts?.guidance,
       context: lines,
-      contextLegend: hasAgentAuthored
-        ? historyLegend(await canLookupUsers(gw))
-        : undefined,
-      text: ctx.text,
+      contextLegend: legend,
+      text: ctx.text + (delivered?.withheldNote ?? ""),
       images: ctx.images,
+      files: delivered?.files ?? [],
     });
   }
 
@@ -1237,33 +1498,104 @@ export function createSlackWorker(
     });
   }
 
-  async function fetchTurnImages(
+  async function fetchTurnAttachments(
     event: SlackMentionEvent,
     slackUserId: string,
-  ): Promise<TurnImages | null> {
+  ): Promise<TurnAttachments | null> {
     if (!gateway) return null;
-    const fetchResult = await fetchSlackImages(gateway, event.files);
-    if (fetchResult.kind === "cap_exceeded") {
-      const mb = (fetchResult.totalBytes / 1_000_000).toFixed(1);
-      const capMb = (TOTAL_IMAGE_BYTES_CAP / 1_000_000).toFixed(0);
-      await ephemeral(
-        event.channel,
-        slackUserId,
-        event.threadTs,
-        `Attached images total ${mb} MB, over the ${capMb} MB per-message cap. Send smaller images or fewer at once.`,
-      );
-      return null;
-    }
-    const { images, failures } = fetchResult;
+    const { images, files, failures, release } = await fetchSlackAttachments(
+      gateway,
+      event.files,
+      slackUserId,
+      heldBudget,
+    );
     for (const f of failures) {
       await ephemeral(
         event.channel,
         slackUserId,
         event.threadTs,
-        `Couldn't use attached image '${f.name}': ${f.reason}`,
+        `Couldn't use attached ${f.plural ? `${f.kind}s` : f.kind} '${f.name}': ${f.reason}`,
       );
     }
-    return { images, withheldNote: renderWithheldNote(failures) };
+    return {
+      images,
+      files,
+      withheldNote: renderWithheldNote(failures),
+      release,
+    };
+  }
+
+  async function deliverTurnFiles(opts: {
+    agentId: string;
+    conversation: string;
+    files: FetchedFile[];
+    onWithheld?: (failure: FetchedFailure) => Promise<void>;
+  }): Promise<TurnDelivery> {
+    if (opts.files.length === 0) return { files: [], withheldNote: "" };
+    const delivered: DeliveredFile[] = [];
+    const failures: FetchedFailure[] = [];
+    try {
+      const store = workspaceFiles(opts.agentId);
+      for (const f of opts.files) {
+        try {
+          const path = await store.write({
+            path: inboundFilePath({
+              conversation: opts.conversation,
+              name: f.name,
+              unique: randomUUID().slice(0, 8),
+            }),
+            bytes: f.bytes,
+            ...(f.contentType ? { contentType: f.contentType } : {}),
+          });
+          delivered.push({
+            name: f.name,
+            path,
+            size: f.bytes.length,
+            ...(f.contentType ? { contentType: f.contentType } : {}),
+          });
+          securityLog("info", "channel.file.delivered", {
+            category: "channel",
+            actor: f.uploader,
+            actorKind: "external",
+            surface: "slack",
+            agentId: opts.agentId,
+            result: "success",
+            target: path,
+            detail: { file: f.name, bytes: f.bytes.length },
+          });
+        } catch (err) {
+          getLogger().warn(
+            {
+              agentId: opts.agentId,
+              file: f.name,
+              bytes: f.bytes.length,
+              error: formatError(err),
+            },
+            "slack.file.undelivered",
+          );
+          failures.push({
+            name: f.name,
+            kind: "file",
+            reason: `the agent couldn't be handed it (${formatError(err)}). Try resending.`,
+          });
+        }
+      }
+    } catch (err) {
+      getLogger().warn(
+        { agentId: opts.agentId, error: formatError(err) },
+        "slack.file_delivery.failed",
+      );
+      for (const f of opts.files) {
+        if (delivered.some((d) => d.name === f.name)) continue;
+        failures.push({
+          name: f.name,
+          kind: "file",
+          reason: `the agent couldn't be handed it (${formatError(err)}). Try resending.`,
+        });
+      }
+    }
+    for (const f of failures) await opts.onWithheld?.(f);
+    return { files: delivered, withheldNote: renderWithheldNote(failures) };
   }
 
   function unboundConversationCopy(
@@ -1299,21 +1631,26 @@ export function createSlackWorker(
       return;
     }
 
-    const fetched = await fetchTurnImages(event, slackUserId);
+    const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
-    await relaySharedTurn({
-      channel: event.channel,
-      threadTs,
-      eventTs: event.ts,
-      text: event.text + fetched.withheldNote,
-      hasThread: !!event.threadTs,
-      slackUserId,
-      instanceName: binding.instanceName,
-      owner: binding.owner,
-      teamId: event.teamId,
-      images: fetched.images,
-      speakerLabel: !opts.directMessage,
-    });
+    try {
+      await relaySharedTurn({
+        channel: event.channel,
+        threadTs,
+        eventTs: event.ts,
+        text: event.text + fetched.withheldNote,
+        hasThread: !!event.threadTs,
+        slackUserId,
+        instanceName: binding.instanceName,
+        owner: binding.owner,
+        teamId: event.teamId,
+        images: fetched.images,
+        files: fetched.files,
+        speakerLabel: !opts.directMessage,
+      });
+    } finally {
+      fetched.release();
+    }
   }
 
   const handleAppMention = (event: SlackMentionEvent) =>
@@ -1335,6 +1672,7 @@ export function createSlackWorker(
     owner: string;
     teamId?: string;
     images: FetchedImage[];
+    files: FetchedFile[];
     speakerLabel?: boolean;
   }) {
     if (!gateway) return;
@@ -1377,6 +1715,7 @@ export function createSlackWorker(
       slackUserId: args.slackUserId,
       teamId: args.teamId,
       images: args.images,
+      files: args.files,
     });
   }
 
@@ -1390,6 +1729,8 @@ export function createSlackWorker(
     hasThread: boolean;
     messages: Array<{ text: string; eventTs: string }>;
     images: FetchedImage[];
+    files: FetchedFile[];
+    droppedFiles: string[];
     externalActorId: string;
   }) {
     if (!gateway) return;
@@ -1401,9 +1742,19 @@ export function createSlackWorker(
       threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
       eventTs: m.eventTs,
     }));
-    const text = multi
-      ? args.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
-      : args.messages[0]!.text;
+    const droppedNote = renderWithheldNote(
+      args.droppedFiles.map((name) => ({
+        name,
+        kind: "file" as const,
+        reason:
+          "too many attachments arrived at once for it to be included. " +
+          "Send it again on its own.",
+      })),
+    );
+    const text =
+      (multi
+        ? args.messages.map((m) => `[ts ${m.eventTs}] ${m.text}`).join("\n")
+        : args.messages[0]!.text) + droppedNote;
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -1418,12 +1769,14 @@ export function createSlackWorker(
       })),
     });
     const guidance = ambientGuidance(brand);
-    const resumePrompt = framePrompt({
-      contract,
-      guidance,
-      text,
-      images: args.images,
-    });
+
+    let delivery: Promise<TurnDelivery>;
+    const deliverFiles = () =>
+      (delivery ??= deliverTurnFiles({
+        agentId: args.instanceName,
+        conversation: args.threadKey,
+        files: args.files,
+      }));
 
     let ghostTurn = false;
     const runTurn = () =>
@@ -1433,8 +1786,17 @@ export function createSlackWorker(
         ...(args.legacyThreadKey
           ? { legacyThreadKey: args.legacyThreadKey }
           : {}),
-        resumePrompt,
-        buildFreshPrompt: () =>
+        buildResumePrompt: async () => {
+          const delivered = await deliverFiles();
+          return framePrompt({
+            contract,
+            guidance,
+            text: text + delivered.withheldNote,
+            images: args.images,
+            files: delivered.files,
+          });
+        },
+        buildFreshPrompt: async () =>
           buildThreadPrompt(
             gw,
             {
@@ -1447,7 +1809,7 @@ export function createSlackWorker(
               images: args.images,
             },
             contract,
-            guidance,
+            { guidance, deliver: deliverFiles },
           ),
         onSession: (sessionId) => {
           for (const ref of turnRefs) ref.sessionId = sessionId;
@@ -1510,7 +1872,35 @@ export function createSlackWorker(
     eventTs: string;
     slackUserId: string;
     images: FetchedImage[];
+    files: FetchedFile[];
+    release: () => void;
   };
+
+  function batchFiles(batch: AmbientPendingMessage[]): {
+    kept: FetchedFile[];
+    dropped: FetchedFile[];
+  } {
+    const kept: FetchedFile[] = [];
+    const dropped: FetchedFile[] = [];
+    let bytes = 0;
+    for (const f of batch.flatMap((m) => m.files)) {
+      if (bytes + f.bytes.length > TOTAL_FILE_BYTES_CAP) {
+        getLogger().warn(
+          { file: f.name, bytes: f.bytes.length },
+          "slack.ambient_file.over_batch_cap",
+        );
+        dropped.push(f);
+        continue;
+      }
+      bytes += f.bytes.length;
+      kept.push(f);
+    }
+    return { kept, dropped };
+  }
+
+  const HELD_BYTES_CAP = stagedFootprint(3 * TOTAL_FILE_BYTES_CAP);
+
+  const heldBudget = createAttachmentBudget(HELD_BYTES_CAP);
 
   type AmbientQueue = {
     channelId: string;
@@ -1546,36 +1936,43 @@ export function createSlackWorker(
     try {
       while (queue.pending.length > 0) {
         const batch = queue.pending.splice(0);
-        const last = batch.at(-1);
-        if (!last) continue;
-        const binding = await channelRegistry.resolveSlackBinding(
-          queue.channelId,
-        );
-        if (!binding || !binding.ambient) {
-          continue;
-        }
-        if (!(await isTermsAccepted(binding.owner))) {
-          getLogger().debug(
-            { agentId: binding.instanceName, channelId: queue.channelId },
-            "slack.ambient_turn.skipped_terms",
+        try {
+          const last = batch.at(-1);
+          if (!last) continue;
+          const binding = await channelRegistry.resolveSlackBinding(
+            queue.channelId,
           );
-          continue;
+          if (!binding || !binding.ambient) {
+            continue;
+          }
+          if (!(await isTermsAccepted(binding.owner))) {
+            getLogger().debug(
+              { agentId: binding.instanceName, channelId: queue.channelId },
+              "slack.ambient_turn.skipped_terms",
+            );
+            continue;
+          }
+          const inThread = queue.threadTs !== null;
+          const { kept, dropped } = batchFiles(batch);
+          await relayAmbientTurn({
+            instanceName: binding.instanceName,
+            channel: queue.channelId,
+            threadKey: inThread
+              ? slackThreadKey(queue.channelId, queue.threadTs!)
+              : ambientThreadKey(queue.channelId),
+            ...(inThread ? { legacyThreadKey: queue.threadTs! } : {}),
+            replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
+            eventTs: last.eventTs,
+            hasThread: inThread,
+            messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
+            images: batch.flatMap((m) => m.images),
+            files: kept,
+            droppedFiles: dropped.map((f) => f.name),
+            externalActorId: last.slackUserId,
+          });
+        } finally {
+          for (const msg of batch) msg.release();
         }
-        const inThread = queue.threadTs !== null;
-        await relayAmbientTurn({
-          instanceName: binding.instanceName,
-          channel: queue.channelId,
-          threadKey: inThread
-            ? slackThreadKey(queue.channelId, queue.threadTs!)
-            : ambientThreadKey(queue.channelId),
-          ...(inThread ? { legacyThreadKey: queue.threadTs! } : {}),
-          replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
-          eventTs: last.eventTs,
-          hasThread: inThread,
-          messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
-          images: batch.flatMap((m) => m.images),
-          externalActorId: last.slackUserId,
-        });
       }
     } catch (err) {
       getLogger().warn(
@@ -1604,10 +2001,13 @@ export function createSlackWorker(
       return;
     }
 
-    const fetchResult = await fetchSlackImages(gateway, event.files);
-    const images = fetchResult.kind === "ok" ? fetchResult.images : [];
-    const withheldNote =
-      fetchResult.kind === "ok" ? renderWithheldNote(fetchResult.failures) : "";
+    const { images, files, failures, release } = await fetchSlackAttachments(
+      gateway,
+      event.files,
+      slackUserId,
+      heldBudget,
+    );
+    const withheldNote = renderWithheldNote(failures);
 
     securityLog("info", "channel.authz", {
       category: "channel",
@@ -1630,6 +2030,8 @@ export function createSlackWorker(
       eventTs: event.ts,
       slackUserId,
       images,
+      files,
+      release,
     });
   }
 

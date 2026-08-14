@@ -9,6 +9,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { DomainEvent } from "../../events.js";
@@ -103,6 +104,7 @@ function harness() {
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 
@@ -301,7 +303,7 @@ describe("slack inbound images", () => {
       .find((l) => String(l.msg).startsWith("slack.permissions.missing"));
     expect(report).toBeDefined();
     expect(String(report!.msg)).toContain("files:read");
-    expect(String(report!.msg)).toContain("reading images people attach");
+    expect(String(report!.msg)).toContain("reading the files people attach");
     expect(String(report!.msg)).toContain("Reinstall the app");
     expect(String(report!.msg)).not.toContain("chat:write");
   });
@@ -318,7 +320,7 @@ describe("slack inbound images", () => {
     ).toBe(false);
   });
 
-  it("leaves a genuine non-image attachment alone", async () => {
+  it("never shows a document as a picture", async () => {
     const h = harness();
     await h.mentionWithFile({
       bytes: Buffer.from("%PDF-1.7"),
@@ -328,6 +330,5 @@ describe("slack inbound images", () => {
 
     expect(h.imageBlocks()).toHaveLength(0);
     expect(h.notices()).not.toContain("Couldn't use");
-    expect(String(h.prompts[0])).not.toContain("could not be read");
   });
 });

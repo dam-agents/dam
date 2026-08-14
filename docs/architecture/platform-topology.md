@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-08-13
+Last verified: 2026-08-14
 
 ## Overview
 
@@ -61,7 +61,7 @@ The per-agent pod that runs the ACP WebSocket server and spawns the underlying a
 - Accept terminal-mode WebSocket connections on `/api/terminal` (relayed from the api-server). Each session gets a PTY running `/usr/local/bin/harness-terminal`; agent-runtime relays a binary input/output/resize frame protocol both ways and serializes scrollback so reattaching replays the screen. A detached PTY survives while the harness keeps producing output and is reaped once it has been quiet for five minutes (30 s detach grace for tab refreshes).
 - Accept SSH WebSocket connections on `/api/ssh` (relayed from the api-server). Each connection spawns a per-connection OpenSSH `sshd -i` (inetd mode) as the agent user; agent-runtime relays raw bytes verbatim between the socket and the child's stdio. The SSH wire is opaque here — this is `dam ssh`'s transport. Available only on images that ship `sshd`.
 - Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME (e.g. `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections), and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers. See [connections](connections.md).
-- Expose a scoped tRPC router (via the api-server's tRPC proxy) for in-pod file operations surfaced to the UI.
+- Expose a scoped tRPC router for in-pod file operations: reached by the UI through the api-server's tRPC proxy, and by a channel worker dialing this pod directly to place an inbound attachment in the workspace ([channels](channels.md)).
 - Accept bundled file imports on the harness port — extract the tarball to a staging directory on the per-agent PVC, then `rm`+`rename` each top-level entry into `<homeDir>/work` (top-level folders are atomic units; unrelated existing top-level entries in `work/` survive). One import per agent at a time; a boot sweeper reclaims staging dirs orphaned by crashes (see [persistence](persistence.md)).
 
 The agent-runtime pod holds zero credential Secrets and has no admitted route to TCP 80/443 except its paired gateway pod. Its `HTTPS_PROXY` value is the per-agent gateway Service DNS, but the value is decorative — Kubernetes admits no other route. See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
@@ -89,7 +89,8 @@ Continuing such a conversation here makes a session outlive the surface it start
 | cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
-| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
+| api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations for the UI — gated per request on ownership, the operate scope, and the key's agent binding |
+| api-server → agent-runtime | HTTP (tRPC, direct) | A channel worker writing an inbound attachment into the workspace. Not the proxy: no bearer, so the pod's NetworkPolicy is the whole gate, and a woken pod becomes a precondition for building that turn's prompt |
 | api-server → agent-runtime | HTTP (status read) | Passive read of the pod's status surface for session-reported background work; never wakes a pod or defers hibernation |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |

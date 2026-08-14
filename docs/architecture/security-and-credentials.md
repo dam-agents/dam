@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-10
+Last verified: 2026-08-14
 
 ## Overview
 
@@ -587,10 +587,13 @@ chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
 relays to the main agent pod and runs under the Agent's own
 credential set, gated by the owner's egress rules exactly like any
-other turn; no per-speaker credential selection happens. What such a
-turn cannot do is raise a *hold* — the decision has nowhere to be made
-from a messenger, so an unmatched request is refused rather than
-waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
+other turn; no per-speaker credential selection happens. Such a turn can also place a file in the
+Agent's workspace: an attachment sent in the conversation is written
+there for the agent to open, so a speaker with no platform
+identity is a writer to persistent state ([persistence](persistence.md)).
+What such a turn cannot do is raise a *hold* — the decision has nowhere
+to be made from a messenger, so an unmatched request is refused rather
+than waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
 — the terms bind the party whose credentials run it — and the
 security log attributes the allow to the messenger-native sender id
 with basis *place*.

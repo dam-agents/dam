@@ -6,6 +6,13 @@ export interface SlackImageFile {
   size: number;
 }
 
+export class FileTooLargeError extends Error {
+  constructor(public readonly maxBytes: number) {
+    super(`file is larger than ${maxBytes} bytes`);
+    this.name = "FileTooLargeError";
+  }
+}
+
 export interface SlackMentionEvent {
   user?: string;
   channel: string;
@@ -145,7 +152,7 @@ export interface SlackGateway {
     limit: number;
   }): Promise<SlackMessage[]>;
   uploadFile(args: SlackUpload): Promise<void>;
-  downloadFile(urlPrivate: string): Promise<ArrayBuffer>;
+  downloadFile(urlPrivate: string, maxBytes: number): Promise<ArrayBuffer>;
   listBotChannels(): Promise<SlackChannelInfo[]>;
   getConversationInfo(channelId: string): Promise<{ isMember: boolean } | null>;
   getUserInfo(userId: string): Promise<SlackUserInfo | null>;

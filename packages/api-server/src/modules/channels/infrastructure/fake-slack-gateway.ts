@@ -1,4 +1,5 @@
 import type { SlackOutboundRecord } from "api-server-api";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackChannelMessageEvent,
   SlackGateway,
@@ -159,9 +160,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async downloadFile(urlPrivate) {
+    async downloadFile(urlPrivate, maxBytes) {
       const bytes = fileBytes.get(urlPrivate);
       if (!bytes) throw new Error(`HTTP 404`);
+      if (bytes.byteLength > maxBytes) {
+        throw new FileTooLargeError(maxBytes);
+      }
       return bytes.buffer.slice(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,
