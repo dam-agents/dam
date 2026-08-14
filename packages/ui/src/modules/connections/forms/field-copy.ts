@@ -47,6 +47,10 @@ const TEMPLATE_FIELD_HINTS: Record<string, Record<string, string>> = {
     value:
       "Create a fine-grained token at github.com/settings/tokens — scope it to the exact repos and permissions you want.",
   },
+  slack: {
+    clientId:
+      "Enable the Slack MCP user-token scopes on your app before authorizing — a scope you miss surfaces later, as a failing Slack call rather than a connect error.",
+  },
 };
 
 export const CREDENTIAL_COPY: Record<
