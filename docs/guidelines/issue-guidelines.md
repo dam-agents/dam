@@ -36,10 +36,10 @@ An agent files under a shared credential, so GitHub credits the credential owner
 ```markdown
 ---
 
-_Filed by @jamiejabbouribm_
+_Filed by @<github-handle>_
 ```
 
-Use the requester's GitHub handle so the footer @-mentions them and they follow the thread. If the handle cannot be resolved, fall back — in order — to any identifier that reaches them: their Slack handle, then their full name. A best-effort footer beats a missing one; never drop the footer because the handle is unknown, and never substitute the credential owner.
+Use the requester's GitHub handle so the footer @-mentions them and they follow the thread. If the handle cannot be resolved, fall back in order: their full name, then their Slack handle. A best-effort footer beats a missing one; never drop the footer because the handle is unknown, and never substitute the credential owner.
 
 This is the one place a real person is named — see **No personal data** above. The footer credits a *team member* who asked for the work. It never names a user, a reporter, or a research participant.
 
