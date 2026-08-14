@@ -3,6 +3,7 @@ import type { Attachment } from "../../../types.js";
 export interface SessionDraft {
   text: string;
   attachments: Attachment[];
+  droppedAttachmentNames?: string[];
 }
 
 const NO_ATTACHMENTS: Attachment[] = [];

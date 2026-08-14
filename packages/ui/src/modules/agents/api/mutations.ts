@@ -6,6 +6,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
@@ -104,6 +105,9 @@ export function useCreateAgent() {
 export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
+    onSuccess: (_data, variables) => {
+      useStore.getState().clearAgentDrafts(variables.id);
+    },
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Failed to delete agent",

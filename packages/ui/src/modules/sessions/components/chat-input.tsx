@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type RefObject,
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -54,6 +55,23 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useAutoResize(textareaRef, input);
+
+  const consumeDroppedAttachments = useStore(
+    (s) => s.consumeDroppedAttachments,
+  );
+  const droppedNames = draft.droppedAttachmentNames;
+  useEffect(() => {
+    if (!key || !droppedNames?.length) return;
+    const fresh = useStore.getState().drafts[key]?.droppedAttachmentNames;
+    if (!fresh?.length) return;
+    emitToast({
+      kind: "info",
+      message: `Draft restored without ${fresh.length} attachment${
+        fresh.length === 1 ? "" : "s"
+      }: ${fresh.join(", ")}`,
+    });
+    consumeDroppedAttachments(key);
+  }, [key, droppedNames, consumeDroppedAttachments]);
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
