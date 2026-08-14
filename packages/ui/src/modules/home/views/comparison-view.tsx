@@ -1,8 +1,10 @@
 import {
+  Book,
   Chat,
   Checkmark,
   Chemistry,
   Close,
+  Document,
   Folders,
   Settings,
   Time,
@@ -30,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -253,9 +256,24 @@ export function ComparisonView() {
       {/* ═══════════════════════════════════════════════════════════════
          SECTION: READY FOR REVIEW — DISMISS VARIATIONS
          ═══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Home Page — Bento Layout Options" />
+
+      <BentoHomeVariants />
+
+      <SectionHeader title="Scheduled Section — Layout Options" />
+
+      <ScheduledSectionVariants />
+
       <SectionHeader title="Ready for Review — Dismiss Options" />
 
       <ReadyCardVariants />
+
+      {/* ═══════════════════════════════════════════════════════════════
+         SECTION: BENTO 1 — READY FOR REVIEW CARD VARIANTS
+         ═══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Bento 1 — Ready for Review Cards" />
+
+      <Bento1CardVariants />
 
       {/* ═══════════════════════════════════════════════════════════════
          SECTION: RESOURCE WIDGETS
@@ -267,7 +285,7 @@ export function ComparisonView() {
         title="Spend + Compute Resources"
         description="Side-by-side resource cards as they appear on the home page. Spend: period selector, total, top 3 bar chart. Compute: 8-cell meter (green=running, blue=awake, outlined=available), interactive legend."
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4 max-w-xl">
           <SpendPreview />
           <ComputePreview />
         </div>
@@ -2217,6 +2235,1197 @@ function ReadyVariant5() {
           <span className="text-[14px] text-muted-foreground">All caught up</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCHEDULED SECTION VARIANTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const SCHED_DATA = [
+  { name: "Daily brand audit", cadence: "Weekdays 9:00 AM", nextRun: "3h", lastResult: "success", enabled: true, agent: "brand-asset-generator" },
+  { name: "Nightly test suite", cadence: "Daily 2:00 AM", nextRun: "14h", lastResult: "failed", enabled: true, agent: "backend-refactor" },
+  { name: "Weekly report generation", cadence: "Mon 8:00 AM", nextRun: "2d", lastResult: "success", enabled: true, agent: "reporting-agent" },
+  { name: "Dependency vulnerability scan", cadence: "Every 6h", nextRun: "4h", lastResult: "success", enabled: true, agent: "security-scanner" },
+  { name: "Performance benchmark", cadence: "Daily 3:00 AM", nextRun: "15h", lastResult: "success", enabled: true, agent: "perf-monitor" },
+  { name: "Data pipeline sync", cadence: "Every 30m", nextRun: "12m", lastResult: "success", enabled: true, agent: "data-pipeline" },
+  { name: "Slack digest summary", cadence: "Weekdays 5:00 PM", nextRun: "7h", lastResult: "success", enabled: true, agent: "reporting-agent" },
+  { name: "Model fine-tune checkpoint", cadence: "Every 12h", nextRun: "8h", lastResult: "success", enabled: false, agent: "ml-trainer" },
+  { name: "Stale PR cleanup", cadence: "Fri 4:00 PM", nextRun: "4d", lastResult: "success", enabled: true, agent: "backend-refactor" },
+  { name: "Cost anomaly detector", cadence: "Every 1h", nextRun: "45m", lastResult: "failed", enabled: true, agent: "cost-monitor" },
+];
+
+function ScheduledSectionVariants() {
+  const [option, setOption] = useState(1);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-[14px] text-muted-foreground font-medium">
+          Option:
+        </span>
+        {[1, 2, 3].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setOption(n)}
+            className={cn(
+              "w-7 h-7 rounded-md text-[14px] font-medium transition-colors",
+              option === n
+                ? "bg-accent text-white"
+                : "bg-muted text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {n}
+          </button>
+        ))}
+        <span className="text-[14px] text-muted-foreground ml-2">
+          {option === 1 && "Dense data table with status rail"}
+          {option === 2 && "Timeline countdown strip"}
+          {option === 3 && "Bento grid with status glow"}
+        </span>
+      </div>
+      <p className="text-[14px] text-muted-foreground leading-relaxed max-w-prose">
+        {option === 1 &&
+          "A compact table-like layout. Each row is a single dense line — name, cadence, countdown, status dot, toggle. Maximizes information density. Failed schedules get a red left-border accent. Disabled ones are dimmed."}
+        {option === 2 &&
+          "A horizontal scrolling strip of countdown tiles sorted by next-run time. Each tile shows the countdown prominently with the name below. Status is encoded as the tile's top-edge color. Toggle lives in an expanded state on click."}
+        {option === 3 &&
+          "A responsive bento grid of cards at varying sizes. Failed/attention items get a larger tile with glow accent. Each tile has the schedule name, a circular countdown indicator, cadence, and agent. Toggle is always visible."}
+      </p>
+      <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[16px] font-semibold text-foreground">
+            Scheduled{" "}
+            <span className="text-[14px] font-normal text-muted-foreground">
+              ({SCHED_DATA.length})
+            </span>
+          </h2>
+        </div>
+        {option === 1 && <ScheduledVariant1 />}
+        {option === 2 && <ScheduledVariant2 />}
+        {option === 3 && <ScheduledVariant3 />}
+      </div>
+    </div>
+  );
+}
+
+function ScheduledVariant1() {
+  const [toggles, setToggles] = useState<Record<number, boolean>>({});
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="grid grid-cols-[1fr_120px_80px_60px_44px] gap-2 px-3 py-2 bg-muted/50 border-b border-border">
+        <span className="text-[14px] font-medium text-muted-foreground">Name</span>
+        <span className="text-[14px] font-medium text-muted-foreground">Cadence</span>
+        <span className="text-[14px] font-medium text-muted-foreground text-right">Next run</span>
+        <span className="text-[14px] font-medium text-muted-foreground text-center">Status</span>
+        <span />
+      </div>
+      {SCHED_DATA.map((s, i) => {
+        const enabled = toggles[i] ?? s.enabled;
+        const failed = s.lastResult === "failed";
+        return (
+          <div
+            key={i}
+            className={cn(
+              "grid grid-cols-[1fr_120px_80px_60px_44px] gap-2 items-center px-3 py-2.5 border-b border-border last:border-b-0 transition-opacity",
+              !enabled && "opacity-40",
+              failed && "border-l-2 border-l-destructive",
+            )}
+          >
+            <div className="min-w-0">
+              <span className="text-[14px] text-foreground truncate block">{s.name}</span>
+              <span className="text-[14px] text-muted-foreground truncate block">{s.agent}</span>
+            </div>
+            <span className="text-[14px] text-muted-foreground tabular-nums truncate">{s.cadence}</span>
+            <span className="text-[14px] text-foreground tabular-nums text-right font-medium">{s.nextRun}</span>
+            <div className="flex justify-center">
+              <span
+                className={cn(
+                  "w-2.5 h-2.5 rounded-full",
+                  failed ? "bg-destructive" : enabled ? "bg-emerald-500" : "bg-muted-foreground/30",
+                )}
+              />
+            </div>
+            <Switch
+              checked={enabled}
+              onCheckedChange={() => setToggles((p) => ({ ...p, [i]: !enabled }))}
+              label={s.name}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScheduledVariant2() {
+  const sorted = [...SCHED_DATA].sort((a, b) => {
+    const parseTime = (t: string) => {
+      const num = parseInt(t);
+      if (t.includes("m")) return num;
+      if (t.includes("h")) return num * 60;
+      if (t.includes("d")) return num * 60 * 24;
+      return num;
+    };
+    return parseTime(a.nextRun) - parseTime(b.nextRun);
+  });
+
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [toggles, setToggles] = useState<Record<number, boolean>>({});
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+        {sorted.map((s, i) => {
+          const enabled = toggles[i] ?? s.enabled;
+          const failed = s.lastResult === "failed";
+          const isExpanded = expanded === i;
+
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setExpanded(isExpanded ? null : i)}
+              className={cn(
+                "relative flex-shrink-0 w-[130px] rounded-xl border bg-card p-3 text-left transition-all",
+                isExpanded ? "ring-2 ring-accent/50 border-accent" : "border-border hover:border-foreground/20",
+                !enabled && "opacity-40",
+              )}
+            >
+              <div
+                className={cn(
+                  "absolute top-0 left-3 right-3 h-[3px] rounded-b-full",
+                  failed ? "bg-destructive" : enabled ? "bg-emerald-500" : "bg-muted-foreground/20",
+                )}
+              />
+              <p className="text-[20px] font-bold text-foreground tabular-nums mt-1">
+                {s.nextRun}
+              </p>
+              <p className="text-[14px] text-foreground font-medium mt-1 truncate">
+                {s.name}
+              </p>
+              <p className="text-[14px] text-muted-foreground truncate">
+                {s.cadence}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      {expanded !== null && (
+        <div className="rounded-lg border border-border bg-card p-4 flex items-center justify-between">
+          <div>
+            <p className="text-[14px] font-medium text-foreground">{sorted[expanded].name}</p>
+            <p className="text-[14px] text-muted-foreground">{sorted[expanded].agent} · {sorted[expanded].cadence}</p>
+            {sorted[expanded].lastResult === "failed" && (
+              <p className="text-[14px] text-destructive mt-1">Last run failed</p>
+            )}
+          </div>
+          <Switch
+            checked={toggles[expanded] ?? sorted[expanded].enabled}
+            onCheckedChange={() => {
+              const cur = toggles[expanded] ?? sorted[expanded].enabled;
+              setToggles((p) => ({ ...p, [expanded]: !cur }));
+            }}
+            label={sorted[expanded].name}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduledVariant3() {
+  const [toggles, setToggles] = useState<Record<number, boolean>>({});
+
+  const failedItems = SCHED_DATA.filter((s) => s.lastResult === "failed");
+  const activeItems = SCHED_DATA.filter((s) => s.lastResult !== "failed" && s.enabled);
+  const disabledItems = SCHED_DATA.filter((s) => !s.enabled);
+
+  function CountdownRing({ time, failed }: { time: string; failed?: boolean }) {
+    const num = parseInt(time);
+    const unit = time.replace(/[0-9]/g, "");
+    const maxMinutes = unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
+    const currentMinutes = unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
+    const progress = Math.max(0.05, 1 - currentMinutes / maxMinutes);
+    const circumference = 2 * Math.PI * 18;
+    const offset = circumference * (1 - progress);
+
+    return (
+      <div className="relative w-[48px] h-[48px] flex items-center justify-center">
+        <svg width="48" height="48" className="absolute -rotate-90">
+          <circle
+            cx="24" cy="24" r="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            className="text-muted/50"
+          />
+          <circle
+            cx="24" cy="24" r="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className={failed ? "text-destructive" : "text-emerald-500"}
+          />
+        </svg>
+        <span className="text-[14px] font-bold tabular-nums text-foreground">{time}</span>
+      </div>
+    );
+  }
+
+  function BentoTile({ s, i, large }: { s: typeof SCHED_DATA[number]; i: number; large?: boolean }) {
+    const enabled = toggles[i] ?? s.enabled;
+    const failed = s.lastResult === "failed";
+
+    return (
+      <div
+        className={cn(
+          "relative rounded-xl border bg-card p-4 transition-opacity",
+          large ? "col-span-2 row-span-2" : "",
+          failed && "border-destructive/40 shadow-[0_0_20px_-4px] shadow-destructive/20",
+          !enabled && "opacity-40",
+          !failed && "border-border",
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className={cn(
+              "font-semibold text-foreground truncate",
+              large ? "text-[16px]" : "text-[14px]",
+            )}>
+              {s.name}
+            </p>
+            <p className="text-[14px] text-muted-foreground truncate mt-0.5">
+              {s.agent}
+            </p>
+          </div>
+          <CountdownRing time={s.nextRun} failed={failed} />
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-[14px] text-muted-foreground">{s.cadence}</span>
+          <Switch
+            checked={enabled}
+            onCheckedChange={() => setToggles((p) => ({ ...p, [i]: !enabled }))}
+            label={s.name}
+          />
+        </div>
+        {failed && (
+          <div className="mt-2 rounded-md bg-destructive/10 px-2 py-1">
+            <span className="text-[14px] text-destructive font-medium">Last run failed</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 auto-rows-min">
+      {failedItems.map((s, i) => (
+        <BentoTile key={`f-${i}`} s={s} i={SCHED_DATA.indexOf(s)} large />
+      ))}
+      {activeItems.map((s, i) => (
+        <BentoTile key={`a-${i}`} s={s} i={SCHED_DATA.indexOf(s)} />
+      ))}
+      {disabledItems.map((s, i) => (
+        <BentoTile key={`d-${i}`} s={s} i={SCHED_DATA.indexOf(s)} />
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BENTO HOME PAGE LAYOUT VARIANTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function BentoHomeVariants() {
+  const [option, setOption] = useState(1);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-[14px] text-muted-foreground font-medium">
+          Option:
+        </span>
+        {[1, 2, 3].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setOption(n)}
+            className={cn(
+              "w-7 h-7 rounded-md text-[14px] font-medium transition-colors",
+              option === n
+                ? "bg-accent text-white"
+                : "bg-muted text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {n}
+          </button>
+        ))}
+        <span className="text-[14px] text-muted-foreground ml-2">
+          {option === 1 && "Asymmetric masonry — hero left, stack right"}
+          {option === 2 && "Full-width rows with inset bento cells"}
+          {option === 3 && "Dashboard grid — mixed sizes, no section wrappers"}
+        </span>
+      </div>
+      <p className="text-[14px] text-muted-foreground leading-relaxed max-w-prose">
+        {option === 1 &&
+          "The biggest priority (needs attention or ready for review) takes a tall left column. Right column stacks active + scheduled as compact cells. Spend/compute lives as a slim footer strip. Sections don't have their own border — they ARE the grid cells."}
+        {option === 2 &&
+          "Each section is a full-width row, but internally uses a bento sub-grid. Ready for review: 2 large + 3 small. Active: horizontal card strip. Scheduled: the countdown ring grid. Needs attention spans full width as an alert banner."}
+        {option === 3 &&
+          "No section wrappers at all. Every card is a direct grid child at varying spans. Needs-attention cards are 2-col-wide alert cells. Ready-for-review, active, scheduled all intermix in one unified grid sorted by priority. Section labels float as small overlaid chips."}
+      </p>
+      {option === 1 && <BentoHome1 />}
+      {option === 2 && <BentoHome2 />}
+      {option === 3 && <BentoHome3 />}
+    </div>
+  );
+}
+
+function BentoHome1() {
+  return (
+    <div className="rounded-2xl border border-border bg-card/50 p-4 space-y-4">
+      {/* Header */}
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">Home</h1>
+
+      {/* Main bento: tall left + stacked right */}
+      <div className="grid grid-cols-3 gap-3 auto-rows-min">
+        {/* LEFT: Ready for review — spans 2 cols, tall */}
+        <div className="col-span-2 row-span-3 rounded-xl border border-border bg-card p-5">
+          <h2 className="text-[14px] font-semibold text-foreground mb-3">Ready for review</h2>
+          <div className="space-y-2">
+            {[
+              { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
+              { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
+              { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+              { title: "Nightly performance report", agent: "reporting-agent", time: "8h ago" },
+              { title: "Spring palette experiment", agent: "color-palette-testing", time: "10h ago" },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[14px] font-medium text-foreground truncate">{item.title}</p>
+                  <p className="text-[14px] text-muted-foreground">{item.agent}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[14px] text-muted-foreground tabular-nums">{item.time}</span>
+                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* RIGHT TOP: Needs attention — compact alert */}
+        <div className="col-span-1 rounded-xl border border-destructive/30 bg-gradient-to-br from-destructive/5 to-card p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 rounded-full bg-destructive" />
+            <h2 className="text-[14px] font-semibold text-foreground">Needs attention</h2>
+          </div>
+          <p className="text-[14px] text-foreground font-medium">GET api.figma.com</p>
+          <p className="text-[14px] text-muted-foreground">brand-asset-generator · 3m ago</p>
+          <div className="flex gap-2 mt-3">
+            <Button size="sm" variant="outline" className="h-7 text-[14px] flex-1">Allow</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-[14px] flex-1 text-muted-foreground">Deny</Button>
+          </div>
+        </div>
+
+        {/* RIGHT MID: Active — compact */}
+        <div className="col-span-1 rounded-xl border border-border bg-card p-4">
+          <h2 className="text-[14px] font-semibold text-foreground mb-2">Active</h2>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[14px] text-foreground truncate">Implement dark mode toggle</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[14px] text-foreground truncate">Spring palette experiment</span>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT BOTTOM: Spend */}
+        <div className="col-span-1 rounded-xl border border-border bg-card p-4">
+          <h2 className="text-[14px] font-semibold text-foreground mb-1">Spend</h2>
+          <p className="text-[24px] font-bold text-foreground tabular-nums">$31.57</p>
+          <p className="text-[14px] text-muted-foreground">this month</p>
+        </div>
+      </div>
+
+      {/* Bottom strip: Scheduled bento */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <h2 className="text-[14px] font-semibold text-foreground mb-3">Scheduled</h2>
+        <div className="grid grid-cols-5 gap-2">
+          {SCHED_DATA.slice(0, 5).map((s, i) => {
+            const failed = s.lastResult === "failed";
+            return (
+              <div key={i} className={cn(
+                "rounded-lg border p-3 text-center",
+                failed ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/30",
+              )}>
+                <p className="text-[18px] font-bold tabular-nums text-foreground">{s.nextRun}</p>
+                <p className="text-[14px] text-muted-foreground truncate mt-0.5">{s.name}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BentoHome2() {
+  return (
+    <div className="rounded-2xl border border-border bg-card/50 p-4 space-y-3">
+      {/* Header */}
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">Home</h1>
+
+      {/* Row 1: Alert banner — full width, no card wrapper */}
+      <div className="flex items-center gap-4 rounded-xl border border-destructive/30 bg-gradient-to-r from-destructive/8 to-transparent px-5 py-3">
+        <span className="w-2.5 h-2.5 rounded-full bg-destructive shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-semibold text-foreground">1 item needs attention</p>
+          <p className="text-[14px] text-muted-foreground">brand-asset-generator wants to access api.figma.com</p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button size="sm" variant="outline" className="h-7 text-[14px]">Allow once</Button>
+          <Button size="sm" variant="outline" className="h-7 text-[14px]">Always allow</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Deny</Button>
+        </div>
+      </div>
+
+      {/* Row 2: Ready for review — bento sub-grid (2 large + 3 small) */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[14px] font-semibold text-foreground">Ready for review <span className="font-normal text-muted-foreground">(5)</span></h2>
+          <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">Dismiss all</button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {/* 2 large cards */}
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-[14px] font-semibold text-foreground">Refactor auth middleware</p>
+            <p className="text-[14px] text-muted-foreground mt-0.5">backend-refactor · 45m ago</p>
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+            </div>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-[14px] font-semibold text-foreground">Spring campaign hero images</p>
+            <p className="text-[14px] text-muted-foreground mt-0.5">brand-asset-generator · 2h ago</p>
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+            </div>
+          </div>
+          {/* 3 small cards in a row below */}
+          <div className="col-span-2 grid grid-cols-3 gap-2">
+            {["Daily brand audit", "Nightly performance report", "Spring palette experiment"].map((t, i) => (
+              <div key={i} className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 flex items-center justify-between">
+                <p className="text-[14px] text-foreground truncate">{t}</p>
+                <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground shrink-0 ml-2">Dismiss</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 3: Active + Spend side by side */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+          <h2 className="text-[14px] font-semibold text-foreground mb-3">Active</h2>
+          <div className="flex gap-3">
+            <div className="flex-1 rounded-lg bg-muted/40 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[14px] font-medium text-foreground">Implement dark mode toggle</span>
+              </div>
+              <p className="text-[14px] text-muted-foreground">frontend-agent · 12m</p>
+            </div>
+            <div className="flex-1 rounded-lg bg-muted/40 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[14px] font-medium text-foreground">Spring palette — warm vs cool</span>
+              </div>
+              <p className="text-[14px] text-muted-foreground">color-palette-testing · 45m</p>
+            </div>
+          </div>
+        </div>
+        <div className="col-span-1 rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
+          <h2 className="text-[14px] font-semibold text-foreground">This month</h2>
+          <p className="text-[28px] font-bold text-foreground tabular-nums">$31.57</p>
+          <p className="text-[14px] text-muted-foreground">4 agents · 12 sessions</p>
+        </div>
+      </div>
+
+      {/* Row 4: Scheduled — countdown ring grid */}
+      <div className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-[14px] font-semibold text-foreground mb-3">Scheduled <span className="font-normal text-muted-foreground">(10)</span></h2>
+        <div className="grid grid-cols-5 gap-3">
+          {SCHED_DATA.slice(0, 10).map((s, i) => {
+            const failed = s.lastResult === "failed";
+            const num = parseInt(s.nextRun);
+            const unit = s.nextRun.replace(/[0-9]/g, "");
+            const maxMinutes = unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
+            const currentMinutes = unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
+            const progress = Math.max(0.05, 1 - currentMinutes / maxMinutes);
+            const circumference = 2 * Math.PI * 16;
+            const offset = circumference * (1 - progress);
+            return (
+              <div key={i} className={cn(
+                "rounded-lg border p-3 flex flex-col items-center gap-1.5",
+                failed ? "border-destructive/40 bg-destructive/5" : !s.enabled ? "border-border opacity-40" : "border-border",
+              )}>
+                <div className="relative w-[40px] h-[40px] flex items-center justify-center">
+                  <svg width="40" height="40" className="absolute -rotate-90">
+                    <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted/40" />
+                    <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className={failed ? "text-destructive" : "text-emerald-500"} />
+                  </svg>
+                  <span className="text-[14px] font-bold tabular-nums text-foreground">{s.nextRun}</span>
+                </div>
+                <p className="text-[14px] text-foreground text-center truncate w-full">{s.name}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BentoHome3() {
+  const items = [
+    { kind: "attention", span: "col-span-2", title: "GET api.figma.com", sub: "brand-asset-generator · 3m ago" },
+    { kind: "ready", span: "col-span-1", title: "Refactor auth middleware", sub: "backend-refactor · 45m ago" },
+    { kind: "ready", span: "col-span-1", title: "Spring campaign hero images", sub: "brand-asset-generator · 2h ago" },
+    { kind: "active", span: "col-span-1", title: "Implement dark mode toggle", sub: "frontend-agent · running 12m" },
+    { kind: "active", span: "col-span-1", title: "Spring palette experiment", sub: "color-palette-testing · running 45m" },
+    { kind: "ready", span: "col-span-1", title: "Daily brand audit", sub: "brand-asset-generator · 6h ago" },
+    { kind: "spend", span: "col-span-1", title: "$31.57", sub: "this month" },
+    { kind: "ready", span: "col-span-1", title: "Nightly performance report", sub: "reporting-agent · 8h ago" },
+    { kind: "ready", span: "col-span-1", title: "Spring palette — warm vs cool", sub: "color-palette-testing · 10h ago" },
+    { kind: "schedule", span: "col-span-2", title: "Schedules", sub: "" },
+  ];
+
+  const kindStyles: Record<string, string> = {
+    attention: "border-destructive/40 bg-gradient-to-br from-destructive/8 to-card",
+    ready: "border-border bg-card hover:border-foreground/20",
+    active: "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-card",
+    spend: "border-border bg-card",
+    schedule: "border-border bg-card",
+  };
+
+  const kindLabels: Record<string, { text: string; color: string }> = {
+    attention: { text: "Blocked", color: "bg-destructive text-white" },
+    ready: { text: "Review", color: "bg-accent/10 text-accent" },
+    active: { text: "Active", color: "bg-emerald-500/10 text-emerald-600" },
+    spend: { text: "Spend", color: "bg-muted text-muted-foreground" },
+    schedule: { text: "Scheduled", color: "bg-muted text-muted-foreground" },
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card/50 p-4 space-y-4">
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">Home</h1>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        {items.map((item, i) => {
+          const label = kindLabels[item.kind];
+
+          if (item.kind === "schedule") {
+            return (
+              <div key={i} className={cn("rounded-xl border p-4", item.span, kindStyles[item.kind])}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={cn("px-2 py-0.5 rounded-full text-[14px] font-medium", label.color)}>{label.text}</span>
+                  <span className="text-[14px] text-muted-foreground">10 schedules</span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {SCHED_DATA.slice(0, 5).map((s, j) => {
+                    const failed = s.lastResult === "failed";
+                    return (
+                      <div key={j} className={cn(
+                        "rounded-lg p-2 text-center border",
+                        failed ? "border-destructive/30 bg-destructive/5" : "border-border bg-muted/20",
+                      )}>
+                        <p className="text-[16px] font-bold tabular-nums text-foreground">{s.nextRun}</p>
+                        <p className="text-[14px] text-muted-foreground truncate">{s.name}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[14px] text-muted-foreground mt-2">+5 more schedules</p>
+              </div>
+            );
+          }
+
+          if (item.kind === "spend") {
+            return (
+              <div key={i} className={cn("rounded-xl border p-4 flex flex-col justify-center", item.span, kindStyles[item.kind])}>
+                <span className={cn("px-2 py-0.5 rounded-full text-[14px] font-medium self-start mb-2", label.color)}>{label.text}</span>
+                <p className="text-[32px] font-bold text-foreground tabular-nums leading-none">{item.title}</p>
+                <p className="text-[14px] text-muted-foreground mt-1">{item.sub}</p>
+              </div>
+            );
+          }
+
+          return (
+            <div key={i} className={cn("rounded-xl border p-4 transition-colors", item.span, kindStyles[item.kind])}>
+              <div className="flex items-center justify-between gap-2">
+                <span className={cn("px-2 py-0.5 rounded-full text-[14px] font-medium shrink-0", label.color)}>{label.text}</span>
+                {item.kind === "active" && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                )}
+              </div>
+              <p className="text-[14px] font-semibold text-foreground mt-2 truncate">{item.title}</p>
+              <p className="text-[14px] text-muted-foreground mt-0.5">{item.sub}</p>
+              {item.kind === "attention" && (
+                <div className="flex gap-2 mt-3">
+                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Allow once</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Always allow</Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Deny</Button>
+                </div>
+              )}
+              {item.kind === "ready" && (
+                <div className="flex gap-2 mt-3">
+                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bento 1 — Ready for Review Card Variants
+   All card types that appear in the Bento 1 feed, categorized by kind.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function Bento1CardVariants() {
+  return (
+    <div className="space-y-8">
+      {/* ─── Experiments ─── */}
+      <div className="space-y-3">
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Experiments</p>
+        <div className="space-y-4 max-w-xl">
+          <B1ExperimentRunning />
+          <B1ExperimentFinished />
+        </div>
+      </div>
+
+      {/* ─── Coding Agent ─── */}
+      <div className="space-y-3">
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Coding Agent</p>
+        <div className="space-y-4 max-w-xl">
+          <B1CodingRunning />
+          <B1CodingFinished />
+          <B1CodingFinishedArtifact />
+        </div>
+      </div>
+
+      {/* ─── Knowledge Base ─── */}
+      <div className="space-y-3">
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Knowledge Base</p>
+        <div className="space-y-4 max-w-xl">
+          <B1KnowledgeIngestionRunning />
+          <B1KnowledgeIngestionFinished />
+          <B1KnowledgeSessionRunning />
+          <B1KnowledgeSessionFinished />
+        </div>
+      </div>
+
+      {/* ─── Scheduled ─── */}
+      <div className="space-y-3">
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Scheduled</p>
+        <div className="space-y-4 max-w-xl">
+          <B1ScheduleExperimentRunning />
+          <B1ScheduleExperimentFinished />
+          <B1ScheduleKBIngestionRunning />
+          <B1ScheduleKBIngestionFinished />
+          <B1ScheduleSessionRunning />
+          <B1ScheduleSessionFinished />
+          <B1ScheduleSessionFinishedArtifact />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Experiment cards ─── */
+
+function B1ExperimentRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Experiment — Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Spring palette — warm vs cool <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
+            <p className="text-[14px] text-muted-foreground mt-1">color-palette-testing</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">12m</span>
+        </div>
+        <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-px">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className={cn("w-[3px] rounded-full", i < 3 ? "bg-blue-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+              ))}
+            </div>
+            <span className="text-[14px] tabular-nums text-muted-foreground">48 runs</span>
+          </div>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">3 variants</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ExperimentFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Experiment — Finished with dashboard</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Spring palette — warm vs cool</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">color-palette-testing</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">10h ago</span>
+        </div>
+        <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-px">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className={cn("w-[3px] rounded-full", i < 4 ? "bg-amber-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+              ))}
+            </div>
+            <span className="text-[14px] tabular-nums text-muted-foreground">120 runs</span>
+          </div>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] tabular-nums font-medium text-foreground">0.87</span>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">3 variants</span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-muted/70 hover:border-foreground/20 transition-all text-[14px] text-muted-foreground"
+        >
+          <Document size={16} className="shrink-0" />
+          <span className="truncate max-w-[160px]">experiment-dashboard</span>
+          <span className="text-[14px] font-mono opacity-60">HTML</span>
+        </button>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Coding Agent cards ─── */
+
+function B1CodingRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Coding Agent — Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Implement dark mode toggle <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
+            <p className="text-[14px] text-muted-foreground mt-1">frontend-agent</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">12m</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1CodingFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Coding Agent — Finished</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Refactor auth middleware</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">backend-refactor</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">45m ago</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1CodingFinishedArtifact() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Coding Agent — Finished with artifact</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Generate marketing copy</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">copywriting-agent</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">1h ago</span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-muted/70 hover:border-foreground/20 transition-all text-[14px] text-muted-foreground"
+        >
+          <Document size={16} className="shrink-0" />
+          <span className="truncate max-w-[160px]">campaign-copy-v3.md</span>
+          <span className="text-[14px] font-mono opacity-60">MD</span>
+        </button>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Knowledge Base cards ─── */
+
+function B1KnowledgeIngestionRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Ingestion Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Ingest API documentation <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
+            <p className="text-[14px] text-muted-foreground mt-1">knowledge-ingestion</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">8m</span>
+        </div>
+        <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
+          <Book size={16} className="text-blue-500/70 shrink-0" />
+          <span className="text-[14px] text-muted-foreground">142 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground/50">·</span>
+          <span className="text-[14px] text-muted-foreground">processing…</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1KnowledgeIngestionFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Ingestion Finished</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Ingest API documentation</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">knowledge-ingestion</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">2h ago</span>
+        </div>
+        <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
+          <Book size={16} className="text-muted-foreground shrink-0" />
+          <span className="text-[14px] text-muted-foreground">312 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground/50">·</span>
+          <span className="text-[14px] font-medium text-foreground">ready</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1KnowledgeSessionRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Session Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Research competitor pricing models <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
+            <p className="text-[14px] text-muted-foreground mt-1">market-research-kb</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">5m</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1KnowledgeSessionFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Session Finished</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">Research competitor pricing models</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">market-research-kb</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">30m ago</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Scheduled cards ─── */
+
+function B1ScheduleExperimentRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Experiment Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Weekly performance regression sweep
+              <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">perf-testing-agent</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">6m</span>
+        </div>
+        <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-px">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className={cn("w-[3px] rounded-full", i < 2 ? "bg-blue-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+              ))}
+            </div>
+            <span className="text-[14px] tabular-nums text-muted-foreground">24 runs</span>
+          </div>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">2 variants</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ScheduleExperimentFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Experiment Finished with dashboard</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Weekly performance regression sweep
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">perf-testing-agent</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">12h ago</span>
+        </div>
+        <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-px">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className={cn("w-[3px] rounded-full", i < 4 ? "bg-amber-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+              ))}
+            </div>
+            <span className="text-[14px] tabular-nums text-muted-foreground">86 runs</span>
+          </div>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] tabular-nums font-medium text-foreground">0.94</span>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">2 variants</span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-muted/70 hover:border-foreground/20 transition-all text-[14px] text-muted-foreground"
+        >
+          <Document size={16} className="shrink-0" />
+          <span className="truncate max-w-[160px]">perf-regression-report</span>
+          <span className="text-[14px] font-mono opacity-60">HTML</span>
+        </button>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ScheduleKBIngestionRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — KB Ingestion Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Nightly docs re-index
+              <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">knowledge-ingestion</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">4m</span>
+        </div>
+        <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
+          <Book size={16} className="text-blue-500/70 shrink-0" />
+          <span className="text-[14px] text-muted-foreground">89 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground/50">·</span>
+          <span className="text-[14px] text-muted-foreground">processing…</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ScheduleKBIngestionFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — KB Ingestion Finished</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Nightly docs re-index
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">knowledge-ingestion</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">5h ago</span>
+        </div>
+        <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
+          <Book size={16} className="text-muted-foreground shrink-0" />
+          <span className="text-[14px] text-muted-foreground">512 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground/50">·</span>
+          <span className="text-[14px] font-medium text-foreground">ready</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ScheduleSessionRunning() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Session Running</p>
+      <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Nightly dependency check
+              <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">maintenance-bot</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">3m</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ScheduleSessionFinished() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Session Finished</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Nightly dependency check
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">maintenance-bot</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">3h ago</span>
+        </div>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function B1ScheduleSessionFinishedArtifact() {
+  return (
+    <div className="space-y-1">
+      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Session Finished with artifact</p>
+      <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+              <Time size={16} className="text-muted-foreground shrink-0" />
+              Daily brand audit
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">brand-asset-generator</p>
+          </div>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">6h ago</span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-muted/70 hover:border-foreground/20 transition-all text-[14px] text-muted-foreground"
+        >
+          <Document size={16} className="shrink-0" />
+          <span className="truncate max-w-[160px]">brand-audit-jun14.pdf</span>
+          <span className="text-[14px] font-mono opacity-60">PDF</span>
+        </button>
+        <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+        </div>
+      </div>
     </div>
   );
 }

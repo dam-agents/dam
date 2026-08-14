@@ -4,15 +4,33 @@ import {
   Chemistry,
   ChevronDown,
   ContainerSoftware,
+  Document,
+  Filter,
+  Time,
 } from "@carbon/icons-react";
-import { Children, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Children, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ListSkeleton } from "@/components/list-skeleton";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { type DemoState, useDemoState } from "../../../mock/demo-state.js";
 import { useStore } from "../../../store.js";
 import { usePendingApprovals } from "../../approvals/api/queries.js";
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "@/components/modal";
+import { WorkingDots } from "../../sessions/components/working-dots.js";
 import { HomeHeader } from "../components/home-header.js";
 import { useAgentRows } from "../home-data.js";
 import { markVisitNow } from "../home-digest-store.js";
@@ -21,7 +39,6 @@ import {
   ArtifactCard,
   ComputePreview,
   ExperimentCard,
-  ScheduleCard,
   SessionFinishedCard,
   SessionRunningCard,
 } from "./comparison-view.js";
@@ -29,12 +46,15 @@ import {
    Home Page
    ═══════════════════════════════════════════════════════════════════════════ */
 
+type HomeLayout = "current" | "bento1";
+
 export function HomeView() {
   const { agentsData, initialLoaded } = useAgentRows();
   const agents = agentsData?.list ?? [];
   const { data: pendingApprovals } = usePendingApprovals();
   const approvals = useMemo(() => pendingApprovals ?? [], [pendingApprovals]);
   const { state: demoState } = useDemoState();
+  const [layout, setLayout] = useState<HomeLayout>("current");
   useEffect(() => {
     return () => {
       markVisitNow();
@@ -54,16 +74,46 @@ export function HomeView() {
     return <EmptyState />;
   }
 
-  if (import.meta.env.VITE_MOCK && demoState === "empty") {
-    return <EmptyState />;
-  }
-
   const populatedState = demoState === "empty" ? "active-blockers" : demoState;
 
   return (
     <div className="space-y-6">
-      <HomeHeader />
-      <PopulatedHome approvals={approvals} state={populatedState} />
+      {/* Layout switcher */}
+      {import.meta.env.VITE_MOCK && (
+        <div className="flex items-center gap-2 rounded-lg border border-dashed border-accent/40 bg-accent/5 px-3 py-2">
+          <span className="text-[14px] text-muted-foreground font-medium mr-1">Layout:</span>
+          {(
+            [
+              { key: "current", label: "Current" },
+              { key: "bento1", label: "Bento 1" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setLayout(opt.key)}
+              className={cn(
+                "px-2.5 py-1 rounded-md text-[14px] font-medium transition-colors",
+                layout === opt.key
+                  ? "bg-accent text-white"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {layout === "current" && (
+        demoState === "empty" ? <EmptyState /> : (
+          <>
+            <HomeHeader />
+            <PopulatedHome approvals={approvals} state={populatedState} />
+          </>
+        )
+      )}
+      {layout === "bento1" && <BentoHomeLayout1 demoState={demoState} />}
     </div>
   );
 }
@@ -366,16 +416,16 @@ export const READY_CARD_DATA: ReadyCardData[] = [
 ];
 
 const SCHEDULED_CARDS = [
-  { name: "Daily brand audit", cadence: "Every weekday at 9:00 AM", nextRun: "in 3h", lastResult: "success" },
-  { name: "Nightly test suite", cadence: "Every day at 2:00 AM", nextRun: "in 14h", lastResult: "failed: agent exceeded timeout after 45m" },
-  { name: "Weekly report generation", cadence: "Every Monday at 8:00 AM", nextRun: "in 2d", lastResult: "success" },
-  { name: "Dependency vulnerability scan", cadence: "Every 6 hours", nextRun: "in 4h", lastResult: "success" },
-  { name: "Performance benchmark", cadence: "Every day at 3:00 AM", nextRun: "in 15h", lastResult: "success" },
-  { name: "Data pipeline sync", cadence: "Every 30 minutes", nextRun: "in 12m", lastResult: "success" },
-  { name: "Slack digest summary", cadence: "Every weekday at 5:00 PM", nextRun: "in 7h", lastResult: "success" },
-  { name: "Model fine-tune checkpoint", cadence: "Every 12 hours", nextRun: "in 8h", lastResult: "success" },
-  { name: "Stale PR cleanup", cadence: "Every Friday at 4:00 PM", nextRun: "in 4d", lastResult: "success" },
-  { name: "Cost anomaly detector", cadence: "Every hour", nextRun: "in 45m", lastResult: "failed: API rate limit exceeded" },
+  { name: "Daily brand audit", cadence: "Every weekday at 9:00 AM", nextRun: "in 3h", lastResult: "success", enabled: true, agentName: "brand-asset-generator" },
+  { name: "Nightly test suite", cadence: "Every day at 2:00 AM", nextRun: "in 14h", lastResult: "failed", enabled: true, agentName: "backend-refactor" },
+  { name: "Weekly report generation", cadence: "Every Monday at 8:00 AM", nextRun: "in 2d", lastResult: "success", enabled: true, agentName: "reporting-agent" },
+  { name: "Dependency vulnerability scan", cadence: "Every 6 hours", nextRun: "in 4h", lastResult: "success", enabled: true, agentName: "security-scanner" },
+  { name: "Performance benchmark", cadence: "Every day at 3:00 AM", nextRun: "in 15h", lastResult: "success", enabled: true, agentName: "perf-monitor" },
+  { name: "Data pipeline sync", cadence: "Every 30 minutes", nextRun: "in 12m", lastResult: "success", enabled: true, agentName: "data-pipeline" },
+  { name: "Slack digest summary", cadence: "Every weekday at 5:00 PM", nextRun: "in 7h", lastResult: "success", enabled: true, agentName: "reporting-agent" },
+  { name: "Model fine-tune checkpoint", cadence: "Every 12 hours", nextRun: "in 8h", lastResult: "success", enabled: false, agentName: "ml-trainer" },
+  { name: "Stale PR cleanup", cadence: "Every Friday at 4:00 PM", nextRun: "in 4d", lastResult: "success", enabled: true, agentName: "backend-refactor" },
+  { name: "Cost anomaly detector", cadence: "Every hour", nextRun: "in 45m", lastResult: "failed", enabled: true, agentName: "cost-monitor" },
 ];
 
 const CARD_TYPE_OPTIONS: { value: CardType; label: string }[] = [
@@ -576,7 +626,93 @@ function ReadySection() {
   );
 }
 
+function CountdownRing({ time, failed }: { time: string; failed?: boolean }) {
+  const num = parseInt(time);
+  const unit = time.replace(/[0-9]/g, "");
+  const maxMinutes = unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
+  const currentMinutes = unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
+  const progress = Math.max(0.05, 1 - currentMinutes / maxMinutes);
+  const circumference = 2 * Math.PI * 18;
+  const offset = circumference * (1 - progress);
+
+  return (
+    <div className="relative w-[48px] h-[48px] flex items-center justify-center">
+      <svg width="48" height="48" className="absolute -rotate-90">
+        <circle
+          cx="24" cy="24" r="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          className="text-muted/50"
+        />
+        <circle
+          cx="24" cy="24" r="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className={failed ? "text-destructive" : "text-emerald-500"}
+        />
+      </svg>
+      <span className="text-[14px] font-bold tabular-nums text-foreground">{time}</span>
+    </div>
+  );
+}
+
 function ScheduledSection() {
+  const [toggles, setToggles] = useState<Record<number, boolean>>({});
+
+  const failedItems = SCHEDULED_CARDS.filter((s) => s.lastResult === "failed");
+  const activeItems = SCHEDULED_CARDS.filter((s) => s.lastResult !== "failed" && s.enabled);
+  const disabledItems = SCHEDULED_CARDS.filter((s) => !s.enabled);
+
+  function BentoTile({ s, i, large }: { s: typeof SCHEDULED_CARDS[number]; i: number; large?: boolean }) {
+    const enabled = toggles[i] ?? s.enabled;
+    const failed = s.lastResult === "failed";
+
+    return (
+      <div
+        className={cn(
+          "relative rounded-xl border bg-card p-4 transition-opacity",
+          large ? "col-span-2 row-span-2" : "",
+          failed && "border-destructive/40 shadow-[0_0_20px_-4px] shadow-destructive/20",
+          !enabled && "opacity-40",
+          !failed && "border-border",
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className={cn(
+              "font-semibold text-foreground truncate",
+              large ? "text-[16px]" : "text-[14px]",
+            )}>
+              {s.name}
+            </p>
+            <p className="text-[14px] text-muted-foreground truncate mt-0.5">
+              {s.agentName}
+            </p>
+          </div>
+          <CountdownRing time={s.nextRun} failed={failed} />
+        </div>
+        <div className="flex items-center justify-between mt-3">
+          <span className="text-[14px] text-muted-foreground">{s.cadence}</span>
+          <Switch
+            checked={enabled}
+            onCheckedChange={() => setToggles((p) => ({ ...p, [i]: !enabled }))}
+            label={s.name}
+          />
+        </div>
+        {failed && (
+          <div className="mt-2 rounded-md bg-destructive/10 px-2 py-1">
+            <span className="text-[14px] text-destructive font-medium">Last run failed</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
       <div className="flex items-center justify-between mb-4">
@@ -587,27 +723,437 @@ function ScheduledSection() {
           </span>
         </h2>
       </div>
-      <StackedCards label="schedules" visibleCount={3}>
-        {SCHEDULED_CARDS.map((s, i) => (
-          <div key={i}>
-            <ScheduleCard
-              name={s.name}
-              cadence={s.cadence}
-              nextRun={s.nextRun}
-              lastResult={s.lastResult}
-              enabled={true}
-            />
-          </div>
+      <div className="grid grid-cols-2 gap-3 auto-rows-min">
+        {failedItems.map((s, i) => (
+          <BentoTile key={`f-${i}`} s={s} i={SCHEDULED_CARDS.indexOf(s)} large />
         ))}
-      </StackedCards>
+        {activeItems.map((s, i) => (
+          <BentoTile key={`a-${i}`} s={s} i={SCHEDULED_CARDS.indexOf(s)} />
+        ))}
+        {disabledItems.map((s, i) => (
+          <BentoTile key={`d-${i}`} s={s} i={SCHEDULED_CARDS.indexOf(s)} />
+        ))}
+      </div>
     </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bento Home Layouts — shared data
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+type ReviewSession = {
+  title: string;
+  agent: string;
+  time: string;
+  scheduled?: boolean;
+  artifact?: { name: string; fileType: string };
+  experiment?: { runs: number; best: string; variants: number };
+};
+
+const REVIEW_SESSIONS: ReviewSession[] = [
+  // Plain session
+  { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
+  // Session with artifact
+  { title: "Generate marketing copy", agent: "copywriting-agent", time: "1h ago", artifact: { name: "campaign-copy-v3.md", fileType: "MD" } },
+  // Scheduled session
+  { title: "Nightly dependency check", agent: "maintenance-bot", time: "3h ago", scheduled: true },
+  // Scheduled session with artifact
+  { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "5h ago", scheduled: true, artifact: { name: "hero-spring-2026.png", fileType: "PNG" } },
+  // Scheduled session with artifact (PDF)
+  { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago", scheduled: true, artifact: { name: "brand-audit-jun14.pdf", fileType: "PDF" } },
+  // Experiment
+  { title: "Spring palette — warm vs cool", agent: "color-palette-testing", time: "10h ago", experiment: { runs: 120, best: "0.87", variants: 3 } },
+];
+
+
+function ExperimentMiniBar({ experiment }: { experiment: NonNullable<ReviewSession["experiment"]> }) {
+  return (
+    <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
+      <div className="flex items-center gap-1.5">
+        <div className="flex gap-px">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className={cn("w-[3px] rounded-full", i < 4 ? "bg-amber-500/70 h-[12px]" : "bg-muted-foreground/20 h-[8px]")} style={{ height: `${8 + Math.random() * 8}px` }} />
+          ))}
+        </div>
+        <span className="text-[14px] tabular-nums text-muted-foreground">{experiment.runs} runs</span>
+      </div>
+      <span className="text-[14px] text-muted-foreground">·</span>
+      <span className="text-[14px] tabular-nums font-medium text-foreground">{experiment.best}</span>
+      {experiment.variants > 1 && (
+        <>
+          <span className="text-[14px] text-muted-foreground">·</span>
+          <span className="text-[14px] text-muted-foreground">{experiment.variants} variants</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+const MOCK_PREVIEW_HTML = `<!DOCTYPE html><html><head><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:40px;background:#fafafa;color:#1a1a1a}
+h1{font-size:24px;font-weight:600;margin:0 0 16px}
+p{font-size:15px;line-height:1.6;color:#555;margin:0 0 12px}
+.block{background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:20px;margin:16px 0}
+code{font-size:13px;background:#f0f0f0;padding:2px 6px;border-radius:4px}
+</style></head><body>
+<h1>Analysis Report</h1>
+<p>This artifact was generated by the agent during the session. It contains a summary of findings and recommendations.</p>
+<div class="block"><p><strong>Key findings:</strong></p>
+<p>Performance improved by <code>23%</code> after applying the suggested optimizations. Memory usage reduced from 512MB to 380MB under load.</p></div>
+<div class="block"><p><strong>Recommendations:</strong></p>
+<p>Consider enabling connection pooling and implementing request batching for the remaining endpoints.</p></div>
+</body></html>`;
+
+function MockArtifactPreview({ artifact, onClose }: { artifact: { name: string; fileType: string }; onClose: () => void }) {
+  return (
+    <Modal widthClass="w-[860px]">
+      <DialogHeader>{artifact.name}</DialogHeader>
+      <DialogBody>
+        <div className="mb-3 flex items-center gap-2 font-mono text-[12px] text-muted-foreground">
+          <span className="truncate">{artifact.name.replace(/\s/g, "-").toLowerCase()}.{artifact.fileType.toLowerCase()}</span>
+          <span>·</span>
+          <span>4.0 KB</span>
+          <span className="flex-1" />
+          <span className="text-[12px] text-muted-foreground/60">v1</span>
+        </div>
+        <div className="h-[58vh] w-full overflow-hidden rounded border border-border bg-white">
+          <iframe
+            srcDoc={MOCK_PREVIEW_HTML}
+            title={artifact.name}
+            className="h-full w-full border-0"
+            sandbox="allow-scripts"
+          />
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="ghost" onClick={onClose}>Close</Button>
+      </DialogFooter>
+    </Modal>
+  );
+}
+
+const ACTIVE_SESSIONS = [
+  { title: "Implement dark mode toggle", agent: "frontend-agent", duration: "12m" },
+  { title: "Spring palette experiment", agent: "color-palette-testing", duration: "45m" },
+];
+
+const FEED_CATEGORIES = ["running", "sessions", "experiments", "scheduled"] as const;
+type FeedCategory = (typeof FEED_CATEGORIES)[number];
+const FEED_CATEGORY_LABELS: Record<FeedCategory, string> = {
+  running: "Running",
+  sessions: "Sessions",
+  experiments: "Experiments",
+  scheduled: "Scheduled",
+};
+
+function feedCategory(item: ReviewSession): FeedCategory {
+  if (item.experiment) return "experiments";
+  if (item.scheduled) return "scheduled";
+  return "sessions";
+}
+
+function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
+  const [previewArtifact, setPreviewArtifact] = useState<ReviewSession["artifact"] | null>(null);
+  const [dismissedReview, setDismissedReview] = useState<Set<number>>(new Set());
+  const [dismissedActive, setDismissedActive] = useState<Set<number>>(new Set());
+  const [feedFilter, setFeedFilter] = useState<FeedCategory[]>([...FEED_CATEGORIES]);
+  const [dismissingReview, setDismissingReview] = useState<Set<number>>(new Set());
+  const [dismissingActive, setDismissingActive] = useState<Set<number>>(new Set());
+  const [collapsingReview, setCollapsingReview] = useState<Set<number>>(new Set());
+  const [collapsingActive, setCollapsingActive] = useState<Set<number>>(new Set());
+
+  const dismissReview = useCallback((idx: number) => {
+    setDismissingReview(prev => new Set([...prev, idx]));
+    setTimeout(() => {
+      setCollapsingReview(prev => new Set([...prev, idx]));
+    }, 200);
+    setTimeout(() => {
+      setDismissedReview(prev => new Set([...prev, idx]));
+      setDismissingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+      setCollapsingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+    }, 500);
+  }, []);
+
+  const dismissActive = useCallback((idx: number) => {
+    setDismissingActive(prev => new Set([...prev, idx]));
+    setTimeout(() => {
+      setCollapsingActive(prev => new Set([...prev, idx]));
+    }, 200);
+    setTimeout(() => {
+      setDismissedActive(prev => new Set([...prev, idx]));
+      setDismissingActive(prev => { const next = new Set(prev); next.delete(idx); return next; });
+      setCollapsingActive(prev => { const next = new Set(prev); next.delete(idx); return next; });
+    }, 500);
+  }, []);
+
+  const toggleFeedFilter = useCallback((cat: FeedCategory) => {
+    setFeedFilter(prev =>
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  }, []);
+
+  const isEmptyState = demoState === "empty";
+  const isClearedState = demoState === "just-cleared" || demoState === "no-blockers";
+  const visibleReview = (isEmptyState || isClearedState) ? [] : REVIEW_SESSIONS.filter((item, i) => !dismissedReview.has(i) && feedFilter.includes(feedCategory(item)));
+  const visibleActive = (isEmptyState || isClearedState) ? [] : (feedFilter.includes("running") ? ACTIVE_SESSIONS.filter((_, i) => !dismissedActive.has(i)) : []);
+  const allCleared = isClearedState || (!isEmptyState && visibleActive.length === 0 && visibleReview.length === 0);
+
+  const dismissAll = () => {
+    const reviewIdxs = REVIEW_SESSIONS.map((_, i) => i).filter(i => !dismissedReview.has(i));
+    const activeIdxs = ACTIVE_SESSIONS.map((_, i) => i).filter(i => !dismissedActive.has(i));
+    setDismissingReview(new Set(reviewIdxs));
+    setDismissingActive(new Set(activeIdxs));
+    setTimeout(() => {
+      setCollapsingReview(new Set(reviewIdxs));
+      setCollapsingActive(new Set(activeIdxs));
+    }, 200);
+    setTimeout(() => {
+      setDismissedReview(new Set(REVIEW_SESSIONS.map((_, i) => i)));
+      setDismissedActive(new Set(ACTIVE_SESSIONS.map((_, i) => i)));
+      setDismissingReview(new Set());
+      setDismissingActive(new Set());
+      setCollapsingReview(new Set());
+      setCollapsingActive(new Set());
+    }, 500);
+  };
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">Home</h1>
+
+      {isEmptyState && (
+        <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-8">
+          <h2 className="text-[20px] font-semibold text-foreground">
+            Accelerate research with DAM
+          </h2>
+          <p className="mt-1.5 max-w-[560px] text-[14px] leading-relaxed text-muted-foreground">
+            Run agents in isolated cloud environments with credentials and tools
+            securely injected. Create knowledge bases, run experiments to compare
+            agent variants, and trigger agents from Slack or on a schedule.
+          </p>
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/agent-setup" : "/agent-setup"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <ContainerSoftware size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Create a coding agent</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Work with your preferred coding agent, credentials, and tools in an isolated environment.
+                </p>
+              </div>
+            </a>
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-onboard" : "/experiment-onboard"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <Chemistry size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Begin an experiment</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Run one goal across many variants at once and compare results.
+                </p>
+              </div>
+            </a>
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/kb-setup" : "/kb-setup"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <Book size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Start a knowledge base</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Organize and converse with data sourced from repos, documents, and more (LLM wiki).
+                </p>
+              </div>
+            </a>
+          </div>
+          <div className="mt-5 flex justify-end">
+            <a
+              href="https://docs.example.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[14px] font-medium text-accent no-underline hover:underline"
+            >
+              Or check out the Documentation →
+            </a>
+          </div>
+        </section>
+      )}
+
+      {!isEmptyState && (
+      <div className="grid grid-cols-[1fr_320px] gap-4 items-start">
+        {/* LEFT: Main feed — active + ready for review */}
+        <div className="space-y-4">
+          {allCleared && (
+            <div className="rounded-xl border border-border bg-card p-10 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Checkmark size={16} className="text-emerald-500" />
+                <span className="text-[14px] font-medium text-foreground">All clear</span>
+              </div>
+              <p className="text-[14px] text-muted-foreground">Nothing waiting for review. You're all caught up.</p>
+            </div>
+          )}
+
+          {(visibleActive.length > 0 || visibleReview.length > 0) && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h2 className="text-[14px] text-muted-foreground">Ready for review</h2>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="xs" className="text-[14px] font-normal text-muted-foreground">
+                      <Filter size={16} />
+                      {feedFilter.length === FEED_CATEGORIES.length
+                        ? "All"
+                        : `Filter (${feedFilter.length})`}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {FEED_CATEGORIES.map((cat) => (
+                      <DropdownMenuCheckboxItem
+                        key={cat}
+                        checked={feedFilter.includes(cat)}
+                        onCheckedChange={() => toggleFeedFilter(cat)}
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        {FEED_CATEGORY_LABELS[cat]}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <button type="button" onClick={dismissAll} className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">Dismiss all</button>
+            </div>
+          )}
+
+          {/* Active sessions — in progress */}
+          {visibleActive.map((item, i) => {
+            const activeIdx = ACTIVE_SESSIONS.indexOf(item);
+            return (
+            <div key={`active-${activeIdx}`} className={cn(
+              "rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3 transition-all duration-300 ease-out",
+              dismissingActive.has(activeIdx) && "opacity-0 scale-[0.98]",
+              collapsingActive.has(activeIdx) && "!mt-0 !p-0 !border-0 max-h-0 overflow-hidden"
+            )}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <WorkingDots className="text-blue-500" size="md" />
+                  <div>
+                    <p className="text-[14px] font-semibold text-foreground leading-snug">{item.title}</p>
+                    <p className="text-[14px] text-muted-foreground mt-1">{item.agent}</p>
+                  </div>
+                </div>
+                <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">{item.duration}</span>
+              </div>
+              <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
+                <Button size="sm" variant="outline" className="h-8 text-[14px]">Open session</Button>
+              </div>
+            </div>
+            );
+          })}
+
+          {/* Ready for review sessions */}
+          {visibleReview.map((item) => {
+            const originalIdx = REVIEW_SESSIONS.indexOf(item);
+            return (
+            <div key={originalIdx} className={cn(
+              "rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3 transition-all duration-300 ease-out",
+              dismissingReview.has(originalIdx) && "opacity-0 scale-[0.98]",
+              collapsingReview.has(originalIdx) && "!mt-0 !p-0 !border-0 max-h-0 overflow-hidden"
+            )}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+                    {item.scheduled && <Time size={16} className="text-muted-foreground shrink-0" />}
+                    {item.title}
+                  </p>
+                  <p className="text-[14px] text-muted-foreground mt-1.5">{item.agent}</p>
+                </div>
+                <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">{item.time}</span>
+              </div>
+              {item.artifact && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewArtifact(item.artifact!)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-muted/70 hover:border-foreground/20 transition-all text-[14px] text-muted-foreground"
+                >
+                  <Document size={16} className="shrink-0" />
+                  <span className="truncate max-w-[160px]">{item.artifact.name}</span>
+                  <span className="text-[14px] font-mono opacity-60">{item.artifact.fileType}</span>
+                </button>
+              )}
+              {item.experiment && <ExperimentMiniBar experiment={item.experiment} />}
+              <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+                <Button size="sm" variant="outline" className="h-8 text-[14px]">
+                  {item.experiment ? "View results" : "View session"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto" onClick={() => dismissReview(originalIdx)}>Dismiss</Button>
+              </div>
+            </div>
+            );
+          })}
+        </div>
+
+        {/* RIGHT: Pinned sidebar */}
+        <div className="space-y-3 sticky top-4">
+          {/* Needs attention */}
+          <div className="rounded-xl border border-destructive/30 bg-gradient-to-br from-destructive/5 to-card p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full bg-destructive" />
+              <h2 className="text-[14px] font-semibold text-foreground">Needs attention</h2>
+            </div>
+            <p className="text-[14px] text-foreground font-medium">GET api.figma.com</p>
+            <p className="text-[14px] text-muted-foreground">brand-asset-generator · 3m ago</p>
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="outline" className="h-7 text-[14px] flex-1">Allow</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[14px] flex-1 text-muted-foreground">Deny</Button>
+            </div>
+          </div>
+
+          {/* Compute resources */}
+          <ComputePreview />
+
+          {/* Scheduled */}
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h2 className="text-[14px] font-semibold text-foreground mb-3">Scheduled</h2>
+            <div className="space-y-2.5">
+              {SCHEDULED_CARDS.slice(0, 5).map((s, i) => {
+                const failed = s.lastResult === "failed";
+                return (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <span className="text-[14px] text-foreground truncate">{s.name}</span>
+                    <span className={cn(
+                      "text-[14px] tabular-nums shrink-0",
+                      failed ? "text-destructive" : "text-muted-foreground",
+                    )}>{s.nextRun}</span>
+                  </div>
+                );
+              })}
+              <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors mt-1">
+                +{SCHEDULED_CARDS.length - 5} more
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {previewArtifact && <MockArtifactPreview artifact={previewArtifact} onClose={() => setPreviewArtifact(null)} />}
+    </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Populated Home
    ═══════════════════════════════════════════════════════════════════════════ */
-
 function PopulatedHome({
   approvals,
   state,
