@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { PRE_TERMS_PROCEDURES } from "api-server-api";
 import type { TermsService, UserIdentity } from "api-server-api";
 import { httpTermsStale } from "./mappers.js";
 
@@ -8,10 +9,17 @@ export interface TermsGateConfig {
 
 const TRPC_PREFIX = "/api/trpc/";
 
-export function isTermsOnlyTrpcCall(path: string): boolean {
-  if (!path.startsWith(TRPC_PREFIX)) return false;
-  const procs = path.slice(TRPC_PREFIX.length).split(",");
-  return procs.length > 0 && procs.every((p) => p.startsWith("terms."));
+export function isTermsOnlyTrpcCall(rawPathname: string): boolean {
+  if (!rawPathname.startsWith(TRPC_PREFIX)) return false;
+  let procs: string[];
+  try {
+    procs = decodeURIComponent(rawPathname.slice(TRPC_PREFIX.length)).split(
+      ",",
+    );
+  } catch {
+    return false;
+  }
+  return procs.length > 0 && procs.every((p) => PRE_TERMS_PROCEDURES.has(p));
 }
 
 export function createTermsGate(config: TermsGateConfig) {

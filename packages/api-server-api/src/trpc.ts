@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
+import { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
 import { withTrpcTelemetry } from "./trpc-telemetry.js";
 
 function extractScanFailure(cause: unknown): unknown {
@@ -43,7 +44,7 @@ export function markTermsProven(ctx: ApiContext): void {
 }
 
 const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
-  if (path.startsWith("terms.")) return next();
+  if (PRE_TERMS_PROCEDURES.has(path)) return next();
   if (!termsProven.has(ctx)) {
     if (!(await ctx.terms.isAccepted(ctx.user.sub))) {
       throw new TRPCError({
