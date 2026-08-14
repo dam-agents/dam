@@ -80,6 +80,9 @@ import {
 import { BusyIndicator } from "../components/busy-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
+import { ExperimentSetupCard } from "../components/experiment-setup-card.js";
+import { MockExperimentDashboard } from "../components/mock-experiment-dashboard.js";
+import { OnboardLanding } from "../components/onboard-landing.js";
 import {
   PermissionStatusLine,
   PermissionVerdictLine,
@@ -109,6 +112,12 @@ export function setMockFromHomePage(value: boolean) {
 let mockWikiOnboard = false;
 export function setMockWikiOnboard(value: boolean) {
   mockWikiOnboard = value;
+}
+
+/** Flag set when entering experiment onboard demo */
+let mockExperimentOnboard = false;
+export function setMockExperimentOnboard(value: boolean) {
+  mockExperimentOnboard = value;
 }
 
 /** Pre-seed the session list cache so the sidebar shows sessions immediately
@@ -199,22 +208,8 @@ export function ChatView() {
     if (!selectedAgent || messages.length > 0) return;
 
     if (demoState === "empty") {
-      if (mockWikiOnboard && view === "knowledge-base-chat") {
-        setMessages([
-          {
-            id: "mock-wiki-setup",
-            role: "assistant",
-            streaming: false,
-            parts: [
-              {
-                kind: "text",
-                text: "I'm your Wiki agent. Point me at sources — repos, docs, URLs, or anything you paste — and I'll ingest them into structured, interlinked wiki pages. When you ask a question, I answer from those pages and cite which ones I used so you can always check my work.\n\nTwo quick things to get started:",
-              },
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              { kind: "wiki-setup" } as any,
-            ],
-          },
-        ]);
+      if (mockWikiOnboard) {
+        setOnboardLanding("knowledge-base");
         mockWikiOnboard = false;
       } else if (view === "knowledge-base-chat") {
         setMessages([
@@ -230,6 +225,9 @@ export function ChatView() {
             ],
           },
         ]);
+      } else if (mockExperimentOnboard) {
+        setOnboardLanding("experiment");
+        mockExperimentOnboard = false;
       } else if (mockCreatedKind === "experiment") {
         setMessages([
           {
@@ -421,6 +419,13 @@ export function ChatView() {
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
+  const [mockDashboard, setMockDashboard] = useState<{
+    name: string;
+    frameworks: string[];
+  } | null>(null);
+  const [onboardLanding, setOnboardLanding] = useState<
+    "experiment" | "knowledge-base" | null
+  >(null);
   const [sessionsOpen, setSessionsOpen] = useState(true);
   const [sessionsH, setSessionsH] = useState(
     () => Number(localStorage.getItem("platform-sessions-h")) || 260,
@@ -614,6 +619,98 @@ export function ChatView() {
             : m,
         ),
       );
+    }, cumulative);
+  }
+
+  function simulateExperimentCreation(
+    payload: { demo: true } | { goal: string; imageIds: string[] },
+  ) {
+    const isDemo = "demo" in payload;
+    const images = isDemo ? ["nous"] : payload.imageIds;
+    const goalText = isDemo
+      ? "optimize fizzbuzz with evolutionary search"
+      : payload.goal;
+    const isHorseRace = images.length > 1;
+    const assistantId = `mock-experiment-creation-${Date.now()}`;
+
+    const imageNames: Record<string, string> = {
+      nous: "nous",
+      openevolve: "openevolve",
+      shinkaevolve: "shinkaevolve",
+      gepa: "gepa",
+      "k-search": "k-search",
+    };
+
+    const toolParts = [
+      ...images.map((id) => ({
+        kind: "tool" as const,
+        title: `pull: quay.io/dam-agents/${imageNames[id] ?? id}:latest`,
+        status: "done" as const,
+      })),
+      {
+        kind: "tool" as const,
+        title: isHorseRace
+          ? `write: experiment-driver.yaml (${images.length} variants)`
+          : `write: experiment.yaml`,
+        status: "done" as const,
+      },
+      ...images.map((id) => ({
+        kind: "tool" as const,
+        title: `spawn: ${imageNames[id] ?? id}-${goalText.slice(0, 12).replace(/\s+/g, "-")}-001`,
+        status: "done" as const,
+      })),
+    ];
+
+    const demoSummary = `Done — launched a **NOUS** experiment running "${goalText}". The run is live and reporting iterations to the experiment dashboard.\n\nYou can watch progress in the experiment panel, or ask me to explain what it's doing at any point.`;
+
+    const singleSummary = `Experiment started — **${imageNames[images[0]!] ?? images[0]}** is running against your goal. Progress will appear in the experiment dashboard as iterations complete.`;
+
+    const horseRaceSummary = `Horse race started — **${images.length} variants** (${images.map((id) => imageNames[id] ?? id).join(", ")}) are running in parallel against your goal. The experiment dashboard will show comparative progress as iterations land.`;
+
+    setMessages((prev: typeof messages) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: "assistant" as const,
+        streaming: true,
+        parts: [],
+      },
+    ]);
+
+    let cumulative = 0;
+    for (const part of toolParts) {
+      cumulative += 300;
+      const delay = cumulative;
+      setTimeout(() => {
+        setMessages((prev: typeof messages) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, parts: [...m.parts, part] } : m,
+          ),
+        );
+      }, delay);
+    }
+
+    cumulative += 600;
+    setTimeout(() => {
+      const text = isDemo
+        ? demoSummary
+        : isHorseRace
+          ? horseRaceSummary
+          : singleSummary;
+      const summary = { kind: "text" as const, text };
+      setMessages((prev: typeof messages) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, streaming: false, parts: [...m.parts, summary] }
+            : m,
+        ),
+      );
+
+      const slug = goalText.slice(0, 30).replace(/\s+/g, "-").toLowerCase();
+      setMockDashboard({
+        name: isDemo ? "fizzbuzz-evolution" : slug,
+        frameworks: images.map((id) => imageNames[id] ?? id),
+      });
     }, cumulative);
   }
 
@@ -1028,7 +1125,56 @@ export function ChatView() {
                     {!loadingSession &&
                       !sessionError &&
                       messages.length === 0 &&
-                      (launchPaneActive ? (
+                      (onboardLanding ? (
+                        <OnboardLanding
+                          variant={onboardLanding}
+                          onSelect={(choice) => {
+                            const variant = onboardLanding;
+                            setOnboardLanding(null);
+                            if (choice === "demo") {
+                              if (variant === "experiment") {
+                                simulateExperimentCreation({ demo: true });
+                              } else {
+                                simulateWikiCreation({ demo: true });
+                              }
+                            } else {
+                              if (variant === "experiment") {
+                                setMessages([
+                                  {
+                                    id: `mock-setup-${Date.now()}`,
+                                    role: "assistant",
+                                    streaming: false,
+                                    parts: [
+                                      {
+                                        kind: "text",
+                                        text: "Let's set up your experiment. Tell me what you want to optimize, then pick the frameworks to run it on.",
+                                      },
+                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                      { kind: "experiment-setup" } as any,
+                                    ],
+                                  },
+                                ]);
+                              } else {
+                                setMessages([
+                                  {
+                                    id: `mock-setup-${Date.now()}`,
+                                    role: "assistant",
+                                    streaming: false,
+                                    parts: [
+                                      {
+                                        kind: "text",
+                                        text: "Let's set up your knowledge base. Give it a name, then tell me what topics it will cover.",
+                                      },
+                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                      { kind: "wiki-setup" } as any,
+                                    ],
+                                  },
+                                ]);
+                              }
+                            }
+                          }}
+                        />
+                      ) : launchPaneActive ? (
                         <div className="py-24 text-center anim-in">
                           <Loader2
                             size={22}
@@ -1201,6 +1347,16 @@ export function ChatView() {
                                       }
                                     }}
                                   />
+                                ) : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                (p as any).kind === "experiment-setup" ? (
+                                  <ExperimentSetupCard
+                                    key={i}
+                                    onSubmit={(payload) => {
+                                      if (import.meta.env.VITE_MOCK) {
+                                        simulateExperimentCreation(payload);
+                                      }
+                                    }}
+                                  />
                                 ) : (
                                   <ToolChip key={i} chip={p} />
                                 ),
@@ -1304,6 +1460,7 @@ export function ChatView() {
             takeover on mobile */}
         {(openFilePath ||
           openArtifactId ||
+          mockDashboard ||
           (dockedExperiment && demoState !== "empty")) && (
           <>
             <div className="hidden md:flex">
@@ -1336,7 +1493,13 @@ export function ChatView() {
                 "md:border-l md:border-border-light",
               )}
             >
-              {openFilePath ? (
+              {mockDashboard ? (
+                <MockExperimentDashboard
+                  experimentName={mockDashboard.name}
+                  frameworks={mockDashboard.frameworks}
+                  onClose={() => setMockDashboard(null)}
+                />
+              ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel

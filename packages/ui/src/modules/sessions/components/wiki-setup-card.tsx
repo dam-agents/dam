@@ -30,12 +30,6 @@ export function WikiSetupCard({ onSubmit }: WikiSetupCardProps) {
     onSubmit?.({ name: wikiName, purpose: purposeInput.trim() });
   }
 
-  function handleLoadDemo() {
-    setWikiName("Greek Mythology Demo");
-    setStep("submitted");
-    onSubmit?.({ demo: true });
-  }
-
   if (step === "submitted") return null;
 
   return (
@@ -69,13 +63,6 @@ export function WikiSetupCard({ onSubmit }: WikiSetupCardProps) {
                 </Button>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handleLoadDemo}
-              className="text-[14px] font-medium text-accent no-underline hover:underline"
-            >
-              Or load a demo wiki to explore first →
-            </button>
           </div>
         )}
 
