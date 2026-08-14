@@ -31,8 +31,6 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 
 ## Attribution
 
-Anyone on the team can ask for an issue and approve it. One explicit approval from the person who asked is enough to file — filing is capture, not prioritization, so it needs no second sign-off.
-
 An agent files under a shared credential, so GitHub credits the credential owner rather than the person who asked. **An agent filing an issue must always end the body with a Filed by footer** naming that person:
 
 ```markdown
