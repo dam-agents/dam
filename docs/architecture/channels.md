@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-08-10
+Last verified: 2026-08-13
 
 ## Overview
 
@@ -167,7 +167,7 @@ sequenceDiagram
 A few observations the diagram glosses over:
 
 - **The gates are the binding check plus the binding owner's Terms-of-Use acceptance** — no sender identity is resolved. Both messengers behave identically here. An unallowed host is refused, not held ([egress](security-and-credentials.md)).
-- **An undecodable attachment is withheld, not forwarded.** An inbound image becomes prompt content only when its bytes are a format the harness decodes: the sniffed type outranks the messenger's label, and a label claiming no format is still sniffed. Handed anything else, a harness substitutes an internal error for the picture and the agent reports that as its answer. So what was withheld is named to the sender — separating a format nothing decodes from a download that returned a page instead of the file, the shape a missing permission takes — and to the agent in its prompt, so it never answers blind about a picture it did not receive.
+- **An attachment is a picture the agent is shown or a file it is handed**, by what the sender sent rather than what the bytes turn out to be. A picture becomes prompt content only in a format the harness decodes, the sniffed type outranking the messenger's label. Everything else is written into the agent's workspace and linked by absolute path, as a web-UI upload is, whatever its format. It is withheld when the bytes are the messenger refusing rather than the file, when the write fails, or when it exceeds a ceiling — per transfer, per message, per turn, and the worker's own, shared across every channel one process serves. What is withheld is named to the agent so it never answers blind; an addressed turn tells the sender too, a read-along turn the agent alone.
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI. Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note and waits one more window before answering, so a healthy-but-slow start never loses the turn. A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string, and never raw controller messages; a cause the platform is itself repairing still invites a retry. Telegram replies with the same copy on wake failures (no early notice, no extended wait).
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (`reply`, `react`, `no_reply_needed`; see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works. The relay hands the message to the pod and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted. The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so a well-behaved agent replies into the right thread without tracking ids. It also states the message's send time in readable UTC, whether the conversation is a DM or a shared channel/group, and a permalink when Slack can resolve one.
@@ -253,8 +253,10 @@ Both messengers are platform channels: install-wide credentials from Helm and a 
 
 ## Persistence touchpoints
 
-Channels touch two stores; the substrate details live on [persistence](persistence.md):
+Channels touch three stores; the substrate details live on [persistence](persistence.md):
 
 - **Identity-link and binding tables (Postgres).** `identity_links` keyed on `(provider, external_user_id)` mapping to `keycloak_sub` — populated by Slack's `/platform login` (which authorizes the in-chat bind/unbind/ambient commands); the `provider` column makes the table reusable for any future workspace channel. Slack bindings live in the channel rows owned by the agents module — one row per bound conversation, so an Agent's several bindings are several rows. The row's identity is the `slackChannelId` (a channel, group DM, or 1:1 DM conversation id, undifferentiated), unique install-wide: that index is what enforces one Agent per conversation. Each binding carries the ambient flag (absent = off). `telegram_conversations` records the conversation→Agent binding for Telegram (plus the binding owner's sub). Different shapes by design — Slack has a workspace, Telegram does not. Both messengers' tokens live in api-server env from Helm values; there are no channel Secrets in k8s.
+
+- **The Agent's workspace (per-Agent PVC).** Inbound attachments land there for the agent to open, so a channel speaker writes to persistent state ([persistence](persistence.md)).
 
 Channels do **not** participate in the Agent ConfigMap spec/status split. An earlier design kept channel config in the Agent ConfigMap; that was superseded: channel routing metadata lives in Postgres, secrets in k8s Secrets, Agent ConfigMaps stay channel-free.

@@ -34,6 +34,7 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
+import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
@@ -528,6 +529,7 @@ export async function bootstrap() {
         isTermsAccepted,
         config.uiBaseUrl,
         turnAttendance,
+        (agentId) => createAgentWorkspaceFiles(agentId, config.namespace),
       )
     : undefined;
 

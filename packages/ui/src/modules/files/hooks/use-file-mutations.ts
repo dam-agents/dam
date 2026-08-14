@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
 import { getErrorMessage } from "../../../lib/errors.js";
+import { formatBytes } from "../../../lib/format-size.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { type BundleEntry, importBundle } from "../api/import-bundle.js";
@@ -253,7 +254,7 @@ export function useFileMutations(agentId: string | null) {
           if (file.size > MAX_UPLOAD_BYTES) {
             emitToast({
               kind: "error",
-              message: `${file.name} exceeds 10 MB — skipped`,
+              message: `${file.name} exceeds ${formatBytes(MAX_UPLOAD_BYTES)} — skipped`,
             });
             continue;
           }

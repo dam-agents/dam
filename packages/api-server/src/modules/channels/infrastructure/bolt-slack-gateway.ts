@@ -1,5 +1,6 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackChannelInfo,
   SlackGateway,
@@ -242,12 +243,50 @@ export function createBoltSlackGateway(
       });
     },
 
-    async downloadFile(urlPrivate: string): Promise<ArrayBuffer> {
+    async downloadFile(
+      urlPrivate: string,
+      maxBytes: number,
+    ): Promise<ArrayBuffer> {
       const res = await fetch(urlPrivate, {
         headers: { Authorization: `Bearer ${deps.botToken}` },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.arrayBuffer();
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        await res.body?.cancel().catch(() => {});
+        throw new FileTooLargeError(maxBytes);
+      }
+      const body = res.body;
+      if (!body) return new ArrayBuffer(0);
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const reader = body.getReader();
+      let overBudget = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > maxBytes) {
+            overBudget = true;
+            throw new FileTooLargeError(maxBytes);
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+        if (overBudget) await body.cancel().catch(() => {});
+      }
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return out.buffer;
     },
 
     async listBotChannels(): Promise<SlackChannelInfo[]> {
