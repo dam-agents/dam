@@ -212,7 +212,11 @@ export function createInvocationsService(deps: {
     async get(invocationId, driverAgentId) {
       const row = await deps.repo.get(invocationId);
       if (!row || row.driverAgentId !== driverAgentId) return null;
-      return { status: row.status, result: row.result };
+      return {
+        status: row.status,
+        result: row.result,
+        errorReason: row.errorReason ?? undefined,
+      };
     },
 
     async recordResult(invocationId, result) {

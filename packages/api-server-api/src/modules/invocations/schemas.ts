@@ -35,7 +35,13 @@ export const spawnInvocationResponseSchema = z.object({
   id: z.string().min(1),
 });
 
+/** GET /invocations/:id reply — status plus the schema-validated result once
+ *  the target reports (undefined while still running or on failure). A failed
+ *  row carries the platform's reason (deadline exceeded, target pod restarted,
+ *  stopped) so the driver can say WHY instead of a bare "failed" — the one
+ *  line of diagnosis the platform holds and the driver cannot reconstruct. */
 export const invocationViewSchema = z.object({
   status: z.enum(["running", "done", "failed"]),
   result: z.unknown(),
+  errorReason: z.string().optional(),
 });

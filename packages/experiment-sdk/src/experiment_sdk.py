@@ -84,11 +84,15 @@ class UnknownImage(Exception):
 
 class InvocationFailed(Exception):
     """A spawned invocation reported ``failed`` (silent exit past its
-    liveness deadline, or an internal error)."""
+    liveness deadline, a target pod crash, or an internal error). ``reason``
+    carries the platform's explanation when it has one — surface it: it is
+    the only diagnosis that survives the target being reaped."""
 
-    def __init__(self, invocation_id: str, label: str):
-        super().__init__(f"invocation {label} ({invocation_id}) failed")
+    def __init__(self, invocation_id: str, label: str, reason: str | None = None):
+        detail = f": {reason}" if reason else ""
+        super().__init__(f"invocation {label} ({invocation_id}) failed{detail}")
         self.invocation_id = invocation_id
+        self.reason = reason
 
 
 def _log(msg: str) -> None:
@@ -292,7 +296,7 @@ def spawn(
             _log(f"{name} ({invocation_id}) done")
             return view.get("result")
         if status == "failed":
-            raise InvocationFailed(invocation_id, name)
+            raise InvocationFailed(invocation_id, name, view.get("errorReason"))
         if time.monotonic() > deadline:
             raise InvocationFailed(invocation_id, f"{name} (client timeout)")
         time.sleep(poll_seconds)

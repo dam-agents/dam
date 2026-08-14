@@ -245,6 +245,39 @@ def test_spawn_without_span_or_experiment(stub):
     assert body["image"] == "some/image:1"
 
 
+def test_spawn_failure_surfaces_the_platform_reason(stub):
+    # The platform's errorReason (deadline, pod crash, stop) is the only
+    # diagnosis that survives the target being reaped — it must reach the
+    # exception text, not just the row.
+    stub.routes[("POST", "/invocations")] = (201, {"id": "inv-3"})
+    stub.routes[("GET", "/invocations/inv-3")] = (
+        200,
+        {
+            "status": "failed",
+            "errorReason": "target pod restarted (OutOfMemory); one-shot turn cannot resume",
+        },
+    )
+
+    with pytest.raises(x.InvocationFailed) as exc:
+        x.spawn("do it", "integer", image="some/image:1", poll_seconds=0.01)
+
+    assert "OutOfMemory" in str(exc.value)
+    assert exc.value.reason is not None
+
+
+def test_spawn_failure_without_a_reason_stays_bare(stub):
+    # An older api-server (no errorReason on the view) must not render
+    # "failed: None".
+    stub.routes[("POST", "/invocations")] = (201, {"id": "inv-4"})
+    stub.routes[("GET", "/invocations/inv-4")] = (200, {"status": "failed"})
+
+    with pytest.raises(x.InvocationFailed) as exc:
+        x.spawn("do it", "integer", image="some/image:1", poll_seconds=0.01)
+
+    assert str(exc.value).endswith("failed")
+    assert exc.value.reason is None
+
+
 # ---- image choice ----------------------------------------------------------------
 
 CATALOG = (
