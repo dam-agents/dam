@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { Db } from "db";
+import type { Db, DbTx } from "db";
 import {
   agentSkills,
   agentSkillPublishes,
@@ -20,15 +20,24 @@ import {
   type SkillPublishRecord,
 } from "api-server-api";
 
+export interface SkillKey {
+  source: string;
+  name: string;
+}
+
+const GHOST_MIN_AGE_SECONDS = 60;
+
 export interface AgentSkillsRepository {
   listSkills(agentId: string): Promise<SkillRef[]>;
-  upsertSkill(agentId: string, ref: SkillRef): Promise<void>;
+  upsertSkill(agentId: string, ref: SkillRef, tx?: Db | DbTx): Promise<void>;
   removeSkill(
     agentId: string,
     key: { source: string; name: string },
+    tx?: Db | DbTx,
   ): Promise<void>;
   removeBySource(agentIds: string[], gitUrl: string): Promise<void>;
-  reconcile(agentId: string, presentNames: Set<string>): Promise<void>;
+  listGhosts(agentId: string, presentNames: Set<string>): Promise<SkillKey[]>;
+  reap(agentId: string, ghosts: SkillKey[], tx?: Db | DbTx): Promise<void>;
 
   listPublishes(agentId: string): Promise<SkillPublishRecord[]>;
   appendPublish(agentId: string, record: SkillPublishRecord): Promise<void>;
@@ -85,8 +94,8 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
       }));
     },
 
-    async upsertSkill(agentId, ref) {
-      await db
+    async upsertSkill(agentId, ref, tx = db) {
+      await tx
         .insert(agentSkills)
         .values({
           agentId,
@@ -102,12 +111,13 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
             version: ref.version,
             contentHash: ref.contentHash ?? null,
             path: ref.path ?? null,
+            installedAt: sql`now()`,
           },
         });
     },
 
-    async removeSkill(agentId, key) {
-      await db
+    async removeSkill(agentId, key, tx = db) {
+      await tx
         .delete(agentSkills)
         .where(
           and(
@@ -130,26 +140,36 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         );
     },
 
-    async reconcile(agentId, presentNames) {
+    async listGhosts(agentId, presentNames) {
       const rows = await db
         .select({ name: agentSkills.name, source: agentSkills.source })
         .from(agentSkills)
-        .where(eq(agentSkills.agentId, agentId));
-      const ghosts = rows.filter((r) => !presentNames.has(r.name));
+        .where(
+          and(
+            eq(agentSkills.agentId, agentId),
+            sql`${agentSkills.installedAt} < now() - make_interval(secs => ${GHOST_MIN_AGE_SECONDS})`,
+          ),
+        );
+      return rows.filter((r) => !presentNames.has(r.name));
+    },
+
+    async reap(agentId, ghosts, tx = db) {
       if (ghosts.length === 0) return;
-      await Promise.all(
-        ghosts.map((g) =>
-          db
-            .delete(agentSkills)
-            .where(
-              and(
-                eq(agentSkills.agentId, agentId),
-                eq(agentSkills.source, g.source),
-                eq(agentSkills.name, g.name),
+      await tx
+        .delete(agentSkills)
+        .where(
+          and(
+            eq(agentSkills.agentId, agentId),
+            or(
+              ...ghosts.map((g) =>
+                and(
+                  eq(agentSkills.source, g.source),
+                  eq(agentSkills.name, g.name),
+                ),
               ),
             ),
-        ),
-      );
+          ),
+        );
     },
 
     async listPublishes(agentId) {

@@ -6,7 +6,7 @@ import type {
   RuntimeDeliveryService,
 } from "api-server-api";
 import type { Db } from "db";
-import type { RuntimeSettledPort } from "../../modules/agents/index.js";
+import type { RuntimeProgressPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
@@ -40,7 +40,7 @@ export interface HarnessApiServerAppDeps {
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   wakeAgent: (agentId: string) => Promise<void>;
-  runtimeSettled: RuntimeSettledPort;
+  runtimeProgress: RuntimeProgressPort;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -57,7 +57,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     wakeAgent,
-    runtimeSettled,
+    runtimeProgress,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -104,7 +104,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         brandName: config.brand.name,
         runtimeMutator,
         templatesRepo,
-        runtimeSettled,
+        runtimeProgress,
       }),
     schedulesServiceFor: (owner) =>
       composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
