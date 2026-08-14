@@ -93,7 +93,6 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 
-/** How a footer-less bot post is named in injected history. */
 function botHistoryLabel(brand: { name: string }): string {
   return `the ${brand.name} bot (unattributed)`;
 }
@@ -106,14 +105,7 @@ function slackTurnContract(ctx: {
   batch?: { count: number; inThread: boolean };
   isDirectMessage: boolean;
   permalink: string | null;
-  /** The bot's own Slack user id, null when Slack didn't answer. Stated because
-   *  mentions reach the agent as raw `<@Uxxx>` tokens against a bot handle that
-   *  is the install's, not the agent's own name — so the id is the only thing
-   *  that ties a tag in the text to itself. */
   botUserId: string | null;
-  /** The name the agent's posts are signed with, null when unresolved. The
-   *  platform publishes it to the channel, so it is the name people type — and
-   *  the agent's workspace persona may go by another. */
   agentName: string | null;
 }): string {
   const batchCount = ctx.batch?.count ?? 1;
@@ -187,10 +179,6 @@ function slackTurnContract(ctx: {
   ].join("\n");
 }
 
-/** Framing for an addressed turn — an @-mention or a 1:1 DM. Stated positively
- *  because such a turn was otherwise recognisable only by the absence of the
- *  read-along block, and the two interleave in one session: a mention in an
- *  ambient thread resumes a session already told to stay silent when in doubt. */
 function addressedGuidance(ctx: {
   isDirectMessage: boolean;
   botUserId: string | null;
@@ -857,7 +845,6 @@ export function createSlackWorker(
     eventTs: string;
     sessionId?: string;
     releaseAttendance?: () => void;
-    /** Set once the agent posts for this turn — a reply or a reaction. */
     posted?: boolean;
   };
 
@@ -988,9 +975,6 @@ export function createSlackWorker(
     "messageTs shown in your turn instructions so this inspects the message " +
     "you mean.";
 
-  /** The agent's display name — the one its posts are signed with, and so the
-   *  one people in the channel call it by. Null when it can't be resolved: the
-   *  instance id is an internal handle and never belongs in a prompt. */
   async function resolveAgentDisplayName(
     instanceName: string,
   ): Promise<string | null> {
@@ -1306,9 +1290,6 @@ export function createSlackWorker(
       endTurn(instanceName, turnRef, {
         harnessMayStillRun: ghostTurn || failureReason === "acp-error",
       });
-      // An addressed turn that posts nothing looks identical to a dead agent
-      // from the channel. Name it, so the silence is diagnosable (#3325). A
-      // ghost turn is exempt: its first session may still be posting.
       if (failureReason === undefined && !ghostTurn && !turnRef.posted) {
         getLogger().warn(
           {

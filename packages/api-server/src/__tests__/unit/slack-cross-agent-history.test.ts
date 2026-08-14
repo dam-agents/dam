@@ -115,12 +115,14 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).not.toContain("agent-99");
   });
 
+  /**
+   * TEST_SCENARIO: Platform notices (wake failures, the still-starting note) come
+   * from the install-wide bot with no footer to credit. Left as a bare Slack id
+   * they read as a human — and, because the contract tells the agent that id is
+   * how it gets tagged, as the agent itself.
+   */
   it("names a footer-less bot post as the bot, not as the reading agent or a human", async () => {
     const h = harness();
-    // Platform notices (wake failures, the still-starting note) are posted by
-    // the same install-wide bot but carry no footer to credit an agent. Left as
-    // a bare id they read as a human — and, since the prompt tells the agent
-    // that id is how it is tagged, as itself.
     h.gw.setHistory([
       {
         ts: "0.1",
@@ -143,10 +145,7 @@ describe("slack cross-agent history attribution", () => {
       `the DAM bot (unattributed) [${formatSlackTs("0.1")}]: The agent is still starting`,
     );
     expect(prompt).not.toContain("U-BOT [");
-    // No history line is credited to this agent (the legend explains the
-    // prefix, so match the labelled-line form rather than the bare phrase).
     expect(prompt).not.toContain("you (this agent) [");
-    // The legend has to explain the prefix even with no agent-footered line.
     expect(prompt).toContain('A line prefixed "the DAM bot (unattributed):"');
     expect(prompt).toContain("not yours unless you recognise it as your own");
   });

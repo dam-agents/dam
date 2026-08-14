@@ -76,8 +76,6 @@ export function historyLegend(
     'your own earlier post in this channel; "<name> (another agent):" is a ' +
     "different agent that posted here; everyone else is a human Slack user, " +
     "prefixed with their Slack id";
-  // Every agent posts through one install-wide bot, so a bot post without a
-  // footer to credit cannot be attributed — including to the reading agent.
   const bot = opts?.botLabel
     ? ` A line prefixed "${opts.botLabel}:" came from the bot but carries no ` +
       "footer, so it is not yours unless you recognise it as your own."
@@ -103,9 +101,6 @@ export function labelHistoryMessage(
   message: SlackMessage,
   footer: { agentId: string; agentName: string } | null,
   readingAgentId: string,
-  /** The install-wide bot's own identity. A footer-less post from it is named
-   *  as the bot rather than left as a bare Slack id, which reads as a human —
-   *  and, since the reading agent posts through that same bot, as itself. */
   bot?: { userId: string | null; label: string },
 ): string {
   const label = footer

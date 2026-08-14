@@ -587,6 +587,11 @@ describe("slack ambient inbound", () => {
     expect(drainFailures).toHaveLength(1);
   });
 
+  /**
+   * TEST_SCENARIO: An ambient thread's session has already been told to stay
+   * silent when in doubt, and a mention resumes that same session — so the
+   * addressed framing has to be stated, not left to the absence of a block.
+   */
   it("mentions in an ambient channel keep the addressed-turn treatment", async () => {
     const h = harness({ binding: ambient });
     await h.mention(STRANGER);
@@ -595,8 +600,6 @@ describe("slack ambient inbound", () => {
     const prompt = String(h.prompts[0]);
     expect(prompt).not.toContain("<reading-along>");
     expect(prompt).toContain("<how-to-respond>");
-    // Said positively, not by omission: these sessions interleave with
-    // read-along turns that told the agent to stay silent when in doubt.
     expect(prompt).toContain("<addressed-to-you>");
     expect(prompt).toContain("You were @-mentioned");
     expect(prompt).toContain("Slack user id U-BOT");
@@ -612,7 +615,6 @@ describe("slack ambient inbound", () => {
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain("<reading-along>");
     expect(prompt).not.toContain("<addressed-to-you>");
-    // The bot's id is still stated — it identifies the agent on every turn.
     expect(prompt).toContain("Slack user id U-BOT");
   });
 });

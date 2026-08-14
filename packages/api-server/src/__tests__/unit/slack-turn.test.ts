@@ -45,7 +45,6 @@ function harness(opts: {
   ensureReady?: AgentsService["ensureReady"];
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
-  /** The agent's display name, as the agents service would report it. */
   agentName?: string;
 }) {
   const gw = createFakeSlackGateway();
@@ -889,29 +888,26 @@ describe("slack turn — network-access framing and attendance", () => {
     await h.mention({ text: "<@U-BOT> say hi" });
     await tick();
 
-    // The id, not just the brand handle: the tag arrives as a raw `<@U-BOT>`
-    // token, and the bot's name is the install's rather than the agent's own.
     expect(prompt).toContain(
       'the bot "DAM" (mentioned as @dam, Slack user id U-BOT)',
     );
-    // All three reference forms, stated as equivalent: the tag, the bot name
-    // typed without a tag, and the agent's own name.
     expect(prompt).toContain("by tagging the bot (U-BOT in the text)");
     expect(prompt).toContain('by typing "dam" with no tag at all');
     expect(prompt).toContain("or by name");
-    // ...but a tag is not authorship: one bot posts for every agent, so the
-    // footer's name is what says which post was this agent's.
     expect(prompt).toContain(
       "a post from it is yours only if the name in its footer is yours",
     );
     expect(prompt).toContain("<addressed-to-you>");
     expect(prompt).toContain("You were @-mentioned");
     expect(prompt).toContain("the mention of U-BOT in it is you");
-    // The read-along framing tells the agent to stay silent when in doubt; an
-    // addressed turn must never carry it.
     expect(prompt).not.toContain("<reading-along>");
   });
 
+  /**
+   * TEST_SCENARIO: The api-server publishes this name in every footer, so it is
+   * the name people type. A workspace persona may go by another, so leaving the
+   * agent to infer "the name you know yourself by" misses the published one.
+   */
   it("delivers the name the agent's posts are signed with, and makes it the authorship test", async () => {
     let prompt = "";
     const h = harness({
@@ -925,13 +921,9 @@ describe("slack turn — network-access framing and attendance", () => {
     await h.mention({ text: "Buginator can you look at this" });
     await tick();
 
-    // The platform publishes this name in every footer, so it is the name
-    // people type — the agent shouldn't have to infer it.
     expect(prompt).toContain('your posts here are signed "Buginator"');
     expect(prompt).toContain("so that is what people will call you");
-    // A workspace persona may go by something else; both still address it.
     expect(prompt).toContain("alongside any name you know yourself by");
-    // Authorship becomes a concrete check against the footer.
     expect(prompt).toContain('yours only if its footer reads "Buginator"');
     expect(prompt).not.toContain("agent-1");
   });

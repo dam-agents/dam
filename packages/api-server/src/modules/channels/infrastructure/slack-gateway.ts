@@ -163,8 +163,5 @@ export interface SlackGateway {
   openDirectMessage(userId: string): Promise<string>;
   getPermalink(channel: string, ts: string): Promise<string | null>;
   getGrantedScopes(): Promise<Set<string> | null>;
-  /** The bot's own Slack user id, or null when it can't be resolved. Inbound
-   *  text carries mentions as raw `<@Uxxx>` tokens, so a turn can only tell it
-   *  was tagged by comparing against this. */
   getBotUserId(): Promise<string | null>;
 }

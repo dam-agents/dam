@@ -32,9 +32,6 @@ export function createBoltSlackGateway(
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = null;
 
-  /** One `auth.test` populates both install-wide facts — the granted scopes and
-   *  the bot's own user id. Each getter caches its own field, so a response
-   *  missing one is retried without pinning the other. */
   async function authTest() {
     if (!app) return;
     try {
@@ -43,7 +40,7 @@ export function createBoltSlackGateway(
       if (scopes) grantedScopes = new Set(scopes);
       if (typeof result.user_id === "string") botUserId = result.user_id;
     } catch {
-      // Unknown, never missing — the callers fail open.
+      return;
     }
   }
 

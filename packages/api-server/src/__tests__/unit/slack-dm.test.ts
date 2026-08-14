@@ -142,8 +142,6 @@ describe("slack 1:1 DM", () => {
     expect(h.prompts).toHaveLength(1);
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain("hello privately");
-    // Nothing the platform adds is a mention token here: the bot's own id is
-    // stated bare, and there is no speaker label to render.
     expect(prompt).not.toContain("<@");
   });
 
