@@ -889,8 +889,15 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain(
       'the bot "DAM" (mentioned as @dam, Slack user id U-BOT)',
     );
+    // All three reference forms, stated as equivalent: the tag, the bot name
+    // typed without a tag, and the agent's own name.
+    expect(prompt).toContain("by tagging the bot (U-BOT in the text)");
+    expect(prompt).toContain('by typing "dam" with no tag at all');
+    expect(prompt).toContain("or by your own name");
+    // ...but a tag is not authorship: one bot posts for every agent, so the
+    // footer's name is what says which post was this agent's.
     expect(prompt).toContain(
-      "U-BOT in a message is you, not another participant",
+      "a post from it is yours only if the name in its footer is yours",
     );
     expect(prompt).toContain("<addressed-to-you>");
     expect(prompt).toContain("You were @-mentioned");

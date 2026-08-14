@@ -93,6 +93,11 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 
+/** How a footer-less bot post is named in injected history. */
+function botHistoryLabel(brand: { name: string }): string {
+  return `the ${brand.name} bot (unattributed)`;
+}
+
 function slackTurnContract(ctx: {
   replyThreadTs: string;
   eventTs: string;
@@ -128,12 +133,14 @@ function slackTurnContract(ctx: {
       `(mentioned as @${ctx.brand.short}` +
       (ctx.botUserId ? `, Slack user id ${ctx.botUserId}` : "") +
       "). " +
-      (ctx.botUserId
-        ? "Your posts are signed with your own name, but people reach you by " +
-          `tagging that bot — so ${ctx.botUserId} in a message is you, not ` +
-          "another participant. "
-        : "") +
-      "Nothing you write as plain text is delivered to Slack — only tool " +
+      "People address you three ways, all equivalent: by tagging the bot" +
+      (ctx.botUserId ? ` (${ctx.botUserId} in the text)` : "") +
+      `, by typing "${ctx.brand.short}" with no tag at all, or by your own ` +
+      "name — the one you know yourself by, which is the name your posts are " +
+      "signed with. Authorship runs the other way: every agent here posts " +
+      "through this one bot, so a post from it is yours only if the name in " +
+      "its footer is yours.",
+    "Nothing you write as plain text is delivered to Slack — only tool " +
       "calls reach the channel. To respond, call one of:",
     replyBullet,
     "• react — add a fitting emoji reaction to the message you're answering: a " +
@@ -193,13 +200,14 @@ function addressedGuidance(ctx: {
   ].join("\n");
 }
 
-function ambientGuidance(brand: { name: string }): string {
+function ambientGuidance(brand: { name: string; short: string }): string {
   return [
     "<reading-along>",
     "You are reading along in a shared Slack channel; the following " +
       "message(s) were not @-mentions. A message that calls you by name — " +
-      `"${brand.name}", or the name you know yourself by — is addressed to ` +
-      "you: answer it as you would a mention. Otherwise chime in only when " +
+      `"${brand.name}", "${brand.short}", or the name you know yourself by — ` +
+      "is addressed to you: answer it as you would a mention. People often " +
+      "drop the @ and just type the name. Otherwise chime in only when " +
       "you can clearly help — answer a question you know the answer to, pick " +
       "up a task someone described, or flag a clear mistake. If in doubt, " +
       "stay silent by calling no_reply_needed.",
@@ -593,7 +601,12 @@ async function getContextMessages(
   ts: string,
   readingAgentId: string,
   threadTs?: string,
-): Promise<{ lines: string[]; hasAgentAuthored: boolean }> {
+  bot?: { userId: string | null; label: string },
+): Promise<{
+  lines: string[];
+  hasAgentAuthored: boolean;
+  hasUnattributedBot: boolean;
+}> {
   const raw = threadTs
     ? await gateway.getThreadReplies({ channel, threadTs, limit: 50 })
     : (await gateway.getChannelHistory({ channel, limit: 10 }))
@@ -601,14 +614,16 @@ async function getContextMessages(
         .reverse();
 
   let hasAgentAuthored = false;
+  let hasUnattributedBot = false;
   const lines = raw
     .filter((m) => m.ts !== ts)
     .map((m) => {
       const footer = parseAgentFooter(m);
       if (footer) hasAgentAuthored = true;
-      return labelHistoryMessage(m, footer, readingAgentId);
+      else if (bot?.userId && m.user === bot.userId) hasUnattributedBot = true;
+      return labelHistoryMessage(m, footer, readingAgentId, bot);
     });
-  return { lines, hasAgentAuthored };
+  return { lines, hasAgentAuthored, hasUnattributedBot };
 }
 
 export interface ChannelRegistry {
@@ -1301,16 +1316,25 @@ export function createSlackWorker(
     contract: string,
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<string | ContentBlock[]> {
-    const { lines, hasAgentAuthored } = await getContextMessages(
-      gw,
-      ctx.channel,
-      ctx.eventTs,
-      ctx.instanceName,
-      ctx.hasThread ? ctx.threadTs : undefined,
-    );
-    const legend = hasAgentAuthored
-      ? historyLegend(await canLookupUsers(gw))
-      : undefined;
+    const bot = {
+      userId: await gw.getBotUserId().catch(() => null),
+      label: botHistoryLabel(brand),
+    };
+    const { lines, hasAgentAuthored, hasUnattributedBot } =
+      await getContextMessages(
+        gw,
+        ctx.channel,
+        ctx.eventTs,
+        ctx.instanceName,
+        ctx.hasThread ? ctx.threadTs : undefined,
+        bot,
+      );
+    const legend =
+      hasAgentAuthored || hasUnattributedBot
+        ? historyLegend(await canLookupUsers(gw), {
+            ...(hasUnattributedBot ? { botLabel: bot.label } : {}),
+          })
+        : undefined;
     const delivered = await opts?.deliver?.();
     return framePrompt({
       contract,
