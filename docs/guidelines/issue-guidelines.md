@@ -25,10 +25,13 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - Bold the key noun in a bullet when it introduces a concept (e.g. "**heartbeat** — a recurring self-scheduled check").
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
+- **Be brief.** One idea per sentence. Active voice. Cut filler, restatement, and any sentence that carries no new fact. A reader should get the problem from the first paragraph. Length is not thoroughness.
+- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Keep source links in the discussion where the ask came from, not in the issue. Check screenshots for names before attaching them.
+- **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed.
+Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - Expand an artifact to full screen from the chat view`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed.
 
 ### Epic
 
