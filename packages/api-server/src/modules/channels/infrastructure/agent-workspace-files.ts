@@ -1,6 +1,5 @@
 import { createTRPCClient, httpLink } from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
-import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
 export interface AgentWorkspaceFiles {
   write(input: {
@@ -15,13 +14,10 @@ export type AgentWorkspaceFilesFactory = (
 ) => AgentWorkspaceFiles;
 
 export function createAgentWorkspaceFiles(
-  agentId: string,
-  namespace: string,
+  trpcUrl: string,
 ): AgentWorkspaceFiles {
   const client = createTRPCClient<AppRouter>({
-    links: [
-      httpLink({ url: `http://${podBaseUrl(agentId, namespace)}/api/trpc` }),
-    ],
+    links: [httpLink({ url: trpcUrl })],
   });
   return {
     async write({ path, bytes, contentType }) {

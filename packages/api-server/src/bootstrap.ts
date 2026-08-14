@@ -529,7 +529,10 @@ export async function bootstrap() {
         isTermsAccepted,
         config.uiBaseUrl,
         turnAttendance,
-        (agentId) => createAgentWorkspaceFiles(agentId, config.namespace),
+        (agentId) =>
+          createAgentWorkspaceFiles(
+            `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+          ),
       )
     : undefined;
 

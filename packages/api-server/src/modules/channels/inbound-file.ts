@@ -23,29 +23,28 @@ const REFUSAL_HEADING =
 const SIGN_IN_URL =
   /^https?:\/\/(?:[a-z0-9-]+\.)*slack\.com\/(?:signin|workspace-signin)(?:[/?#]|$)/;
 
-const ATTRIBUTE = /([a-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
-
 const REFRESH_URL = /url\s*=\s*(.+)$/;
 
 function* targetElements(
   head: string,
 ): Generator<{ tag: string; attributes: Map<string, string> }> {
+  const attributePattern = /([a-z-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
   const open = /<(form|meta)\b/g;
   let found: RegExpExecArray | null;
   while ((found = open.exec(head))) {
     const attributes = new Map<string, string>();
-    ATTRIBUTE.lastIndex = open.lastIndex;
+    attributePattern.lastIndex = open.lastIndex;
     let cursor = open.lastIndex;
     for (
       let attribute: RegExpExecArray | null;
-      (attribute = ATTRIBUTE.exec(head));
+      (attribute = attributePattern.exec(head));
     ) {
       if (head.slice(cursor, attribute.index).includes(">")) break;
       attributes.set(
         attribute[1]!,
         (attribute[2] ?? attribute[3] ?? attribute[4] ?? "").trim(),
       );
-      cursor = ATTRIBUTE.lastIndex;
+      cursor = attributePattern.lastIndex;
     }
     yield { tag: found[1]!, attributes };
     open.lastIndex = cursor;
