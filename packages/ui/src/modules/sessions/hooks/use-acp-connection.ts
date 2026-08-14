@@ -11,6 +11,7 @@ import {
 } from "../../acp/session-projection.js";
 import type { UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
 
 export interface LiveConnection {
@@ -135,6 +136,7 @@ export function useAcpConnection(
     (
       connection: ClientSideConnection,
       ws: WebSocket,
+      agentId: string,
       startedSessionId: string,
     ) => {
       connectionRef.current?.ws.close();
@@ -145,7 +147,12 @@ export function useAcpConnection(
       generationRef.current += 1;
       ensureInFlightRef.current = null;
       setState("live");
-      useStore.getState().setSessionId(startedSessionId);
+      const store = useStore.getState();
+      store.migrateDraft(
+        draftKey(agentId, null),
+        draftKey(agentId, startedSessionId),
+      );
+      store.setSessionId(startedSessionId);
     },
     [attachCloseHandler, bindEngagement],
   );
@@ -153,6 +160,7 @@ export function useAcpConnection(
   const startSession = useCallback(
     async (holders: { count: number }): Promise<StartedSession> => {
       if (!selectedAgent) throw new Error("No agent selected");
+      const agentId = selectedAgent;
 
       let listening = true;
       let settled = false;
@@ -196,7 +204,7 @@ export function useAcpConnection(
             listening = false;
             return false;
           }
-          keepAsLive(connection, ws, startedSessionId);
+          keepAsLive(connection, ws, agentId, startedSessionId);
           return true;
         },
         finish: () => {

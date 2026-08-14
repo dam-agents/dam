@@ -9,6 +9,7 @@ import type { Message } from "../../../types.js";
 import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
+import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import {
   SESSION_CATEGORIES,
   type SessionCategory,
@@ -25,7 +26,7 @@ export interface SessionsSlice {
   messages: Message[];
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
-  queuedMessage: string | null;
+  drafts: Record<string, SessionDraft>;
   busy: boolean;
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
@@ -37,7 +38,9 @@ export interface SessionsSlice {
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
-  setQueuedMessage: (msg: string | null) => void;
+  setDraft: (key: string, patch: Partial<SessionDraft>) => void;
+  clearDraft: (key: string) => void;
+  migrateDraft: (fromKey: string, toKey: string) => void;
   setBusy: (busy: boolean) => void;
 
   deleteSession: (sessionId: string) => Promise<boolean>;
@@ -56,7 +59,7 @@ export const createSessionsSlice: StateCreator<
   messages: [],
   sessionError: null,
   sessionFilter: [...SESSION_CATEGORIES],
-  queuedMessage: null,
+  drafts: {},
   busy: false,
   terminalPaused: false,
   pendingResumeSessionId: null,
@@ -76,7 +79,34 @@ export const createSessionsSlice: StateCreator<
         ? s.sessionFilter.filter((c) => c !== category)
         : [...s.sessionFilter, category],
     })),
-  setQueuedMessage: (msg) => set({ queuedMessage: msg }),
+  setDraft: (key, patch) =>
+    set((s) => {
+      const next = { ...(s.drafts[key] ?? EMPTY_DRAFT), ...patch };
+      const drafts = { ...s.drafts };
+      if (next.text.length === 0 && next.attachments.length === 0) {
+        if (!(key in drafts)) return {};
+        delete drafts[key];
+      } else {
+        drafts[key] = next;
+      }
+      return { drafts };
+    }),
+  clearDraft: (key) =>
+    set((s) => {
+      if (!(key in s.drafts)) return {};
+      const drafts = { ...s.drafts };
+      delete drafts[key];
+      return { drafts };
+    }),
+  migrateDraft: (fromKey, toKey) =>
+    set((s) => {
+      const moving = s.drafts[fromKey];
+      if (!moving) return {};
+      const drafts = { ...s.drafts };
+      delete drafts[fromKey];
+      drafts[toKey] = moving;
+      return { drafts };
+    }),
   setBusy: (busy) => set({ busy }),
 
   resetChatContext: () =>
@@ -91,7 +121,6 @@ export const createSessionsSlice: StateCreator<
       openFileDirty: false,
       openFileEdit: false,
       pendingPermissions: [],
-      queuedMessage: null,
       pendingResumeSessionId: null,
     }),
 
@@ -108,6 +137,7 @@ export const createSessionsSlice: StateCreator<
       queryKey: acpSessionsKeys.agentLists(agentId),
     });
     removeSessionFromCache(agentId, sessionId);
+    get().clearDraft(draftKey(agentId, sessionId));
     queryClient.invalidateQueries({
       queryKey: acpSessionsKeys.agentLists(agentId),
     });
