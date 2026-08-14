@@ -71,6 +71,19 @@ export function hintFor(
     case EventType.ContributionApplyFailed:
     case EventType.ContributionRecovered:
     case EventType.ContributionApplyGaveUp:
+    case EventType.SessionTurnRelayed:
+    case EventType.AgentRelayAttached:
+    case EventType.ArtifactPublished:
+    case EventType.ArtifactShared:
+    case EventType.ArtifactViewed:
+    case EventType.AgentSkillChanged:
+    case EventType.SkillPublished:
+    case EventType.SkillSetSaved:
+    case EventType.SkillSetDeleted:
+    case EventType.KindedAgentCreated:
+    case EventType.InvocationSpawned:
+    case EventType.FeatureFlagChanged:
+    case EventType.ApiKeyChanged:
       return null;
     default: {
       const unhandled: never = event;

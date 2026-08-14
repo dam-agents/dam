@@ -74,6 +74,7 @@ export interface ArtifactLibraryDeps {
   repo: ArtifactLibraryRepository;
   artifacts: ArtifactService;
   owner: string;
+  surface: string;
   shareBaseUrl: string;
 }
 
@@ -129,7 +130,7 @@ function expiresAtFrom(expiresInHours: number | null | undefined): Date | null {
 export function createArtifactLibraryService(
   deps: ArtifactLibraryDeps,
 ): ArtifactLibraryServiceImpl {
-  const { repo, artifacts, owner, shareBaseUrl } = deps;
+  const { repo, artifacts, owner, shareBaseUrl, surface } = deps;
 
   async function requireOwnedFolder(folderId: string): Promise<FolderRow> {
     const folder = await repo.getFolder(folderId, owner);
@@ -333,6 +334,15 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(attribution?.agentId ? { agentId: attribution.agentId } : {}),
       });
+      emit({
+        type: EventType.ArtifactPublished,
+        actorSub: owner,
+        artifactId: row.id,
+        agentId: attribution?.agentId ?? null,
+        kind: row.kind,
+        visibility: row.visibility,
+        surface,
+      });
       return toLibraryArtifact(row, shareBaseUrl);
     },
 
@@ -412,6 +422,13 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(updated.agentId ? { agentId: updated.agentId } : {}),
       });
+      emit({
+        type: EventType.ArtifactShared,
+        actorSub: owner,
+        artifactId: id,
+        visibility: updated.visibility,
+        surface,
+      });
       return toLibraryArtifact(updated, shareBaseUrl);
     },
 
@@ -425,6 +442,8 @@ export function createArtifactLibraryService(
         ...(deleted.artifact.agentId
           ? { agentId: deleted.artifact.agentId }
           : {}),
+        actorSub: owner,
+        surface,
       });
       await Promise.allSettled(
         [

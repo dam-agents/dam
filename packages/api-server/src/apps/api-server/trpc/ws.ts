@@ -6,6 +6,7 @@ import type { ApiContext, UserIdentity } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
+  clientSurface,
   emitUserAuthenticated,
   logWsAttach,
   upgradeSourceIp,
@@ -22,7 +23,7 @@ const CLOSE_CREDENTIAL_EXPIRED = 4401;
 export interface TrpcWsDeps {
   authenticate: Authenticate;
   surfaceAttribution: SurfaceAttribution;
-  composeApiContext: (user: UserIdentity) => ApiContext;
+  composeApiContext: (user: UserIdentity, surface: string) => ApiContext;
 }
 
 export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
@@ -74,7 +75,10 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);
       attachCredentialLifecycle(res, admitted.principal.expiresAt);
-      return deps.composeApiContext(user);
+      return deps.composeApiContext(
+        user,
+        clientSurface(admitted.principal, deps.surfaceAttribution),
+      );
     },
   });
 

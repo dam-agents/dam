@@ -128,6 +128,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     authenticate,
     verifyOwner,
     isTermsAccepted: deps.isTermsAccepted,
+    surfaceAttribution: deps.surfaceAttribution,
   });
   const acpRelay = createAcpRelay(
     config.namespace,

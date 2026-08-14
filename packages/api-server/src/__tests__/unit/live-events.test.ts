@@ -166,7 +166,6 @@ describe("hintFor", () => {
         agentId: "a1",
         ownerSub: "u1",
         mode: "fresh",
-        sessionId: null,
         outcome: "success",
       }),
     ).toEqual({ ownerSub: "u1", hint: { topic: "schedules", agentId: "a1" } });

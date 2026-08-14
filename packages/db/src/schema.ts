@@ -206,6 +206,14 @@ export const activityEvents = pgTable(
         sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
       )
       .where(sql`${table.type} = 'auth'`),
+    uniqueIndex("activity_events_relay_dedup_idx")
+      .on(
+        table.actorSub,
+        table.agentId,
+        sql`(${table.payload} ->> 'relay')`,
+        sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
+      )
+      .where(sql`${table.type} = 'relay_attached'`),
   ],
 );
 

@@ -11,6 +11,7 @@ export function composeFilesModule(
   api: k8s.CoreV1Api,
   namespace: string,
   ownerSub: string,
+  surface: string,
 ): FilesService {
   const agentsRepo = createAgentsRepository(createK8sClient(api, namespace));
   return {
@@ -24,6 +25,7 @@ export function composeFilesModule(
           type: EventType.FilesImported,
           actorSub: ownerSub,
           agentId: input.agentId,
+          surface,
           outcome,
           bytes,
         });

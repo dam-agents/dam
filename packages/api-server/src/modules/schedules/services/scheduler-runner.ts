@@ -72,7 +72,6 @@ export function createSchedulerRunner(
         agentId: sched.agentId,
         ownerSub,
         mode: sched.spec.sessionMode ?? "fresh",
-        sessionId: null,
         outcome,
       });
     }

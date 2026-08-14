@@ -38,7 +38,7 @@ export interface ImportProxyDeps {
 }
 
 type ImportCtx = Context<{
-  Variables: { user: UserIdentity; roles: string[] };
+  Variables: { user: UserIdentity; roles: string[]; surface: string };
 }>;
 
 export function createImportProxy(deps: ImportProxyDeps) {
@@ -92,6 +92,7 @@ export function createImportProxy(deps: ImportProxyDeps) {
         type: EventType.FilesImported,
         actorSub: user.sub,
         agentId,
+        surface: c.get("surface"),
         outcome,
         bytes: length,
       });

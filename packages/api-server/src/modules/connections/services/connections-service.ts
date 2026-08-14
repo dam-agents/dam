@@ -460,6 +460,7 @@ export function createConnectionsService(deps: {
         type: EventType.ConnectionRemoved,
         actorSub: deps.ownerId,
         connectionKey: conn.id,
+        templateId: conn.templateId,
         kind: template?.category === "mcp" ? "mcp" : "oauth_app",
       });
     },
@@ -665,6 +666,15 @@ export function createConnectionsService(deps: {
         result: "success",
         detail: { templateId: template.id, authKind: built.auth.kind },
       });
+      if (built.auth.kind !== "oauth") {
+        emit({
+          type: EventType.ConnectionCreated,
+          actorSub: deps.ownerId,
+          connectionKey: id,
+          templateId: template.id,
+          kind: template.category === "mcp" ? "mcp" : "oauth_app",
+        });
+      }
       return id;
     },
 

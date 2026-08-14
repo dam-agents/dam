@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { emit, EventType } from "../../../events.js";
 import {
   harnessConfigCatalog,
   type HarnessConfigCatalog,
@@ -11,11 +12,11 @@ import type {
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { getLogger } from "../../../core/logger.js";
-import { emit, EventType } from "../../../events.js";
 
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createHarnessConfigService(deps: {
+  surface: string;
   runtimeMutator: RuntimeMutator;
   snapshotRepo: HarnessConfigSnapshotRepo;
   ownerSub: string;
@@ -85,6 +86,13 @@ export function createHarnessConfigService(deps: {
           "harness-config: recording the declared snapshot failed",
         );
       }
+      emit({
+        type: EventType.HarnessConfigChanged,
+        agentId,
+        ownerSub: deps.ownerSub,
+        actorSub: deps.ownerSub,
+        surface: deps.surface,
+      });
     },
   };
 

@@ -54,6 +54,7 @@ export function composeSkillsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
   owner: string;
+  surface: string;
   db: Db;
   seedSources: SkillSourceSeed[];
   brandName: string;
@@ -64,6 +65,7 @@ export function composeSkillsModule(deps: {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
   return createSkillsService({
+    surface: deps.surface,
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),

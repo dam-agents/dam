@@ -151,6 +151,7 @@ export function createOAuthFlowService(deps: {
           type: EventType.ConnectionCreated,
           actorSub: pending.ctx.ownerId,
           connectionKey: conn.id,
+          templateId: conn.templateId,
           kind: template?.category === "mcp" ? "mcp" : "oauth_app",
         });
       }

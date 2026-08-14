@@ -61,7 +61,6 @@ export function startAuditLogSaga(): Subscription {
       detail: {
         scheduleId: e.scheduleId,
         mode: e.mode,
-        sessionId: e.sessionId,
       },
     }),
   );

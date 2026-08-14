@@ -74,6 +74,7 @@ export class CustomDataTooLargeError extends Error {
 
 export interface ExperimentsServiceDeps {
   owner: string;
+  surface: string;
   repo: ExperimentsRepository;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocationsForExperiment: (
@@ -149,12 +150,17 @@ export function createExperimentsService(
 ): ExperimentsService {
   const { owner, repo, artifactLibrary } = deps;
 
-  const emitChanged = (experimentId: string, agentId: string) =>
+  const emitChanged = (
+    experimentId: string,
+    agentId: string,
+    action?: "started" | "stopped" | "deleted",
+  ) =>
     emit({
       type: EventType.ExperimentChanged,
       experimentId,
       agentId,
       ownerSub: owner,
+      ...(action ? { action, actorSub: owner, surface: deps.surface } : {}),
     });
   const now = deps.now ?? (() => new Date());
 
@@ -366,6 +372,7 @@ export function createExperimentsService(
         executedAt: now(),
         lastActivityAt: now(),
       });
+      emitChanged(runId, source.driverAgentId, "started");
       return launchRun(runId);
     },
 
@@ -388,7 +395,7 @@ export function createExperimentsService(
           `[experiments] invocation cancel for ${id} failed: ${err instanceof Error ? err.message : err}\n`,
         );
       }
-      emitChanged(id, row.driverAgentId);
+      emitChanged(id, row.driverAgentId, "stopped");
       await releasePin(row.driverAgentId);
       await snapshotDashboard(id);
       return toView((await repo.get(id, owner))!);
@@ -404,7 +411,7 @@ export function createExperimentsService(
         });
       }
       await repo.delete(id, owner);
-      emitChanged(id, row.driverAgentId);
+      emitChanged(id, row.driverAgentId, "deleted");
     },
 
     async planRegister(driverAgentId, input: PlanRegisterInput) {

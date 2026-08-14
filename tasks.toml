@@ -529,6 +529,23 @@ echo "OK: version $version"
 ["docs:check"]
 depends = ["docs:check:*"]
 
+# Regenerate docs/activity-events.md from the event registry. The table is a
+# projection of what the code emits, never hand-maintained — the ticket that
+# asked for it (#3259) requires a reader to answer "is this action captured?"
+# without reading code, and a hand-written list would drift the first time an
+# event moved.
+["docs:generate:activity-events"]
+dir = "{{config_root}}/packages/api-server"
+depends = ["common:setup:pnpm"]
+run = "node scripts/event-coverage.mjs --doc"
+
+# Guard: the committed table must match regeneration. Same fail-closed shape as
+# docs:check:adr-index.
+["docs:check:activity-events"]
+dir = "{{config_root}}/packages/api-server"
+depends = ["common:setup:pnpm"]
+run = "node scripts/event-coverage.mjs --check-doc"
+
 # Regenerate docs/adrs/index.md from ADR frontmatter. The index is a projection
 # of the ADR log, never hand-maintained: edit an ADR, run this, commit both.
 ["docs:generate:adr-index"]

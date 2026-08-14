@@ -7,6 +7,8 @@ export type ActivityEventRow = {
   surface: string | null;
   outcome: "success" | "failure";
   payload: Record<string, unknown>;
+  externalActorId?: string | null;
+  ownerSub?: string | null;
 };
 
 export type AgentRegistryRow = {

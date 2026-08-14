@@ -8,13 +8,16 @@ import { stagingKey } from "./domain/storage-key.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
 
 export interface ArtifactLibraryRoutesDeps {
-  artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  artifactLibraryFor: (
+    owner: string,
+    surface: string,
+  ) => ArtifactLibraryServiceImpl;
   artifacts: ArtifactService;
 }
 
 export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
   const routes = new Hono<{
-    Variables: { user: UserIdentity; roles: string[] };
+    Variables: { user: UserIdentity; roles: string[]; surface: string };
   }>();
 
   routes.post("/upload", async (c) => {
@@ -80,7 +83,7 @@ export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
       );
 
     const ref = await deps
-      .artifactLibraryFor(user.sub)
+      .artifactLibraryFor(user.sub, c.get("surface"))
       .resolveContentRef(
         id,
         Number.isInteger(version) && version! >= 1 ? version : undefined,

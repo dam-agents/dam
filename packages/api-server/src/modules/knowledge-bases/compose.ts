@@ -4,6 +4,7 @@ import { createKnowledgeBasesService } from "./services/knowledge-bases-service.
 
 export function composeKnowledgeBasesForOwner(opts: {
   owner: string;
+  surface: string;
   agents: AgentsService;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
@@ -11,6 +12,7 @@ export function composeKnowledgeBasesForOwner(opts: {
   return {
     knowledgeBases: createKnowledgeBasesService({
       owner: opts.owner,
+      surface: opts.surface,
       agents: opts.agents,
       runtimeMutator: opts.runtimeMutator,
       wakeAgent: opts.wakeAgent,

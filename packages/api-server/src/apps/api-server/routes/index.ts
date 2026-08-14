@@ -58,11 +58,12 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   app.route(
     "/api/artifact-library",
     createArtifactLibraryRoutes({
-      artifactLibraryFor: (owner) =>
+      artifactLibraryFor: (owner, surface) =>
         composeArtifactLibraryForOwner({
           db: boot.db,
           artifacts: boot.artifacts,
           owner,
+          surface,
           shareBaseUrl: config.shareBaseUrl,
         }).artifactLibrary,
       artifacts: boot.artifacts,

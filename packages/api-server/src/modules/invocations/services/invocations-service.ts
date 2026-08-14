@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
 import {
   type AgentsService,
@@ -159,6 +160,12 @@ export function createInvocationsService(deps: {
         resultSchema: input.schema,
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,
+      });
+      emit({
+        type: EventType.InvocationSpawned,
+        targetAgentId: targetId,
+        driverAgentId: input.driverAgentId,
+        ownerSub: deps.owner,
       });
 
       let agent;
