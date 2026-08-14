@@ -592,10 +592,28 @@ describe("slack ambient inbound", () => {
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
-    expect(String(h.prompts[0])).not.toContain("<reading-along>");
-    expect(String(h.prompts[0])).toContain("<how-to-respond>");
+    const prompt = String(h.prompts[0]);
+    expect(prompt).not.toContain("<reading-along>");
+    expect(prompt).toContain("<how-to-respond>");
+    // Said positively, not by omission: these sessions interleave with
+    // read-along turns that told the agent to stay silent when in doubt.
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("You were @-mentioned");
+    expect(prompt).toContain("Slack user id U-BOT");
     expect(h.reactions()).toHaveLength(0);
     expect(h.messages()).toHaveLength(0);
+  });
+
+  it("read-along turns are framed as read-along, never as addressed", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "just chatting", { ts: "8.8" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("<reading-along>");
+    expect(prompt).not.toContain("<addressed-to-you>");
+    // The bot's id is still stated — it identifies the agent on every turn.
+    expect(prompt).toContain("Slack user id U-BOT");
   });
 });
 

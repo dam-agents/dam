@@ -29,6 +29,7 @@ export interface FakeSlackGateway extends SlackGateway {
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
+  setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
   setMessageReactions(
     channel: string,
@@ -46,6 +47,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const userLookups: string[] = [];
   let nextStreamTs = 1;
   let grantedScopes: Set<string> | null = null;
+  let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const fileBytes = new Map<string, Buffer>();
 
@@ -252,8 +254,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return grantedScopes;
     },
 
+    async getBotUserId() {
+      return botUserId;
+    },
+
     setGrantedScopes(scopes) {
       grantedScopes = scopes ? new Set(scopes) : null;
+    },
+
+    setBotUserId(id) {
+      botUserId = id;
     },
 
     setMessageReactions(channel, ts, reactions) {

@@ -101,6 +101,11 @@ function slackTurnContract(ctx: {
   batch?: { count: number; inThread: boolean };
   isDirectMessage: boolean;
   permalink: string | null;
+  /** The bot's own Slack user id, null when Slack didn't answer. Stated because
+   *  mentions reach the agent as raw `<@Uxxx>` tokens against a bot handle that
+   *  is the install's, not the agent's own name — so the id is the only thing
+   *  that ties a tag in the text to itself. */
+  botUserId: string | null;
 }): string {
   const batchCount = ctx.batch?.count ?? 1;
   const multi = batchCount > 1;
@@ -120,9 +125,16 @@ function slackTurnContract(ctx: {
   return [
     "<how-to-respond>",
     `You appear in this Slack workspace as the bot "${ctx.brand.name}" ` +
-      `(mentioned as @${ctx.brand.short}). Nothing you write as plain text ` +
-      "is delivered to Slack — only tool calls reach the channel. To " +
-      "respond, call one of:",
+      `(mentioned as @${ctx.brand.short}` +
+      (ctx.botUserId ? `, Slack user id ${ctx.botUserId}` : "") +
+      "). " +
+      (ctx.botUserId
+        ? "Your posts are signed with your own name, but people reach you by " +
+          `tagging that bot — so ${ctx.botUserId} in a message is you, not ` +
+          "another participant. "
+        : "") +
+      "Nothing you write as plain text is delivered to Slack — only tool " +
+      "calls reach the channel. To respond, call one of:",
     replyBullet,
     "• react — add a fitting emoji reaction to the message you're answering: a " +
       "quiet acknowledgement that notifies no one — pick an emoji that suits " +
@@ -155,6 +167,29 @@ function slackTurnContract(ctx: {
     "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
     channelNetworkAccessGuidance(ctx.brand.name),
+  ].join("\n");
+}
+
+/** Framing for an addressed turn — an @-mention or a 1:1 DM. Stated positively
+ *  because such a turn was otherwise recognisable only by the absence of the
+ *  read-along block, and the two interleave in one session: a mention in an
+ *  ambient thread resumes a session already told to stay silent when in doubt. */
+function addressedGuidance(ctx: {
+  isDirectMessage: boolean;
+  botUserId: string | null;
+}): string {
+  return [
+    "<addressed-to-you>",
+    ctx.isDirectMessage
+      ? "This is a 1:1 direct message with you — every message here is " +
+        "addressed to you."
+      : "You were @-mentioned: this message is addressed to you" +
+        (ctx.botUserId
+          ? `, and the mention of ${ctx.botUserId} in it is you.`
+          : "."),
+    "Answer it. Only call no_reply_needed when it genuinely needs no " +
+      "response — one you have already handled, for instance.",
+    "</addressed-to-you>",
   ].join("\n");
 }
 
@@ -747,14 +782,19 @@ async function turnContractContext(
   channel: string,
   eventTs: string,
   opts?: { batched?: boolean },
-): Promise<{ canLookupUsers: boolean; permalink: string | null }> {
-  const [lookup, permalink] = await Promise.all([
+): Promise<{
+  canLookupUsers: boolean;
+  permalink: string | null;
+  botUserId: string | null;
+}> {
+  const [lookup, permalink, botUserId] = await Promise.all([
     canLookupUsers(gw),
     opts?.batched
       ? Promise.resolve(null)
       : gw.getPermalink(channel, eventTs).catch(() => null),
+    gw.getBotUserId().catch(() => null),
   ]);
-  return { canLookupUsers: lookup, permalink };
+  return { canLookupUsers: lookup, permalink, botUserId };
 }
 
 export function createSlackWorker(
@@ -787,6 +827,8 @@ export function createSlackWorker(
     eventTs: string;
     sessionId?: string;
     releaseAttendance?: () => void;
+    /** Set once the agent posts for this turn — a reply or a reaction. */
+    posted?: boolean;
   };
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
@@ -886,7 +928,9 @@ export function createSlackWorker(
     match: (ref: TurnRef) => boolean,
   ) {
     const engaged = findTurnRef(instanceName, match);
-    if (engaged) lastTurn.set(instanceName, engaged);
+    if (!engaged) return;
+    engaged.posted = true;
+    lastTurn.set(instanceName, engaged);
   }
 
   const userCache = new Map<
@@ -1077,12 +1121,18 @@ export function createSlackWorker(
     });
     presenter.setThinking();
 
+    const isDirectMessage = isDirectMessageId(ctx.channel);
+    const turnContext = await turnContractContext(gw, ctx.channel, ctx.eventTs);
     const contract = slackTurnContract({
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
       brand,
-      isDirectMessage: isDirectMessageId(ctx.channel),
-      ...(await turnContractContext(gw, ctx.channel, ctx.eventTs)),
+      isDirectMessage,
+      ...turnContext,
+    });
+    const guidance = addressedGuidance({
+      isDirectMessage,
+      botUserId: turnContext.botUserId,
     });
 
     let outcome: TurnOutcome = "failure";
@@ -1133,13 +1183,17 @@ export function createSlackWorker(
           const delivered = await deliverFiles();
           return framePrompt({
             contract,
+            guidance,
             text: ctx.text + delivered.withheldNote,
             images: ctx.images,
             files: delivered.files,
           });
         },
         buildFreshPrompt: () =>
-          buildThreadPrompt(gw, ctx, contract, { deliver: deliverFiles }),
+          buildThreadPrompt(gw, ctx, contract, {
+            guidance,
+            deliver: deliverFiles,
+          }),
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
@@ -1203,6 +1257,21 @@ export function createSlackWorker(
       endTurn(instanceName, turnRef, {
         harnessMayStillRun: ghostTurn || failureReason === "acp-error",
       });
+      // An addressed turn that posts nothing looks identical to a dead agent
+      // from the channel. Name it, so the silence is diagnosable (#3325). A
+      // ghost turn is exempt: its first session may still be posting.
+      if (failureReason === undefined && !ghostTurn && !turnRef.posted) {
+        getLogger().warn(
+          {
+            agentId: instanceName,
+            channelId: ctx.channel,
+            threadTs: ctx.threadTs,
+            eventTs: ctx.eventTs,
+          },
+          "slack.turn.unanswered: the agent finished an addressed turn without " +
+            "posting a reply or a reaction",
+        );
+      }
       await presenter.clearStatus();
       emit({
         type: EventType.ChannelTurnRelayed,

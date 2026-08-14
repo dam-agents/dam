@@ -30,6 +30,22 @@ export function createBoltSlackGateway(
 ): SlackGateway {
   let app: BoltApp | null = null;
   let grantedScopes: Set<string> | null = null;
+  let botUserId: string | null = null;
+
+  /** One `auth.test` populates both install-wide facts — the granted scopes and
+   *  the bot's own user id. Each getter caches its own field, so a response
+   *  missing one is retried without pinning the other. */
+  async function authTest() {
+    if (!app) return;
+    try {
+      const result = await app.client.auth.test();
+      const scopes = result.response_metadata?.scopes;
+      if (scopes) grantedScopes = new Set(scopes);
+      if (typeof result.user_id === "string") botUserId = result.user_id;
+    } catch {
+      // Unknown, never missing — the callers fail open.
+    }
+  }
 
   return {
     async start(handlers: SlackGatewayHandlers): Promise<boolean> {
@@ -43,6 +59,7 @@ export function createBoltSlackGateway(
       });
 
       bolt.event("app_mention", async ({ event, context }) => {
+        botUserId ??= context.botUserId ?? null;
         await handlers.onMention({
           user: event.user,
           channel: event.channel,
@@ -56,6 +73,7 @@ export function createBoltSlackGateway(
       });
 
       bolt.event("message", async ({ event, context }) => {
+        botUserId ??= context.botUserId ?? null;
         const msg = event as {
           channel: string;
           channel_type?: string;
@@ -82,7 +100,6 @@ export function createBoltSlackGateway(
           await handlers.onDirectMessage(payload);
           return;
         }
-        const botUserId = context.botUserId;
         if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
         if (msg.channel_type === "channel" || msg.channel_type === "group") {
           await handlers.onMessage(payload);
@@ -123,6 +140,7 @@ export function createBoltSlackGateway(
         await app.stop();
         app = null;
         grantedScopes = null;
+        botUserId = null;
       }
     },
 
@@ -400,14 +418,15 @@ export function createBoltSlackGateway(
     async getGrantedScopes(): Promise<Set<string> | null> {
       if (!app) return null;
       if (grantedScopes) return grantedScopes;
-      try {
-        const result = await app.client.auth.test();
-        const scopes = result.response_metadata?.scopes;
-        if (scopes) grantedScopes = new Set(scopes);
-        return grantedScopes;
-      } catch {
-        return null;
-      }
+      await authTest();
+      return grantedScopes;
+    },
+
+    async getBotUserId(): Promise<string | null> {
+      if (botUserId) return botUserId;
+      if (!app) return null;
+      await authTest();
+      return botUserId;
     },
   };
 }

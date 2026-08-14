@@ -1,4 +1,5 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import { configureLogger } from "../../core/logger.js";
 import { describe, it, expect, vi } from "vitest";
 import { slackThreadKey, type AgentsService } from "api-server-api";
 import {
@@ -90,13 +91,13 @@ function harness(opts: {
     async start() {
       await worker.start("agent-1", {} as StoredChannelConfig);
     },
-    async mention(over?: { user?: string; teamId?: string }) {
+    async mention(over?: { user?: string; teamId?: string; text?: string }) {
       await worker.start("agent-1", {} as StoredChannelConfig);
       await gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",
         ts: "1.1",
-        text: "hi agent",
+        text: over?.text ?? "hi agent",
         teamId: "teamId" in (over ?? {}) ? over?.teamId : "T-e2e",
       });
     },
@@ -869,6 +870,93 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain("a later message carries its own");
     expect(prompt).toContain("didn't come from Slack");
     expect(prompt).toContain("post to Slack for it only if you're asked to");
+  });
+
+  it("names the bot's own Slack id, so a tag of it reads as self", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    h.gw.setBotUserId("U-BOT");
+    await h.mention({ text: "<@U-BOT> say hi" });
+    await tick();
+
+    // The id, not just the brand handle: the tag arrives as a raw `<@U-BOT>`
+    // token, and the bot's name is the install's rather than the agent's own.
+    expect(prompt).toContain(
+      'the bot "DAM" (mentioned as @dam, Slack user id U-BOT)',
+    );
+    expect(prompt).toContain(
+      "U-BOT in a message is you, not another participant",
+    );
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("You were @-mentioned");
+    expect(prompt).toContain("the mention of U-BOT in it is you");
+    // The read-along framing tells the agent to stay silent when in doubt; an
+    // addressed turn must never carry it.
+    expect(prompt).not.toContain("<reading-along>");
+  });
+
+  it("still frames the turn as addressed when Slack won't say who the bot is", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    h.gw.setBotUserId(null);
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain('the bot "DAM" (mentioned as @dam).');
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain(
+      "You were @-mentioned: this message is addressed to you.",
+    );
+    expect(prompt).not.toContain("Slack user id");
+  });
+
+  it("warns when an addressed turn ends without a reply or a reaction", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+
+    const h = harness({ sendPrompt: async () => "prose, never delivered" });
+    await h.mention();
+    await tick();
+
+    const unanswered = lines
+      .map((l) => JSON.parse(l))
+      .filter((r) => String(r.msg).startsWith("slack.turn.unanswered"));
+    configureLogger({ level: "info" });
+    expect(unanswered).toHaveLength(1);
+    expect(unanswered[0]).toMatchObject({
+      agentId: "agent-1",
+      channelId: "C1",
+      threadTs: "1.1",
+    });
+  });
+
+  it("stays quiet when the agent answers the turn", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+
+    const h = harness({
+      sendPrompt: async () => {
+        await h.worker.reply("agent-1", { text: "answered" });
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+    configureLogger({ level: "info" });
+
+    expect(
+      lines.filter((l) => l.includes("slack.turn.unanswered")),
+    ).toHaveLength(0);
   });
 
   it("marks the agent channel-driven for the turn and releases it after", async () => {

@@ -142,7 +142,20 @@ describe("slack 1:1 DM", () => {
     expect(h.prompts).toHaveLength(1);
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain("hello privately");
+    // Nothing the platform adds is a mention token here: the bot's own id is
+    // stated bare, and there is no speaker label to render.
     expect(prompt).not.toContain("<@");
+  });
+
+  it("frames a DM as addressed to the agent, without claiming a mention", async () => {
+    const h = harness({ binding: boundDm });
+    await h.directMessage("hello privately");
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("every message here is addressed to you");
+    expect(prompt).not.toContain("You were @-mentioned");
+    expect(prompt).toContain("Slack user id U-BOT");
   });
 
   it("logs a basis:'place' allow keyed on the DM conversation", async () => {
