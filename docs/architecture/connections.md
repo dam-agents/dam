@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-08-13
+Last verified: 2026-08-14
 
 ## Overview
 
@@ -77,7 +77,7 @@ Beyond the auth credential, a template may declare optional **config inputs** th
 
 #### Internal-only templates
 
-Some templates (initially Spotify, Slack, YouTube, and all Google services) are hidden from regular users client-side, affecting only what's offered (on both the Connections settings page and the sandbox creation wizard), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
+Some templates (Spotify, YouTube, Google services, and the machine-to-machine auth shapes) are hidden from regular users client-side, affecting only what's offered (wherever the catalog is browsed), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
 
 ### Connection
 
