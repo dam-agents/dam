@@ -6,7 +6,7 @@ description: >
 
 # Draft an Issue
 
-Follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md) for the issue types, style, and the per-type templates.
+Follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md) for the content shape — the whole document, every section.
 
 ## Workflow
 
