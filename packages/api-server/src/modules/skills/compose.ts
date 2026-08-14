@@ -28,6 +28,7 @@ import {
   type PrStateResolver,
 } from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import { createUnitOfWork } from "../../core/unit-of-work.js";
 
 const sharedScanCache = createScanCache();
 
@@ -75,6 +76,7 @@ export function composeSkillsModule(deps: {
     ),
     runtimeMutator: deps.runtimeMutator,
     runtimeProgress: deps.runtimeProgress,
+    unitOfWork: createUnitOfWork(db),
     owner: deps.owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,

@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-08-13
+Last verified: 2026-08-14
 
 ## Overview
 
@@ -271,7 +271,7 @@ The cache is invalidated on `sources.refresh` and after every successful publish
 
 Then it drops "ghost" rows (tracked rows whose directory has been deleted out-of-band) and persists the cleanup. The Postgres rows stop drifting from the filesystem without requiring a separate reconciler — every read is the reconciler.
 
-Two things qualify that. **The local list is not durable** — installed refs come from Postgres and survive the pod going away, but local skills exist only on the PVC. So while the sandbox runs, `state` records the local list it computed, and while the pod is unreachable it serves that recording, dated and marked as a snapshot. Nothing recorded means the sandbox has never run, which is distinct from having no local skills. **And reaping waits for the pod to catch up** — install is declarative, so between the row landing and the apply fetching the files a freshly-installed skill's directory is legitimately absent. Reaping then would not merely lose the install: the reap re-delivers, so the pod removes the files it just fetched. The reconcile is gated on the pod having **cleanly applied** the current version, not merely settled it ([runtime channel](connections.md#the-runtime-channel)) — a failed apply settles too, so its row waits for the retry. The gate is read either side of the disk list, so a version that moved mid-read defers the reap. And a row younger than a sweep interval is never a ghost — the pod may not have been told about it yet, and no cursor shows that. What is deleted is exactly the set the gate cleared. A reap also bumps before it deletes, or the pod keeps an applied hash naming a set that no longer exists; a bump that fails cancels the reap. A snapshot never drives reconciliation — it is not evidence about the current disk. The cost is an out-of-band deletion noticed one read later, or one sweep later on a young row.
+Two things qualify that. **The local list is not durable** — installed refs live in Postgres and survive the pod going away, but local skills exist only on the PVC. So `state` records the list it computed while the sandbox ran, and serves that recording — dated, and marked as a snapshot — while the pod is unreachable. Nothing recorded means the sandbox has never run, which is distinct from having no local skills. A snapshot never drives reconciliation; it is not evidence about the current disk. **And reaping waits for the pod to catch up** — install is declarative, so a freshly-installed skill's directory is legitimately absent until the apply fetches it, and reaping then would not merely lose the install: the reap re-delivers, so the pod removes the files it just fetched. A row is a ghost only on evidence from one moment that the pod has **cleanly applied** the current version ([runtime channel](connections.md#the-runtime-channel)) — a failed apply settles without applying — and only once the row is old enough to have been delivered at all, an age that every write to the row renews. The delete and its re-delivery bump commit together, or the pod keeps an applied hash naming a set that no longer exists. The cost is an out-of-band deletion noticed one read later.
 
 ## Persistence touchpoints
 
