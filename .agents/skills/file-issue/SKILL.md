@@ -41,13 +41,14 @@ Draft a GitHub issue and file it after the user approves. For the content shape,
 
 5. **Draft inline.** Produce the draft following [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md), using the decided type's template. Present the full draft (title + body, plus the Epic line if one was suggested) in the chat. Do not file yet.
 
-6. **Append the Filed by footer.** You file under a shared credential, so the body must credit the person who asked — see **Attribution** in the guidelines doc for the format and the fallback order. Resolve the requester's GitHub handle first:
+6. **Decide whether the body needs a Filed by footer.** You file under a credential you don't own, so check whether that credential's owner is the person who asked — see **Attribution** in the guidelines doc for the rule, the format, and the fallback order.
 
    ```sh
-   gh api "search/users?q=<name-or-email>" --jq '.items[].login'
+   gh api user --jq .login                                   # the account you file as
+   gh api "search/users?q=<name-or-email>" --jq '.items[].login'   # the requester
    ```
 
-   Put the footer at the end of the body you present in step 5, so the approved body already carries it. Never file a body without the footer, and never credit the credential owner instead.
+   Same person: no footer — GitHub already credits them. Different person: append the footer at the end of the body you present in step 5, so the approved body already carries it. Never credit the account you file as instead of the requester.
 
 7. **Get explicit approval.** Ask whether to file as-is or revise. NEVER file without explicit approval. Approval covers the type and any epic suggestion too — if the user changes either, that's a revision.
 
@@ -61,7 +62,7 @@ After approval, file with `gh issue create`. Do not use the GitHub MCP tools (`m
 
 - `--repo owner/repo` — infer from git remote or prior context; ask if ambiguous
 - `--title "..."` — exactly as approved
-- `--body "..."` — exactly as approved, including the **Filed by** footer, minus the **Epic** line (it's draft metadata, applied as the parent relationship below, not body text); pass via a HEREDOC so markdown formatting survives
+- `--body "..."` — exactly as approved, including the **Filed by** footer if step 6 called for one, minus the **Epic** line (it's draft metadata, applied as the parent relationship below, not body text); pass via a HEREDOC so markdown formatting survives
 - `--label foo --label bar` — only if the user specified labels
 
 Example:

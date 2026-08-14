@@ -32,7 +32,13 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 
 ## Attribution
 
-An agent files under a shared credential, so GitHub credits the credential owner rather than the person who asked. **An agent filing an issue must always end the body with a Filed by footer** naming that person:
+GitHub credits the account that files the issue. **When that account is not the person who asked for the work, end the body with a Filed by footer** naming the person who did:
+
+- An **agent** files under a credential it does not own, so compare that credential's owner to the requester. Filing another person's ask needs the footer; filing the credential owner's own ask does not.
+- A **person filing on someone else's behalf** needs the footer too, for the same reason.
+- A person filing their own ask does **not** need it. GitHub already credits the right person, and a footer would just repeat the author.
+
+The format:
 
 ```markdown
 ---
@@ -48,13 +54,13 @@ Use the requester's GitHub handle so the footer @-mentions them and they follow 
 _Filed by <full name or Slack handle>_
 ```
 
-A best-effort footer beats a missing one; never drop the footer because the handle is unknown, and never substitute the credential owner.
+A best-effort footer beats a missing one; when the footer is required, never drop it because the handle is unknown, and never substitute the account that files.
 
 This is the one place a real person is named — see **No personal data** above. The footer credits a *team member* who asked for the work. It never names a user, a reporter, or a research participant.
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - Expand an artifact to full screen from the chat view`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer when an agent files the issue — see [Attribution](#attribution).
+Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - Expand an artifact to full screen from the chat view`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the person filing is the person who asked — see [Attribution](#attribution).
 
 ### Epic
 
@@ -82,6 +88,8 @@ An epic defines the value, not a single fix, and gives enough shape that issues 
 ## Open Questions
 
 <Key decisions or unknowns.>
+
+<omit this footer if you are the person who asked>
 
 ---
 
@@ -130,6 +138,8 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 <optional — links to designs, research, related issues, docs, or other supporting material>
 
+<omit this footer if you are the person who asked>
+
 ---
 
 _Filed by @<github-handle>_
@@ -158,6 +168,8 @@ A task states the work and what it unblocks. It's the one type where naming engi
 ## Done when
 
 <The observable end state — how we know it's finished.>
+
+<omit this footer if you are the person who asked>
 
 ---
 
@@ -191,6 +203,8 @@ Lead with observed vs. expected behavior. Reproduction steps should be minimal a
 ## Steps to Reproduce
 
 1. <minimal, numbered steps>
+
+<omit this footer if you are the person who asked>
 
 ---
 
@@ -236,6 +250,8 @@ A research task defines what we need to learn and why, before committing to buil
 ## Additional resources
 
 <optional — links to existing research, related issues, docs, or other supporting material>
+
+<omit this footer if you are the person who asked>
 
 ---
 
