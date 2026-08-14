@@ -280,7 +280,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .where(
           and(
             eq(pendingApprovals.status, "pending"),
-            sql`${pendingApprovals.expiresAt} < ${now}`,
+            lt(pendingApprovals.expiresAt, now),
           ),
         )
         .returning({

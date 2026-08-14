@@ -5,6 +5,8 @@ import {
   pickOptionId,
 } from "../infrastructure/wrapper-response-frames.js";
 import { emit, EventType } from "../../../events.js";
+import { getLogger } from "../../../core/logger.js";
+import { formatError } from "../../../core/format-error.js";
 
 export interface DeliverySweeper {
   tick(): Promise<void>;
@@ -44,7 +46,13 @@ export function createDeliverySweeper(
           await deps.repo.markDelivered(row.id);
         } catch {}
       }
-      const expired = await deps.repo.expireOverdue(new Date()).catch(() => []);
+      const expired = await deps.repo.expireOverdue(new Date()).catch((err) => {
+        getLogger().error(
+          { reason: formatError(err) },
+          "approvals.expire_overdue_error",
+        );
+        return [];
+      });
       for (const row of expired) {
         emit({
           type: EventType.ApprovalResolved,
