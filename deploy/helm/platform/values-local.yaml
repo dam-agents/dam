@@ -22,6 +22,14 @@ controller:
   agent:
     templateDefaults:
       imagePullPolicy: IfNotPresent
+  # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
+  # (4 CPU / 8Gi) with headroom for a second sandbox. The stock 4 CPU / 8Gi
+  # ceiling parked the nous target in OverBudget for hours (the deadline clock
+  # kept running) and later couldn't have admitted the resized worker at all.
+  # Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml).
+  userBudgets:
+    defaultCpu: "8"
+    defaultMemory: "16Gi"
 
 # Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
 # upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
@@ -173,12 +181,3 @@ keycloak:
 terms:
   version: dev
   text: "Dev placeholder Terms of Use."
-
-# Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
-# (4 CPU / 8Gi) with headroom for a second sandbox. The stock 4 CPU / 8Gi
-# ceiling parked the nous target in OverBudget for hours (the deadline clock
-# kept running) and later couldn't have admitted the resized worker at all.
-# Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml).
-budgets:
-  defaultCpu: "8"
-  defaultMemory: "16Gi"
