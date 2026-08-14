@@ -101,8 +101,7 @@ export function FilePreviewBody({
       <div className="py-12 text-center text-sm text-muted-foreground">
         <p>File too large to preview</p>
         <p className="mt-1 text-[11px]">
-          The agent refused to read it at this size — open it in a terminal
-          instead
+          Too large to load in the browser — open it in a terminal instead
         </p>
       </div>
     );
