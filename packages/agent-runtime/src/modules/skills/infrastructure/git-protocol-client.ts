@@ -34,6 +34,7 @@ export function createGitProtocolClient(): GitProtocolClient {
           "--depth",
           String(depth),
           ...(ref ? ["--branch", ref] : []),
+          "--end-of-options",
           url,
           dest,
         ]);
@@ -48,25 +49,55 @@ export function createGitProtocolClient(): GitProtocolClient {
     },
     async fetchAtSha(url, sha, dest) {
       try {
-        await runProc("git", ["init", "--quiet", dest]);
-        await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
+        await runProc("git", ["init", "--quiet", "--end-of-options", dest]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "remote",
+          "add",
+          "--end-of-options",
+          "origin",
+          url,
+        ]);
         await runProc("git", [
           "-C",
           dest,
           "fetch",
           "--depth",
           "1",
+          "--end-of-options",
           "origin",
           sha,
         ]);
-        await runProc("git", ["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "checkout",
+          "--quiet",
+          "--end-of-options",
+          "FETCH_HEAD",
+        ]);
         return ok(undefined);
       } catch {}
       try {
         await fs.rm(dest, { recursive: true, force: true });
         await fs.mkdir(dest, { recursive: true });
-        await runProc("git", ["clone", "--quiet", "--no-local", url, dest]);
-        await runProc("git", ["-C", dest, "checkout", "--quiet", sha]);
+        await runProc("git", [
+          "clone",
+          "--quiet",
+          "--no-local",
+          "--end-of-options",
+          url,
+          dest,
+        ]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "checkout",
+          "--quiet",
+          "--end-of-options",
+          sha,
+        ]);
         return ok(undefined);
       } catch (e) {
         return err({
@@ -99,14 +130,20 @@ export function createGitProtocolClient(): GitProtocolClient {
   };
 }
 
+const GIT_ALLOW_PROTOCOL = "https:http:ssh:git:file";
+
 const gitArgv = (cmd: string, args: string[]): string[] =>
   cmd === "git" ? ["-c", "maintenance.auto=false", ...args] : args;
+
+const gitEnv = (cmd: string): { env: NodeJS.ProcessEnv } | undefined =>
+  cmd === "git" ? { env: { ...process.env, GIT_ALLOW_PROTOCOL } } : undefined;
 
 async function runProc(cmd: string, args: string[]): Promise<void> {
   const argv = gitArgv(cmd, args);
   await new Promise<void>((resolve, reject) => {
     const supervised = spawnSupervised(cmd, argv, {
       stdio: ["ignore", "pipe", "pipe"],
+      ...gitEnv(cmd),
     });
     const proc = supervised.child;
     const stderrChunks: Buffer[] = [];
@@ -145,6 +182,7 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
     const supervised = spawnSupervised(cmd, argv, {
       stdio: ["ignore", "pipe", "pipe"],
+      ...gitEnv(cmd),
     });
     const proc = supervised.child;
     const stdoutChunks: Buffer[] = [];

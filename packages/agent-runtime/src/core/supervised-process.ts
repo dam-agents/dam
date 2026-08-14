@@ -104,6 +104,11 @@ export function spawnSupervised(
   args: readonly string[],
   options: NoShell<SpawnOptions> = {},
 ): SupervisedProcess<ChildProcess> {
+  for (const arg of args)
+    if (typeof arg !== "string")
+      throw new TypeError(
+        `spawnSupervised: ${command} argv contains a ${typeof arg}`,
+      );
   const child = spawn(command, args as string[], {
     ...options,
     detached: true,
