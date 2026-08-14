@@ -147,9 +147,17 @@ will reply to you. Target repo: {repo}. Hypothesis to test: {hypothesis}.
 Optimize: {metric} (higher is better); pass condition: {pass_condition}.
 Author campaign.yaml yourself with an objective block over that metric,
 max_iterations: {campaign_iters}, seeds: {seeds}, run --auto-approve, and
-stay alive until the campaign is DONE. Then report the objective score from
-best_found.json, the h-main arm status from the last iteration's
-findings.json, and a summary from meta_findings.json."""
+stay alive until the campaign is DONE.
+Locked parameter — resource envelope: you run inside a container with a hard
+memory limit; exceeding it kills the whole campaign, not the offending
+process. Run measurement arms SERIALLY (one baseline-or-treatment condition
+at a time), tear each target-system instance down before starting the next,
+and never hold more than one instance of the target system's daemons alive
+at once. Serial arms are also better science: concurrent instances contend
+for CPU and pollute latency numbers.
+Then report the objective score from best_found.json, the h-main arm status
+from the last iteration's findings.json, and a summary from
+meta_findings.json."""
 
 with x.Experiment("nous-campaigns") as exp:
     loop = exp.loop("rounds")
@@ -176,7 +184,13 @@ with x.Experiment("nous-campaigns") as exp:
         hypothesis = next_hypothesis(result)  # your own choice of what to try
 ```
 
-Three things this example is really teaching:
+In a multi-round loop, **wrap the spawn** so one dead worker fails the round,
+not the run: catch `x.InvocationFailed`, record `span.attrs["error"] =
+str(e)` (the message carries the platform's reason — OOM, deadline, crash),
+mark the span failed, and continue to the next round. An uncaught failure
+kills the script and every remaining round with it.
+
+Four things this example is really teaching:
 
 - **Give a purpose-built worker an autonomous prompt.** Its own instructions
   (the image's `AGENTS.md`) may default to a conversational, ask-the-human
@@ -193,6 +207,12 @@ Three things this example is really teaching:
   it reports; make the prompt name what to report and which files to publish
   as artifacts (`report.md`, `meta_findings.json` — see the reference) or the
   evidence is unrecoverable.
+- **Bound the campaign's own parallelism.** The worker's memory limit is a
+  hard ceiling for everything the campaign starts — benchmark daemons
+  included — and blowing it OOM-kills the whole container mid-iteration (a
+  pm2 benchmark holding three ~1 GiB daemons at once died exactly this way).
+  Lock a resource envelope in the prompt: serial measurement arms, one
+  target-system instance at a time.
 
 ## Plan, then run — never run the loop yourself
 
