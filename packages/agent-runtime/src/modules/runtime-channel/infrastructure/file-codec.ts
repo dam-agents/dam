@@ -2,8 +2,6 @@ import { dump as stringifyYaml, load as parseYaml } from "js-yaml";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import type { FileFormat } from "agent-runtime-api";
 
-// Shared string<->object codec for every config-file format, used by both
-// file-ops and the harness-config read path. Pure: no I/O.
 export function parseFile(format: FileFormat, content: string): unknown {
   switch (format) {
     case "json":

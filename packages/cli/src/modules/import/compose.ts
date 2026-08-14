@@ -9,7 +9,6 @@ export interface ImportModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Per-host service factory exported by the agent module's compose. */
   createAgentService: (host: string) => AgentService;
   serverEnvVar: string;
 }
@@ -18,8 +17,6 @@ export interface ImportModule {
   commands: ReadonlyArray<Command>;
 }
 
-/** Slimmer than `auth`/`agent` — one POST with status-classification
- *  doesn't earn a service layer. */
 export function composeImportModule(opts: ImportModuleOptions): ImportModule {
   return {
     commands: [

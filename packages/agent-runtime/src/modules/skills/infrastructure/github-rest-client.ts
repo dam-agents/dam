@@ -7,8 +7,6 @@ import { err, ok } from "agent-runtime-api";
 
 const GITHUB_API = "https://api.github.com";
 
-/** Matches the api-server's bound on its own pinned read — a SKILL.md is
- *  kilobytes. */
 const MAX_SKILL_FILE_BYTES = 1024 * 1024;
 
 export interface DetectedOwnerRepo {
@@ -16,11 +14,6 @@ export interface DetectedOwnerRepo {
   repo: string;
 }
 
-/**
- * Mirrors api-server's `detectHost` but inline — agent-runtime avoids a
- * cross-package dependency. Only GitHub is recognized; other hosts skip the
- * pre-flight and fall through to an anonymous clone.
- */
 export function detectGithubOwnerRepo(
   gitUrl: string,
 ): DetectedOwnerRepo | null {
@@ -55,13 +48,6 @@ export interface PullRequest {
   htmlUrl: string;
 }
 
-/**
- * Read shape of an existing pull request — distinct from {@link PullRequest},
- * which is the *create* response. Deliberately the three raw fields rather than
- * a `draft | open | merged | closed` verdict: that derivation is application
- * concern and the api-server owns the single copy of it, so duplicating it here
- * is how "merged beats closed" would eventually drift.
- */
 export interface PullRequestState {
   state: "open" | "closed";
   draft: boolean;
@@ -72,26 +58,14 @@ export interface GithubFetchOpts {
   withAuth?: boolean;
 }
 
-/** `/repos/{owner}/{repo}` with both segments encoded. Owner and repo come
- *  from a user-typed git URL (anything non-`/` survives
- *  `detectGithubOwnerRepo`), so encoding is defense-in-depth: a stray
- *  character must never change the request target. */
 function repoPath(host: DetectedOwnerRepo): string {
   return `/repos/${encodeURIComponent(host.owner)}/${encodeURIComponent(host.repo)}`;
 }
 
-/** Encode each segment and rejoin: escaping the whole path would escape the
- *  separators too and change the request target. */
 function encodePath(filePath: string): string {
   return filePath.split("/").map(encodeURIComponent).join("/");
 }
 
-/**
- * Thin port over `api.github.com`. Sequencing of these primitives (publish's
- * blob → tree → commit → ref → PR; scan's commit → tarball) is application
- * concern, not the port's. Auth toggle (`withAuth`) is exposed so the scan
- * service can do anonymous-first, retry-with-sentinel-on-404.
- */
 export interface GitHubRestClient {
   getRepo: (
     host: DetectedOwnerRepo,
@@ -108,7 +82,6 @@ export interface GitHubRestClient {
     host: DetectedOwnerRepo,
     number: number,
   ) => Promise<Result<PullRequestState, SkillsDomainError>>;
-  /** One file's decoded UTF-8 text at `ref`, via the Contents API. */
   getFileContent: (
     host: DetectedOwnerRepo,
     ref: string,
@@ -146,22 +119,6 @@ export interface GitHubRestClient {
   ) => Promise<Result<PullRequest, SkillsDomainError>>;
 }
 
-/**
- * Adapter that talks to `api.github.com` through the agent pod's Envoy
- * sidecar (HTTPS_PROXY).
- *
- * `withAuth: true` attaches the sentinel bearer (`dummy-placeholder` unless
- * `GH_TOKEN` overrides) — the sidecar's credential_injector filter rewrites
- * it to the user's OAuth token on the wire. Needed for mutations and for
- * endpoints whose 404-on-unauthenticated path is ambiguous (we'd rather get
- * the structured `app_not_connected` CTA).
- *
- * `withAuth: false` sends no Authorization header. The sidecar passes
- * anonymous reads through for public resources; private resources require
- * the sentinel so credential_injector can attach the user's token. The
- * hard-requirement path for scan: public repos must work even when the user
- * hasn't Connected GitHub yet.
- */
 export function createGitHubRestClient(): GitHubRestClient {
   return {
     async getRepo(host) {
@@ -188,9 +145,6 @@ export function createGitHubRestClient(): GitHubRestClient {
       return ok({ sha: r.value.sha });
     },
     async getPullRequest(host, number) {
-      // Authenticated by default, which is the point: the gateway injects the
-      // owner's token for api.github.com, so a private repo resolves here when
-      // the api-server's anonymous read could only 404.
       const r = await ghJson<{
         state: string;
         draft?: boolean;
@@ -205,18 +159,11 @@ export function createGitHubRestClient(): GitHubRestClient {
       });
     },
     async getFileContent(host, ref, filePath) {
-      // Authenticated by default, same reason as getPullRequest: the gateway
-      // injects the owner's token for api.github.com, so a private repo
-      // resolves here where the api-server's anonymous read could only 404.
       const r = await ghJson<{ content?: string; encoding?: string }>(
         "GET",
         `${repoPath(host)}/contents/${encodePath(filePath)}?ref=${encodeURIComponent(ref)}`,
       );
       if (!r.ok) return r;
-      // A directory or submodule omits `content` entirely; a file over the
-      // endpoint's own 1 MB ceiling returns `content: ""` with
-      // `encoding: "none"`. Requiring base64 rejects both, where a bare
-      // `content` check would decode the empty string into an empty preview.
       if (
         typeof r.value.content !== "string" ||
         r.value.encoding !== "base64"
@@ -355,10 +302,6 @@ async function ghBytes(
   }
 }
 
-/** A throw from fetch (or a mid-body read) means the request died in
- *  transit — undici reports it as `TypeError: fetch failed` with the real
- *  reason (connect/headers timeout, reset) on `cause`. Both hops of that
- *  cause chain go into `detail` for diagnosability. */
 function toUnreachableError(
   method: string,
   path: string,
@@ -393,8 +336,6 @@ function isErrorBody(value: unknown): value is GitHubErrorBody {
   return typeof value === "object" && value !== null;
 }
 
-/** Helper: extract the `status` from an UpstreamGitHubError so services can
- *  branch on 404-vs-other for the "anonymous → retry with auth" pattern. */
 export function isUpstreamStatus(
   error: SkillsDomainError,
   status: number,

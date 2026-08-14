@@ -18,7 +18,6 @@ import {
   readFlowIdFromSearch,
 } from "../lib/bind-flow.js";
 
-// URL-owned inputs, read once: a refresh keeps working within the flow TTL.
 const flowId = readFlowIdFromSearch(window.location.search);
 const callbackError = readCallbackErrorFromSearch(window.location.search);
 

@@ -5,8 +5,6 @@ import {
 import type { StateQueue } from "../infrastructure/state-queue.js";
 
 export interface CronSweep {
-  /** One idempotent reconciliation pass — scheduled via the shared
-   *  periodic-jobs queue (one execution per period across replicas). */
   tick(): Promise<void>;
 }
 

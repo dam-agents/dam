@@ -12,9 +12,6 @@ export function useCreateConnection() {
   });
 }
 
-// `silent` for callers that render the failure inline — a rejected credential is
-// feedback about what was just typed, so a global toast would be the wrong place
-// to read it.
 export function useUpdateConnection(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.connections.update.mutationOptions(),
@@ -43,8 +40,6 @@ export function useDeleteConnection() {
   });
 }
 
-// `silent` for background detection (the debounced URL probe), where a
-// transient failure shouldn't pop a global toast.
 export function useDiscoverMcp(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.connections.discoverMcp.mutationOptions(),
@@ -61,8 +56,6 @@ export function useProbeClusterCa() {
   });
 }
 
-// Failure is expected while the user is still typing the app's details, and
-// the picker renders the reason inline next to the button, so no global toast.
 export function useProbeGitHubAppInstallation() {
   return useMutation({
     ...trpc.connections.probeGitHubAppInstallation.mutationOptions(),
@@ -70,8 +63,6 @@ export function useProbeGitHubAppInstallation() {
   });
 }
 
-// The same read for a connection that already exists — it supplies its own app
-// identity and key, so the editor never asks for the private key again.
 export function useProbeGitHubAppInstallationForConnection() {
   return useMutation({
     ...trpc.connections.probeGitHubAppInstallationForConnection.mutationOptions(),
@@ -79,8 +70,6 @@ export function useProbeGitHubAppInstallationForConnection() {
   });
 }
 
-// The dialog renders a rejected scope on the form, so no global toast here
-// either; the list refreshes because the stored scope is part of the view.
 export function useUpdateGitHubAppScope() {
   return useMutation({
     ...trpc.connections.updateGitHubAppScope.mutationOptions(),
@@ -94,11 +83,6 @@ export function useUpdateGitHubAppScope() {
   });
 }
 
-/**
- * Verifies an Anthropic credential against Anthropic before save. Returns
- * `{ ok: true } | { ok: false; message }` rather than throwing — callers
- * render the result inline, so no errorToast / invalidation here.
- */
 export function useTestAnthropic() {
   return useMutation({
     ...trpc.connections.testAnthropic.mutationOptions(),

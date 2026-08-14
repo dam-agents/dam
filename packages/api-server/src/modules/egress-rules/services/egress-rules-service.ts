@@ -16,15 +16,8 @@ import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
-  /** Port that promotes a host onto the agent's L7 chain via the Agent
-   *  CR's spec.l7Hosts (#2865). Optional so non-cluster contexts (tests)
-   *  can skip the side effect. */
   l7Hosts?: AgentL7HostsPort;
-  /** Bulk-seeder used by `applyPreset`. Optional so non-cluster contexts
-   *  (tests) can skip preset operations. */
   presetSeeder?: PresetSeeder;
-  /** Same list the seeder uses; surfaced so the UI can preview trusted
-   *  rules without committing to a preset switch. */
   trustedHosts: readonly string[];
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
@@ -48,21 +41,6 @@ function toView(row: EgressRuleRow): EgressRuleView {
 export function createEgressRulesService(
   deps: CreateEgressRulesServiceDeps,
 ): EgressRulesService {
-  // Recompute the agent's promoted-host set from its active rules and write
-  // it wholesale, so spec.l7Hosts stays a pure projection of the rules
-  // table (#2865). Run after every mutation — create/update *and* revoke —
-  // so a narrowing that no longer exists drops its host instead of
-  // ratcheting forever. Idempotent: the port skips the patch (and the
-  // gateway roll) when the set is unchanged.
-  //
-  // Deliberately NOT transactional with the rule write: if the CR patch
-  // throws (conflict retries exhausted, pruned write), the rule row stays
-  // committed and the caller sees the error — fail-loud, never
-  // silently-unpromoted (#2322). The gap self-heals: the projection is
-  // recomputed from the table on the agent's next rule mutation, and the
-  // periodic l7-promotion-reconcile re-projects every agent with active
-  // narrow rules — covering the case where the process died between the
-  // rule commit and the patch, which no in-request retry can.
   async function reconvergePromotions(agentId: string): Promise<void> {
     if (!deps.l7Hosts) return;
     const rows = await deps.repo.listForAgent(agentId);
@@ -109,28 +87,18 @@ export function createEgressRulesService(
         decidedBy: deps.ownerSub,
         source: "manual",
       });
-      // Insert conflicted with an existing rule carrying a different verdict.
-      // Nothing changed, so bail before the create audit log and L7 side
-      // effect — changing a verdict is the update/edit path's job.
       if (row.verdict !== input.verdict) {
         throw new TRPCError({
           code: "CONFLICT",
           message: `an equivalent rule already exists with verdict '${row.verdict}' — edit the existing rule instead`,
         });
       }
-      // Port is outside the rule's unique key and not editable, so a
-      // port-differing duplicate can't be stored or fixed by edit — reject
-      // rather than return a rule that misrepresents the requested port.
       if ((row.port ?? null) !== (input.port ?? null)) {
         throw new TRPCError({
           code: "CONFLICT",
           message: `an equivalent rule already exists ${row.port ? `for port ${row.port}` : "without a port"} — revoke it and create the rule again`,
         });
       }
-      // Same-verdict duplicate of a preset/connection row: the manual create
-      // takes ownership (same intent as edit-promotes-to-manual), so a later
-      // preset sweep or connection revoke won't silently drop a rule the
-      // user explicitly asked for.
       if (row.source !== "manual" && row.source !== "inbox") {
         row =
           (await deps.repo.updateTakeOwnership({
@@ -161,11 +129,6 @@ export function createEgressRulesService(
             : {}),
         },
       });
-      // Path-specific rules need the host on the L7 chain so the ext_authz
-      // handler can see method/path. spec.l7Hosts on the Agent CR is the
-      // controller's per-agent signal to extend the cert SAN list and
-      // render the chain (#2865); reconverge recomputes it from the agent's
-      // full active rule set.
       await reconvergePromotions(input.agentId);
       return toView(row);
     },
@@ -220,9 +183,6 @@ export function createEgressRulesService(
           priorVerdict: rule.verdict,
         },
       });
-      // The user may have just narrowed `(host, *, *)` to `(host, GET, /v1/x)`
-      // (promotes the host) or widened it back (demotes, if it was the last
-      // narrowing on that host). Reconverge covers both directions.
       await reconvergePromotions(updated.agentId);
       return toView(updated);
     },
@@ -244,9 +204,6 @@ export function createEgressRulesService(
           pathPattern: rule.pathPattern,
         },
       });
-      // Revoking the last narrowing on a host demotes it — reconverge drops
-      // it from spec.l7Hosts so the gateway stops MITM-terminating a host
-      // no rule needs anymore (#2865).
       await reconvergePromotions(rule.agentId);
     },
 
@@ -264,12 +221,7 @@ export function createEgressRulesService(
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
       if (!deps.presetSeeder) return;
-      // The seeder sweeps prior `preset:*` rows before inserting the new
-      // ones, so switching presets replaces rather than piles up. Manual
-      // and connection-derived rows are untouched.
       await deps.presetSeeder.seed(agentId, preset, deps.ownerSub);
-      // The `all` preset seeds host:* method:* path:* — a single row that
-      // removes every egress restriction; flag it explicitly.
       securityLog("info", "egress_rule.preset", {
         category: "authz-list",
         actor: deps.ownerSub,

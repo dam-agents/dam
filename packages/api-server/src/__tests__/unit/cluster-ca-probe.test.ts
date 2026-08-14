@@ -3,8 +3,6 @@ import { createServer, type Server } from "node:tls";
 import type { AddressInfo } from "node:net";
 import { probeClusterCa } from "../../modules/connections/infrastructure/cluster-ca-probe.js";
 
-// A real self-signed cert/key for 127.0.0.1 (test-only; never trusted). The
-// probe must therefore report untrusted and hand back a pinnable CA.
 const TEST_CERT = `-----BEGIN CERTIFICATE-----
 MIIDMjCCAhqgAwIBAgIUMiX4bseuRVT+8L+EjCMZs2MIUAMwDQYJKoZIhvcNAQEL
 BQAwIDEeMBwGA1UEAwwVcGxhdGZvcm0tdGVzdC1jbHVzdGVyMB4XDTI2MDcwMjEy

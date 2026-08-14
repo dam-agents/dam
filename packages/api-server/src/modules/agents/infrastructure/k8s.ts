@@ -1,25 +1,8 @@
-/**
- * Thin K8s client — Secret and agent-platform.ai custom-resource operations
- * only. No domain types, no YAML parsing, no label constants.
- */
 import * as k8s from "@kubernetes/client-node";
 
-// ---------------------------------------------------------------------------
-// K8sClient interface
-// ---------------------------------------------------------------------------
-
 export interface K8sClient {
-  /** The namespace this client is scoped to (i.e. where agent pods live). */
   readonly namespace: string;
 
-  // Agents/forks are custom resources and templates are file-mounted now,
-  // so the api-server makes no ConfigMap calls — none are exposed.
-  /** Restart info for an agent's backing pod (selected by pair labels, so it
-   *  finds a StatefulSet pod or a vm backend's virt-launcher alike): the
-   *  highest container restart count and the reason the last dead container
-   *  gave (e.g. "OOMKilled"). Null if no pod exists. Read-only; used by the
-   *  Invocation liveness sweep to fail a one-shot target whose pod crashed
-   *  mid-turn (its trigger will not re-fire, so it can never report). */
   readAgentPodRestart(
     agentId: string,
   ): Promise<{ restarts: number; reason: string | null } | null>;
@@ -30,16 +13,12 @@ export interface K8sClient {
   replaceSecret(name: string, body: k8s.V1Secret): Promise<k8s.V1Secret>;
   deleteSecret(name: string): Promise<void>;
 
-  // agent-platform.ai/v1 custom resources. `plural` selects the
-  // resource (e.g. "agents"); the group/version are the platform's.
   getCustomObject(plural: string, name: string): Promise<KubeObject | null>;
   listCustomObjects(
     plural: string,
     labelSelector?: string,
   ): Promise<KubeObject[]>;
   createCustomObject(plural: string, body: object): Promise<KubeObject>;
-  /** RFC 7386 merge-patch — replaces the supplied spec/metadata subtrees,
-   *  arrays included. Conflict-free (no resourceVersion), so no 409 retry. */
   patchCustomObject(
     plural: string,
     name: string,
@@ -48,8 +27,6 @@ export interface K8sClient {
   deleteCustomObject(plural: string, name: string): Promise<void>;
 }
 
-/** A minimally-typed Kubernetes custom resource as returned by the dynamic
- *  CustomObjects API. Consumers cast `spec`/`status` to their shape. */
 export interface KubeObject {
   apiVersion?: string;
   kind?: string;
@@ -64,14 +41,8 @@ export interface KubeObject {
   status?: unknown;
 }
 
-// The platform's custom-resource group/version. Kept here so the
-// generic CR methods stay caller-agnostic about coordinates.
 const CR_GROUP = "agent-platform.ai";
 const CR_VERSION = "v1";
-
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
 
 function isStatus(err: unknown, code: number): boolean {
   return (
@@ -86,9 +57,6 @@ export function createK8sClient(
   api: k8s.CoreV1Api,
   namespace: string,
 ): K8sClient {
-  // The CustomObjects client drives agent-platform.ai/v1 resources. Built
-  // from the same default KubeConfig as `api` so callers don't have to thread
-  // a second client through every composition site.
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
@@ -103,10 +71,6 @@ export function createK8sClient(
     namespace,
 
     async readAgentPodRestart(agentId) {
-      // Label-selected rather than the `-0` ordinal name: a vm backend's pod
-      // is virt-launcher-<name>-<hash>. (A whole-VM crash under runStrategy
-      // Always surfaces as a *replacement* launcher pod, not a container
-      // restart — that signal is not covered here.)
       const res = await api.listNamespacedPod({
         namespace,
         labelSelector: `agent-platform.ai/pair=${agentId},agent-platform.ai/role=agent`,
@@ -210,14 +174,7 @@ export function createK8sClient(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
 export function podBaseUrl(agentId: string, namespace: string): string {
-  // Headless agent Service DNS — resolves to the single ready backing pod for
-  // either backend (a StatefulSet pod or a vm backend's virt-launcher pod),
-  // unlike the former `-0` ordinal pod DNS which only StatefulSets provide.
   return `${agentId}.${namespace}.svc:8080`;
 }
 

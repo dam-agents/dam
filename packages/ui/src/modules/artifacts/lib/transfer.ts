@@ -31,9 +31,6 @@ function saveAs(href: string, filename?: string): void {
   anchor.click();
 }
 
-/** Push raw file bytes through the authenticated upload route (browser →
- *  api-server → object store; no store CORS involved) and return the
- *  `uploadRef` to pass to the create/update mutations. */
 export async function uploadArtifactFile(file: File): Promise<string> {
   const token = await getAccessToken();
   const response = await fetch(
@@ -61,8 +58,6 @@ export async function uploadArtifactFile(file: File): Promise<string> {
   return body.uploadRef;
 }
 
-/** Download an artifact (optionally a past version) — JSON `{ url }` means a
- *  presigned direct link we navigate to; otherwise the relayed blob. */
 export async function downloadArtifact(
   id: string,
   version?: number,
@@ -92,6 +87,5 @@ export async function downloadArtifact(
     "artifact";
   const url = URL.createObjectURL(blob);
   saveAs(url, filename);
-  // Deferred: revoking in the click's tick can cancel the download.
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

@@ -1,7 +1,5 @@
 import { DAM_TOKEN_ENV_VAR } from "../auth/infrastructure/auth-env-reader.js";
 
-// A DAM_TOKEN is sent verbatim and never stored in auth.toml, so `dam auth
-// login` can't fix a rejected one — point at the env var instead.
 export function formatAuthRejection(
   reason: string,
   env: NodeJS.ProcessEnv = process.env,

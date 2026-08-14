@@ -24,7 +24,6 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string, name: string) => void;
   deletingId: string | null;
-  /** Per-row credential maintenance; omit to offer none. */
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
@@ -44,7 +43,7 @@ export function CatalogProviderCard({
   const newButton = templates.length > 0 && (
     <Button
       variant="outline"
-      className="h-8 px-3 text-sm font-normal"
+      size="sm"
       onClick={onNew}
       data-testid={`catalog-new-${provider.id}`}
     >

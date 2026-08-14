@@ -14,14 +14,10 @@ describe("TOML ConfigStore", () => {
   });
 
   afterEach(async () => {
-    // Best-effort cleanup. mkdtemp on macOS lives under /var/folders, no
-    // crossover with the user's $HOME — see the reviewer-checklist guard.
     try {
       const { rm } = await import("node:fs/promises");
       await rm(dir, { recursive: true, force: true });
-    } catch {
-      // ignore
-    }
+    } catch {}
   });
 
   it("read on missing file returns Ok({})", async () => {
@@ -40,7 +36,6 @@ describe("TOML ConfigStore", () => {
   });
 
   it("write preserves unrelated top-level keys in the file", async () => {
-    // Simulate a user-edited file with extra top-level keys we don't own.
     await writeFile(
       configPath,
       'server = "https://old"\nfoo = "bar"\n',

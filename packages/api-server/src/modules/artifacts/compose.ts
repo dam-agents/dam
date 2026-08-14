@@ -8,12 +8,6 @@ import { createUnconfiguredArtifactStore } from "./infrastructure/unconfigured-a
 import type { ArtifactService } from "./services/artifact-service.js";
 import { createArtifactService } from "./services/artifact-service.js";
 
-/** Three endpoints because SigV4 binds the Host header — a link only works
- *  on the authority it was signed for: api-server's own (`endpoint`), the
- *  agents' (`agentEndpoint`, direct up- and downloads through the gateway),
- *  the browsers' (`publicEndpoint`, download links; null relays browser
- *  downloads). null credentials = SDK default provider chain (IRSA, instance
- *  profile). */
 export interface ObjectStorageConfig {
   endpoint: string;
   agentEndpoint: string;
@@ -26,12 +20,9 @@ export interface ObjectStorageConfig {
 
 export interface ComposeArtifactsDeps {
   maxBytes: number;
-  /** null = no object store configured: the service fails closed. */
   objectStorage: ObjectStorageConfig | null;
 }
 
-/** Boot-time singleton shared by both app servers. `ensureReady` (bucket
- *  provisioning) must resolve before the service serves traffic. */
 export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
   service: ArtifactService;
   ensureReady: () => Promise<void>;
@@ -50,7 +41,6 @@ export function composeArtifactsModule(deps: ComposeArtifactsDeps): {
     endpoint: ep,
     region: common.region,
     forcePathStyle: common.forcePathStyle,
-    // The SDK default would bake an empty-body CRC into presigned URLs.
     requestChecksumCalculation: "WHEN_REQUIRED",
     ...(common.credentials ? { credentials: common.credentials } : {}),
   });

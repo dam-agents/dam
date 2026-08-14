@@ -11,7 +11,6 @@ import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-previ
 import { useExperimentFeed, useExperiments } from "../api/queries.js";
 import { ExperimentStatusBadge } from "./experiment-status-badge.js";
 
-/** Cap the expanded run list — old runs stay reachable via the library. */
 const EXPANDED_RUNS_MAX = 10;
 
 export function LineageRuns({
@@ -22,7 +21,6 @@ export function LineageRuns({
   name: string;
 }) {
   const { data: experiments } = useExperiments();
-  // Titles for the runs' artifact chips — one cached library query.
   const { data: artifacts } = useArtifacts();
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
     null,
@@ -37,7 +35,6 @@ export function LineageRuns({
     (e) => e.driverAgentId === driverAgentId && e.name === name,
   );
   const draft = lineage.find((e) => e.status === "draft");
-  // list() is newest-first; run numbers count from the oldest.
   const runs = lineage.filter((e) => e.status !== "draft");
   const shown = runs.slice(0, EXPANDED_RUNS_MAX);
   return (
@@ -88,23 +85,14 @@ function RunRow({
   artifactTitles: Map<string, string>;
   onOpenArtifact: (artifactId: string) => void;
 }) {
-  // Lazy by construction: this row only exists while its card is expanded.
-  // The feed poll keeps the dots moving for a live run and stops when
-  // terminal (useExperimentFeed's poll-while-live behavior).
   const { data: feed } = useExperimentFeed(run.id);
   const startedAt = run.executedAt ?? run.createdAt;
-  // A live run still points at the draft's renderer; its own results
-  // artifact only exists after the terminal snapshot repointed it.
   const resultsArtifactId =
     run.status !== "running" &&
     run.dashboardArtifactId !== null &&
     run.dashboardArtifactId !== draftDashboardArtifactId
       ? run.dashboardArtifactId
       : null;
-  // Everything else the run produced or referenced: span-referenced
-  // candidates, driver-attached reports, invocation-target publishes. The
-  // renderer/results id has its own button; the script clone is stock and
-  // stays in the library folder. Deleted artifacts drop out (no title).
   const extraArtifacts = (feed?.artifactIds ?? [])
     .filter(
       (id) =>
@@ -116,8 +104,7 @@ function RunRow({
     .filter((a): a is { id: string; title: string } => a.title !== undefined);
   return (
     <div className="border-t border-border py-3.5 pl-12 pr-[18px] first:border-t-0">
-      {/* Fixed-width columns so Run #, status, timestamp and the invocation area
-          line up across every row of the lineage. */}
+      {}
       <div className="flex items-center gap-3.5 text-sm">
         <span className="w-12 shrink-0 font-semibold text-foreground">
           Run {number}
@@ -164,8 +151,6 @@ function RunRow({
   );
 }
 
-/** The run's subagent invocations at a glance: one dot each (running pulses
- *  blue, done green, failed red), capped, with the total alongside. */
 const INVOCATION_DOTS_MAX = 12;
 
 function InvocationDots({
@@ -173,8 +158,6 @@ function InvocationDots({
 }: {
   invocations: { id: string; status: string }[] | undefined;
 }) {
-  // One shared cached query — a "running" invocation whose target agent is
-  // parked over-budget (#1900) hasn't actually started; show it amber.
   const agents = useAgentsList();
   if (!invocations || invocations.length === 0) return null;
   const stateById = new Map(agents.map((a) => [a.id, a.state]));
@@ -217,8 +200,6 @@ function InvocationDots({
   );
 }
 
-/** Run artifacts open in the library's preview dialog; the artifact object
- *  is looked up lazily — this component only mounts after a click. */
 function ArtifactPreview({
   artifactId,
   onClose,

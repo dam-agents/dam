@@ -7,14 +7,6 @@ import {
   INVALID_URL_MESSAGE,
 } from "../../hooks/use-github-source-form.js";
 
-/**
- * "GitHub repository" tab of the add-skill-source modal: point at a repo whose
- * skills are installed under one group. Sources apply immediately on create —
- * there is no staged "Submit changes" step.
- *
- * Presentational: the form instance lives in `useGithubSourceForm` (owned by
- * the modal shell) so the typed values survive tab switches.
- */
 export function GithubSourceTab({
   github,
   onClose,

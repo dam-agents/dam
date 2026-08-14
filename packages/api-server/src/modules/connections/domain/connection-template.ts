@@ -40,9 +40,6 @@ export interface OAuthConnectionTemplate extends TemplateCommon {
   credentialFamily?: string;
 }
 
-// Client-credentials grant: the platform mints access tokens from the stored
-// client secret; the token endpoint (discovered from the issuer's OAuth
-// metadata at create time) is dialed server-side, never by the agent.
 export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
   authKind: "client-credentials";
   host?: string;
@@ -54,16 +51,12 @@ export interface ClientCredentialsConnectionTemplate extends TemplateCommon {
   tokenEndpointAcceptJson?: boolean;
 }
 
-// GitHub App installation grant: the platform signs a JWT with the app's
-// private key and mints installation tokens (ghs_…) at the GitHub REST base
-// (`apiBaseUrl`); the token endpoint is dialed server-side, never by the agent.
 export interface GitHubAppConnectionTemplate extends TemplateCommon {
   authKind: "github-app";
   host?: string;
   apiBaseUrl?: string;
 }
 
-// An optional config input a header template ships; filling it emits an `env` contribution, leaving it blank emits nothing.
 export interface ConfigInputSpec {
   inputName: string;
   envName: string;
@@ -111,15 +104,11 @@ export function createConnectionTemplateRegistry(
   };
 }
 
-/** Client credentials a family sibling already registered, surfaced as an
- *  overridable preset on the other family members. */
 export interface FamilyCredsPreset {
   clientId: string;
   hasSecret: boolean;
 }
 
-/** An OAuth template in a credential family with no operator-baked client id
- *  of its own — it inherits credentials from a connected family sibling. */
 export function inheritsFamily(
   t: ConnectionTemplate,
 ): t is OAuthConnectionTemplate {
@@ -190,8 +179,6 @@ function inputsFor(
 
   switch (t.authKind) {
     case "oauth": {
-      // A pre-registered client skips dynamic client registration; endpoints
-      // still come from the server's OAuth discovery metadata.
       if (t.dynamicRegistration)
         return [
           required("url"),
@@ -206,8 +193,6 @@ function inputsFor(
       if (urlsHavePlaceholder) {
         out.push(t.host ? overridable("host", t.host) : required("host"));
       }
-      // A family sibling's creds (familyPreset) stand in when this template
-      // has no operator-baked client id, surfacing both as overridable.
       const clientId = t.clientId ?? familyPreset?.clientId;
       out.push(
         clientId ? overridable("clientId", clientId) : required("clientId"),
@@ -230,7 +215,6 @@ function inputsFor(
       return out;
     }
     case "client-credentials":
-      // Same visible pre-filled style as the custom header credential.
       return [
         required("host", { presetValue: t.host }),
         {
@@ -249,9 +233,6 @@ function inputsFor(
       ];
     case "github-app": {
       const out: ConnectionTemplateInput[] = [];
-      // Only a host-parameterized template (its apiBaseUrl carries a
-      // `{host}` placeholder, e.g. the GitHub Enterprise sibling) asks for a
-      // host — the fixed github.com template has nothing to substitute.
       if (t.apiBaseUrl?.includes("{host}")) {
         out.push(t.host ? overridable("host", t.host) : required("host"));
       }
@@ -276,9 +257,6 @@ function inputsFor(
           label: "Private key (PEM)",
           hint: "A private key generated for the app (.pem). Paste the whole file including the BEGIN/END lines, or its base64 encoding.",
         },
-        // The UI renders these three through the installation picker rather
-        // than as text fields; they stay declared inputs so the CLI and any
-        // scripted caller can still set them directly.
         {
           name: "repositories",
           state: "optional",
@@ -303,8 +281,6 @@ function inputsFor(
     case "header": {
       const out: ConnectionTemplateInput[] = [];
       if (t.isCustom) {
-        // Custom credential: visible pre-filled inputs, not the operator
-        // "Customize defaults" accordion.
         out.push(required("host", { presetValue: t.host }));
         out.push(required("headerName", { presetValue: t.headerName }));
         out.push(required("valueFormat", { presetValue: t.valueFormat }));
@@ -331,7 +307,6 @@ function inputsFor(
         );
       }
       out.push(required("value", { secret: true }));
-      // CA is public material (not secret) and optional per endpoint.
       if (t.id === "kubernetes") {
         out.push({
           name: "caData",
@@ -340,8 +315,6 @@ function inputsFor(
           hint: "Leave blank for a publicly-trusted API endpoint (most managed clusters). For a private or self-signed CA, paste certificate-authority-data from your kubeconfig (base64 or PEM).",
         });
       }
-      // Custom credential can also be exposed to the agent as an env var
-      // (placeholder in-pod; Envoy injects the real value on egress).
       if (t.isCustom) out.push(optional("envName"));
       for (const spec of t.configInputs ?? []) {
         out.push({
@@ -358,8 +331,6 @@ function inputsFor(
       return out;
     }
     case "none":
-      // Custom MCP servers may carry an optional header credential (API
-      // key) injected at the gateway.
       return t.category === "mcp"
         ? [
             required("url"),

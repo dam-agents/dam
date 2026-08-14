@@ -5,12 +5,9 @@ import type { PlatformStore } from "../../store.js";
 export interface FilesSlice {
   openFilePath: string | null;
   filesSectionOpen: boolean;
-  /** Whether the file-viewer has an unsaved in-memory edit. Surfaced here so
-   *  the tree-click handler can prompt before discarding. */
   openFileDirty: boolean;
   openFileEdit: boolean;
   expandedDirs: Record<string, Set<string>>;
-  /** In-flight import count per agent; count not bool so overlapping uploads compose. */
   importingAgents: Record<string, number>;
   setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
   setOpenFileEdit: (edit: boolean) => void;
@@ -23,9 +20,6 @@ export interface FilesSlice {
   endImport: (agentId: string) => void;
 }
 
-/** Drop `prefix` and every path nested under it. Collapsing a parent must
- *  also forget its expanded children, otherwise they keep shipping in the
- *  batched poll even though no DirContents is mounted to render them. */
 function withoutPath(set: Set<string>, prefix: string): Set<string> {
   const next = new Set<string>();
   for (const p of set) {
@@ -34,9 +28,6 @@ function withoutPath(set: Set<string>, prefix: string): Set<string> {
   return next;
 }
 
-/** Rewrite `from` and every path nested under it to live under `to`. Used
- *  after a rename so an expanded subtree follows its new parent path
- *  instead of evaporating. */
 function rewritePrefix(
   set: Set<string>,
   from: string,
@@ -68,8 +59,6 @@ export const createFilesSlice: StateCreator<
       openFilePath: path,
       openFileDirty: false,
       openFileEdit: opts?.edit ?? false,
-      // The docked file viewer and the docked artifact preview share the
-      // right dock — opening one closes the other.
       ...(path !== null ? { openArtifactId: null } : {}),
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),

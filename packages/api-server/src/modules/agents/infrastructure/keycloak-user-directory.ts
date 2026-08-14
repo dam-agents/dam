@@ -2,13 +2,6 @@ export interface KeycloakUserDirectory {
   resolveByEmail(email: string): Promise<string | null>;
   resolveBySub(sub: string): Promise<string | null>;
   resolveManyBySub(subs: string[]): Promise<Map<string, string>>;
-  /** Definitive existence + enabled check, fit for authorization decisions
-   *  (unlike `resolveBySub`, which is display-grade: it swallows transport
-   *  errors and conflates "no email" with "gone"). Returns false only when
-   *  Keycloak definitively says so — 404 or `enabled: false`; throws on
-   *  anything transient (5xx, network) so callers can choose their own
-   *  failure policy. Uncached: negative answers must take effect on the
-   *  next request. */
   isActive(sub: string): Promise<boolean>;
 }
 

@@ -16,14 +16,6 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// reconcileAgentVM is the vm-backend counterpart of the agent-StatefulSet
-// apply block: explicit workspace PVCs (no volumeClaimTemplates on a VM),
-// the cloud-init Secret, and the VirtualMachine itself. Transient waits
-// (leaf CA not yet issued) return a plain error so the caller requeues
-// without stamping ReconcileError — same standing as the gateway ClusterIP
-// wait. Warm-pool claiming and roll-rev are container-backend concepts and
-// deliberately don't apply here (a VM picks up template changes on its next
-// stop/start cycle).
 func (r *AgentReconciler) reconcileAgentVM(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayClusterIP string, running bool) error {
 	name := agent.Name
 	agentSpec := &agent.Spec
@@ -38,9 +30,6 @@ func (r *AgentReconciler) reconcileAgentVM(ctx context.Context, agent *apiv1.Age
 		}
 	}
 
-	// The guest trusts the MITM CA via cloud-init (the container backend
-	// mounts the same key from the leaf Secret). cert-manager may still be
-	// issuing on the first pass — requeue quietly.
 	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		return fmt.Errorf("leaf CA Secret not yet issued, requeuing")
@@ -68,11 +57,6 @@ func (r *AgentReconciler) reconcileAgentVM(ctx context.Context, agent *apiv1.Age
 	return r.applyVirtualMachine(ctx, vm, running)
 }
 
-// applyVirtualMachine creates or updates the VM, owning its runStrategy per
-// the activity-driven model exactly like applyStatefulSet owns replicas: when
-// `running` it sets Always; when not it *preserves* the existing strategy —
-// the reconciler wakes but never hibernates (scale-down is the idle checker's
-// probe-gated job via haltAgentVMs).
 func (r *AgentReconciler) applyVirtualMachine(ctx context.Context, desired *unstructured.Unstructured, running bool) error {
 	cli := r.dynamic.Resource(VirtualMachinesGVR).Namespace(desired.GetNamespace())
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -109,9 +93,6 @@ func (r *AgentReconciler) applyVirtualMachine(ctx context.Context, desired *unst
 	})
 }
 
-// haltAgentVMs sets runStrategy=Halted on the agent's VirtualMachines (by
-// LabelAgent, mirroring the StatefulSet scale-to-zero). A NotFound CRD means
-// no KubeVirt in this install — nothing to halt.
 func haltAgentVMs(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
 	if dyn == nil {
 		return nil
@@ -120,10 +101,6 @@ func haltAgentVMs(ctx context.Context, dyn dynamic.Interface, namespace, name st
 		LabelSelector: LabelAgent + "=" + name,
 	})
 	if err != nil {
-		// 404 = the VirtualMachine CRD is absent (KubeVirt not installed);
-		// 403 = kubevirt RBAC not rendered (virtualization disabled after a
-		// vm agent was created). Either way there is nothing the controller
-		// could halt — don't let a leftover vm agent wedge hibernation.
 		if errors.IsNotFound(err) || errors.IsForbidden(err) {
 			return nil
 		}
@@ -140,11 +117,6 @@ func haltAgentVMs(ctx context.Context, dyn dynamic.Interface, namespace, name st
 	return nil
 }
 
-// vmCurrentAndReady is podCurrentAndReady's vm-backend counterpart: the
-// virt-launcher pod (which carries the pair labels from the VM template) must
-// be Ready and not terminating. There is no controller-revision-hash
-// analogue — a VM applies template changes on its next stop/start, so
-// readiness deliberately reflects the running instance, stale or not.
 func (r *AgentReconciler) vmCurrentAndReady(ctx context.Context, name string) bool {
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("%s=%s,%s=%s", LabelPair, name, LabelRole, RoleAgent),
@@ -161,7 +133,6 @@ func (r *AgentReconciler) vmCurrentAndReady(ctx context.Context, name string) bo
 	return false
 }
 
-// applySecret creates or updates a Secret (StringData replace).
 func (r *AgentReconciler) applySecret(ctx context.Context, desired *corev1.Secret) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.CoreV1().Secrets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})

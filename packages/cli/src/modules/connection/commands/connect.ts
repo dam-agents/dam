@@ -188,9 +188,6 @@ export function buildConnectCommand(deps: {
       }
       const templates = templatesRes.value;
 
-      // A positional that parses as an http(s) URL is an MCP server; catalog
-      // template ids are slugs (`github`, `custom-header`, …) and never contain
-      // `://`, so the discriminator is unambiguous.
       const mcpUrl = parseHttpUrl(providerOrUrl);
       const { template, name, values, presetsApplied } = mcpUrl
         ? await resolveMcpTemplate({
@@ -227,8 +224,6 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
-      // Probe (unless a CA was pasted) so a private-CA cluster fails here, not
-      // cryptically at use time.
       if (
         template.id === "kubernetes" &&
         payload.authKind === "header" &&
@@ -246,9 +241,6 @@ export function buildConnectCommand(deps: {
       }
       const { id } = createRes.value;
 
-      // A preset filled inputs we never asked about (operator default or family
-      // sibling). Note it on stderr in human mode; under --json the same signal
-      // rides along in the result as `presetsApplied`.
       const presetNames = presetsApplied.map((i) => i.name);
       if (!json && presetNames.length > 0) {
         process.stderr.write(formatPresetNote(presetsApplied));
@@ -338,11 +330,6 @@ async function resolveSlugTemplate(args: {
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  // An older server declares no such input, and unknown keys are stripped
-  // server-side, so the flag would vanish and the token be minted with the
-  // installation's *full* authority. Every other stripped input lands in the
-  // safe direction; these two land in the unsafe one, so fail rather than
-  // report success for a connection that was never narrowed.
   for (const flag of [
     "repositories",
     "repositoryIds",
@@ -396,7 +383,6 @@ async function resolveMcpTemplate(args: {
 
   const name = await resolveMcpName(mcpUrl, opts, json);
   validateName(name);
-  // MCP templates declare only a `url` input — no presets to override.
   return { template, name, values: { url }, presetsApplied: [] };
 }
 
@@ -437,8 +423,6 @@ function validateName(name: string): void {
 
 interface CollectedInputs {
   values: Record<string, string>;
-  /** Overridable inputs the user didn't supply a flag for — the server fills
-   *  these from a preset. Surfaced to the user so the silent reuse is visible. */
   presetsApplied: ConnectionTemplateInput[];
 }
 
@@ -455,14 +439,10 @@ async function collectInputs(
   for (const input of template.inputs) {
     const flagVal = flags[input.name];
     if (typeof flagVal === "string" && flagVal.trim().length > 0) {
-      // A supplied flag overrides an `overridable` preset; for required/optional
-      // inputs it's just the user-typed value.
       values[input.name] = flagVal.trim();
     } else if (input.state === "required") {
       missing.push(input);
     } else if (input.state === "overridable") {
-      // Left to the server-side preset (an operator default, or a credential
-      // inherited from a family sibling). Never prompted — reported instead.
       presetsApplied.push(input);
     }
   }
@@ -478,9 +458,6 @@ async function collectInputs(
   for (const input of missing) {
     const prompt = input.secret ? password : text;
     const label = input.label ?? labelFor(input.name);
-    // Surface the input's hint inline — the prompt is single-line, so a
-    // multi-line secret (e.g. a PEM key) needs the hint's base64 guidance to be
-    // enterable here rather than only via the flag.
     const answer = await prompt({
       message: input.hint ? `${label} — ${input.hint}` : label,
       validate: (v) => (v && v.trim().length > 0 ? undefined : "Required"),
@@ -579,8 +556,6 @@ function buildPayload(
   }
 }
 
-// Returns whether to proceed: trusted proceeds; reachable-but-untrusted blocks
-// (must paste a CA); unreachable/probe-failure warns and proceeds.
 function checkClusterTrust(
   probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
   host: string,
@@ -612,8 +587,6 @@ async function pollUntilActive(
   const deadline = Date.now() + timeoutSeconds * 1000;
   while (true) {
     const res = await svc.getConnection(id);
-    // A transient read failure shouldn't abort a multi-minute wait — retry
-    // on the next tick; a persistent one surfaces as the timeout message.
     if (res.ok && res.value?.status === "active") return "active";
     if (Date.now() + POLL_INTERVAL_MS >= deadline) return "timeout";
     await sleep(POLL_INTERVAL_MS);
@@ -681,8 +654,6 @@ function parseHttpUrl(s: string): URL | null {
   }
 }
 
-// Strip a leading mcp./api./www. label, take the first remaining DNS label,
-// and slugify to connectionNameSchema (e.g. mcp.notion.com -> "notion").
 function deriveMcpName(url: URL): string {
   const host = url.hostname.replace(/^(mcp|api|www)\./, "");
   const label = host.split(".")[0] ?? host;
@@ -693,9 +664,6 @@ function camelToKebab(s: string): string {
   return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
 }
 
-// CLI flag spellings for a set of inputs, e.g. [clientId, clientSecret] →
-// "--client-id, --client-secret". Shared by the missing-input error and the
-// preset note so the two can never disagree on how a flag is spelled.
 function flagListFor(inputs: readonly ConnectionTemplateInput[]): string {
   return inputs.map((i) => `--${camelToKebab(i.name)}`).join(", ");
 }
@@ -738,11 +706,6 @@ function formatConfigFlagError(e: ConfigFlagError): string {
   }
 }
 
-// Generic by design: the CLI can't tell an operator default from a family
-// inheritance, so the note names the fields and how to override them, not the
-// source (issue #554, "Out of scope"). Preset values are never printed — for
-// secrets the CLI doesn't have them, and echoing even a client id into a
-// terminal/CI log is needless exposure.
 function formatPresetNote(inputs: ConnectionTemplateInput[]): string {
   const fields = inputs.map((i) => labelFor(i.name)).join(", ");
   return `Using preset values (${fields}). Pass ${flagListFor(inputs)} to use your own.\n`;

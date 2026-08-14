@@ -53,9 +53,6 @@ interface Props {
   readOnly?: boolean;
 }
 
-/** Thin CodeMirror 6 wrapper. Keeps the editor view alive across renders and
- *  mirrors the controlled `value` prop only when the caller's value diverges
- *  from the editor's (prevents cursor reset on every keystroke). */
 export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -116,8 +113,6 @@ export function CodeEditor({ value, path, onChange, onSave, readOnly }: Props) {
       view.destroy();
       viewRef.current = null;
     };
-    // Editor is set up once per mounted instance; language + content are
-    // reconciled by the effects below to avoid tearing down on each keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

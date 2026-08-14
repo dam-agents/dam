@@ -1,17 +1,9 @@
-// The composed prompt Execute delivers as a session turn. Harness-agnostic by
-// design: plain instructions, no tool names — any harness image that can run
-// shell commands can follow it. The script reports to the platform itself
-// over the experiment SDK, so the harness must NOT hold the process in a
-// foreground tool call (tool timeouts are far shorter than a loop).
-
 export function buildLaunchPrompt(input: {
   name: string;
   experimentId: string;
   scriptPath: string;
 }): string {
   const { name, experimentId, scriptPath } = input;
-  // PLATFORM_EXPERIMENT_ID switches the SDK into run mode against this exact
-  // run — without it the script re-registers a plan and exits.
   return [
     `Execute the experiment "${name}" and keep the user posted in this session.`,
     "",

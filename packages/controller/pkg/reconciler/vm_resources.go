@@ -17,37 +17,21 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/types"
 )
 
-// VirtualMachinesGVR addresses kubevirt.io/v1 VirtualMachines via the dynamic
-// client — like cert-manager Certificates, we don't pull in the typed client
-// for one resource shape.
 var VirtualMachinesGVR = schema.GroupVersionResource{
 	Group: "kubevirt.io", Version: "v1", Resource: "virtualmachines",
 }
 
-// vmRunStrategyAlways / vmRunStrategyHalted are the two run states the
-// controller flips between — the VM-backend equivalent of replicas 1 / 0.
 const (
 	vmRunStrategyAlways = "Always"
 	vmRunStrategyHalted = "Halted"
 )
 
-// VMCloudInitSecretName names the per-agent cloud-init Secret the VM boots
-// from (NoCloud userdata: platform env file, MITM CA, virtiofs mounts).
 func VMCloudInitSecretName(agentName string) string { return agentName + "-vm-cloudinit" }
 
-// vmWorkspacePVCName mirrors the name a StatefulSet volumeClaimTemplate would
-// produce (`<mount>-<agent>-0`), so container→vm mental models and any
-// name-based tooling stay consistent.
 func vmWorkspacePVCName(agentName, volName string) string {
 	return fmt.Sprintf("%s-%s-0", volName, agentName)
 }
 
-// BuildVMWorkspacePVCs renders the explicit PVCs backing a VM agent's
-// persisted mounts — the VM path has no volumeClaimTemplates, so the
-// reconciler creates what the StatefulSet controller would have. Same labels
-// as template-derived PVCs, so deletion and the orphan sweep apply unchanged;
-// deliberately no ownerRef (matching StatefulSet PVC semantics — the
-// controller deletes them explicitly on Agent delete).
 func BuildVMWorkspacePVCs(name string, agentSpec *types.AgentSpec, cfg *config.Config) []*corev1.PersistentVolumeClaim {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
@@ -79,16 +63,8 @@ func BuildVMWorkspacePVCs(name string, agentSpec *types.AgentSpec, cfg *config.C
 	return pvcs
 }
 
-// The uid the guest's agent user is created with (claude-code-vm Containerfile),
-// matching the container backend so workspace ownership carries across backends.
 const vmAgentUID = 65532
 
-// BuildVMCloudInitSecret renders the NoCloud userdata the guest consumes at
-// boot: the platform env block as /etc/platform/env (the VM image's
-// agent-runtime unit sources it), the MITM CA at the same path the container
-// backend mounts it, and one virtiofs fstab entry per mount. Everything
-// user-configurable still rides the runtime channel — this is platform wiring
-// only, exactly like pod env on the container backend.
 func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP, caCrt string) (*corev1.Secret, error) {
 	defaults := cfg.AgentTemplateDefaults
 	agentHome := agentSpec.AgentHome
@@ -96,10 +72,6 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		agentHome = defaults.AgentHome
 	}
 
-	// Values are single-quoted (shell escaping): the file is both shell-sourced
-	// by the boot gate and read as a systemd EnvironmentFile, and both parse
-	// single quotes — an unquoted value with whitespace would word-split into
-	// root-executed commands or brick the gate.
 	envFile := ""
 	for _, e := range agentPlatformEnv(name, cfg, agentHome, agentProxyAddr(cfg, gatewayClusterIP)) {
 		envFile += e.Name + "=" + shellQuote(e.Value) + "\n"
@@ -108,10 +80,6 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		envFile += e.Name + "=" + shellQuote(e.Value) + "\n"
 	}
 
-	// The boot gate's negative probe target: the kube-apiserver authority as
-	// seen from inside the cluster (kubelet-injected into the controller's own
-	// pod). Kept out of /etc/platform/env so it never leaks into the harness
-	// env; empty (e.g. tests) skips the negative check in the guest.
 	gateEnv := ""
 	if cfg.KubeAPIAddr != "" {
 		gateEnv = "PLATFORM_KUBE_API_DENY=" + shellQuote(cfg.KubeAPIAddr) + "\n"
@@ -133,67 +101,28 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		},
 	}
 	for _, m := range resolveSpecMounts(agentSpec, defaults) {
-		// Every mount gets its directory created, persisted or not. On the
-		// container backend an ephemeral mount is an emptyDir and kubelet
-		// creates the path; nothing does that here, and a missing one is not
-		// harmless — agent-runtime spawns the harness with WORK_DIR as its cwd,
-		// and Node fails a spawn whose cwd does not exist:
-		//   [agent-process] spawn error: spawn /usr/local/bin/harness-chat ENOENT
-		// which reads as a missing binary rather than a missing directory.
 		if !m.Persist {
 			cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
 				"mkdir -p %[1]s && chown %[2]d:%[2]d %[1]s || true",
 				shellQuote(m.Path), vmAgentUID,
 			)})
-			continue // no virtiofs device for an ephemeral mount; the rootfs overlay covers its contents
+			continue
 		}
-		// virtiofs tag == sanitized mount name (matches the filesystem device
-		// on the VM spec).
-		//
-		// bootcmd, not cloud-init's `mounts:` module: that module runs every
-		// device through sanitize_devname(), which resolves paths, LABEL= and
-		// UUID= but not a bare virtiofs tag — it returns None for one, and the
-		// entry is dropped with only a debug line ("Ignoring nonexistent
-		// default named mount"). The workspace then never mounts and
-		// agent-runtime fails loud against an empty $HOME. bootcmd runs in the
-		// init-local stage, before agent-runtime, on every boot — which is what
-		// we want anyway, since the rootfs is an ephemeral containerDisk
-		// overlay and any fstab edit would be discarded.
-		// `|| true` keeps a broken share from wedging boot, as nofail did.
 		tag := types.SanitizeMountName(m.Path)
 		cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
 			"mkdir -p %[1]s && { mountpoint -q %[1]s || mount -t virtiofs %[2]s %[1]s; } || true",
 			shellQuote(m.Path), shellQuote(tag),
 		)})
 	}
-	// agent-entrypoint swaps ~/.cache for pod-local disk, but on unprivileged
-	// virtiofs a non-root caller cannot create symlinks (virtiofsd lacks
-	// CAP_CHOWN; the guest kernel returns EPERM) — so root pre-creates the
-	// link here and the entrypoint's `[ ! -L ]` check skips its own attempt.
-	// Runs after the mount bootcmds above so the workspace share is in place.
-	// `ln -sfn` into an existing real directory nests the link instead of
-	// swapping — clear a non-symlink first so the pre-create is authoritative
-	// on volumes that already carry a real ~/.cache.
 	cc.BootCmd = append(cc.BootCmd, []string{"sh", "-c", fmt.Sprintf(
 		"mkdir -p /tmp/agent-cache && chown %[1]d:%[1]d /tmp/agent-cache && { [ -L %[2]s/.cache ] || rm -rf %[2]s/.cache; } && ln -sfn /tmp/agent-cache %[2]s/.cache || true",
 		vmAgentUID, shellQuote(agentHome),
 	)})
 
-	// The init script — on the container backend an init container (see
-	// resources.go). It is what seeds $HOME from /app/working-dir on first
-	// boot (Claude Code onboarding state, settings, the work dir), so
-	// skipping it leaves the harness with a first-run wizard and no
-	// permission config. Same every-start semantics as the init container:
-	// bootcmd runs each boot and the script is idempotent by contract.
-	// Runs as root (matching agent-runtime here); HOME is set explicitly
-	// since cloud-init's env carries none.
 	initScript := agentSpec.Init
 	if initScript == "" {
 		initScript = defaults.Init
 	}
-	// Inline argv, not a write_files script: bootcmd can run before
-	// write_files within cloud-init's module order, so a file dependency
-	// would race. `env` sets HOME without shell-quoting the script.
 	if initScript != "" {
 		cc.BootCmd = append(cc.BootCmd, []string{"env", "HOME=" + agentHome, "bash", "-c", initScript})
 	}
@@ -213,17 +142,6 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 	}, nil
 }
 
-// BuildAgentVirtualMachine renders the VM-backend counterpart of
-// BuildAgentStatefulSet: one kubevirt.io/v1 VirtualMachine whose
-// virt-launcher pod carries the same labels as an agent pod would — the
-// per-pair NetworkPolicies, the agent Service selector, the ambient-mesh
-// opt-out, and the pod informer all keep working against the launcher pod
-// unchanged. runStrategy is owned by applyVirtualMachine (the replicas
-// analogue); the value rendered here is a create-time default only.
-//
-// Warm-pool claims are a container-backend concept and deliberately don't
-// render here. Non-persisted mount dirs and the init script ride the
-// cloud-init userdata instead (BuildVMCloudInitSecret).
 func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) (*unstructured.Unstructured, error) {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
@@ -238,13 +156,8 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	for k, v := range labels {
 		podLabels[k] = v
 	}
-	// Same ambient opt-out as the container backend: the kernel NetworkPolicy
-	// on the virt-launcher pod must see real destinations, not HBONE.
 	podLabels["istio.io/dataplane-mode"] = "none"
 
-	// Guest sizing: spec limits map 1:1 onto the guest (requests == limits by
-	// CRD validation on the vm backend); missing dimensions fall back like the
-	// container path so no VM renders unbounded.
 	limits := toResourceList(agentSpec.Resources.Limits)
 	if defaults.Resources != nil {
 		for rn, q := range defaults.Resources.Limits {
@@ -257,29 +170,11 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	mem := limits[corev1.ResourceMemory]
 	cores := vmGuestCores(cpu)
 
-	// cache=writeback on the ephemeral disks. KubeVirt defaults containerDisk
-	// and emptyDisk to cache=none (O_DIRECT), which bypasses the host page
-	// cache — fine on real storage, pathological when the image is a
-	// copy-on-write overlay stacked on another VM's disk, as in any nested
-	// setup: every guest read becomes a synchronous trip down the whole stack
-	// and boot slows by orders of magnitude, tripping systemd's 45s timeouts.
-	// Both disks are already discarded on VM restart, so the weaker crash
-	// durability of writeback costs nothing here.
 	disks := []any{
 		map[string]any{"name": "boot", "cache": "writeback", "disk": map[string]any{"bus": "virtio"}},
 		map[string]any{"name": "cloudinit", "disk": map[string]any{"bus": "virtio"}},
-		// Serial "scratch" gives the guest a stable /dev/disk/by-id handle;
-		// the VM image's scratch unit formats and mounts it for the
-		// docker/k3s image stores (state there dies with hibernation).
 		map[string]any{"name": "scratch", "serial": "scratch", "cache": "writeback", "disk": map[string]any{"bus": "virtio"}},
 	}
-	// containerDisk supports a single pull secret: the agent-scoped ref wins,
-	// else the first chart-wide default. (The pod path lists all defaults as
-	// fallbacks; KubeVirt's API takes one — a multi-secret install needs the
-	// matching secret first.)
-	// Unlike a pod's container, containerDisk validates imagePullPolicy as a
-	// strict enum — the chart's default "" (tag-based K8s behavior) must be
-	// omitted, not passed through, or admission rejects the VM.
 	bootDisk := map[string]any{"image": agentSpec.Image}
 	if pullPolicy != "" {
 		bootDisk["imagePullPolicy"] = pullPolicy
@@ -297,7 +192,7 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	var filesystems []any
 	for _, m := range resolveSpecMounts(agentSpec, defaults) {
 		if !m.Persist {
-			continue // ephemeral mounts have no VM analogue; the guest rootfs overlay covers them
+			continue
 		}
 		volName := types.SanitizeMountName(m.Path)
 		filesystems = append(filesystems, map[string]any{"name": volName, "virtiofs": map[string]any{}})
@@ -308,13 +203,7 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	}
 
 	devices := map[string]any{
-		"disks": disks,
-		// virtio-rng: without a host entropy source the guest's CRNG seeds from
-		// interrupt timing alone, which barely accrues in a quiet VM. Every
-		// crypto consumer then blocks — measured on a boot without it: 30s
-		// loading kernel signing certs, 25s on the IMA CA, 30s entering /init,
-		// 52s attaching the BPF LSM. That pushed ordinary boot past systemd's
-		// 45s timeouts and wedged it (generator sandbox EPROTO → PID1 freeze).
+		"disks":      disks,
 		"rng":        map[string]any{},
 		"interfaces": []any{map[string]any{"name": "default", "masquerade": map[string]any{}}},
 	}
@@ -333,11 +222,6 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 		"volumes":  volumes,
 	}
 	if cfg.AgentProbesEnabled {
-		// Kubelet executes the probe against the launcher pod IP; masquerade
-		// forwards it to the guest, so ready == agent-runtime healthy — which
-		// also gates the headless Service endpoint the api-server dials.
-		// int64 literals: applyVirtualMachine's update path deep-copies the
-		// template as unstructured JSON, which panics on plain int.
 		podSpec["readinessProbe"] = map[string]any{
 			"httpGet":             map[string]any{"path": "/healthz", "port": int64(8080)},
 			"initialDelaySeconds": int64(5),
@@ -383,15 +267,10 @@ func BuildAgentVirtualMachine(name string, agentSpec *types.AgentSpec, cfg *conf
 	return u, nil
 }
 
-// shellQuote single-quotes a value for shell sourcing / systemd
-// EnvironmentFile parsing (an embedded single quote becomes quote-backslash-quote-quote).
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// vmGuestCores maps a CPU limit onto whole guest cores (ceil, min 1). Shared
-// by the builder and the resize budget gate so the two never disagree about
-// what a spec renders to.
 func vmGuestCores(cpu resource.Quantity) int64 {
 	cores := int64(math.Ceil(float64(cpu.MilliValue()) / 1000))
 	if cores < 1 {
@@ -400,8 +279,6 @@ func vmGuestCores(cpu resource.Quantity) int64 {
 	return cores
 }
 
-// toUnstructuredSlice JSON-shapes a typed slice for embedding in an
-// unstructured object.
 func toUnstructuredSlice[T any](in []T) ([]any, error) {
 	out := make([]any, len(in))
 	for i := range in {

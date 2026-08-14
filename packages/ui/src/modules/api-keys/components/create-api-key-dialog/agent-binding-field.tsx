@@ -11,8 +11,6 @@ interface Props {
   selectedAgentIds: Set<string>;
   onModeChange: (mode: BindingMode) => void;
   onToggleAgent: (agentId: string) => void;
-  /** `agents:manage` keys must be wildcard-bound, so the picker locks to "all"
-   *  and the "specific" option is disabled. */
   lockedToAll: boolean;
 }
 

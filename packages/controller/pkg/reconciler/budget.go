@@ -17,17 +17,6 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// Budget enforcement (#1900). The reconciler is the single actuator of the
-// 0→1 scale transition, so the ceiling is checked here — no api-server code
-// path can start pods around it. The rule stays deliberately dumb: sum the
-// owner's scaled-up agents' `spec.resources.limits` — the user-facing "size",
-// i.e. what the agents can actually consume — compare against the owner's
-// Ceiling (UserBudget CR, else chart default), refuse the start when either
-// dimension would overflow. Because limits hard-cap usage, a user's agents
-// can never consume past the Ceiling. Running agents are never re-checked or
-// evicted; the budget constrains starting, not running. The uniform per-agent
-// gateway overhead is deliberately excluded from the sum.
-
 type budgetVerdict struct {
 	allowed bool
 	message string
@@ -35,19 +24,7 @@ type budgetVerdict struct {
 
 var allowedVerdict = budgetVerdict{allowed: true}
 
-// budgetAllows decides whether scaling this agent's pair 0→1 fits the owner's
-// Ceiling. Already-running agents pass without any reads.
-//
-// Race note: the check reads desired SS replicas, but the admitted agent's
-// own scale-up happens later in Reconcile, after this returns — an admitted
-// but not-yet-scaled agent is invisible to a concurrent check. That gap is
-// safe ONLY because agent reconciles are drained by a single worker
-// goroutine (see the runAgentWorker call in main.go), so two same-owner
-// checks can never interleave with it. The per-owner mutex below is
-// belt-and-suspenders for that invariant, not a substitute: if agent workers
-// are ever parallelized, the lock must be held through the scale-up.
 func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, owner string) (budgetVerdict, error) {
-	// Ownerless agents (nothing to account against) are not gated.
 	if owner == "" {
 		return allowedVerdict, nil
 	}
@@ -56,7 +33,7 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 		return budgetVerdict{}, err
 	}
 	if up {
-		return allowedVerdict, nil // already running — only a real 0→1 spends budget
+		return allowedVerdict, nil
 	}
 
 	lock := r.ownerLock(owner)
@@ -87,20 +64,6 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	return allowedVerdict, nil
 }
 
-// resizeAllows gates a live resize (#1900): when an UP agent's rendered
-// limits GREW past its owner's Ceiling, the pair parks — the same "doesn't
-// fit ⇒ park" the 0→1 gate applies to starts. This makes the controller's
-// enforcement complete: the api-server's synchronous resize rejection is a
-// UX courtesy in front of this gate, not the enforcement, and an
-// out-of-band spec write (kubectl, GitOps) cannot grow a running agent
-// around the Ceiling.
-//
-// Returns grew=false when there is nothing to gate: the agent isn't up
-// (the 0→1 gate owns admission), or the new render's limits did not grow.
-// Grow detection diffs the new limits against the LIVE StatefulSet
-// template, so resyncs and ceiling changes never re-check a running agent
-// — the budget constrains *changes*, never running — and a shrink always
-// renders: even for an over-ceiling owner, shrinking only helps.
 func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, owner string) (budgetVerdict, bool, error) {
 	if owner == "" {
 		return allowedVerdict, false, nil
@@ -131,9 +94,6 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 		for i := range existing.Spec.Template.Spec.Containers {
 			c := &existing.Spec.Template.Spec.Containers[i]
 			if c.Name == AgentContainerName {
-				// Absent limits read as zero — a legacy template without limits
-				// counts any concrete new size as growth, which errs toward
-				// checking (conservative on a quota boundary).
 				oldCPU = c.Resources.Limits[corev1.ResourceCPU]
 				oldMem = c.Resources.Limits[corev1.ResourceMemory]
 				found = true
@@ -173,10 +133,6 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 	return allowedVerdict, true, nil
 }
 
-// reservedByOwner sums spec.resources.limits over the owner's scaled-up
-// agents, excluding `self`. Scaled-up = desired run state, per backend (see
-// agentDesiredUp) — desired, not observed, so agents still starting already
-// count and two near-simultaneous wakes cannot both slip under the ceiling.
 func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self string) (resource.Quantity, resource.Quantity, error) {
 	ns := r.config.Namespace
 	var cpu, mem resource.Quantity
@@ -189,7 +145,7 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 	for i := range sss.Items {
 		ss := &sss.Items[i]
 		if ss.Name != ss.Labels[LabelAgent] {
-			continue // the paired gateway StatefulSet — counted with its agent's spec, not separately
+			continue
 		}
 		if ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1 {
 			up[ss.Name] = true
@@ -213,8 +169,6 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 		}
 		isUp := up[item.GetName()]
 		if a.Spec.IsVM() {
-			// vm-backend peers have no agent StatefulSet — read the VM's
-			// desired run state instead.
 			isUp, err = r.vmDesiredUp(ctx, item.GetName())
 			if err != nil {
 				return cpu, mem, err
@@ -230,9 +184,6 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 	return cpu, mem, nil
 }
 
-// agentDesiredUp reads an agent's desired run state, per backend: the agent
-// StatefulSet's replicas for containers, the VirtualMachine's runStrategy for
-// the vm backend. Desired, not observed — mirrors the replicas semantics.
 func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vmBackend bool) (bool, error) {
 	if vmBackend {
 		return r.vmDesiredUp(ctx, name)
@@ -247,12 +198,6 @@ func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vmBac
 	return ss.Spec.Replicas != nil && *ss.Spec.Replicas >= 1, nil
 }
 
-// vmDesiredUp reads a vm-backend agent's desired run state off its
-// VirtualMachine's runStrategy. Absent VM / absent KubeVirt CRD = down, and
-// Forbidden too: the kubevirt RBAC is rendered only under
-// virtualization.enabled, and a leftover vm agent after disabling it must not
-// wedge the owner's whole budget gate (a VM the controller can't even read
-// is one it can't be running either).
 func (r *AgentReconciler) vmDesiredUp(ctx context.Context, name string) (bool, error) {
 	vm, err := r.dynamic.Resource(VirtualMachinesGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if errors.IsNotFound(err) || errors.IsForbidden(err) {
@@ -265,12 +210,6 @@ func (r *AgentReconciler) vmDesiredUp(ctx context.Context, name string) (bool, e
 	return strategy == vmRunStrategyAlways, nil
 }
 
-// vmResizeGrew is resizeAllows' grow detection for the vm backend: diff the
-// new spec's rendered guest size against the LIVE VirtualMachine's domain —
-// the same "diff against the live template" semantics the StatefulSet path
-// uses, on the same rendering (vmGuestCores / memory 1:1). Not-running,
-// absent, or unreadable (see vmDesiredUp) VMs return false — the 0→1 gate
-// owns admission.
 func (r *AgentReconciler) vmResizeGrew(ctx context.Context, name string, newCPU, newMem resource.Quantity) (bool, error) {
 	vm, err := r.dynamic.Resource(VirtualMachinesGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if errors.IsNotFound(err) || errors.IsForbidden(err) {
@@ -285,26 +224,10 @@ func (r *AgentReconciler) vmResizeGrew(ctx context.Context, name string, newCPU,
 	}
 	oldCores, _, _ := unstructured.NestedInt64(vm.Object, "spec", "template", "spec", "domain", "cpu", "cores")
 	oldMemStr, _, _ := unstructured.NestedString(vm.Object, "spec", "template", "spec", "domain", "memory", "guest")
-	// An unreadable live size reads as zero — any concrete new size counts as
-	// growth, erring toward checking (same stance as the container path's
-	// absent-limits case).
 	oldMem := parseQuantityOr(oldMemStr, resource.Quantity{})
 	return vmGuestCores(newCPU) > oldCores || newMem.Cmp(oldMem) > 0, nil
 }
 
-// ensureConcreteSize materializes an absent Size dimension into the Agent
-// spec (#1900): fill-if-absent with the chart's legacyAgentSize — the
-// limits pre-Sizes agents actually ran with — never touching a set value.
-// This gives `spec.resources.limits` "required" semantics without
-// schema-level enforcement: every Agent the controller observes converges
-// to concrete limits within one reconcile, however it was created
-// (api-server, kubectl, GitOps, restore). The api-server stays the sole
-// writer of user *intent*; this writes only a system default into unset
-// fields — the same license the K8s scheduler takes with spec.nodeName.
-//
-// The in-memory spec is updated alongside the patch, so the same pass
-// renders and budgets with the filled values: a legacy agent never runs at
-// the wrong default, even transiently.
 func (r *AgentReconciler) ensureConcreteSize(ctx context.Context, agent *apiv1.Agent) error {
 	fill := map[string]string{}
 	if agent.Spec.Resources.Limits["cpu"] == "" {
@@ -336,21 +259,12 @@ func (r *AgentReconciler) ensureConcreteSize(ctx context.Context, agent *apiv1.A
 	return nil
 }
 
-// limitsOf reads an agent's CPU/memory limits — its "size" — off its spec,
-// falling back per dimension to the chart's legacyAgentSize: the value
-// ensureConcreteSize will materialize on that agent's own next reconcile,
-// so the budget counts what a not-yet-filled peer is about to become.
-// Fallback, never zero: an unreadable OR non-positive limit must not let
-// an agent slip under the ceiling.
 func (r *AgentReconciler) limitsOf(spec *apiv1.AgentSpec) (resource.Quantity, resource.Quantity) {
 	cpu := parseQuantityOr(spec.Resources.Limits["cpu"], r.config.LegacyAgentCPULimit)
 	mem := parseQuantityOr(spec.Resources.Limits["memory"], r.config.LegacyAgentMemoryLimit)
 	return cpu, mem
 }
 
-// parseQuantityOr falls back on malformed AND non-positive quantities, with
-// the identical tolerance toResourceList applies at render — the two must
-// agree, or the budget would count a value the pod doesn't run with.
 func parseQuantityOr(s string, def resource.Quantity) resource.Quantity {
 	if s == "" {
 		return def
@@ -362,13 +276,6 @@ func parseQuantityOr(s string, def resource.Quantity) resource.Quantity {
 	return q
 }
 
-// ceilingFor resolves the owner's Ceiling: their UserBudget CR when one
-// exists, else the chart-wide default. A direct Get by the CEL-pinned name
-// (`budget-<owner>`) is complete — a differently-named CR for this owner
-// cannot exist. Read live rather than via an informer — 0→1 transitions are
-// rare and a live read keeps enforcement unlagged. (An owner string that is
-// label-legal but name-illegal can never have an override; Keycloak subs are
-// UUIDs, so this doesn't arise.)
 func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resource.Quantity, resource.Quantity, error) {
 	obj, err := r.dynamic.Resource(UserBudgetsGVR).Namespace(r.config.Namespace).Get(ctx, "budget-"+owner, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -384,14 +291,6 @@ func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resourc
 	return b.Spec.CPU, b.Spec.Memory, nil
 }
 
-// Denied-wake memo (#1900): a parked agent must NOT start by itself when
-// room frees — only a NEW deliberate wake (a fresh last-activity bump) or an
-// always-on agent (effective timeout 0, which declares "always run") retries
-// the gate. Keyed by the last-activity value at denial time, so any later
-// bump invalidates the memo naturally. In-memory: a controller restart
-// forgets denials and re-evaluates once — the rare restart-time auto-start
-// is accepted (leader-only single instance, same standing as the worker
-// invariant).
 func (r *AgentReconciler) wakeAlreadyDenied(name, lastActivity string) bool {
 	r.budgetMu.Lock()
 	defer r.budgetMu.Unlock()
@@ -414,7 +313,6 @@ func (r *AgentReconciler) clearDeniedWake(name string) {
 	delete(r.deniedWakes, name)
 }
 
-// ownerLock returns the per-owner mutex, lazily created.
 func (r *AgentReconciler) ownerLock(owner string) *sync.Mutex {
 	r.budgetMu.Lock()
 	defer r.budgetMu.Unlock()
@@ -429,10 +327,6 @@ func (r *AgentReconciler) ownerLock(owner string) *sync.Mutex {
 	return l
 }
 
-// publishOverBudget parks the agent: Ready=False/OverBudget with the figures
-// in the message (the api-server classifies this into a typed wake failure),
-// Reconciled=True — the render succeeded, the start was refused. The idle
-// checker's sweep restamps Hibernated once the activity window lapses.
 func (r *AgentReconciler) publishOverBudget(ctx context.Context, agent *apiv1.Agent, msg string) error {
 	gen := agent.Generation
 	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {

@@ -55,7 +55,6 @@ export function createStateBuilder(deps: {
         readSkillRefContributions(deps.db, agentId),
       ]);
       const builtin = deps.builtin.for(agentId);
-      // User env first: the env driver is first-occurrence-wins, so it shadows connection env.
       const rawContribs = [...userEnv, ...builtin, ...granted, ...skills];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
@@ -71,7 +70,6 @@ export function createStateBuilder(deps: {
   };
 }
 
-/** `env` contributions for an agent's user-typed env; the literal value rides in `placeholder`. */
 async function readUserEnvContributions(
   db: Db,
   agentId: string,
@@ -94,8 +92,6 @@ async function readGrantedContributions(
   db: Db,
   agentId: string,
 ): Promise<Contribution[]> {
-  // Ordered oldest-first: downstream is order-sensitive and unordered rows
-  // shift on any connection update, reading as a spurious state change (#3143).
   const rows = (await db
     .select({
       contributions: connectionsTable.contributions,

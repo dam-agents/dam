@@ -9,10 +9,6 @@ import {
 } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
 
-// Stable UUIDs would be nice; Node >= 18 has globalThis.crypto.randomUUID —
-// vitest's environment: "node" picks it up. Each call generates a new id for
-// on-demand bubbles, so assertions focus on shape rather than id equality.
-
 function userMsg(id: string, text: string): Message {
   return {
     id,
@@ -45,9 +41,6 @@ const txtChunk = (
   content: { type: "text" as const, text },
 });
 
-/** Pull the leading text part's body out of a message. Throws when the first
- *  part isn't text — these tests build messages with a known shape, so a
- *  mismatch should fail loudly rather than silently return "". */
 function firstTextPart({ parts }: Message): string {
   const [first] = parts;
   if (first?.kind !== "text")
@@ -85,9 +78,6 @@ describe("applyUpdate — agent content", () => {
   });
 
   test("does not promote queued bubble if an active one is present", () => {
-    // Prompt 1 still streaming (a1 active); prompt 2 already appended (a2
-    // queued) while we await a1's response. Agent content for prompt 1 must
-    // continue landing in a1 even though a2 sits after the last user message.
     const start: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "streaming", true, false),
@@ -271,9 +261,6 @@ describe("applyUpdate — turn boundaries", () => {
   });
 
   test("a system wrapper holding a nested element leaves no orphan closing tag", () => {
-    // The harness injects background-work notifications as a user message
-    // wrapping a nested element. A name-agnostic strip ended the match at
-    // `</task>` and left `</task-notification>` as the entire bubble.
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,
       messageId: "u1",
@@ -448,7 +435,6 @@ describe("replay scenarios", () => {
 
 describe("queued prompt scenarios", () => {
   test("second prompt queues behind the first; content lands on the right bubble after turn end", () => {
-    // Initial: first prompt in flight, second prompt queued.
     let m: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "", true, false),
@@ -456,14 +442,12 @@ describe("queued prompt scenarios", () => {
       assistantMsg("a2", "", true, true),
     ];
 
-    // Agent streams response to first prompt.
     m = applyUpdate(m, txtChunk("hello 1"));
     expect(firstTextPart(m[1])).toBe("hello 1");
     expect(m[1].queued ?? false).toBe(false);
     expect(m[3].parts).toEqual([]);
     expect(m[3].queued).toBe(true);
 
-    // Turn 1 ends.
     m = applyUpdate(m, {
       sessionUpdate: "platform_turn_ended",
       sessionId: "test-sid",
@@ -471,12 +455,10 @@ describe("queued prompt scenarios", () => {
     expect(m[1].streaming).toBe(false);
     expect(m[3].streaming).toBe(true);
 
-    // Agent starts streaming second prompt — promotes a2 to active.
     m = applyUpdate(m, txtChunk("hello 2"));
     expect(m[3].queued).toBe(false);
     expect(firstTextPart(m[3])).toBe("hello 2");
 
-    // Turn 2 ends.
     m = applyUpdate(m, {
       sessionUpdate: "platform_turn_ended",
       sessionId: "test-sid",
@@ -485,13 +467,6 @@ describe("queued prompt scenarios", () => {
   });
 
   test("turn boundary after promotion leaves the empty promoted bubble open for its reply", () => {
-    // The real wire order at promotion (#3127 Code Guardian finding): the
-    // sender's bubble for turn 1 is already closed by its own prompt
-    // response, `promptStarted` then strips the queued protection from the
-    // second bubble, and only AFTERWARDS does turn 1's `platform_turn_ended`
-    // fan out. That boundary must not close the just-promoted, still-empty
-    // placeholder — the reply would otherwise open a fresh bubble and orphan
-    // the user's message behind an empty "Agent" ghost.
     let m: Message[] = [
       userMsg("u1", "first"),
       { ...assistantMsg("a1", "done with turn one", false), promptId: "p1" },
@@ -512,12 +487,10 @@ describe("queued prompt scenarios", () => {
     });
     expect(m[3].streaming).toBe(true);
 
-    // The reply lands in the promoted bubble, not a fresh one.
     m = applyUpdate(m, txtChunk("answer to second"));
     expect(m).toHaveLength(4);
     expect(firstTextPart(m[3])).toBe("answer to second");
 
-    // Its own turn boundary closes it now that it has content.
     m = applyUpdate(m, {
       sessionUpdate: "platform_turn_ended",
       sessionId: "test-sid",
@@ -550,7 +523,6 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
 });
 
 describe("failQueuedOnDisconnect", () => {
-  /** The sender's own queued bubble: promptId + stashed retry payload. */
   function ourQueued(id: string, text: string): Message {
     return {
       ...assistantMsg(id, "", true, true),
@@ -566,12 +538,9 @@ describe("failQueuedOnDisconnect", () => {
       userMsg("u2", "second"),
       ourQueued("a2", "second"),
     ]);
-    // The interrupted turn merely closes — it was delivered, and its partial
-    // content is real.
     expect(out[1].streaming).toBe(false);
     expect(out[1].error).toBeUndefined();
     expect(firstTextPart(out[1])).toBe("partial reply");
-    // The queued one was dropped by the runtime, so it fails with Retry.
     expect(out[3].streaming).toBe(false);
     expect(out[3].queued).toBe(false);
     expect(out[3].error?.message).toMatch(/couldn't deliver/i);
@@ -587,7 +556,6 @@ describe("failQueuedOnDisconnect", () => {
   });
 
   test("drops a hidden queued send instead of failing it", () => {
-    // Hidden sends stash no retry payload — they fail silently everywhere.
     const hidden: Message = {
       ...assistantMsg("a1", "", true, true),
       promptId: "p-a1",
@@ -598,8 +566,6 @@ describe("failQueuedOnDisconnect", () => {
   });
 
   test("only finalizes a queued bubble that isn't ours to fail", () => {
-    // No promptId: another viewer's parked prompt, or one from replay. Their
-    // channel is still attached, so the runtime hasn't dropped it.
     const out = failQueuedOnDisconnect([assistantMsg("a1", "", true, true)]);
     expect(out).toHaveLength(1);
     expect(out[0].streaming).toBe(false);
@@ -607,7 +573,6 @@ describe("failQueuedOnDisconnect", () => {
   });
 
   test("finalizes a queued bubble that already has content", () => {
-    // Content beats a stale queued flag: the turn started, so it wasn't dropped.
     const started: Message = {
       ...assistantMsg("a1", "already talking", true, true),
       promptId: "p-a1",
@@ -626,8 +591,6 @@ describe("mergeLocalFailures", () => {
   };
 
   test("carries a locally-failed bubble across the reconnect rebuild", () => {
-    // The replayed log holds the dropped prompt's echo but never a reply, so
-    // the failure and its Retry have to survive.
     const rebuilt = [userMsg("u1", "first"), assistantMsg("a1r", "reply")];
     const out = mergeLocalFailures(rebuilt, [...rebuilt, failed]);
     expect(out).toHaveLength(3);
@@ -638,8 +601,6 @@ describe("mergeLocalFailures", () => {
     const rebuilt = [userMsg("u1", "hi"), assistantMsg("a1", "reply")];
     const previous = [
       ...rebuilt,
-      // A failure with no retry payload is history, not a live failure —
-      // a later send already stripped its Retry.
       { ...assistantMsg("a2", "", false), error: { message: "old" } },
     ];
     expect(mergeLocalFailures(rebuilt, previous)).toBe(rebuilt);

@@ -15,8 +15,6 @@ export function StickyFooterLayout({
 }: Props) {
   const hasFooter = Boolean(footer);
 
-  // Publishes the bar on the root so anything fixed to the bottom of the
-  // viewport can clear it — see `--bottom-bar-inset`.
   useEffect(() => {
     if (!hasFooter) return;
     document.documentElement.dataset.bottomBar = "";

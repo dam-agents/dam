@@ -13,6 +13,7 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
+  type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -20,6 +21,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import {
   assembleAgent,
@@ -51,43 +53,24 @@ import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
-/** Outbox-derived contribution status, supplied by runtime-delivery. */
 export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
 }
 
-/** Port: the failed contributions surfaced on an agent (the degraded badge). */
 export interface ContributionsSettledPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  /** Just the settled bit, for consumers that gate on it rather than report it.
-   *  Carried by the port so the projection out of `ContributionsStatus` lives
-   *  with the status shape instead of being re-derived at each call site. */
   isSettled(agentId: string): Promise<boolean>;
 }
 
-/** The settled bit alone, for modules that gate on it — one named dependency
- *  instead of a bare function type re-spelled at every wiring hop. */
 export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
 
-/**
- * Port consumed by `create()` to seed `egress_rules` for a brand-new agent.
- * Declared locally so the agents module doesn't import across
- * module boundaries; the egress-rules module's adapter structurally
- * satisfies this shape.
- */
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
 }
 
-/**
- * Port consumed by `bindTelegramChat()`. Declared locally (like
- * `PresetSeeder`) so the agents module doesn't import channels
- * infrastructure; the composition root assembles it from the bind-flow
- * store, the conversations repository, and the ChannelManager.
- */
 export interface TelegramBindingPort {
   peekFlow(flowId: string): Promise<{
     conversationId: string;
@@ -104,21 +87,15 @@ export interface TelegramBindingPort {
     agentId: string,
     authorizedBy: string,
   ): Promise<"bound" | "conflict">;
-  /** Best-effort confirmation into the chat, via the channel manager. */
   postMessage(
     agentId: string,
     conversationId: string,
     text: string,
   ): Promise<{ ok: true } | { error: string }>;
-  /** Bound conversations for an agent, with human titles. */
   listConversations(agentId: string): Promise<{ id: string; title: string }[]>;
   unbind(conversationId: string): Promise<void>;
 }
 
-/**
- * The bind flow, extracted from the service so tests can drive it with
- * three narrow deps instead of the full service dependency set.
- */
 export function executeTelegramBind(deps: {
   owner: string | undefined;
   getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
@@ -132,9 +109,6 @@ export function executeTelegramBind(deps: {
     if (!flow) return err({ type: "FlowInvalid" as const });
 
     if (!deps.owner || flow.keycloakSub !== deps.owner) {
-      // A different signed-in user is trying to consume the flow. Same error
-      // as an unknown flow — don't reveal that the id exists; the flow stays
-      // alive so the right account can still complete within the TTL.
       securityLog("warn", "authz.owner_mismatch", {
         category: "authz",
         actor: deps.owner ?? null,
@@ -153,8 +127,6 @@ export function executeTelegramBind(deps: {
       flow.conversationId,
     );
     if (existing && existing.agentId !== agentId) {
-      // Flow stays alive — the user may pick the right agent, or run the
-      // unbind command in the chat and retry.
       return err({ type: "ChatAlreadyBound" as const });
     }
     if (!existing) {
@@ -164,8 +136,6 @@ export function executeTelegramBind(deps: {
         flow.keycloakSub,
       );
       if (outcome === "conflict") {
-        // Lost an insert race — re-read to tell idempotent-same-agent apart
-        // from a real clash.
         const raced = await deps.binding.findAgentByConversation(
           flow.conversationId,
         );
@@ -176,8 +146,6 @@ export function executeTelegramBind(deps: {
 
     await deps.binding.consumeFlow(flowId);
 
-    // The binding IS the consent grant: the owner lends this agent — its
-    // credentials included — to everyone in the conversation.
     securityLog("info", "channel.chat_bound", {
       category: "authz-list",
       actor: deps.owner,
@@ -197,7 +165,6 @@ export function executeTelegramBind(deps: {
       `This chat is now connected to ${agent.name}. Run the unbind command to disconnect.`,
     );
     if ("error" in post) {
-      // Best-effort: the binding is committed; the confirmation is courtesy.
       securityLog("warn", "channel.chat_bound.notify_failed", {
         category: "channel",
         actor: deps.owner,
@@ -214,7 +181,22 @@ export function executeTelegramBind(deps: {
   };
 }
 
-/** Owner-side disconnect, extracted like `executeTelegramBind` for tests. */
+export function executeBackgroundWorkRead(deps: {
+  getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
+  podStatus: PodStatusClient;
+}) {
+  return async (id: string): Promise<SessionBackgroundWork[] | null> => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return null;
+    if (infra.hibernated) return [];
+    try {
+      return await deps.podStatus.backgroundWork(id);
+    } catch {
+      return [];
+    }
+  };
+}
+
 export function executeTelegramUnbind(deps: {
   owner: string | undefined;
   getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
@@ -231,8 +213,6 @@ export function executeTelegramUnbind(deps: {
     if (!existing || existing.agentId !== agentId)
       return err({ type: "ChatNotFound" as const });
 
-    // Courtesy note BEFORE the row goes away — outbound posting validates
-    // the binding, so this ordering is load-bearing. Best-effort either way.
     const post = await deps.binding.postMessage(
       agentId,
       conversationId,
@@ -265,12 +245,6 @@ export function executeTelegramUnbind(deps: {
   };
 }
 
-/**
- * Port consumed by `bindSlackChannel()`. Unlike Telegram, the durable write
- * is the shared `channels` row, so the port only carries
- * the bind-flow bearer store and the confirmation post; the ownership check
- * and the write reuse the service's own `connectSlack` path.
- */
 export interface SlackBindingPort {
   peekFlow(flowId: string): Promise<{
     slackChannelId: string;
@@ -279,7 +253,6 @@ export interface SlackBindingPort {
     channelTitle?: string;
   } | null>;
   consumeFlow(flowId: string): Promise<void>;
-  /** Best-effort confirmation into the channel, via the channel manager. */
   postMessage(
     agentId: string,
     slackChannelId: string,
@@ -287,12 +260,6 @@ export interface SlackBindingPort {
   ): Promise<{ ok: true } | { error: string }>;
 }
 
-/**
- * The in-chat Slack bind flow, extracted like `executeTelegramBind` so tests
- * can drive it with narrow deps. The binder must own the agent (`getAgent` is
- * owner-scoped) and must be the flow's authenticated user; an already-bound
- * channel is rejected outright (no in-place override).
- */
 export function executeSlackBind(deps: {
   owner: string | undefined;
   getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
@@ -313,8 +280,6 @@ export function executeSlackBind(deps: {
     if (!flow) return err({ type: "FlowInvalid" as const });
 
     if (!deps.owner || flow.keycloakSub !== deps.owner) {
-      // A different signed-in user is trying to consume the flow. Same error
-      // as an unknown flow — no oracle; the flow stays alive within its TTL.
       securityLog("warn", "authz.owner_mismatch", {
         category: "authz",
         actor: deps.owner ?? null,
@@ -329,26 +294,16 @@ export function executeSlackBind(deps: {
     const agent = await deps.getAgent(agentId);
     if (!agent) return err({ type: "AgentNotFound" as const });
 
-    // No override: reject if the channel is already bound to any agent — the
-    // prior binder must unbind first.
     const existing = await deps.findChannelBinding(flow.slackChannelId);
     if (existing) return err({ type: "ChannelAlreadyBound" as const });
 
-    // A shared channel bind is ambient-off by default: the agent answers
-    // mentions only until the binder opts the channel into read-along with the
-    // ambient command. Ambient has the agent read every message in the channel,
-    // so keeping that broader exposure an explicit opt-in is the safe default.
     const connected = await deps.connectShared(agentId, flow.slackChannelId);
     if (!connected.ok) {
-      // Ownership was already proven by getAgent, so a non-ok here is a lost
-      // race (the channel was bound between the check and the write).
       return err({ type: "ChannelAlreadyBound" as const });
     }
 
     await deps.binding.consumeFlow(flowId);
 
-    // The binding IS the consent grant: the binder lends this agent — its
-    // credentials included — to everyone in the channel.
     securityLog("info", "channel.chat_bound", {
       category: "authz-list",
       actor: deps.owner,
@@ -362,8 +317,6 @@ export function executeSlackBind(deps: {
       },
     });
 
-    // A 1:1 DM conversation id starts with "D" — tailor the confirmation so a
-    // private DM doesn't read as a shared channel ("everyone here").
     const isDm = flow.slackChannelId.startsWith("D");
     const post = await deps.binding.postMessage(
       agentId,
@@ -373,7 +326,6 @@ export function executeSlackBind(deps: {
         : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
     );
     if ("error" in post) {
-      // Best-effort: the binding is committed; the confirmation is courtesy.
       securityLog("warn", "channel.chat_bound.notify_failed", {
         category: "channel",
         actor: deps.owner,
@@ -390,12 +342,6 @@ export function executeSlackBind(deps: {
   };
 }
 
-/**
- * The template-upgrade flow (#1077), extracted like the bind flows so tests
- * can drive it with narrow deps. v1 re-applies the template's image only —
- * template env/mounts stay frozen at create time by design (re-flowing them
- * risks clobbering user edits / immutable volumeClaimTemplates).
- */
 export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
   getAgent: (id: string) => Promise<InfraAgent | null>;
@@ -416,18 +362,14 @@ export function executeTemplateUpgrade(deps: {
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return err({ type: "TemplateNotFound" as const });
 
-    // Binding consent: the confirmed image must still be what the template
-    // ships, or the user would apply a movement they never reviewed.
     if (expectedToImage !== undefined && expectedToImage !== tmpl.spec.image)
       return err({ type: "TemplateMoved" as const });
 
     const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
-    // Already current — idempotent success, no patch, no pod roll.
     if (!update) return ok(infra);
 
     const patched = await deps.patchImage(id, update.toImage);
     if (!patched) return err({ type: "AgentNotFound" as const });
-    // Swaps what code the pod runs — record the exact image movement.
     securityLog("info", "agent.upgrade", {
       category: "resource",
       actor: deps.owner ?? null,
@@ -444,20 +386,8 @@ export function executeTemplateUpgrade(deps: {
   };
 }
 
-/**
- * Cleanup hook invoked after a successful K8s ConfigMap delete. Each
- * registered hook clears its module's per-agent durable state — egress
- * rules, pending approvals, anything else keyed by `agent_id` in
- * Postgres. Best-effort: a single hook failing logs and continues so a
- * partial delete doesn't strand the rest.
- */
 export type AgentCleanupHook = (agentId: string) => Promise<void>;
 
-/**
- * Returns a new env list where any platform-managed entries (e.g. PORT) are
- * taken from `current` rather than `incoming`, preventing clients from
- * clobbering template-owned envs.
- */
 function preserveProtectedEnvs(
   current: EnvVar[],
   incoming: EnvVar[],
@@ -467,15 +397,10 @@ function preserveProtectedEnvs(
   return [...preserved, ...user];
 }
 
-/** Feed the view's `spec.env` from the store (the CR no longer carries user env). */
 function withUserEnv(infra: InfraAgent, env: EnvVar[]): InfraAgent {
   return { ...infra, spec: { ...infra.spec, env } };
 }
 
-/** Port: budget gate for resizing an UP agent (#1900) — a live resize rolls
- *  the pod at replicas=1 and never crosses the controller's 0→1 gate, so the
- *  api-server owns this one check. Wired from the budgets module; structural
- *  so this module doesn't import across the boundary. */
 export interface ResizeGatePort {
   assertResizeFits(
     agent: InfraAgent,
@@ -485,36 +410,22 @@ export interface ResizeGatePort {
 
 export function createAgentsService(deps: {
   repo: AgentsRepository;
-  /** Postgres store for user-typed env. */
   agentEnvRepo: AgentEnvRepository;
-  /** Global default idle timeout in minutes; resolves a per-agent override into the effective value. */
   agentIdleTimeoutMinutes: number;
   owner: string | undefined;
   readTemplateSpec: (
     id: string,
   ) => Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
-  /** Seeds egress_rules at create time. Optional so the system-agents
-   *  composition (which never creates agents) can omit it. */
   presetSeeder?: PresetSeeder;
-  /** Run after a successful K8s delete. Each module that owns per-agent
-   *  Postgres state contributes one hook. */
   cleanupHooks?: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
+  podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  /** KubeVirt vm backend available in this install; absent = false. */
   virtualizationEnabled?: boolean;
-  /** Budget gate for live resizes; omitted by system compositions (which
-   *  never resize) — a live resize without it is rejected. */
   resizeGate?: ResizeGatePort;
-  /** Cross-replica critical section serializing resize check+patch per
-   *  owner (Postgres advisory lock) — the courtesy ceiling check is
-   *  read+check+patch and must not race across replicas. */
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
-  /** Single-shot create: seeds spec grant fields before first render, then
-   *  applies egress/DB/delivery side-effects. Omitted by system compositions. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -524,13 +435,10 @@ export function createAgentsService(deps: {
       sel: { connectionIds: string[] },
     ): Promise<void>;
   };
-  // --- Runtime / channels / allowed-users dependencies (formerly Instance) ---
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (agentId: string, channel: ChannelConfig) => Promise<void>;
   deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
-  /** Release one of the agent's Slack bindings; false when it held none for
-   *  that conversation. */
   deleteSlackChannelByAgent: (
     agentId: string,
     slackChannelId: string,
@@ -545,19 +453,13 @@ export function createAgentsService(deps: {
     ) => Promise<void>;
     listByAgent: (tx: Tx, agentId: string) => Promise<ChannelConfig[]>;
   };
-  /** The Agent (if any) a Slack channel id is already bound to — global, since
-   *  Slack bindings are unique across the whole install. */
   findSlackChannelBinding: (slackChannelId: string) => Promise<{
     agentId: string;
     ambient?: boolean;
   } | null>;
-  /** Absent in the system-wide composition — binding is a user-facing flow. */
   telegramBinding?: TelegramBindingPort;
-  /** Absent in the system-wide composition — the in-chat Slack bind is a
-   *  user-facing flow driven from the authenticated UI picker. */
   slackBinding?: SlackBindingPort;
 }): AgentsService {
-  // Fail-soft: a transient outbox-DB error must never 500 an agent read.
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
       return await deps.contributionsSettled.status(id);
@@ -566,8 +468,6 @@ export function createAgentsService(deps: {
     }
   }
 
-  // Behind-the-template check (#1077): compares the create-time image capture
-  // against the boot-loaded template. Memory-backed, so fine on every read.
   async function templateUpdateFor(
     infra: InfraAgent,
   ): Promise<TemplateUpdate | undefined> {
@@ -596,8 +496,6 @@ export function createAgentsService(deps: {
     );
   }
 
-  // Shared by the public connectSlack method and the in-chat bind flow, so
-  // both take the same transactional-uniqueness and event path.
   const connectSlackImpl = async (
     id: string,
     slackChannelId: string,
@@ -606,12 +504,6 @@ export function createAgentsService(deps: {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
-    // One Slack channel binds to one Agent globally. Pre-check rather than
-    // relying on the unique-index violation: catching it inside the
-    // transaction below doesn't work — the aborted tx rethrows the raw error
-    // as it unwinds — so a channel bound to a different Agent would otherwise
-    // surface as a generic 500 instead of ChannelAlreadyBound. The in-tx
-    // catch stays as a backstop for the (accepted) concurrent-connect race.
     const existing = await deps.findSlackChannelBinding(slackChannelId);
     if (existing && existing.agentId !== id)
       return err({ type: "ChannelAlreadyBound" as const });
@@ -643,10 +535,6 @@ export function createAgentsService(deps: {
       slackChannelId,
     });
 
-    // An ambient change is audited so the flip stays diagnosable after the
-    // fact, but it is deliberately not announced in the channel — whoever made
-    // the change confirms it on their own surface (the UI, the CLI, or the
-    // ephemeral slash-command reply), never a channel-visible post.
     const wasAmbient = existing?.ambient === true;
     if (wasAmbient !== requestedAmbient) {
       securityLog("info", "channel.ambient_toggled", {
@@ -683,8 +571,6 @@ export function createAgentsService(deps: {
       const infraIds = new Set(infraAgents.map((a) => a.id));
       const orphans = [...channelMap.keys()].filter((id) => !infraIds.has(id));
       if (orphans.length > 0) {
-        // Clearing bindings as a side-effect of a read — flag it so a
-        // transient K8s read returning empty can't silently mass-purge.
         securityLog("warn", "agent.channels.orphan_purge", {
           category: "authz-list",
           actor: deps.owner ?? null,
@@ -704,8 +590,6 @@ export function createAgentsService(deps: {
         deps.agentEnvRepo.listMany([...infraIds]),
       ]);
 
-      // One template lookup per distinct id; agents from the same template
-      // share the resolved image for the behind-the-template check (#1077).
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
       ];
@@ -740,6 +624,11 @@ export function createAgentsService(deps: {
       if (!infra) return null;
       return project(infra);
     },
+
+    backgroundWork: executeBackgroundWorkRead({
+      getAgent: (id) => deps.repo.get(id, deps.owner),
+      podStatus: deps.podStatus,
+    }),
 
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;
@@ -778,8 +667,6 @@ export function createAgentsService(deps: {
             "this template runs as a full VM, which is not enabled on this install (virtualization.enabled)",
         });
       }
-      // Template-declared env rides the rail like user env (seeded below), not
-      // the CR — the controller no longer reads spec.env.
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
@@ -790,16 +677,9 @@ export function createAgentsService(deps: {
         spec.hibernationTimeout = minutesToDuration(
           input.hibernationTimeoutMin,
         );
-      // Invocation spawn stamps the root Driver id here so the target's
-      // gateway attributes its telemetry to the Driver (#3041). Service-only:
-      // the controller renders it into the gateway bootstrap, so it belongs in
-      // the spec, not annotations. Never wire-settable (see types.ts).
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
 
-      // Single-shot create: seed grants into the spec before first render so
-      // credentials ride the first snapshot and the gateway renders its chains
-      // once. (Not the roll fix — the agent template is grant-independent.)
       const grantSel = { connectionIds: input.connectionIds ?? [] };
       const hasInitialGrants = grantSel.connectionIds.length > 0;
       if (deps.grantProvisioner && hasInitialGrants) {
@@ -826,11 +706,6 @@ export function createAgentsService(deps: {
         spec.imagePullSecretRef = deps.registrySecretPort.secretName(agentId);
       }
 
-      // Sweepable (#2816): stamp the Agent Sweep annotations at create so an
-      // ephemeral agent is marked from birth (no window where a spawned target
-      // could hibernate before it is flagged). Durable agents omit them.
-      // Agent Kind (#2946) rides the same create-time stamp: an agent either
-      // belongs to its owning surface from birth or never.
       const createAnnotations: Record<string, string> = {};
       if (input.sweepable) {
         createAnnotations[ANN_SWEEPABLE] = "true";
@@ -841,8 +716,6 @@ export function createAgentsService(deps: {
       if (input.kbTemplateId)
         createAnnotations[ANN_KB_TEMPLATE] = input.kbTemplateId;
 
-      // No desiredState — a freshly-created agent runs (recent
-      // activity), and the idle checker hibernates it once it goes quiet.
       let infra: InfraAgent;
       try {
         infra = await deps.repo.create(
@@ -870,7 +743,6 @@ export function createAgentsService(deps: {
         throw e;
       }
 
-      // Input is ordered last so user env wins over a same-named template default (replace dedupes last-wins).
       const userEnv = preserveProtectedEnvs(
         [],
         [...templateEnv, ...(input.env ?? [])],
@@ -878,9 +750,6 @@ export function createAgentsService(deps: {
       if (userEnv.length > 0)
         await deps.agentEnvRepo.replace(infra.id, userEnv);
 
-      // Bulk-seed the requested preset (default `trusted`). `none` is a
-      // no-op; the trusted host list is captured at boot, so reseeding on
-      // retry is idempotent against the lookup index.
       if (deps.presetSeeder) {
         await deps.presetSeeder.seed(
           infra.id,
@@ -889,9 +758,6 @@ export function createAgentsService(deps: {
         );
       }
 
-      // Bump so the built-in platform connection ships from creation (#421).
-      // When a git repo was chosen, also enqueue a one-shot `workspace-seed`
-      // event — the agent clones it into the work dir on its first apply.
       await deps.runtimeMutator.bump(
         infra.id,
         input.gitRepo
@@ -906,8 +772,6 @@ export function createAgentsService(deps: {
           : [],
       );
 
-      // Side-effects now the CR exists: egress sync, connection-grant rows,
-      // channel delivery. Re-states the seeded grants (idempotent, no roll).
       if (deps.grantProvisioner && hasInitialGrants) {
         await deps.grantProvisioner.applyAfterCreate(infra.id, grantSel);
       }
@@ -918,8 +782,6 @@ export function createAgentsService(deps: {
         [],
         deps.agentIdleTimeoutMinutes,
       );
-      // Records the agent's initial security posture (preset, secret ref,
-      // env key names — never env values).
       securityLog("info", "agent.create", {
         category: "resource",
         actor: owner || null,
@@ -948,7 +810,6 @@ export function createAgentsService(deps: {
       if (input.description !== undefined)
         patch.description = input.description;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
-      // null clears the override (merge-patch deletes the key → inherit the global default).
       if (input.hibernationTimeoutMin !== undefined)
         patch.hibernationTimeout =
           input.hibernationTimeoutMin === null
@@ -960,15 +821,6 @@ export function createAgentsService(deps: {
           ) => Promise<InfraAgent | null>)
         | null = null;
       if (input.size !== undefined) {
-        // A sleeping agent's new Size passes the controller's 0→1 gate on
-        // its next start. An UP agent's resize is gated by the controller
-        // at render (an over-ceiling grow parks the pair); the check here
-        // is the synchronous courtesy in front of it — fail at save time
-        // with a typed error instead of parking a moment later. Serialized
-        // per owner around read+check+patch, with the read INSIDE the
-        // lock: the shrink shortcut and the up/sleeping split must
-        // classify against the same state the ceiling check runs on, or
-        // two rapid resizes could classify an increase as a shrink.
         gateLiveResize = (apply) =>
           deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
             const current = await deps.repo.get(input.id, deps.owner);
@@ -985,11 +837,8 @@ export function createAgentsService(deps: {
             }
             return apply();
           });
-        // Merge-patch merges nested objects, so only the provided
-        // dimensions change; requests (operator escape hatch) survive.
         patch.resources = { limits: input.size };
       }
-      // Both branches do the owner check; an env-only update skips the no-op CR patch.
       const applyPatch = () =>
         Object.keys(patch).length > 0
           ? deps.repo.updateSpec(input.id, deps.owner, patch)
@@ -1001,7 +850,6 @@ export function createAgentsService(deps: {
 
       let env = input.env;
       if (env !== undefined) {
-        // Strip protected names, then bump + enqueue so a running agent applies it next turn.
         env = preserveProtectedEnvs([], env);
         if (input.name !== undefined)
           env = renamedTelemetryIdentity(env, input.name) ?? env;
@@ -1009,8 +857,6 @@ export function createAgentsService(deps: {
         await deps.runtimeMutator.bump(input.id, []);
         await deps.runtimeMutator.enqueueAfterCommit(input.id);
       } else if (input.name !== undefined) {
-        // Rename: keep the telemetry name attribute in step with the new
-        // name; skipped entirely when the agent doesn't carry it.
         const refreshed = renamedTelemetryIdentity(
           await deps.agentEnvRepo.list(input.id),
           input.name,
@@ -1023,8 +869,6 @@ export function createAgentsService(deps: {
       }
 
       if (input.env !== undefined || input.secretRef !== undefined) {
-        // Env and secretRef control what credentials the pod receives — log
-        // key names only, never values.
         securityLog("info", "agent.update", {
           category: "resource",
           actor: deps.owner ?? null,
@@ -1045,9 +889,6 @@ export function createAgentsService(deps: {
     async delete(id) {
       const deleted = await deps.repo.delete(id, deps.owner);
       if (!deleted) return;
-      // Run cleanup hooks sequentially. Each hook is best-effort: a thrown
-      // hook is logged and skipped so a single module's failure doesn't
-      // strand the others. The sweeper saga catches anything missed here.
       for (const hook of deps.cleanupHooks ?? []) {
         try {
           await hook(id);
@@ -1062,8 +903,6 @@ export function createAgentsService(deps: {
           });
         }
       }
-      // Destructive (cascades PVC/secret/egress-rule cleanup); the actor is
-      // absent from the AgentDeleted event, so log it here.
       securityLog("info", "agent.delete", {
         category: "resource",
         actor: deps.owner ?? null,
@@ -1104,8 +943,6 @@ export function createAgentsService(deps: {
       }
       const infra = await deps.repo.wake(id);
       if (!infra) return null;
-      // Wake is an unconditional activity poke; the reconciler scales
-      // the pair up in response.
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1157,10 +994,6 @@ export function createAgentsService(deps: {
       }
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return null;
-      // A never-hibernate agent (effective timeout 0) runs regardless of
-      // activity, so a non-sticky pause would silently self-revive within a
-      // reconcile. For those, pause degrades to the sticky stop — down until
-      // explicitly woken — which is the only stable "paused" it can have.
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
         deps.agentIdleTimeoutMinutes,
@@ -1204,10 +1037,6 @@ export function createAgentsService(deps: {
       return connectSlackImpl(id, slackChannelId, ambient);
     },
 
-    // An agent may hold several Slack bindings (#3086), so a disconnect names
-    // the conversation to release. Omitting it releases them all — the
-    // pre-#3086 meaning, kept so an older client's `disconnectSlack(id)` still
-    // does what it always did rather than silently releasing one of many.
     async disconnectSlack(id, slackChannelId) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
@@ -1218,8 +1047,6 @@ export function createAgentsService(deps: {
         return project(infra);
       }
 
-      // Idempotent like the release-all path: an unbound conversation is not
-      // an error, it just emits nothing.
       const released = await deps.deleteSlackChannelByAgent(id, slackChannelId);
       if (released) {
         emit({

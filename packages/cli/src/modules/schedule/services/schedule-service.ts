@@ -14,11 +14,6 @@ import type {
   TransportError,
 } from "../domain/errors.js";
 
-// The router returns a structural view (`toView`), not a named contract type.
-// Derive the CLI-local alias from the inferred router output rather than
-// adding a contract type. NB: this is *not* a discriminated union — `type`
-// carries the full `"cron" | "rrule"` in both shapes, so callers discriminate
-// on the nullable `rrule` field, not on `type`.
 export type ScheduleView = inferRouterOutputs<AppRouter>["schedules"]["get"];
 
 function codeOf(e: unknown): string | undefined {
@@ -130,7 +125,6 @@ export function createScheduleService(deps: {
       }
     },
     async delete(id) {
-      // Server is idempotent on delete — unknown ids return without throwing.
       return trpcCall(async () => {
         await deps.trpc.schedules.delete.mutate({ id });
       });

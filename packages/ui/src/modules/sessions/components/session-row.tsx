@@ -6,6 +6,7 @@ import {
   TrashCan,
 } from "@carbon/icons-react";
 import {
+  type BackgroundWorkItemView,
   SessionMode,
   type SessionRuntime,
   SessionType,
@@ -28,9 +29,12 @@ import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { slackSessionKind } from "../lib/session-category.js";
+import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
+
+const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
 interface Props {
   session: SessionView;
@@ -38,6 +42,7 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
+  backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   onResume: () => void;
   onDelete: () => void;
@@ -49,6 +54,7 @@ export function SessionRow({
   working,
   needsApproval,
   unread = false,
+  backgroundWork = NO_WORK,
   cost,
   onResume,
   onDelete,
@@ -85,7 +91,6 @@ export function SessionRow({
     onResume();
   }, [onResume, menuOpen]);
 
-  // Close menu on outside tap
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -96,8 +101,6 @@ export function SessionRow({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  // Show "(no title · abcd1234)" while the harness hasn't named the session
-  // — the id suffix keeps untitled rows distinguishable from each other.
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = !s.title
     ? "text-muted-foreground italic"
@@ -110,8 +113,6 @@ export function SessionRow({
   const channel =
     s.type === SessionType.ChannelSlack ||
     s.type === SessionType.ChannelTelegram;
-  // Slack channel sessions split into the channel's rolling ambient reader and
-  // the threads it spins off; the ambient one wears an extra "A" marker.
   const slackKind = slackSessionKind(s);
 
   return (
@@ -134,7 +135,7 @@ export function SessionRow({
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          {/* The one 13px step in the design; every other size is on the scale. */}
+          {}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -146,6 +147,7 @@ export function SessionRow({
             needsApproval={needsApproval}
             working={working}
             session={s}
+            backgroundWork={backgroundWork}
           />
         </div>
         <span className="text-[11px] text-muted-foreground">
@@ -164,7 +166,7 @@ export function SessionRow({
           )}
         </span>
       </div>
-      {/* Desktop: hover-visible overflow menu */}
+      {}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -188,7 +190,7 @@ export function SessionRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* Context menu — long press (mobile) or right-click */}
+      {}
       {menuOpen && (
         <div
           ref={menuRef}
@@ -221,6 +223,7 @@ function SessionIndicators({
   needsApproval,
   working,
   session,
+  backgroundWork,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -229,8 +232,17 @@ function SessionIndicators({
   needsApproval: boolean;
   working: boolean;
   session: SessionView;
+  backgroundWork: readonly BackgroundWorkItemView[];
 }) {
-  if (!scheduled && !terminal && !channel && !needsApproval && !working)
+  const hasBackgroundWork = backgroundWork.length > 0;
+  if (
+    !scheduled &&
+    !terminal &&
+    !channel &&
+    !needsApproval &&
+    !working &&
+    !hasBackgroundWork
+  )
     return null;
   const runTime = scheduled ? runTimeLabel(session) : null;
   return (
@@ -240,8 +252,6 @@ function SessionIndicators({
       )}
       {channel &&
         (ambient ? (
-          // Rolling channel reader: keep the # channel glyph, brand it with a
-          // superscript "A" so it stands apart from the threads it spins off.
           <span
             className="inline-flex items-start text-foreground"
             aria-label="Ambient channel session"
@@ -282,14 +292,16 @@ function SessionIndicators({
         />
       ) : working ? (
         <WorkingDots className="text-accent" title="Working" />
+      ) : hasBackgroundWork ? (
+        <WorkingDots
+          className="working-dots-slow text-success"
+          title={backgroundWorkLabel(backgroundWork)}
+        />
       ) : null}
     </span>
   );
 }
 
-/** Time the schedule's fires have spent running, summed over every fire this
- *  session served. Null until the first fire finishes — including on sessions
- *  that predate the accounting. */
 function runTimeLabel(s: SessionView): string | null {
   const runs = s.runCount ?? 0;
   const total = formatDuration(s.runTotalMs ?? 0);

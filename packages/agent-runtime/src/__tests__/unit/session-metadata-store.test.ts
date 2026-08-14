@@ -135,7 +135,6 @@ describe("createSessionMetadataStore", () => {
 
     store.startRun("s1");
     clock = "2026-01-01T00:01:00Z";
-    // A concurrent fire must not discard the open run's start.
     store.startRun("s1");
     clock = "2026-01-01T00:02:00Z";
     store.finishRun("s1");
@@ -143,7 +142,6 @@ describe("createSessionMetadataStore", () => {
     store.startRun("s1");
     clock = "2026-01-01T01:01:00Z";
     store.finishRun("s1");
-    // A human turn ending with no run open must not count.
     store.finishRun("s1");
 
     expect(store.get("s1")).toMatchObject({ runCount: 2, runTotalMs: 180_000 });

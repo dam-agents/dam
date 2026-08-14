@@ -24,11 +24,6 @@ import { useExperimentFeed } from "../api/queries.js";
 import { DashboardCanvas } from "./dashboard-canvas.js";
 import { ExperimentStatusBadge } from "./experiment-status-badge.js";
 
-/** The launch session opens agent-side (runtime channel), so its id isn't in
- *  the start-run response — poll the agent's session list briefly and switch
- *  the chat to it, so the user follows the launch turn next to the graph.
- *  A pendingLaunch record covers the wait (pod wake can take a while):
- *  Start buttons disable and the sidebar shows a skeleton run row. */
 async function openLaunchSession(
   agentId: string,
   experimentId: string,
@@ -41,15 +36,11 @@ async function openLaunchSession(
         const sessions = await listAgentSessions(agentId);
         const launch = sessions.find((s) => s.experimentId === experimentId);
         if (launch) {
-          // Clear BEFORE opening: the chat's pending-launch takeover resets
-          // whatever session is open, and must never race the real one.
           useStore.getState().clearPendingLaunch(experimentId);
           useStore.getState().openAgentSession(agentId, launch.sessionId);
           return;
         }
-      } catch {
-        // The pod may still be waking from the launch poke; keep polling.
-      }
+      } catch {}
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     emitToast({
@@ -62,12 +53,6 @@ async function openLaunchSession(
   }
 }
 
-/** The experiment surface in the chat dock. Building and running are
- *  separate lifecycles with separate lenses: a DRAFT panel shows the plan
- *  (skeleton dashboard) with "Start a new run" and nothing else; a RUN
- *  panel shows only that run — the draft's renderer fed live data (its own
- *  results artifact once terminal), Stop while live, and the run's
- *  artifacts. */
 export function ExperimentDockPanel({
   experiment,
   options = [],
@@ -75,12 +60,8 @@ export function ExperimentDockPanel({
   onClose,
 }: {
   experiment: Experiment;
-  /** The agent's other dockable experiments — >1 renders a switcher. */
   options?: Experiment[];
   onSelect?: (id: string) => void;
-  /** Only the artifact-doorway variant closes (back to the normal dock);
-   *  the persistent panel has no close — dismissing it left no obvious way
-   *  to reopen the dashboard. */
   onClose?: () => void;
 }) {
   const isDraft = experiment.status === "draft";
@@ -88,9 +69,6 @@ export function ExperimentDockPanel({
   const startRun = useStartRun();
   const stop = useStopExperiment();
   const status = feed?.experiment.status ?? experiment.status;
-  // A launch in flight for THIS agent disables starting anything else on it
-  // until its session appears — the wait spans a pod wake, and an enabled
-  // button there invites an accidental second run.
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const launching =
     startRun.isPending || pendingLaunch?.agentId === experiment.driverAgentId;
@@ -102,8 +80,6 @@ export function ExperimentDockPanel({
         startRun.mutate(
           { id: experiment.id },
           {
-            // startRun returns the fresh run — follow its launch session;
-            // the run panel takes over via the session binding.
             onSuccess: (run) =>
               void openLaunchSession(run.driverAgentId, run.id),
           },
@@ -219,11 +195,6 @@ export function ExperimentDockPanel({
   );
 }
 
-/** The run's Invocations — one row per spawned subagent, running first.
- *  An invocation's id IS its target agent's id (report_result attribution),
- *  so a click opens that subagent's chat directly; targets already reaped
- *  render inert. Stage labels join through the recent-spans window and
- *  degrade to nothing for spans that scrolled out of it. */
 function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const agents = useAgentsList();
@@ -238,10 +209,6 @@ function RunInvocations({ feed }: { feed: TraceFeed | undefined }) {
       .map((invocation) => ({
         ...invocation,
         agentName: agentById.get(invocation.id)?.name ?? null,
-        // The invocation row says "running", but a target parked by the
-        // budget gate (#1900) hasn't started — show the wait honestly. The
-        // controller auto-retries sweepable targets, so this resolves by
-        // itself once room frees.
         waitingForRoom:
           invocation.status === "running" &&
           agentById.get(invocation.id)?.state === "over_budget",
@@ -292,7 +259,6 @@ function InvocationRow({
       <span
         className={cn(
           "size-[7px] shrink-0 rounded-full",
-          // Invocation statuses: running | done | failed.
           row.waitingForRoom
             ? "animate-pulse bg-amber-500"
             : row.status === "running"
@@ -320,8 +286,6 @@ function InvocationRow({
       </span>
     </button>
   );
-  // A disabled button fires neither pointer nor focus events, so a tooltip on
-  // one can never open; the row's own "(deleted)" text carries that instead.
   return deleted ? (
     button
   ) : (
@@ -329,11 +293,6 @@ function InvocationRow({
   );
 }
 
-/** The run's own artifacts: its frozen script clone plus everything the
- *  feed attributes structurally — span-referenced candidates, driver
- *  attaches (create_artifact experiment_id=), and invocation-target
- *  publishes (auto-attributed). The renderer/results artifact is the canvas
- *  above, so it isn't repeated here. */
 function RunArtifacts({
   experiment,
   feed,

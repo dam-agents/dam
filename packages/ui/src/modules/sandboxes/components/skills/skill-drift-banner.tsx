@@ -4,13 +4,8 @@ import type { Skill } from "api-server-api";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
-/** How many names the sentence spells out before it starts counting. Drift is
- *  computed across every source, so an upstream sweep can strand dozens at
- *  once; naming them all would swamp the banner and shove its button around. */
 const MAX_NAMED = 3;
 
-/** "a", "a and b", "a, b and 4 more" — the design names the drifted skills in
- *  the sentence, so the list has to read as prose rather than a comma dump. */
 function nameList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   if (names.length <= MAX_NAMED) {
@@ -19,11 +14,6 @@ function nameList(names: string[]): string {
   return `${names.slice(0, MAX_NAMED).join(", ")} and ${names.length - MAX_NAMED} more`;
 }
 
-/**
- * Drift is a sandbox-level fact, so it gets a sandbox-level action: one banner
- * naming what went stale and updating all of it together, instead of hunting
- * per-row Update pills across collapsed cards.
- */
 export function SkillDriftBanner({
   drifted,
   busy,
@@ -35,9 +25,6 @@ export function SkillDriftBanner({
 }) {
   const count = drifted.length;
   return (
-    // `status`, not `alert`: drift appears and disappears from polled data while
-    // the user reads the page, and an interrupting role would fire on a fact
-    // that is informational.
     <div
       role="status"
       className="flex items-start gap-2 rounded-lg border border-border bg-muted px-4 py-3 text-sm"

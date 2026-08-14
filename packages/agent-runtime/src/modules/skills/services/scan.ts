@@ -21,17 +21,6 @@ export interface ScanDeps {
   log: (msg: string) => void;
 }
 
-/**
- * Enumerate skills in a remote git source. GitHub URLs walk through
- * api.github.com (commit-head + tarball) so the Envoy sidecar's stable
- * Bearer-sentinel swap is on the hot path; non-GitHub URLs fall back to
- * anonymous git clone.
- *
- * Trade-off: `version` is the source's HEAD commit at scan time, uniform
- * across the catalogue. Drift detection lights the Update badge whenever the
- * source gets *any* commit, not only when a skill dir was touched. Click
- * still does the right thing (re-installs at HEAD); just noisier.
- */
 export async function runScan(
   deps: ScanDeps,
   input: SkillScanInput,
@@ -56,12 +45,6 @@ async function scanGithub(
   host: DetectedOwnerRepo,
   subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  // Anonymous preflight. The Envoy sidecar passes public repos through and
-  // its credential_injector filter rewrites the sentinel for private repos
-  // when the user is Connected — happy path is one call. A 404 here is
-  // ambiguous: truly-not-found OR private + not Connected. Retry with the
-  // sentinel so the api-server can surface the structured `app_not_connected`
-  // / `access_restricted` CTA the UI renders.
   let head = await deps.github.getCommitHead(host, { withAuth: false });
   if (
     !head.ok &&
@@ -73,9 +56,6 @@ async function scanGithub(
   if (!head.ok) return head;
   const version = head.value.sha;
 
-  // Tarball is served by api.github.com (with a redirect to codeload that
-  // the sidecar follows transparently — verified empirically). For a typical
-  // skill repo this is ~50–500 KB.
   const tarball = await deps.github.fetchTarball(host, version, {
     withAuth: false,
   });
@@ -83,8 +63,6 @@ async function scanGithub(
 
   return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
     await deps.repo.extractTarball(tarball.value, tmp, {});
-    // GitHub tarballs wrap contents in a single top-level dir like
-    // `{owner}-{repo}-{short-sha}` — find it and scan from there.
     const fs = await import("node:fs/promises");
     const extracted = (await fs.readdir(tmp, { withFileTypes: true })).filter(
       (e) => e.isDirectory(),

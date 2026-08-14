@@ -1,7 +1,5 @@
 import { cn } from "@/lib/utils";
 
-// Three dots with a staggered jump (see `.working-dots` in App.css). Color
-// comes from `currentColor`, so callers set it with a `text-*` class.
 export function WorkingDots({
   className,
   title,

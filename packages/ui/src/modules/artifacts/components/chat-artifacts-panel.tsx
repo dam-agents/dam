@@ -20,12 +20,8 @@ import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionBadge } from "./version-badge.js";
 
-/** Tracks agents publishing mid-conversation without a manual refresh. */
 const LIVE_POLL_MS = 5000;
 
-/** Chat sidebar section listing the agent's published artifacts — the
- *  artifact counterpart of the Files section. Clicking a row opens the
- *  docked live preview beside the chat. */
 export function ChatArtifactsPanel({
   agentId,
   open,
@@ -119,7 +115,7 @@ function ArtifactListRow({
       )}
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
-          {/* Kept mounted so hovering doesn't reflow the row. */}
+          {}
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"

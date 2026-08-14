@@ -14,9 +14,6 @@ export interface ApplyStateDeps {
   dispatcher: Dispatcher;
   eventDispatcher: EventDispatcher;
   stateStore: StateStore;
-  /** The harness config the server should record, or undefined when this agent
-   *  has no harness-config driver. Read after the drivers run — the env driver
-   *  has just materialized the base URL model discovery needs. */
   readHarnessConfig: () => Promise<HarnessConfigCurrent | undefined>;
   log: (msg: string) => void;
 }
@@ -24,7 +21,6 @@ export interface ApplyStateDeps {
 export function createRuntimeChannelService(
   deps: ApplyStateDeps,
 ): RuntimeChannelService {
-  // Serialize applies: the read-modify-write spans an await, so concurrent dispatches would double-fire events.
   let tail: Promise<unknown> = Promise.resolve();
   const serialize = <T>(work: () => Promise<T>): Promise<T> => {
     const run = tail.then(work, work);
@@ -46,7 +42,6 @@ export function createRuntimeChannelService(
       `[applyState] incoming v=${input.version} hash=${input.state.hash.slice(0, 8)} local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} contribs={${kindCounts}} events={${eventCounts}}`,
     );
 
-    // Contributions caught up, but events carry their own version — still apply them.
     if (input.version <= local.lastAppliedVersion) {
       deps.log(
         `[applyState] contributions stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; events only`,
@@ -82,7 +77,6 @@ export function createRuntimeChannelService(
       deps.log,
     );
 
-    // One read for however this apply ends, taken now that the drivers are done.
     const harnessConfigCurrent = await deps.readHarnessConfig();
 
     if (failures.length > 0) {
@@ -90,7 +84,6 @@ export function createRuntimeChannelService(
       deps.log(
         `[applyState] driver failure(s) — settling without advancing applied state; returning failures: ${summary}`,
       );
-      // Leave the cursor/hash behind so the retry re-dispatches.
       return {
         status: "ok",
         appliedVersion: local.lastAppliedVersion,
@@ -101,7 +94,6 @@ export function createRuntimeChannelService(
       };
     }
 
-    // Re-read to preserve the eventRuns just written by processEvents.
     const current = deps.stateStore.read();
     deps.stateStore.write({
       ...current,

@@ -41,8 +41,6 @@ export async function runInstall(
       input.path,
     );
     if (!srcDirRes.ok) {
-      // Re-tag with the original source URL — the tmpdir path inside the
-      // repo's resolveSkillDirInClone result isn't useful to callers.
       return err({
         kind: "SkillNotFoundInSource",
         source: input.sourceUrl,
@@ -67,9 +65,6 @@ async function fetchSourceAtVersion(
 ): Promise<Result<void, SkillsDomainError>> {
   const host = detectGithubOwnerRepo(source);
   if (host) {
-    // Anonymous-first; on 404 retry with the sentinel so the api-server's
-    // upstream-error mapping can surface the structured `app_not_connected`
-    // / `access_restricted` CTA body.
     let bytes = await deps.github.fetchTarball(host, version, {
       withAuth: false,
     });

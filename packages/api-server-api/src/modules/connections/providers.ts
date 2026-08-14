@@ -1,9 +1,5 @@
-// Single source of truth for model-provider definitions; the server catalog,
-// UI, and CLI all derive from it.
-
 export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
 
-// `placeholder` is the literal env value Envoy rewrites to the real credential at egress.
 export interface EnvMapping {
   envName: string;
   placeholder: string;
@@ -11,13 +7,10 @@ export interface EnvMapping {
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
-// `queryParamName` moves the credential from `headerName` into that URL query param at egress.
 export interface InjectionConfig {
   headerName: string;
   valueFormat?: string;
   queryParamName?: string;
-  // Terminate this host's gateway chain as HTTP/2 so injection lands on a gRPC
-  // stream (e.g. Modal). Omit for ordinary HTTP/1.1 REST hosts.
   http2?: boolean;
 }
 
@@ -39,9 +32,6 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   ];
 }
 
-// Standalone OpenAI (api.openai.com). OPENAI_BASE_URL is the SDK default, so it
-// doesn't change harness runtime — it gives harness-config model discovery a
-// base to GET /v1/models. Shared by PROVIDERS.openai and the connection catalog.
 export function openaiEnvMappings(): EnvMapping[] {
   return [
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
@@ -53,14 +43,10 @@ export interface BobModelPins {
   model?: string;
   agentId?: string;
   teamId?: string;
-  // 2.0 renamed the concept coins → cost (`--max-cost`). The env name stays
-  // BOB_MAX_COINS: it is pinned on secrets created before the rename, and the
-  // harness reads either spelling. The identifiers follow the current concept.
   maxCost?: string;
   chatMode?: string;
 }
 
-// Bob downgrades to a legacy backend when BOBSHELL_API_KEY starts with `sk-`/`pk-`; the placeholder must not.
 export const BOB_HOST = "api.us-east.bob.ibm.com";
 const BOB_PLACEHOLDER = "dummy-placeholder";
 
@@ -95,19 +81,12 @@ export function bobPinsFromEnvMappings(
   if (agentId) pins.agentId = agentId;
   if (teamId) pins.teamId = teamId;
   if (maxCost) pins.maxCost = maxCost;
-  // Same normalization as the UI's read path: a stored legacy mode reads back as
-  // the mode it became, so a re-save can't be blocked by it.
   if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
   return pins;
 }
 
 export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
 
-// Bob 2.0 merged the 1.x code/advanced modes into agent. Secrets pinned before
-// the upgrade still carry the old value, so a stored pin must be normalized
-// wherever it is read back — never rejected, or the connection becomes
-// un-editable over a field the runtime itself tolerates. Fresh input stays
-// strict against BOB_CHAT_MODES.
 const BOB_LEGACY_CHAT_MODES: Record<string, (typeof BOB_CHAT_MODES)[number]> = {
   code: "agent",
   advanced: "agent",
@@ -125,7 +104,6 @@ export interface ProviderPresetMode {
   tokenPrefix?: string;
   isDefault?: boolean;
   defaultEnvMappings: EnvMapping[];
-  // injection/extraInjections feed credential injection; read by the secrets module today, not yet the catalog.
   injection?: InjectionConfig;
   extraInjections?: readonly InjectionConfig[];
 }
@@ -189,7 +167,6 @@ export const PROVIDERS = {
     id: "openai",
     displayName: "OpenAI",
     hostPattern: "api.openai.com",
-    // Scope injection to /v1/* so other host endpoints don't get a stray Authorization header.
     pathPattern: "/v1/*",
     modes: [
       {
@@ -210,7 +187,6 @@ export const PROVIDERS = {
         label: "API Key",
         templateId: "bob",
         defaultEnvMappings: bobEnvMappings(),
-        // `Apikey` prefix; `Bearer` would trigger JWT auth.
         injection: {
           headerName: "Authorization",
           valueFormat: "Apikey {value}",
@@ -231,7 +207,6 @@ export function isProviderPresetType(type: string): type is ProviderPresetType {
   return type in PROVIDERS;
 }
 
-// Built from the modes so the template→provider relation isn't hand-maintained.
 const TEMPLATE_TO_PROVIDER: ReadonlyMap<string, ProviderPresetType> = new Map(
   PROVIDER_PRESET_TYPES.flatMap((type) =>
     PROVIDERS[type].modes.map(
@@ -250,7 +225,6 @@ export function providerTypeForTemplateId(
   return TEMPLATE_TO_PROVIDER.get(templateId) ?? null;
 }
 
-// tokenPrefix match wins; otherwise the default (or only) mode.
 export function templateIdForProvider(
   type: ProviderPresetType,
   value: string,

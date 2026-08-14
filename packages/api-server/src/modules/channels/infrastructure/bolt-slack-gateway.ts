@@ -28,8 +28,6 @@ export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
   let app: BoltApp | null = null;
-  // Scopes only change on a reinstall, which restarts this process — one
-  // successful probe is good for the gateway's lifetime.
   let grantedScopes: Set<string> | null = null;
 
   return {
@@ -57,11 +55,6 @@ export function createBoltSlackGateway(
       });
 
       bolt.event("message", async ({ event, context }) => {
-        // Deliver only plain human messages. Bot posts (including the agent's
-        // own replies) are skipped to prevent loops; edits/joins/etc. carry a
-        // subtype (file_share excepted — that's a plain message with an
-        // upload); and a message that mentions the bot already arrives via
-        // app_mention.
         const msg = event as {
           channel: string;
           channel_type?: string;
@@ -84,22 +77,12 @@ export function createBoltSlackGateway(
           files: msg.files,
           channelType: msg.channel_type,
         };
-        // A 1:1 DM (im) is always addressed to the bot, so every message
-        // relays — including one that @mentions the bot. Route it before the
-        // bot-mention drop below: that drop only dedups the channel/group case
-        // against app_mention, and the worker ignores the duplicate
-        // app_mention for DMs.
         if (msg.channel_type === "im") {
           await handlers.onDirectMessage(payload);
           return;
         }
-        // channel/group: a message that @mentions the bot already arrives via
-        // app_mention — skip it here to avoid processing the turn twice.
         const botUserId = context.botUserId;
         if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
-        // Plain channel/group messages feed ambient read-along; mpim (group
-        // DM) is mention-driven (arrives via app_mention), so its plain
-        // messages are ignored here.
         if (msg.channel_type === "channel" || msg.channel_type === "group") {
           await handlers.onMessage(payload);
         }
@@ -149,9 +132,6 @@ export function createBoltSlackGateway(
         text: args.text,
         thread_ts: args.threadTs,
         blocks: args.blocks,
-        // Sent only when broadcasting: Slack's own arg type pairs
-        // `reply_broadcast` with a definite `thread_ts`, so an unset flag stays
-        // off the payload entirely rather than riding along as undefined.
         ...(args.replyBroadcast ? { reply_broadcast: true } : {}),
       } as ChatPostMessageArgs);
     },
@@ -167,8 +147,6 @@ export function createBoltSlackGateway(
     },
 
     async startStream(args): Promise<{ ts: string }> {
-      // Throw (not silent no-op) when the app isn't running or Slack rejects
-      // the stream — the worker relies on the throw to fall back to a plain post.
       if (!app) throw new Error("slack app not started");
       const res = await app.client.chat.startStream({
         channel: args.channel,
@@ -265,9 +243,6 @@ export function createBoltSlackGateway(
     },
 
     async downloadFile(urlPrivate: string): Promise<ArrayBuffer> {
-      // A 2xx here does not mean the bytes are the file: Slack answers a
-      // request it won't serve with a 200 and a sign-in page. The caller
-      // classifies what actually arrived rather than trusting the status.
       const res = await fetch(urlPrivate, {
         headers: { Authorization: `Bearer ${deps.botToken}` },
       });
@@ -314,8 +289,6 @@ export function createBoltSlackGateway(
       try {
         info = await app.client.users.info({ user: userId });
       } catch (err) {
-        // A wrong or foreign id is a lookup miss, not a gateway fault — the
-        // caller reports it per id and keeps the rest of the batch.
         if (formatError(err).includes("user_not_found")) return null;
         throw err;
       }
@@ -354,7 +327,6 @@ export function createBoltSlackGateway(
           full: true,
         });
       } catch (err) {
-        // A ts Slack can't find is a lookup miss, not a gateway fault.
         if (formatError(err).includes("message_not_found")) return null;
         throw err;
       }
@@ -374,7 +346,6 @@ export function createBoltSlackGateway(
         });
         return result.permalink ?? null;
       } catch {
-        // Never fails the turn over a link — the contract just omits it.
         return null;
       }
     },
@@ -391,8 +362,6 @@ export function createBoltSlackGateway(
       if (!app) return null;
       if (grantedScopes) return grantedScopes;
       try {
-        // auth.test needs no scope of its own and has a generous rate limit;
-        // it's a cheap way to ask Slack what the bot token can actually do.
         const result = await app.client.auth.test();
         const scopes = result.response_metadata?.scopes;
         if (scopes) grantedScopes = new Set(scopes);

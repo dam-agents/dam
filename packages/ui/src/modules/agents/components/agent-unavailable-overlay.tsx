@@ -16,14 +16,10 @@ import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
 
 interface OverlayCopy {
-  /** Omitted for transient states, where a `Spinner` stands in for the icon. */
   Icon?: typeof Asleep;
   description: string;
 }
 
-/** Copy + iconography per non-running state. `running` is present only to
- *  satisfy the exhaustive record; the overlay is never rendered for it. The
- *  `error` description is replaced at render time with the agent's own message. */
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
   starting: { description: "The agent pod is starting up." },
@@ -48,15 +44,6 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   },
 };
 
-/**
- * Full-view takeover shown whenever the open agent isn't confirmed `running`.
- * Gates the chat/terminal beneath it and surfaces the lifecycle state, plus an
- * explicit Start (hibernated, or parked retrying the budget gate) or Restart
- * (error). A hibernated agent is also started once by `useAutoWakeOnOpen` when
- * its chat opens, so Start is the retry when that wake fails.
- * A null `display` means the agents list hasn't loaded yet (cold reload): show
- * a neutral spinner so we never flash the chat before the state is known.
- */
 export function AgentUnavailableOverlay({
   agent,
   display,
@@ -84,8 +71,6 @@ export function AgentUnavailableOverlay({
     );
   }
 
-  // Shown while displayState is `running` only because the breaker is open: the
-  // pod is unreachable but the lifecycle poll hasn't caught up to the dip yet.
   if (display.state === "running") {
     return (
       <OverlayFrame onBack={onBack}>

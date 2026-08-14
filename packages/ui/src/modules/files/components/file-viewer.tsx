@@ -50,7 +50,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     file.mtimeMs,
   );
 
-  // If the user opens already opened file for editiing
   useEffect(() => {
     if (openFileEdit) {
       if (editable) setEditMode(true);
@@ -58,7 +57,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     }
   }, [openFileEdit, editable, setOpenFileEdit]);
 
-  // Leaving fullscreen when the viewer switches to a different file.
   useEffect(() => setIsExpanded(false), [path]);
 
   const dirty = editMode && draft !== content;
@@ -68,8 +66,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     return () => setOpenFileDirty(false);
   }, [dirty, setOpenFileDirty]);
 
-  // Reset draft / baseline when the user switches files or the cache delivers
-  // fresh content (e.g., after a save or external change).
   useEffect(() => {
     if (!editMode) {
       setDraft(content);
@@ -98,7 +94,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           "File changed on disk",
         );
         if (!ok) {
-          // Refresh from disk and leave draft intact so the user can merge.
           const fresh = await fetchFileContent(selectedAgent, path);
           setBaseMtimeMs(fresh.mtimeMs);
           return;
@@ -140,7 +135,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     setEditMode(false);
   }, [dirty, content, showConfirm]);
 
-  // Create blob URL for PDF rendering; revoke on change/unmount to avoid leaking
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!isPdf || !content) {
@@ -156,8 +150,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
 
-  // Whether the current view is a rendered preview (not source/editor/hex) and
-  // therefore worth offering at full size.
   const isRenderedPreview =
     !editMode &&
     (isBinaryImage ||

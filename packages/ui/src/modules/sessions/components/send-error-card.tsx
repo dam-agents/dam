@@ -8,14 +8,10 @@ import { describeSendError } from "../../acp/errors.js";
 
 interface Props {
   rawError: string;
-  /** The turn had already streamed content before it broke — the card then
-   *  sits under that content and says so, instead of reading as a send that
-   *  never landed. */
   interrupted?: boolean;
   onRetry?: () => void;
 }
 
-/** Why a turn didn't complete, rendered inside the assistant bubble. */
 export function SendErrorCard({ rawError, interrupted, onRetry }: Props) {
   const { message, hint } = describeSendError(rawError);
   return (

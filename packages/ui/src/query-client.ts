@@ -24,8 +24,6 @@ declare module "@tanstack/react-query" {
   }
 }
 
-// One toast per sustained outage, cleared on the next success. Without this a
-// 5-second poll would emit a toast every tick while the backend is down.
 const notifiedOutages = new WeakSet<Query<unknown, unknown, unknown>>();
 
 export const queryClient = new QueryClient({

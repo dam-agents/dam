@@ -5,15 +5,11 @@ import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-/** Image-shipped Local Skills, split out of "Created in this sandbox"
- *  (#2828). Read-only — publish is also blocked server-side. */
 export function BuiltInSkillsGroup({
   skills,
   onOpenSkill,
 }: {
   skills: LocalSkill[];
-  /** Open a skill's SKILL.md preview. Absent when there is no pod to read
-   *  the file from, which leaves the names inert. */
   onOpenSkill?: (skill: LocalSkill) => void;
 }) {
   return (
@@ -35,7 +31,6 @@ export function BuiltInSkillsGroup({
   );
 }
 
-/** Pilled when the on-disk copy has diverged from the image. */
 function BuiltInSkillRow({
   skill,
   withDivider,
@@ -48,7 +43,7 @@ function BuiltInSkillRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-4 py-3",
+        "flex items-center gap-3 px-4 py-2",
         withDivider && "border-t border-border",
       )}
     >
@@ -66,14 +61,6 @@ function BuiltInSkillRow({
             {skill.name}
           </p>
         )}
-        <p
-          className={cn(
-            "truncate text-sm text-muted-foreground",
-            !skill.description && "italic",
-          )}
-        >
-          {skill.description || "No description"}
-        </p>
       </div>
       {skill.origin === "system-modified" && (
         <Badge

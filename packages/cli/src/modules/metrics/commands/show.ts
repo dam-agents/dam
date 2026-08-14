@@ -79,10 +79,6 @@ export function buildMetricsCommand(deps: {
         }
         const agent = resolved.value;
 
-        // Session titles live on the agent (over ACP), not in metrics —
-        // fetch them alongside the overview to label sessions as the UI does.
-        // Best-effort: metrics can outlive sessions or the agent may be
-        // unreachable, so a failure degrades to raw session ids.
         const fetchTitles = async (): Promise<Map<string, string>> => {
           const tok = await deps.tokenProvider.getValidAccessToken(host);
           if (!tok.ok) return new Map();

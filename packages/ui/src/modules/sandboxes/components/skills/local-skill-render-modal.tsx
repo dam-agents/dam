@@ -1,43 +1,76 @@
 import { useQuery } from "@tanstack/react-query";
-import type { LocalSkill } from "api-server-api";
+import type { LocalSkill, SkillPublishRecord } from "api-server-api";
+import type { ReactNode } from "react";
 
 import { trpc } from "../../../../trpc.js";
-import { SkillMarkdownModal } from "./skill-markdown-modal.js";
+import { SkillChip, SkillMarkdownModal } from "./skill-markdown-modal.js";
 
-/**
- * Renders a Local Skill's `SKILL.md` — standalone or image-baked — read off the
- * pod's PVC. No GitHub link accessory: a Local Skill has no source, and a
- * published one's pull request is a different thing than this file (the row
- * already links it).
- *
- * `agentId` is non-optional: without a pod there is nothing to read.
- */
+function stateLabel(skill: LocalSkill): string {
+  return skill.origin === "system" || skill.origin === "system-modified"
+    ? "Always on · ships with the image"
+    : "Always on";
+}
+
 export function LocalSkillRenderModal({
   skill,
   agentId,
+  publish,
+  onDownload,
+  footer,
   onClose,
 }: {
   skill: LocalSkill;
   agentId: string;
+  publish?: SkillPublishRecord;
+  onDownload: () => void;
+  footer?: ReactNode;
   onClose: () => void;
 }) {
   const { data, isPending, isError } = useQuery({
     ...trpc.skills.readLocal.queryOptions({ agentId, name: skill.name }),
-    // Same reasoning as the source-backed modal: the pod's NOT_FOUND /
-    // PAYLOAD_TOO_LARGE are verdicts, and retrying them strands the skeleton.
     retry: false,
   });
-  // Every Local Skill has a SKILL.md by definition, so a missing (or binary)
-  // one means something is wrong — the shell's error state, not a blank body.
   const manifest = data?.files.find((f) => f.relPath === "SKILL.md");
+  const builtIn =
+    skill.origin === "system" || skill.origin === "system-modified";
 
   return (
     <SkillMarkdownModal
       title={skill.name}
-      description={skill.description}
+      stateControl={
+        <span className="text-sm text-muted-foreground">
+          {stateLabel(skill)}
+        </span>
+      }
+      chips={
+        <>
+          <SkillChip>{builtIn ? "Built-in" : "Standalone"}</SkillChip>
+          <SkillChip>
+            {builtIn ? "sandbox image" : "created in this sandbox"}
+          </SkillChip>
+          <SkillChip className="font-mono">
+            {builtIn ? "image" : "local"}
+          </SkillChip>
+          {publish && (
+            <SkillChip>
+              <a
+                href={publish.prUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="hover:underline"
+              >
+                {publish.sourceName}
+              </a>
+            </SkillChip>
+          )}
+        </>
+      }
+      path={data ? `${data.dir}/SKILL.md` : `${skill.name}/SKILL.md`}
+      onDownload={onDownload}
       isPending={isPending}
       isError={isError}
       content={manifest?.base64 ? undefined : manifest?.content}
+      footer={footer}
       onClose={onClose}
     />
   );

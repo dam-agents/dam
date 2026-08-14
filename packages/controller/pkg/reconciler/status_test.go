@@ -71,8 +71,6 @@ func TestUpdateAgentStatus_NoOpWhenUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	rv1 := after1.GetResourceVersion()
 
-	// Re-applying the identical observation must be a no-op — no write, so no
-	// resourceVersion bump (load-bearing: a write would re-trigger reconcile).
 	require.NoError(t, updateAgentStatus(context.Background(), dyn, "test-agents", "my-agent", mutate))
 	after2, err := dyn.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -110,8 +108,6 @@ func TestSetError_DoesNotDowngradeBackoffExceeded(t *testing.T) {
 	r := NewAgentReconciler(nil, &config.Config{Namespace: "test-agents"}).WithDynamicClient(dyn)
 
 	r.SetBackoffExceeded(context.Background(), "my-agent", 16, fmt.Errorf("boom"))
-	// A subsequent failed reconcile must NOT flip the reason back — the
-	// flip-flop would self-trigger via the informer and never settle.
 	_ = r.setError(context.Background(), "my-agent", "still failing")
 
 	got, err := dyn.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})

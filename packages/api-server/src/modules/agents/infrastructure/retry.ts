@@ -1,8 +1,3 @@
-/**
- * Retry `fn` while `shouldRetry(err)` returns true. Waits `backoffMs` with
- * ±10% jitter between attempts. The 10ms default is sized for K8s
- * optimistic-concurrency contention (see retry.DefaultRetry in client-go).
- */
 export async function retry<T>(
   fn: () => Promise<T>,
   shouldRetry: (err: unknown) => boolean,

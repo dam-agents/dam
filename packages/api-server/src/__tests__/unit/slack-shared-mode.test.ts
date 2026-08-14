@@ -17,7 +17,6 @@ import type { StoredChannelConfig } from "../../modules/channels/stored-channel.
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
 
-// Capture securityLog lines (it writes through the process-wide Pino logger).
 const logLines: string[] = [];
 configureLogger({ level: "info", write: (l) => logLines.push(l) });
 beforeEach(() => {
@@ -99,8 +98,6 @@ describe("slack shared-channel access", () => {
     const h = harness({ binding: bound });
     await h.mention(STRANGER);
 
-    // The turn is relayed and succeeds — no login prompt, no allow-list block.
-    // (The reply itself only lands if the agent calls the `reply` tool.)
     expect(h.turnEvents()[0]?.outcome).toBe("success");
     const joined = h.texts().join("\n");
     expect(joined).not.toContain("link your account");

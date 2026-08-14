@@ -20,14 +20,11 @@ interface Props {
   onManage?: () => void;
   onDelete?: (id: string, name: string) => void;
   deletingId?: string | null;
-  /** Per-row credential maintenance; omit to offer none. */
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
 }
 
-/** Provider group card listing existing connections — the "My connections"
- *  anatomy shared by the sandbox section and the settings page. */
 export function ConnectionGroupCard({
   group,
   templateById,

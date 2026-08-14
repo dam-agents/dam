@@ -34,12 +34,8 @@ export function MarkdownCodeBlock({ node, children, ...preProps }: Props) {
             aria-label="Copy code"
             tooltip="Copy code"
             className={cn(
-              // Gate the reveal on hover capability, not width: a touch device
-              // wider than `md` would hide the button with no way to show it.
               "absolute right-2 top-2 transition-opacity",
               "hover-capable:opacity-0 group-hover/code-block:opacity-100 focus-visible:opacity-100",
-              // The `outline` variant's own hover colour outranks these tints,
-              // and after a click the pointer is still on the button.
               state === "copied" && "text-success hover:text-success",
               state === "failed" && "text-danger hover:text-danger",
             )}
@@ -52,8 +48,7 @@ export function MarkdownCodeBlock({ node, children, ...preProps }: Props) {
               <Copy size={14} />
             )}
           </Button>
-          {/* A changing button name isn't reliably announced, so carry the
-              outcome in a live region instead. */}
+          {}
           <span role="status" aria-live="polite" className="sr-only">
             {STATUS[state]}
           </span>

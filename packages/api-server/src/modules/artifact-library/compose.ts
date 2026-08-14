@@ -17,15 +17,11 @@ import {
 
 export interface ComposeArtifactLibraryForOwnerOpts {
   db: Db;
-  /** Shared blob-store service (owner-agnostic); this module owner-scopes
-   *  every key it hands over. */
   artifacts: ArtifactService;
   owner: string;
   shareBaseUrl: string;
 }
 
-/** Owner-scoped service — backs both the user tRPC router and the in-pod MCP
- *  session (same factory, owner bound at composition, never request input). */
 export function composeArtifactLibraryForOwner(
   opts: ComposeArtifactLibraryForOwnerOpts,
 ): { artifactLibrary: ArtifactLibraryServiceImpl } {
@@ -39,8 +35,6 @@ export function composeArtifactLibraryForOwner(
   };
 }
 
-/** Owner-agnostic read surface for the public share host (slug resolution,
- *  password verification, view counting). Boot-scoped. */
 export function composeShareViewer(opts: {
   db: Db;
   artifacts: ArtifactService;
@@ -51,8 +45,6 @@ export function composeShareViewer(opts: {
   });
 }
 
-/** System-level expired-artifact reaper tick — the composition root
- *  schedules it on the platform periodic-jobs queue. */
 export function composeArtifactExpirySweeper(opts: {
   db: Db;
   artifacts: ArtifactService;

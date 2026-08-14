@@ -9,8 +9,6 @@ interface CardButtonProps
     React.ComponentProps<"button">,
     VariantProps<typeof cardSelectionVariants> {}
 
-/** A whole card that acts as one button — a pickable option, a "connect this"
- *  affordance. Callers supply the inner layout through `className`. */
 export function CardButton({ className, selected, ...props }: CardButtonProps) {
   return (
     <button

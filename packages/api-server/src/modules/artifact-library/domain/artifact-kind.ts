@@ -1,6 +1,5 @@
 import type { ArtifactKind } from "api-server-api";
 
-/** Extensions that render as highlighted code in-app and on the share page. */
 const CODE_EXTENSIONS = new Set([
   "js",
   "mjs",
@@ -67,9 +66,6 @@ export function extensionOf(fileName: string): string {
   return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
 }
 
-/** Content heuristics ported from slop's `detect.ts`. Order matters: an
- *  explicit `import` opener wins for JSX, then strong HTML anchors are checked
- *  before the weaker JSX signals so HTML-with-embedded-React reads as HTML. */
 function detectTextKind(content: string): ArtifactKind | null {
   const trimmed = content.trimStart();
   if (trimmed.startsWith("import ")) return "jsx";
@@ -94,15 +90,11 @@ function detectTextKind(content: string): ArtifactKind | null {
   return null;
 }
 
-/** True when the buffer looks like text (no NUL in the first 8 KiB and valid
- *  enough UTF-8). Cheap gate before treating uploaded bytes as a text kind. */
 export function looksLikeText(content: Buffer): boolean {
   const probe = content.subarray(0, 8192);
   return !probe.includes(0);
 }
 
-/** Resolve the artifact kind: explicit wins, then the file extension, then
- *  content sniffing for text, else binary. */
 export function detectKind(input: {
   explicit?: ArtifactKind;
   fileName?: string;
@@ -123,21 +115,15 @@ export function detectKind(input: {
   return input.content ? "binary" : "text";
 }
 
-/** Kinds whose bytes are utf-8 text (previewable in-app without base64). */
 export function isTextKind(kind: ArtifactKind): boolean {
   return kind !== "binary";
 }
 
-/** Strip characters that would break out of a quoted Content-Disposition
- *  filename — the name is used verbatim in download headers and baked into
- *  presigned download links. */
 export function downloadFileName(name: string): string {
   const cleaned = name.replace(/[\r\n"\\]/g, "").trim();
   return cleaned.length > 0 ? cleaned : "artifact";
 }
 
-/** File name fallback when the caller supplied none — derived from the title
- *  so downloads and highlighting have something sensible to key off. */
 export function defaultFileName(title: string, kind: ArtifactKind): string {
   const base =
     title

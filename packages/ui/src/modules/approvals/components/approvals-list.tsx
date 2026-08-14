@@ -31,7 +31,6 @@ const STATUS_LABEL: Record<ApprovalView["status"], string> = {
 
 export interface ApprovalsListProps {
   rows: readonly ApprovalView[];
-  /** Compact rendering for the dropdown / tray; full rendering for the page. */
   density?: "compact" | "full";
   emptyLabel?: string;
 }
@@ -85,13 +84,7 @@ function ApprovalRow({
     denyForever.isPending ||
     dismiss.isPending;
   const expired = row.status === "expired";
-  // Allow-once is only meaningful for ext_authz: there's a single in-flight
-  // call to release. ACP-native rows don't have a hold to release — the
-  // verdict goes back to the harness via wrapper-response either way.
   const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
-  // Host-scoped rules and the egress-rules table are ext_authz concepts.
-  // Acp-native verdicts are forwarded to the harness, which has its own
-  // per-tool rule model — host wildcards don't apply there.
   const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
   const showHostActions = hostLabel !== null;
 

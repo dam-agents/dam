@@ -23,9 +23,6 @@ const skill: Skill = {
   dir: "skills/a",
 };
 
-/** A service wired to spy on the scope each scan path asks the cache for.
- *  `scanSource` stands in for the cache: it runs the scanner it was handed,
- *  exactly as a cold cache would. */
 function serviceWithScanSpy(scanPublic: SkillsServiceDeps["scanPublic"]) {
   const scanSource = vi.fn<SkillsServiceDeps["scanSource"]>(
     async (_scope, gitUrl, _path, scanner) => ({
@@ -69,9 +66,6 @@ describe("skills list scan scope", () => {
 
     await service.list(SOURCE_ID, AGENT_ID);
 
-    // The public probe runs first and 404s; the pod scan that answers carried
-    // one sandbox's credentials, so it is scoped to that sandbox — a sibling
-    // with different grants must not be served this list.
     expect(scanSource).toHaveBeenCalledTimes(2);
     expect(scanSource.mock.calls[1][0]).toEqual({
       kind: "agent",

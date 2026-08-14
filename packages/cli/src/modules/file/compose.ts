@@ -17,8 +17,6 @@ export interface FileModule {
   commands: ReadonlyArray<Command>;
 }
 
-/** Slim module like `import` — three commands, each a single tRPC call
- *  against the per-agent proxy. No service layer. */
 export function composeFileModule(opts: FileModuleOptions): FileModule {
   const parent = new Command("file").description(
     "Read, write, and list files in an Agent's workspace",

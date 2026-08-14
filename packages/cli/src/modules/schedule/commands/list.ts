@@ -21,7 +21,6 @@ import type {
 } from "../services/schedule-service.js";
 
 function recurrenceText(view: ScheduleView): string {
-  // rrule rows render human-readable; a legacy cron row renders its raw string.
   return view.rrule !== null ? rruleToText(view.rrule) : (view.cron ?? "");
 }
 

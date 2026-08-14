@@ -7,7 +7,6 @@ import {
   type SendFailureFacts,
 } from "../../modules/sessions/lib/send-outcome.js";
 
-/** The agent answered with a failure; nothing else true. */
 const BASE: SendFailureFacts = {
   connectionClosed: false,
   delivered: false,

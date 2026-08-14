@@ -2,16 +2,11 @@ import type { Capabilities, HarnessConfigCurrent } from "agent-runtime-api";
 import type { HarnessClient } from "./harness-client.js";
 import type { StateStore } from "./state-store.js";
 
-/** Boot/wake registration. The worker drives any actual apply. Returns whether it landed. */
 export async function runHello(opts: {
   client: HarnessClient;
   stateStore: StateStore;
   capabilities: Capabilities;
   agentRuntimeVersion: string;
-  /** The harness config file as it stands, so the server's snapshot follows a
-   *  hand-edit even on a boot with nothing to apply. Carries no model list —
-   *  see `readCurrent`. Undefined when the manifest declares no harness-config
-   *  driver. */
   harnessConfigCurrent: HarnessConfigCurrent | undefined;
   log: (msg: string) => void;
 }): Promise<boolean> {

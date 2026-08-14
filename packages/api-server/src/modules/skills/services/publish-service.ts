@@ -18,28 +18,13 @@ import { securityLog } from "../../../core/security-log.js";
 
 export interface PublishServiceDeps {
   owner: string;
-  /** Look up a source by id. Must handle real ids (user / system) AND
-   *  template-synthesised `template:*` ids — publishing is supposed to work
-   *  against template-bound sources too. */
   resolveSource: (id: string) => Promise<SkillSource | null>;
   agentSkills: AgentSkillsRepository;
   agents: AgentsRepository;
   runtimeClient: AgentRuntimeSkillsClient;
-  /** Display name surfaced in the auto-generated PR body when the caller
-   *  doesn't pass one. Sourced from brand config (env-var driven). */
   brandName: string;
 }
 
-/**
- * Publish orchestrator — thin proxy. Validates that the user owns the
- * instance + source and wakes a hibernated agent, then delegates
- * everything else to agent-runtime (which goes through the in-pod Envoy
- * sidecar's credential injector for the GitHub token swap).
- *
- * Upstream gateway errors (app_not_connected / access_restricted) get
- * re-thrown as tRPC errors with the `connect_url` / `manage_url` carried
- * along in `message` so the UI can parse them.
- */
 export async function publishSkill(
   deps: PublishServiceDeps,
   input: SkillPublishInput,
@@ -65,14 +50,6 @@ export async function publishSkill(
     });
   }
 
-  // Image-shipped skills aren't the user's to publish (#2828) — modified or
-  // not: divergence (a user edit, or an image upgrade moving the baked copy)
-  // doesn't transfer ownership, so the gate can't be disarmed by appending a
-  // byte or by a routine image bump. A skill tracked as installed from a
-  // Skill Source is exempt: install overwrites the directory, so it always
-  // diverges from a same-named baked copy, but it's governed by its source
-  // relationship, not by the image (publish-back-to-source must keep
-  // working). Missing origin (pre-provenance pod) stays publishable.
   const [local, tracked] = await Promise.all([
     deps.runtimeClient.listLocal(input.agentId),
     deps.agentSkills.listSkills(input.agentId),
@@ -108,10 +85,6 @@ export async function publishSkill(
     throw err;
   }
 
-  // Explicit publish record. Drives the UI's Published badge + View PR link
-  // so we don't fall back to a name-match heuristic that false-positives on
-  // unrelated skills sharing a catalog entry's name. Source fields are
-  // denormalized so the record survives source renames/deletions.
   const record: SkillPublishRecord = {
     skillName: input.name,
     sourceId: source.id,
@@ -119,15 +92,11 @@ export async function publishSkill(
     sourceGitUrl: source.gitUrl,
     prUrl: result.prUrl,
     publishedAt: new Date().toISOString(),
-    // Unresolved, not `open`: a freshly opened pull request has not been read
-    // back yet, and guessing would be a claim we have not verified.
     prState: null,
     prStateCheckedAt: null,
   };
   await deps.agentSkills.appendPublish(input.agentId, record);
 
-  // Credential-backed external write: the agent's injected GitHub PAT opens a
-  // PR upstream on the owner's behalf.
   securityLog("info", "skill.publish", {
     category: "privileged",
     actor: deps.owner,

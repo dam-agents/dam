@@ -6,13 +6,10 @@ import type { ProviderRef } from "../../providers/components/provider-item.js";
 interface Args {
   apps: readonly ConnectionView[];
   assignedAppIds: string[];
-  /** Read at call time — a confirm dialog can hold `selectProvider` open
-   *  across background grant refetches. */
   getAssignedAppIds: () => string[];
   setAssignedAppIds: (ids: string[]) => void;
 }
 
-/** Provider (model-credential) staging on top of the form's grant list. */
 export function useProviderStaging({
   apps,
   assignedAppIds,
@@ -34,8 +31,6 @@ export function useProviderStaging({
     return connId ? { id: connId } : null;
   }, [assignedAppIds, providerAppIds]);
 
-  // Selecting a provider swaps it in, clearing any other provider connection
-  // so an agent never carries two providers at once.
   const selectProvider = (ref: ProviderRef) =>
     setAssignedAppIds(
       [

@@ -127,14 +127,11 @@ const identityResolver = {
 
 const noMatchRules = { match: async () => null };
 
-/** No channel turn in flight — a hold has somewhere to land, so the gate waits.
- *  The default for every case that isn't about channel origin. */
 const attended = {
   hasOpenChannelTurn: async () => false,
   hasInteractiveSession: async () => false,
 };
 
-/** Drain microtasks so all internal awaits inside `gateRequest` settle. */
 async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
@@ -215,13 +212,10 @@ describe("ext-authz gate", () => {
       method: "GET",
       path: "/p",
     });
-    // Yield so insertPending + publish run before we resolve.
     await flushMicrotasks();
 
     expect(repo.inserts).toBe(1);
     expect(bus.publishes).toHaveLength(1);
-    // The synth frame fans out on the policy-bearing agent's channel (the
-    // resolved identity), not the raw caller's.
     expect(bus.publishes[0].channel).toBe("inject:agent-1");
 
     const id = repo.rows[0].id;
@@ -255,10 +249,6 @@ describe("ext-authz gate", () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(await inflight).toBe("deny");
-    // Row's lifecycle tracks the held call: hold-timeout = held call gone =
-    // expired. The inbox UI greys out one-shot actions in that state; rule-
-    // writing actions (approve permanently / deny forever) still apply
-    // because they affect future requests, not this expired row.
     expect(repo.expirePendingCalls).toEqual([repo.rows[0].id]);
   });
 
@@ -286,7 +276,6 @@ describe("ext-authz gate", () => {
     expect(bus.publishes).toHaveLength(1);
     const id = repo.rows[0].id;
 
-    // Retry from the agent CLI while the original row is still pending.
     const retry = gate.gateRequest({
       agentId: "inst-1",
       host: "h",
@@ -295,11 +284,9 @@ describe("ext-authz gate", () => {
     });
     await flushMicrotasks();
 
-    // No second insert; no second synth frame fan-out.
     expect(repo.inserts).toBe(1);
     expect(bus.publishes).toHaveLength(1);
 
-    // Both holds resolve from the same row when the user clicks once.
     repo.resolve(id, "allow");
     bus.fire(`approval:${id}`, "");
     expect(await first).toBe("allow");
@@ -375,7 +362,6 @@ describe("ext-authz gate", () => {
         platformAllowedHosts: [],
       });
 
-      // No timer advance: a held call would still be pending here.
       const verdict = await gate.gateRequest({
         agentId: "inst-1",
         host: "h",
@@ -384,8 +370,6 @@ describe("ext-authz gate", () => {
       });
 
       expect(verdict).toBe("deny");
-      // The row is what the owner approves later, so it must exist and stay
-      // actionable rather than being expired along with the refusal.
       expect(repo.inserts).toBe(1);
       expect(repo.rows[0].status).toBe("pending");
       expect(repo.expirePendingCalls).toHaveLength(0);
@@ -464,7 +448,6 @@ describe("ext-authz gate", () => {
       });
       await flushMicrotasks();
 
-      // Someone can decide, so the prompt goes out and the call is still open.
       expect(bus.publishes).toHaveLength(1);
 
       const id = repo.rows[0].id;

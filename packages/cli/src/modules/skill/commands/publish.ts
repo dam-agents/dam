@@ -96,7 +96,6 @@ export function buildPublishCommand(deps: {
 
         const svc = deps.createSkillsService(host);
 
-        // Pass the agentId so template sources resolve too.
         const sourcesRes = await svc.listSources(agentId);
         if (!sourcesRes.ok) {
           printServiceError(sourcesRes.error, host);
@@ -113,8 +112,6 @@ export function buildPublishCommand(deps: {
           process.exit(EXIT_INVALID_INPUT);
         }
 
-        // GitHub guard, up front: reject a non-publishable target before any
-        // publish call (no pod wake). canPublish === "the gitUrl is GitHub".
         if (source.canPublish !== true) {
           process.stderr.write(
             `error: publishing to ${source.gitUrl} isn't supported — only GitHub sources can publish\n`,
@@ -174,10 +171,6 @@ export function buildPublishCommand(deps: {
     );
 }
 
-/** Resolve PR title/body. Flags pass through (empty → undefined so the server
- *  default applies); otherwise prompt on a TTY; otherwise leave both undefined
- *  and let the server fill its defaults. The CLI is brand-blind, so a blank
- *  body is sent as undefined rather than an empty string. */
 async function resolveTitleBody(
   name: string,
   opts: { title?: string; body?: string },

@@ -23,7 +23,6 @@ export function useCreateSchedule() {
       api.schedules.createRRule.mutate({
         ...input,
         quietHours: input.quietHours.length > 0 ? input.quietHours : undefined,
-        // "fresh" is the absence of a persisted session on the wire.
         sessionMode:
           input.sessionMode === "fresh" ? undefined : input.sessionMode,
       }),

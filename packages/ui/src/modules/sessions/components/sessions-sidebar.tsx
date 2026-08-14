@@ -19,6 +19,7 @@ import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
+import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
@@ -71,19 +72,12 @@ export function SessionsSidebar({
     activeSessionId: sessionId,
   });
   const sessions: SessionView[] = data ?? EMPTY;
-  // First load only, not every refetch: the list polls every few seconds, and
-  // keying the empty state off `isFetching` made "No sessions yet" blink out on
-  // each poll for an agent that genuinely has none.
   const loading = data === undefined && isFetching;
 
   const visibleSessions = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
     [sessions, sessionFilter],
   );
-  // Experiment runs are agent-launched, not conversations — they get their
-  // own group below the sessions the user actually drives.
-  // A run whose launch session hasn't materialized yet (pod waking) renders
-  // as a skeleton row; the real session replaces it once the list has it.
   const launchingRun =
     pendingLaunch &&
     pendingLaunch.agentId === selectedAgent &&
@@ -113,6 +107,12 @@ export function SessionsSidebar({
     return set;
   }, [approvals]);
 
+  const backgroundWork = useAgentBackgroundWork(selectedAgent);
+  const backgroundWorkBySession = useMemo(
+    () => new Map(backgroundWork.map((s) => [s.sessionId, s.items])),
+    [backgroundWork],
+  );
+
   const confirmDelete = useCallback(
     async (sid: string, title: string | null | undefined) => {
       const label = title || sid.slice(0, 12);
@@ -125,20 +125,15 @@ export function SessionsSidebar({
 
   const renderRow = (s: (typeof sessions)[number]) => {
     const isOpen = s.sessionId === sessionId;
-    // Terminal sessions have no chat turn, so `busy` never applies.
     const working =
       s.mode === SessionMode.Terminal
         ? !!s.running
         : isOpen
           ? busy || !!s.running
           : !!s.running;
-    // Polled approvals cover all sessions; the live store surfaces the open one instantly.
     const needsApproval =
       approvalSessions.has(s.sessionId) ||
       pendingPermissions.some((p) => p.sessionId === s.sessionId);
-    // Terminals have no meaningful unread — their updatedAt tracks the
-    // harness file mtime (bumped by restarts and TUI repaints), not
-    // reading. No seenAt means an untracked (legacy) session — also read.
     const unread = Boolean(
       !isOpen &&
       s.mode !== SessionMode.Terminal &&
@@ -154,6 +149,7 @@ export function SessionsSidebar({
         working={working}
         needsApproval={needsApproval}
         unread={unread}
+        backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts?.get(s.sessionId)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);

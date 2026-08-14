@@ -46,8 +46,6 @@ export function createSkillInstallPlugin(deps: {
         );
       }
       const configuredPaths = parsed.data.paths;
-      // State lives in this plugin's own dir (ctx.pluginStateDir), known only
-      // at dispatch; created once and reused across dispatches.
       let stateStore: SkillInstallStateStore | undefined;
 
       return async (contributions, ctx) => {
@@ -98,9 +96,6 @@ export function createSkillInstallPlugin(deps: {
           installed.add(c.name);
         }
 
-        // Only remove skills this driver installed before that are no longer
-        // desired. Seeded skills (platform-base) and standalone skills authored
-        // on disk are never in `managed`, so the sweep leaves them untouched.
         const toRemove = [...managed].filter((name) => !desired.has(name));
         for (const root of resolvedPaths) {
           for (const name of toRemove) {

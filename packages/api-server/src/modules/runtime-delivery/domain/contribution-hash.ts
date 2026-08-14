@@ -2,8 +2,6 @@ import { createHash } from "node:crypto";
 import type { Contribution } from "api-server-api";
 
 export function contributionHash(contributions: Contribution[]): string {
-  // Duplicate keys tie-break on content, so the hash never depends on input
-  // order — even where the stable sort would otherwise preserve it.
   const sorted = [...contributions]
     .map(canonicalize)
     .sort((a, b) => cmp(a.k, b.k) || cmp(a.json, b.json));

@@ -8,13 +8,10 @@ import {
 } from "../../modules/channels/services/channel-manager.js";
 import type { SlackWorker } from "../../modules/channels/infrastructure/slack.js";
 
-/** In-process stand-in for Redis pub/sub, shared by both "replicas". */
 function fakeBus(): RedisBus {
   const listeners = new Map<string, Set<BusListener>>();
   return {
     async publish(channel, payload) {
-      // Async delivery, like the real bus — catches anything that assumes a
-      // synchronous round trip.
       await Promise.resolve();
       for (const fn of listeners.get(channel) ?? []) fn(payload);
     },
@@ -50,7 +47,6 @@ function fakeSlackWorker(): SlackWorker {
   };
 }
 
-/** In-memory stand-in for the Redis blob handoff. */
 function fakeBlobs() {
   const store = new Map<string, Buffer>();
   return {
@@ -96,8 +92,6 @@ describe("channel attachments across replicas", () => {
     });
     await leader.bootstrap(new Map());
 
-    // Non-UTF8 bytes: a Buffer put through JSON.stringify comes back as
-    // `{type:"Buffer",data:[…]}`, which the worker would upload as garbage.
     const data = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
     const result = await follower.postMessage(
       "agent-1",
@@ -112,7 +106,6 @@ describe("channel attachments across replicas", () => {
     expect(Buffer.isBuffer(passed.data)).toBe(true);
     expect([...passed.data]).toEqual([...data]);
     expect(passed.filename).toBe("x.png");
-    // Handed off, not leaked.
     expect(blobs.store.size).toBe(0);
   });
 
@@ -141,7 +134,6 @@ describe("channel attachments across replicas", () => {
     });
     await leader.bootstrap(new Map());
 
-    // The handoff expired before the leader read it.
     const original = blobs.handoff.take;
     blobs.handoff.take = async () => null;
 
@@ -163,13 +155,10 @@ describe("channel outbound across replicas", () => {
     const bus = fakeBus();
     const workerA = fakeSlackWorker();
     const workerB = fakeSlackWorker();
-    // One claim keyspace, as Redis would be.
     const claimed = new Set<string>();
     const claim = async (id: string) =>
       claimed.has(id) ? false : (claimed.add(id), true);
 
-    // Mid-handover: the outgoing holder hasn't noticed it lost the lease and
-    // the incoming one has already started serving. PUBLISH reaches both.
     const outgoing = createChannelManager({
       slackWorker: workerA,
       rpc: createBusRpc<ChannelRpcRequest, unknown>({
@@ -203,7 +192,6 @@ describe("channel outbound across replicas", () => {
 
     await follower.postMessage("agent-1", ChannelType.Slack, "hello");
 
-    // Exactly one post reaches Slack — not one per serving replica.
     const posts =
       vi.mocked(workerA.postMessage).mock.calls.length +
       vi.mocked(workerB.postMessage).mock.calls.length;
@@ -238,16 +226,12 @@ describe("channel outbound across replicas", () => {
 
     await leader.bootstrap(new Map());
 
-    // The agent's reply arrives over MCP on whichever replica the harness
-    // Service pinned its gateway to — which is not the replica holding the
-    // Slack socket, and so not the one holding this turn's thread refs.
     const result = await follower.reply("agent-1", ChannelType.Slack, {
       text: "hi",
     });
 
     expect(result).toEqual({ ok: true });
     expect(leaderWorker.reply).toHaveBeenCalledWith("agent-1", { text: "hi" });
-    // The follower's own worker is inert — it holds no turn state.
     expect(followerWorker.reply).not.toHaveBeenCalled();
 
     await leader.stopAll();
@@ -297,9 +281,6 @@ describe("channel outbound across replicas", () => {
       isLeader: () => false,
     });
 
-    // No leader bootstrapped, so nothing answers. A hung promise would wedge
-    // the agent's tool call forever; a rejection would break every caller's
-    // `"error" in result` branch. It has to surface as an error result.
     expect(
       await follower.postMessage("agent-1", ChannelType.Slack, "hi"),
     ).toEqual({ error: expect.stringMatching(/timed out/) });
@@ -333,8 +314,6 @@ describe("channel outbound across replicas", () => {
     await leader.bootstrap(new Map());
     await leader.standDown();
 
-    // standDown must unhook the rpc server, or a demoted replica keeps
-    // answering with workers it has already stopped.
     expect(
       await follower.reply("agent-1", ChannelType.Slack, { text: "hi" }),
     ).toEqual({ error: expect.stringMatching(/timed out/) });

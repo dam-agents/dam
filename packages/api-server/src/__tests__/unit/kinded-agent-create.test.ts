@@ -104,7 +104,6 @@ describe("createKindedAgent", () => {
     expect(event.kind).toBe("workspace-command");
     expect(event.id).toContain("experiment-install:agent-x1:");
     expect(event.payload.command).toContain("dam-experiment");
-    // Generous TTL: a fresh agent parked over budget may wait far beyond boot.
     expect(event.expiresAt.getTime()).toBeGreaterThan(
       new Date("2026-08-20T00:00:00Z").getTime(),
     );
@@ -114,8 +113,6 @@ describe("createKindedAgent", () => {
   });
 
   it("deletes the fresh agent when the install enqueue fails", async () => {
-    // Without the compensation, a throw here would leave a marked agent whose
-    // setup never ran — indistinguishable in the lists from a healthy one.
     const { deps, calls } = makeHarness();
     await expect(
       createKindedAgent(
@@ -141,8 +138,6 @@ describe("createKindedAgent", () => {
   });
 
   it("wakes only after the install event is enqueued", async () => {
-    // The wake is what triggers delivery, so enqueueing after it would race a
-    // fast boot and leave the command undelivered until the next wake.
     const { deps, calls } = makeHarness();
     const order: string[] = [];
     await createKindedAgent(

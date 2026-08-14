@@ -29,7 +29,7 @@ export function ConnectionsView() {
   const newButton = (
     <Button
       variant="outline"
-      className="h-8 px-3 text-sm font-normal"
+      size="sm"
       onClick={() => setCatalogOpen(true)}
       data-testid="open-connection-catalog"
     >

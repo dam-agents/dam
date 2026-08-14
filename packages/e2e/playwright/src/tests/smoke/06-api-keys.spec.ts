@@ -6,20 +6,6 @@ import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 
-/**
- * End-to-end authorization for API keys, against the real api-server + Keycloak
- * + Postgres (no browser). Mints keys with narrow scopes through an interactive
- * (JWT) session, then drives the public tRPC surface with each.
- *
- * The headline test walks a real agent through its whole lifecycle with three
- * keys at once — manage creates/configures/deletes, operate drives the live
- * agent but cannot manage it, read can only look — so every allow/deny verdict
- * lands on an agent that actually exists. The remaining tests cover the
- * credential surface and the key-management barrier with cheap, scope-only
- * signals (the scope middleware runs before the resolver, so a wrong-scope
- * call is rejected without touching real resources).
- */
-
 const KEY_PREFIX = "e2e-authz";
 const mintedKeyIds: string[] = [];
 const createdAgentIds: string[] = [];
@@ -44,7 +30,6 @@ function trpcCode(err: unknown): string | undefined {
     : undefined;
 }
 
-/** Awaits a tRPC call expected to be rejected by the scope gate. */
 async function expectRejected(
   call: Promise<unknown>,
   code: string,
@@ -66,7 +51,6 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // Keep the owner's state clean across e2e:loop reruns (jwt has full scopes).
   for (const id of createdAgentIds) {
     await jwt.agents.delete.mutate({ id }).catch(() => {});
   }
@@ -76,14 +60,12 @@ test.afterAll(async () => {
 });
 
 test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, read only looks", async () => {
-  // Creating + booting + tearing down a real agent pod; allow generous headroom.
   test.setTimeout(240_000);
 
   const manage = await mintKey(["agents:manage"]);
   const operate = await mintKey(["agents:operate"]);
   const read = await mintKey(["agents:read"]);
 
-  // The mock template the e2e cluster ships (same harness as 03-agent).
   const templates = await manage.templates.list.query();
   const template = templates.find((t) => t.name === "mock") ?? templates[0];
   if (!template) throw new Error("no agent template available in the cluster");
@@ -91,7 +73,6 @@ test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, 
   const name = `e2e-authz-crud-${Date.now()}`;
   const createInput = { name, templateId: template.id };
 
-  // CREATE — only agents:manage may; read and operate are rejected by scope.
   await expectRejected(
     read.agents.create.mutate(createInput),
     "FORBIDDEN",
@@ -106,15 +87,12 @@ test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, 
   createdAgentIds.push(created.id);
   expect(created.name).toBe(name);
 
-  // READ — every agent scope can read; wait for the pod to come up.
   const agentId = await waitForAgentRunning(manage, name);
   expect((await read.agents.get.query({ id: agentId })).name).toBe(name);
   expect((await operate.agents.get.query({ id: agentId })).state).toBe(
     "running",
   );
 
-  // OPERATE — the operate key drives the live agent (workspace file upload via
-  // the in-pod runtime proxy); the read key cannot.
   const uploaded = await operate.files.upload.mutate({
     agentId,
     path: "e2e-authz.txt",
@@ -133,7 +111,6 @@ test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, 
     "agents:read → files.upload (operate)",
   );
 
-  // UPDATE — manage-only configuration change; operate is rejected.
   const description = "updated by the e2e authz test";
   await expectRejected(
     operate.agents.update.mutate({ id: agentId, description }),
@@ -145,8 +122,6 @@ test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, 
     description,
   );
 
-  // DELETE — neither operate nor read may delete the *running* agent (so the
-  // FORBIDDEN can only be the scope gate, not a missing row); manage can.
   await expectRejected(
     operate.agents.delete.mutate({ id: agentId }),
     "FORBIDDEN",

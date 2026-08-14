@@ -5,20 +5,10 @@ import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendi
 
 declare const process: { env: Record<string, string | undefined> };
 
-// A spec activates when ${envPrefix}_URL is set. Models come from the
-// OpenAI-compatible /v1/models endpoint; ${envPrefix}_MODEL only picks the
-// default. If discovery fails we register the single ${envPrefix}_MODEL, else
-// skip the spec. Auth is injected on the wire by Envoy's credential_injector;
-// the apiKey here only satisfies pi-acp's auth gate, and discovery deliberately
-// omits Authorization so Envoy injects it the same way.
 
 type ProviderSpec = {
 	name: string;
 	envPrefix: string;
-	// When activated and ${envPrefix}_URL matches the shadow's urlEnv, hide the
-	// named provider as a duplicate alias. apiKeyEnv is unset so built-in
-	// providers (auth discovered via pi-ai env-api-keys) drop out of
-	// getAvailable() — unregisterProvider() only affects dynamic ones.
 	shadows?: { name: string; urlEnv: string; apiKeyEnv?: string }[];
 };
 
@@ -80,9 +70,6 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 
 	applyShadows(pi, spec, url, state);
 
-	// Default to the requested model only if it was discovered (matched
-	// case-insensitively; proxies are inconsistent), preferring the discovered
-	// casing so it matches upstream. Otherwise use the first discovered model.
 	const requestedLower = requestedModel?.toLowerCase();
 	const defaultModel = models.find((m) => m.id.toLowerCase() === requestedLower)?.id ?? models[0].id;
 	return { name: spec.name, model: defaultModel };
@@ -101,7 +88,6 @@ function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: 
 
 function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderModelConfig {
 	const contextWindow = model.contextWindow ?? intEnv(`${envPrefix}_CONTEXT_WINDOW`, 128000);
-	// Cap maxTokens at the context window (vLLM's max_model_len covers input+output).
 	const maxTokens = Math.min(intEnv(`${envPrefix}_MAX_TOKENS`, 16384), contextWindow);
 	return {
 		id: model.id,
@@ -122,9 +108,6 @@ function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderMo
 	};
 }
 
-// Best-effort: startup may race the upstream, the endpoint may be missing, or
-// the response malformed. The caller falls back to env-defined registration; we
-// warn so operators see when discovery silently degrades.
 async function discoverModels(url: string): Promise<DiscoveredModel[]> {
 	try {
 		const res = await fetch(url, { signal: AbortSignal.timeout(intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000)) });
@@ -174,23 +157,15 @@ function loadState(): ConfigState {
 }
 
 function persistState(state: ConfigState, lastActivated: Activation): void {
-	// pi-acp re-checks models.json/auth.json every session/prompt and can't see
-	// runtime registerProvider(), so mirror to disk.
-	// Upstream: https://github.com/svkozak/pi-acp/issues/15
 	writeJson(state.paths.models, state.models);
 	writeJson(state.paths.auth, state.auth);
 
-	// Keep the user's existing default if it still resolves to a registered
-	// model; only fall back to the last-activated spec otherwise.
 	const chosen = resolveExistingDefault(state) ?? lastActivated;
 	state.settings.defaultProvider = chosen.name;
 	state.settings.defaultModel = chosen.model;
 	writeJson(state.paths.settings, state.settings);
 }
 
-// Resolve the configured default to a still-registered provider/model,
-// preferring the user's own provider and matching ids case-insensitively.
-// Returns the registered casing, or undefined when there's no usable default.
 function resolveExistingDefault(state: ConfigState): Activation | undefined {
 	const model = state.settings.defaultModel;
 	if (typeof model !== "string" || model.length === 0) return undefined;
@@ -212,7 +187,6 @@ function readJson<T>(path: string): T | undefined {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
 		return parsed && typeof parsed === "object" ? (parsed as T) : undefined;
 	} catch {
-		// Missing on a fresh home or malformed; caller treats undefined as empty.
 		return undefined;
 	}
 }

@@ -19,7 +19,6 @@ export interface ChannelModuleOptions {
   tokenProvider: TokenProvider;
   configService: ConfigService;
   compatService: CompatService;
-  /** Per-host factory the resolver inside agent-scoped commands consumes. */
   createAgentService: (host: string) => AgentService;
 }
 
@@ -37,8 +36,6 @@ export function composeChannelModule(
   const createService = (host: string): ChannelService =>
     createChannelService({ trpc: buildTrpc(host) });
 
-  // Shared by the agent-scoped binding verbs; the provider sub-groups keep
-  // their own flags/help while routing through the same resolver + service.
   const agentScoped = {
     compatService: opts.compatService,
     configService: opts.configService,

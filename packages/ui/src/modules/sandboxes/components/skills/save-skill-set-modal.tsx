@@ -19,14 +19,6 @@ export interface SaveSetGroup {
   skills: Skill[];
 }
 
-/**
- * Save what's on in this sandbox as a named, reusable skill set.
- *
- * Opens pre-marked with everything currently installed, so the common case is
- * "type a name, Create" and unmarking is the edit path. Only source-backed
- * skills are offered: a set installs by name from a source, so a skill authored
- * here or shipped with the image has nowhere to install from.
- */
 export function SaveSkillSetModal({
   groups,
   omitted,
@@ -35,19 +27,9 @@ export function SaveSkillSetModal({
   onCreate,
   onClose,
 }: {
-  /** Source-backed skills, grouped by source — a set reads as "these skills,
-   *  from these repos" rather than a flat bag of names. */
   groups: SaveSetGroup[];
-  /** Connected sources whose scan failed while skills from them stay on, with
-   *  how many. Those skills can't be offered below, and the dialog promises to
-   *  start from what's on — so it names what it dropped instead of implying
-   *  the list is complete. */
   omitted: { source: SkillSource; count: number }[];
-  /** Whether a skill is currently installed. Read once, at mount, to seed the
-   *  snapshot below. */
   isOn: (skill: Skill) => boolean;
-  /** Existing set names, so a clash is caught before submitting. The server
-   *  still answers CONFLICT — another session may take the name meanwhile. */
   existingNames: ReadonlySet<string>;
   onCreate: (input: {
     name: string;
@@ -56,11 +38,6 @@ export function SaveSkillSetModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  // One snapshot — rows and marks together — for the dialog's whole lifetime.
-  // Both inputs move underneath it: the 5s poll folds in agent-initiated
-  // installs, and a re-scan re-lists a source. Reading either live would put an
-  // "on here" badge beside an unchecked box under copy promising the marks start
-  // from what's on, and the created set would omit the skill it named.
   const [snapshot] = useState(() => {
     const on = new Set<string>();
     for (const group of groups) {
@@ -112,8 +89,13 @@ export function SaveSkillSetModal({
   };
 
   return (
-    <Modal widthClass="w-[640px]">
-      <DialogHeader title="Save as skill set" onClose={onClose} />
+    <Modal widthClass="w-[620px]">
+      <DialogHeader
+        title="Save as skill set"
+        subtitle="Starts from what's on here — unmark anything you don't want in the set."
+        onClose={onClose}
+        divided={false}
+      />
 
       <form
         onSubmit={(e) => {
@@ -121,22 +103,17 @@ export function SaveSkillSetModal({
           if (canCreate) void submit();
         }}
       >
-        <DialogBody className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">
-            Starts from what's on here — unmark anything you don't want in the
-            set.
-          </p>
-
-          {omittedCount > 0 && (
-            <p className="text-sm text-warning-fg">
-              {omittedCount} skill{omittedCount === 1 ? "" : "s"} that{" "}
-              {omittedCount === 1 ? "is" : "are"} on can't be included —{" "}
-              {snapshot.omitted.map((o) => o.source.name).join(", ")} can't be
-              read right now.
-            </p>
-          )}
-
-          <div className="flex flex-col gap-1.5">
+        {}
+        <DialogBody flush className="py-0">
+          <div className="flex flex-col gap-1.5 px-5 pb-4 md:px-7">
+            {omittedCount > 0 && (
+              <p className="pb-2 text-sm text-warning-fg">
+                {omittedCount} skill{omittedCount === 1 ? "" : "s"} that{" "}
+                {omittedCount === 1 ? "is" : "are"} on can't be included —{" "}
+                {snapshot.omitted.map((o) => o.source.name).join(", ")} can't be
+                read right now.
+              </p>
+            )}
             <SectionLabel>Set name</SectionLabel>
             <Input
               size="sm"
@@ -156,7 +133,8 @@ export function SaveSkillSetModal({
             )}
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {}
+          <div className="flex items-center gap-2 border-y border-border bg-muted/40 px-5 py-2.5 text-sm text-muted-foreground md:px-7">
             <span>
               {marked.size} skill{marked.size === 1 ? "" : "s"} selected
             </span>
@@ -175,22 +153,30 @@ export function SaveSkillSetModal({
             </Button>
           </div>
 
-          <div className="flex max-h-[40vh] flex-col gap-4 overflow-y-auto">
+          <div className="max-h-[44vh] overflow-y-auto">
             {snapshot.groups.map((group) => (
-              <div key={group.source.id} className="flex flex-col gap-2">
-                <SectionLabel>{group.source.name}</SectionLabel>
+              <div key={group.source.id}>
+                {}
+                <div className="sticky top-0 bg-card px-5 pt-3 pb-1 md:px-7">
+                  <SectionLabel>{group.source.name}</SectionLabel>
+                </div>
                 {group.skills.map((skill) => {
                   const key = skillKey(skill);
                   return (
-                    <div key={key} className="flex items-start gap-2">
+                    <div
+                      key={key}
+                      className="flex items-center gap-2 px-5 py-1.5 transition-colors hover:bg-muted md:px-7"
+                    >
                       <CheckboxItem
+                        className="min-w-0 flex-1 items-center"
                         label={skill.name}
                         description={skill.description}
+                        descriptionClassName="truncate"
                         checked={marked.has(key)}
                         onCheckedChange={() => toggle(key)}
                       />
                       {snapshot.on.has(key) && (
-                        <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+                        <span className="shrink-0 text-xs text-muted-foreground">
                           on here
                         </span>
                       )}
@@ -201,7 +187,7 @@ export function SaveSkillSetModal({
             ))}
           </div>
 
-          <p className="text-sm text-muted-foreground">
+          <p className="px-5 py-4 text-sm text-muted-foreground md:px-7">
             Only skills from a connected source can go in a set — a set installs
             by name, and skills authored here or shipped with the image have
             nowhere to install from.

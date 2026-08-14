@@ -34,9 +34,6 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
 ];
 
-/** The hidden Features settings tab — per-user, per-feature toggles stored
- *  server-side so feature surfaces beyond the browser (e.g. agents' MCP
- *  tools) can be gated too. */
 export function FeaturesTab() {
   const { data: flags } = useFeatures();
   const setFeature = useSetFeature();

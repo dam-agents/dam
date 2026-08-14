@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 
 import { codeBlockText, type HastElement } from "../../lib/code-block-text.js";
 
-/** `<pre>` as rehype-highlight leaves it: text only at the token leaves. */
 function pre(...lines: string[]): HastElement {
   const source = lines.join("");
   return {

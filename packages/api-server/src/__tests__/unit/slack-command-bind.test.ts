@@ -22,9 +22,7 @@ type Binding = {
 
 function harness(opts: {
   binding: Binding;
-  /** identityLinks.resolve result — null = unlinked Slack user. */
   linkedSub?: string | null;
-  /** getInstanceOwner result — the agent's owner. */
   agentOwner?: string | null;
 }) {
   const gw = createFakeSlackGateway();

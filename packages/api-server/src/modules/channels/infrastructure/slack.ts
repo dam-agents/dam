@@ -76,32 +76,13 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 
-/** Per-turn contract prepended to every relayed Slack message. Plain assistant
- *  text is never delivered — the agent reaches the channel only by calling a
- *  tool. The concrete thread/message ids are injected so the agent can echo
- *  them back; the tools also fall back to the turn's most-recent ids when they
- *  are omitted. Re-stated every turn because mention and ambient turns
- *  interleave in the same sessions — the contract can't live in a session
- *  alone. The install's bot identity comes from the brand config; the agent's
- *  own name belongs to its workspace setup and is deliberately not injected. */
 function slackTurnContract(ctx: {
   replyThreadTs: string;
   eventTs: string;
   brand: { name: string; short: string };
-  /** Whether describe_channel_users is registered on this Agent's MCP
-   *  session — omit its mention when it isn't, so the contract never points
-   *  at a tool the agent won't find. */
   canLookupUsers: boolean;
-  /** Set when several coalesced read-along messages share this turn: each is
-   *  tagged `[ts …]` in the prompt so the agent can target the one it means.
-   *  `inThread` batches still reply into their one thread; top-level batches
-   *  must name the message a reply threads under. */
   batch?: { count: number; inThread: boolean };
-  /** Whether the triggering message arrived in a 1:1 DM rather than a shared
-   *  channel or group DM — changes who else can see the exchange. */
   isDirectMessage: boolean;
-  /** A permanent link to the triggering message, or null when Slack couldn't
-   *  resolve one (never fails the turn over this). */
   permalink: string | null;
 }): string {
   const batchCount = ctx.batch?.count ?? 1;
@@ -140,8 +121,6 @@ function slackTurnContract(ctx: {
             "reasoning about their local time.",
         ]
       : []),
-    // A coalesced batch has no single send time or permalink to name — each
-    // message carries its own [ts …] tag instead.
     multi
       ? `You're reading ${batchCount} messages from ` +
         `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}. ` +
@@ -151,11 +130,6 @@ function slackTurnContract(ctx: {
         `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
         (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
         ".",
-    // Sessions outlive the surface they started on: this same conversation can
-    // be continued from the platform UI, where an unqualified "only tool calls
-    // reach the channel" has the agent answer the person typing there by
-    // posting into Slack instead. A turn from a surface that names itself
-    // carries its own block; the rest are covered by the second sentence.
     "These instructions apply to the message they arrive with, not to this " +
       "conversation as a whole — a later message carries its own. A message " +
       "that arrives with no such block didn't come from Slack: answer it " +
@@ -167,10 +141,6 @@ function slackTurnContract(ctx: {
   ].join("\n");
 }
 
-/** Extra framing for ambient (read-along) turns: nobody @-mentioned the agent,
- *  so it chimes in only when it can clearly help and otherwise stays silent via
- *  `no_reply_needed`. When it does engage, it opens with a fitting reaction —
- *  the light-touch, in-channel signal that replaces the old automatic ack. */
 function ambientGuidance(brand: { name: string }): string {
   return [
     "<reading-along>",
@@ -191,15 +161,10 @@ function ambientGuidance(brand: { name: string }): string {
   ].join("\n");
 }
 
-/** Assemble the framed prompt for a turn: the contract first, then optional
- *  ambient guidance, then injected thread history (fresh sessions only), then
- *  the user's message — carrying any images as content blocks. */
 function framePrompt(opts: {
   contract: string;
   guidance?: string;
   context?: string[];
-  /** Explains the history attribution prefixes; emitted right before the
-   *  `<context>` block when that history contains agent-authored lines. */
   contextLegend?: string;
   text: string;
   images: FetchedImage[];
@@ -216,9 +181,6 @@ function framePrompt(opts: {
   return [{ type: "text", text }, ...opts.images.map((i) => i.block)];
 }
 
-/** A 1:1 DM conversation (Slack `im`) always has an id starting with "D". Used
- *  to tailor DM-specific copy where the event's `channelType` isn't carried
- *  (e.g. some `app_mention` payloads) and to label a DM-bound conversation. */
 function isDirectMessageId(channelId: string): boolean {
   return channelId.startsWith("D");
 }
@@ -258,10 +220,6 @@ function createSemaphore(max: number) {
 
 const imageFetchSemaphore = createSemaphore(CONCURRENT_IMAGE_FETCH_LIMIT);
 
-/** Why a downloaded attachment never became a prompt block, in words the
- *  sender can act on. A rejected attachment is worth explaining rather than
- *  dropping: the harness would otherwise hand the model an unreadable blob and
- *  the agent would answer with an internal resize error (#3008). */
 async function unreadableImageCopy(
   gw: SlackGateway,
   attachment: Exclude<InboundAttachment, { kind: "image" }>,
@@ -281,11 +239,6 @@ async function unreadableImageCopy(
         "this conversation — check that it is still installed and can read files.";
 }
 
-/** Whether an attachment is worth downloading and letting the bytes judge.
- *  Slack's `mimetype` decides that much, but it is the uploading client's claim,
- *  not a fact — so a generic or absent label with an image extension is taken
- *  seriously too, rather than dropping a real screenshot unread on the strength
- *  of a bad label. Anything else (a PDF, a spreadsheet) is still left alone. */
 const GENERIC_MIME_TYPES = ["application/octet-stream", "binary/octet-stream"];
 
 function mayBeImageAttachment(f: SlackImageFile): boolean {
@@ -311,9 +264,6 @@ async function fetchSlackImages(
     for (const f of imageFiles) {
       try {
         const bytes = Buffer.from(await gateway.downloadFile(f.url_private));
-        // A 2xx download is not proof it returned the file, and `image/*`
-        // covers formats no harness decodes. Trust the bytes — and their
-        // sniffed type, so a mislabelled upload still reaches the agent.
         const attachment = classifyInboundAttachment(bytes);
         if (attachment.kind !== "image") {
           getLogger().warn(
@@ -352,10 +302,6 @@ async function fetchSlackImages(
   }
 }
 
-/** The accepted images for a turn, plus a line naming any attachment that was
- *  withheld. The note goes into the prompt, not just the sender's notice: an
- *  agent that is asked about a picture it never received would otherwise answer
- *  blind, which reads as a worse failure than saying it couldn't see the file. */
 type TurnImages = { images: FetchedImage[]; withheldNote: string };
 
 function renderWithheldNote(failures: FetchedFailure[]): string {
@@ -376,11 +322,6 @@ function renderTurnFiles(images: FetchedImage[]): string {
   return `\nTurn included: ${list}.`;
 }
 
-/** Injected history for a fresh session, with each line attributed. Because one
- *  install-wide bot posts for every agent, a bot message's author is recovered
- *  from its footer, not its Slack user id: the reading agent's own posts become
- *  "you (this agent)", other agents are named, humans keep their id.
- *  `hasAgentAuthored` tells the caller whether to inject the explaining legend. */
 async function getContextMessages(
   gateway: SlackGateway,
   channel: string,
@@ -406,24 +347,16 @@ async function getContextMessages(
 }
 
 export interface ChannelRegistry {
-  /** The binding (if any) for a Slack channel: agent, binding owner, and
-   *  whether ambient mode is on (absent = off). */
   resolveSlackBinding(slackChannelId: string): Promise<{
     instanceName: string;
     owner: string;
     ambient?: boolean;
   } | null>;
-  /** Every Slack conversation bound to the agent (#3086), in a stable order.
-   *  Empty means the agent has no Slack reach at all. */
   resolveSlackChannelsByInstance(agentId: string): Promise<string[]>;
 }
 
 export interface SlackWorker {
   type: ChannelType.Slack;
-  /** Open the workspace socket-mode connection at startup, before any binding
-   *  exists — inbound slash commands (`/<brand> login`), mentions and DMs must
-   *  reach the bot in chats that have no binding yet, mirroring the Telegram
-   *  bot. Idempotent and single-flight with the other gateway starters. */
   connect(): Promise<void>;
   start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
   stop(instanceName: string): Promise<void>;
@@ -444,29 +377,15 @@ export interface SlackWorker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
-  /** Resolve Slack user ids to the people behind them. The agent meets people
-   *  as bare `U…` ids — in speaker labels, injected history, and mentions
-   *  inside message text — and has no other way to learn who they are. */
   describeUsers(
     instanceName: string,
     userIds: string[],
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
-  /** Whether a lookup could plausibly succeed right now — false only when the
-   *  app's granted scopes are confirmed to lack `users:read`. An unreachable
-   *  bot or an unprobed gateway reports true: an unknown state should never
-   *  hide a tool that might in fact work. */
   supportsUserLookup(): Promise<boolean>;
-  /** Who reacted to a message, and with what emoji — invisible to the agent
-   *  otherwise, since nothing in the message text or injected history reveals
-   *  it. Unlike describeUsers this is never cached: a reaction count is live
-   *  state, not stable identity, and the point of asking is the current tally. */
   describeMessageReactions(
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  /** Whether a lookup could plausibly succeed right now — false only when the
-   *  app's granted scopes are confirmed to lack `reactions:read`. Same
-   *  fail-open rule as supportsUserLookup. */
   supportsMessageReactions(): Promise<boolean>;
 }
 
@@ -474,22 +393,10 @@ export interface SlackOAuthPending {
   slackUserId: string;
   channelId: string;
   codeVerifier: string;
-  /** Whether the callback just links identity (`login`) or also mints a bind
-   *  flow and hands off to the agent picker (`bind`). */
   intent: "login" | "bind";
   createdAt: number;
 }
 
-/** Resolve an outbound conversationId to the Slack conversation to post into.
- *  A bound conversation passes untouched; a user id opens a DM; any other
- *  channel must have the bot as a member. The one workspace bot is shared by
- *  all Agents, so its membership — governed Slack-side via /invite — is the
- *  reach boundary.
- *
- *  With no conversationId there is a default only while the Agent holds a
- *  single binding. Bound to several (#3086), the call is refused rather than
- *  posted into an arbitrary one — the same refuse-don't-guess rule the id-less
- *  `reply`/`react` follow when several turns are in flight. */
 async function resolveOutboundTarget(
   gateway: SlackGateway,
   boundChannelIds: string[],
@@ -506,8 +413,6 @@ async function resolveOutboundTarget(
   if (boundChannelIds.includes(conversationId)) {
     return { id: conversationId };
   }
-  // Exactly one well-formed user id — conversations.open would accept a
-  // comma-separated list and mint a group DM, which is not on offer here.
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
     try {
       return { id: await gateway.openDirectMessage(conversationId) };
@@ -517,8 +422,6 @@ async function resolveOutboundTarget(
       };
     }
   }
-  // An existing DM conversation — Slack itself rejects DMs the bot is not
-  // party to, and conversations.info carries no membership flag for them.
   if (conversationId.startsWith("D")) {
     return { id: conversationId };
   }
@@ -531,8 +434,6 @@ async function resolveOutboundTarget(
     };
   }
   if (!info) {
-    // Private channels are invisible to the bot until it is invited, so
-    // they surface here rather than on the membership branch below.
     return {
       error: `conversation ${conversationId} not found — if it is a private channel, the bot must be invited to it first (/invite)`,
     };
@@ -545,36 +446,17 @@ async function resolveOutboundTarget(
   return { id: conversationId };
 }
 
-/** How long a turn whose relay settled with a transport-ish error stays
- *  resolvable for id-less `reply`/`react`. The runtime keeps a running prompt
- *  alive when its relay channel drops, so the harness may work on such a turn
- *  long after the worker saw it fail — up to the ACP turn ceiling, whose
- *  default this mirrors. An entry outstaying a longer configured ceiling only
- *  reopens the last-active-thread fallback, never a crash. */
 export const TURN_LINGER_MS = 60 * 60_000;
 
-/** How long a looked-up profile (or a confirmed miss) stays good. Names,
- *  titles and time zones change rarely, and an agent reading a busy channel
- *  asks about the same handful of people turn after turn. */
 const USER_CACHE_TTL_MS = 10 * 60_000;
 
-/** Concurrent `users.info` calls across all agents: the one install-wide bot
- *  shares a single Slack rate limit, and a lookup is already batched. */
 const userLookupSemaphore = createSemaphore(5);
 
-/** Reduce what the agent actually sees — `<@U123>`, `<@U123|tom>` or a bare
- *  id — to the id Slack takes. Anything else (a handle, a channel id) returns
- *  null, so a typo costs a per-id error rather than a Slack round trip. */
 function normalizeSlackUserId(input: string): string | null {
   const bare = input.trim().replace(/^<@/, "").replace(/>$/, "").split("|")[0]!;
   return /^[UW][A-Z0-9]+$/i.test(bare) ? bare.toUpperCase() : null;
 }
 
-/** The granted-scope set, or null for "unknown". The port already promises
- *  null rather than a throw on a failed probe, but these checks gate the MCP
- *  session build: a rejection escaping here would cost the agent *every* tool
- *  instead of the one affordance a withheld scope backs, so an unexpectedly
- *  throwing gateway is also read as unknown. */
 async function grantedScopes(gw: SlackGateway): Promise<Set<string> | null> {
   try {
     return await gw.getGrantedScopes();
@@ -583,29 +465,16 @@ async function grantedScopes(gw: SlackGateway): Promise<Set<string> | null> {
   }
 }
 
-/** Whether the running gateway's granted scopes are confirmed to include
- *  `users:read`. An unprobed or unreachable gateway reports true — an
- *  unknown state fails open rather than hiding a tool that might work. */
 async function canLookupUsers(gw: SlackGateway): Promise<boolean> {
   const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("users:read");
 }
 
-/** Whether the running gateway's granted scopes are confirmed to include
- *  `reactions:read`. An unprobed or unreachable gateway reports true — an
- *  unknown state fails open rather than hiding a tool that might work. */
 async function canReadReactions(gw: SlackGateway): Promise<boolean> {
   const scopes = await grantedScopes(gw);
   return !scopes || scopes.has("reactions:read");
 }
 
-/** What each scope the Slack features rely on actually buys, in the words an
- *  operator would use to describe the capability going missing. Declared here
- *  rather than read from the app manifest because the manifest describes a
- *  *fresh* install: a scope added to it later never reaches a workspace that
- *  installed earlier — the app keeps the scopes it was installed with — so the
- *  two drift apart silently, and this is the side that knows what the running
- *  features need. */
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "app_mentions:read", backs: "answering mentions" },
   { scope: "chat:write", backs: "posting replies" },
@@ -619,11 +488,6 @@ const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "channels:read", backs: "posting outside the bound channel" },
 ];
 
-/** Say once, at startup, which granted permissions are missing and what stops
- *  working without them. A withheld scope otherwise has no symptom of its own:
- *  the capability simply behaves as though it were broken, and the agent is the
- *  one that looks wrong. Nothing here changes behaviour — an unknown or
- *  unreachable probe stays silent rather than guessing at a gap. */
 async function reportMissingPermissions(gw: SlackGateway): Promise<void> {
   const scopes = await grantedScopes(gw);
   if (!scopes) return;
@@ -643,12 +507,6 @@ async function reportMissingPermissions(gw: SlackGateway): Promise<void> {
   );
 }
 
-/** The two Slack-dependent turn-contract inputs, resolved together. The scope
- *  probe is cached for the gateway's lifetime, but the permalink is a live
- *  `chat.getPermalink` round trip on the relay's critical path — so they run in
- *  parallel rather than back to back, and a coalesced batch (which names no
- *  single message, so renders no permalink) skips the call entirely instead of
- *  paying for a result it discards. */
 async function turnContractContext(
   gw: SlackGateway,
   channel: string,
@@ -657,11 +515,6 @@ async function turnContractContext(
 ): Promise<{ canLookupUsers: boolean; permalink: string | null }> {
   const [lookup, permalink] = await Promise.all([
     canLookupUsers(gw),
-    // A permalink is one decorative line of the prompt, so it must never be
-    // able to fail the turn that carries it — an unanswered Slack message is
-    // a far worse outcome than a contract missing its link. The port promises
-    // null over a throw and Bolt honors it; this enforces the promise rather
-    // than trusting every future gateway to keep it.
     opts?.batched
       ? Promise.resolve(null)
       : gw.getPermalink(channel, eventTs).catch(() => null),
@@ -678,81 +531,32 @@ export function createSlackWorker(
   pendingOAuthFlows: TtlStore<SlackOAuthPending>,
   getInstanceOwner: (agentId: string) => Promise<string | null>,
   channelRegistry: ChannelRegistry,
-  /** Delete the shared binding for a Slack channel, owner-agnostic. The in-chat
-   *  unbind command authorizes the caller (binder or agent owner) before
-   *  calling this; unlike the owner-scoped platform disconnect it runs
-   *  system-side. */
   unbindSlackChannel: (slackChannelId: string) => Promise<void>,
-  /** Flip ambient mode on a Slack binding, owner-agnostic. Same authorization
-   *  story as `unbindSlackChannel`: the in-chat ambient command checks the
-   *  caller (binder or agent owner) itself and runs system-side. */
   setSlackChannelAmbient: (
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>,
-  /** Install brand identity: `short` is the lowercase slash-command name
-   *  (e.g. short="name" → /name login), `name` the bot display name the
-   *  ambient frame announces. Sourced from BRAND_NAME / BRAND_SHORT env. */
   brand: { name: string; short: string },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
-  /** Marks the agent as driven from a channel for the length of each turn, so
-   *  the egress gate can refuse a request that would otherwise hold for a
-   *  verdict nobody in a Slack conversation can give. Required: a missing
-   *  wiring here would silently restore the stall this exists to prevent, so
-   *  whether the marker does anything is the store's own business, decided
-   *  where it is built. */
   attendance: ChannelTurnAttendance,
   emit: (event: DomainEvent) => void = defaultEmit,
 ): SlackWorker {
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
 
-  /** A turn the `reply`/`react` tools can target when the agent doesn't echo
-   *  ids: the thread to reply into and the message to react to. `sessionId` is
-   *  filled in once the turn's session is resolved — later than the ref itself,
-   *  since resolving it means waking the pod and matching the thread key — and
-   *  is what lets a posted reply link back to the conversation in the UI. */
   type TurnRef = {
     channel: string;
     threadTs: string;
     eventTs: string;
     sessionId?: string;
-    /** Releases this turn's channel-turn attendance marker; set by
-     *  {@link beginTurn} and paired in {@link endTurn}, so concurrent turns on
-     *  one agent each hold their own and the marker outlives all of them. */
     releaseAttendance?: () => void;
   };
 
-  /** Turns currently driving the harness per agent. A single agent pod
-   *  multiplexes every thread over one harness process and one MCP identity,
-   *  so the outbound `reply`/`react` call carries no turn id — only the
-   *  prompt-injected `threadTs` argument distinguishes them. This set is the
-   *  fallback for when the agent omits it: with one candidate thread the
-   *  target is unambiguous; with several, guessing would post one thread's
-   *  reply into another (#2952), so the tools refuse and ask for the id the
-   *  prompt already gave. A turn joins when it starts driving the harness and
-   *  leaves when its prompt settles. */
   const inFlightTurns = new Map<string, Set<TurnRef>>();
 
-  /** Turns whose relay settled with an error that says nothing about the
-   *  harness: on a relay drop, a heartbeat abort or the turn ceiling the
-   *  runtime keeps the running prompt alive, so the pod may still be working
-   *  the turn and its late `reply`/`react` calls still arrive over the MCP
-   *  path. Deleting the ref then would resolve those calls against whatever
-   *  turn is live by that time — the residual #2952 cross-route. Instead the
-   *  ref lingers (value + expiry) and keeps counting toward resolution until
-   *  {@link TURN_LINGER_MS} passes; swept lazily, no timers. */
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
-  /** The most recent turn per agent, never cleared — the last-active-thread
-   *  fallback for a proactive `reply`/`react` made outside any live turn (e.g.
-   *  from a scheduled session), mirroring Telegram. Consulted only when no turn
-   *  is live or lingering. Addressed turns (mention, DM) advance it when
-   *  they start; ambient read-along turns do not — most end silent, and a
-   *  proactive reply must not target whatever channel message last drifted by.
-   *  An ambient turn advances it only through engagement: when a `reply`/
-   *  `react` actually lands on the turn's thread or message. */
   const lastTurn = new Map<string, TurnRef>();
 
   function beginTurn(
@@ -770,11 +574,6 @@ export function createSlackWorker(
     ref.releaseAttendance ??= attendance.openChannelTurn(instanceName);
   }
 
-  /** `harnessMayStillRun`: the turn settled on a path that says nothing about
-   *  the pod (relay drop, ceiling, generic ACP error) — keep the ref lingering
-   *  so the harness's late tool calls can't resolve against another thread.
-   *  Settlements that prove the harness is done (success) or never ran the
-   *  prompt (wake failure, agent stopped) pass false and drop the ref. */
   function endTurn(
     instanceName: string,
     ref: TurnRef,
@@ -785,9 +584,6 @@ export function createSlackWorker(
       live.delete(ref);
       if (live.size === 0) inFlightTurns.delete(instanceName);
     }
-    // Released even when the harness may still be running: a late request from
-    // a turn whose relay dropped falls back to the ordinary hold rather than
-    // being refused on the strength of a marker nothing is refreshing.
     ref.releaseAttendance?.();
     ref.releaseAttendance = undefined;
     if (opts?.harnessMayStillRun) {
@@ -800,7 +596,6 @@ export function createSlackWorker(
     }
   }
 
-  /** Unexpired lingering refs for the agent, sweeping expired ones out. */
   function lingeringFor(instanceName: string): TurnRef[] {
     const lingering = lingeringTurns.get(instanceName);
     if (!lingering) return [];
@@ -815,13 +610,6 @@ export function createSlackWorker(
     return [...lingering.keys()];
   }
 
-  /** Resolve the turn a reply/react targets when the agent passed no ids.
-   *  Candidates are the live turns plus the lingering ones (either may be the
-   *  caller). What must be unambiguous is the *target*, not the turn: a reply
-   *  needs one thread, a react one message — so several candidates that agree
-   *  on it still resolve (e.g. a retried relay of the same thread), while
-   *  distinct targets refuse and the agent must name the id its prompt
-   *  injected. No candidates → the last-active-thread fallback. */
   function resolveTurn(
     instanceName: string,
     kind: "reply" | "react",
@@ -842,9 +630,6 @@ export function createSlackWorker(
     return last ? { ref: last } : { none: true };
   }
 
-  /** The newest live ref matching `match`, then the newest lingering one —
-   *  newest first so a multi-message batch resolves to its most recent
-   *  matching message, not an arbitrary older one. */
   function findTurnRef(
     instanceName: string,
     match: (ref: TurnRef) => boolean,
@@ -860,9 +645,6 @@ export function createSlackWorker(
     return undefined;
   }
 
-  /** The turn ref (live or lingering) a successful `reply`/`react` engaged,
-   *  matched by the ids it actually posted with. Engagement advances the
-   *  last-active-thread fallback — the one way an ambient turn ever does. */
   function noteEngagedTurn(
     instanceName: string,
     match: (ref: TurnRef) => boolean,
@@ -871,11 +653,6 @@ export function createSlackWorker(
     if (engaged) lastTurn.set(instanceName, engaged);
   }
 
-  /** Looked-up profiles keyed by user id. The directory is workspace-wide and
-   *  so is the bot, so one cache serves every agent. Misses are cached too — a
-   *  wrong id stays wrong, and re-asking Slack about it each turn buys nothing.
-   *  Expired entries are swept lazily once the map grows past a workspace-sized
-   *  handful. */
   const userCache = new Map<
     string,
     { user: SlackUserInfo | null; expiresAt: number }
@@ -896,20 +673,11 @@ export function createSlackWorker(
     'threadTs shown in your turn instructions (reply threadTs="…", react ' +
     'messageTs="…") so this lands in the thread you are answering.';
 
-  /** The read-only sibling of AMBIGUOUS_THREAD_ERROR: a lookup delivers
-   *  nowhere, so the "lands in the right thread" framing would misdescribe
-   *  what is at stake — reading the wrong message, not posting to it. */
   const AMBIGUOUS_MESSAGE_ERROR =
     "This agent is handling more than one Slack thread right now — pass the " +
     "messageTs shown in your turn instructions so this inspects the message " +
     "you mean.";
 
-  /** Attribution footer for a post by `instanceName`: the agent's name linked
-   *  into the UI, with the id carried in the URL so the author can be recovered
-   *  from injected history. `sessionId` (a turn's own session) makes the link
-   *  open that conversation, so a reader can pick the thread up in the UI. The
-   *  name lookup is best-effort — a lookup failure or a nameless agent degrades
-   *  to the id as the (still clickable) link label. */
   async function resolveAgentFooter(
     instanceName: string,
     sessionId?: string,
@@ -918,9 +686,7 @@ export function createSlackWorker(
     try {
       const agent = await agents().get(instanceName);
       if (agent?.name) agentName = agent.name;
-    } catch {
-      // best-effort — fall back to the id as the link label
-    }
+    } catch {}
     return {
       uiBaseUrl,
       agentId: instanceName,
@@ -950,13 +716,6 @@ export function createSlackWorker(
     }
   }
 
-  /** The session for a thread key, preferring the channel-qualified key that
-   *  every session now carries. `legacyKey` is the bare `thread_ts` sessions
-   *  minted before conversations were part of the key (#3086); matching it
-   *  keeps threads that were mid-conversation at upgrade time resumable instead
-   *  of restarting them cold. Those old keys carry the cross-channel ambiguity
-   *  the qualified key exists to remove, so they are only ever a fallback and
-   *  the set drains as those threads go quiet. */
   async function findThreadSession(
     acp: AcpClient,
     threadKey: string,
@@ -976,14 +735,6 @@ export function createSlackWorker(
     );
   }
 
-  /** One turn at a time per (agent, thread-session). Concurrent prompts on one
-   *  session collide in the runtime's per-session queue — which silently drops
-   *  a queued prompt when its relay connection tears down — and the
-   *  list-then-create session match can mint two sessions for one thread key.
-   *  The ambient queue already serializes read-along traffic; this lock closes
-   *  the remaining routes into a session (mentions, DMs) against each other
-   *  and against ambient turns. Promise-chained per key; an entry is removed
-   *  once its chain drains. */
   const sessionTurnLocks = new Map<string, Promise<void>>();
 
   async function withSessionTurnLock<T>(
@@ -1005,10 +756,6 @@ export function createSlackWorker(
     return run;
   }
 
-  /** One ACP turn against the session keyed by `threadKey`
-   *  (`_meta.platform.threadTs`): wake the pod, resume the matching session
-   *  (falling back to a fresh context-injected one when resume fails), or
-   *  create it. Returns the assistant response; posting is the caller's. */
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
@@ -1016,31 +763,15 @@ export function createSlackWorker(
     buildFreshPrompt: () => Promise<string | ContentBlock[]>;
     onWaking?: () => void;
     onImagesDropped?: () => void;
-    /** Live per-update stream for the turn (omitted → no status presentation). */
     onUpdate?: (update: PromptUpdate) => void;
-    /** The session this turn ended up running on — resumed, or minted here.
-     *  Called before the prompt, and again if a failed resume re-runs the turn
-     *  on a fresh session, so the caller always holds the live one. */
     onSession?: (sessionId: string) => void;
-    /** The resume attempt failed after it may have delivered the prompt (a
-     *  relay drop mid-turn leaves the harness running it), and the turn is
-     *  being re-run on a fresh session. The caller must keep the turn's ref
-     *  resolvable past its own settlement. */
     onGhostTurn?: () => void;
-    /** The pre-#3086 unqualified key for this thread, matched only when the
-     *  qualified one finds nothing. Absent on ambient channel sessions, whose
-     *  key was already channel-scoped. */
     legacyThreadKey?: string;
   }): Promise<string> {
     const platformMeta = {
       type: SessionType.ChannelSlack,
       threadTs: args.threadKey,
     };
-    // The lock spans readiness, the session match, and the prompt: a second
-    // turn for the same thread waits its turn instead of racing the runtime's
-    // per-session queue, finds the session the first turn minted instead of
-    // minting a duplicate for the same thread key, and re-verifies readiness
-    // when it actually runs rather than when it queued.
     return withSessionTurnLock(args.instanceName, args.threadKey, async () => {
       await agents().ensureReady(args.instanceName, {
         onWaking: args.onWaking,
@@ -1084,8 +815,6 @@ export function createSlackWorker(
     eventTs: string;
     text: string;
     hasThread: boolean;
-    /** Always null on channel relays — no platform identity is resolved for
-     *  the sender; attribution rides `externalActorId`. */
     actorSub: string | null;
     externalActorId?: string;
     slackUserId: string;
@@ -1096,17 +825,12 @@ export function createSlackWorker(
     const gw = gateway;
     const { instanceName } = ctx;
 
-    // The thread/message the reply/react tools target when the agent doesn't
-    // echo ids back. Registered inside the turn's `try` below (not here) so a
-    // throw during turn setup can never leak an in-flight entry.
     const turnRef: TurnRef = {
       channel: ctx.channel,
       threadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
     };
 
-    // A running "working…" status is all the platform presents on the agent's
-    // behalf — the reply itself only ever lands when the agent calls `reply`.
     const presenter = createTurnPresenter(gw, {
       channel: ctx.channel,
       threadTs: ctx.threadTs,
@@ -1132,8 +856,6 @@ export function createSlackWorker(
         "This agent can't process images yet — answering text only.",
       );
 
-    // Requester-only heads-up on a cold start; suppressed on the retry
-    // pass so a second window doesn't re-announce the same wake.
     let coldNoticePosted = false;
     const onWaking = () => {
       presenter.setWaking();
@@ -1154,8 +876,6 @@ export function createSlackWorker(
         text: ctx.text,
         images: ctx.images,
       });
-      // The response is not posted — the agent replies via the `reply` tool
-      // during the turn. We only need to know the turn completed.
       await runSessionTurn({
         instanceName,
         threadKey: slackThreadKey(ctx.channel, ctx.threadTs),
@@ -1189,8 +909,6 @@ export function createSlackWorker(
         },
         "slack.turn.failed",
       );
-      // Wake timeouts get human copy mapped from the classified cause;
-      // everything else keeps the raw path (out of scope here).
       const text = isAgentStoppedError(err)
         ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx.images)}`
         : isAgentWakeTimeoutError(err)
@@ -1208,9 +926,6 @@ export function createSlackWorker(
       try {
         await runTurn();
       } catch (err) {
-        // A transient timeout means the pods are progressing (e.g. a slow
-        // image pull that legitimately outruns one window) — tell the
-        // thread and wait one more window instead of losing the turn.
         if (
           !isAgentWakeTimeoutError(err) ||
           !isTransientWakeFailure(err.failure)
@@ -1227,9 +942,6 @@ export function createSlackWorker(
     } catch (err) {
       await postFailure(err);
     } finally {
-      // "acp-error" is the settlement class that says nothing about the pod —
-      // the harness may still be running this turn (so may a ghost run left by
-      // a failed resume attempt); keep the ref lingering for those.
       endTurn(instanceName, turnRef, {
         harnessMayStillRun: ghostTurn || failureReason === "acp-error",
       });
@@ -1248,8 +960,6 @@ export function createSlackWorker(
     }
   }
 
-  /** The fresh-session prompt: the per-turn contract, optional ambient
-   *  guidance, injected thread history, then the user's message. */
   async function buildThreadPrompt(
     gw: SlackGateway,
     ctx: {
@@ -1321,9 +1031,6 @@ export function createSlackWorker(
         await ack({ text: "Account unlinked." });
       })
       .with("bind", async () => {
-        // Anyone in the channel may start a bind (no admin gate) — but the
-        // agent picker that follows only lists the signed-in user's own
-        // agents, so a channel only ever runs under an agent its binder owns.
         const binding = await channelRegistry.resolveSlackBinding(
           command.channelId,
         );
@@ -1424,8 +1131,6 @@ export function createSlackWorker(
         await handleAmbientCommand(cmd, command, ack);
       })
       .with(P.string, async () => {
-        // `login`/`logout` (identity linking) stay working but aren't
-        // advertised here — bind/unbind are the primary command surface.
         await ack({
           text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, or \`/${brandShort} ambient on|off\``,
         });
@@ -1433,11 +1138,6 @@ export function createSlackWorker(
       .exhaustive();
   }
 
-  // The in-chat dial for ambient mode: `ambient` reports the state, `ambient
-  // on|off` flips it — allowed for the binder or the agent's owner, same
-  // authorization as unbind. The flip is confirmed to the invoker alone via
-  // the ephemeral slash-command reply; it is audited but deliberately not
-  // announced into the channel.
   async function handleAmbientCommand(
     subcommand: "ambient" | "ambient on" | "ambient off",
     command: SlackSlashCommand,
@@ -1526,8 +1226,6 @@ export function createSlackWorker(
       },
     });
 
-    // Confirm to the invoker only — no channel-visible announcement. The
-    // ephemeral reply carries the full description the channel post used to.
     const termsPending =
       enable && !(await isTermsAccepted(binding.owner))
         ? ` Heads-up: the person who connected this channel hasn't accepted the Terms of Use at ${uiBaseUrl} yet, so the agent stays silent until they do.`
@@ -1568,9 +1266,6 @@ export function createSlackWorker(
     return { images, withheldNote: renderWithheldNote(failures) };
   }
 
-  /** Copy for an inbound message that hit an unbound conversation. Channels
-   *  keep the historical wording; DMs and group DMs instead point at the
-   *  in-chat bind command — the only way to connect those surfaces. */
   function unboundConversationCopy(
     event: SlackMentionEvent,
     directMessage: boolean,
@@ -1584,9 +1279,6 @@ export function createSlackWorker(
     return "No instance connected to this channel.";
   }
 
-  /** Shared intake for an addressed turn: a channel/group-DM `@mention` or a
-   *  plain message in a bound 1:1 DM. The only differences are the unbound copy
-   *  and that a 1:1 DM's single-speaker prompt isn't speaker-labelled. */
   async function handleInbound(
     event: SlackMentionEvent,
     opts: { directMessage: boolean },
@@ -1620,28 +1312,18 @@ export function createSlackWorker(
       owner: binding.owner,
       teamId: event.teamId,
       images: fetched.images,
-      // A 1:1 DM has exactly one human speaker, so labelling the prompt with
-      // their Slack mention is redundant — keep the private DM prompt clean.
       speakerLabel: !opts.directMessage,
     });
   }
 
-  // A channel or group-DM `@mention` (`app_mention`). A 1:1 DM's messages
-  // arrive reliably via message.im (→ handleDirectMessage), so an app_mention
-  // for the same DM — if Slack fires one at all — is a duplicate; drop it so
-  // the turn isn't processed twice.
   const handleAppMention = (event: SlackMentionEvent) =>
     isDirectMessageId(event.channel)
       ? Promise.resolve()
       : handleInbound(event, { directMessage: false });
 
-  // A plain message in a 1:1 DM (`message.im`): every DM message is addressed
-  // to the bot, so a bound DM relays it without an @mention.
   const handleDirectMessage = (event: SlackMentionEvent) =>
     handleInbound(event, { directMessage: true });
 
-  // The binding is the authorization — anyone Slack admits to the channel
-  // drives the agent under the agent's credentials.
   async function relaySharedTurn(args: {
     channel: string;
     threadTs: string;
@@ -1653,8 +1335,6 @@ export function createSlackWorker(
     owner: string;
     teamId?: string;
     images: FetchedImage[];
-    /** Prefix the prompt with the speaker's Slack mention (multi-speaker
-     *  channels/group DMs). Defaults to true; a 1:1 DM passes false. */
     speakerLabel?: boolean;
   }) {
     if (!gateway) return;
@@ -1673,8 +1353,6 @@ export function createSlackWorker(
       },
     });
 
-    // The binding owner lends the credentials, so their ToU acceptance gates
-    // every shared turn — mirrors Telegram's binding.authorizedBy gate.
     if (!(await isTermsAccepted(args.owner))) {
       await gateway.postEphemeral({
         channel: args.channel,
@@ -1689,8 +1367,6 @@ export function createSlackWorker(
       channel: args.channel,
       threadTs: args.threadTs,
       eventTs: args.eventTs,
-      // Shared channels/group DMs are multi-speaker: label who is talking. A
-      // 1:1 DM has a single human, so its prompt goes through unlabelled.
       text:
         args.speakerLabel === false
           ? args.text
@@ -1704,28 +1380,14 @@ export function createSlackWorker(
     });
   }
 
-  // Ambient turns stay out of the channel's way: no reaction, no wake
-  // notices, and failures are logged, never posted — nobody summoned the
-  // agent, so there is nothing to apologize for in-channel.
   async function relayAmbientTurn(args: {
     instanceName: string;
     channel: string;
-    /** `_meta.platform.threadTs` session key: the channel-qualified thread key
-     *  for thread replies, the synthetic ambient key for top-level channel
-     *  flow. Not a Slack id — see `replyThreadTs` for that. */
     threadKey: string;
-    /** The thread's pre-#3086 unqualified session key, for resuming a thread
-     *  that was already going at upgrade time. Absent top-level. */
     legacyThreadKey?: string;
-    /** Where a reply (if the agent chimes in) is threaded by default: the
-     *  thread's ts in a thread, the batch's newest message top-level. */
     replyThreadTs: string;
-    /** The triggering message ts (the batch's newest), excluded from
-     *  injected context. */
     eventTs: string;
     hasThread: boolean;
-    /** The coalesced batch, oldest first — speaker-labelled text plus each
-     *  message's own ts, so a multi-message turn can target per message. */
     messages: Array<{ text: string; eventTs: string }>;
     images: FetchedImage[];
     externalActorId: string;
@@ -1733,14 +1395,6 @@ export function createSlackWorker(
     if (!gateway) return;
     const gw = gateway;
 
-    // A reply (if the agent chimes in) threads under the message it answers; a
-    // react targets that message. No 👀 ack and no status — ambient stays out
-    // of the channel's way until the agent decides to speak. Every batched
-    // message registers as its own target: in a thread they share the reply
-    // thread, but a multi-message top-level batch has no single "the" thread —
-    // its prompt tags each message with its ts, an id-less reply refuses, and
-    // an answer to an older batched message threads under that message instead
-    // of silently attaching to the newest one.
     const multi = args.messages.length > 1;
     const turnRefs: TurnRef[] = args.messages.map((m) => ({
       channel: args.channel,
@@ -1786,9 +1440,6 @@ export function createSlackWorker(
             {
               instanceName: args.instanceName,
               channel: args.channel,
-              // History injection reads Slack, so this is the thread's real
-              // `thread_ts` (only consulted when `hasThread`), never the
-              // session key — the two diverged once keys became qualified.
               threadTs: args.replyThreadTs,
               eventTs: args.eventTs,
               text,
@@ -1798,8 +1449,6 @@ export function createSlackWorker(
             contract,
             guidance,
           ),
-        // Every message in a coalesced batch runs on the one session, so they
-        // all link back to the same conversation.
         onSession: (sessionId) => {
           for (const ref of turnRefs) ref.sessionId = sessionId;
         },
@@ -1809,15 +1458,9 @@ export function createSlackWorker(
       });
 
     try {
-      // Registered inside the try (like the owner path) so a throw can never
-      // leak a live entry — live refs, unlike lingering ones, never expire.
-      // Read-along turns never advance the last-active-thread fallback at
-      // start; engagement (an actual reply/react) is what advances it.
       for (const ref of turnRefs) {
         beginTurn(args.instanceName, ref, { advanceLastTurn: false });
       }
-      // The response is not posted — the agent chimes in via the `reply`/`react`
-      // tools, or stays silent via `no_reply_needed`.
       try {
         await runTurn();
       } catch (err) {
@@ -1827,7 +1470,6 @@ export function createSlackWorker(
         ) {
           throw err;
         }
-        // Transient wake overrun: retry silently — no still-starting note.
         await runTurn();
       }
       outcome = "success";
@@ -1846,9 +1488,6 @@ export function createSlackWorker(
         "slack.ambient_turn.failed",
       );
     } finally {
-      // Same settlement classes as the owner path: an "acp-error" (or a ghost
-      // run left by a failed resume attempt) may leave the harness working
-      // this turn, so its refs must stay resolvable.
       for (const ref of turnRefs) {
         endTurn(args.instanceName, ref, {
           harnessMayStillRun: ghostTurn || failureReason === "acp-error",
@@ -1867,35 +1506,20 @@ export function createSlackWorker(
   }
 
   type AmbientPendingMessage = {
-    /** Speaker-labelled message text. */
     text: string;
     eventTs: string;
     slackUserId: string;
     images: FetchedImage[];
   };
 
-  // Ambient traffic is serialized per session and coalesced: messages that
-  // arrive while a turn is in flight flush as one multi-message prompt, so a
-  // burst never races concurrent prompts into the same read-along session. The
-  // queue key is per-channel for top-level flow (the channel's synthetic
-  // ambient session) and per-thread for a thread's read-along (its own
-  // session); `threadTs === null` selects which. Both must coalesce — several
-  // concurrent turns on one thread session let the runtime's per-session prompt
-  // queue silently drop the losers when their short-lived connections tear
-  // down, so read-along messages vanished with no trace.
   type AmbientQueue = {
     channelId: string;
-    /** The thread's real `thread_ts` for a thread's read-along session, or
-     *  `null` for the channel's synthetic top-level ambient session. */
     threadTs: string | null;
     pending: AmbientPendingMessage[];
     draining: boolean;
   };
   const ambientQueues = new Map<string, AmbientQueue>();
 
-  /** One queue per ambient session: the channel's top-level flow and each of
-   *  its threads drain independently (different sessions run concurrently), but
-   *  every message within a session is serialized and coalesced. */
   function ambientQueueKey(channelId: string, threadTs: string | null): string {
     return threadTs === null
       ? `top:${channelId}`
@@ -1924,10 +1548,6 @@ export function createSlackWorker(
         const batch = queue.pending.splice(0);
         const last = batch.at(-1);
         if (!last) continue;
-        // Re-resolve: the binding may have been unbound, dialed back to
-        // mentions-only, or rebound to a different owner while the batch
-        // waited — the ToU gate must hold against the owner whose
-        // credentials actually run the turn, so it is re-checked here too.
         const binding = await channelRegistry.resolveSlackBinding(
           queue.channelId,
         );
@@ -1941,10 +1561,6 @@ export function createSlackWorker(
           );
           continue;
         }
-        // A thread's read-along resumes the thread's own session (the same key
-        // a mention there resumes) and threads its reply back into the thread;
-        // top-level flow uses the channel's rolling ambient session and opens a
-        // reply thread under the batch's newest message.
         const inThread = queue.threadTs !== null;
         await relayAmbientTurn({
           instanceName: binding.instanceName,
@@ -1962,28 +1578,16 @@ export function createSlackWorker(
         });
       }
     } catch (err) {
-      // The drain floats outside any awaited chain — a rejection here (e.g.
-      // a transient DB error resolving the binding) must never escape as an
-      // unhandled rejection. The dropped batch stays dropped (ambient turns
-      // fail silently); the next message re-kicks the drain.
       getLogger().warn(
         { channelId: queue.channelId, error: formatError(err) },
         "slack.ambient_drain.failed",
       );
     } finally {
-      // No await between the empty check and this reset, so a message can't
-      // slip past both; any later enqueue sees draining=false and re-kicks.
       queue.draining = false;
-      // Drop a fully-drained queue so per-thread entries don't accumulate for
-      // the channel's lifetime; a later message recreates it. Guarded on empty
-      // so a batch the catch above left pending is not discarded.
       if (queue.pending.length === 0) ambientQueues.delete(key);
     }
   }
 
-  // Ambient inbound: a channel message that mentioned nobody. Only bindings
-  // with ambient on relay it; everything else drops silently — the sender did
-  // not address the agent, so there is nothing to explain.
   async function handleChannelMessage(event: SlackChannelMessageEvent) {
     if (!gateway) return;
     const slackUserId = event.user;
@@ -1992,8 +1596,6 @@ export function createSlackWorker(
     const binding = await channelRegistry.resolveSlackBinding(event.channel);
     if (!binding || !binding.ambient) return;
 
-    // The binding owner's ToU acceptance gates ambient turns like any shared
-    // turn — but silently: an ephemeral would ping people who never asked.
     if (!(await isTermsAccepted(binding.owner))) {
       getLogger().debug(
         { agentId: binding.instanceName, channelId: event.channel },
@@ -2002,9 +1604,6 @@ export function createSlackWorker(
       return;
     }
 
-    // Images ride along when they fit; ambient turns never post error
-    // ephemerals, so oversized or unfetchable attachments just drop — but the
-    // agent is still told, in the prompt, that one was withheld.
     const fetchResult = await fetchSlackImages(gateway, event.files);
     const images = fetchResult.kind === "ok" ? fetchResult.images : [];
     const withheldNote =
@@ -2025,11 +1624,6 @@ export function createSlackWorker(
       },
     });
 
-    // Both thread and top-level read-along traffic coalesce through the queue,
-    // keyed per-session so a burst is serialized into one turn rather than
-    // racing concurrent prompts into the shared session. A thread reply keys on
-    // its own thread_ts (the same session a mention there resumes); top-level
-    // flow keys on the channel's rolling ambient session.
     const text = `<@${slackUserId}>: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text,
@@ -2042,9 +1636,6 @@ export function createSlackWorker(
   let gatewayFailed = false;
   let gatewayStarting: Promise<SlackGateway | null> | null = null;
 
-  // Single-flight: a connect emits SlackConnected (whose handler starts the
-  // worker) while the same request may already be posting an announcement —
-  // both paths must share one start, never race two socket connections.
   async function ensureGateway(): Promise<SlackGateway | null> {
     if (gateway) return gateway;
     if (gatewayFailed) return null;
@@ -2110,12 +1701,6 @@ export function createSlackWorker(
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (boundChannelIds.length === 0) return [];
 
-      // The bound conversations lead (agents treat chats[0] as their home
-      // surface), then every other channel the bot is a member of.
-      // Discovery failure (bot down, missing scopes) degrades to the
-      // bound conversations alone. ensureGateway: like outbound posts, a
-      // describe_channel can arrive before any inbound event started
-      // the gateway.
       let botChannels: SlackChannelInfo[] = [];
       const gw = await ensureGateway();
       if (gw) {
@@ -2150,25 +1735,18 @@ export function createSlackWorker(
       text: string,
       options?: PostMessageOptions,
     ) {
-      // The binding is the Agent's membership card into the workspace: no
-      // binding, no Slack outbound — even though the workspace bot exists.
       const boundChannelIds =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (boundChannelIds.length === 0) {
         return { error: "no channel connected" };
       }
 
-      // Outbound may arrive before any inbound event started the gateway —
-      // e.g. the announcement posted right after the first-ever connect,
-      // which races the SlackConnected handler's fire-and-forget start.
       const gw = await ensureGateway();
       if (!gw) {
         return { error: "slack bot not running" };
       }
 
       const { conversationId, attachment } = options ?? {};
-      // Refuse before resolving: an empty send to a user id would still
-      // open a DM conversation as a side effect.
       if (!text && !attachment) {
         return { error: "nothing to send — pass text or an attachment" };
       }
@@ -2185,12 +1763,6 @@ export function createSlackWorker(
       const contextBlock = agentContextBlock(footer);
 
       try {
-        // Two-message pattern when there's both text and a file: post the
-        // text via postMessage (full markdown rendering) then upload the file
-        // as a separate message. uploadFile with blocks gives a narrower
-        // mrkdwn subset and was returning internal_error on Slack's side for
-        // some block shapes — keeping the upload simple side-steps both issues
-        // and gives consistent text formatting in either path.
         if (text) {
           await gw.postMessage({
             channel: target.id,
@@ -2208,9 +1780,6 @@ export function createSlackWorker(
               initialComment: text ? undefined : agentFooterMrkdwn(footer),
             });
           } catch (err) {
-            // The text message (if any) already landed — say so, or the
-            // caller (and the audit trail reading its result) would take
-            // the whole send for undelivered.
             return {
               error: text
                 ? `message posted, but the attachment upload failed: ${formatError(err)}`
@@ -2247,15 +1816,9 @@ export function createSlackWorker(
         threadTs = resolved.ref.threadTs;
         turn = resolved.ref;
       } else {
-        // An explicit id that names a live/lingering turn follows that turn's
-        // conversation too — batch turns must pass ids, and the rebind
-        // protection would otherwise skip exactly them.
         const id = threadTs;
         turn = findTurnRef(instanceName, (ref) => ref.threadTs === id);
       }
-      // A threadTs is only meaningful inside its own conversation — post where
-      // the resolved turn ran, not wherever the agent is bound *now*, or a
-      // mid-turn rebind would redirect the reply into the new channel.
       const target = await resolveOutboundTarget(
         gw,
         boundChannelIds,
@@ -2263,8 +1826,6 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      // The reply carries the turn's session, so its footer link opens this
-      // conversation in the UI rather than the agent's chat at large.
       const footer = await resolveAgentFooter(instanceName, turn?.sessionId);
       try {
         await gw.postMessage({
@@ -2299,8 +1860,6 @@ export function createSlackWorker(
         if ("ambiguous" in turn) return { error: AMBIGUOUS_THREAD_ERROR };
         if ("none" in turn) return { error: "no message to react to" };
         messageTs = turn.ref.eventTs;
-        // Like reply: the message lives in the turn's conversation, not
-        // necessarily the currently-bound one.
         turnChannel = turn.ref.channel;
       } else {
         const id = messageTs;
@@ -2309,8 +1868,6 @@ export function createSlackWorker(
           (ref) => ref.eventTs === id,
         )?.channel;
       }
-      // Slack wants the bare short name; tolerate :colons: or an accidental
-      // leading/trailing space.
       const name = args.emoji.trim().replace(/^:+|:+$/g, "");
       if (!name) {
         return { error: 'emoji is required (a Slack short name like "eyes")' };
@@ -2330,16 +1887,11 @@ export function createSlackWorker(
         );
         return { ok: true as const };
       } catch (err) {
-        // Bad emoji name, already_reacted, or a missing scope surface to the
-        // agent as a tool error rather than aborting its turn.
         return { error: formatError(err) };
       }
     },
 
     async describeUsers(instanceName: string, userIds: string[]) {
-      // Same gate as every outbound affordance: the binding is the Agent's
-      // membership card into the workspace, so an unbound Agent reads no
-      // directory even though the workspace bot exists.
       const boundChannelIds =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (boundChannelIds.length === 0)
@@ -2347,9 +1899,6 @@ export function createSlackWorker(
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
-      // One entry per person: the same id twice, or in two spellings, is one
-      // lookup and one result. Unparseable input keeps its raw spelling so the
-      // agent can see which of its arguments was wrong.
       const seen = new Set<string>();
       const requested: { raw: string; id: string | null }[] = [];
       for (const raw of userIds) {
@@ -2380,7 +1929,6 @@ export function createSlackWorker(
           try {
             info = await gw.getUserInfo(id);
           } catch (err) {
-            // A rate limit or a missing scope fails this id, not the batch.
             return { id, error: formatError(err) };
           } finally {
             release();
@@ -2401,8 +1949,6 @@ export function createSlackWorker(
       instanceName: string,
       query: ReactionsQuery,
     ) {
-      // Same gate as every outbound affordance: the binding is the Agent's
-      // membership card into the workspace.
       const boundChannelIds =
         await channelRegistry.resolveSlackChannelsByInstance(instanceName);
       if (boundChannelIds.length === 0)
@@ -2413,7 +1959,6 @@ export function createSlackWorker(
       let messageTs = query.messageTs;
       let turnChannel: string | undefined;
       if (!messageTs) {
-        // Message-level target, same granularity as react.
         const turn = resolveTurn(instanceName, "react");
         if ("ambiguous" in turn) return { error: AMBIGUOUS_MESSAGE_ERROR };
         if ("none" in turn) {
@@ -2422,8 +1967,6 @@ export function createSlackWorker(
           };
         }
         messageTs = turn.ref.eventTs;
-        // Like react: the message lives in the turn's conversation, not
-        // necessarily the currently-bound one.
         turnChannel = turn.ref.channel;
       } else {
         const id = messageTs;
@@ -2442,9 +1985,6 @@ export function createSlackWorker(
       try {
         const reactions = await gw.getMessageReactions(target.id, messageTs);
         if (!reactions) return { error: "message not found" };
-        // Return the resolved target, not just the (often-omitted) request —
-        // the caller audits by these, and an agent that omitted both still
-        // learns which message and chat it actually asked about.
         return { reactions, conversationId: target.id, messageTs };
       } catch (err) {
         return { error: formatError(err) };

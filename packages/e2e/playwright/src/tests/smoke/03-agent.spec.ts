@@ -34,9 +34,6 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   });
 
   await test.step("open app", async () => {
-    // Suppress first-run auto-routing — a blank account (providers cleared
-    // above) would otherwise skip the list and land in the wizard, breaking
-    // the "Create sandbox" flow below.
     await page.addInitScript(() =>
       sessionStorage.setItem("platform-first-run-routed", "1"),
     );
@@ -46,11 +43,8 @@ test("create a mock agent with the connection attached", async ({ page }) => {
 
   await test.step("pick the mock image", async () => {
     await page.getByRole("button", { name: /create sandbox/i }).click();
-    // Step 1 picks a starting point first; the harness images only appear once
-    // the general-purpose path reveals them.
     await page.getByTestId("starting-point-general-purpose").click();
     await page.getByTestId(`template-card-${harnessName}`).click();
-    // The image step now only selects on click; advance with its Continue button.
     await page.getByRole("button", { name: /continue/i }).click();
   });
 

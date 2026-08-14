@@ -36,14 +36,10 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
     )
     .action(
       async (opts: { server?: string; browser?: boolean; force?: boolean }) => {
-        // Resolve target host: explicit flag → env/file via ConfigService.
         let host = opts.server;
         if (!host) {
           const resolved = await deps.configService.getResolved({});
           if (!resolved.ok) {
-            // Distinguish "no server configured" from "config.toml is broken"
-            // so the remediation hint matches the underlying cause —
-            // matches ping's handling (review §3).
             if (resolved.error.kind === "malformed-config") {
               process.stderr.write(`error: ${resolved.error.reason}\n`);
             } else {
@@ -56,16 +52,12 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
           host = resolved.value.server;
         }
 
-        // DAM_TOKEN warning (analysis §3.9): if env shadowing is active,
-        // the login still proceeds but the saved creds will be hidden.
         if (deps.authEnvReader.damToken() !== undefined) {
           process.stderr.write(
             `warning: DAM_TOKEN is set; the saved credentials will be shadowed by the env var on every command until you unset it\n`,
           );
         }
 
-        // Re-login confirm prompt is owned by the command — service only
-        // signals whether `--force` is required.
         const isTty = Boolean(process.stdin.isTTY);
         const onPromptUser = (info: {
           userCode: string;
@@ -96,7 +88,6 @@ export function buildLoginCommand(deps: LoginCommandDeps): Command {
 
         let result = await attemptLogin(opts.force ?? false);
 
-        // Handle re-login confirm — retry with force after user agreement.
         if (!result.ok && result.error.kind === "aborted") {
           const rl = createInterface({
             input: process.stdin,

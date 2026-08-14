@@ -58,15 +58,9 @@ function InlineNameInput({
 }: InputProps) {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement | null>(null);
-  // Guard against double-firing commit from blur + Enter; both paths race.
   const committedRef = useRef(false);
-  // True while the focus grab below is running; blurs during that window are
-  // the menu's focus trap yanking, not user intent — don't commit on them.
   const grabbingRef = useRef(true);
 
-  // The row is usually spawned from a menu whose focus trap stays alive
-  // through its exit animation and which refocuses its trigger at the end —
-  // a single focus() loses. Re-assert briefly, then behave normally.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

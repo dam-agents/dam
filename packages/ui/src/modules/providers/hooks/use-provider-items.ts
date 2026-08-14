@@ -8,8 +8,6 @@ import type { ProviderItem } from "../components/provider-item.js";
 export function useProviderItems() {
   const { data: connections = [], isPending } = useAppConnections();
 
-  // itemByType keeps one connection per preset, but a sandbox may hold a
-  // different connection of the same preset — hence the lookup by id too.
   const { itemByType, typeByConnectionId } = useMemo(() => {
     const itemByType = new Map<ProviderPresetType, ProviderItem>();
     const typeByConnectionId = new Map<string, ProviderPresetType>();

@@ -12,16 +12,6 @@ import (
 	"github.com/kagenti/platform/packages/controller/pkg/config"
 )
 
-// Per-agent ServiceAccount in the agent namespace, name == agent ID.
-//
-// Both pods of the long-lived pair (agent-runtime + gateway) mount this SA.
-// K8s GC reaps each SA on agent delete via the owner reference.
-//
-// `automountServiceAccountToken: false` is preserved: Istio workload identity
-// does not depend on SA-token mounts, and we keep the agent + gateway pods
-// credential-free at the K8s API surface.
-
-// BuildServiceAccount renders the per-agent ServiceAccount for `agentName`.
 func BuildServiceAccount(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.ServiceAccount {
 	falseVal := false
 	return &corev1.ServiceAccount{
@@ -38,10 +28,6 @@ func BuildServiceAccount(agentName string, cfg *config.Config, ownerRef metav1.O
 	}
 }
 
-// applyServiceAccount creates or reconciles the per-agent ServiceAccount.
-// Idempotent under label drift, owner-ref drift, and AutomountServiceAccountToken
-// drift — a pre-existing SA from a prior install / manual creation gets
-// reconciled rather than silently accepted.
 func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *corev1.ServiceAccount) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.CoreV1().ServiceAccounts(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
@@ -52,8 +38,6 @@ func (r *AgentReconciler) applyServiceAccount(ctx context.Context, desired *core
 		if err != nil {
 			return err
 		}
-		// Reconcile fields we own; preserve everything else (other controllers
-		// may add their own ImagePullSecrets / labels).
 		changed := false
 		if existing.Labels == nil {
 			existing.Labels = map[string]string{}
@@ -90,8 +74,6 @@ func hasOwnerRef(existing []metav1.OwnerReference, want metav1.OwnerReference) b
 	return false
 }
 
-// ensureSA is the convenience wrapper used by Reconcile. Returns a wrapped
-// error that names the operation for callers that surface it via setError.
 func (r *AgentReconciler) ensureServiceAccount(ctx context.Context, agentName string, ownerRef metav1.OwnerReference) error {
 	sa := BuildServiceAccount(agentName, r.config, ownerRef)
 	if err := r.applyServiceAccount(ctx, sa); err != nil {

@@ -17,12 +17,6 @@ import type {
   MalformedAuthStoreError,
 } from "../domain/errors.js";
 
-/**
- * The host URL is the key into the `auth.toml` `hosts` table — e.g.
- * `"http://dam.localhost:4444"`. Kept as a plain string so callers can pass
- * the Active Host straight from `config.toml`'s `server` field without a
- * type-cast dance.
- */
 export type HostUrl = string;
 
 export interface AuthStore {
@@ -46,8 +40,6 @@ const hostEntrySchema = z.object({
   cli_client_id: z.string().min(1),
   access_token: z.string().min(1),
   refresh_token: z.string().min(1),
-  // smol-toml parses unquoted `YYYY-MM-DDTHH:MM:SSZ` as Date and quoted as
-  // string. Accept both so a hand-edited file with either shape round-trips.
   expires_at: z.union([z.string().min(1), z.date()]),
 });
 
@@ -99,7 +91,6 @@ function fromHostAuth(value: HostAuth): TomlTable {
     cli_client_id: value.cliClientId,
     access_token: value.accessToken,
     refresh_token: value.refreshToken,
-    // Always emit a quoted ISO 8601 string for unambiguous round-tripping.
     expires_at: value.expiresAt.toISOString(),
   };
 }
@@ -134,17 +125,11 @@ async function writeFileAtomic(
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   try {
     await mkdir(dirname(filePath), { recursive: true });
-    // Defensive: pass mode AND chmod after — the mode flag is masked by
-    // umask on create, so the explicit chmod is what actually guarantees
-    // 0600 (gemini-cli idiom).
     await writeFile(tmp, contents, { encoding: "utf-8", mode: FILE_MODE });
     await chmod(tmp, FILE_MODE);
     await rename(tmp, filePath);
     return ok(undefined);
   } catch (e) {
-    // Best-effort cleanup so we don't leak a 0600 file containing a
-    // refresh token on the user's disk when rename (or any earlier step)
-    // fails. Errors here are swallowed — the original error wins.
     await unlink(tmp).catch(() => {});
     return err({
       kind: "auth-store-write",
@@ -154,13 +139,6 @@ async function writeFileAtomic(
   }
 }
 
-// Note: `write` and `remove` use read-merge-rename. The rename itself is
-// atomic, but the read→merge→rename sequence is not coordinated across
-// processes — two concurrent `dam` invocations can each persist their own
-// merged snapshot and the later rename silently reverts the other host's
-// entry. Accepted for v1 (solo-terminal use); see docs/architecture/cli.md
-// "Authentication" section for the deferred fix (per-host files or
-// cross-process locking).
 export function createTomlAuthStore(filePath: string): AuthStore {
   return {
     async read() {
@@ -187,8 +165,6 @@ export function createTomlAuthStore(filePath: string): AuthStore {
     async write(host, value) {
       const raw = await readRawFile(filePath);
       if (!raw.ok) {
-        // A malformed existing file would otherwise be clobbered silently;
-        // surface as a write error so the caller can decide what to do.
         return err({
           kind: "auth-store-write",
           path: filePath,

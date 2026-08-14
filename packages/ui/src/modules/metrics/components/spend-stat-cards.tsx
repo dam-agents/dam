@@ -16,15 +16,10 @@ interface Props {
   durationMs: number;
 }
 
-/** Subordinated run inside a figure — units and secondary values, so the digits
- *  that matter stay the ones you read first. Inherits the figure's weight so the
- *  two stay matched. */
 function Sub({ children }: { children: ReactNode }) {
   return <span className="text-sm text-muted-foreground/70">{children}</span>;
 }
 
-// `dt`/`dd` pair the label with its figure, so jumping straight to a number
-// still carries what the number is.
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Card className="p-4">
@@ -36,8 +31,6 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The month's headline figures. Takes already-summed primitives so the caller
- *  owns the arithmetic and this stays presentation only. */
 export function SpendStatCards({
   costUsd,
   calls,
@@ -52,7 +45,7 @@ export function SpendStatCards({
       <Stat label="Tokens in / out">
         {formatTokens(tokensIn)}
         <Sub>
-          {/* Tighter than a mono space, which is wide enough to read as a gap. */}
+          {}
           <span className="mx-1">/</span>
           {formatTokens(tokensOut)}
         </Sub>

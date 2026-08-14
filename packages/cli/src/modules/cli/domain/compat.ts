@@ -1,7 +1,3 @@
-// Server-advertised compatibility floor. Domain has no
-// dependencies — the comparator is inlined rather than pulling a semver
-// lib so the layering rule stays clean.
-
 export type CompatVerdict =
   | {
       kind: "ok";
@@ -47,15 +43,6 @@ export function verdictFor(inputs: VerdictInputs): CompatVerdict {
   return { kind: "ok", localCli, serverVersion, serverMinClient };
 }
 
-/**
- * Semver compare per https://semver.org/. Throws on invalid input — both
- * inputs in production come from package.json (CLI) and `/api/version`
- * (server), where invalid input is a bug worth surfacing.
- *
- * Build metadata (`+...`) is ignored. Pre-release (`-rc.1` etc.) is
- * compared per the semver spec: a version with pre-release ranks lower
- * than the same version without.
- */
 export function compareVersions(a: string, b: string): -1 | 0 | 1 {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
@@ -114,7 +101,6 @@ function cmpNum3(
 }
 
 function comparePreRelease(a: string[], b: string[]): -1 | 0 | 1 {
-  // Per semver §11: a version with pre-release < same version without.
   if (a.length === 0 && b.length === 0) return 0;
   if (a.length === 0) return 1;
   if (b.length === 0) return -1;

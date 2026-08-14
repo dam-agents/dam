@@ -21,9 +21,6 @@ export type PersistActivityDeps = {
   upsertActorRole: (actorSub: string, isCore: boolean) => Promise<void>;
 };
 
-/** Bound per-stream concurrency for DB writes — defaults to Infinity in
- *  rxjs, which would let an auth burst (api-server restart, silent renew
- *  storm) saturate the pg pool. */
 const STREAM_CONCURRENCY = 8;
 
 export function startPersistActivitySaga(
@@ -37,10 +34,6 @@ export function startPersistActivitySaga(
         ofType<UserAuthenticated>(EventType.UserAuthenticated),
         mergeMap(async (event) => {
           try {
-            // `upsertActorRole` is a no-op after the first call per UTC day
-            // (setWhere on updated_at < CURRENT_DATE), so this stays cheap
-            // under heavy auth traffic while still picking up role flips
-            // within a day.
             await deps.upsertActorRole(event.userSub, event.isCore);
             await deps.insert({
               type: "auth",
@@ -72,8 +65,6 @@ export function startPersistActivitySaga(
               agentId: event.agentId,
               surface: event.channel,
               outcome: event.outcome,
-              // externalActorId stays in the payload — the actor_sub column
-              // is HMAC-pseudonymized Keycloak-sub space, not messenger ids.
               payload: {
                 ...(event.externalActorId
                   ? { externalActorId: event.externalActorId }

@@ -3,7 +3,6 @@ import type { SlackReplyPoster } from "../services/ports.js";
 const PROTOCOL_VERSION = "2025-06-18";
 const TIMEOUT_MS = 15_000;
 
-/** Parse the first JSON-RPC object from an MCP response (SSE or plain JSON). */
 function firstJsonRpc(raw: string, contentType: string): unknown {
   if (contentType.includes("text/event-stream")) {
     for (const line of raw.split(/\r?\n/)) {
@@ -16,10 +15,6 @@ function firstJsonRpc(raw: string, contentType: string): unknown {
   return raw.trim() ? JSON.parse(raw) : null;
 }
 
-/** Calls the per-agent platform-outbound MCP endpoint to post a Slack reply,
- *  running the same initialize → initialized → tools/call handshake a real
- *  harness does (auth is mesh-based off the pod's identity — no token). The URL
- *  is injected as PLATFORM_MCP_URL inside every agent pod. */
 export function createSlackReplyPoster(): SlackReplyPoster {
   const mcpUrl = process.env.PLATFORM_MCP_URL ?? "";
 

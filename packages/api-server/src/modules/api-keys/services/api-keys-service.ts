@@ -9,9 +9,6 @@ import type {
 } from "api-server-api";
 import type { ApiKeyRow } from "../domain/types.js";
 
-/** Active-keys cap per owner. Hard upper bound to keep the table bounded
- *  even under a misbehaving / scripted caller; well above any reasonable
- *  human-issued count (typical CI pipelines use 1–3 keys per user). */
 const MAX_ACTIVE_KEYS_PER_OWNER = 50;
 
 export interface ApiKeysServiceDeps {
@@ -27,11 +24,7 @@ export interface ApiKeysServiceDeps {
     expiresAt: Date | null;
   }) => Promise<ApiKeyRow>;
   revoke: (id: string, ownerSub: string) => Promise<boolean>;
-  /** Mints a fresh token + its at-rest digest (HMAC-SHA256 with the server
-   *  pepper). Injected so the service stays free of key material. */
   mintToken: () => { token: string; hash: string };
-  /** Verifies each agent ID exists and is owned by the caller — keys
-   *  binding to non-existent agents are a silent footgun. */
   isAgentOwnedBy: (agentId: string, ownerSub: string) => Promise<boolean>;
 }
 
@@ -51,12 +44,6 @@ function generateKeyId(): string {
   return `key-${randomUUID()}`;
 }
 
-/**
- * "API keys cannot manage API keys" is enforced by `browserOnlyProcedure` at
- * the router layer (see `api-server-api/auth-procedures.ts`). The service
- * therefore does not need to know how the caller authenticated — every request
- * reaching this file already comes from an interactive Keycloak session.
- */
 export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
   return {
     async list() {
@@ -65,9 +52,6 @@ export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
     },
 
     async create(input: ApiKeyCreateInput): Promise<ApiKeyCreateResult> {
-      // Bounded active-key count per owner. Race window between count
-      // and insert is acceptable — the cap is for resource-bound
-      // protection, not a strict invariant.
       const existing = await deps.list(deps.ownerSub);
       if (existing.length >= MAX_ACTIVE_KEYS_PER_OWNER) {
         throw new TRPCError({
@@ -76,9 +60,6 @@ export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
         });
       }
 
-      // `agents:manage` is wildcard-bound by design (per-agent management
-      // downscoping is a future refinement), so reject minting a management
-      // key restricted to a specific agent set.
       if (input.scopes.includes("agents:manage") && input.agentIds !== "*") {
         throw new TRPCError({
           code: "BAD_REQUEST",

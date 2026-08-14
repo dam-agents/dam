@@ -20,8 +20,6 @@ export function useEgressRulesForAgent(agentId: string | null) {
   });
 }
 
-/** Derived from active `egress_rules.source` server-side: any `preset:all`
- *  row → "all"; any `preset:trusted` row → "trusted"; otherwise "none". */
 export function useCurrentPreset(agentId: string | null) {
   return useQuery({
     queryKey: egressRulesKeys.currentPreset(agentId),
@@ -31,9 +29,6 @@ export function useCurrentPreset(agentId: string | null) {
   });
 }
 
-/** Helm-mounted list of hosts the `trusted` preset would seed. Read once
- *  at boot on the server, so a long staleTime is fine. Used to render a
- *  preview of preset rules before the user commits the switch. */
 export function useTrustedHosts() {
   return useQuery({
     queryKey: [...egressRulesKeys.all, "trusted-hosts"] as const,

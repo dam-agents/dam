@@ -58,9 +58,6 @@ const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.WORK_DIR;
 
-// skill-ref driver paths from the *resolved* manifest (the built-in default when
-// the manifest doesn't declare skill-ref), $HOME expanded against home. Must
-// match how composeRuntimeChannel resolves it — hence resolveDrivers, not the raw map.
 function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
   const binding = resolveDrivers(manifest)["skill-ref"] as
     | { paths?: unknown }
@@ -71,20 +68,12 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
     .map((p) => expandHome(p, home));
 }
 
-// Shared by the skills service (read side) and the skill-install driver.
 const manifestPath = config.PLATFORM_DEV
   ? join(__dir, "../../platform-base/runtime-manifest.yaml")
   : join(__dir, "../runtime-manifest.yaml");
 const runtimeManifest = loadManifest(manifestPath);
 
-// Boot-time module composition. Skills + Files services are stable across the
-// lifetime of the process; createContext just hands them out per-request.
 const filesService = createFilesService(homeDir);
-// Pristine roots for origin classification: the manifest paths re-expanded
-// against the image workspace root, plus the staged-skills dir (system
-// skills an Install Command copies in post-create). The Set drops non-$HOME
-// manifest paths — those re-expand to themselves and would compare a skill
-// against its own directory.
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
 const pristineSkillPaths = [
@@ -105,8 +94,6 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
 
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 
-// Single shared env store: the env driver writes it; the spawn paths below
-// (harness, terminal, ssh, git) read it through the RuntimeEnvReader port.
 const envStore = createEnvStateStore(homeDir);
 
 const podServicePath = "/usr/local/bin/pod-service";
@@ -122,10 +109,6 @@ const podService = existsSync(podServicePath)
 
 if (envStore.ready()) podService?.refreshEnv();
 
-// Where in-pod callers reach this runtime. Set on our own env so every process
-// the runtime spawns inherits it — the harness (and anything it runs) needs it
-// to report background work, and a hook or wrapper script shouldn't have to
-// guess a port. See the background-work contract in agent-runtime-api.
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
 const {
@@ -158,7 +141,6 @@ const runtimeChannel = await composeRuntimeChannel({
     createEnvPlugin({
       store: envStore,
       onChange: ({ namesChanged }) => {
-        // Value-only changes never force-kill an in-flight turn (#3143).
         acpRuntime.refreshEnv({ force: namesChanged });
         podService?.refreshEnv();
         configureGitCredentialHelper(envStore, (msg) =>
@@ -182,17 +164,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// 70 MB upload headroom: file-uploads go through files.upload as base64
-// (≈1.34× overhead) plus JSON wrapping. The server-side FilesService caps
-// decoded payloads at 50 MB, so this is purely a transport-layer guard that
-// prevents partial reads before the service-level check kicks in.
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
-// The agent's NetworkPolicy admits ingress on this port only from the
-// api-server and controller pods; the api-server has already verified
-// the user JWT and agent ownership before forwarding. So tRPC routes
-// need no in-process auth check — the kernel-level gate is the auth
-// boundary.
 const trpcHandler = createHTTPHandler({
   router: appRouter,
   createContext: (): AgentRuntimeContext => ({
@@ -205,13 +178,8 @@ const trpcHandler = createHTTPHandler({
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
-// A detached PTY survives while the harness produces output; the short grace
-// covers tab-refresh reattach.
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
-// Recent non-echo output ≈ busy. The window is the indicator's tail after the
-// last output; sized near the TUI repaint tick, trading possible flicker for
-// a short tail.
 const PTY_ACTIVE_WINDOW_MS = 1_000;
 const PTY_INPUT_ECHO_MS = 500;
 
@@ -226,13 +194,10 @@ interface PtySlot {
   serialize: InstanceType<typeof SerializeAddon>;
   client: WsWebSocket | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
-  /** Any output — drives detached-idle reaping. */
   lastOutputAt: number;
   lastSeenStampAt: number;
-  /** Echo-discounted output after the first keypress — drives `running`. */
   lastBusyAt: number;
   lastInputAt: number;
-  /** Boot render precedes any input and must not read as busy. */
   sawInput: boolean;
 }
 
@@ -242,9 +207,6 @@ const ptyLog = (sid: string, msg: string) =>
 
 const PTY_SEEN_STAMP_DEBOUNCE_MS = 30_000;
 
-// An attached viewer sees everything the terminal does. Terminal sessions are
-// usually store-less; the first stamp creates their entry (with the explicit
-// mode, which `set` needs and which keeps the terminal decode).
 function markTerminalSeen(sessionId: string): void {
   if (sessionMetadata.get(sessionId)) sessionMetadata.recordSeen(sessionId);
   else sessionMetadata.set(sessionId, { mode: "terminal" });
@@ -285,7 +247,6 @@ function attachPty(
   let initialized = false;
   ws.binaryType = "nodebuffer";
 
-  // An errored socket may never emit close; both paths must arm the reap timer.
   const detach = () => {
     const slot = ptySlots.get(sessionId);
     if (!slot || slot.client !== ws) return;
@@ -329,7 +290,6 @@ function attachPty(
         }
         existing.client = ws;
         markTerminalSeen(sessionId);
-        // The reattach resize repaint is a reaction too, not work.
         existing.lastInputAt = Date.now();
         existing.headless.resize(cols, rows);
         existing.pty?.resize(cols, rows);
@@ -353,7 +313,6 @@ function attachPty(
         rows,
         cwd: workDir,
         env: {
-          // Runtime-channel env first; process.env wins on collision.
           ...envStore.current(),
           ...(Object.fromEntries(
             Object.entries(process.env).filter(
@@ -389,7 +348,6 @@ function attachPty(
         slot.lastOutputAt = now;
         if (slot.sawInput && now - slot.lastInputAt > PTY_INPUT_ECHO_MS)
           slot.lastBusyAt = now;
-        // Keep other clients' unread honest during long attached work.
         if (
           slot.client &&
           now - slot.lastSeenStampAt > PTY_SEEN_STAMP_DEBOUNCE_MS
@@ -422,12 +380,9 @@ function attachPty(
       slot.lastInputAt = now;
       slot.sawInput = true;
       const text = new TextDecoder().decode(frame.data);
-      // A submitted line counts as work starting; busy doesn't wait for the
-      // first non-echo repaint.
       if (/[\r\n]/.test(text)) slot.lastBusyAt = now;
       slot.pty?.write(text);
     } else if (frame.op === OP_RESIZE) {
-      // Suppresses the repaint echo without counting as the first keypress.
       slot.lastInputAt = Date.now();
       slot.headless.resize(frame.cols, frame.rows);
       slot.pty?.resize(frame.cols, frame.rows);
@@ -435,14 +390,12 @@ function attachPty(
   });
 }
 
-/** Small JSON body reader for the plain-HTTP routes (tRPC has its own). */
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     bytes += buf.length;
-    // A report is a short list; anything larger is a caller bug, not a payload.
     if (bytes > 64 * 1024) throw new Error("body too large");
     chunks.push(buf);
   }
@@ -464,8 +417,6 @@ const server = http.createServer((req, res) => {
     const acp = acpRuntime.status();
     const status = {
       idle: acp.idle && ptySlots.size === 0,
-      // Published for diagnosis only — the controller reads `idle`, which
-      // already accounts for these. It answers "why is this pod awake?".
       backgroundWork: acp.backgroundWork,
     };
     res
@@ -488,10 +439,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // The background-work contract (#2965): a session reports its complete
-  // in-flight set, and the platform keeps the session — and the pod — alive
-  // while that set is non-empty. Local to the pod, like the reset route above:
-  // anything that can reach it already runs as the agent.
   const backgroundWorkMatch =
     req.method === "POST" &&
     req.url?.match(/^\/api\/sessions\/([^/]+)\/background-work$/);
@@ -564,22 +511,6 @@ server.on("upgrade", (req, socket, head) => {
   }
 });
 
-// Node defaults `requestTimeout` to 5 minutes. The import route holds a
-// request open through extract+finalize of a multi-GB tar — easily over
-// the default on slow uploads. `server.requestTimeout` is an absolute
-// timer set at request start (not socket-idle) so there's no public Node
-// API to scope it per-handler; disable it server-wide instead.
-//
-// What's lost: the body-read timeout on every other route. What still
-// protects them:
-//   - `headersTimeout = 60s` bounds the headers phase on every route.
-//   - Non-import routes have hard body caps (TRPC_MAX_BODY_SIZE = 32 MB),
-//     so a slow body ties up a TCP connection but can't grow memory.
-//   - This server is reachable only from the api-server pod
-//     (NetworkPolicy), so the slow-body actor would have to be the
-//     trusted api-server itself.
-// The import handler installs its own inactivity (30s) + wall-clock
-// (30min) deadlines, so stuck imports still get aborted.
 server.requestTimeout = 0;
 server.headersTimeout = 60_000;
 
@@ -596,10 +527,6 @@ server.listen(config.PORT, () => {
   });
 });
 
-// cgroup memory accounting is whole-container (agent-runtime + harness +
-// pod-service), so it catches pressure from the harness even when this
-// process's own heap is fine. cgroupfs reads are kernel-served (no disk I/O),
-// so a sync read here can't itself stall the loop. v2 path, v1 fallback.
 function readCgroupBytes(v2: string, v1: string): number | null {
   for (const p of [v2, v1]) {
     try {
@@ -607,26 +534,11 @@ function readCgroupBytes(v2: string, v1: string): number | null {
       if (raw === "max") return Infinity;
       const n = Number.parseInt(raw, 10);
       if (Number.isFinite(n)) return n;
-    } catch {
-      // try next path / give up
-    }
+    } catch {}
   }
   return null;
 }
 
-// Event-loop block watchdog. /healthz shares this single thread, so a long
-// synchronous stall is what trips the liveness probe and gets the pod
-// SIGKILLed. Each block is logged with memory + CPU context so the cause is
-// self-evident next time without guessing:
-//   - GC thrash        → heap≈heapTotal, high cpu%
-//   - container memory  → cgroup near limit, low cpu% (harness is a separate
-//     pressure            process under the same cgroup; our own heap stays normal)
-//   - CPU-bound sync op → high cpu%, heap + cgroup normal
-//   - blocking syscall  → low cpu%, heap + cgroup normal
-// A gated [mem] heartbeat captures the run-up to a memory-pressure collapse,
-// since a terminal wedge leaves no time to log on its own. monitorEventLoopDelay
-// samples at libuv level so a recoverable block is captured; a terminal wedge
-// still can't self-report (the kubelet event is the signal there).
 const mib = (n: number) => Math.round(n / 1_048_576);
 const cgMax = readCgroupBytes(
   "/sys/fs/cgroup/memory.max",
@@ -669,9 +581,7 @@ setInterval(() => {
     ) {
       process.stderr.write(`[mem] high cgroup usage — ${memStr}\n`);
     }
-  } catch {
-    // observability must never take down the runtime
-  }
+  } catch {}
 }, 10_000).unref();
 
 let shuttingDown = false;

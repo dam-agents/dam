@@ -23,8 +23,6 @@ function makeCurrent(sessionMode?: "continuous" | "fresh"): Schedule {
   return { id: SCHEDULE_ID, agentId: "agent-1", name: "daily", spec };
 }
 
-/** Fake repo that returns `current` from get() and captures the spec passed to
- *  updateSpec(), plus a no-op runner. */
 function makeDeps(current: Schedule) {
   let savedSpec: ScheduleSpec | undefined;
   const repo = {
@@ -72,7 +70,6 @@ describe("updateRRule sessionMode", () => {
 });
 
 describe("createRRule createdBy", () => {
-  /** Fake repo whose create() captures the spec it was asked to persist. */
   function makeCreateDeps() {
     let created:
       | { agentId: string; owner: string; spec: ScheduleSpec }

@@ -23,7 +23,7 @@ export function SandboxHomeView() {
 
   const display = useResolvedAgentDisplay(f.agent);
 
-  const summaries = useSectionSummaries(f.agent);
+  const { summaries, warnings } = useSectionSummaries(f.agent);
 
   if (f.status !== "ready" || !f.agent || !display) {
     return (
@@ -60,14 +60,13 @@ export function SandboxHomeView() {
 
   return (
     <SandboxTwoColumnShell
-      // Setup is the only section that commits on Submit; other sections keep
-      // the bar only while edits are pending, so leaving can't strand them.
       footer={section === "setup" || f.dirty ? footer : undefined}
       nav={
         <SandboxSectionNav
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
           summaries={summaries}
+          warnings={warnings}
         />
       }
     >

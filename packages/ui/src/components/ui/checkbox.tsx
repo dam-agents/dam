@@ -30,19 +30,17 @@ interface CheckboxItemProps extends Omit<
   "children"
 > {
   label: string;
-  /** Extra classes for the label text, e.g. `font-mono` for an identifier. */
   labelClassName?: string;
   description?: string;
+  descriptionClassName?: string;
   testId?: string;
 }
 
-/** The multi-select counterpart of `RadioGroupItem`. `className` styles the
- *  row, not the box. `aria-label` keeps the description out of the accessible
- *  name, which the wrapping `<label>` would otherwise run together with it. */
 function CheckboxItem({
   label,
   labelClassName,
   description,
+  descriptionClassName,
   testId,
   className,
   id,
@@ -79,7 +77,13 @@ function CheckboxItem({
           {label}
         </span>
         {description && (
-          <span id={descriptionId} className="text-sm text-muted-foreground">
+          <span
+            id={descriptionId}
+            className={cn(
+              "text-sm text-muted-foreground",
+              descriptionClassName,
+            )}
+          >
             {description}
           </span>
         )}

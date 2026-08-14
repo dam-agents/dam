@@ -4,21 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import { OverlayFrame } from "./overlay-frame.js";
 
-/**
- * Full-view takeover for a chat the signed-in user may not open — the end of the
- * road for a session link followed by someone other than the owner, which is
- * everyone else in the conversation it was posted into.
- *
- * It deliberately says nothing about the target beyond "not yours": the read
- * behind it is owner-scoped, so a sandbox belonging to someone else and one that
- * was deleted are the same answer, and neither reveals whose it is.
- */
-export function AgentInaccessibleOverlay({
-  onLeave,
-}: {
-  /** Leave the surface entirely — there is nothing here to wait for. */
-  onLeave: () => void;
-}) {
+export function AgentInaccessibleOverlay({ onLeave }: { onLeave: () => void }) {
   return (
     <OverlayFrame onBack={onLeave}>
       <Locked size={40} className="text-muted-foreground" />

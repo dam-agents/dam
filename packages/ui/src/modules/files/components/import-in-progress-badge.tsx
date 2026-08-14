@@ -6,7 +6,6 @@ interface Props {
   agentId: string | null;
 }
 
-/** Active indicator: a file upload/import is in flight for this agent. */
 export function ImportInProgressBadge({ agentId }: Props) {
   const importing = useIsImporting(agentId);
   if (!importing) return null;

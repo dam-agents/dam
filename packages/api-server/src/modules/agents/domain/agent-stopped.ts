@@ -1,8 +1,3 @@
-/** Thrown by `ensureReady` when the agent carries a pending hard stop
- *  (#1900). Deliberately NOT a wake failure: the agent is not failing to
- *  start — its owner told it to stop, and background activity (UI polling,
- *  relay reconnects) must not resurrect it. Only an explicit wake or a
- *  schedule fire clears the stop. */
 export class AgentStoppedError extends Error {
   readonly agentId: string;
 

@@ -59,9 +59,6 @@ export function ScheduleCard({
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
 
-  /** A locked schedule opens its reason rather than a dead menu item — a
-   *  disabled item swallows the pointer, so its tooltip never reliably showed
-   *  and keyboard users got nothing at all. */
   const handleEdit = async () => {
     if (!lock) {
       onEdit();
@@ -128,11 +125,7 @@ export function ScheduleCard({
           </div>
         </div>
 
-        <Button
-          variant="outline"
-          className="h-8 px-3 text-sm font-normal"
-          onClick={onViewResults}
-        >
+        <Button variant="outline" size="sm" onClick={onViewResults}>
           <Launch size={14} /> View results
         </Button>
 

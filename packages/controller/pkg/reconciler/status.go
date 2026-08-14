@@ -15,12 +15,6 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
-// updateAgentStatus read-modify-writes the Agent's status subresource.
-// `mutate` receives the current observed status and adjusts it in
-// place — typically via setStatusCondition for conditions plus direct Phase /
-// ObservedGeneration assignment. The write is skipped when the mutation is a
-// no-op, which is load-bearing: the controller watches Agents, so an
-// unconditional status write would re-trigger reconcile and hot-loop.
 func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, name string, mutate func(*apiv1.AgentStatus)) error {
 	cli := dyn.Resource(AgentsGVR).Namespace(namespace)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -37,7 +31,7 @@ func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, na
 		desired := *current.DeepCopy()
 		mutate(&desired)
 		if apiequality.Semantic.DeepEqual(current, desired) {
-			return nil // no-op — avoid status churn re-triggering reconcile
+			return nil
 		}
 		statusMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&desired)
 		if err != nil {
@@ -51,9 +45,6 @@ func updateAgentStatus(ctx context.Context, dyn dynamic.Interface, namespace, na
 	})
 }
 
-// setStatusCondition stamps a condition onto the status, managing
-// LastTransitionTime (preserved when the status value is unchanged) so repeated
-// reconciles with the same observation produce a no-op.
 func setStatusCondition(s *apiv1.AgentStatus, condType string, ok bool, trueReason, falseReason, message string, generation int64) {
 	status := metav1.ConditionFalse
 	reason := falseReason

@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { useCreateFolder, useUpdateFolder } from "../api/mutations.js";
 
 interface Props {
-  /** null = create a new folder. */
   folder: ArtifactFolder | null;
   onClose: () => void;
 }

@@ -17,16 +17,11 @@ export interface AgentTrpcProxyDeps {
 
 type ProxyCtx = Context<{ Variables: { user: UserIdentity; roles: string[] } }>;
 
-/** `/api/agents/:id/trpc/*` — proxies the agent-runtime's own tRPC surface
- *  (in-pod file operations) to the UI. Sits behind the /api middleware
- *  chain; adds ownership + operate-scope + binding before forwarding. */
 export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
   return async (c: ProxyCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
     if (!(await deps.verifyOwner(agentId, user.sub))) {
-      // The 404 is otherwise indistinguishable from a genuinely missing
-      // agent — log the cross-tenant access attempt.
       securityLog("warn", "authz.owner_mismatch", {
         category: "authz",
         actor: user.sub,
@@ -39,9 +34,6 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
       });
       return c.json({ error: "not found" }, 404);
     }
-    // The in-pod relay is the most powerful surface in the system (ACP
-    // frames, pod-files, terminal). Require `agents:operate` + per-key agent
-    // binding before forwarding to the agent-runtime.
     if (!hasScope(user, "agents:operate")) {
       return c.json(
         { error: "forbidden", message: "Requires agents:operate" },
@@ -75,9 +67,6 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
       );
     }
 
-    // No Bearer swap needed: ownership is verified above, and the agent
-    // pod's NetworkPolicy admits ingress only from the api-server pod —
-    // the kernel-level gate is the auth boundary on this hop.
     const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
     const upstreamUrl = `http://${podBaseUrl(agentId, deps.namespace)}/api/trpc${rest}${qs}`;

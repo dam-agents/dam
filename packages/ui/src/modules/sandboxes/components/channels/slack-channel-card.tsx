@@ -17,7 +17,6 @@ import { findSlackChannels } from "../../hooks/use-slack-channel-form.js";
 import { ChannelCard } from "./channel-card.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 
-/** Which binding the modal is editing: a channel, or `"new"` for a connect. */
 type ModalTarget = SlackChannel | "new" | null;
 
 export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
@@ -46,7 +45,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         )}
         <Button
           variant="outline"
-          className="h-8 px-3 text-sm font-normal"
+          size="sm"
           onClick={() => setModalTarget("new")}
           disabled={!agent}
           data-testid="slack-connect"

@@ -11,7 +11,6 @@ import {
   type TelegramBindFlowStore,
 } from "../../modules/channels/infrastructure/telegram-flows.js";
 
-// Swallow securityLog output from the deny/notify paths under test.
 configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
@@ -40,7 +39,6 @@ async function harness(opts?: {
     consumeFlow: store.consume,
     findAgentByConversation: vi.fn(async () => {
       if (bound && opts?.bindOutcome === "conflict") {
-        // post-race re-read
         return opts.racedTo
           ? { agentId: opts.racedTo, authorizedBy: "x" }
           : null;

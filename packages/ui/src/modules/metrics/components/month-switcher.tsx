@@ -10,8 +10,6 @@ interface Props {
   onChange: (month: Date) => void;
 }
 
-/** Month stepper shared by the Usage surfaces. Next is disabled on the current
- *  month — there is no future spend to page into. */
 export function MonthSwitcher({ month, isCurrentMonth, onChange }: Props) {
   return (
     <div className="flex items-center gap-1">

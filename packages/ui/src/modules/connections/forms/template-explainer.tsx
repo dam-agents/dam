@@ -1,7 +1,6 @@
 import { getBrand } from "../../../brand.js";
 import { DisclosureBox } from "./disclosure-box.js";
 
-/** Per-template "how does this work?" block; null for templates without one. */
 export function TemplateExplainer({ templateId }: { templateId: string }) {
   if (templateId === "github" || templateId === "github-enterprise")
     return <GithubAuthExplainer />;

@@ -14,7 +14,6 @@ interface Props {
   renderSvg: boolean;
   renderMd: boolean;
   renderHtml: boolean;
-  /** Blob URL for PDF rendering; owned by the parent so it can revoke on change. */
   pdfBlobUrl: string | null;
   onOpenFile: (path: string) => void;
 }
@@ -47,10 +46,6 @@ function isImageMime(mime: string | undefined): boolean {
   return !!mime && mime.startsWith("image/");
 }
 
-/** Renders a file's body — editor, rendered preview (image / PDF / SVG /
- * markdown / HTML), hex dump, or syntax-highlighted source. Sizing fills the
- * width of its container, so the same body works in the side panel and in the
- * fullscreen dialog. */
 export function FilePreviewBody({
   file,
   editMode,
@@ -101,8 +96,6 @@ export function FilePreviewBody({
       />
     );
   }
-  // tooLarge must come before the `binary` arm: PAYLOAD_TOO_LARGE comes back with
-  // binary:true and content:"" so the hex-dump path would render an empty buffer.
   if (tooLarge) {
     return (
       <div className="py-12 text-center text-sm text-muted-foreground">
@@ -146,8 +139,6 @@ export function FilePreviewBody({
     return <Markdown onFileClick={onOpenFile}>{content}</Markdown>;
   }
   if (isHtml && renderHtml) {
-    // `allow-scripts` without `allow-same-origin` runs the page's JS in an
-    // opaque origin, so agent-authored HTML can't reach the app's session.
     return (
       <iframe
         srcDoc={content}

@@ -1,21 +1,3 @@
-// The stock experiment dashboard — the default renderer attached to every
-// Experiment at plan registration, replaceable by an agent-generated bespoke
-// artifact. It is a fully self-contained HTML document (no external requests:
-// it renders inside the sealed DeferredFrame sandbox) whose only input is the
-// Trace Feed pushed by the host page via postMessage as
-// `{ type: "experiment-feed", feed }` (EXPERIMENT_FEED_MESSAGE_TYPE).
-//
-// Design goals: read as native next to the app's chat dock (system font
-// stack, zinc palette, soft borders, tabular numerals), stages stacked as a
-// vertical timeline (the dock is narrow), light/dark via prefers-color-scheme
-// (the app's default "system" theme matches; a manual override can't reach
-// into a sealed iframe and that trade is accepted).
-//
-// Inline TS string rather than an .html asset: tsup bundles api-server to
-// dist/ and dev runs under tsx — neither carries sidecar assets, a string
-// survives both. The inner script avoids template literals so this outer
-// literal needs no escaping.
-
 export const STOCK_DASHBOARD_HTML = `<!doctype html>
 <html>
 <head>

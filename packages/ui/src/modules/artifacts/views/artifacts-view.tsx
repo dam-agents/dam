@@ -77,15 +77,11 @@ export function ArtifactsView() {
   };
 
   const copyFolderLink = async (folder: ArtifactFolder) => {
-    // Imperative one-shot read — the URL only exists while something inside
-    // the folder is shared, so it's resolved at click time, not subscribed.
     return api.artifactLibrary.folderShareUrl
       .query({ id: folder.id })
       .then((url) => url ?? null);
   };
 
-  // Platform-managed experiment lineage folders render apart from the user's
-  // own folders — one muted, collapsed section at the bottom.
   const experimentFolders = folders.filter((f) =>
     f.name.startsWith(EXPERIMENT_FOLDER_PREFIX),
   );
@@ -96,8 +92,6 @@ export function ArtifactsView() {
   const ungrouped = byFolder.get(null) ?? [];
   const loading = artifactsLoading || foldersLoading;
   const hasContent = artifacts.length > 0 || folders.length > 0;
-  // Folders load on their own query — a folders-only library must not flash the
-  // empty state (which also strips the search box) before its groups land.
   const isEmpty = !loading && !hasContent;
 
   return (
@@ -141,8 +135,7 @@ export function ArtifactsView() {
         </div>
       )}
 
-      {/* Artifacts can be warm from another view while folders is still cold —
-          skeleton only when there is nothing to show, never above content. */}
+      {}
       {loading && !hasContent && <ListSkeleton rows={2} rowHeight={70} />}
 
       {isEmpty && (

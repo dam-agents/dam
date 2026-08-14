@@ -2,7 +2,6 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
-/** Coarse relative time for table cells: "in 12m" / "3h ago". */
 export function formatRelative(iso: string, now: Date): string {
   const diffMs = Date.parse(iso) - now.getTime();
   const abs = Math.abs(diffMs);

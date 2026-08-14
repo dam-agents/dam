@@ -1,5 +1,6 @@
 import type {
   LocalSkill,
+  Skill,
   SkillPublishRecord,
   SkillSource,
 } from "api-server-api";
@@ -11,12 +12,6 @@ import { useStore } from "../../../store.js";
 import type { SkillsDerivations } from "./use-skills-derivations.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
 
-/**
- * The skills surface's destructive and governance actions, each behind the
- * confirm that states what it will do. Grouped here because they share one
- * shape — a dialog, then one call on the surface — and because the wording is
- * the substance: what each sentence promises is the reviewable part.
- */
 export function useSkillsConfirms(
   surface: SkillsSurface,
   derived: SkillsDerivations,
@@ -29,7 +24,11 @@ export function useSkillsConfirms(
     skill: LocalSkill,
     pub: SkillPublishRecord,
   ) => Promise<void>;
-  toggleAllWithConfirm: (source: SkillSource, on: boolean) => Promise<void>;
+  toggleAllWithConfirm: (
+    source: SkillSource,
+    on: boolean,
+    scope?: Skill[],
+  ) => Promise<void>;
   removeSourceWithConfirm: (source: SkillSource) => Promise<void>;
 } {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -39,14 +38,10 @@ export function useSkillsConfirms(
     skill: LocalSkill,
     pub?: SkillPublishRecord,
   ) => {
-    // Nothing here knows the PR's state, so the wording stays state-neutral —
-    // "isn't withdrawn", not "is still open" (#3019).
     const ok = await showConfirm(
       <>
         This skill will be removed from the sandbox.
         {pub && (
-          // Leading space joins this onto the sentence above: JSX drops the
-          // newline whitespace that would otherwise separate them.
           <>
             {" The "}
             <a href={pub.prUrl} {...externalLinkProps} className="underline">
@@ -62,12 +57,6 @@ export function useSkillsConfirms(
     if (ok) await surface.deleteStandalone(skill);
   };
 
-  /**
-   * Hand a merged skill over to its source. This is a governance change, not
-   * housekeeping — once tracked, a future install overwrites the local copy —
-   * so it is an explicit action with a confirm that states what will happen,
-   * rather than something that fires on a schedule.
-   */
   const trackWithConfirm = async (
     skill: LocalSkill,
     pub: SkillPublishRecord,
@@ -75,7 +64,6 @@ export function useSkillsConfirms(
     const scanned = skillsBySource[pub.sourceId]?.find(
       (s) => s.name === skill.name,
     );
-    // The kebab item is disabled in this case; guard anyway rather than guess.
     if (!scanned) return;
     const diverged = skill.contentHash !== scanned.contentHash;
     const ok = await showConfirm(
@@ -97,9 +85,6 @@ export function useSkillsConfirms(
         : { confirmLabel: "Track skill" },
     );
     if (!ok) return;
-    // The existing install path is the migration: it fetches the skill at a
-    // version, writes it into every Skill Path, and upserts the agent_skills
-    // row — so no second writer of that row is introduced.
     if (await surface.update(scanned)) {
       emitToast({
         kind: "success",
@@ -108,19 +93,25 @@ export function useSkillsConfirms(
     }
   };
 
-  /** Enabling adds; disabling removes many skills at once, so only that
-   *  direction asks. Mirrors how a standalone delete and a source removal are
-   *  already gated. */
-  const toggleAllWithConfirm = async (src: SkillSource, on: boolean) => {
-    const list = derived.listBySource.get(src.id) ?? [];
+  const toggleAllWithConfirm = async (
+    src: SkillSource,
+    on: boolean,
+    scope?: Skill[],
+  ) => {
+    const list = scope ?? derived.listBySource.get(src.id) ?? [];
     if (!on) {
       const removing = list.filter(
         (s) => installedRef(s.source, s.name) !== undefined,
       ).length;
       const ok = await showConfirm(
-        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn them back on at any time.`,
-        `Disable all skills from ${src.name}?`,
-        { kind: "destructive", confirmLabel: "Disable all" },
+        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn ${removing === 1 ? "it" : "them"} back on at any time.`,
+        scope
+          ? `Disable the ${removing} matching skill${removing === 1 ? "" : "s"} from ${src.name}?`
+          : `Disable all skills from ${src.name}?`,
+        {
+          kind: "destructive",
+          confirmLabel: scope ? "Disable matching" : "Disable all",
+        },
       );
       if (!ok) return;
     }

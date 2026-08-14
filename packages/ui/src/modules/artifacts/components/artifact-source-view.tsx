@@ -4,9 +4,6 @@ import { HighlightedCode } from "@/components/highlighted-code";
 
 import type { useArtifactContent } from "../api/queries.js";
 
-/** Source/content fallback body shared by the preview dialog and the docked
- *  chat panel: highlighted source for text kinds, inline images, and notes
- *  for binaries or oversized content. */
 export function ArtifactSourceView({
   artifact,
   content,

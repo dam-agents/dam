@@ -8,16 +8,12 @@ import { agentsKeys } from "../../agents/api/queries.js";
 
 export interface CreateKnowledgeBaseInput {
   name: string;
-  /** The pinned harness image template (claude-code); hidden in the UI. */
   templateId: string;
-  /** The picked installation procedure (surfaced as "Template"). */
   kbTemplateId: KnowledgeBaseTemplateId;
   connectionIds?: string[];
   egressPreset?: EgressPreset;
 }
 
-/** A Knowledge Base is an agent under the hood, so creating one changes the
- *  agents list and Reserved compute — same invalidations as a sandbox create. */
 export function useCreateKnowledgeBase() {
   return useMutation({
     mutationFn: (input: CreateKnowledgeBaseInput) =>

@@ -55,9 +55,6 @@ import {
 import type { GithubCredentialPort } from "../infrastructure/github-credential-port.js";
 import { getLogger } from "../../../core/logger.js";
 
-/** Stable, deterministic id for a template-derived source row. The hash
- *  prefix keeps the id compact while avoiding collisions when a template
- *  seeds many sources. */
 export function templateSourceId(templateId: string, gitUrl: string): string {
   const hash = crypto
     .createHash("sha256")
@@ -75,29 +72,12 @@ export interface SkillsServiceDeps {
   agentSkillsRepo: AgentSkillsRepository;
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
-  /** System (cluster-admin-declared) Skill Sources, parsed once at api-server
-   *  startup from SKILL_SOURCES_SEED. Merged into listSources() with
-   *  `system: true` and protected from deletion. */
   seedSources: SkillSourceSeed[];
   runtimeClient: AgentRuntimeSkillsClient;
-  /** Answers whether a sandbox can authenticate to GitHub at all — the one
-   *  thing a failed scan's upstream status cannot tell us apart from a repo
-   *  the connection simply wasn't granted. Read only on the failure path. */
   githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
-  /** Whether the pod has applied everything the outbox has asked of it. The
-   *  `state` reconcile is only sound once it has: until then a tracked skill's
-   *  directory is legitimately absent, because the apply that writes it hasn't
-   *  run yet. */
   runtimeSettled: RuntimeSettledPort;
   owner: string;
-  /** Scan via the provided scanner with a TTL cache, keyed by `(gitUrl, path)`
-   *  — the catalogue depends on both, and the same repo may be pointed at
-   *  different subdirs. `scope` says what the result depended on: an
-   *  uncredentialed scan is shared across users, a scan that ran under one
-   *  user's credentials is served only back to them. Also reports when the
-   *  returned list was read from upstream (epoch ms), which a cache hit answers
-   *  with the original read rather than the hit. */
   scanSource: (
     scope: ScanScope,
     gitUrl: string,
@@ -105,44 +85,21 @@ export interface SkillsServiceDeps {
     scanner: (gitUrl: string) => Promise<Skill[]>,
   ) => Promise<{ skills: Skill[]; scannedAt: number }>;
   invalidateScan: (gitUrl: string, path: string | undefined) => void;
-  /** Scan a public GitHub repo directly from the api-server pod. Throws
-   *  `PublicArchiveNotFoundError` when the archive endpoint returns 404 —
-   *  signal to the caller to fall back to the agent-runtime path for
-   *  private-repo auth (if the instance is running). */
   scanPublic: (gitUrl: string, path?: string) => Promise<Skill[]>;
-  /** Read one skill's raw `SKILL.md` at a pinned commit, given the repo-relative
-   *  directory the scan already reported — one small GET, no tarball. Throws
-   *  `PublicArchiveNotFoundError` on 404 (private repo). */
   readPublicSkillFile: (
     gitUrl: string,
     version: string,
     dir: string,
   ) => Promise<string>;
-  /** Brand display name surfaced in publish-PR bodies. Sourced from runtime
-   *  brand config so a deployment rebrand doesn't need a code change. */
   brandName: string;
 }
 
-/**
- * canPublish is a soft signal: "the publish infrastructure knows how to
- * target this host." True when the gitUrl parses as a GitHub URL — that's
- * the only host our publish flow supports today. Authentication/authorization
- * (is the user's GitHub connection live? is this agent granted access?)
- * is not preflighted here; any failure surfaces at publish time with a
- * precise CTA from upstream. Cheaper + harder to get stale than a cluster
- * call.
- */
 function enrichSources(sources: SkillSource[]): SkillSource[] {
   return sources.map((s) =>
     detectHost(s.gitUrl) ? { ...s, canPublish: true } : s,
   );
 }
 
-/** Build the list of template-derived sources for an instance. Resolves the
- *  instance → agent → template chain and synthesises a SkillSource per entry
- *  in template.spec.skillSources. Returns an empty list if any link in the
- *  chain is missing — template sources are a nice-to-have overlay, never a
- *  hard dependency. */
 async function loadTemplateSources(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -162,10 +119,6 @@ async function loadTemplateSources(
   }));
 }
 
-/** Resolve a template-synthesised id back to a SkillSource by parsing the
- *  templateId out of the id and finding the seed whose gitUrl hashes to the
- *  embedded suffix. Returns null if the template is gone or the entry was
- *  removed. */
 async function resolveTemplateSource(
   deps: SkillsServiceDeps,
   id: string,
@@ -188,10 +141,6 @@ async function resolveTemplateSource(
   };
 }
 
-/** Look up any source by id — template-synthesised, system seed, or a real
- *  user-owned Postgres row. Each kind has its own resolution path; we
- *  dispatch on id shape (for templates) and seed-id presence (for system
- *  sources) to avoid querying the wrong store. */
 async function resolveSource(
   deps: SkillsServiceDeps,
   id: string,
@@ -204,12 +153,6 @@ async function resolveSource(
   return deps.repo.get(id, deps.owner);
 }
 
-/** Order the merged source list: user → template → platform. "Yours first"
- *  matches ownership + recency (what the user most recently added is most
- *  top-of-mind); template is second because it's scoped to this instance's
- *  agent; platform is last because it's cluster-wide and least personal.
- *  Within-kind ordering is case-insensitive alphabetical by name — stable
- *  across reloads. */
 function sortSources(list: SkillSource[]): SkillSource[] {
   const kindOf = (s: SkillSource): number => {
     if (s.system) return 2;
@@ -224,9 +167,6 @@ function sortSources(list: SkillSource[]): SkillSource[] {
   });
 }
 
-/** Dedupe a [user, system, template]-ordered list by gitUrl: whichever
- *  entry appears first wins, which makes "user shadows system shadows
- *  template" fall out naturally. */
 function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
   const seen = new Set<string>();
   const out: SkillSource[] = [];
@@ -238,10 +178,6 @@ function dedupeByGitUrl(list: SkillSource[]): SkillSource[] {
   return out;
 }
 
-/** gitUrl → the source's subdir, for every source visible to this agent, using
- *  the same merge + dedupe precedence as listSources (user → system → template).
- *  Built once per call: a batch resolves many entries against one listing rather
- *  than re-listing sources per entry. */
 async function sourcePathsByGitUrl(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -255,9 +191,6 @@ async function sourcePathsByGitUrl(
   return new Map(merged.map((s) => [s.gitUrl, s.path]));
 }
 
-/** Recover one source's subdir from its gitUrl. Install carries the gitUrl, not
- *  the source id, so this is how the path is found to denormalize onto the
- *  installed ref. */
 async function resolveSourcePathByGitUrl(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -266,9 +199,6 @@ async function resolveSourcePathByGitUrl(
   return (await sourcePathsByGitUrl(deps, agentId)).get(gitUrl);
 }
 
-/** Re-throw a pod client-error verdict with its own code and message, so a
- *  missing skill answers 404 and a cap breach 413 rather than a 500. Anything
- *  else passes through untouched (and stays a server fault). */
 function asPodVerdict(err: unknown): unknown {
   if (err instanceof AgentRuntimeClientError) {
     return new TRPCError({ code: err.code, message: err.podMessage });
@@ -276,8 +206,6 @@ function asPodVerdict(err: unknown): unknown {
   return err;
 }
 
-/** On-disk Local Skills minus anything tracked as installed-from-remote (by
- *  name) — the same subtraction getState performs for its `standalone` view. */
 async function standaloneFor(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -291,25 +219,10 @@ async function standaloneFor(
 interface SourceScan {
   skills: Skill[];
   scannedAt: number;
-  /** Which branch answered. `false` means the public archive under the
-   *  `shared` scope; `true` means the agent's pod under that sandbox's scope.
-   *  It is trustworthy because the cache is scoped: a `shared` lookup can never
-   *  be served an `agent`-scoped entry, so the branch that produced the list is
-   *  also the access level it was read with. */
   viaPod: boolean;
+  visibility?: "public" | "private";
 }
 
-/**
- * One source's scanned skill list, and how it was obtained. Shared by `list`
- * and the content read so neither can drift into a different dispatch — the
- * content read used to call `scanPublic` directly, which is why a private
- * source could never resolve a directory.
- *
- * Every failure leaves here as a named verdict. The catch-all is the point:
- * whatever went wrong, the user gets a sentence they can act on and the real
- * error stays in the api-server's log, where a parser's complaint or a
- * Kubernetes message belongs.
- */
 async function scanForSource(
   deps: SkillsServiceDeps,
   src: SkillSource,
@@ -327,11 +240,6 @@ async function scanForSource(
   }
 }
 
-/**
- * Advice for a sandbox that couldn't be made ready, chosen from its state —
- * the generic "try again in a moment" is only true for a sandbox that is
- * coming up. Read on the failure path only.
- */
 async function unreachableSandboxCopy(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -355,15 +263,6 @@ async function unreachableSandboxCopy(
   }
 }
 
-/**
- * The verdict for a GitHub failure that came back through a sandbox pod, or
- * null when this flow doesn't own the error.
- *
- * "Can't access the repo" and "there is no GitHub credential here" arrive as
- * the same 401/404 — only the sandbox's own connections tell them apart. That
- * read happens here and nowhere else, so it costs nothing until a scan has
- * already failed.
- */
 async function podGithubVerdict(
   deps: SkillsServiceDeps,
   err: unknown,
@@ -385,11 +284,9 @@ async function runScanForSource(
   src: SkillSource,
   agentId?: string,
 ): Promise<SourceScan> {
-  // Fast path: public GitHub repo scanned directly from api-server. This
-  // works in every connection state (no app configured, not Connected,
-  // not granted, fully granted) because api-server has direct internet
-  // egress — it never touches the agent pod's per-grant gating.
+  let archiveAsked = false;
   if (detectHost(src.gitUrl)) {
+    archiveAsked = true;
     try {
       const { skills, scannedAt } = await deps.scanSource(
         { kind: "shared" },
@@ -397,26 +294,15 @@ async function runScanForSource(
         src.path,
         (gitUrl) => deps.scanPublic(gitUrl, src.path),
       );
-      return { skills, scannedAt, viaPod: false };
+      return { skills, scannedAt, viaPod: false, visibility: "public" };
     } catch (err) {
       if (!(err instanceof PublicArchiveNotFoundError)) throw err;
-      // 404 → repo is private (or nonexistent). Only the authenticated
-      // agent-runtime path can distinguish those and surface a useful
-      // CTA, so we fall through.
     }
   }
 
-  // Private/authenticated path: delegate to agent-runtime inside a
-  // running instance pod, whose Envoy sidecar performs the token swap.
-  // Without an agentId we can't target a pod — refuse with a clear
-  // message.
   if (!agentId) {
     throw scanFailureError("needs_sandbox");
   }
-  // A sandbox that can't be woken is a verdict of its own — the raw wake
-  // failure names a pod and a Kubernetes condition, neither of which the user
-  // can act on. Its own state decides the advice, because "try again in a
-  // moment" is false for a sandbox the owner stopped or the budget parked.
   try {
     await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
   } catch (err) {
@@ -436,7 +322,12 @@ async function runScanForSource(
       src.path,
       (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
     );
-    return { skills, scannedAt, viaPod: true };
+    return {
+      skills,
+      scannedAt,
+      viaPod: true,
+      visibility: archiveAsked ? "private" : undefined,
+    };
   } catch (err) {
     const verdict = await podGithubVerdict(deps, err, agentId);
     if (!verdict) throw err;
@@ -461,22 +352,12 @@ function removeSkillRef(
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
-  /**
-   * The batch apply. Not a service method, because `sourcePaths` is a
-   * server-internal shortcut — a caller that already resolved the merged source
-   * list (gitUrl → subdir) hands it over instead of making this re-derive it.
-   * A `ReadonlyMap` cannot cross the wire, so the published contract exposes
-   * only the one-argument form and this stays in-process.
-   */
   const applyBatchWith = async (
     input: SkillApplyBatchInput,
     sourcePaths?: ReadonlyMap<string, string | undefined>,
   ): Promise<SkillRef[]> => {
     const { agentId, install, uninstall } = input;
 
-    // Nothing to do: no wake, no bump, no log. The set-apply path leans on
-    // this — adding a set whose skills are all already on must cost nothing.
-    // Ownership is still enforced, so an unowned agent can't be probed.
     if (install.length === 0 && uninstall.length === 0) {
       if (!(await deps.agentsRepo.get(agentId, deps.owner))) {
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
@@ -484,8 +365,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       return deps.agentSkillsRepo.listSkills(agentId);
     }
 
-    // Reject a self-contradicting batch before writing anything: picking a
-    // winner would silently do something the caller didn't ask for.
     const removing = new Set(uninstall.map(skillKey));
     const contradiction = install.find((e) => removing.has(skillKey(e)));
     if (contradiction) {
@@ -495,8 +374,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       });
     }
 
-    // The schema enforces the same cap, but only at the tRPC boundary — an
-    // in-process caller (the set-apply path) would otherwise be unbounded.
     if (install.length + uninstall.length > MAX_SKILL_BATCH_ENTRIES) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -507,9 +384,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
     const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
 
-    // Rows first, then one bump for the whole batch — the point of this path.
-    // A failure part-way leaves rows the pod hasn't been told about; the next
-    // `state` read reaps them as ghosts, so a partial batch self-heals.
     for (const entry of install) {
       const path = paths.get(entry.source);
       await deps.agentSkillsRepo.upsertSkill(agentId, {
@@ -532,8 +406,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     await deps.runtimeMutator.bump(agentId, []);
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
 
-    // Per skill, not per batch: "what did this agent install, from where" has
-    // to stay answerable after an incident, and one aggregate line loses that.
     for (const entry of install) {
       securityLog("info", "skill.install", {
         category: "privileged",
@@ -560,9 +432,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     return deps.agentSkillsRepo.listSkills(agentId);
   };
 
-  // Named rather than returned anonymously so the few methods that compose
-  // siblings can call them through `service` instead of `this` — a detached or
-  // wrapped method reference then still works.
   const service: SkillsService = {
     async listSources(agentId?: string) {
       const [owned, template] = await Promise.all([
@@ -572,10 +441,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           : Promise.resolve<SkillSource[]>([]),
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
-      // Priority order matters for dedupe: user-created first, then
-      // platform-seeded, then template-derived. A user source with the same
-      // URL as a system or template entry wins — if they later remove the
-      // system/template layer, their copy is still there.
       const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
       return sortSources(enrichSources(merged));
     },
@@ -601,9 +466,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
     },
     async deleteSource(id) {
-      // Template-derived ids are synthesised at read time — there's no row
-      // to delete. Reject up-front with the same FORBIDDEN code the UI uses
-      // for system sources so the error shape matches.
       if (id.startsWith(TEMPLATE_SOURCE_ID_PREFIX)) {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -611,8 +473,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             "skill source is declared by an agent template and cannot be deleted",
         });
       }
-      // Capture the gitUrl before deletion — after delete we can't resolve
-      // which installed-skill entries belonged to this source.
       const src = await resolveSource(deps, id);
       try {
         await deps.repo.delete(id, deps.owner);
@@ -622,11 +482,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
         throw err;
       }
-      // Scrub installed-skill entries that reference the now-gone source URL
-      // across every instance owned by the user. Without this, re-adding a
-      // source with the same URL would render its skills as already-checked
-      // (the stale rows persist), which is confusing at best and wrong when
-      // the user has manually deleted the skill files in the meantime.
       if (src) {
         const instances = await deps.agentsRepo.list(deps.owner);
         await deps.agentSkillsRepo.removeBySource(
@@ -645,8 +500,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      const { skills, scannedAt } = await scanForSource(deps, src, agentId);
-      return { skills, scannedAt: new Date(scannedAt).toISOString() };
+      const { skills, scannedAt, visibility } = await scanForSource(
+        deps,
+        src,
+        agentId,
+      );
+      return {
+        skills,
+        scannedAt: new Date(scannedAt).toISOString(),
+        visibility,
+      };
     },
 
     async getSkillContent(sourceId: string, name: string, agentId?: string) {
@@ -657,9 +520,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: `skill source ${JSON.stringify(sourceId)} not found`,
         });
       }
-      // The one surviving limit, and it is about the host rather than privacy:
-      // the pinned single-file read is GitHub-only, and reading one file out of
-      // another host would mean a repo download per preview.
       if (!detectHost(src.gitUrl)) {
         throw new TRPCError({
           code: "NOT_IMPLEMENTED",
@@ -667,11 +527,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             "in-product preview is only available for github.com sources",
         });
       }
-      // Resolve the skill's pinned {version, dir} from the same cached scan
-      // `list` uses, then GET that one file — no repo download. A private repo
-      // 404s the public archive inside the helper and escalates to the pod,
-      // which is what makes a private preview possible at all. The wake, when
-      // one is needed, happens in there too.
       const { skills, viaPod } = await scanForSource(deps, src, agentId);
       const skill = skills.find((s) => s.name === name);
       if (!skill) {
@@ -682,10 +537,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       }
 
       if (!viaPod) {
-        // The public-archive scan always sets `dir`, and under scan scoping only
-        // a public-archive scan answers a shared lookup — so a missing one means
-        // a credentialed entry did, which is a scoping violation worth a line
-        // rather than a quiet deferral.
         if (!skill.dir) {
           securityLog("warn", "skill.preview.unscoped_scan", {
             category: "privileged",
@@ -708,8 +559,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           );
           return { content, dir: skill.dir };
         } catch (err) {
-          // The scan located this file, so a 404 on the pinned path means the
-          // cached entry outlived the revision it described.
           if (err instanceof PublicArchiveNotFoundError) {
             throw new TRPCError({
               code: "NOT_FOUND",
@@ -720,9 +569,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
       }
 
-      // Pod scan, sandbox scope: the source is private. Here a missing `dir`
-      // means the sandbox's runtime predates reporting it — a stale deployment,
-      // not a scoping violation, so no security log.
       if (!skill.dir) {
         throw new TRPCError({
           code: "NOT_IMPLEMENTED",
@@ -730,8 +576,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             "this sandbox's runtime is too old to locate the skill's directory",
         });
       }
-      // Reaching this branch required an agentId — the helper throws
-      // PRECONDITION_FAILED otherwise — but narrow it rather than assert.
       if (!agentId) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -746,8 +590,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
         return { content, dir: skill.dir };
       } catch (err) {
-        // Same verdicts the pod scan reaches, so a missing GitHub connection
-        // reads the same here as it does on the source card.
         throw (await podGithubVerdict(deps, err, agentId)) ?? err;
       }
     },
@@ -772,9 +614,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
       await deps.runtimeMutator.bump(input.agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
-      // Supply-chain: code fetched from an arbitrary git URL onto the agent's
-      // PV (often agent-driven via MCP). "what did this agent install, from
-      // where" must be answerable post-incident.
       securityLog("info", "skill.install", {
         category: "privileged",
         actor: deps.owner,
@@ -850,8 +689,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
         throw err;
       }
-      // A set is a reusable instruction to fetch code from named repositories,
-      // so its creation deserves the same answerability as an install.
       securityLog("info", "skill.set.create", {
         category: "privileged",
         actor: deps.owner,
@@ -898,8 +735,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      // A set whose stored entries failed to parse reads as empty; applying it
-      // would install nothing and report "already on". Refuse it by name.
       const unreadable = sets.filter((s) => s?.entriesUnreadable);
       if (unreadable.length > 0) {
         throw new TRPCError({
@@ -910,7 +745,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      // Union across the chosen sets: two sets sharing a skill install it once.
       const wanted = new Map<string, SkillSetEntry>();
       for (const set of sets) {
         for (const entry of set!.skills) {
@@ -918,12 +752,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
       }
 
-      // Bound the apply by what the caller actually asked for, before spending a
-      // scan per source resolving it. The schema caps 50 sets of 500 entries
-      // each, so the union can far exceed one batch; `applyBatchWith`'s own cap
-      // would only catch it after the scans, and would name a batch the caller
-      // never assembled. A union this large fails even when most of it is
-      // already installed — the bound is on what one apply may ask for.
       if (wanted.size > MAX_SKILL_BATCH_ENTRIES) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -931,12 +759,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      // The merged source list, so system and template sources count too — not
-      // just the user's own rows.
       const sources = await service.listSources(agentId);
       const connected = new Map(sources.map((s) => [s.gitUrl, s]));
-      // Reuse this listing for the batch's path lookup rather than making it
-      // re-list and re-walk the template chain.
       const sourcePaths = new Map(sources.map((s) => [s.gitUrl, s.path]));
 
       const skipped: (SkillSetEntry & { reason: SkillSetSkipReason })[] = [];
@@ -952,14 +776,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         byGitUrl.set(entry.source, list);
       }
 
-      // One scan per distinct source, through the same cached dispatch `list`
-      // uses. A source that can't be read blocks its own entries only: everything
-      // reachable still lands and the user is told which skills didn't and why.
-      // Refusing the whole apply would be worse for exactly the case sets exist
-      // for — a set built where credentials are granted, applied where they
-      // aren't — so the verdict is narrowed to a skip rather than propagated.
-      // It is still a distinct reason from "not connected", because the fix
-      // differs, and the underlying failure is logged rather than dropped.
       const installedKeys = new Set(
         (await deps.agentSkillsRepo.listSkills(agentId)).map(skillKey),
       );
@@ -986,12 +802,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
             skipped.push({ ...entry, reason: "not-in-source" });
             continue;
           }
-          // Already on: nothing to do, whatever version it sits at. Adding a
-          // set turns skills on; it does not adopt a newer revision of one the
-          // user already has. Updating is its own explicit action — the row's
-          // Update pill and the drift banner — and doing it as a side effect
-          // here would overwrite a skill the "already all on" preview just
-          // promised to leave alone.
           if (installedKeys.has(skillKey(entry))) continue;
           toInstall.push({
             source: match.source,
@@ -1002,20 +812,14 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
       }
 
-      // Empty uninstall list is the additive guarantee, enforced here rather
-      // than trusted to callers: a set adds skills, it never turns one off.
       const after = await applyBatchWith(
         { agentId, install: toInstall, uninstall: [] },
         sourcePaths,
       );
-      // Authoritative count: what this call actually turned on. A client can't
-      // derive it by diffing lengths, because its own view may have moved under
-      // it between render and response.
       return { installed: after, skipped, added: toInstall.length };
     },
 
     async createLocal(input: SkillCreateLocalInput): Promise<LocalSkill[]> {
-      // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
       let created: LocalSkill[];
       try {
@@ -1024,17 +828,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           input.skills,
         );
       } catch (err) {
-        // Pass the pod's collision verdict through verbatim — the message names
-        // the offending skills and the UI matches rows against it.
         if (err instanceof AgentRuntimeConflictError) {
           throw new TRPCError({ code: "CONFLICT", message: err.message });
         }
         throw err;
       }
-      // No agent_skills row, no outbox bump: a standalone Local Skill is
-      // deliberately untracked — the reconciled `state` read surfaces it on the
-      // next poll. User-authored content written onto the agent's PV must be
-      // answerable post-incident, so log the write (parity with skill.install).
       securityLog("info", "skill.create_local", {
         category: "privileged",
         actor: deps.owner,
@@ -1048,12 +846,8 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     },
 
     async deleteLocal(input: SkillDeleteLocalInput): Promise<LocalSkill[]> {
-      // Wakes a hibernated agent and rejects foreign/missing ones (owner-scoped).
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
       const tracked = await deps.agentSkillsRepo.listSkills(input.agentId);
-      // deleteLocal is the standalone-only path: the UI never offers it for a
-      // tracked skill, and letting it through would wipe an install while
-      // leaving a row for the next `state` read to reap as a ghost.
       if (tracked.some((s) => s.name === input.name)) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -1065,8 +859,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       } catch (err) {
         throw asPodVerdict(err);
       }
-      // Removing user-authored content from the agent's PV must be answerable
-      // post-incident (parity with skill.create_local).
       securityLog("info", "skill.delete_local", {
         category: "privileged",
         actor: deps.owner,
@@ -1076,17 +868,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         result: "success",
         detail: { name: input.name },
       });
-      // No agent_skills write, no outbox bump, and agent_skill_publishes rows
-      // are left intact: a publish record logs something that really happened
-      // and is reaped only by the AgentDeleted cleanup saga.
       return standaloneFor(deps, input.agentId, tracked);
     },
 
     async readLocal(input: SkillReadLocalInput): Promise<SkillLocalFiles> {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
-      // A thin passthrough by design: the size caps and the not-found verdict
-      // are pod-side. No security log — the Files panel already serves
-      // arbitrary pod file content unlogged, so a skill read is strictly less.
       try {
         return await deps.runtimeClient.readLocal(input.agentId, input.name);
       } catch (err) {
@@ -1106,9 +892,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         },
         input,
       );
-      // Drop the scan cache for this source so the next listSkills reflects
-      // the merged PR (whenever that happens — we don't wait, we just stop
-      // serving a stale snapshot).
       const source = await resolveSource(deps, input.sourceId);
       if (source) deps.invalidateScan(source.gitUrl, source.path);
       return result;
@@ -1127,26 +910,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async listLocal(agentId: string): Promise<LocalSkill[]> {
       const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra) return [];
-      // No filesystem to read when the pod isn't running.
       if (computeAgentState(infra) !== "running") return [];
       const tracked = await deps.agentSkillsRepo.listSkills(agentId);
       return standaloneFor(deps, agentId, tracked);
     },
 
-    /**
-     * Reconciled skills view. Returns:
-     *   - installed: SkillRefs whose directories still exist on the pod
-     *   - standalone: on-disk skills that aren't tracked
-     *
-     * Also self-heals tracked installs: when an entry's directory is missing
-     * (manual deletion, PVC wipe, etc.) it's dropped from Postgres. Safe
-     * because the filesystem is the source of truth for "what is installed";
-     * the DB row is the declarative record that just needs to catch up.
-     *
-     * When the pod isn't running we can't see the filesystem, so we return
-     * the tracked refs as-is (no reconciliation) and an empty standalone
-     * list. This avoids wrongly dropping rows during a restart.
-     */
     async getState(agentId: string): Promise<SkillsState> {
       const infra = await deps.agentsRepo.get(agentId, deps.owner);
       if (!infra)
@@ -1157,10 +925,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           deps.agentSkillsRepo.listPublishes(agentId),
           deps.agentSkillsRepo.readStandaloneSnapshot(agentId),
         ]);
-        // No snapshot means nothing was ever recorded, so the list stays empty
-        // and unmarked — a never-run sandbox must not read as "has no skills".
-        // Deliberately no reconciliation here: a snapshot is not evidence about
-        // the current disk, and dropping tracked rows from it would be wrong.
         if (!recorded) return { installed, standalone: [], instancePublishes };
         return {
           installed,
@@ -1170,14 +934,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         };
       }
 
-      // Publishes are read before the listing, not alongside it, because they
-      // decide which skills need a contentHash and the listing is where the
-      // hashing happens. Every published name needs one, not just the `merged`
-      // ones: the UI de-duplicates on the hash matching the source's copy, and
-      // gating that on our own knowledge of the pull request's state would leave
-      // the duplicate on screen for as long as the resolver takes to notice a
-      // merge — up to the re-check interval. A sandbox that never published
-      // still asks for none.
       const instancePublishes =
         await deps.agentSkillsRepo.listPublishes(agentId);
       const publishedNames = [
@@ -1188,16 +944,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       const onDisk = new Set(local.map((s) => s.name));
 
-      // Drop ghost rows whose directories no longer exist — but only once the
-      // pod has caught up with the outbox. Install is declarative: the row is
-      // written first and the apply worker fetches the files after, so between
-      // those two moments every freshly-installed skill looks like a ghost.
-      // Reaping then doesn't just lose the install — the files still land, and
-      // the skill resurfaces as a Standalone one the user supposedly authored.
-      // One install's window is a single fetch wide; a batch's is N, which is
-      // what makes the guard necessary rather than merely tidy.
-      // A failed settled read defers reaping rather than failing the whole
-      // state read: this is the one query the Skills page cannot do without.
       let settled = false;
       try {
         settled = await deps.runtimeSettled.isSettled(agentId);
@@ -1216,8 +962,6 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const trackedNames = new Set(installed.map((s) => s.name));
       const standalone = local.filter((s) => !trackedNames.has(s.name));
 
-      // Record the computed list, not the raw local one: this is what the
-      // stopped branch has to return, already reconciled against tracked names.
       try {
         await deps.agentSkillsRepo.recordStandaloneSnapshot(
           agentId,

@@ -4,6 +4,7 @@ import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createAgentsRepository,
@@ -41,17 +42,10 @@ export type {
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
-  /** Global default idle timeout in minutes; the per-agent override resolves against it. */
   agentIdleTimeoutMinutes: number;
-  /** Chart-default agent size (limits), stamped concretely at create (#1900). */
   agentDefaultLimits: { cpu: string; memory: string };
-  /** KubeVirt vm backend available in this install; absent = false (creating
-   *  from a vm-backend template is rejected). */
   virtualizationEnabled?: boolean;
-  /** Budget gate for live resizes (#1900); omitted by system compositions. */
   resizeGate?: ResizeGatePort;
-  /** `undefined` enables system-level composition (cross-owner) for the
-   *  Slack/Telegram workers that read agents owned by anyone. */
   owner: string | undefined;
   db: Db;
   readTemplateSpec: ReadTemplateSpec;
@@ -59,11 +53,8 @@ export function composeAgentsModule(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
-  /** Telegram chat→agent binding flow; omitted system-side. */
   telegramBinding?: TelegramBindingPort;
-  /** Slack in-chat channel→agent binding flow; omitted system-side. */
   slackBinding?: SlackBindingPort;
-  /** Single-shot create; wired from connections. Omitted system-side. */
   grantProvisioner?: {
     resolveSpecGrants(sel: {
       connectionIds: string[];
@@ -82,9 +73,6 @@ export function composeAgentsModule(deps: {
   const repo = createAgentsRepository(k8s);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
-  // For DB-scoped lookups, an undefined owner means "system-wide". The
-  // Postgres queries that already accept an empty-string owner-filter
-  // (channels repo) treat "" as "match all" — keep that.
   const owner = deps.owner ?? "";
   return {
     agents: createAgentsService({
@@ -94,8 +82,6 @@ export function composeAgentsModule(deps: {
       agentDefaultLimits: deps.agentDefaultLimits,
       virtualizationEnabled: deps.virtualizationEnabled,
       resizeGate: deps.resizeGate,
-      // Cross-replica per-owner resize serialization (Postgres advisory
-      // lock) — see budgets.md.
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
@@ -104,6 +90,7 @@ export function composeAgentsModule(deps: {
       registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
       contributionsSettled: deps.contributionsSettled,
+      podStatus: createPodStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

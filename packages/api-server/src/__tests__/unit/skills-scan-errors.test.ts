@@ -54,8 +54,6 @@ describe("privateScanFailure", () => {
 });
 
 describe("scanFailureError", () => {
-  // tRPC wraps a non-Error cause in an UnknownCauseError, copying own
-  // properties across — so the verdict is read off the cause, not compared to it.
   it("carries the verdict on the cause so the errorFormatter can lift it", () => {
     const err = scanFailureError("needs_github_connection");
     expect(hasScanFailure(err)).toBe(true);

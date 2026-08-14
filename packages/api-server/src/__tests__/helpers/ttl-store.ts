@@ -1,7 +1,5 @@
 import type { TtlStore } from "../../core/ttl-store.js";
 
-/** In-memory TtlStore whose backing Map stays visible for assertions —
- *  tests seed and inspect flows synchronously via `map`. */
 export function createInspectableTtlStore<T>(): {
   store: TtlStore<T>;
   map: Map<string, T>;

@@ -10,15 +10,8 @@ import type {
 } from "./ports.js";
 
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
-/** The Slack turn contract injects the thread id; its presence marks a turn
- *  whose reply must go out through the `reply` tool, not plain ACP text. */
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
-/** E2e directive: run a python script (written via scriptFiles) to
- *  completion — how a spec drives experiment plan registration in-pod. */
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
-/** The Experiments Execute launch prompt (#2942) — recognize the composed
- *  command line and behave like a real harness: start the script detached
- *  with the run id in its environment, then end the turn. */
 const EXPERIMENT_LAUNCH_DIRECTIVE =
   /PLATFORM_EXPERIMENT_ID=(\S+)\s+python3\s+(\S+)/;
 
@@ -28,7 +21,6 @@ export interface AcpServiceDeps {
   workspace: WorkspaceWriter;
   proxyFetch: ProxyFetch;
   processRunner: ProcessRunner;
-  /** Posts to Slack via the reply tool; omitted outside channel turns. */
   slackReply?: SlackReplyPoster;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
@@ -71,11 +63,6 @@ export function startAcpService(deps: AcpServiceDeps): void {
           return;
         }
         case "session/list":
-          // Bare ids are enough: the runtime enriches each entry with its
-          // stored `_meta.platform` (mode, activity, running) on the way out,
-          // which is what the sessions sidebar decodes. Without this a
-          // reloaded tab can never pick a session back up on a mock agent —
-          // the sidebar stays "No sessions yet" forever.
           respond(id, {
             sessions: [...knownSessions].map((sessionId) => ({ sessionId })),
           });
@@ -118,9 +105,6 @@ export function startAcpService(deps: AcpServiceDeps): void {
     });
 
     const promptStr = promptText(promptPayload);
-    // On a Slack turn the reply must go out via the `reply` tool — plain ACP
-    // text is not delivered to the channel. We still emit the ACP text so UI /
-    // transcript views keep working.
     const slackThreadTs = SLACK_THREAD_DIRECTIVE.exec(promptStr)?.[1];
 
     const fetchUrl = FETCH_DIRECTIVE.exec(promptStr)?.[1];
@@ -172,8 +156,6 @@ export function startAcpService(deps: AcpServiceDeps): void {
     respond(id, { stopReason: deps.state.scriptStopReason });
   }
 
-  /** Post the turn's reply through the Slack `reply` tool, when this is a Slack
-   *  turn and there is something to say (empty → the mock stays silent). */
   async function maybeSlackReply(
     text: string,
     threadTs: string | undefined,
@@ -236,9 +218,6 @@ function extractSessionId(params: unknown): string | null {
   return typeof sid === "string" ? sid : null;
 }
 
-/** The reply text a scripted turn would show: the concatenation of its
- *  agent_message_chunk text. Empty when the script emits no assistant text
- *  (the mock then stays silent on Slack, like calling no_reply_needed). */
 function scriptedReplyText(state: MockState): string {
   let out = "";
   for (const entry of state.scriptEntries) {

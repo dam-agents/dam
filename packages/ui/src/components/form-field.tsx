@@ -10,13 +10,7 @@ interface Props {
   label: ReactNode;
   hint?: ReactNode;
   error?: string;
-  /** The control is outdent-aligned with the label on `md+` by default (see
-   *  Inset). Set to opt out — forms not yet migrated, or containers with no
-   *  gutter (nested side panels). */
   disableInset?: boolean;
-  /** Gutter-less containers (modals, bordered boxes): keep the control flush
-   *  inside the container padding and indent the label to it, instead of
-   *  outdenting the control onto the border. Ignored when `disableInset`. */
   labelInset?: boolean;
   className?: string;
   children: ReactNode;

@@ -1,10 +1,3 @@
-// driver-sdk — a dependency-free wrapper over the platform's Invocation
-// primitive (issue #2784). A "driver" agent
-// uses it to spawn ephemeral Invocations, hand each one a prompt, and get back
-// a schema-validated result, without hand-rolling the create-then-poll HTTP
-// dance. Built with tsup to a single dependency-free `.mjs` baked into the
-// platform-base image at /usr/local/lib/driver-sdk.mjs.
-
 export {
   s,
   type JsonSchema,

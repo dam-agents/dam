@@ -120,23 +120,13 @@ export function createAcpRelay(
         } catch {}
       });
 
-      // A passive connection (the sessions-list status poll) is a read that
-      // must not defer hibernation: skip presence and the last-activity bump.
       const passive =
         new URL(req.url ?? "", "http://localhost").searchParams.get(
           "passive",
         ) === "1";
 
-      // Resolve identity once per upgrade. The instance's owner/agent
-      // can't change for the lifetime of this WS — capturing here avoids
-      // a K8s ConfigMap GET per permission-request mirror. Failure to
-      // resolve fails the upgrade closed; without identity we'd write
-      // pending_approvals rows the inbox query can't find.
       let identity: { ownerSub: string; agentId: string } | null = null;
 
-      // Subscribe the inject channel for synth ext_authz frames bound for
-      // this UI client. Unrelated to ACP-native delivery — that path is
-      // outbox-driven and lives entirely in the approvals service.
       const unsubInjects = approvals.subscribeFrameInjects(agentId, (frame) => {
         if (client.readyState === WebSocket.OPEN) client.send(frame);
       });
@@ -170,10 +160,6 @@ export function createAcpRelay(
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
-        // Compute the row id deterministically from `(agentId, rpcId)`.
-        // Non-permission responses produce a row id that doesn't exist in
-        // pending_approvals; the CAS-resolve update affects zero rows and
-        // silently no-ops. So we don't need an in-memory tracking map.
         const rowId = acpNativeRowId(agentId, msg.id);
         approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
       }
@@ -189,10 +175,6 @@ export function createAcpRelay(
         pending.push({ data: data as Buffer, isBinary });
       });
 
-      // A client that leaves while we're still waking the pod would otherwise
-      // strand its upstream: the close→upstream handler below is only registered
-      // once `connectUpstream` resolves, and the pod-side channel stays engaged
-      // forever, pinning that session against the runtime's idle reap.
       let clientGone = false;
       client.once("close", () => {
         clientGone = true;
@@ -210,8 +192,6 @@ export function createAcpRelay(
           identity = resolved;
         })
         .then(async () => {
-          // Passive: never wake or bump activity. Read-only readiness gate;
-          // fail closed if the pod isn't already up.
           if (passive) {
             if (!(await repo.isReady(agentId))) {
               client.close(1011, "agent not ready");
@@ -255,8 +235,6 @@ export function createAcpRelay(
 
             const parsed = tryParse(data);
 
-            // Dumb proxy: the agent owns session existence; the
-            // server learns of sessions via session/list, not by writing here.
             upstream.send(data, { binary: false });
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });
@@ -277,8 +255,6 @@ export function createAcpRelay(
           upstream.on("close", (code, reason) => {
             if (client.readyState !== WebSocket.OPEN) return;
             try {
-              // Passed through as-is: a substituted default would reach the
-              // sender as a stated cause for a close that stated none.
               client.close(sanitizeCloseCode(code), reason.toString());
             } catch {
               client.terminate();
@@ -295,9 +271,6 @@ export function createAcpRelay(
           });
 
           client.on("close", () => {
-            // Inbox-driven verdicts no longer need this upstream — delivery
-            // happens out-of-band via WrapperFrameSender on the click-handling
-            // replica (or via the periodic sweep). Closing here is safe.
             if (upstream.readyState === WebSocket.OPEN) {
               upstream.close();
             }
@@ -306,7 +279,6 @@ export function createAcpRelay(
         .catch((err: unknown) => {
           if (client.readyState !== WebSocket.OPEN) return;
           try {
-            // Close reasons cap at 123 bytes — carry the short cause kind.
             const reason = isAgentWakeTimeoutError(err)
               ? `agent not ready: ${err.failure.kind}`
               : "failed to connect to agent";

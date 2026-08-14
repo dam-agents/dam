@@ -19,7 +19,6 @@ export async function createCustomHeaderConnection(
     .getByTestId("app-sidebar")
     .getByRole("button", { name: "Settings" })
     .click();
-  // The settings nav is a tablist, not a row of buttons.
   await page.getByRole("tab", { name: "Connections", exact: true }).click();
   await page.getByTestId("open-connection-catalog").click();
   await page.getByTestId("catalog-tab-custom-headers").click();
@@ -35,7 +34,6 @@ export async function createCustomHeaderConnection(
   await page.getByTestId("connection-field-envName").fill(input.envName);
 
   await page.getByTestId("connection-create-submit").click();
-  // A successful create closes the whole catalogue modal.
   await expect(page.getByTestId("catalog-close")).toBeHidden();
 }
 

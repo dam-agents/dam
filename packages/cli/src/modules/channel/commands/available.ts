@@ -11,7 +11,6 @@ import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ChannelService } from "../services/channel-service.js";
 
-// Stable display order, independent of the order the server returns keys in.
 const PROVIDER_ORDER: readonly ChannelType[] = [
   ChannelType.Slack,
   ChannelType.Telegram,

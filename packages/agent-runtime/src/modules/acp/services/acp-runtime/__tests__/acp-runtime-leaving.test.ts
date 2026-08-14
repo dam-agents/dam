@@ -8,7 +8,7 @@ import {
 } from "./acp-world.js";
 
 /**
- * Feature: leaving.
+ * TEST_OVERVIEW: leaving.
  *
  * Nobody says goodbye. A tab closes, a laptop lid drops, a connection just
  * dies — and the conversation, the other people in it, and the work in
@@ -28,7 +28,7 @@ describe("acp-runtime: leaving", () => {
   });
 
   /**
-   * Two people are watching a turn and one of them leaves. The other must
+   * TEST_SCENARIO: Two people are watching a turn and one of them leaves. The other must
    * notice nothing, and neither must the agent.
    *
    * The harness cannot be trusted with this because it cannot even see it:
@@ -41,7 +41,6 @@ describe("acp-runtime: leaving", () => {
     vi.useFakeTimers();
     const world = createWorld();
 
-    // Alice asks, Bob is watching, and the agent is mid-answer.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -50,10 +49,8 @@ describe("acp-runtime: leaving", () => {
     bob.send(frames.loadSession(1, SESSION));
     world.harness().emit(frames.agentMessage(SESSION, "it is a monorepo"));
 
-    // Bob's tab closes.
     bob.disconnect();
 
-    // The rest of the turn plays out for Alice as if he had never left.
     world.harness().emit(frames.agentMessage(SESSION, "with three packages"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
@@ -65,16 +62,13 @@ describe("acp-runtime: leaving", () => {
       `${SESSION}: with three packages`,
     ]);
 
-    // And the machinery is untouched: even well past the quiescence window
-    // that follows any departure, the harness was neither stopped nor told
-    // to shed the session — Alice is still in it.
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(world.harness().killed()).toBe(false);
     expect(world.harness().received("session/close")).toEqual([]);
   });
 
   /**
-   * The person whose turn is running disconnects while the agent is
+   * TEST_SCENARIO: The person whose turn is running disconnects while the agent is
    * mid-answer. The turn is not theirs to take down with them: it belongs to
    * the conversation, which others may be watching and more messages are
    * queued behind.
@@ -90,8 +84,6 @@ describe("acp-runtime: leaving", () => {
   it("should finish the turn and run the next queued message when a client disconnects mid-turn", () => {
     const world = createWorld();
 
-    // Alice asks, and while the agent is working Bob queues the next
-    // question behind the running turn.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -100,30 +92,23 @@ describe("acp-runtime: leaving", () => {
     bob.send(frames.loadSession(1, SESSION));
     bob.send(frames.prompt(2, SESSION, "then run the tests"));
 
-    // Alice leaves with her turn still running.
     alice.disconnect();
 
-    // The agent never hears about it — no cancel — and finishes the turn on
-    // its own terms.
     world.harness().emit(frames.agentMessage(SESSION, "done, parser shrank"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // The moment the slot freed, Bob's question went in, exactly as it
-    // would have with Alice still there.
     expect(world.harness().received("session/cancel")).toEqual([]);
     expect(promptTextsOf(world.harness())).toEqual([
       "refactor the parser",
       "then run the tests",
     ]);
 
-    // And Bob's turn is a real one: the agent answers it, and the answer
-    // comes back to him.
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(bob.reply(2)?.result).toEqual({ stopReason: "end_turn" });
   });
 
   /**
-   * A queued message has not reached the harness yet; it exists only inside
+   * TEST_SCENARIO: A queued message has not reached the harness yet; it exists only inside
    * the runtime. If its sender leaves before its turn comes, running it
    * anyway would start work whose asker can never see it, answer its
    * permission prompts, or read its result — so it goes with them. But only
@@ -137,8 +122,6 @@ describe("acp-runtime: leaving", () => {
   it("should drop a leaver's queued messages but nobody else's", () => {
     const world = createWorld();
 
-    // Alice's turn is running, and two questions wait behind it: first
-    // Bob's, then Carol's.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -150,15 +133,11 @@ describe("acp-runtime: leaving", () => {
     carol.send(frames.loadSession(1, SESSION));
     carol.send(frames.prompt(2, SESSION, "and tag a release"));
 
-    // Bob leaves before his question ever reached the agent.
     bob.disconnect();
 
-    // The running turn ends, and the queue drains past the hole he left.
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // The agent was asked exactly two things, and Bob's was never one of
-    // them. Carol's survived his departure untouched and got its answer.
     expect(promptTextsOf(world.harness())).toEqual([
       "keep the build green",
       "and tag a release",
@@ -167,7 +146,7 @@ describe("acp-runtime: leaving", () => {
   });
 
   /**
-   * The last person closes the tab on a finished conversation. Every open
+   * TEST_SCENARIO: The last person closes the tab on a finished conversation. Every open
    * session pins a CLI subprocess of roughly 300MB inside the harness, so a
    * sandbox that kept every visited conversation live would bloat until the
    * pod died — and the harness will not save itself, because it has no idea
@@ -185,7 +164,6 @@ describe("acp-runtime: leaving", () => {
     vi.useFakeTimers();
     const world = createWorld();
 
-    // Alice has a complete conversation: asked, answered, turn over.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -193,18 +171,11 @@ describe("acp-runtime: leaving", () => {
     world.harness().emit(frames.agentMessage(SESSION, "done"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // While she is looking at it, the session is hers and stays live.
     expect(world.harness().received("session/close")).toEqual([]);
 
-    // She closes the tab, leaving the sandbox empty with nothing running.
-    // The departure alone releases nothing — she may be back in a second.
     alice.disconnect();
     expect(world.harness().received("session/close")).toEqual([]);
 
-    // The window passes with nobody back. Now the harness is told to let
-    // the conversation go — that is the subprocess behind it being freed.
-    // The harness itself stays up for the next visitor: releasing a
-    // conversation is not stopping the sandbox.
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(
       world
@@ -216,7 +187,7 @@ describe("acp-runtime: leaving", () => {
   });
 
   /**
-   * The other half of the quiescence window: someone closes the tab and
+   * TEST_SCENARIO: The other half of the quiescence window: someone closes the tab and
    * reopens it moments later. Reloads, laptop sleep, a flaky proxy — brief
    * disconnects are everyday events, and paying a full subprocess teardown
    * and cold respawn for each one is exactly what the window exists to
@@ -228,7 +199,6 @@ describe("acp-runtime: leaving", () => {
     vi.useFakeTimers();
     const world = createWorld();
 
-    // A finished conversation, and its only reader closes the tab.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
@@ -237,13 +207,9 @@ describe("acp-runtime: leaving", () => {
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     alice.disconnect();
 
-    // She is back before the window ends.
     const aliceAgain = world.connect();
     aliceAgain.send(frames.loadSession(1, SESSION));
 
-    // Her return cancelled the release: however long she now stays, the
-    // session is never let go, and her reload was answered with the
-    // conversation intact — no cold rebuild.
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS * 3);
     expect(world.harness().received("session/close")).toEqual([]);
     expect(aliceAgain.reply(1)).toBeDefined();
@@ -252,8 +218,6 @@ describe("acp-runtime: leaving", () => {
       `${SESSION}: done`,
     ]);
 
-    // Leaving for good still works: once she is gone and the window passes
-    // with nobody back, the session is released.
     aliceAgain.disconnect();
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
     expect(
@@ -265,7 +229,7 @@ describe("acp-runtime: leaving", () => {
   });
 
   /**
-   * A connection dies mid-turn and the agent keeps talking to a room with
+   * TEST_SCENARIO: A connection dies mid-turn and the agent keeps talking to a room with
    * nobody in it. When the person comes back, everything said into that
    * silence must be waiting for them.
    *
@@ -278,31 +242,22 @@ describe("acp-runtime: leaving", () => {
   it("should show a client that drops and comes back what was said while it was gone", () => {
     const world = createWorld();
 
-    // Alice asks and sees the answer start.
     const alice = world.connect();
     alice.send(frames.newSession(1));
     world.harness().replyTo("session/new", { sessionId: SESSION });
     alice.send(frames.prompt(2, SESSION, "run the whole test suite"));
     world.harness().emit(frames.agentMessage(SESSION, "starting the suite"));
 
-    // Her connection dies mid-turn, and the agent keeps going with nobody
-    // there to hear it.
     alice.disconnect();
     world.harness().emit(frames.agentMessage(SESSION, "unit tests passed"));
     world.harness().emit(frames.agentMessage(SESSION, "e2e passed"));
 
-    // She comes back and opens the conversation again.
     const aliceAgain = world.connect();
     aliceAgain.send(frames.loadSession(1, SESSION));
 
-    // She is not merely caught up but live again: the turn's last line
-    // arrives as it is said, with no second ask needed.
     world.harness().emit(frames.agentMessage(SESSION, "all green"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
 
-    // Her load was answered, and the transcript is whole: what she saw
-    // before the drop, what was said to nobody while she was gone, and what
-    // came after her return — once each, in order.
     expect(aliceAgain.reply(1)).toBeDefined();
     expect(transcriptOf(aliceAgain)).toEqual([
       `${SESSION}: run the whole test suite`,

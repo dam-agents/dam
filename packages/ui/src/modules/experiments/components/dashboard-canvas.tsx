@@ -4,10 +4,6 @@ import { useMemo } from "react";
 import { useArtifactPreview } from "../../artifacts/api/queries.js";
 import { DeferredFrame } from "../../artifacts/components/deferred-frame.js";
 
-/** The experiment's visualization canvas: the dashboard artifact (stock or
- *  agent-generated) rendered in the sealed iframe, fed the Trace Feed via
- *  postMessage on load and on every poll. The artifact never gets network —
- *  the host page owns transport, the artifact owns rendering. */
 export function DashboardCanvas({
   dashboardArtifactId,
   feed,
@@ -22,14 +18,11 @@ export function DashboardCanvas({
   );
 
   if (!dashboardArtifactId) {
-    // Dashboard publish failed at plan time — degrade to a native summary.
     return (
       <NativeFallback feed={feed} note="This experiment has no dashboard." />
     );
   }
   if (isError) {
-    // The artifact was deleted from the library — degrade instead of an
-    // eternal loading state.
     return (
       <NativeFallback
         feed={feed}
