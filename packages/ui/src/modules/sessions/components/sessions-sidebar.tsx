@@ -19,6 +19,7 @@ import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
+import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
 import {
   SESSION_CATEGORIES,
@@ -106,6 +107,12 @@ export function SessionsSidebar({
     return set;
   }, [approvals]);
 
+  const backgroundWork = useAgentBackgroundWork(selectedAgent);
+  const backgroundWorkBySession = useMemo(
+    () => new Map(backgroundWork.map((s) => [s.sessionId, s.items])),
+    [backgroundWork],
+  );
+
   const confirmDelete = useCallback(
     async (sid: string, title: string | null | undefined) => {
       const label = title || sid.slice(0, 12);
@@ -142,6 +149,7 @@ export function SessionsSidebar({
         working={working}
         needsApproval={needsApproval}
         unread={unread}
+        backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts?.get(s.sessionId)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);

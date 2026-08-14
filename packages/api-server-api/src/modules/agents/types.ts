@@ -71,6 +71,17 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
+export interface BackgroundWorkItemView {
+  id: string;
+  description?: string;
+  command?: string;
+}
+
+export interface SessionBackgroundWork {
+  sessionId: string;
+  items: BackgroundWorkItemView[];
+}
+
 export type UpgradeAgentError =
   | { type: "AgentNotFound" }
   | { type: "TemplateNotFound" }
@@ -130,6 +141,7 @@ export type UnbindTelegramChatResult =
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
+  backgroundWork: (id: string) => Promise<SessionBackgroundWork[] | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;
   update: (input: AgentUpdateInput) => Promise<Agent | null>;
   delete: (id: string) => Promise<void>;

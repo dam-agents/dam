@@ -13,6 +13,7 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
+  type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -20,6 +21,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import {
   assembleAgent,
@@ -176,6 +178,22 @@ export function executeTelegramBind(deps: {
     }
 
     return ok({ chatTitle: flow.chatTitle ?? null });
+  };
+}
+
+export function executeBackgroundWorkRead(deps: {
+  getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
+  podStatus: PodStatusClient;
+}) {
+  return async (id: string): Promise<SessionBackgroundWork[] | null> => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return null;
+    if (infra.hibernated) return [];
+    try {
+      return await deps.podStatus.backgroundWork(id);
+    } catch {
+      return [];
+    }
   };
 }
 
@@ -403,6 +421,7 @@ export function createAgentsService(deps: {
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
   contributionsSettled: ContributionsSettledPort;
+  podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
@@ -605,6 +624,11 @@ export function createAgentsService(deps: {
       if (!infra) return null;
       return project(infra);
     },
+
+    backgroundWork: executeBackgroundWorkRead({
+      getAgent: (id) => deps.repo.get(id, deps.owner),
+      podStatus: deps.podStatus,
+    }),
 
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;

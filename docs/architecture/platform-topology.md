@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-08-10
+Last verified: 2026-08-13
 
 ## Overview
 
@@ -88,6 +88,7 @@ Continuing such a conversation here makes a session outlive the surface it start
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
 | api-server → agent-runtime | HTTP (tRPC proxy) | In-pod file operations surfaced to the UI |
+| api-server → agent-runtime | HTTP (status read) | Passive read of the pod's status surface for session-reported background work; never wakes a pod or defers hibernation |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
