@@ -23,3 +23,11 @@ export function draftKey(agentId: string, sessionId: string | null): string {
 export function draftHasContent(draft: SessionDraft): boolean {
   return draft.text.trim().length > 0 || draft.attachments.length > 0;
 }
+
+export function keysWithDraftContent(
+  drafts: Record<string, SessionDraft>,
+): string[] {
+  return Object.keys(drafts)
+    .filter((key) => draftHasContent(drafts[key]))
+    .sort();
+}

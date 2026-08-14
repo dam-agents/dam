@@ -55,7 +55,7 @@ by the final session id), so drafts have no server-side residue.
 |----|-------|-------|------------|
 | 01 | ✅ [Session-keyed drafts in memory](./01-drafts-in-memory.md) | Drafts map in the sessions slice; store-controlled composer; clear on send; blank-chat key + promotion migration; delete hook; remove dead `queuedMessage`. | — |
 | 02 | ✅ [Text persistence and restore notice](./02-text-persistence.md) | zod-validated localStorage snapshot (text + attachment names); hydrate at store init; dropped-attachments toast; list-driven prune; sandbox-delete cleanup. | 01 |
-| 03 | [Draft marker in the session list](./03-session-list-marker.md) | Muted pencil icon in the status-dot slot, idle sessions only; driven by the drafts map. | 01 |
+| 03 | ✅ [Draft marker in the session list](./03-session-list-marker.md) | Muted pencil icon in the status-dot slot, idle sessions only; driven by the drafts map. | 01 |
 
 03 depends only on 01, so it may land before 02 if convenient; the commit order in this plan is
 01 → 02 → 03.
