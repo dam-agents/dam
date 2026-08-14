@@ -1,9 +1,16 @@
+import { TRPCClientError } from "@trpc/client";
 import type { AuthRequiredError, TransportError } from "../errors.js";
 import { formatAuthRejection } from "../auth-message.js";
 import { classifyTrpcError } from "./classify.js";
 
 export function formatTransportError(reason: string, host: string): string {
   return `cannot reach server \`${host}\`: ${reason}`;
+}
+
+export function serverDetail(e: unknown): string {
+  if (!(e instanceof TRPCClientError)) return "";
+  const code = e.data?.code as string | undefined;
+  return e.message && e.message !== code ? e.message : "";
 }
 
 export function printServiceError(
