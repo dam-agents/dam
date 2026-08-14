@@ -362,7 +362,7 @@ async function write(
           .rm(previous, { recursive: true, force: true })
           .catch(leaveSidecar);
       } else {
-        await fs.rename(previous, dst).catch(ignoreMissing);
+        await fs.rename(previous, dst).catch(leaveSidecar);
       }
     }
   }
