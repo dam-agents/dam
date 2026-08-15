@@ -61,7 +61,7 @@ This is the one place a real person is named — see **No personal data** above.
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix (see **State the problem, not the solution** above). Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the person filing is the person who asked — see [Attribution](#attribution).
+Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix, except in a **task**, whose title may name the work (see **State the problem, not the solution** above). Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the account you file as belongs to the person who asked — see [Attribution](#attribution).
 
 ### Epic
 
