@@ -114,6 +114,7 @@ function writeDraftEntry(
 export interface DraftWriter {
   write(key: string, draft: SessionDraft | null): void;
   flush(): void;
+  clearAll(): void;
 }
 
 export function createDraftWriter(
@@ -123,13 +124,18 @@ export function createDraftWriter(
   const queued = new Map<string, SessionDraft>();
   let timer: ReturnType<typeof setTimeout> | null = null;
 
-  const flush = () => {
+  const discardQueue = () => {
     if (timer !== null) {
       clearTimeout(timer);
       timer = null;
     }
-    for (const [key, draft] of queued) writeDraftEntry(key, draft, store);
     queued.clear();
+  };
+
+  const flush = () => {
+    const pending = [...queued];
+    discardQueue();
+    for (const [key, draft] of pending) writeDraftEntry(key, draft, store);
   };
 
   return {
@@ -143,6 +149,21 @@ export function createDraftWriter(
       if (timer === null) timer = setTimeout(flush, batchMs);
     },
     flush,
+    clearAll() {
+      discardQueue();
+      let storageKeys: string[] = [];
+      try {
+        storageKeys = store.keys();
+      } catch {
+        return;
+      }
+      for (const storageKey of storageKeys) {
+        if (!storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
+        try {
+          store.removeItem(storageKey);
+        } catch {}
+      }
+    },
   };
 }
 
