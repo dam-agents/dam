@@ -107,6 +107,64 @@ describe("leader lease", () => {
     await healthy.stop();
   });
 
+  // TEST_SCENARIO: one transient renew error must not cost the install a holder; the second stands down and releases the key so takeover beats the TTL.
+  it("tolerates one renew blip, stands down and releases on the second", async () => {
+    vi.useFakeTimers();
+    try {
+      const redis = fakeRedis();
+      const realEval = redis.eval.bind(redis);
+      const lease = createLeaderLease({
+        redis,
+        name: "channels",
+        onAcquired: () => {},
+        onLost: () => {},
+        log: () => {},
+      });
+      await lease.start();
+      expect(lease.isLeader()).toBe(true);
+
+      redis.eval = ((script: string, ...args: unknown[]) => {
+        if (script.includes("PEXPIRE"))
+          return Promise.reject(new Error("ETIMEDOUT"));
+        return realEval(script, ...(args as [number, string, string]));
+      }) as Redis["eval"];
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(lease.isLeader()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(lease.isLeader()).toBe(false);
+      expect(redis.store.has("leader:channels")).toBe(false);
+
+      redis.eval = realEval as Redis["eval"];
+      await lease.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: a failed teardown must not leave the ex-leader's workers running lease-less forever — onLost gets one retry.
+  it("retries a failed onLost once", async () => {
+    const redis = fakeRedis();
+    let lostCalls = 0;
+    const lease = createLeaderLease({
+      redis,
+      name: "channels",
+      onAcquired: () => {},
+      onLost: () => {
+        lostCalls += 1;
+        if (lostCalls === 1) throw new Error("bolt stop failed");
+      },
+      log: () => {},
+    });
+    await lease.start();
+    expect(lease.isLeader()).toBe(true);
+
+    await lease.stop();
+    expect(lostCalls).toBe(2);
+    expect(redis.store.has("leader:channels")).toBe(false);
+  });
+
   it("stands down when Redis is unreachable rather than acting as leader", async () => {
     const redis = fakeRedis();
     const lease = createLeaderLease({

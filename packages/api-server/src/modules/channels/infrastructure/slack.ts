@@ -2865,12 +2865,13 @@ export function createSlackWorker(
     });
   }
 
+  let serving = false;
   let gatewayFailed = false;
   let gatewayStarting: Promise<SlackGateway | null> | null = null;
 
   async function ensureGateway(): Promise<SlackGateway | null> {
     if (gateway) return gateway;
-    if (gatewayFailed) return null;
+    if (!serving || gatewayFailed) return null;
     gatewayStarting ??= startGateway();
     return gatewayStarting;
   }
@@ -2889,6 +2890,10 @@ export function createSlackWorker(
         process.stderr.write("[slack] Slack bot not connected\n");
         return null;
       }
+      if (!serving) {
+        await gw.stop().catch(() => {});
+        return null;
+      }
 
       gateway = gw;
       process.stderr.write("Slack bot started (single app)\n");
@@ -2903,16 +2908,18 @@ export function createSlackWorker(
     type: ChannelType.Slack,
 
     async connect() {
+      serving = true;
       if (!(await ensureGateway()))
         throw new Error("Slack gateway failed to connect");
     },
 
     async stopAll() {
-      if (gateway) {
-        await gateway.stop();
-        gateway = null;
-      }
+      serving = false;
+      if (gatewayStarting) await gatewayStarting.catch(() => null);
+      const gw = gateway;
+      gateway = null;
       gatewayFailed = false;
+      if (gw) await gw.stop();
     },
 
     async listConversations(instanceName: string) {

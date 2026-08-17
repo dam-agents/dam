@@ -605,11 +605,6 @@ export function createTelegramWorker(deps: {
         } catch {}
         bot = null;
       }
-      try {
-        await (
-          deps.state as unknown as { disconnect?: () => Promise<void> }
-        ).disconnect?.();
-      } catch {}
     },
 
     async listConversations(agentId: string) {

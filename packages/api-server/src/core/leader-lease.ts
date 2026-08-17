@@ -58,11 +58,19 @@ export function createLeaderLease(opts: {
             log(`release handler failed: ${lostErr}`);
           }
           await releaseKey();
+        } else {
+          try {
+            await opts.onLost();
+          } catch (retryErr) {
+            log(`release handler retry failed: ${retryErr}`);
+          }
         }
       }
     });
     return transition;
   };
+
+  let campaignFailures = 0;
 
   async function campaign(): Promise<void> {
     try {
@@ -74,6 +82,7 @@ export function createLeaderLease(opts: {
           id,
           String(ttlMs),
         );
+        campaignFailures = 0;
         if (extended === 0) {
           log(`lease ${opts.name} lost`);
           await transitionTo(false);
@@ -81,13 +90,18 @@ export function createLeaderLease(opts: {
         return;
       }
       const won = await opts.redis.set(key, id, "PX", ttlMs, "NX");
+      campaignFailures = 0;
       if (won === "OK") {
         log(`lease ${opts.name} acquired`);
         await transitionTo(true);
       }
     } catch (err) {
+      campaignFailures += 1;
       log(`campaign failed: ${err}`);
-      if (held) await transitionTo(false);
+      if (held && campaignFailures >= 2) {
+        await transitionTo(false);
+        await releaseKey();
+      }
     }
   }
 

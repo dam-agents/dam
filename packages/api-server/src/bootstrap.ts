@@ -1030,6 +1030,7 @@ export async function bootstrap() {
     await schedulesBoot.close();
     await redisBus.close();
     turnAttendance.close();
+    await chatSdkState?.disconnect().catch(() => {});
     await sharedRedis.quit().catch(() => {});
     await sql.end();
   };
