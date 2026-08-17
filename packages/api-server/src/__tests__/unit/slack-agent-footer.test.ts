@@ -16,6 +16,8 @@ const footer: AgentFooter = {
   agentName: "Helper",
 };
 
+const NO_BOT = { userId: null, label: "the DAM bot (unattributed)" };
+
 describe("agent footer", () => {
   it("renders the name as a link with the id in the URL", () => {
     expect(agentFooterMrkdwn(footer)).toBe(
@@ -114,23 +116,30 @@ describe("labelHistoryMessage", () => {
 
   it("labels the reading agent's own posts", () => {
     expect(
-      labelHistoryMessage(mine, parseAgentFooter(mine), footer.agentId),
+      labelHistoryMessage(mine, parseAgentFooter(mine), footer.agentId, NO_BOT),
     ).toBe("you (this agent): on it");
   });
 
   it("names another agent's posts", () => {
     expect(
-      labelHistoryMessage(theirs, parseAgentFooter(theirs), footer.agentId),
+      labelHistoryMessage(
+        theirs,
+        parseAgentFooter(theirs),
+        footer.agentId,
+        NO_BOT,
+      ),
     ).toBe("Ops (another agent): already handled");
   });
 
   it("keeps humans as their Slack id", () => {
-    expect(labelHistoryMessage(human, null, footer.agentId)).toBe("U123: hey");
+    expect(labelHistoryMessage(human, null, footer.agentId, NO_BOT)).toBe(
+      "U123: hey",
+    );
   });
 
   it("includes a human-readable timestamp when the message carries one", () => {
     const withTs: SlackMessage = { ts: "0.1", text: "hey", user: "U123" };
-    expect(labelHistoryMessage(withTs, null, footer.agentId)).toBe(
+    expect(labelHistoryMessage(withTs, null, footer.agentId, NO_BOT)).toBe(
       `U123 [${formatSlackTs("0.1")}]: hey`,
     );
   });
@@ -142,7 +151,7 @@ describe("labelHistoryMessage", () => {
       user: "U123",
       edited: true,
     };
-    expect(labelHistoryMessage(edited, null, footer.agentId)).toBe(
+    expect(labelHistoryMessage(edited, null, footer.agentId, NO_BOT)).toBe(
       `U123 [${formatSlackTs("0.1")}]: hey (edited)`,
     );
   });

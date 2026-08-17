@@ -587,15 +587,52 @@ describe("slack ambient inbound", () => {
     expect(drainFailures).toHaveLength(1);
   });
 
+  /**
+   * TEST_SCENARIO: An ambient thread's session has already been told to stay
+   * silent when in doubt, and a mention resumes that same session — so the
+   * addressed framing has to be stated, not left to the absence of a block.
+   */
   it("mentions in an ambient channel keep the addressed-turn treatment", async () => {
     const h = harness({ binding: ambient });
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
-    expect(String(h.prompts[0])).not.toContain("<reading-along>");
-    expect(String(h.prompts[0])).toContain("<how-to-respond>");
+    const prompt = String(h.prompts[0]);
+    expect(prompt).not.toContain("<reading-along>");
+    expect(prompt).toContain("<how-to-respond>");
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("You were @-mentioned");
+    expect(prompt).toContain("Slack user id U-BOT");
     expect(h.reactions()).toHaveLength(0);
     expect(h.messages()).toHaveLength(0);
+  });
+
+  /**
+   * TEST_SCENARIO: a plain message reaches the agent only where the binding is
+   * ambient (or in a DM), so the contract states the untagged-name form there
+   * and nowhere else — a prompt must not promise an inbound path the router
+   * drops.
+   */
+  it("states the untagged-name form where a plain message is actually delivered", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "anyone around?", { ts: "9.1" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("People address you three ways");
+    expect(prompt).toContain('by typing "dam" with no tag');
+    expect(prompt).not.toContain("only a tag reaches you");
+  });
+
+  it("read-along turns are framed as read-along, never as addressed", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "just chatting", { ts: "8.8" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("<reading-along>");
+    expect(prompt).not.toContain("<addressed-to-you>");
+    expect(prompt).toContain("Slack user id U-BOT");
   });
 });
 

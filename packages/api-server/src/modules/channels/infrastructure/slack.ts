@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
-import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import {
+  addressedGuidance,
+  ambientGuidance,
+  botHistoryLabel,
+  slackTurnContract,
+} from "./slack-turn-copy.js";
 import { match, P } from "ts-pattern";
 import {
   ambientThreadKey,
@@ -92,91 +97,6 @@ import {
   parseAgentFooter,
   type AgentFooter,
 } from "./agent-footer.js";
-
-function slackTurnContract(ctx: {
-  replyThreadTs: string;
-  eventTs: string;
-  brand: { name: string; short: string };
-  canLookupUsers: boolean;
-  batch?: { count: number; inThread: boolean };
-  isDirectMessage: boolean;
-  permalink: string | null;
-}): string {
-  const batchCount = ctx.batch?.count ?? 1;
-  const multi = batchCount > 1;
-  const replyBullet =
-    multi && ctx.batch?.inThread === false
-      ? "• reply — post a message threaded under the batched message you are " +
-        "answering: pass its [ts …] tag as threadTs (several messages share " +
-        "this turn, so an id-less reply is refused). Pass alsoSendToChannel " +
-        "when that message is old enough that people watching the channel " +
-        "would miss a thread-only reply."
-      : `• reply — post a message into this thread (threadTs="${ctx.replyThreadTs}"). ` +
-        "Pass alsoSendToChannel when this thread is old enough that people " +
-        "watching the channel would miss a thread-only reply.";
-  const reactIds = multi
-    ? "messageTs = the [ts …] tag of the message you are reacting to"
-    : `messageTs="${ctx.eventTs}"`;
-  return [
-    "<how-to-respond>",
-    `You appear in this Slack workspace as the bot "${ctx.brand.name}" ` +
-      `(mentioned as @${ctx.brand.short}). Nothing you write as plain text ` +
-      "is delivered to Slack — only tool calls reach the channel. To " +
-      "respond, call one of:",
-    replyBullet,
-    "• react — add a fitting emoji reaction to the message you're answering: a " +
-      "quiet acknowledgement that notifies no one — pick an emoji that suits " +
-      "the message (e.g. eyes on a bug report, tada on good news) " +
-      `(${reactIds}). Pass the Slack emoji short name, no colons.`,
-    "• no_reply_needed — end your turn without posting anything, when the " +
-      "message doesn't call for a response.",
-    ...(ctx.canLookupUsers
-      ? [
-          "People appear here as bare Slack ids like U024BE7LH, in speaker labels " +
-            'and inside message text — call describe_channel_users with channel="slack" ' +
-            "to learn who they are before naming someone, attributing work, or " +
-            "reasoning about their local time.",
-        ]
-      : []),
-    multi
-      ? `You're reading ${batchCount} messages from ` +
-        `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}. ` +
-        "Each [ts …] tag above is that message's own send time, in seconds " +
-        "since the Unix epoch."
-      : `You're answering a message sent ${formatSlackTs(ctx.eventTs)}, in ` +
-        `${ctx.isDirectMessage ? "a 1:1 direct message" : "a shared channel or group DM"}` +
-        (ctx.permalink ? ` (permalink: ${ctx.permalink})` : "") +
-        ".",
-    "These instructions apply to the message they arrive with, not to this " +
-      "conversation as a whole — a later message carries its own. A message " +
-      "that arrives with no such block didn't come from Slack: answer it " +
-      "where it arrived, in plain text, and post to Slack for it only if " +
-      "you're asked to.",
-    "If a tool is deferred, load it via ToolSearch first.",
-    "</how-to-respond>",
-    channelNetworkAccessGuidance(ctx.brand.name),
-  ].join("\n");
-}
-
-function ambientGuidance(brand: { name: string }): string {
-  return [
-    "<reading-along>",
-    "You are reading along in a shared Slack channel; the following " +
-      "message(s) were not @-mentions. A message that calls you by name — " +
-      `"${brand.name}", or the name you know yourself by — is addressed to ` +
-      "you: answer it as you would a mention. Otherwise chime in only when " +
-      "you can clearly help — answer a question you know the answer to, pick " +
-      "up a task someone described, or flag a clear mistake. If in doubt, " +
-      "stay silent by calling no_reply_needed.",
-    "When a message is worth engaging with, open with a fitting emoji " +
-      "reaction before you do anything else — it notifies no one and is a " +
-      "quiet signal that you have picked it up. Choose an emoji that suits " +
-      "the message rather than a rote one, and let the reaction stand alone " +
-      "as your whole response when a full reply isn't warranted. Don't react " +
-      "to messages you would otherwise stay silent on.",
-    "</reading-along>",
-  ].join("\n");
-}
 
 function framePrompt(opts: {
   contract: string;
@@ -557,8 +477,13 @@ async function getContextMessages(
   channel: string,
   ts: string,
   readingAgentId: string,
-  threadTs?: string,
-): Promise<{ lines: string[]; hasAgentAuthored: boolean }> {
+  threadTs: string | undefined,
+  bot: { userId: string | null; label: string },
+): Promise<{
+  lines: string[];
+  hasAgentAuthored: boolean;
+  hasUnattributedBot: boolean;
+}> {
   const raw = threadTs
     ? await gateway.getThreadReplies({ channel, threadTs, limit: 50 })
     : (await gateway.getChannelHistory({ channel, limit: 10 }))
@@ -566,14 +491,16 @@ async function getContextMessages(
         .reverse();
 
   let hasAgentAuthored = false;
+  let hasUnattributedBot = false;
   const lines = raw
     .filter((m) => m.ts !== ts)
     .map((m) => {
       const footer = parseAgentFooter(m);
       if (footer) hasAgentAuthored = true;
-      return labelHistoryMessage(m, footer, readingAgentId);
+      else if (bot.userId && m.user === bot.userId) hasUnattributedBot = true;
+      return labelHistoryMessage(m, footer, readingAgentId, bot);
     });
-  return { lines, hasAgentAuthored };
+  return { lines, hasAgentAuthored, hasUnattributedBot };
 }
 
 export interface ChannelRegistry {
@@ -607,6 +534,7 @@ export interface SlackWorker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  declineTurn(instanceName: string): Promise<{ ok: true } | { error: string }>;
   describeUsers(
     instanceName: string,
     userIds: string[],
@@ -747,14 +675,19 @@ async function turnContractContext(
   channel: string,
   eventTs: string,
   opts?: { batched?: boolean },
-): Promise<{ canLookupUsers: boolean; permalink: string | null }> {
-  const [lookup, permalink] = await Promise.all([
+): Promise<{
+  canLookupUsers: boolean;
+  permalink: string | null;
+  botUserId: string | null;
+}> {
+  const [lookup, permalink, botUserId] = await Promise.all([
     canLookupUsers(gw),
     opts?.batched
       ? Promise.resolve(null)
       : gw.getPermalink(channel, eventTs).catch(() => null),
+    gw.getBotUserId().catch(() => null),
   ]);
-  return { canLookupUsers: lookup, permalink };
+  return { canLookupUsers: lookup, permalink, botUserId };
 }
 
 export function createSlackWorker(
@@ -787,6 +720,8 @@ export function createSlackWorker(
     eventTs: string;
     sessionId?: string;
     releaseAttendance?: () => void;
+    posted?: boolean;
+    declined?: boolean;
   };
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
@@ -886,7 +821,9 @@ export function createSlackWorker(
     match: (ref: TurnRef) => boolean,
   ) {
     const engaged = findTurnRef(instanceName, match);
-    if (engaged) lastTurn.set(instanceName, engaged);
+    if (!engaged) return;
+    engaged.posted = true;
+    lastTurn.set(instanceName, engaged);
   }
 
   const userCache = new Map<
@@ -913,6 +850,18 @@ export function createSlackWorker(
     "This agent is handling more than one Slack thread right now — pass the " +
     "messageTs shown in your turn instructions so this inspects the message " +
     "you mean.";
+
+  async function resolveAgentDisplayName(
+    instanceName: string,
+  ): Promise<string | null> {
+    try {
+      const agent = await agents().get(instanceName);
+      const name = agent?.name?.trim();
+      return name && name !== instanceName ? name : null;
+    } catch {
+      return null;
+    }
+  }
 
   async function resolveAgentFooter(
     instanceName: string,
@@ -1058,6 +1007,7 @@ export function createSlackWorker(
     teamId?: string;
     images: FetchedImage[];
     files: FetchedFile[];
+    ambient: boolean;
   }) {
     if (!gateway) return;
     const gw = gateway;
@@ -1077,13 +1027,20 @@ export function createSlackWorker(
     });
     presenter.setThinking();
 
+    const isDirectMessage = isDirectMessageId(ctx.channel);
+    const [turnContext, agentName] = await Promise.all([
+      turnContractContext(gw, ctx.channel, ctx.eventTs),
+      resolveAgentDisplayName(instanceName),
+    ]);
+    const { botUserId, ...contractContext } = turnContext;
     const contract = slackTurnContract({
       replyThreadTs: ctx.threadTs,
       eventTs: ctx.eventTs,
-      brand,
-      isDirectMessage: isDirectMessageId(ctx.channel),
-      ...(await turnContractContext(gw, ctx.channel, ctx.eventTs)),
+      identity: { brand, botUserId, agentName },
+      reach: { isDirectMessage, ambient: ctx.ambient },
+      ...contractContext,
     });
+    const guidance = addressedGuidance({ isDirectMessage, botUserId });
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
@@ -1133,13 +1090,17 @@ export function createSlackWorker(
           const delivered = await deliverFiles();
           return framePrompt({
             contract,
+            guidance,
             text: ctx.text + delivered.withheldNote,
             images: ctx.images,
             files: delivered.files,
           });
         },
         buildFreshPrompt: () =>
-          buildThreadPrompt(gw, ctx, contract, { deliver: deliverFiles }),
+          buildThreadPrompt(gw, ctx, contract, {
+            guidance,
+            deliver: deliverFiles,
+          }),
         onWaking,
         onImagesDropped,
         onUpdate: presenter.onUpdate,
@@ -1203,6 +1164,23 @@ export function createSlackWorker(
       endTurn(instanceName, turnRef, {
         harnessMayStillRun: ghostTurn || failureReason === "acp-error",
       });
+      if (
+        failureReason === undefined &&
+        !ghostTurn &&
+        !turnRef.posted &&
+        !turnRef.declined
+      ) {
+        getLogger().warn(
+          {
+            agentId: instanceName,
+            channelId: ctx.channel,
+            threadTs: ctx.threadTs,
+            eventTs: ctx.eventTs,
+          },
+          "slack.turn.unanswered: the agent finished an addressed turn without " +
+            "posting a reply or a reaction",
+        );
+      }
       await presenter.clearStatus();
       emit({
         type: EventType.ChannelTurnRelayed,
@@ -1232,16 +1210,25 @@ export function createSlackWorker(
     contract: string,
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
   ): Promise<string | ContentBlock[]> {
-    const { lines, hasAgentAuthored } = await getContextMessages(
-      gw,
-      ctx.channel,
-      ctx.eventTs,
-      ctx.instanceName,
-      ctx.hasThread ? ctx.threadTs : undefined,
-    );
-    const legend = hasAgentAuthored
-      ? historyLegend(await canLookupUsers(gw))
-      : undefined;
+    const bot = {
+      userId: await gw.getBotUserId().catch(() => null),
+      label: botHistoryLabel(brand),
+    };
+    const { lines, hasAgentAuthored, hasUnattributedBot } =
+      await getContextMessages(
+        gw,
+        ctx.channel,
+        ctx.eventTs,
+        ctx.instanceName,
+        ctx.hasThread ? ctx.threadTs : undefined,
+        bot,
+      );
+    const legend =
+      hasAgentAuthored || hasUnattributedBot
+        ? historyLegend(await canLookupUsers(gw), {
+            botLabel: hasUnattributedBot ? bot.label : null,
+          })
+        : undefined;
     const delivered = await opts?.deliver?.();
     return framePrompt({
       contract,
@@ -1647,6 +1634,7 @@ export function createSlackWorker(
         images: fetched.images,
         files: fetched.files,
         speakerLabel: !opts.directMessage,
+        ambient: binding.ambient === true,
       });
     } finally {
       fetched.release();
@@ -1674,6 +1662,7 @@ export function createSlackWorker(
     images: FetchedImage[];
     files: FetchedFile[];
     speakerLabel?: boolean;
+    ambient: boolean;
   }) {
     if (!gateway) return;
 
@@ -1716,6 +1705,7 @@ export function createSlackWorker(
       teamId: args.teamId,
       images: args.images,
       files: args.files,
+      ambient: args.ambient,
     });
   }
 
@@ -1758,17 +1748,25 @@ export function createSlackWorker(
 
     let outcome: TurnOutcome = "failure";
     let failureReason: string | undefined;
+    const agentName = await resolveAgentDisplayName(args.instanceName);
+    const { botUserId, ...contractContext } = await turnContractContext(
+      gw,
+      args.channel,
+      args.eventTs,
+      { batched: args.messages.length > 1 },
+    );
     const contract = slackTurnContract({
       replyThreadTs: args.replyThreadTs,
       eventTs: args.eventTs,
-      brand,
       batch: { count: args.messages.length, inThread: args.hasThread },
-      isDirectMessage: isDirectMessageId(args.channel),
-      ...(await turnContractContext(gw, args.channel, args.eventTs, {
-        batched: args.messages.length > 1,
-      })),
+      identity: { brand, botUserId, agentName },
+      reach: {
+        isDirectMessage: isDirectMessageId(args.channel),
+        ambient: true,
+      },
+      ...contractContext,
     });
-    const guidance = ambientGuidance(brand);
+    const guidance = ambientGuidance(brand, agentName);
 
     let delivery: Promise<TurnDelivery>;
     const deliverFiles = () =>
@@ -2189,10 +2187,26 @@ export function createSlackWorker(
             };
           }
         }
+        noteEngagedTurn(instanceName, (ref) => ref.channel === target.id);
         return { ok: true as const };
       } catch (err) {
         return { error: formatError(err) };
       }
+    },
+
+    async declineTurn(instanceName: string) {
+      const turn = resolveTurn(instanceName, "reply");
+      if (!("ref" in turn)) return { ok: true as const };
+      turn.ref.declined = true;
+      getLogger().info(
+        {
+          agentId: instanceName,
+          channelId: turn.ref.channel,
+          threadTs: turn.ref.threadTs,
+        },
+        "slack.turn.declined: the agent chose not to answer",
+      );
+      return { ok: true as const };
     },
 
     async reply(instanceName: string, args: ChannelReply) {

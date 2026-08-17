@@ -1,4 +1,5 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
+import { configureLogger } from "../../core/logger.js";
 import { describe, it, expect, vi } from "vitest";
 import { slackThreadKey, type AgentsService } from "api-server-api";
 import {
@@ -44,6 +45,7 @@ function harness(opts: {
   ensureReady?: AgentsService["ensureReady"];
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
+  agentName?: string;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -54,6 +56,9 @@ function harness(opts: {
   };
   const agents = {
     ensureReady: opts.ensureReady ?? (async () => {}),
+    ...(opts.agentName !== undefined
+      ? { get: async () => ({ name: opts.agentName }) }
+      : {}),
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -90,13 +95,13 @@ function harness(opts: {
     async start() {
       await worker.start("agent-1", {} as StoredChannelConfig);
     },
-    async mention(over?: { user?: string; teamId?: string }) {
+    async mention(over?: { user?: string; teamId?: string; text?: string }) {
       await worker.start("agent-1", {} as StoredChannelConfig);
       await gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",
         ts: "1.1",
-        text: "hi agent",
+        text: over?.text ?? "hi agent",
         teamId: "teamId" in (over ?? {}) ? over?.teamId : "T-e2e",
       });
     },
@@ -869,6 +874,186 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain("a later message carries its own");
     expect(prompt).toContain("didn't come from Slack");
     expect(prompt).toContain("post to Slack for it only if you're asked to");
+  });
+
+  it("names the bot's own Slack id, so a tag of it reads as self", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    h.gw.setBotUserId("U-BOT");
+    await h.mention({ text: "<@U-BOT> say hi" });
+    await tick();
+
+    expect(prompt).toContain(
+      'the bot "DAM" (mentioned as @dam, Slack user id U-BOT)',
+    );
+    expect(prompt).toContain("by tagging the bot (U-BOT in the text)");
+    expect(prompt).toContain("the name your posts are signed with");
+    expect(prompt).toContain("People address you two ways");
+    expect(prompt).not.toContain('by typing "dam" with no tag');
+    expect(prompt).toContain("only a tag reaches you");
+    expect(prompt).toContain(
+      "a post from it is yours only if its footer names you",
+    );
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("You were @-mentioned");
+    expect(prompt).toContain("the mention of U-BOT in it is you");
+    expect(prompt).not.toContain("<reading-along>");
+  });
+
+  /**
+   * TEST_SCENARIO: The api-server publishes this name in every footer, so it is
+   * the name people type. A workspace persona may go by another, so leaving the
+   * agent to infer "the name you know yourself by" misses the published one.
+   */
+  it("delivers the name the agent's posts are signed with, and makes it the authorship test", async () => {
+    let prompt = "";
+    const h = harness({
+      agentName: "Buginator",
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    h.gw.setBotUserId("U-BOT");
+    await h.mention({ text: "Buginator can you look at this" });
+    await tick();
+
+    expect(prompt).toContain(
+      'by the name your posts here are signed with, "Buginator"',
+    );
+    expect(prompt).toContain("any other name you know yourself by");
+    expect(prompt).toContain('yours only if its footer reads "Buginator"');
+    expect(prompt).not.toContain("agent-1");
+  });
+
+  it("omits the signed name rather than leaking the instance id when it can't be resolved", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain(
+      "the name your posts are signed with, the one you know yourself by",
+    );
+    expect(prompt).toContain("its footer names you");
+    expect(prompt).not.toContain("agent-1");
+  });
+
+  it("still frames the turn as addressed when Slack won't say who the bot is", async () => {
+    let prompt = "";
+    const h = harness({
+      sendPrompt: async (p) => {
+        prompt = typeof p === "string" ? p : JSON.stringify(p);
+        return "ok";
+      },
+    });
+    h.gw.setBotUserId(null);
+    await h.mention();
+    await tick();
+
+    expect(prompt).toContain('the bot "DAM" (mentioned as @dam).');
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain(
+      "You were @-mentioned: this message is addressed to you.",
+    );
+    expect(prompt).not.toContain("Slack user id");
+  });
+
+  it("warns when an addressed turn ends without a reply or a reaction", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+
+    const h = harness({ sendPrompt: async () => "prose, never delivered" });
+    await h.mention();
+    await tick();
+
+    const unanswered = lines
+      .map((l) => JSON.parse(l))
+      .filter((r) => String(r.msg).startsWith("slack.turn.unanswered"));
+    configureLogger({ level: "info" });
+    expect(unanswered).toHaveLength(1);
+    expect(unanswered[0]).toMatchObject({
+      agentId: "agent-1",
+      channelId: "C1",
+      threadTs: "1.1",
+    });
+  });
+
+  it("stays quiet when the agent answers the turn", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+
+    const h = harness({
+      sendPrompt: async () => {
+        await h.worker.reply("agent-1", { text: "answered" });
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+    configureLogger({ level: "info" });
+
+    expect(
+      lines.filter((l) => l.includes("slack.turn.unanswered")),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * TEST_SCENARIO: no_reply_needed is the contract's own sanctioned way to end a
+   * turn, so it must not read as the silence bug. It only can if the tool
+   * reaches the worker — as a pure MCP no-op it left a decline and a failure
+   * byte-identical.
+   */
+  it("does not warn when the agent deliberately declines the turn", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "info", write: (line) => lines.push(line) });
+
+    const h = harness({
+      sendPrompt: async () => {
+        await h.worker.declineTurn("agent-1");
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+    configureLogger({ level: "info" });
+
+    const msgs = lines.map((l) => String(JSON.parse(l).msg));
+    expect(msgs.some((m) => m.startsWith("slack.turn.unanswered"))).toBe(false);
+    expect(msgs.some((m) => m.startsWith("slack.turn.declined"))).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: an agent may answer with a top-level post rather than a
+   * threaded reply. That reaches the channel, so the turn was answered.
+   */
+  it("stays quiet when the agent answers with a top-level post", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+
+    const h = harness({
+      sendPrompt: async () => {
+        await h.worker.postMessage("agent-1", "answered up top");
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+    configureLogger({ level: "info" });
+
+    expect(
+      lines.filter((l) => l.includes("slack.turn.unanswered")),
+    ).toHaveLength(0);
   });
 
   it("marks the agent channel-driven for the turn and releases it after", async () => {

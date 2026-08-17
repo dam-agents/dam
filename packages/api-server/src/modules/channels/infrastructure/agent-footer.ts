@@ -67,15 +67,23 @@ export function parseAgentFooter(
   return null;
 }
 
-export function historyLegend(canLookupUsers: boolean): string {
+export function historyLegend(
+  canLookupUsers: boolean,
+  opts: { botLabel: string | null },
+): string {
   const base =
     'In the conversation history below, a line prefixed "you (this agent):" is ' +
     'your own earlier post in this channel; "<name> (another agent):" is a ' +
     "different agent that posted here; everyone else is a human Slack user, " +
     "prefixed with their Slack id";
+  const bot = opts.botLabel
+    ? ` A line prefixed "${opts.botLabel}:" came from the bot but carries no ` +
+      "footer, so it is not yours unless you recognise it as your own."
+    : "";
   return canLookupUsers
-    ? `${base} — call describe_channel_users to find out who they are.`
-    : `${base}.`;
+    ? `${base} — call mcp__platform-outbound__describe_channel_users to find ` +
+        `out who they are.${bot}`
+    : `${base}.${bot}`;
 }
 
 export function formatSlackTs(ts: string): string {
@@ -94,12 +102,15 @@ export function labelHistoryMessage(
   message: SlackMessage,
   footer: { agentId: string; agentName: string } | null,
   readingAgentId: string,
+  bot: { userId: string | null; label: string },
 ): string {
   const label = footer
     ? footer.agentId === readingAgentId
       ? "you (this agent)"
       : `${footer.agentName || footer.agentId} (another agent)`
-    : (message.user ?? "unknown");
+    : bot.userId && message.user === bot.userId
+      ? bot.label
+      : (message.user ?? "unknown");
   const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
   const edited = message.edited ? " (edited)" : "";
   return `${label}${when}: ${message.text ?? ""}${edited}`;

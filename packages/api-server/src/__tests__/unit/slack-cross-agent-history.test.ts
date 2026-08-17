@@ -115,6 +115,41 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).not.toContain("agent-99");
   });
 
+  /**
+   * TEST_SCENARIO: Platform notices (wake failures, the still-starting note) come
+   * from the install-wide bot with no footer to credit. Left as a bare Slack id
+   * they read as a human — and, because the contract tells the agent that id is
+   * how it gets tagged, as the agent itself.
+   */
+  it("names a footer-less bot post as the bot, not as the reading agent or a human", async () => {
+    const h = harness();
+    h.gw.setHistory([
+      {
+        ts: "0.1",
+        user: "U-BOT",
+        text: "The agent is still starting — hang on",
+      },
+      { ts: "0.2", user: "U999", text: "ok" },
+    ]);
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(
+      `the DAM bot (unattributed) [${formatSlackTs("0.1")}]: The agent is still starting`,
+    );
+    expect(prompt).not.toContain("U-BOT [");
+    expect(prompt).not.toContain("you (this agent) [");
+    expect(prompt).toContain('A line prefixed "the DAM bot (unattributed):"');
+    expect(prompt).toContain("not yours unless you recognise it as your own");
+  });
+
   it("omits the legend when history has no agent-authored messages", async () => {
     const h = harness();
     h.gw.setHistory([{ ts: "0.1", user: "U999", text: "just humans here" }]);
@@ -162,10 +197,10 @@ describe("slack cross-agent history attribution", () => {
 
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain(
-      "call describe_channel_users to find out who they are",
+      "call mcp__platform-outbound__describe_channel_users to find out who they are",
     );
     expect(prompt).toContain(
-      'call describe_channel_users with channel="slack"',
+      'call mcp__platform-outbound__describe_channel_users with channel="slack"',
     );
   });
 

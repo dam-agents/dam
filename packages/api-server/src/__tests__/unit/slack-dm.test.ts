@@ -145,6 +145,19 @@ describe("slack 1:1 DM", () => {
     expect(prompt).not.toContain("<@");
   });
 
+  it("frames a DM as addressed to the agent, without claiming a mention", async () => {
+    const h = harness({ binding: boundDm });
+    await h.directMessage("hello privately");
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("every message here is addressed to you");
+    expect(prompt).not.toContain("You were @-mentioned");
+    expect(prompt).toContain("Slack user id U-BOT");
+    expect(prompt).toContain('by typing "dam" with no tag');
+    expect(prompt).not.toContain("only a tag reaches you");
+  });
+
   it("logs a basis:'place' allow keyed on the DM conversation", async () => {
     const h = harness({ binding: boundDm });
     await h.directMessage("hello privately", "D-42");

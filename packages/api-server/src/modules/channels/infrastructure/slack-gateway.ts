@@ -163,4 +163,5 @@ export interface SlackGateway {
   openDirectMessage(userId: string): Promise<string>;
   getPermalink(channel: string, ts: string): Promise<string | null>;
   getGrantedScopes(): Promise<Set<string> | null>;
+  getBotUserId(): Promise<string | null>;
 }

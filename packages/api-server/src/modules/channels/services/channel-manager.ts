@@ -91,6 +91,7 @@ interface Worker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  declineTurn?(instanceName: string): Promise<{ ok: true } | { error: string }>;
   describeUsers?(
     instanceName: string,
     userIds: string[],
@@ -129,6 +130,10 @@ export interface ChannelManager {
     channelType: ChannelType,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  declineTurn(
+    instanceName: string,
+    channelType: ChannelType,
+  ): Promise<{ ok: true } | { error: string }>;
   describeUsers(
     instanceName: string,
     channelType: ChannelType,
@@ -149,6 +154,7 @@ export type ChannelRpcRequest = {
     | "postMessage"
     | "reply"
     | "react"
+    | "declineTurn"
     | "describeUsers"
     | "supportsUserLookup"
     | "describeMessageReactions"
@@ -254,6 +260,14 @@ export function createChannelManager(deps: {
           error: `reactions not supported on ${channelType}`,
         });
       return worker.react(instanceName, reaction);
+    },
+    declineTurn: (instanceName: string, channelType: ChannelType) => {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.declineTurn)
+        return Promise.resolve({
+          error: `declining a turn is not supported on ${channelType}`,
+        });
+      return worker.declineTurn(instanceName);
     },
     describeUsers: (
       instanceName: string,
@@ -412,6 +426,12 @@ export function createChannelManager(deps: {
         "react",
         [instanceName, channelType, reaction],
         () => localHandlers.react(instanceName, channelType, reaction),
+      );
+    },
+
+    declineTurn(instanceName, channelType) {
+      return dispatchResult("declineTurn", [instanceName, channelType], () =>
+        localHandlers.declineTurn(instanceName, channelType),
       );
     },
 
