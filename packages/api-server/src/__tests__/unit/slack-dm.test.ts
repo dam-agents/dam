@@ -154,6 +154,8 @@ describe("slack 1:1 DM", () => {
     expect(prompt).toContain("every message here is addressed to you");
     expect(prompt).not.toContain("You were @-mentioned");
     expect(prompt).toContain("Slack user id U-BOT");
+    expect(prompt).toContain('by typing "dam" with no tag');
+    expect(prompt).not.toContain("only a tag reaches you");
   });
 
   it("logs a basis:'place' allow keyed on the DM conversation", async () => {

@@ -607,6 +607,23 @@ describe("slack ambient inbound", () => {
     expect(h.messages()).toHaveLength(0);
   });
 
+  /**
+   * TEST_SCENARIO: a plain message reaches the agent only where the binding is
+   * ambient (or in a DM), so the contract states the untagged-name form there
+   * and nowhere else — a prompt must not promise an inbound path the router
+   * drops.
+   */
+  it("states the untagged-name form where a plain message is actually delivered", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "anyone around?", { ts: "9.1" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("People address you three ways");
+    expect(prompt).toContain('by typing "dam" with no tag');
+    expect(prompt).not.toContain("only a tag reaches you");
+  });
+
   it("read-along turns are framed as read-along, never as addressed", async () => {
     const h = harness({ binding: ambient });
     await h.message(STRANGER, "just chatting", { ts: "8.8" });

@@ -892,10 +892,12 @@ describe("slack turn — network-access framing and attendance", () => {
       'the bot "DAM" (mentioned as @dam, Slack user id U-BOT)',
     );
     expect(prompt).toContain("by tagging the bot (U-BOT in the text)");
-    expect(prompt).toContain('by typing "dam" with no tag at all');
-    expect(prompt).toContain("or by name");
+    expect(prompt).toContain("the name your posts are signed with");
+    expect(prompt).toContain("People address you two ways");
+    expect(prompt).not.toContain('by typing "dam" with no tag');
+    expect(prompt).toContain("only a tag reaches you");
     expect(prompt).toContain(
-      "a post from it is yours only if the name in its footer is yours",
+      "a post from it is yours only if its footer names you",
     );
     expect(prompt).toContain("<addressed-to-you>");
     expect(prompt).toContain("You were @-mentioned");
@@ -921,9 +923,10 @@ describe("slack turn — network-access framing and attendance", () => {
     await h.mention({ text: "Buginator can you look at this" });
     await tick();
 
-    expect(prompt).toContain('your posts here are signed "Buginator"');
-    expect(prompt).toContain("so that is what people will call you");
-    expect(prompt).toContain("alongside any name you know yourself by");
+    expect(prompt).toContain(
+      'by the name your posts here are signed with, "Buginator"',
+    );
+    expect(prompt).toContain("any other name you know yourself by");
     expect(prompt).toContain('yours only if its footer reads "Buginator"');
     expect(prompt).not.toContain("agent-1");
   });
@@ -939,8 +942,10 @@ describe("slack turn — network-access framing and attendance", () => {
     await h.mention();
     await tick();
 
-    expect(prompt).toContain("the one you know yourself by");
-    expect(prompt).toContain("the name in its footer is yours");
+    expect(prompt).toContain(
+      "the name your posts are signed with, the one you know yourself by",
+    );
+    expect(prompt).toContain("its footer names you");
     expect(prompt).not.toContain("agent-1");
   });
 
@@ -991,6 +996,54 @@ describe("slack turn — network-access framing and attendance", () => {
     const h = harness({
       sendPrompt: async () => {
         await h.worker.reply("agent-1", { text: "answered" });
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+    configureLogger({ level: "info" });
+
+    expect(
+      lines.filter((l) => l.includes("slack.turn.unanswered")),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * TEST_SCENARIO: no_reply_needed is the contract's own sanctioned way to end a
+   * turn, so it must not read as the silence bug. It only can if the tool
+   * reaches the worker — as a pure MCP no-op it left a decline and a failure
+   * byte-identical.
+   */
+  it("does not warn when the agent deliberately declines the turn", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "info", write: (line) => lines.push(line) });
+
+    const h = harness({
+      sendPrompt: async () => {
+        await h.worker.declineTurn("agent-1");
+        return "ok";
+      },
+    });
+    await h.mention();
+    await tick();
+    configureLogger({ level: "info" });
+
+    const msgs = lines.map((l) => String(JSON.parse(l).msg));
+    expect(msgs.some((m) => m.startsWith("slack.turn.unanswered"))).toBe(false);
+    expect(msgs.some((m) => m.startsWith("slack.turn.declined"))).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: an agent may answer with a top-level post rather than a
+   * threaded reply. That reaches the channel, so the turn was answered.
+   */
+  it("stays quiet when the agent answers with a top-level post", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+
+    const h = harness({
+      sendPrompt: async () => {
+        await h.worker.postMessage("agent-1", "answered up top");
         return "ok";
       },
     });

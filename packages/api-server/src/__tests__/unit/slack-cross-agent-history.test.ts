@@ -197,10 +197,10 @@ describe("slack cross-agent history attribution", () => {
 
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain(
-      "call describe_channel_users to find out who they are",
+      "call mcp__platform-outbound__describe_channel_users to find out who they are",
     );
     expect(prompt).toContain(
-      'call describe_channel_users with channel="slack"',
+      'call mcp__platform-outbound__describe_channel_users with channel="slack"',
     );
   });
 

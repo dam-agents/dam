@@ -32,16 +32,21 @@ export function createBoltSlackGateway(
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = null;
 
+  let authTested: Promise<void> | null = null;
+
   async function authTest() {
     if (!app) return;
-    try {
-      const result = await app.client.auth.test();
-      const scopes = result.response_metadata?.scopes;
-      if (scopes) grantedScopes = new Set(scopes);
-      if (typeof result.user_id === "string") botUserId = result.user_id;
-    } catch {
-      return;
-    }
+    authTested ??= (async () => {
+      try {
+        const result = await app!.client.auth.test();
+        const scopes = result.response_metadata?.scopes;
+        if (scopes) grantedScopes = new Set(scopes);
+        if (typeof result.user_id === "string") botUserId = result.user_id;
+      } catch {
+        authTested = null;
+      }
+    })();
+    await authTested;
   }
 
   return {
@@ -138,6 +143,7 @@ export function createBoltSlackGateway(
         app = null;
         grantedScopes = null;
         botUserId = null;
+        authTested = null;
       }
     },
 

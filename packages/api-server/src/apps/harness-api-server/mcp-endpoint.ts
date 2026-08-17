@@ -460,7 +460,10 @@ export function createMcpSession(
           "Optional short note on why no reply was needed (not posted).",
         ),
     },
-    async () => textResult("No reply sent."),
+    async () => {
+      await deps.channelManager.declineTurn(agentId, ChannelType.Slack);
+      return textResult("No reply sent.");
+    },
   );
 
   server.tool(
