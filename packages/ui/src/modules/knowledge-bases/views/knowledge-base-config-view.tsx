@@ -4,6 +4,7 @@ import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { READ_ONLY_FIELD } from "@/components/ui/read-only-field";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -14,7 +15,6 @@ import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-d
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { ConnectionsSection } from "../../sandboxes/components/connections-section.js";
-import { READ_ONLY_FIELD } from "../../sandboxes/components/sandbox-setup-section.js";
 import { useSandboxSettingsForm } from "../../sandboxes/hooks/use-sandbox-settings-form.js";
 import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
 
