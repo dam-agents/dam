@@ -4,6 +4,7 @@ export const SCHEDULES_QUEUE = "schedules";
 
 interface ScheduleJob {
   scheduleId: string;
+  fireAtMs?: number;
 }
 
 export interface ScheduleQueue {
@@ -35,7 +36,7 @@ export function createScheduleQueue(
       const delayMs = Math.max(0, fireAt.getTime() - now.getTime());
       await queue.add(
         "fire",
-        { scheduleId },
+        { scheduleId, fireAtMs: fireAt.getTime() },
         {
           jobId: `schedule-${scheduleId}-${fireAt.getTime()}`,
           delay: delayMs,
@@ -57,7 +58,7 @@ export function createScheduleQueue(
 
 export interface StartScheduleWorkerOpts {
   connection: ConnectionOptions;
-  handler: (scheduleId: string) => Promise<void>;
+  handler: (scheduleId: string, fireAt: Date) => Promise<void>;
   log: (msg: string) => void;
 }
 
@@ -70,7 +71,11 @@ export function startScheduleWorker(
 ): RunningWorker {
   const worker = new Worker<ScheduleJob>(
     SCHEDULES_QUEUE,
-    async (job) => opts.handler(job.data.scheduleId),
+    async (job) =>
+      opts.handler(
+        job.data.scheduleId,
+        new Date(job.data.fireAtMs ?? Date.now()),
+      ),
     {
       connection: opts.connection,
       concurrency: 16,

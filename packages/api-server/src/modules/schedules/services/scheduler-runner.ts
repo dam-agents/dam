@@ -5,7 +5,7 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { emit, EventType } from "../../../events.js";
 
 export interface SchedulerRunner {
-  buildFireHandler(): (scheduleId: string) => Promise<void>;
+  buildFireHandler(): (scheduleId: string, fireAt: Date) => Promise<void>;
   sync(scheduleId: string): Promise<void>;
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
@@ -29,7 +29,7 @@ export function createSchedulerRunner(
   const now = deps.now ?? (() => new Date());
   const ttlSec = deps.triggerTtlSeconds ?? 3600;
 
-  async function fire(scheduleId: string): Promise<void> {
+  async function fire(scheduleId: string, fireAt: Date): Promise<void> {
     const sched = await deps.repo.getById(scheduleId);
     if (!sched) {
       log(`fire: schedule ${scheduleId} not found; dropping`);
@@ -40,7 +40,7 @@ export function createSchedulerRunner(
       return;
     }
 
-    const eventId = `${scheduleId}:${now().getTime()}`;
+    const eventId = `${scheduleId}:${fireAt.getTime()}`;
     const expiresAt = new Date(now().getTime() + ttlSec * 1000);
     const payload: Record<string, unknown> = {
       scheduleId,
@@ -79,6 +79,7 @@ export function createSchedulerRunner(
     const next = nextFireAt(sched.spec, now());
     await deps.repo.recordFire(scheduleId, result, next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
+    if (outcome === "failure") throw new Error(result);
   }
 
   return {
@@ -121,7 +122,11 @@ export function createSchedulerRunner(
     async restoreAll(): Promise<void> {
       const enabled = await deps.repo.listAllEnabled();
       for (const s of enabled) {
-        const next = nextFireAt(s.spec, now());
+        const stored = s.status?.nextRun ? new Date(s.status.nextRun) : null;
+        const next =
+          stored && stored.getTime() > now().getTime()
+            ? stored
+            : nextFireAt(s.spec, now());
         await deps.repo.setNextRun(s.id, next);
         if (next) await deps.queue.enqueue(s.id, next, now());
       }

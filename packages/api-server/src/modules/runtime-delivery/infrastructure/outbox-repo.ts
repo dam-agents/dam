@@ -290,14 +290,17 @@ export function createOutboxRepo(db: Db): OutboxRepo {
     },
 
     async insertEvent(input, tx = db): Promise<void> {
-      await tx.insert(runtimeEvents).values({
-        id: input.id,
-        agentId: input.agentId,
-        kind: input.kind,
-        payload: input.payload as object,
-        version: input.version,
-        expiresAt: input.expiresAt,
-      });
+      await tx
+        .insert(runtimeEvents)
+        .values({
+          id: input.id,
+          agentId: input.agentId,
+          kind: input.kind,
+          payload: input.payload as object,
+          version: input.version,
+          expiresAt: input.expiresAt,
+        })
+        .onConflictDoNothing();
     },
   };
 }
