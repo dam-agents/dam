@@ -65,21 +65,13 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createPermissionsSlice(...a),
 }));
 
-let draftSyncTeardown: (() => void) | null = null;
+let draftSyncStarted = false;
 
 export function startDraftSync(): void {
-  if (draftSyncTeardown !== null) return;
-  const stopForeignDrafts = onForeignDraftChange((key, draft) =>
+  if (draftSyncStarted) return;
+  draftSyncStarted = true;
+  onForeignDraftChange((key, draft) =>
     useStore.getState().applyForeignDraft(key, draft),
   );
-  const stopDraftFlush = flushDraftsOnHide();
-  draftSyncTeardown = () => {
-    stopForeignDrafts();
-    stopDraftFlush();
-  };
-}
-
-export function stopDraftSync(): void {
-  draftSyncTeardown?.();
-  draftSyncTeardown = null;
+  flushDraftsOnHide();
 }
