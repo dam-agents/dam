@@ -45,6 +45,7 @@ import { mintClientCredentialsToken } from "./client-credentials.js";
 import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
 import type { XactLock } from "../../../core/xact-lock.js";
 import { refreshOAuthAccessToken } from "./oauth-token.js";
+import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -238,16 +239,18 @@ export function createConnectionsService(deps: {
     });
 
     try {
-      const next = await refreshOAuthAccessToken({
-        conn,
-        auth,
-        engine: deps.oauthEngine,
-        templates: deps.templates,
-        secretStore: deps.secretStore,
-      });
-      await deps.repo.updateAuth(conn.id, {
-        ...withoutRefreshFailureMarker(auth),
-        expiresAt: next.expiresAt,
+      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+        const next = await refreshOAuthAccessToken({
+          conn,
+          auth,
+          engine: deps.oauthEngine,
+          templates: deps.templates,
+          secretStore: deps.secretStore,
+        });
+        await deps.repo.updateAuth(conn.id, {
+          ...withoutRefreshFailureMarker(auth),
+          expiresAt: next.expiresAt,
+        });
       });
     } catch (err) {
       securityLog("warn", "connection.client_secret_revive_failed", {
@@ -502,37 +505,39 @@ export function createConnectionsService(deps: {
         }
       }
 
-      const current = await deps.repo.listAgentGrants(agentId);
-      const currentIds = new Set(current.map((c) => c.connectionId));
-      const desiredIds = new Set(deduped);
+      await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+        const current = await deps.repo.listAgentGrants(agentId);
+        const currentIds = new Set(current.map((c) => c.connectionId));
+        const desiredIds = new Set(deduped);
 
-      const toGrant = deduped.filter((id) => !currentIds.has(id));
-      const toRevoke = current
-        .map((c) => c.connectionId)
-        .filter((id) => !desiredIds.has(id));
+        const toGrant = deduped.filter((id) => !currentIds.has(id));
+        const toRevoke = current
+          .map((c) => c.connectionId)
+          .filter((id) => !desiredIds.has(id));
 
-      for (const id of toGrant) await deps.repo.grant(id, agentId);
-      for (const id of toRevoke) await deps.repo.revoke(id, agentId);
+        for (const id of toGrant) await deps.repo.grant(id, agentId);
+        for (const id of toRevoke) await deps.repo.revoke(id, agentId);
 
-      if (toGrant.length > 0 || toRevoke.length > 0) {
-        securityLog("info", "connection.grants_set", {
-          category: "authz-list",
-          actor: deps.ownerId,
-          actorKind: "user",
+        if (toGrant.length > 0 || toRevoke.length > 0) {
+          securityLog("info", "connection.grants_set", {
+            category: "authz-list",
+            actor: deps.ownerId,
+            actorKind: "user",
+            agentId,
+            result: "success",
+            detail: { granted: toGrant, revoked: toRevoke },
+          });
+        }
+
+        const grantedConnections = deduped
+          .map((id) => ownedById.get(id))
+          .filter((c): c is Connection => c !== undefined);
+        await deps.fanOut.apply({
           agentId,
-          result: "success",
-          detail: { granted: toGrant, revoked: toRevoke },
+          ownerId: deps.ownerId,
+          grantedConnections,
+          allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
         });
-      }
-
-      const grantedConnections = deduped
-        .map((id) => ownedById.get(id))
-        .filter((c): c is Connection => c !== undefined);
-      await deps.fanOut.apply({
-        agentId,
-        ownerId: deps.ownerId,
-        grantedConnections,
-        allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
       });
     },
 

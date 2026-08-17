@@ -42,6 +42,7 @@ interface RefreshDeps {
   githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
+  connectionLock?: XactLock;
   refreshSkewSeconds?: number;
   backoffBaseMs?: number;
   backoffMaxMs?: number;
@@ -295,6 +296,10 @@ function parseRow(row: {
   };
 }
 
+export function connectionRefreshLockKey(connectionId: string): string {
+  return `connection:refresh:${connectionId}`;
+}
+
 async function refreshOne(
   conn: Connection,
   auth: Extract<ConnectionAuthConfig, { kind: "oauth" }>,
@@ -303,23 +308,31 @@ async function refreshOne(
     templates: ConnectionTemplateRegistry;
     secretStore: SecretStore;
     db: Db;
+    connectionLock?: XactLock;
   },
 ): Promise<void> {
-  const next = await refreshOAuthAccessToken({
-    conn,
-    auth,
-    engine: deps.engine,
-    templates: deps.templates,
-    secretStore: deps.secretStore,
+  const withLock = deps.connectionLock ?? createXactLock(deps.db);
+  await withLock(connectionRefreshLockKey(conn.id), async () => {
+    const current = await readAuth(deps.db, conn.id);
+    if (
+      !current ||
+      current.kind !== "oauth" ||
+      current.expiresAt !== auth.expiresAt
+    ) {
+      return;
+    }
+    const next = await refreshOAuthAccessToken({
+      conn,
+      auth: current,
+      engine: deps.engine,
+      templates: deps.templates,
+      secretStore: deps.secretStore,
+    });
+    await writeAuth(deps.db, conn.id, {
+      ...withoutRefreshFailureMarker(current),
+      expiresAt: next.expiresAt,
+    });
   });
-  const updatedAuth: ConnectionAuthConfig = {
-    ...withoutRefreshFailureMarker(auth),
-    expiresAt: next.expiresAt,
-  };
-  await deps.db
-    .update(connectionsTable)
-    .set({ auth: updatedAuth, updatedAt: new Date() })
-    .where(eq(connectionsTable.id, conn.id));
 }
 
 export async function remintOne(
@@ -329,6 +342,7 @@ export async function remintOne(
     engine: OAuthEngine;
     secretStore: SecretStore;
     db: Db;
+    connectionLock?: XactLock;
   },
 ): Promise<void> {
   const clientSecret = await deps.secretStore.getField(auth.clientSecretRef);
@@ -336,24 +350,37 @@ export async function remintOne(
     throw new Error(`client secret missing at ${auth.clientSecretRef.path}`);
   }
 
-  const next = await mintClientCredentialsToken(deps.engine, {
-    connectionRef: `connection:${conn.id}:${conn.templateId}`,
-    auth,
-    clientSecret,
-  });
+  const withLock = deps.connectionLock ?? createXactLock(deps.db);
+  await withLock(connectionRefreshLockKey(conn.id), async () => {
+    const current = await readAuth(deps.db, conn.id);
+    if (!current || current.kind !== "client-credentials") return;
 
-  await deps.secretStore.putFields(auth.accessTokenRef, {
-    access_token: next.accessToken,
-    ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+    const next = await mintClientCredentialsToken(deps.engine, {
+      connectionRef: `connection:${conn.id}:${conn.templateId}`,
+      auth: current,
+      clientSecret,
+    });
+
+    await deps.secretStore.putFields(auth.accessTokenRef, {
+      access_token: next.accessToken,
+      ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+    });
+    await writeAuth(deps.db, conn.id, {
+      ...withoutRefreshFailureMarker(current),
+      expiresAt: next.expiresAt,
+    });
   });
-  const updatedAuth: ConnectionAuthConfig = {
-    ...withoutRefreshFailureMarker(auth),
-    expiresAt: next.expiresAt,
-  };
-  await deps.db
+}
+
+async function writeAuth(
+  db: Db,
+  connectionId: string,
+  auth: ConnectionAuthConfig,
+): Promise<void> {
+  await db
     .update(connectionsTable)
-    .set({ auth: updatedAuth, updatedAt: new Date() })
-    .where(eq(connectionsTable.id, conn.id));
+    .set({ auth, updatedAt: new Date() })
+    .where(eq(connectionsTable.id, connectionId));
 }
 
 export async function remintGitHubAppOne(
@@ -396,15 +423,22 @@ export async function remintGitHubAppOne(
   });
 }
 
-async function readGitHubAppAuth(
+async function readAuth(
   db: Db,
   id: string,
-): Promise<Extract<ConnectionAuthConfig, { kind: "github-app" }> | null> {
+): Promise<ConnectionAuthConfig | null> {
   const rows = (await db
     .select()
     .from(connectionsTable)
     .where(eq(connectionsTable.id, id))) as { auth: unknown }[];
   const parsed = authConfigSchema.safeParse(rows[0]?.auth);
-  if (!parsed.success || parsed.data.kind !== "github-app") return null;
-  return parsed.data;
+  return parsed.success ? parsed.data : null;
+}
+
+async function readGitHubAppAuth(
+  db: Db,
+  id: string,
+): Promise<Extract<ConnectionAuthConfig, { kind: "github-app" }> | null> {
+  const auth = await readAuth(db, id);
+  return auth?.kind === "github-app" ? auth : null;
 }

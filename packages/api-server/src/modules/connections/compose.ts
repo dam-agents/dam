@@ -60,6 +60,7 @@ export function composeConnectionsAtBoot(
     githubAppEngine,
     templates,
     secretStore: opts.secretStore,
+    connectionLock: createXactLock(opts.db),
   });
 
   return { templates, oauthEngine, githubAppEngine, refreshLoop };
