@@ -462,7 +462,9 @@ run = "zizmor --min-confidence medium .github/workflows/"
 ["common:check:pinact"]
 description = "Every GitHub Actions `uses:` must be pinned to a full commit SHA"
 dir = "{{config_root}}"
-run = "pinact run --check"
+# -no-api keeps this purely syntactic: upstream retagging a release must
+# never fail a build that did not change. Bump pins with `pinact run -u`.
+run = "pinact run -fix=false -no-api"
 
 ["common:check:resolve-image"]
 description = "Assert the image dependency graph in scripts/resolve-image.sh (build-vs-reuse logic)"
