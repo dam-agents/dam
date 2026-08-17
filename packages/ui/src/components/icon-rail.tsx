@@ -3,7 +3,7 @@ import {
   type CarbonIconType,
   Chemistry,
   Close,
-  ContainerSoftware,
+  Code,
   Folders,
   Home,
   Settings,
@@ -93,7 +93,7 @@ export function IconRail({
   };
   const sandboxes: Destination = {
     label: "Coding agents",
-    icon: ContainerSoftware,
+    icon: Code,
     active: view === "list" || pathname === "/agent-setup",
     badge: 0,
     navigate: () => {

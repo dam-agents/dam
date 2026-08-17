@@ -4,8 +4,11 @@ import {
   Checkmark,
   Chemistry,
   Close,
+  Code,
   Document,
   Folders,
+  Hashtag,
+  OverflowMenuVertical,
   Settings,
   Time,
   WarningAlt,
@@ -87,206 +90,51 @@ export function ComparisonView() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════
-         SECTION: BLOCKED / NEEDS ACTION
+         CODING AGENTS
          ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Blocked — Needs Your Decision" />
+      <SectionHeader title="Coding Agents" />
 
-      <CardEntry
-        number={1}
-        title="Approval Card (Network Request)"
-        description="Agent name (16px medium) + 'wants to access' context + mono request. Single 'Allow' button visible; all other actions (allow permanently, allow all of host, deny, deny permanently) in overflow menu."
-      >
-        {networkApprovals[0] ? (
-          <ApprovalVariant1 row={networkApprovals[0]} />
-        ) : (
-          <Placeholder label="No pending network approvals in mock data" />
-        )}
-      </CardEntry>
-
-      <CardEntry
-        number={2}
-        title="Approval Card (Tool Use)"
-        description="Same layout as network card but says 'wants to use' and shows tool name. No 'Allow all of host' option in overflow."
-      >
-        {toolApprovals[0] ? (
-          <ApprovalVariant1 row={toolApprovals[0]} />
-        ) : (
-          <Placeholder label="No pending tool approvals in mock data" />
-        )}
-      </CardEntry>
+      <FeedCodingAgentCards />
 
       {/* ═══════════════════════════════════════════════════════════════
-         SECTION: APPROVAL CARD REDESIGNS
+         KNOWLEDGE BASES
          ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Approval Card — Redesign Options" />
+      <SectionHeader title="Knowledge Bases" />
 
-      {networkApprovals[0] && (
-        <ApprovalCardVariants
-          networkRow={networkApprovals[0]}
-          toolRow={toolApprovals[0]}
-        />
-      )}
+      <FeedKnowledgeBaseCards />
 
       {/* ═══════════════════════════════════════════════════════════════
-         SECTION: RUNNING NOW
+         EXPERIMENTS
          ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Running Now" />
+      <SectionHeader title="Experiments" />
 
-      <CardEntry
-        number={3}
-        title="Session Still Running"
-        description="Source: sessions API → session.running === true && !session.scheduleId. An interactive session you started is still working. Shows: session title (or agent name if untitled), agent name, time since last update. Actions: 'Open' navigates into the session, 'Stop' halts the agent."
-      >
-        <SessionRunningCard
-          title="Implement dark mode toggle"
-          agentName="frontend-agent"
-          updatedAt="12 min ago"
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={4}
-        title="Experiment Running"
-        description="Source: useDriverSummaries() → experiment.status === 'running'. An experiment sweep is in progress. Shows: Chemistry (beaker) icon, driver agent name, experiment name, running invocations count, status badge 'Running'. We CAN show progress via TraceFeed (completedSpans / totalStages) if we fetch the feed."
-      >
-        <ExperimentCard
-          agentName="color-palette-testing"
-          experimentName="Spring palette — warm vs cool tones"
-          status="running"
-          runningInvocations={3}
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={5}
-        title="Scheduled Session — Next Run"
-        description="Source: schedules API → schedule.enabled && schedule.status.nextRun. A schedule is armed and will fire. Shows: clock icon, schedule name, cadence (human-readable cron/rrule), next run relative time. Actions: 'Edit schedule' navigates to the schedule tab of that agent's configure page."
-      >
-        <ScheduleCard
-          name="Daily brand audit"
-          cadence="Every weekday at 9:00 AM"
-          nextRun="in 3 hr"
-          lastResult="success"
-          enabled={true}
-        />
-      </CardEntry>
+      <FeedExperimentCards />
 
       {/* ═══════════════════════════════════════════════════════════════
-         SECTION: READY FOR YOU
+         CHANNELS (Slack-triggered)
          ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Ready For You — Finished Work" />
+      <SectionHeader title="Channels" />
 
-      <CardEntry
-        number={6}
-        title="Session Finished"
-        description="Source: sessions API → session.running === false && session.updatedAt > session.seenAt. Shows: session title (or agent name if untitled), agent name, relative time. Actions: 'View session' opens the session."
-      >
-        <SessionFinishedCard
-          title="Refactor auth middleware"
-          agentName="backend-refactor"
-          updatedAt="45 min ago"
-          scheduled={false}
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={7}
-        title="Scheduled Session Finished"
-        description="Source: sessions API → session.running === false && session.scheduleId != null && session.updatedAt > session.seenAt. A scheduled job ran while you were away. Shows: session title, agent name, relative time, clock icon. Actions: 'View session' opens the session."
-      >
-        <SessionFinishedCard
-          title="Daily brand audit"
-          agentName="brand-asset-generator"
-          updatedAt="6 hr ago"
-          scheduled={true}
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={8}
-        title="Artifact Created"
-        description="Source: artifact-library API → artifact created by an agent, shown as its own card. Uses the Folders icon (same as left rail). Actions: 'Open artifact' opens the artifact in the docked panel."
-      >
-        <ArtifactCard
-          title="Spring campaign hero images"
-          agentName="brand-asset-generator"
-          updatedAt="2 hr ago"
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={9}
-        title="Artifact Created (Scheduled)"
-        description="Source: artifact-library API → artifact created by an agent during a scheduled session. Same card style, different context."
-      >
-        <ArtifactCard
-          title="Nightly performance report"
-          agentName="reporting-agent"
-          updatedAt="8 hr ago"
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={10}
-        title="Experiment Completed"
-        description="Source: useExperiments() → experiment.status === 'completed'. An experiment sweep finished successfully. Shows: Chemistry (beaker) icon, driver agent name, experiment name, 'Completed' badge (green). Actions: 'View results' opens the experiment's results dashboard artifact (a frozen snapshot of scores/outcomes across runs)."
-      >
-        <ExperimentCard
-          agentName="color-palette-testing"
-          experimentName="Spring palette — warm vs cool tones"
-          status="completed"
-          runningInvocations={0}
-        />
-      </CardEntry>
-
-      <CardEntry
-        number={11}
-        title="Schedule Last Run Failed"
-        description="Source: schedules API → schedule.status.lastResult !== 'success' && lastResult !== 'skipped: quiet hours'. The most recent scheduled run produced an error. Shows: clock icon, schedule name, cadence, last result error string, next run time. Actions: 'Edit schedule' navigates to the agent's schedule config."
-      >
-        <ScheduleCard
-          name="Nightly test suite"
-          cadence="Every day at 2:00 AM"
-          nextRun="in 14 hr"
-          lastResult="failed: agent exceeded timeout after 45m"
-          enabled={true}
-        />
-      </CardEntry>
+      <FeedChannelCards />
 
       {/* ═══════════════════════════════════════════════════════════════
-         SECTION: READY FOR REVIEW — DISMISS VARIATIONS
+         NEEDS ATTENTION
          ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Home Page — Bento Layout Options" />
+      <SectionHeader title="Needs Attention" />
 
-      <BentoHomeVariants />
-
-      <SectionHeader title="Scheduled Section — Layout Options" />
-
-      <ScheduledSectionVariants />
-
-      <SectionHeader title="Ready for Review — Dismiss Options" />
-
-      <ReadyCardVariants />
+      <FeedNeedsAttentionCards />
 
       {/* ═══════════════════════════════════════════════════════════════
-         SECTION: BENTO 1 — READY FOR REVIEW CARD VARIANTS
+         SIDEBAR WIDGETS
          ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Bento 1 — Ready for Review Cards" />
-
-      <Bento1CardVariants />
-
-      {/* ═══════════════════════════════════════════════════════════════
-         SECTION: RESOURCE WIDGETS
-         ═══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Resource Widgets" />
+      <SectionHeader title="Sidebar Widgets" />
 
       <CardEntry
-        number={12}
-        title="Spend + Compute Resources"
-        description="Side-by-side resource cards as they appear on the home page. Spend: period selector, total, top 3 bar chart. Compute: 8-cell meter (green=running, blue=awake, outlined=available), interactive legend."
+        number={0}
+        title="Compute Resources + Schedules"
+        description="Sidebar cards as they appear on the feed home page. Compute: interactive cell meter. Schedules: upcoming runs with 'New' button."
       >
-        <div className="space-y-4 max-w-xl">
-          <SpendPreview />
+        <div className="space-y-4 max-w-xs">
           <ComputePreview />
         </div>
       </CardEntry>
@@ -1739,7 +1587,7 @@ export function ComputePreview() {
     !hoveredAgent && !hoveredState ? false : !isHighlighted(cell);
   const ariaLabelFor = (cell: ComputeCell) => {
     if (cell.state === "available") return "Available";
-    return `${cell.agentName} — ${cell.agentKind ? KIND_LABELS[cell.agentKind] : "Agent"}, ${cell.agentSize} CPU`;
+    return `${cell.agentName} — ${cell.agentKind ? KIND_LABELS[cell.agentKind] : "Agent"}, ${cell.agentSize} CPU · ${cell.agentSize} Gi`;
   };
   const tooltipFor = (cell: ComputeCell) => {
     if (cell.state === "available") return "Available";
@@ -1750,23 +1598,31 @@ export function ComputePreview() {
         </span>
         <span className="text-[12px] text-muted-foreground">
           {cell.agentKind ? KIND_LABELS[cell.agentKind] : "Agent"} ·{" "}
-          {cell.agentSize} CPU
+          {cell.agentSize} CPU · {cell.agentSize} Gi
         </span>
       </div>
     );
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6 flex flex-col">
+    <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
       <div className="flex items-center justify-between mb-1 min-h-[32px]">
         <p className="text-[14px] text-muted-foreground">Compute resources</p>
-        <span className="text-[14px] font-medium text-accent shrink-0">
-          Request more
-        </span>
+        <Tooltip content={
+          <div className="flex flex-col gap-1 py-0.5">
+            <span className="text-[13px] font-medium text-popover-foreground">Need more compute?</span>
+            <span className="text-[13px] text-muted-foreground">Request in <a href="https://slack.com/app_redirect?channel=DAMBUDGET" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-500 hover:underline">#DAMBUDGET</a> on Slack</span>
+          </div>
+        } side="bottom">
+          <span className="text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-default">
+            Need more?
+          </span>
+        </Tooltip>
       </div>
-      <p className="text-[28px] font-bold tabular-nums text-foreground leading-none tracking-tight mb-5">
-        {inUse}/{COMPUTE_TOTAL} CPU
+      <p className="text-[28px] font-bold tabular-nums text-foreground leading-none tracking-tight mb-1">
+        {inUse}/{COMPUTE_TOTAL}
       </p>
+      <p className="text-[14px] text-muted-foreground mb-5">CPU · Gi</p>
 
       <div
         className="flex gap-0.5 mb-5 [&>span]:flex-1"
@@ -1826,7 +1682,7 @@ export function ComputePreview() {
             </span>
             <span className="text-[14px] tabular-nums text-muted-foreground">
               {runningCount} {runningCount === 1 ? "agent" : "agents"} ·{" "}
-              {runningCpu} CPU
+              {runningCpu} CPU · {runningCpu} Gi
             </span>
           </button>
         )}
@@ -1847,8 +1703,8 @@ export function ComputePreview() {
               Awake
             </span>
             <span className="text-[14px] tabular-nums text-muted-foreground">
-              {awakeCount} {awakeCount === 1 ? "agent" : "agents"} · {awakeCpu}{" "}
-              CPU
+              {awakeCount} {awakeCount === 1 ? "agent" : "agents"} ·{" "}
+              {awakeCpu} CPU · {awakeCpu} Gi
             </span>
           </button>
         )}
@@ -3426,6 +3282,386 @@ function B1ScheduleSessionFinishedArtifact() {
           <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Feed Cards — Final Designs (Full State Matrix)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function FeedActiveCard({ icon, agentName, title, duration, statsPill, scheduled }: {
+  icon: React.ReactNode;
+  agentName: string;
+  title: string;
+  duration: string;
+  statsPill?: React.ReactNode;
+  scheduled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200 hover:shadow-lg"
+    >
+      <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+        {icon}
+        <span>{agentName}</span>
+      </div>
+      <p className="text-[15px] font-semibold text-foreground leading-snug">
+        {title}
+        <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" />
+      </p>
+      {statsPill}
+      <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[14px] text-muted-foreground">{duration}</span>
+          {scheduled && (
+            <span className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+              · Edit schedule
+            </span>
+          )}
+        </div>
+        <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">→</span>
+      </div>
+    </button>
+  );
+}
+
+function FeedFinishedCard({ icon, agentName, title, time, unread, artifact, statsPill, scheduled }: {
+  icon: React.ReactNode;
+  agentName: string;
+  title: string;
+  time: string;
+  unread: boolean;
+  artifact?: { name: string };
+  statsPill?: React.ReactNode;
+  scheduled?: boolean;
+}) {
+  return (
+    <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200 cursor-pointer hover:shadow-lg">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+            {icon}
+            <span>{agentName}</span>
+          </div>
+          <p className="text-[15px] font-semibold text-foreground leading-snug">
+            {title}
+            {unread && <span className="inline-block w-2 h-2 rounded-full bg-blue-500 align-middle ml-1.5" />}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+        >
+          Dismiss
+        </button>
+      </div>
+      {statsPill}
+      {artifact && (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border/50 bg-muted/40 hover:bg-muted/70 hover:border-border transition-all text-[14px] text-muted-foreground hover:text-foreground mt-3"
+          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        >
+          <Document size={16} className="shrink-0" />
+          <span className="truncate max-w-[160px]">{artifact.name}</span>
+        </button>
+      )}
+      <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[14px] text-muted-foreground">{time}</span>
+          {scheduled && (
+            <span className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+              · Edit schedule
+            </span>
+          )}
+        </div>
+        <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">→</span>
+      </div>
+    </div>
+  );
+}
+
+function experimentPill(runs: string, status: string, statusColor?: string) {
+  return (
+    <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+      <span className="text-[14px] text-muted-foreground tabular-nums">{runs}</span>
+      <span className="text-[14px] text-muted-foreground/40">·</span>
+      <span className={cn("text-[14px] tabular-nums", statusColor || "text-muted-foreground")}>{status}</span>
+    </div>
+  );
+}
+
+function FeedCodingAgentCards() {
+  let n = 0;
+  return (
+    <div className="space-y-6 max-w-xl">
+      <CardEntry number={++n} title="Active — Ongoing Session" description="Code icon. Working dots. Arrow on hover. No dismiss (still active).">
+        <FeedActiveCard icon={<Code size={16} className="shrink-0" />} agentName="frontend-agent" title="Implement dark mode toggle" duration="12m" />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Time icon replaces agent icon for scheduled runs. 'Edit schedule' appears on hover in footer (tertiary).">
+        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="maintenance-bot" title="Nightly dependency update" duration="4m" scheduled />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Unread)" description="Blue dot = unread. Dismiss on hover. Arrow on hover.">
+        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="backend-refactor" title="Refactor auth middleware" time="45m ago" unread />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Artifact chip independently clickable. Card click → session.">
+        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="copywriting-agent" title="Generate marketing copy" time="1h ago" unread artifact={{ name: "campaign-copy-v3.md" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Time icon shows scheduled. 'Edit schedule' tertiary link in footer on hover.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="maintenance-bot" title="Nightly dependency check" time="3h ago" unread />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled + artifact combo.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="report-agent" title="Weekly code coverage report" time="6h ago" unread artifact={{ name: "coverage-report-aug14.pdf" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Read)" description="No blue dot. Already visited. Dismiss still available.">
+        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="backend-refactor" title="Refactor auth middleware" time="45m ago" unread={false} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read state with artifact.">
+        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="copywriting-agent" title="Generate marketing copy" time="1h ago" unread={false} artifact={{ name: "campaign-copy-v3.md" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled session.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="maintenance-bot" title="Nightly dependency check" time="3h ago" unread={false} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="report-agent" title="Weekly code coverage report" time="6h ago" unread={false} artifact={{ name: "coverage-report-aug14.pdf" }} />
+      </CardEntry>
+    </div>
+  );
+}
+
+function FeedKnowledgeBaseCards() {
+  let n = 0;
+  return (
+    <div className="space-y-6 max-w-xl">
+      <CardEntry number={++n} title="Active — Ongoing Session" description="Book icon for knowledge base agents.">
+        <FeedActiveCard icon={<Book size={16} className="shrink-0" />} agentName="docs-indexer" title="Re-index API documentation" duration="8m" />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Scheduled knowledge base run. 'Edit schedule' tertiary in footer.">
+        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Sync Confluence pages" duration="2m" scheduled />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Unread)" description="Knowledge base session completed.">
+        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="docs-indexer" title="Re-index API documentation" time="20m ago" unread />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Knowledge base produced an artifact.">
+        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="research-agent" title="Competitive analysis sweep" time="1h ago" unread artifact={{ name: "competitor-matrix.csv" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Scheduled knowledge base run finished.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Sync Confluence pages" time="4h ago" unread />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Weekly knowledge digest" time="8h ago" unread artifact={{ name: "digest-aug14.md" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Read)" description="Already reviewed.">
+        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="docs-indexer" title="Re-index API documentation" time="20m ago" unread={false} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read with artifact.">
+        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="research-agent" title="Competitive analysis sweep" time="1h ago" unread={false} artifact={{ name: "competitor-matrix.csv" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Sync Confluence pages" time="4h ago" unread={false} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Weekly knowledge digest" time="8h ago" unread={false} artifact={{ name: "digest-aug14.md" }} />
+      </CardEntry>
+    </div>
+  );
+}
+
+function FeedExperimentCards() {
+  let n = 0;
+  return (
+    <div className="space-y-6 max-w-xl">
+      <CardEntry number={++n} title="Active — Ongoing Session" description="Chemistry icon + stats pill with live variant count.">
+        <FeedActiveCard icon={<Chemistry size={16} className="shrink-0" />} agentName="perf-testing-agent" title="Weekly performance regression sweep" duration="6m" statsPill={experimentPill("24 runs", "2 live", "text-blue-500")} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Scheduled experiment in progress. 'Edit schedule' tertiary in footer.">
+        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" duration="3m" scheduled statsPill={experimentPill("8 runs", "1 live", "text-blue-500")} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Unread)" description="Experiment complete with final stats.">
+        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="color-palette-testing" title="Spring palette — warm vs cool" time="10h ago" unread statsPill={experimentPill("120 runs", "best 0.87")} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Experiment produced a report artifact.">
+        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="prompt-optimizer" title="System prompt A/B test" time="2h ago" unread statsPill={experimentPill("50 runs", "best 0.92")} artifact={{ name: "prompt-results.json" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Scheduled experiment finished.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread statsPill={experimentPill("200 runs", "p95 42ms")} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled experiment + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread statsPill={experimentPill("200 runs", "p95 42ms")} artifact={{ name: "bench-aug14.csv" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Read)" description="Read experiment.">
+        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="color-palette-testing" title="Spring palette — warm vs cool" time="10h ago" unread={false} statsPill={experimentPill("120 runs", "best 0.87")} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read experiment + artifact.">
+        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="prompt-optimizer" title="System prompt A/B test" time="2h ago" unread={false} statsPill={experimentPill("50 runs", "best 0.92")} artifact={{ name: "prompt-results.json" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled experiment.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread={false} statsPill={experimentPill("200 runs", "p95 42ms")} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled experiment + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread={false} statsPill={experimentPill("200 runs", "p95 42ms")} artifact={{ name: "bench-aug14.csv" }} />
+      </CardEntry>
+    </div>
+  );
+}
+
+function FeedChannelCards() {
+  let n = 0;
+  return (
+    <div className="space-y-6 max-w-xl">
+      <CardEntry number={++n} title="Active — Ongoing Session" description="Hashtag icon indicates Slack channel origin. Agent name shown (not channel name).">
+        <FeedActiveCard icon={<Hashtag size={16} className="shrink-0" />} agentName="brand-asset-generator" title="Generate brand audit report" duration="7m" />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Scheduled channel session. Time icon + 'Edit schedule' tertiary.">
+        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="standup-summarizer" title="Summarize overnight PRs" duration="2m" scheduled />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Unread)" description="Channel session completed. Blue dot = unread.">
+        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="brand-asset-generator" title="Generate brand audit report" time="30m ago" unread />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Channel session produced an artifact.">
+        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="copywriting-agent" title="Draft release notes for v2.4" time="1h ago" unread artifact={{ name: "release-notes-v2.4.md" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Scheduled channel session finished.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="standup-summarizer" title="Summarize overnight PRs" time="6h ago" unread />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled channel session + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="velocity-tracker" title="Weekly team velocity digest" time="12h ago" unread artifact={{ name: "velocity-week33.pdf" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session (Read)" description="Already reviewed channel session.">
+        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="brand-asset-generator" title="Generate brand audit report" time="30m ago" unread={false} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read channel session with artifact.">
+        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="copywriting-agent" title="Draft release notes for v2.4" time="1h ago" unread={false} artifact={{ name: "release-notes-v2.4.md" }} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled channel session.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="standup-summarizer" title="Summarize overnight PRs" time="6h ago" unread={false} />
+      </CardEntry>
+
+      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled channel session + artifact.">
+        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="velocity-tracker" title="Weekly team velocity digest" time="12h ago" unread={false} artifact={{ name: "velocity-week33.pdf" }} />
+      </CardEntry>
+    </div>
+  );
+}
+
+function FeedNeedsAttentionCards() {
+  let n = 0;
+  return (
+    <div className="space-y-6 max-w-xl">
+      <CardEntry number={++n} title="Network Request" description="Agent requesting external network access. Standard border, pulsing amber dot. Allow + overflow menu. Not dismissible.">
+        <div className="rounded-2xl border border-border bg-card/80 p-5 transition-colors">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <span>Needs attention</span>
+              </div>
+              <p className="text-[15px] text-foreground">
+                brand-asset-generator
+                <span className="text-muted-foreground font-normal text-[14px] ml-2">wants to access</span>
+              </p>
+              <p className="font-mono text-[14px] text-muted-foreground mt-0.5 truncate">GET api.figma.com</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm">Allow</Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="px-2">
+                    <OverflowMenuVertical size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem>Allow permanently</DropdownMenuItem>
+                  <DropdownMenuItem>Allow all of api.figma.com</DropdownMenuItem>
+                  <DropdownMenuItem>Deny this request</DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive">Deny permanently</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry number={++n} title="Tool Request" description="Agent requesting tool execution approval. Same card pattern, different context.">
+        <div className="rounded-2xl border border-border bg-card/80 p-5 transition-colors">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <span>Needs attention</span>
+              </div>
+              <p className="text-[15px] text-foreground">
+                backend-refactor
+                <span className="text-muted-foreground font-normal text-[14px] ml-2">wants to run</span>
+              </p>
+              <p className="font-mono text-[14px] text-muted-foreground mt-0.5 truncate">bash_execute</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm">Allow</Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="px-2">
+                    <OverflowMenuVertical size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem>Allow permanently</DropdownMenuItem>
+                  <DropdownMenuItem>Allow all bash commands</DropdownMenuItem>
+                  <DropdownMenuItem>Deny this request</DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive">Deny permanently</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry number={++n} title="All Cleared — Empty Feed" description="Shown when all items dismissed or no activity.">
+        <div className="rounded-xl border border-border bg-card/80 p-10 text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Checkmark size={16} className="text-emerald-500" />
+            <span className="text-[14px] font-medium text-foreground">All clear</span>
+          </div>
+          <p className="text-[14px] text-muted-foreground">Nothing waiting for review. You're all caught up.</p>
+        </div>
+      </CardEntry>
     </div>
   );
 }

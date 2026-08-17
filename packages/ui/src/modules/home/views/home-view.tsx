@@ -1,35 +1,43 @@
 import {
+  Add,
   Book,
   Checkmark,
   Chemistry,
   ChevronDown,
+  Close,
+  Code,
   ContainerSoftware,
   Document,
   Filter,
+  OverflowMenuVertical,
   Time,
 } from "@carbon/icons-react";
 import { Children, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { FormField } from "@/components/form-field";
 import { ListSkeleton } from "@/components/list-skeleton";
-import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
-
-import { type DemoState, useDemoState } from "../../../mock/demo-state.js";
-import { useStore } from "../../../store.js";
-import { usePendingApprovals } from "../../approvals/api/queries.js";
 import {
   DialogBody,
   DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+
+import { type DemoState, useDemoState } from "../../../mock/demo-state.js";
+import { useStore } from "../../../store.js";
+import { usePendingApprovals } from "../../approvals/api/queries.js";
+import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
 import { HomeHeader } from "../components/home-header.js";
 import { useAgentRows } from "../home-data.js";
@@ -46,7 +54,7 @@ import {
    Home Page
    ═══════════════════════════════════════════════════════════════════════════ */
 
-type HomeLayout = "current" | "bento1";
+type HomeLayout = "bento2" | "bento3" | "feed";
 
 export function HomeView() {
   const { agentsData, initialLoaded } = useAgentRows();
@@ -54,7 +62,7 @@ export function HomeView() {
   const { data: pendingApprovals } = usePendingApprovals();
   const approvals = useMemo(() => pendingApprovals ?? [], [pendingApprovals]);
   const { state: demoState } = useDemoState();
-  const [layout, setLayout] = useState<HomeLayout>("current");
+  const [layout, setLayout] = useState<HomeLayout>("bento2");
   useEffect(() => {
     return () => {
       markVisitNow();
@@ -78,14 +86,14 @@ export function HomeView() {
 
   return (
     <div className="space-y-6">
-      {/* Layout switcher */}
       {import.meta.env.VITE_MOCK && (
         <div className="flex items-center gap-2 rounded-lg border border-dashed border-accent/40 bg-accent/5 px-3 py-2">
           <span className="text-[14px] text-muted-foreground font-medium mr-1">Layout:</span>
           {(
             [
-              { key: "current", label: "Current" },
-              { key: "bento1", label: "Bento 1" },
+              { key: "bento2", label: "Current" },
+              { key: "bento3", label: "Refined" },
+              { key: "feed", label: "Feed" },
             ] as const
           ).map((opt) => (
             <button
@@ -105,15 +113,9 @@ export function HomeView() {
         </div>
       )}
 
-      {layout === "current" && (
-        demoState === "empty" ? <EmptyState /> : (
-          <>
-            <HomeHeader />
-            <PopulatedHome approvals={approvals} state={populatedState} />
-          </>
-        )
-      )}
-      {layout === "bento1" && <BentoHomeLayout1 demoState={demoState} />}
+      {layout === "bento2" && <BentoHomeLayout2 demoState={demoState} />}
+      {layout === "bento3" && <BentoHomeLayout3 demoState={demoState} />}
+      {layout === "feed" && <FeedDashboardLayout />}
     </div>
   );
 }
@@ -752,18 +754,20 @@ type ReviewSession = {
 };
 
 const REVIEW_SESSIONS: ReviewSession[] = [
-  // Plain session
+  // Coding Agent — Finished
   { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
-  // Session with artifact
+  // Coding Agent — Finished with artifact
   { title: "Generate marketing copy", agent: "copywriting-agent", time: "1h ago", artifact: { name: "campaign-copy-v3.md", fileType: "MD" } },
-  // Scheduled session
+  // Coding Agent — Session Finished
+  { title: "Research competitor pricing models", agent: "market-research-kb", time: "30m ago" },
+  // Scheduled — Session Finished
   { title: "Nightly dependency check", agent: "maintenance-bot", time: "3h ago", scheduled: true },
-  // Scheduled session with artifact
-  { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "5h ago", scheduled: true, artifact: { name: "hero-spring-2026.png", fileType: "PNG" } },
-  // Scheduled session with artifact (PDF)
+  // Scheduled — Session Finished with artifact
   { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago", scheduled: true, artifact: { name: "brand-audit-jun14.pdf", fileType: "PDF" } },
-  // Experiment
-  { title: "Spring palette — warm vs cool", agent: "color-palette-testing", time: "10h ago", experiment: { runs: 120, best: "0.87", variants: 3 } },
+  // Scheduled — Experiment Finished with dashboard
+  { title: "Weekly performance regression sweep", agent: "perf-testing-agent", time: "12h ago", scheduled: true, experiment: { runs: 86, best: "0.94", variants: 2 }, artifact: { name: "perf-regression-report", fileType: "HTML" } },
+  // Experiment — Finished with dashboard
+  { title: "Spring palette — warm vs cool", agent: "color-palette-testing", time: "10h ago", experiment: { runs: 120, best: "0.87", variants: 3 }, artifact: { name: "experiment-dashboard", fileType: "HTML" } },
 ];
 
 
@@ -833,35 +837,93 @@ function MockArtifactPreview({ artifact, onClose }: { artifact: { name: string; 
   );
 }
 
-const ACTIVE_SESSIONS = [
-  { title: "Implement dark mode toggle", agent: "frontend-agent", duration: "12m" },
-  { title: "Spring palette experiment", agent: "color-palette-testing", duration: "45m" },
+const MOCK_AGENTS_FOR_SCHEDULE = [
+  { id: "1", name: "frontend-agent", kind: undefined as string | undefined },
+  { id: "2", name: "backend-refactor", kind: undefined as string | undefined },
+  { id: "3", name: "brand-asset-generator", kind: undefined as string | undefined },
+  { id: "4", name: "market-research-kb", kind: undefined as string | undefined },
+  { id: "5", name: "color-palette-testing", kind: "experiment" as string | undefined },
+  { id: "6", name: "perf-testing-agent", kind: "experiment" as string | undefined },
 ];
 
-const FEED_CATEGORIES = ["running", "sessions", "experiments", "scheduled"] as const;
+function kindLabel(kind: string | undefined) {
+  if (kind === "experiment") return "Experiment";
+  return "Coding Agent";
+}
+
+function HomeCreateScheduleModal({ onClose }: { onClose: () => void }) {
+  const [selectedAgent, setSelectedAgent] = useState(MOCK_AGENTS_FOR_SCHEDULE[0]!.id);
+
+  const agentPicker = (
+    <FormField label="Agent" disableInset>
+      <select
+        value={selectedAgent}
+        onChange={(e) => setSelectedAgent(e.target.value)}
+        className="h-[40px] w-full rounded-md border border-border bg-background px-3 text-[14px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        {MOCK_AGENTS_FOR_SCHEDULE.map((a) => (
+          <option key={a.id} value={a.id}>{a.name} — {kindLabel(a.kind)}</option>
+        ))}
+      </select>
+    </FormField>
+  );
+
+  return (
+    <ScheduleFormModal
+      agentId={selectedAgent}
+      onClose={onClose}
+      onSaved={onClose}
+      headerSlot={agentPicker}
+    />
+  );
+}
+
+type ActiveSession = {
+  title: string;
+  agent: string;
+  duration: string;
+  scheduled?: boolean;
+  experiment?: { runs: number; variants: number };
+};
+
+const ACTIVE_SESSIONS: ActiveSession[] = [
+  // Coding Agent — Running
+  { title: "Implement dark mode toggle", agent: "frontend-agent", duration: "12m" },
+  // Coding Agent — Running
+  { title: "Research competitor pricing models", agent: "market-research-kb", duration: "5m" },
+  // Scheduled — Experiment Running
+  { title: "Weekly performance regression sweep", agent: "perf-testing-agent", duration: "6m", scheduled: true, experiment: { runs: 24, variants: 2 } },
+  // Scheduled — Session Running
+  { title: "Nightly dependency check", agent: "maintenance-bot", duration: "3m", scheduled: true },
+];
+
+const FEED_CATEGORIES = ["sessions", "experiments", "scheduled"] as const;
 type FeedCategory = (typeof FEED_CATEGORIES)[number];
 const FEED_CATEGORY_LABELS: Record<FeedCategory, string> = {
-  running: "Running",
-  sessions: "Sessions",
+  sessions: "Coding Agents",
   experiments: "Experiments",
-  scheduled: "Scheduled",
+  scheduled: "Schedules",
 };
 
 function feedCategory(item: ReviewSession): FeedCategory {
-  if (item.experiment) return "experiments";
   if (item.scheduled) return "scheduled";
+  if (item.experiment) return "experiments";
+  return "sessions";
+}
+
+function feedCategoryActive(item: ActiveSession): FeedCategory {
+  if (item.scheduled) return "scheduled";
+  if (item.experiment) return "experiments";
   return "sessions";
 }
 
 function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
   const [previewArtifact, setPreviewArtifact] = useState<ReviewSession["artifact"] | null>(null);
   const [dismissedReview, setDismissedReview] = useState<Set<number>>(new Set());
-  const [dismissedActive, setDismissedActive] = useState<Set<number>>(new Set());
   const [feedFilter, setFeedFilter] = useState<FeedCategory[]>([...FEED_CATEGORIES]);
   const [dismissingReview, setDismissingReview] = useState<Set<number>>(new Set());
-  const [dismissingActive, setDismissingActive] = useState<Set<number>>(new Set());
   const [collapsingReview, setCollapsingReview] = useState<Set<number>>(new Set());
-  const [collapsingActive, setCollapsingActive] = useState<Set<number>>(new Set());
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
 
   const dismissReview = useCallback((idx: number) => {
     setDismissingReview(prev => new Set([...prev, idx]));
@@ -875,17 +937,6 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
     }, 500);
   }, []);
 
-  const dismissActive = useCallback((idx: number) => {
-    setDismissingActive(prev => new Set([...prev, idx]));
-    setTimeout(() => {
-      setCollapsingActive(prev => new Set([...prev, idx]));
-    }, 200);
-    setTimeout(() => {
-      setDismissedActive(prev => new Set([...prev, idx]));
-      setDismissingActive(prev => { const next = new Set(prev); next.delete(idx); return next; });
-      setCollapsingActive(prev => { const next = new Set(prev); next.delete(idx); return next; });
-    }, 500);
-  }, []);
 
   const toggleFeedFilter = useCallback((cat: FeedCategory) => {
     setFeedFilter(prev =>
@@ -896,31 +947,24 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
   const isEmptyState = demoState === "empty";
   const isClearedState = demoState === "just-cleared" || demoState === "no-blockers";
   const visibleReview = (isEmptyState || isClearedState) ? [] : REVIEW_SESSIONS.filter((item, i) => !dismissedReview.has(i) && feedFilter.includes(feedCategory(item)));
-  const visibleActive = (isEmptyState || isClearedState) ? [] : (feedFilter.includes("running") ? ACTIVE_SESSIONS.filter((_, i) => !dismissedActive.has(i)) : []);
+  const visibleActive = (isEmptyState || isClearedState) ? [] : ACTIVE_SESSIONS.filter(item => feedFilter.includes(feedCategoryActive(item)));
   const allCleared = isClearedState || (!isEmptyState && visibleActive.length === 0 && visibleReview.length === 0);
 
   const dismissAll = () => {
     const reviewIdxs = REVIEW_SESSIONS.map((_, i) => i).filter(i => !dismissedReview.has(i));
-    const activeIdxs = ACTIVE_SESSIONS.map((_, i) => i).filter(i => !dismissedActive.has(i));
     setDismissingReview(new Set(reviewIdxs));
-    setDismissingActive(new Set(activeIdxs));
     setTimeout(() => {
       setCollapsingReview(new Set(reviewIdxs));
-      setCollapsingActive(new Set(activeIdxs));
     }, 200);
     setTimeout(() => {
       setDismissedReview(new Set(REVIEW_SESSIONS.map((_, i) => i)));
-      setDismissedActive(new Set(ACTIVE_SESSIONS.map((_, i) => i)));
       setDismissingReview(new Set());
-      setDismissingActive(new Set());
       setCollapsingReview(new Set());
-      setCollapsingActive(new Set());
     }, 500);
   };
 
   return (
     <div className="space-y-4">
-      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">Home</h1>
 
       {isEmptyState && (
         <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-8">
@@ -990,6 +1034,40 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
       )}
 
       {!isEmptyState && (
+      <>
+      {(visibleActive.length > 0 || visibleReview.length > 0) && (
+        <div className="flex items-center justify-between" style={{ maxWidth: "calc(100% - 320px - 16px)" }}>
+          <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">Home</h1>
+          <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="xs" className="text-[14px]">
+                  <Filter size={16} />
+                  {feedFilter.length === FEED_CATEGORIES.length
+                    ? "All"
+                    : `Filter (${feedFilter.length})`}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {FEED_CATEGORIES.map((cat) => (
+                  <DropdownMenuCheckboxItem
+                    key={cat}
+                    checked={feedFilter.includes(cat)}
+                    onCheckedChange={() => toggleFeedFilter(cat)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {FEED_CATEGORY_LABELS[cat]}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground" onClick={dismissAll}>
+              Dismiss all
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-[1fr_320px] gap-4 items-start">
         {/* LEFT: Main feed — active + ready for review */}
         <div className="space-y-4">
@@ -1003,58 +1081,38 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
             </div>
           )}
 
-          {(visibleActive.length > 0 || visibleReview.length > 0) && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <h2 className="text-[14px] text-muted-foreground">Ready for review</h2>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="xs" className="text-[14px] font-normal text-muted-foreground">
-                      <Filter size={16} />
-                      {feedFilter.length === FEED_CATEGORIES.length
-                        ? "All"
-                        : `Filter (${feedFilter.length})`}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {FEED_CATEGORIES.map((cat) => (
-                      <DropdownMenuCheckboxItem
-                        key={cat}
-                        checked={feedFilter.includes(cat)}
-                        onCheckedChange={() => toggleFeedFilter(cat)}
-                        onSelect={(e) => e.preventDefault()}
-                      >
-                        {FEED_CATEGORY_LABELS[cat]}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <button type="button" onClick={dismissAll} className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">Dismiss all</button>
-            </div>
-          )}
-
           {/* Active sessions — in progress */}
-          {visibleActive.map((item, i) => {
+          {visibleActive.map((item) => {
             const activeIdx = ACTIVE_SESSIONS.indexOf(item);
             return (
-            <div key={`active-${activeIdx}`} className={cn(
-              "rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3 transition-all duration-300 ease-out",
-              dismissingActive.has(activeIdx) && "opacity-0 scale-[0.98]",
-              collapsingActive.has(activeIdx) && "!mt-0 !p-0 !border-0 max-h-0 overflow-hidden"
-            )}>
+            <div key={`active-${activeIdx}`} className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <WorkingDots className="text-blue-500" size="md" />
-                  <div>
-                    <p className="text-[14px] font-semibold text-foreground leading-snug">{item.title}</p>
-                    <p className="text-[14px] text-muted-foreground mt-1">{item.agent}</p>
-                  </div>
+                <div>
+                  <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
+                    {item.scheduled && <Time size={16} className="text-muted-foreground shrink-0" />}
+                    {item.title}
+                    <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+                  </p>
+                  <p className="text-[14px] text-muted-foreground mt-1">{item.agent}</p>
                 </div>
                 <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">{item.duration}</span>
               </div>
+              {item.experiment && (
+                <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex gap-px">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className={cn("w-[3px] rounded-full", i < 2 ? "bg-blue-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+                      ))}
+                    </div>
+                    <span className="text-[14px] tabular-nums text-muted-foreground">{item.experiment.runs} runs</span>
+                  </div>
+                  <span className="text-[14px] text-muted-foreground">·</span>
+                  <span className="text-[14px] tabular-nums text-muted-foreground">{item.experiment.variants} variants</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-                <Button size="sm" variant="outline" className="h-8 text-[14px]">Open session</Button>
+                <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
               </div>
             </div>
             );
@@ -1079,6 +1137,7 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
                 </div>
                 <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">{item.time}</span>
               </div>
+              {item.experiment && <ExperimentMiniBar experiment={item.experiment} />}
               {item.artifact && (
                 <button
                   type="button"
@@ -1090,11 +1149,8 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
                   <span className="text-[14px] font-mono opacity-60">{item.artifact.fileType}</span>
                 </button>
               )}
-              {item.experiment && <ExperimentMiniBar experiment={item.experiment} />}
               <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-                <Button size="sm" variant="outline" className="h-8 text-[14px]">
-                  {item.experiment ? "View results" : "View session"}
-                </Button>
+                <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
                 <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto" onClick={() => dismissReview(originalIdx)}>Dismiss</Button>
               </div>
             </div>
@@ -1108,7 +1164,7 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
           <div className="rounded-xl border border-destructive/30 bg-gradient-to-br from-destructive/5 to-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="w-2 h-2 rounded-full bg-destructive" />
-              <h2 className="text-[14px] font-semibold text-foreground">Needs attention</h2>
+              <h2 className="text-[14px] text-muted-foreground">Needs attention</h2>
             </div>
             <p className="text-[14px] text-foreground font-medium">GET api.figma.com</p>
             <p className="text-[14px] text-muted-foreground">brand-asset-generator · 3m ago</p>
@@ -1122,8 +1178,13 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
           <ComputePreview />
 
           {/* Scheduled */}
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h2 className="text-[14px] font-semibold text-foreground mb-3">Scheduled</h2>
+          <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[14px] text-muted-foreground">Scheduled</p>
+              <Button variant="outline" size="xs" className="text-[14px]" onClick={() => setShowCreateSchedule(true)}>
+                <Add size={16} /> New
+              </Button>
+            </div>
             <div className="space-y-2.5">
               {SCHEDULED_CARDS.slice(0, 5).map((s, i) => {
                 const failed = s.lastResult === "failed";
@@ -1144,9 +1205,11 @@ function BentoHomeLayout1({ demoState }: { demoState: DemoState }) {
           </div>
         </div>
       </div>
+      </>
       )}
 
       {previewArtifact && <MockArtifactPreview artifact={previewArtifact} onClose={() => setPreviewArtifact(null)} />}
+      {showCreateSchedule && <HomeCreateScheduleModal onClose={() => setShowCreateSchedule(false)} />}
     </div>
   );
 }
@@ -1412,6 +1475,1126 @@ function EmptyState() {
           8 CPU · 8 Gi available
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bento 2 — Production-aligned typography
+   Same layout/features as Bento 1, with corrected type scale:
+   - Card titles: 15px (matching prod schedule-card)
+   - Stat number: font-semibold tracking-[-0.65px] (matching page title style)
+   - Body/metadata: 14px minimum throughout
+   ═══════════════════════════════════════════════════════════════════════════ */
+function BentoHomeLayout2({ demoState }: { demoState: DemoState }) {
+  const [previewArtifact, setPreviewArtifact] = useState<ReviewSession["artifact"] | null>(null);
+  const [dismissedReview, setDismissedReview] = useState<Set<number>>(new Set());
+  const [feedFilter, setFeedFilter] = useState<FeedCategory[]>([...FEED_CATEGORIES]);
+  const [dismissingReview, setDismissingReview] = useState<Set<number>>(new Set());
+  const [collapsingReview, setCollapsingReview] = useState<Set<number>>(new Set());
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
+
+  const dismissReview = useCallback((idx: number) => {
+    setDismissingReview(prev => new Set([...prev, idx]));
+    setTimeout(() => {
+      setCollapsingReview(prev => new Set([...prev, idx]));
+    }, 200);
+    setTimeout(() => {
+      setDismissedReview(prev => new Set([...prev, idx]));
+      setDismissingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+      setCollapsingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+    }, 500);
+  }, []);
+
+  const toggleFeedFilter = useCallback((cat: FeedCategory) => {
+    setFeedFilter(prev =>
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  }, []);
+
+  const isEmptyState = demoState === "empty";
+  const isClearedState = demoState === "just-cleared" || demoState === "no-blockers";
+  const visibleReview = (isEmptyState || isClearedState) ? [] : REVIEW_SESSIONS.filter((item, i) => !dismissedReview.has(i) && feedFilter.includes(feedCategory(item)));
+  const visibleActive = (isEmptyState || isClearedState) ? [] : ACTIVE_SESSIONS.filter(item => feedFilter.includes(feedCategoryActive(item)));
+  const allCleared = isClearedState || (!isEmptyState && visibleActive.length === 0 && visibleReview.length === 0);
+
+  const dismissAll = () => {
+    const reviewIdxs = REVIEW_SESSIONS.map((_, i) => i).filter(i => !dismissedReview.has(i));
+    setDismissingReview(new Set(reviewIdxs));
+    setTimeout(() => {
+      setCollapsingReview(new Set(reviewIdxs));
+    }, 200);
+    setTimeout(() => {
+      setDismissedReview(new Set(REVIEW_SESSIONS.map((_, i) => i)));
+      setDismissingReview(new Set());
+      setCollapsingReview(new Set());
+    }, 500);
+  };
+
+  return (
+    <div className="space-y-4">
+
+      {isEmptyState && (
+        <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-8">
+          <h2 className="text-[20px] font-semibold text-foreground">
+            Accelerate research with DAM
+          </h2>
+          <p className="mt-1.5 max-w-[560px] text-[14px] leading-relaxed text-muted-foreground">
+            Run agents in isolated cloud environments with credentials and tools
+            securely injected. Create knowledge bases, run experiments to compare
+            agent variants, and trigger agents from Slack or on a schedule.
+          </p>
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/agent-setup" : "/agent-setup"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <ContainerSoftware size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Create a coding agent</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Work with your preferred coding agent, credentials, and tools in an isolated environment.
+                </p>
+              </div>
+            </a>
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-onboard" : "/experiment-onboard"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <Chemistry size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Begin an experiment</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Run one goal across many variants at once and compare results.
+                </p>
+              </div>
+            </a>
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/kb-setup" : "/kb-setup"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <Book size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Start a knowledge base</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Organize and converse with data sourced from repos, documents, and more (LLM wiki).
+                </p>
+              </div>
+            </a>
+          </div>
+          <div className="mt-5 flex justify-end">
+            <a
+              href="https://docs.example.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[14px] font-medium text-accent no-underline hover:underline"
+            >
+              Or check out the Documentation →
+            </a>
+          </div>
+        </section>
+      )}
+
+      {!isEmptyState && (
+      <>
+      {(visibleActive.length > 0 || visibleReview.length > 0) && (
+        <div className="flex items-center justify-between" style={{ maxWidth: "calc(100% - 320px - 16px)" }}>
+          <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground md:text-[28px]">Home</h1>
+          <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="xs" className="text-[14px]">
+                  <Filter size={16} />
+                  {feedFilter.length === FEED_CATEGORIES.length
+                    ? "All"
+                    : `Filter (${feedFilter.length})`}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {FEED_CATEGORIES.map((cat) => (
+                  <DropdownMenuCheckboxItem
+                    key={cat}
+                    checked={feedFilter.includes(cat)}
+                    onCheckedChange={() => toggleFeedFilter(cat)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {FEED_CATEGORY_LABELS[cat]}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground" onClick={dismissAll}>
+              Dismiss all
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-[1fr_320px] gap-4 items-start">
+        {/* LEFT: Main feed */}
+        <div className="space-y-4">
+          {allCleared && (
+            <div className="rounded-xl border border-border bg-card p-10 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Checkmark size={16} className="text-emerald-500" />
+                <span className="text-[14px] font-medium text-foreground">All clear</span>
+              </div>
+              <p className="text-[14px] text-muted-foreground">Nothing waiting for review. You're all caught up.</p>
+            </div>
+          )}
+
+          {/* Active sessions — in progress */}
+          {visibleActive.map((item) => {
+            const activeIdx = ACTIVE_SESSIONS.indexOf(item);
+            return (
+            <div key={`active-${activeIdx}`} className="rounded-xl border border-border bg-gradient-to-br from-blue-500/10 to-card p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                    {item.experiment ? <Chemistry size={16} className="shrink-0" /> : <Code size={16} className="shrink-0" />}
+                    <span>{item.agent}</span>
+                  </div>
+                  <p className="text-[15px] font-semibold text-foreground leading-snug">
+                    {item.title}
+                    <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" />
+                  </p>
+                </div>
+                <span className="text-[14px] text-muted-foreground whitespace-nowrap shrink-0">{item.duration}</span>
+              </div>
+              {item.experiment && (
+                <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border">
+                  <span className="text-[14px] text-muted-foreground tabular-nums">{item.experiment.runs} runs</span>
+                  <span className="text-[14px] text-muted-foreground/40">·</span>
+                  <span className="text-[14px] text-blue-500 tabular-nums">{item.experiment.variants} live</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+                <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+              </div>
+            </div>
+            );
+          })}
+
+          {/* Review sessions */}
+          {visibleReview.map((item) => {
+            const originalIdx = REVIEW_SESSIONS.indexOf(item);
+            return (
+            <div key={originalIdx} className={cn(
+              "rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3 transition-all duration-300 ease-out",
+              dismissingReview.has(originalIdx) && "opacity-0 scale-[0.98]",
+              collapsingReview.has(originalIdx) && "!mt-0 !p-0 !border-0 max-h-0 overflow-hidden"
+            )}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                    {item.scheduled ? <Time size={16} className="shrink-0" /> : item.experiment ? <Chemistry size={16} className="shrink-0" /> : <Code size={16} className="shrink-0" />}
+                    <span>{item.agent}</span>
+                  </div>
+                  <p className="text-[15px] font-semibold text-foreground leading-snug">
+                    {item.title}
+                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500 align-middle ml-1.5" />
+                  </p>
+                </div>
+                <span className="text-[14px] text-muted-foreground whitespace-nowrap shrink-0">{item.time}</span>
+              </div>
+              {item.experiment && (
+                <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border">
+                  <span className="text-[14px] text-muted-foreground tabular-nums">{item.experiment.runs} runs</span>
+                  <span className="text-[14px] text-muted-foreground/40">·</span>
+                  <span className="text-[14px] text-muted-foreground">ran {item.experiment.best}</span>
+                </div>
+              )}
+              {item.artifact && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewArtifact(item.artifact!)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-muted/70 hover:border-foreground/20 transition-all text-[14px] text-muted-foreground hover:text-foreground"
+                >
+                  <Document size={16} className="shrink-0" />
+                  <span className="truncate max-w-[160px]">{item.artifact.name}</span>
+                </button>
+              )}
+              <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
+                <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+                <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto" onClick={() => dismissReview(originalIdx)}>Dismiss</Button>
+              </div>
+            </div>
+            );
+          })}
+        </div>
+
+        {/* RIGHT: Pinned sidebar */}
+        <div className="space-y-3 sticky top-4">
+          {/* Needs attention */}
+          <div className="rounded-xl border border-destructive/30 bg-gradient-to-br from-destructive/5 to-card p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full bg-destructive" />
+              <h2 className="text-[14px] text-muted-foreground">Needs attention</h2>
+            </div>
+            <p className="text-[15px] text-foreground font-medium">GET api.figma.com</p>
+            <p className="text-[14px] text-muted-foreground">brand-asset-generator · 3m ago</p>
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="outline" className="h-7 text-[14px] flex-1">Allow</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[14px] flex-1 text-muted-foreground">Deny</Button>
+            </div>
+          </div>
+
+          {/* Compute resources */}
+          <ComputePreview />
+
+          {/* Scheduled */}
+          <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[14px] text-muted-foreground">Scheduled</p>
+              <Button variant="outline" size="xs" className="text-[14px]" onClick={() => setShowCreateSchedule(true)}>
+                <Add size={16} /> New
+              </Button>
+            </div>
+            <div className="space-y-2.5">
+              {SCHEDULED_CARDS.slice(0, 5).map((s, i) => {
+                const failed = s.lastResult === "failed";
+                return (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <span className="text-[14px] text-foreground truncate">{s.name}</span>
+                    <span className={cn(
+                      "text-[14px] tabular-nums shrink-0",
+                      failed ? "text-destructive" : "text-muted-foreground",
+                    )}>{s.nextRun}</span>
+                  </div>
+                );
+              })}
+              <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors mt-1">
+                +{SCHEDULED_CARDS.length - 5} more
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </>
+      )}
+
+      {previewArtifact && <MockArtifactPreview artifact={previewArtifact} onClose={() => setPreviewArtifact(null)} />}
+      {showCreateSchedule && <HomeCreateScheduleModal onClose={() => setShowCreateSchedule(false)} />}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bento Home Layout 3 — Refined
+   Title-first hierarchy. Titles are 16px semibold (primary scan target).
+   Metadata subordinate below at 14px muted. No card borders on feed items —
+   active items get faint blue tint, reviews are borderless rows. Sidebar is
+   a flat panel with section headers.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function BentoHomeLayout3({ demoState }: { demoState: DemoState }) {
+  const [previewArtifact, setPreviewArtifact] = useState<ReviewSession["artifact"] | null>(null);
+  const [dismissedReview, setDismissedReview] = useState<Set<number>>(new Set());
+  const [feedFilter, setFeedFilter] = useState<FeedCategory[]>([...FEED_CATEGORIES]);
+  const [dismissingReview, setDismissingReview] = useState<Set<number>>(new Set());
+  const [collapsingReview, setCollapsingReview] = useState<Set<number>>(new Set());
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
+
+  const dismissReview = useCallback((idx: number) => {
+    setDismissingReview(prev => new Set([...prev, idx]));
+    setTimeout(() => { setCollapsingReview(prev => new Set([...prev, idx])); }, 200);
+    setTimeout(() => {
+      setDismissedReview(prev => new Set([...prev, idx]));
+      setDismissingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+      setCollapsingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+    }, 500);
+  }, []);
+
+  const toggleFeedFilter = useCallback((cat: FeedCategory) => {
+    setFeedFilter(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+  }, []);
+
+  const isEmptyState = demoState === "empty";
+  const isClearedState = demoState === "just-cleared" || demoState === "no-blockers";
+  const visibleReview = (isEmptyState || isClearedState) ? [] : REVIEW_SESSIONS.filter((item, i) => !dismissedReview.has(i) && feedFilter.includes(feedCategory(item)));
+  const visibleActive = (isEmptyState || isClearedState) ? [] : ACTIVE_SESSIONS.filter(item => feedFilter.includes(feedCategoryActive(item)));
+  const allCleared = isClearedState || (!isEmptyState && visibleActive.length === 0 && visibleReview.length === 0);
+
+  const dismissAll = () => {
+    const reviewIdxs = REVIEW_SESSIONS.map((_, i) => i).filter(i => !dismissedReview.has(i));
+    setDismissingReview(new Set(reviewIdxs));
+    setTimeout(() => { setCollapsingReview(new Set(reviewIdxs)); }, 200);
+    setTimeout(() => {
+      setDismissedReview(new Set(REVIEW_SESSIONS.map((_, i) => i)));
+      setDismissingReview(new Set());
+      setCollapsingReview(new Set());
+    }, 500);
+  };
+
+  return (
+    <div className="space-y-8">
+
+      {isEmptyState && (
+        <section className="pt-8">
+          <h2 className="text-[20px] font-semibold text-foreground tracking-[-0.3px]">
+            Accelerate research with DAM
+          </h2>
+          <p className="mt-2 max-w-[480px] text-[14px] leading-relaxed text-muted-foreground">
+            Run agents in isolated cloud environments with credentials and tools
+            securely injected. Create knowledge bases, run experiments, and
+            trigger agents from Slack or on a schedule.
+          </p>
+          <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-px bg-border/50 rounded-2xl overflow-hidden">
+            <a href={import.meta.env.VITE_PROTOTYPE ? "#/agent-setup" : "/agent-setup"} className="group flex flex-col gap-4 bg-background p-7 no-underline transition-colors hover:bg-muted/30">
+              <ContainerSoftware size={16} className="text-muted-foreground" />
+              <div>
+                <p className="text-[15px] font-semibold text-foreground">Coding agent</p>
+                <p className="mt-1 text-[14px] leading-snug text-muted-foreground">Work with your preferred agent, credentials, and tools in isolation.</p>
+              </div>
+            </a>
+            <a href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-onboard" : "/experiment-onboard"} className="group flex flex-col gap-4 bg-background p-7 no-underline transition-colors hover:bg-muted/30">
+              <Chemistry size={16} className="text-muted-foreground" />
+              <div>
+                <p className="text-[15px] font-semibold text-foreground">Experiment</p>
+                <p className="mt-1 text-[14px] leading-snug text-muted-foreground">Run one goal across many variants at once and compare results.</p>
+              </div>
+            </a>
+            <a href={import.meta.env.VITE_PROTOTYPE ? "#/kb-setup" : "/kb-setup"} className="group flex flex-col gap-4 bg-background p-7 no-underline transition-colors hover:bg-muted/30">
+              <Book size={16} className="text-muted-foreground" />
+              <div>
+                <p className="text-[15px] font-semibold text-foreground">Knowledge base</p>
+                <p className="mt-1 text-[14px] leading-snug text-muted-foreground">Organize and converse with data sourced from repos and documents.</p>
+              </div>
+            </a>
+          </div>
+          <p className="mt-6 text-[14px] text-muted-foreground">
+            <a href="https://docs.example.com" target="_blank" rel="noopener noreferrer" className="text-foreground no-underline hover:underline">Read the docs</a>
+            {" "}to learn more.
+          </p>
+        </section>
+      )}
+
+      {!isEmptyState && (
+      <>
+      <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-[18px] font-semibold tracking-[-0.3px] text-foreground">Activity</h1>
+          {(visibleActive.length > 0 || visibleReview.length > 0) && (
+            <span className="text-[14px] text-muted-foreground tabular-nums">{visibleActive.length + visibleReview.length}</span>
+          )}
+        </div>
+        {(visibleActive.length > 0 || visibleReview.length > 0) && (
+          <div className="flex items-center gap-4">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="flex items-center gap-1.5 text-[14px] text-muted-foreground hover:text-foreground transition-colors">
+                  <Filter size={16} />
+                  {feedFilter.length === FEED_CATEGORIES.length ? "All" : `${feedFilter.length}`}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {FEED_CATEGORIES.map((cat) => (
+                  <DropdownMenuCheckboxItem key={cat} checked={feedFilter.includes(cat)} onCheckedChange={() => toggleFeedFilter(cat)} onSelect={(e) => e.preventDefault()}>
+                    {FEED_CATEGORY_LABELS[cat]}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors" onClick={dismissAll}>Clear all</button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-[1fr_320px] gap-4 items-start">
+        {/* LEFT: Main feed */}
+        <div className="space-y-3">
+          {/* Needs attention — in main feed */}
+          <div className="rounded-2xl border border-border bg-card/80 p-5 transition-colors">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                  <span>Needs attention</span>
+                </div>
+                <p className="text-[15px] text-foreground">
+                  brand-asset-generator
+                  <span className="text-muted-foreground font-normal text-[14px] ml-2">
+                    wants to access
+                  </span>
+                </p>
+                <p className="font-mono text-[14px] text-muted-foreground mt-0.5 truncate">
+                  GET api.figma.com
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button size="sm">Allow</Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="px-2">
+                      <OverflowMenuVertical size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem>Allow permanently</DropdownMenuItem>
+                    <DropdownMenuItem>Allow all of api.figma.com</DropdownMenuItem>
+                    <DropdownMenuItem>Deny this request</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive">Deny permanently</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </div>
+
+          {allCleared && (
+            <div className="py-20 text-center">
+              <Checkmark size={16} className="text-emerald-500 mx-auto mb-2" />
+              <p className="text-[16px] font-semibold text-foreground">All clear</p>
+              <p className="mt-1 text-[14px] text-muted-foreground">Nothing needs your attention right now.</p>
+            </div>
+          )}
+
+          {/* Active sessions — in progress */}
+          {visibleActive.map((item) => {
+            const activeIdx = ACTIVE_SESSIONS.indexOf(item);
+            return (
+            <div key={`active-${activeIdx}`} className="rounded-2xl border border-blue-500/10 bg-blue-500/[0.03] p-5">
+              <div className="flex items-start gap-3">
+                <div className="pt-[3px] text-blue-500">
+                  {item.experiment ? <Chemistry size={16} className="shrink-0" /> : <Code size={16} className="shrink-0" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[16px] font-semibold text-foreground leading-snug">
+                    {item.title}
+                    <WorkingDots className="text-blue-500 inline-flex align-middle ml-1.5" size="md" />
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-[14px] text-muted-foreground">
+                    <span>{item.agent}</span>
+                    <span className="text-border">·</span>
+                    <span>{item.duration}</span>
+                    {item.experiment && (
+                      <>
+                        <span className="text-border">·</span>
+                        <span className="tabular-nums">{item.experiment.runs} runs</span>
+                        <span className="text-border">·</span>
+                        <span className="text-blue-500 tabular-nums">{item.experiment.variants} live</span>
+                      </>
+                    )}
+                  </div>
+                  <button type="button" className="mt-3 text-[14px] text-muted-foreground hover:text-foreground transition-colors">
+                    View session →
+                  </button>
+                </div>
+              </div>
+            </div>
+            );
+          })}
+
+          {/* Review sessions */}
+          {visibleReview.map((item) => {
+            const originalIdx = REVIEW_SESSIONS.indexOf(item);
+            return (
+            <div key={originalIdx} className={cn(
+              "rounded-2xl border border-border/50 bg-card/80 p-5 transition-all duration-300 ease-out",
+              dismissingReview.has(originalIdx) && "opacity-0 scale-[0.98]",
+              collapsingReview.has(originalIdx) && "!mt-0 !p-0 !border-0 max-h-0 overflow-hidden"
+            )}>
+              <div className="flex items-start gap-3">
+                <div className="pt-[3px] text-muted-foreground">
+                  {item.scheduled ? <Time size={16} className="shrink-0" /> : item.experiment ? <Chemistry size={16} className="shrink-0" /> : <Code size={16} className="shrink-0" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[16px] font-semibold text-foreground leading-snug">
+                    {item.title}
+                    <span className="inline-block w-[7px] h-[7px] rounded-full bg-blue-500 align-middle ml-2" />
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1.5 text-[14px] text-muted-foreground">
+                    <span>{item.agent}</span>
+                    <span className="text-border">·</span>
+                    <span>{item.time}</span>
+                    {item.experiment && (
+                      <>
+                        <span className="text-border">·</span>
+                        <span className="tabular-nums">{item.experiment.runs} runs</span>
+                        <span className="text-border">·</span>
+                        <span>best: {item.experiment.best}</span>
+                      </>
+                    )}
+                  </div>
+                  {item.artifact && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewArtifact(item.artifact!)}
+                      className="mt-2 inline-flex items-center gap-1.5 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Document size={16} className="shrink-0" />
+                      <span className="truncate max-w-[240px]">{item.artifact.name}</span>
+                    </button>
+                  )}
+                  <div className="flex items-center gap-4 mt-3">
+                    <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">View session →</button>
+                    <button type="button" className="text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-colors" onClick={() => dismissReview(originalIdx)}>Dismiss</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            );
+          })}
+        </div>
+
+        {/* RIGHT: Sidebar — Compute + Schedules only */}
+        <div className="sticky top-4 space-y-4">
+          {/* Compute resources */}
+          <ComputePreview />
+
+          {/* Scheduled */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[14px] font-semibold text-foreground">Scheduled</span>
+              <Button variant="outline" size="xs" className="text-[14px]" onClick={() => setShowCreateSchedule(true)}>
+                <Add size={16} /> New
+              </Button>
+            </div>
+            <div className="space-y-2.5">
+              {SCHEDULED_CARDS.slice(0, 5).map((s, i) => {
+                const failed = s.lastResult === "failed";
+                return (
+                  <div key={i} className="flex items-center justify-between gap-3">
+                    <span className="text-[14px] text-foreground truncate">{s.name}</span>
+                    <span className={cn(
+                      "text-[14px] tabular-nums shrink-0",
+                      failed ? "text-destructive" : "text-muted-foreground",
+                    )}>{s.nextRun}</span>
+                  </div>
+                );
+              })}
+              <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">
+                +{SCHEDULED_CARDS.length - 5} more
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </>
+      )}
+
+      {previewArtifact && <MockArtifactPreview artifact={previewArtifact} onClose={() => setPreviewArtifact(null)} />}
+      {showCreateSchedule && <HomeCreateScheduleModal onClose={() => setShowCreateSchedule(false)} />}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Feed Dashboard Layout
+   Centered single-column feed using real project content.
+   "Good morning" + "Activity" header, category pill filters.
+   Cards use BentoHomeLayout2's internal structure with Feed color palette.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const FEED_TABS = ["all", "attention", "agents", "experiments", "knowledge", "schedules"] as const;
+type FeedTab = (typeof FEED_TABS)[number];
+const FEED_TAB_LABELS: Record<FeedTab, string> = {
+  all: "All",
+  attention: "Needs attention",
+  agents: "Coding agents",
+  experiments: "Experiments",
+  knowledge: "Knowledge bases",
+  schedules: "Schedules",
+};
+
+function FeedFilterDropdown({ value, onChange }: { value: FeedTab; onChange: (v: FeedTab) => void }) {
+  const label = FEED_TAB_LABELS[value];
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+      >
+        {label}
+        <ChevronDown
+          size={16}
+          className={cn("transition-transform", open && "rotate-180")}
+        />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-50 rounded-md border border-border bg-card shadow-md py-1 min-w-[140px]">
+            {FEED_TABS.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => { onChange(tab); setOpen(false); }}
+                className={cn(
+                  "w-full text-left px-3 py-1.5 text-[14px] transition-colors",
+                  value === tab
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                )}
+              >
+                {FEED_TAB_LABELS[tab]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+type FeedStatus = "everything" | "in-progress" | "unread" | "read" | "attention";
+type FeedTime = "all" | "24h" | "7d" | "30d";
+
+const FEED_STATUS_LABELS: Record<FeedStatus, string> = {
+  everything: "Everything",
+  "in-progress": "In progress",
+  unread: "Unread",
+  read: "Read",
+  attention: "Needs attention",
+};
+
+const FEED_TIME_LABELS: Record<FeedTime, string> = {
+  all: "All time",
+  "24h": "Last 24 hours",
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+};
+
+function FeedFilterBar({
+  status,
+  onStatusChange,
+  time,
+  onTimeChange,
+}: {
+  status: FeedStatus;
+  onStatusChange: (v: FeedStatus) => void;
+  time: FeedTime;
+  onTimeChange: (v: FeedTime) => void;
+}) {
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [timeOpen, setTimeOpen] = useState(false);
+
+  return (
+    <div className="flex items-center gap-3">
+      {/* Status dropdown */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => { setStatusOpen(!statusOpen); setTimeOpen(false); }}
+          className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        >
+          {FEED_STATUS_LABELS[status]}
+          <ChevronDown size={16} className={cn("transition-transform", statusOpen && "rotate-180")} />
+        </button>
+        {statusOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setStatusOpen(false)} />
+            <div className="absolute left-0 top-full mt-1 z-50 rounded-md border border-border bg-card shadow-md py-1 min-w-[160px]">
+              {(Object.keys(FEED_STATUS_LABELS) as FeedStatus[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { onStatusChange(key); setStatusOpen(false); }}
+                  className={cn(
+                    "w-full text-left px-3 py-1.5 text-[14px] transition-colors",
+                    status === key
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                >
+                  {FEED_STATUS_LABELS[key]}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Time dropdown */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => { setTimeOpen(!timeOpen); setStatusOpen(false); }}
+          className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        >
+          {FEED_TIME_LABELS[time]}
+          <ChevronDown size={16} className={cn("transition-transform", timeOpen && "rotate-180")} />
+        </button>
+        {timeOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setTimeOpen(false)} />
+            <div className="absolute left-0 top-full mt-1 z-50 rounded-md border border-border bg-card shadow-md py-1 min-w-[160px]">
+              {(Object.keys(FEED_TIME_LABELS) as FeedTime[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { onTimeChange(key); setTimeOpen(false); }}
+                  className={cn(
+                    "w-full text-left px-3 py-1.5 text-[14px] transition-colors",
+                    time === key
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                >
+                  {FEED_TIME_LABELS[key]}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FeedDashboardLayout() {
+  const { state: demoState } = useDemoState();
+  const [previewArtifact, setPreviewArtifact] = useState<ReviewSession["artifact"] | null>(null);
+  const [dismissedReview, setDismissedReview] = useState<Set<number>>(new Set());
+  const [_activeTab, _setActiveTab] = useState<FeedTab>("all");
+  const [statusFilter, setStatusFilter] = useState<FeedStatus>("everything");
+  const [timeFilter, setTimeFilter] = useState<FeedTime>("all");
+  const [dismissingReview, setDismissingReview] = useState<Set<number>>(new Set());
+  const [collapsingReview, setCollapsingReview] = useState<Set<number>>(new Set());
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
+
+  const [dismissedActive, setDismissedActive] = useState<Set<number>>(new Set());
+  const [attentionDismissed, setAttentionDismissed] = useState(false);
+
+  const dismissReview = useCallback((idx: number) => {
+    setDismissingReview(prev => new Set([...prev, idx]));
+    setTimeout(() => { setCollapsingReview(prev => new Set([...prev, idx])); }, 200);
+    setTimeout(() => {
+      setDismissedReview(prev => new Set([...prev, idx]));
+      setDismissingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+      setCollapsingReview(prev => { const next = new Set(prev); next.delete(idx); return next; });
+    }, 500);
+  }, []);
+
+  const isEmptyState = demoState === "empty";
+  const isClearedState = demoState === "just-cleared" || demoState === "no-blockers";
+
+  const showAttention = (statusFilter === "everything" || statusFilter === "attention") && !attentionDismissed;
+
+  const visibleReview = (isEmptyState || isClearedState) ? [] : REVIEW_SESSIONS.filter((_item, i) => {
+    if (dismissedReview.has(i)) return false;
+    if (statusFilter === "everything") return true;
+    if (statusFilter === "unread") return true;
+    if (statusFilter === "read") return false;
+    return false;
+  });
+  const visibleActive = (isEmptyState || isClearedState) ? [] : ACTIVE_SESSIONS.filter((_item, i) => {
+    if (dismissedActive.has(i)) return false;
+    if (statusFilter === "in-progress" || statusFilter === "everything") return true;
+    return false;
+  });
+  const allCleared = isClearedState || (!isEmptyState && visibleActive.length === 0 && visibleReview.length === 0 && !showAttention);
+
+  const dismissAll = () => {
+    const reviewIdxs = REVIEW_SESSIONS.map((_, i) => i).filter(i => !dismissedReview.has(i));
+    setDismissingReview(new Set(reviewIdxs));
+    setTimeout(() => { setCollapsingReview(new Set(reviewIdxs)); }, 200);
+    setTimeout(() => {
+      setDismissedReview(new Set(REVIEW_SESSIONS.map((_, i) => i)));
+      setDismissedActive(new Set(ACTIVE_SESSIONS.map((_, i) => i)));
+      setAttentionDismissed(true);
+      setDismissingReview(new Set());
+      setCollapsingReview(new Set());
+    }, 500);
+  };
+
+  return (
+    <div className="space-y-6">
+
+      {/* Empty state — matches the Current home page EmptyState exactly */}
+      {isEmptyState && (
+        <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-8">
+          <h2 className="text-[20px] font-semibold text-foreground">
+            Accelerate research with DAM
+          </h2>
+          <p className="mt-1.5 max-w-[560px] text-[14px] leading-relaxed text-muted-foreground">
+            Run agents in isolated cloud environments with credentials and tools
+            securely injected. Create knowledge bases, run experiments to compare
+            agent variants, and trigger agents from Slack or on a schedule.
+          </p>
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/agent-setup" : "/agent-setup"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <ContainerSoftware size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Create a coding agent</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Work with your preferred coding agent, credentials, and tools in an isolated environment.
+                </p>
+              </div>
+            </a>
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/experiment-onboard" : "/experiment-onboard"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <Chemistry size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Begin an experiment</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Run one goal across many variants at once and compare results.
+                </p>
+              </div>
+            </a>
+            <a
+              href={import.meta.env.VITE_PROTOTYPE ? "#/kb-setup" : "/kb-setup"}
+              className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
+            >
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
+                <Book size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-foreground">Start a knowledge base</p>
+                <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">
+                  Organize and converse with data sourced from repos, documents, and more (LLM wiki).
+                </p>
+              </div>
+            </a>
+          </div>
+          <div className="mt-5 flex justify-end">
+            <a
+              href="https://docs.example.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[14px] font-medium text-accent no-underline hover:underline"
+            >
+              Or check out the Documentation →
+            </a>
+          </div>
+        </section>
+      )}
+
+      {!isEmptyState && (
+      <>
+        {/* Greeting — own line */}
+        <div className="pb-4">
+          <p className="text-[18px] text-muted-foreground mb-1">Good morning</p>
+          <h1 className="text-[40px] font-bold tracking-[-1px] text-foreground leading-none">Activity</h1>
+        </div>
+
+        <div className="grid grid-cols-[1fr_320px] gap-4 items-start">
+          {/* LEFT: Feed */}
+          <div className="space-y-3">
+            {/* Filter + stats — scoped to feed column only */}
+            <div className="flex items-center justify-between pb-3">
+              <FeedFilterBar status={statusFilter} onStatusChange={setStatusFilter} time={timeFilter} onTimeChange={setTimeFilter} />
+              {(visibleActive.length > 0 || visibleReview.length > 0) && (
+                <div className="flex items-center gap-4">
+                  <p className="text-[14px] text-muted-foreground tabular-nums">
+                    <span className="text-foreground font-medium">{visibleActive.length}</span> running
+                    <span className="text-border mx-1.5">·</span>
+                    <span className="text-foreground font-medium">{visibleReview.length}</span> to review
+                  </p>
+                  <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors" onClick={dismissAll}>
+                    Clear all
+                  </button>
+                </div>
+              )}
+            </div>
+            {/* Needs attention — approval card matching ApprovalVariant1 */}
+            {showAttention && (
+              <div className="rounded-2xl border border-border bg-card/80 p-5 transition-colors">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                      <span>Needs attention</span>
+                    </div>
+                    <p className="text-[15px] text-foreground">
+                      brand-asset-generator
+                      <span className="text-muted-foreground font-normal text-[14px] ml-2">
+                        wants to access
+                      </span>
+                    </p>
+                    <p className="font-mono text-[14px] text-muted-foreground mt-0.5 truncate">
+                      GET api.figma.com
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button size="sm">Allow</Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="px-2">
+                          <OverflowMenuVertical size={16} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>Allow permanently</DropdownMenuItem>
+                        <DropdownMenuItem>Allow all of api.figma.com</DropdownMenuItem>
+                        <DropdownMenuItem>Deny this request</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive">Deny permanently</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {allCleared && (
+              <div className="rounded-xl border border-border bg-card/80 p-10 text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <Checkmark size={16} className="text-emerald-500" />
+                  <span className="text-[14px] font-medium text-foreground">All clear</span>
+                </div>
+                <p className="text-[14px] text-muted-foreground">Nothing waiting for review. You're all caught up.</p>
+              </div>
+            )}
+
+            {/* Active sessions — clickable card with hover arrow */}
+            {visibleActive.map((item) => {
+              const activeIdx = ACTIVE_SESSIONS.indexOf(item);
+              return (
+              <button
+                key={`active-${activeIdx}`}
+                type="button"
+                className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200 hover:shadow-lg"
+              >
+                <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                  {item.scheduled ? <Time size={16} className="shrink-0" /> : item.experiment ? <Chemistry size={16} className="shrink-0" /> : <Code size={16} className="shrink-0" />}
+                  <span>{item.agent}</span>
+                </div>
+                <p className="text-[15px] font-semibold text-foreground leading-snug">
+                  {item.title}
+                  <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" />
+                </p>
+                {item.experiment && (
+                  <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+                    <span className="text-[14px] text-muted-foreground tabular-nums">{item.experiment.runs} runs</span>
+                    <span className="text-[14px] text-muted-foreground/40">·</span>
+                    <span className="text-[14px] text-blue-500 tabular-nums">{item.experiment.variants} live</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[14px] text-muted-foreground">{item.duration}</span>
+                    {item.scheduled && (
+                      <span className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                        · Edit schedule
+                      </span>
+                    )}
+                  </div>
+                  <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">→</span>
+                </div>
+              </button>
+              );
+            })}
+
+            {/* Review sessions — clickable card with hover arrow + dismiss top-right */}
+            {visibleReview.map((item) => {
+              const originalIdx = REVIEW_SESSIONS.indexOf(item);
+              return (
+              <div
+                key={originalIdx}
+                className={cn(
+                  "group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-300 ease-out cursor-pointer hover:shadow-lg",
+                  dismissingReview.has(originalIdx) && "opacity-0 scale-[0.98]",
+                  collapsingReview.has(originalIdx) && "!mt-0 !p-0 !border-0 max-h-0 overflow-hidden"
+                )}
+                onClick={() => {/* navigate to session */}}
+                role="button"
+                tabIndex={0}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                      {item.scheduled ? <Time size={16} className="shrink-0" /> : item.experiment ? <Chemistry size={16} className="shrink-0" /> : <Code size={16} className="shrink-0" />}
+                      <span>{item.agent}</span>
+                    </div>
+                    <p className="text-[15px] font-semibold text-foreground leading-snug">
+                      {item.title}
+                      <span className="inline-block w-2 h-2 rounded-full bg-blue-500 align-middle ml-1.5" />
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+                    onClick={(e) => { e.stopPropagation(); dismissReview(originalIdx); }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                {item.experiment && (
+                  <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+                    <span className="text-[14px] text-muted-foreground tabular-nums">{item.experiment.runs} runs</span>
+                    <span className="text-[14px] text-muted-foreground/40">·</span>
+                    <span className="text-[14px] text-muted-foreground">ran {item.experiment.best}</span>
+                  </div>
+                )}
+                {item.artifact && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setPreviewArtifact(item.artifact!); }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border/50 bg-muted/40 hover:bg-muted/70 hover:border-border transition-all text-[14px] text-muted-foreground hover:text-foreground mt-3"
+                  >
+                    <Document size={16} className="shrink-0" />
+                    <span className="truncate max-w-[160px]">{item.artifact.name}</span>
+                  </button>
+                )}
+                <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[14px] text-muted-foreground">{item.time}</span>
+                    {item.scheduled && (
+                      <span className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        · Edit schedule
+                      </span>
+                    )}
+                  </div>
+                  <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">→</span>
+                </div>
+              </div>
+              );
+            })}
+          </div>
+
+          {/* RIGHT: Sidebar — Compute + Schedules */}
+          <div className="sticky top-4 space-y-4">
+            <ComputePreview />
+
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <div className="flex items-center justify-between mb-4 min-h-[32px]">
+                <p className="text-[14px] text-muted-foreground">Scheduled</p>
+                <Button variant="outline" size="xs" className="text-[14px]" onClick={() => setShowCreateSchedule(true)}>
+                  <Add size={16} /> New
+                </Button>
+              </div>
+              <div className="space-y-2.5">
+                {SCHEDULED_CARDS.slice(0, 5).map((s, i) => {
+                  const failed = s.lastResult === "failed";
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <span className="text-[14px] text-foreground truncate">{s.name}</span>
+                      <span className={cn(
+                        "text-[14px] tabular-nums shrink-0",
+                        failed ? "text-destructive" : "text-muted-foreground",
+                      )}>{s.nextRun}</span>
+                    </div>
+                  );
+                })}
+                <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">
+                  +{SCHEDULED_CARDS.length - 5} more
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+      )}
+
+      {previewArtifact && <MockArtifactPreview artifact={previewArtifact} onClose={() => setPreviewArtifact(null)} />}
+      {showCreateSchedule && <HomeCreateScheduleModal onClose={() => setShowCreateSchedule(false)} />}
     </div>
   );
 }
