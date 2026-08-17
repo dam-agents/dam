@@ -21,7 +21,10 @@ import type {
   SkillSetSkipReason,
 } from "api-server-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
-import type { RuntimeSettledPort } from "../../agents/index.js";
+import type {
+  ContributionsProgress,
+  RuntimeProgressPort,
+} from "../../agents/index.js";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import { computeAgentState } from "../../agents/infrastructure/agent-mappers.js";
 import type { TemplatesRepository } from "../../templates/infrastructure/templates-repository.js";
@@ -29,7 +32,10 @@ import {
   SkillSourceProtectedError,
   type SkillsRepository,
 } from "../infrastructure/skills-repository.js";
-import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
+import type {
+  AgentSkillsRepository,
+  SkillKey,
+} from "../infrastructure/agent-skills-repository.js";
 import type { SkillSetsRepository } from "../infrastructure/skill-sets-repository.js";
 import type { SkillSourceSeed } from "../infrastructure/seed-sources.js";
 import { seedToSkillSource } from "../infrastructure/seed-sources.js";
@@ -41,6 +47,7 @@ import {
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import type { UnitOfWork } from "../../../core/unit-of-work.js";
 import { detectHost } from "../domain/git-host.js";
 import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
 import type { ScanScope } from "../infrastructure/scan-cache.js";
@@ -76,7 +83,8 @@ export interface SkillsServiceDeps {
   runtimeClient: AgentRuntimeSkillsClient;
   githubCredential: GithubCredentialPort;
   runtimeMutator: RuntimeMutator;
-  runtimeSettled: RuntimeSettledPort;
+  runtimeProgress: RuntimeProgressPort;
+  unitOfWork: UnitOfWork;
   owner: string;
   scanSource: (
     scope: ScanScope,
@@ -206,6 +214,49 @@ function asPodVerdict(err: unknown): unknown {
   return err;
 }
 
+async function reapGate(
+  deps: SkillsServiceDeps,
+  agentId: string,
+): Promise<ContributionsProgress | null> {
+  try {
+    return await deps.runtimeProgress.progress(agentId);
+  } catch (err) {
+    getLogger().warn(
+      { err, agentId },
+      "skills state: progress read failed; deferring reconcile",
+    );
+    return null;
+  }
+}
+
+async function reapWithRedelivery(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  ghosts: SkillKey[],
+): Promise<boolean> {
+  try {
+    await deps.unitOfWork(async (tx) => {
+      await deps.agentSkillsRepo.reap(agentId, ghosts, tx);
+      await deps.runtimeMutator.bump(agentId, [], tx);
+    });
+  } catch (err) {
+    getLogger().warn(
+      { err, agentId },
+      "skills state: reap deferred — the delete and its re-delivery bump did not commit",
+    );
+    return false;
+  }
+  try {
+    await deps.runtimeMutator.enqueueAfterCommit(agentId);
+  } catch (err) {
+    getLogger().warn(
+      { err, agentId },
+      "skills state: reap re-delivery left to the sweep — enqueue failed",
+    );
+  }
+  return true;
+}
+
 async function standaloneFor(
   deps: SkillsServiceDeps,
   agentId: string,
@@ -220,6 +271,7 @@ interface SourceScan {
   skills: Skill[];
   scannedAt: number;
   viaPod: boolean;
+  visibility?: "public" | "private";
 }
 
 async function scanForSource(
@@ -283,7 +335,9 @@ async function runScanForSource(
   src: SkillSource,
   agentId?: string,
 ): Promise<SourceScan> {
+  let archiveAsked = false;
   if (detectHost(src.gitUrl)) {
+    archiveAsked = true;
     try {
       const { skills, scannedAt } = await deps.scanSource(
         { kind: "shared" },
@@ -291,7 +345,7 @@ async function runScanForSource(
         src.path,
         (gitUrl) => deps.scanPublic(gitUrl, src.path),
       );
-      return { skills, scannedAt, viaPod: false };
+      return { skills, scannedAt, viaPod: false, visibility: "public" };
     } catch (err) {
       if (!(err instanceof PublicArchiveNotFoundError)) throw err;
     }
@@ -319,7 +373,12 @@ async function runScanForSource(
       src.path,
       (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
     );
-    return { skills, scannedAt, viaPod: true };
+    return {
+      skills,
+      scannedAt,
+      viaPod: true,
+      visibility: archiveAsked ? "private" : undefined,
+    };
   } catch (err) {
     const verdict = await podGithubVerdict(deps, err, agentId);
     if (!verdict) throw err;
@@ -376,26 +435,32 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
     const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
 
-    for (const entry of install) {
-      const path = paths.get(entry.source);
-      await deps.agentSkillsRepo.upsertSkill(agentId, {
-        source: entry.source,
-        name: entry.name,
-        version: entry.version,
-        ...(entry.contentHash !== undefined
-          ? { contentHash: entry.contentHash }
-          : {}),
-        ...(path !== undefined ? { path } : {}),
-      });
-    }
-    for (const entry of uninstall) {
-      await deps.agentSkillsRepo.removeSkill(agentId, {
-        source: entry.source,
-        name: entry.name,
-      });
-    }
-
-    await deps.runtimeMutator.bump(agentId, []);
+    await deps.unitOfWork(async (tx) => {
+      for (const entry of install) {
+        const path = paths.get(entry.source);
+        await deps.agentSkillsRepo.upsertSkill(
+          agentId,
+          {
+            source: entry.source,
+            name: entry.name,
+            version: entry.version,
+            ...(entry.contentHash !== undefined
+              ? { contentHash: entry.contentHash }
+              : {}),
+            ...(path !== undefined ? { path } : {}),
+          },
+          tx,
+        );
+      }
+      for (const entry of uninstall) {
+        await deps.agentSkillsRepo.removeSkill(
+          agentId,
+          { source: entry.source, name: entry.name },
+          tx,
+        );
+      }
+      await deps.runtimeMutator.bump(agentId, [], tx);
+    });
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
 
     for (const entry of install) {
@@ -492,8 +557,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
 
-      const { skills, scannedAt } = await scanForSource(deps, src, agentId);
-      return { skills, scannedAt: new Date(scannedAt).toISOString() };
+      const { skills, scannedAt, visibility } = await scanForSource(
+        deps,
+        src,
+        agentId,
+      );
+      return {
+        skills,
+        scannedAt: new Date(scannedAt).toISOString(),
+        visibility,
+      };
     },
 
     async getSkillContent(sourceId: string, name: string, agentId?: string) {
@@ -595,8 +668,10 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           : {}),
         ...(path !== undefined ? { path } : {}),
       };
-      await deps.agentSkillsRepo.upsertSkill(input.agentId, ref);
-      await deps.runtimeMutator.bump(input.agentId, []);
+      await deps.unitOfWork(async (tx) => {
+        await deps.agentSkillsRepo.upsertSkill(input.agentId, ref, tx);
+        await deps.runtimeMutator.bump(input.agentId, [], tx);
+      });
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
       securityLog("info", "skill.install", {
         category: "privileged",
@@ -619,11 +694,14 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async uninstall(input: SkillUninstallInput) {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
-      await deps.agentSkillsRepo.removeSkill(input.agentId, {
-        source: input.source,
-        name: input.name,
+      await deps.unitOfWork(async (tx) => {
+        await deps.agentSkillsRepo.removeSkill(
+          input.agentId,
+          { source: input.source, name: input.name },
+          tx,
+        );
+        await deps.runtimeMutator.bump(input.agentId, [], tx);
       });
-      await deps.runtimeMutator.bump(input.agentId, []);
       await deps.runtimeMutator.enqueueAfterCommit(input.agentId);
       securityLog("info", "skill.uninstall", {
         category: "privileged",
@@ -924,24 +1002,28 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         ...new Set(instancePublishes.map((p) => p.skillName)),
       ];
 
+      const gateBefore = await reapGate(deps, agentId);
+
       const local = await deps.runtimeClient.listLocal(agentId, publishedNames);
 
       const onDisk = new Set(local.map((s) => s.name));
 
-      let settled = false;
-      try {
-        settled = await deps.runtimeSettled.isSettled(agentId);
-      } catch (err) {
-        getLogger().warn(
-          { err, agentId },
-          "skills state: settled check failed; deferring reconcile",
-        );
+      const tracked = await deps.agentSkillsRepo.listSkills(agentId);
+      let installed = tracked;
+      const ghosts =
+        gateBefore?.applied === true
+          ? await deps.agentSkillsRepo.listGhosts(agentId, onDisk)
+          : [];
+      if (gateBefore !== null && ghosts.length > 0) {
+        const gateAfter = await reapGate(deps, agentId);
+        const stable =
+          gateAfter?.applied === true &&
+          gateAfter.version === gateBefore.version;
+        if (stable && (await reapWithRedelivery(deps, agentId, ghosts))) {
+          const reaped = new Set(ghosts.map(skillKey));
+          installed = tracked.filter((s) => !reaped.has(skillKey(s)));
+        }
       }
-      if (settled) {
-        await deps.agentSkillsRepo.reconcile(agentId, onDisk);
-      }
-
-      const installed = await deps.agentSkillsRepo.listSkills(agentId);
 
       const trackedNames = new Set(installed.map((s) => s.name));
       const standalone = local.filter((s) => !trackedNames.has(s.name));

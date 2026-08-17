@@ -42,9 +42,9 @@ export function createRuntimeChannelService(
       `[applyState] incoming v=${input.version} hash=${input.state.hash.slice(0, 8)} local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} contribs={${kindCounts}} events={${eventCounts}}`,
     );
 
-    if (input.version <= local.lastAppliedVersion) {
+    if (input.version < local.lastAppliedVersion) {
       deps.log(
-        `[applyState] contributions stale — incoming v=${input.version} <= local v=${local.lastAppliedVersion}; events only`,
+        `[applyState] contributions stale — incoming v=${input.version} < local v=${local.lastAppliedVersion}; events only`,
       );
       const settledEvents = await processEvents(
         input.events,

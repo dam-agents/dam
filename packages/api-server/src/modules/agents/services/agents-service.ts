@@ -13,6 +13,7 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
+  type SessionBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -20,6 +21,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import type { AgentsRepository } from "../infrastructure/agents-repository.js";
 import type { AgentEnvRepository } from "../infrastructure/agent-env-repository.js";
+import type { PodStatusClient } from "../infrastructure/pod-status-client.js";
 import { minutesToDuration } from "../../../duration.js";
 import {
   assembleAgent,
@@ -57,13 +59,20 @@ export interface ContributionsStatus {
   preparingWorkspace: boolean;
 }
 
-export interface ContributionsSettledPort {
-  status(agentId: string): Promise<ContributionsStatus>;
-  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  isSettled(agentId: string): Promise<boolean>;
+export interface ContributionsProgress {
+  version: number;
+  settled: boolean;
+  applied: boolean;
+  failures: DriverFailure[];
 }
 
-export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
+export interface ContributionsProgressPort {
+  status(agentId: string): Promise<ContributionsStatus>;
+  statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
+  progress(agentId: string): Promise<ContributionsProgress>;
+}
+
+export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
@@ -176,6 +185,22 @@ export function executeTelegramBind(deps: {
     }
 
     return ok({ chatTitle: flow.chatTitle ?? null });
+  };
+}
+
+export function executeBackgroundWorkRead(deps: {
+  getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
+  podStatus: PodStatusClient;
+}) {
+  return async (id: string): Promise<SessionBackgroundWork[] | null> => {
+    const infra = await deps.getAgent(id);
+    if (!infra) return null;
+    if (infra.hibernated) return [];
+    try {
+      return await deps.podStatus.backgroundWork(id);
+    } catch {
+      return [];
+    }
   };
 }
 
@@ -402,7 +427,8 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
+  podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
   resizeGate?: ResizeGatePort;
@@ -443,7 +469,7 @@ export function createAgentsService(deps: {
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
-      return await deps.contributionsSettled.status(id);
+      return await deps.contributionsProgress.status(id);
     } catch {
       return { settled: true, failures: [], preparingWorkspace: false };
     }
@@ -565,7 +591,7 @@ export function createAgentsService(deps: {
       }
 
       const [failuresMap, envMap] = await Promise.all([
-        deps.contributionsSettled
+        deps.contributionsProgress
           .statusMany([...infraIds])
           .catch(() => new Map<string, ContributionsStatus>()),
         deps.agentEnvRepo.listMany([...infraIds]),
@@ -605,6 +631,11 @@ export function createAgentsService(deps: {
       if (!infra) return null;
       return project(infra);
     },
+
+    backgroundWork: executeBackgroundWorkRead({
+      getAgent: (id) => deps.repo.get(id, deps.owner),
+      podStatus: deps.podStatus,
+    }),
 
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;

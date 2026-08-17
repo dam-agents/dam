@@ -36,6 +36,7 @@ export const skillSchema = z.object({
 export const skillListResultSchema = z.object({
   skills: z.array(skillSchema),
   scannedAt: z.string().datetime(),
+  visibility: z.enum(["public", "private"]).optional(),
 });
 
 export const scanFailureCodes = [

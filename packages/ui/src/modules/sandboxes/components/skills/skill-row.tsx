@@ -1,7 +1,6 @@
-import { Compare, Renew } from "@carbon/icons-react";
+import { Compare } from "@carbon/icons-react";
 import type { Skill } from "api-server-api";
 
-import { badgeVariants } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -35,63 +34,51 @@ export function SkillRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 border-t border-border px-4 py-3",
-        installed && "bg-muted/30",
+        "flex items-center gap-3 border-t border-border px-4 py-2",
+        installed && "bg-muted/40",
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          {onOpen ? (
-            <button
-              type="button"
-              onClick={onOpen}
-              className="min-w-0 truncate text-left text-[15px] font-medium text-foreground hover:underline"
-            >
-              {skill.name}
-            </button>
-          ) : (
-            <p className="min-w-0 truncate text-[15px] font-medium text-foreground">
-              {skill.name}
-            </p>
-          )}
-          {hasDrift && (
-            <Tooltip content={DRIFT_HINT}>
-              <button
-                type="button"
-                onClick={onUpdate}
-                disabled={disabled}
-                title={disabled ? DRIFT_HINT : undefined}
-                className={cn(
-                  badgeVariants({ variant: "info", size: "sm" }),
-                  "shrink-0 gap-1 px-2 text-[11px] transition-opacity hover:opacity-80 disabled:opacity-50",
-                )}
-              >
-                <Renew size={11} /> Update
-              </button>
-            </Tooltip>
-          )}
-          {hasDrift && compareUrl && (
-            <Tooltip content="View changes on GitHub">
-              <a
-                href={compareUrl}
-                {...externalLinkProps}
-                aria-label="View changes on GitHub"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <Compare size={13} />
-              </a>
-            </Tooltip>
-          )}
-        </div>
-        {skill.description && (
-          <p
-            className="truncate text-sm text-muted-foreground"
-            title={skill.description}
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
           >
-            {skill.description}
+            {skill.name}
+          </button>
+        ) : (
+          <p className="truncate text-[15px] font-medium text-foreground">
+            {skill.name}
           </p>
         )}
       </div>
+      {hasDrift && (
+        <Tooltip content={DRIFT_HINT}>
+          {}
+          <button
+            type="button"
+            onClick={onUpdate}
+            disabled={disabled}
+            title={disabled ? DRIFT_HINT : undefined}
+            className="shrink-0 text-xs font-medium text-accent transition-colors hover:underline disabled:opacity-50"
+          >
+            Update
+          </button>
+        </Tooltip>
+      )}
+      {hasDrift && compareUrl && (
+        <Tooltip content="View changes on GitHub">
+          <a
+            href={compareUrl}
+            {...externalLinkProps}
+            aria-label="View changes on GitHub"
+            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Compare size={13} />
+          </a>
+        </Tooltip>
+      )}
       {busy && <Spinner />}
       <Switch
         checked={installed}

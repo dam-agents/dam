@@ -1,8 +1,7 @@
 import type { AuthDenialKind } from "../admission/auth.js";
-import type { TermsDenialKind } from "../admission/terms.js";
 
 export const trpcDenial: Record<
-  AuthDenialKind | TermsDenialKind,
+  AuthDenialKind,
   {
     code: "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_SERVER_ERROR";
     message: string;
@@ -18,5 +17,4 @@ export const trpcDenial: Record<
     code: "INTERNAL_SERVER_ERROR",
     message: "authentication unavailable",
   },
-  "terms-stale": { code: "FORBIDDEN", message: "terms not accepted" },
 };

@@ -39,14 +39,16 @@ export interface ApprovalsRepository {
     id: string,
     verdict: "allow" | "deny",
     decidedBy: string,
-  ): Promise<void>;
+  ): Promise<boolean>;
   markDelivered(id: string): Promise<void>;
   listResolvedUndelivered(opts: {
     staleMs: number;
     limit: number;
   }): Promise<PendingApprovalRow[]>;
   expirePending(id: string): Promise<void>;
-  expireOverdue(now: Date): Promise<string[]>;
+  expireOverdue(
+    now: Date,
+  ): Promise<Array<{ id: string; agentId: string; ownerSub: string }>>;
   deleteForAgent(agentId: string): Promise<void>;
   listDistinctAgentIds(): Promise<string[]>;
 }
@@ -210,7 +212,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
 
     async resolveExpired(id, verdict, decidedBy) {
       const now = new Date();
-      await db
+      const rows = await db
         .update(pendingApprovals)
         .set({
           status: "resolved",
@@ -224,7 +226,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "expired"),
           ),
-        );
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async markDelivered(id) {
@@ -276,11 +280,15 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
         .where(
           and(
             eq(pendingApprovals.status, "pending"),
-            sql`${pendingApprovals.expiresAt} < ${now}`,
+            lt(pendingApprovals.expiresAt, now),
           ),
         )
-        .returning({ id: pendingApprovals.id });
-      return rows.map((r) => r.id);
+        .returning({
+          id: pendingApprovals.id,
+          agentId: pendingApprovals.agentId,
+          ownerSub: pendingApprovals.ownerSub,
+        });
+      return rows;
     },
 
     async deleteForAgent(agentId) {

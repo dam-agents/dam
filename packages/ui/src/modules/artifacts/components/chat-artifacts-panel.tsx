@@ -20,8 +20,6 @@ import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionBadge } from "./version-badge.js";
 
-const LIVE_POLL_MS = 5000;
-
 export function ChatArtifactsPanel({
   agentId,
   open,
@@ -35,9 +33,8 @@ export function ChatArtifactsPanel({
   className?: string;
   style?: CSSProperties;
 }) {
-  const { data: artifacts = [] } = useArtifacts(
-    agentId ? { agentId } : null,
-    open ? { refetchIntervalMs: LIVE_POLL_MS } : undefined,
+  const { data: artifacts = [], isPending } = useArtifacts(
+    open && agentId ? { agentId } : null,
   );
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
@@ -54,7 +51,7 @@ export function ChatArtifactsPanel({
     >
       {artifacts.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
-          No artifacts yet
+          {isPending ? "Loading\u2026" : "No artifacts yet"}
         </p>
       ) : (
         <div className="overflow-y-auto">

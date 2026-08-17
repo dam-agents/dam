@@ -4,6 +4,7 @@ import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type {
   E2eService,
+  LiveEventsService,
   ReposService,
   TermsService,
   UserIdentity,
@@ -13,7 +14,7 @@ import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentsRepository,
-  ContributionsSettledPort,
+  ContributionsProgressPort,
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -72,7 +73,7 @@ export interface ApiServerDeps {
   agentCleanupHooks: readonly AgentCleanupHook[];
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
   mountUsageRoutes: (
@@ -84,6 +85,7 @@ export interface ApiServerDeps {
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
   artifacts: ArtifactService;
+  liveEvents: LiveEventsService;
 
   k8sClient: K8sClient;
   agentsRepo: AgentsRepository;

@@ -68,4 +68,14 @@ On every `v*` tag push, the release jobs in [`cd.yml`](../../.github/workflows/c
   - The keycloak image tag is pinned to a content tag (the commit that last touched its inputs) rather than the release version, so upgrading to a release that didn't change the image doesn't restart Keycloak
 - Publishes `@dam-agents/cli` to npm (stable tags get `latest`, RC tags get `rc`)
 
-On every push to `main` (no tag), CD builds images and pushes a dev Helm chart (`0.0.0-main.*`).
+A release waits for every image the chart names, so a `v*` chart never references
+a tag that was never built.
+
+On every push to `main` (no tag), CD builds images and pushes a dev Helm chart
+(`0.0.0-main.*`). The dev chart does **not** wait for the agent image chain — it
+publishes as soon as the platform images are merged, which is most of the time
+between a merge and a usable chart. For the few minutes until the agent images
+are tagged, the dev chart names agent images that aren't pullable yet: creating
+or upgrading an agent fails to pull and recovers on its own once the tags land.
+If an agent build fails outright, that window lasts until the next green `main`
+run. This tradeoff is deliberate and applies to the dev channel only.

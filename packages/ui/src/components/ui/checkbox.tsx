@@ -32,6 +32,7 @@ interface CheckboxItemProps extends Omit<
   label: string;
   labelClassName?: string;
   description?: string;
+  descriptionClassName?: string;
   testId?: string;
 }
 
@@ -39,6 +40,7 @@ function CheckboxItem({
   label,
   labelClassName,
   description,
+  descriptionClassName,
   testId,
   className,
   id,
@@ -75,7 +77,13 @@ function CheckboxItem({
           {label}
         </span>
         {description && (
-          <span id={descriptionId} className="text-sm text-muted-foreground">
+          <span
+            id={descriptionId}
+            className={cn(
+              "text-sm text-muted-foreground",
+              descriptionClassName,
+            )}
+          >
             {description}
           </span>
         )}

@@ -51,7 +51,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     agentCleanupHooks,
     secretStores,
     runtimeMutator,
-    contributionsSettled,
+    contributionsProgress,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -65,6 +65,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     reposService,
     connectionsBoot,
     apiKeysModule,
+    liveEvents,
   } = boot;
 
   return (user: UserIdentity): ApiContext => {
@@ -131,7 +132,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
-      contributionsSettled,
+      contributionsProgress,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({
@@ -193,7 +194,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       runtimeMutator,
       templatesRepo,
-      runtimeSettled: contributionsSettled,
+      runtimeProgress: contributionsProgress,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
@@ -220,11 +221,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
+      ownerSub: user.sub,
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
       isSettled: (agentId) =>
-        contributionsSettled.status(agentId).then((s) => s.settled),
+        contributionsProgress.progress(agentId).then((p) => p.settled),
     });
     const metrics = metricsReader
       ? createMetricsService({
@@ -266,6 +268,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       features,
       files,
       harnessConfig,
+      liveEvents,
       metrics,
       terms,
       e2e,

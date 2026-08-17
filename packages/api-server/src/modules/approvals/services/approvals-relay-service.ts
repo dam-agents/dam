@@ -6,6 +6,7 @@ import {
   injectChannelOf,
   SYNTHETIC_SESSION_PREFIX,
 } from "../infrastructure/acp-frames.js";
+import { emit, EventType } from "../../../events.js";
 
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -60,13 +61,33 @@ export function createApprovalsRelayService(
         },
         expiresAt: new Date(Date.now() + ACP_NATIVE_TTL_MS),
       });
+      emit({
+        type: EventType.ApprovalRequested,
+        approvalId: rowId,
+        agentId: input.agentId,
+        ownerSub: input.ownerSub,
+      });
       return rowId;
     },
 
     async resolveAcpNativeFromInSession(rowId) {
-      await deps.repo.resolvePending(rowId, "allow_once", "in-session", {
-        markDelivered: true,
-      });
+      const casWon = await deps.repo.resolvePending(
+        rowId,
+        "allow_once",
+        "in-session",
+        { markDelivered: true },
+      );
+      if (casWon) {
+        const row = await deps.repo.getPending(rowId);
+        if (row) {
+          emit({
+            type: EventType.ApprovalResolved,
+            approvalId: row.id,
+            agentId: row.agentId,
+            ownerSub: row.ownerSub,
+          });
+        }
+      }
     },
 
     subscribeFrameInjects(agentId, listener) {

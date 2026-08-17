@@ -1,5 +1,6 @@
 import type {
   LocalSkill,
+  Skill,
   SkillPublishRecord,
   SkillSource,
 } from "api-server-api";
@@ -23,7 +24,11 @@ export function useSkillsConfirms(
     skill: LocalSkill,
     pub: SkillPublishRecord,
   ) => Promise<void>;
-  toggleAllWithConfirm: (source: SkillSource, on: boolean) => Promise<void>;
+  toggleAllWithConfirm: (
+    source: SkillSource,
+    on: boolean,
+    scope?: Skill[],
+  ) => Promise<void>;
   removeSourceWithConfirm: (source: SkillSource) => Promise<void>;
 } {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -88,16 +93,25 @@ export function useSkillsConfirms(
     }
   };
 
-  const toggleAllWithConfirm = async (src: SkillSource, on: boolean) => {
-    const list = derived.listBySource.get(src.id) ?? [];
+  const toggleAllWithConfirm = async (
+    src: SkillSource,
+    on: boolean,
+    scope?: Skill[],
+  ) => {
+    const list = scope ?? derived.listBySource.get(src.id) ?? [];
     if (!on) {
       const removing = list.filter(
         (s) => installedRef(s.source, s.name) !== undefined,
       ).length;
       const ok = await showConfirm(
-        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn them back on at any time.`,
-        `Disable all skills from ${src.name}?`,
-        { kind: "destructive", confirmLabel: "Disable all" },
+        `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the sandbox. You can turn ${removing === 1 ? "it" : "them"} back on at any time.`,
+        scope
+          ? `Disable the ${removing} matching skill${removing === 1 ? "" : "s"} from ${src.name}?`
+          : `Disable all skills from ${src.name}?`,
+        {
+          kind: "destructive",
+          confirmLabel: scope ? "Disable matching" : "Disable all",
+        },
       );
       if (!ok) return;
     }

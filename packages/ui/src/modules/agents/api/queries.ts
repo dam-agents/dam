@@ -20,7 +20,6 @@ export function useAgents() {
       ]);
       return { list, availableChannels };
     },
-    refetchInterval: 5000,
     staleTime: 5000,
     meta: { errorToast: "Can't reach the server — agent list may be stale" },
   });

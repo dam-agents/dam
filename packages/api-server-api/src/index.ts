@@ -3,6 +3,9 @@ export type { ApiContext, UserIdentity } from "./context.js";
 
 export { ChannelType, envVarSchema, type EnvVar } from "./modules/shared.js";
 
+export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
+export type { LiveEventsService } from "./modules/events/types.js";
+
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
   mountSchema,
@@ -62,6 +65,8 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentUpdateInput,
+  BackgroundWorkItemView,
+  SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
   UpgradeAgentResult,
@@ -81,6 +86,7 @@ export type {
   ChannelConfig,
 } from "./modules/agents/types.js";
 export {
+  agentBackgroundWorkInputSchema,
   agentBindSlackChannelInputSchema,
   agentBindTelegramChatInputSchema,
   agentListTelegramChatsInputSchema,
@@ -506,6 +512,7 @@ export {
   termsDocumentSchema,
   termsLatestAcceptanceSchema,
 } from "./modules/terms/schemas.js";
+export { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
 
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";

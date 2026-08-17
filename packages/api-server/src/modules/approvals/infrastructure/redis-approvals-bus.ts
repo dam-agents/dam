@@ -1,9 +1,9 @@
 import type { RedisBus } from "../../../core/redis-bus.js";
-import type { ApprovalsNotifier } from "../services/approvals-service.js";
 
 export type ResolutionListener = (approvalId: string) => void;
 
-export interface ApprovalsBus extends ApprovalsNotifier {
+export interface ApprovalsBus {
+  notifyResolved(approvalId: string): Promise<void>;
   subscribe(approvalId: string, listener: ResolutionListener): () => void;
 }
 

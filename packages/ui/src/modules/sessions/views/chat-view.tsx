@@ -66,11 +66,13 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
   optimisticInsertSession,
   setSessionRunning,
 } from "../api/queries.js";
+import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
@@ -476,6 +478,7 @@ export function ChatView() {
             agents={agents}
             busy={busy}
             connectionState={connectionState}
+            sessionId={sessionId}
           />
         </div>
       </header>
@@ -722,7 +725,7 @@ export function ChatView() {
                   onClose={() => setOpenArtifactId(null)}
                 />
               ) : openArtifactId ? (
-                <DockedArtifactPanel />
+                <DockedArtifactPanel key={openArtifactId} />
               ) : dockedExperiment ? (
                 <ExperimentDockPanel
                   experiment={dockedExperiment}
@@ -757,17 +760,21 @@ function ChatHeaderStatus({
   agents,
   busy,
   connectionState,
+  sessionId,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
+  sessionId: string | null;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
+  const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
   const reconnecting =
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
+      <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (

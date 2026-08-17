@@ -48,6 +48,7 @@ interface DialogHeaderProps {
   className?: string;
   title?: ReactNode;
   titleAccessory?: ReactNode;
+  actions?: ReactNode;
   subtitle?: ReactNode;
   onClose?: () => void;
   closeDisabled?: boolean;
@@ -59,6 +60,7 @@ interface DialogHeaderProps {
 export function DialogHeader({
   title,
   titleAccessory,
+  actions,
   subtitle,
   onClose,
   closeDisabled,
@@ -72,13 +74,14 @@ export function DialogHeader({
   return (
     <div
       id={title ? undefined : labelId}
+      data-dialog-noautofocus
       className={cn(
         "px-5 pt-5 pb-4 md:px-7 md:pt-7",
         divided && "border-b border-border",
         className,
       )}
     >
-      {(title || subtitle || onClose) && (
+      {(title || subtitle || onClose || actions) && (
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {title && (
@@ -99,20 +102,25 @@ export function DialogHeader({
               <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
             )}
           </div>
-          {onClose && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={onClose}
-              disabled={closeDisabled}
-              aria-label="Close"
-              data-dialog-close
-              data-testid={closeTestId}
-              className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
-            >
-              <Close size={16} />
-            </Button>
+          {(actions || onClose) && (
+            <div className="flex shrink-0 items-center gap-3">
+              {actions}
+              {onClose && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={onClose}
+                  disabled={closeDisabled}
+                  aria-label="Close"
+                  data-dialog-close
+                  data-testid={closeTestId}
+                  className="-mt-1 -mr-1 shrink-0 text-muted-foreground md:-mt-3 md:-mr-3"
+                >
+                  <Close size={16} />
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -216,8 +224,11 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       if (!container.contains(document.activeElement)) {
         const focusables = focusablesIn(container);
         const target =
-          focusables.find((el) => !el.hasAttribute("data-dialog-close")) ??
-          focusables[0];
+          focusables.find(
+            (el) =>
+              !el.hasAttribute("data-dialog-close") &&
+              el.closest("[data-dialog-noautofocus]") === null,
+          ) ?? focusables[0];
         target?.focus();
       }
       if (performance.now() < reassertUntil)

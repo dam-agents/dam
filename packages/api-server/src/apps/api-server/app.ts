@@ -78,7 +78,10 @@ export function startApiServerApp(deps: ApiServerDeps) {
   );
   app.use(
     "/api/*",
-    except((c) => isTermsOnlyTrpcCall(c.req.path), termsGate.middleware),
+    except(
+      (c) => isTermsOnlyTrpcCall(new URL(c.req.raw.url).pathname),
+      termsGate.middleware,
+    ),
   );
   mountRoutes(app, deps);
   app.all("/api/trpc/*", createTrpcHttpHandler({ composeApiContext }));
@@ -119,7 +122,6 @@ export function startApiServerApp(deps: ApiServerDeps) {
   const trpcWs = createTrpcWsEndpoint({
     authenticate,
     surfaceAttribution: deps.surfaceAttribution,
-    isTermsAccepted: deps.isTermsAccepted,
     composeApiContext,
   });
   const relayAdmission = createRelayAdmission({

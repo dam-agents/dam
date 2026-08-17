@@ -4,6 +4,7 @@ import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createAgentsRepository,
@@ -14,7 +15,7 @@ import {
   createAgentsService,
   type AgentCleanupHook,
   type PresetSeeder,
-  type ContributionsSettledPort,
+  type ContributionsProgressPort,
   type ResizeGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
@@ -51,7 +52,7 @@ export function composeAgentsModule(deps: {
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   grantProvisioner?: {
@@ -88,7 +89,8 @@ export function composeAgentsModule(deps: {
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
-      contributionsSettled: deps.contributionsSettled,
+      contributionsProgress: deps.contributionsProgress,
+      podStatus: createPodStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

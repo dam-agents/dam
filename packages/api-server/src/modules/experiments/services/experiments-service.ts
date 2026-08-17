@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import { TRPCError } from "@trpc/server";
 import {
   CUSTOM_DATA_MAX_BYTES,
@@ -147,6 +148,14 @@ export function createExperimentsService(
   deps: ExperimentsServiceDeps,
 ): ExperimentsService {
   const { owner, repo, artifactLibrary } = deps;
+
+  const emitChanged = (experimentId: string, agentId: string) =>
+    emit({
+      type: EventType.ExperimentChanged,
+      experimentId,
+      agentId,
+      ownerSub: owner,
+    });
   const now = deps.now ?? (() => new Date());
 
   async function lineageFolderId(name: string): Promise<string> {
@@ -201,6 +210,7 @@ export function createExperimentsService(
         finishedAt: now(),
         error: `launch failed: ${err instanceof Error ? err.message : err}`,
       });
+      emitChanged(id, row.driverAgentId);
       await releasePin(row.driverAgentId);
       await snapshotDashboard(id);
       throw new TRPCError({
@@ -208,6 +218,7 @@ export function createExperimentsService(
         message: "the experiment could not be launched",
       });
     }
+    emitChanged(id, row.driverAgentId);
     return toView((await repo.get(id, owner))!);
   }
 
@@ -377,6 +388,7 @@ export function createExperimentsService(
           `[experiments] invocation cancel for ${id} failed: ${err instanceof Error ? err.message : err}\n`,
         );
       }
+      emitChanged(id, row.driverAgentId);
       await releasePin(row.driverAgentId);
       await snapshotDashboard(id);
       return toView((await repo.get(id, owner))!);
@@ -392,6 +404,7 @@ export function createExperimentsService(
         });
       }
       await repo.delete(id, owner);
+      emitChanged(id, row.driverAgentId);
     },
 
     async planRegister(driverAgentId, input: PlanRegisterInput) {
@@ -477,6 +490,7 @@ export function createExperimentsService(
           scriptVersion: version,
           dashboardArtifactId,
         });
+        emitChanged(draft.id, driverAgentId);
         return { experimentId: draft.id };
       }
 
@@ -549,6 +563,7 @@ export function createExperimentsService(
         scriptVersion,
         dashboardArtifactId,
       });
+      emitChanged(id, driverAgentId);
       return { experimentId: id };
     },
 
@@ -648,6 +663,7 @@ export function createExperimentsService(
         ]);
       }
       await repo.bumpActivity(experimentId, now());
+      emitChanged(experimentId, driverAgentId);
       return { accepted: events.length };
     },
 
@@ -672,6 +688,7 @@ export function createExperimentsService(
         const current = await repo.get(experimentId, owner);
         throw new ExperimentClosedError(current?.status ?? "unknown");
       }
+      emitChanged(experimentId, experiment.driverAgentId);
       await releasePin(experiment.driverAgentId);
       await snapshotDashboard(experimentId);
     },
@@ -694,6 +711,7 @@ export function createExperimentsService(
           ...row.attachedArtifactIds,
           artifactId,
         ]);
+        emitChanged(row.id, row.driverAgentId);
       }
       return { experimentId: row.id };
     },

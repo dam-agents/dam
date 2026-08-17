@@ -6,6 +6,7 @@ import {
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  agentBackgroundWorkInputSchema,
   agentBindSlackChannelInputSchema,
   agentBindTelegramChatInputSchema,
   agentListTelegramChatsInputSchema,
@@ -83,6 +84,15 @@ export const agentsRouter = t.router({
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       const driver = targets.find((t) => t.targetAgentId === agent.id);
       return toAgentView(agent, driver?.driverAgentId ?? null);
+    }),
+
+  backgroundWork: readAgentProcedure
+    .input(agentBackgroundWorkInputSchema)
+    .query(async ({ ctx, input }) => {
+      checkAgentBinding(ctx, input.id);
+      const work = await ctx.agents.backgroundWork(input.id);
+      if (work === null) throw new TRPCError({ code: "NOT_FOUND" });
+      return work;
     }),
 
   create: manageAgentsProcedure

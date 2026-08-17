@@ -43,7 +43,7 @@ function BuiltInSkillRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-4 py-3",
+        "flex items-center gap-3 px-4 py-2",
         withDivider && "border-t border-border",
       )}
     >
@@ -61,14 +61,6 @@ function BuiltInSkillRow({
             {skill.name}
           </p>
         )}
-        <p
-          className={cn(
-            "truncate text-sm text-muted-foreground",
-            !skill.description && "italic",
-          )}
-        >
-          {skill.description || "No description"}
-        </p>
       </div>
       {skill.origin === "system-modified" && (
         <Badge
