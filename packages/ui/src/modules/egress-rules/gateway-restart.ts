@@ -62,10 +62,16 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
     impact.reapplied.length > 0 &&
       `rebuild request inspection for ${formatHosts(impact.reapplied)}`,
   ].filter((c): c is string => c !== false);
+  const rolls =
+    impact.promoted.length +
+    impact.demoted.length +
+    impact.reapplied.length * 2;
+  const timing =
+    rolls > 1 ? "restarts more than once (~5–15s each)" : "restarts (~5–15s)";
   if (clauses.length === 0) {
-    return `The network gateway restarts (~5–15s). ${SANDBOX_KEEPS_RUNNING}`;
+    return `The network gateway ${timing}. ${SANDBOX_KEEPS_RUNNING}`;
   }
-  return `The network gateway restarts (~5–15s) to ${joinClauses(clauses)}. ${SANDBOX_KEEPS_RUNNING}`;
+  return `The network gateway ${timing} to ${joinClauses(clauses)}. ${SANDBOX_KEEPS_RUNNING}`;
 }
 
 export async function confirmGatewayRestart(

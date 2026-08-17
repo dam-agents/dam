@@ -1,4 +1,3 @@
-import type { EgressRuleView } from "api-server-api";
 import type {
   FormState,
   UseFormHandleSubmit,
@@ -18,7 +17,7 @@ import {
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../../egress-rules/api/mutations.js";
-import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
+import { fetchEgressRulesForAgent } from "../../egress-rules/api/queries.js";
 import {
   confirmGatewayRestart,
   stagedGatewayRestart,
@@ -29,8 +28,6 @@ import { confirmHibernationChange } from "../lib/hibernation.js";
 import type { SettingsValues } from "./sandbox-settings-schema.js";
 import type { useHarnessConfigDraft } from "./use-harness-config-draft.js";
 import type { useStagedNetworkAccess } from "./use-staged-network-access.js";
-
-const EMPTY_RULES: EgressRuleView[] = [];
 
 interface Args {
   agentId: string | null;
@@ -58,7 +55,6 @@ export function useSandboxSettingsSave({
   dirtyFields,
 }: Args) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const { data: serverRules = EMPTY_RULES } = useEgressRulesForAgent(agentId);
   const updateAgent = useUpdateAgent();
   const applyHarnessConfig = useApplyHarnessConfig();
   const setAgentConnections = useSetAgentConnections();
@@ -69,7 +65,7 @@ export function useSandboxSettingsSave({
   return handleSubmit(async (values) => {
     if (!agentId || !dirty) return;
     const gatewayRestart = stagedGatewayRestart({
-      current: serverRules,
+      current: await fetchEgressRulesForAgent(agentId),
       adds: net.pendingAdds.map(toPromotionRule),
       removeIds: [...net.pendingDeletes],
     });

@@ -1,6 +1,7 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
 
 export const egressRulesKeys = {
   all: ["egress-rules"] as const,
@@ -17,6 +18,14 @@ export function useEgressRulesForAgent(agentId: string | null) {
       ? () => api.egressRules.listForAgent.query({ agentId })
       : skipToken,
     meta: { errorToast: "Couldn't load egress rules" },
+  });
+}
+
+export function fetchEgressRulesForAgent(agentId: string) {
+  return queryClient.fetchQuery({
+    queryKey: egressRulesKeys.forAgent(agentId),
+    queryFn: () => api.egressRules.listForAgent.query({ agentId }),
+    staleTime: 0,
   });
 }
 

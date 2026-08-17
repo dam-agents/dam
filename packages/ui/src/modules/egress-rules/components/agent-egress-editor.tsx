@@ -21,7 +21,11 @@ import {
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../api/mutations.js";
-import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
+import {
+  fetchEgressRulesForAgent,
+  useEgressRulesForAgent,
+  useTrustedHosts,
+} from "../api/queries.js";
 import {
   confirmGatewayRestart,
   describeGatewayRestart,
@@ -130,7 +134,7 @@ export function AgentEgressEditor({
       return;
     }
     const impact = stagedGatewayRestart({
-      current: serverRules,
+      current: await fetchEgressRulesForAgent(agentId),
       adds: [toPromotionRule(next)],
     });
     if (!(await confirmGatewayRestart(showConfirm, impact, "Add & restart")))
@@ -173,7 +177,7 @@ export function AgentEgressEditor({
       return;
     }
     const impact = stagedGatewayRestart({
-      current: serverRules,
+      current: await fetchEgressRulesForAgent(agentId),
       removeIds: [rule.id],
     });
     if (!(await confirmGatewayRestart(showConfirm, impact, "Revoke & restart")))

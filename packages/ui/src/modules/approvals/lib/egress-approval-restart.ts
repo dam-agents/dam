@@ -1,17 +1,11 @@
-import type {
-  ApprovalView,
-  EgressRuleView,
-  PromotionRule,
-} from "api-server-api";
+import type { ApprovalView, PromotionRule } from "api-server-api";
 
 import { useStore } from "../../../store.js";
-import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
+import { fetchEgressRulesForAgent } from "../../egress-rules/api/queries.js";
 import {
   confirmGatewayRestart,
   stagedGatewayRestart,
 } from "../../egress-rules/gateway-restart.js";
-
-const EMPTY: EgressRuleView[] = [];
 
 export interface EgressApprovalRestart {
   confirmNarrow: (confirmLabel: string) => Promise<boolean>;
@@ -24,7 +18,6 @@ export interface EgressApprovalRestart {
 export function useEgressApprovalRestart(
   row: ApprovalView,
 ): EgressApprovalRestart {
-  const { data: agentRules = EMPTY } = useEgressRulesForAgent(row.agentId);
   const showConfirm = useStore((s) => s.showConfirm);
 
   const payload = row.payload.kind === "ext_authz" ? row.payload : null;
@@ -40,22 +33,25 @@ export function useEgressApprovalRestart(
     ? { host: payload.host, method: "*", pathPattern: "*", source: "inbox" }
     : null;
 
-  const narrow = narrowRule
-    ? stagedGatewayRestart({ current: agentRules, adds: [narrowRule] })
-    : null;
-  const host = hostRule
-    ? stagedGatewayRestart({ current: agentRules, adds: [hostRule] })
-    : null;
+  const confirmFor = async (
+    rule: PromotionRule | null,
+    confirmLabel: string,
+  ) => {
+    if (!rule) return true;
+    const impact = stagedGatewayRestart({
+      current: await fetchEgressRulesForAgent(row.agentId),
+      adds: [rule],
+    });
+    return confirmGatewayRestart(showConfirm, impact, confirmLabel);
+  };
 
   const inspectionNote = payload
-    ? ` Needs request inspection for ${payload.host}${narrow?.willRestart ? ", which restarts the network gateway (~5–15s)" : ""}.`
+    ? ` Needs request inspection for ${payload.host}, which restarts the network gateway unless it is already inspected.`
     : "";
 
   return {
-    confirmNarrow: (confirmLabel) =>
-      confirmGatewayRestart(showConfirm, narrow, confirmLabel),
-    confirmHost: (confirmLabel) =>
-      confirmGatewayRestart(showConfirm, host, confirmLabel),
+    confirmNarrow: (confirmLabel) => confirmFor(narrowRule, confirmLabel),
+    confirmHost: (confirmLabel) => confirmFor(hostRule, confirmLabel),
     permanentTooltip: `Allow this exact path on this host (writes a rule).${inspectionNote}`,
     denyForeverTooltip: `Deny this exact path on this host (writes a deny rule).${inspectionNote}`,
     allowHostTooltip: payload
