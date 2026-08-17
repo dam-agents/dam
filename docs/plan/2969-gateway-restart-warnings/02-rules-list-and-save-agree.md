@@ -52,6 +52,15 @@ Apply [`/react-ui-engineering`](../../../.claude/skills/react-ui-engineering/SKI
    rule list today: call `useEgressRulesForAgent(agentId)` — TanStack Query serves it from
    the cache the editor already populated, so this costs no extra request.
 
+   **Ask the function twice.** Save applies every delete, then every add, and the server
+   rewrites the projection after each one. A Save that swaps the last narrowing rule on a
+   host (delete `/v1/*`, add `/v2/*`) nets to no change, yet the host demotes and re-promotes
+   mid-save — measured on the cluster as two gateway pod-template writes. Since the rules
+   list has no edit button, that swap *is* the normal way to change a path, so it must warn.
+   `stagedGatewayRestart` in [`gateway-restart.ts`](../../../packages/ui/src/modules/egress-rules/gateway-restart.ts)
+   runs the shared predicate over the deletes-only state and over the full change, and warns
+   if either restarts. The contract function stays a pure before/after set diff.
+
 6. The dialog names what changes in each direction, and does not appear when
    `willRestart` is false. Keep the existing title and `confirmLabel` shape; keep it
    before the hibernation and size confirms, as now.

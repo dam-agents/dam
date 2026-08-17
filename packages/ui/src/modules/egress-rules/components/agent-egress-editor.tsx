@@ -3,6 +3,8 @@ import {
   type EgressPreset,
   type EgressRuleView,
   formatEgressRuleSource,
+  gatewayRestartImpact,
+  type PromotionRule,
 } from "api-server-api";
 import { useState } from "react";
 
@@ -15,12 +17,19 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../api/mutations.js";
 import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
+import {
+  describeGatewayRestart,
+  GATEWAY_RESTART_TITLE,
+  stagedGatewayRestart,
+  toPromotionRule,
+} from "../gateway-restart.js";
 import { formatHostPort, splitHostPort } from "../host-port.js";
 
 const EMPTY: EgressRuleView[] = [];
@@ -85,19 +94,22 @@ export function AgentEgressEditor({
   );
 
   const stagedMode = staged !== undefined;
+  const showConfirm = useStore((s) => s.showConfirm);
 
-  const draftNeedsMitm =
-    draft.method !== "*" ||
-    draft.pathPattern.trim() !== "*" ||
-    splitHostPort(draft.host.trim()).port != null;
-  const draftRequiresGatewayRestart =
-    draft.host.trim().length > 0 &&
-    draftNeedsMitm &&
-    !serverRules.some(
-      (r) =>
-        r.host === draft.host.trim() &&
-        (r.method !== "*" || r.pathPattern !== "*"),
-    );
+  const pendingRemoveIds = stagedMode ? [...staged.pendingDeletes] : [];
+  const pendingAdds: PromotionRule[] = [
+    ...(stagedMode ? staged.pendingAdds.map(toPromotionRule) : []),
+    ...(draft.host.trim().length > 0 ? [toPromotionRule(draft)] : []),
+  ];
+  const pendingRestart = stagedGatewayRestart({
+    current: serverRules,
+    adds: pendingAdds,
+    removeIds: pendingRemoveIds,
+  });
+  const demotedByStagedDeletes = new Set(
+    gatewayRestartImpact({ current: serverRules, removeIds: pendingRemoveIds })
+      .demoted,
+  );
 
   const canAdd =
     draft.host.trim().length > 0 &&
@@ -105,7 +117,7 @@ export function AgentEgressEditor({
     draft.pathPattern.trim().length > 0 &&
     !createRule.isPending;
 
-  const onAddRule = () => {
+  const onAddRule = async () => {
     if (!canAdd) return;
     const next: AddRuleDraft = {
       host: draft.host.trim(),
@@ -118,11 +130,17 @@ export function AgentEgressEditor({
       setDraft(EMPTY_DRAFT);
       return;
     }
+    const impact = stagedGatewayRestart({
+      current: serverRules,
+      adds: [toPromotionRule(next)],
+    });
     if (
-      draftRequiresGatewayRestart &&
-      !window.confirm(
-        `This rule needs a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted. Continue?`,
-      )
+      impact.willRestart &&
+      !(await showConfirm(
+        describeGatewayRestart(impact),
+        GATEWAY_RESTART_TITLE,
+        { confirmLabel: "Add & restart" },
+      ))
     )
       return;
     createRule.mutate(
@@ -134,7 +152,7 @@ export function AgentEgressEditor({
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      onAddRule();
+      void onAddRule();
     }
   };
 
@@ -157,12 +175,25 @@ export function AgentEgressEditor({
     applyPreset.mutate({ agentId, preset: livePreset });
   };
 
-  const onRowDeleteClick = (rule: EgressRuleView) => {
+  const onRowDeleteClick = async (rule: EgressRuleView) => {
     if (stagedMode) {
       staged.togglePendingDelete(rule.id);
-    } else {
-      revokeRule.mutate({ id: rule.id });
+      return;
     }
+    const impact = stagedGatewayRestart({
+      current: serverRules,
+      removeIds: [rule.id],
+    });
+    if (
+      impact.willRestart &&
+      !(await showConfirm(
+        describeGatewayRestart(impact),
+        GATEWAY_RESTART_TITLE,
+        { confirmLabel: "Revoke & restart" },
+      ))
+    )
+      return;
+    revokeRule.mutate({ id: rule.id });
   };
 
   const dropdownValue = stagedMode
@@ -296,17 +327,15 @@ export function AgentEgressEditor({
             type="button"
             size="sm"
             className="h-7 text-[11px]"
-            onClick={onAddRule}
+            onClick={() => void onAddRule()}
             disabled={!canAdd}
             variant="outline"
           >
             <Add size={11} /> Add rule
           </Button>
-          {draftRequiresGatewayRestart && (
+          {pendingRestart.willRestart && (
             <p className="basis-full text-[11px] text-warning">
-              Saving will restart the network gateway (~5–15s) — this rule
-              requires inspecting requests to this host. The agent keeps
-              running.
+              {describeGatewayRestart(pendingRestart)}
             </p>
           )}
         </div>
@@ -344,8 +373,9 @@ export function AgentEgressEditor({
                   rule={r}
                   sourceLabelOverride={sourceLabelOverride}
                   pendingDelete={userDelete || presetSweep || connectionSweep}
+                  demotesHost={userDelete && demotedByStagedDeletes.has(r.host)}
                   hideAction={(presetSweep || connectionSweep) && !userDelete}
-                  onAction={() => onRowDeleteClick(r)}
+                  onAction={() => void onRowDeleteClick(r)}
                   disabled={!stagedMode && revokeRule.isPending}
                 />
               );
@@ -404,6 +434,7 @@ function RuleRow({
   rule,
   sourceLabelOverride,
   pendingDelete,
+  demotesHost,
   hideAction,
   onAction,
   disabled,
@@ -411,6 +442,7 @@ function RuleRow({
   rule: EgressRuleView;
   sourceLabelOverride?: string | null;
   pendingDelete: boolean;
+  demotesHost?: boolean;
   hideAction?: boolean;
   onAction: () => void;
   disabled: boolean;
@@ -433,6 +465,15 @@ function RuleRow({
       </span>
       {sourceLabel && (
         <SourceTag label={sourceLabel} hint={`source: ${rule.source}`} />
+      )}
+      {demotesHost && (
+        <Badge
+          size="sm"
+          variant="warning"
+          title={`Saving stops request inspection for ${rule.host}, which restarts the network gateway (~5–15s). The sandbox keeps running.`}
+        >
+          restarts gateway
+        </Badge>
       )}
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}

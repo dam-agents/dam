@@ -103,7 +103,7 @@ A follow-up issue is filed separately; nothing here makes the current behavior w
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | One promotion answer in the contract | Move the projection into `api-server-api`, add the impact function, repoint the server | — |
+| 01 ✅ | One promotion answer in the contract | Move the projection into `api-server-api`, add the impact function, repoint the server | — |
 | 02 | Rules list and Save dialog agree | Both surfaces ask the shared function over the whole staged change set | 01 |
 | 03 | Inbox and toast mark the restarting action | Confirm the two actions that promote; say why the third does not | 01 |
 | 04 | CLI gives the same answer | Same function, plus a confirm on revoke and honest wording | 01 |

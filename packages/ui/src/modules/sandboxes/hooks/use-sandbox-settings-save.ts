@@ -1,3 +1,4 @@
+import type { EgressRuleView } from "api-server-api";
 import type {
   FormState,
   UseFormHandleSubmit,
@@ -17,11 +18,20 @@ import {
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../../egress-rules/api/mutations.js";
+import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
+import {
+  describeGatewayRestart,
+  GATEWAY_RESTART_TITLE,
+  stagedGatewayRestart,
+  toPromotionRule,
+} from "../../egress-rules/gateway-restart.js";
 import { splitHostPort } from "../../egress-rules/host-port.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
 import type { SettingsValues } from "./sandbox-settings-schema.js";
 import type { useHarnessConfigDraft } from "./use-harness-config-draft.js";
 import type { useStagedNetworkAccess } from "./use-staged-network-access.js";
+
+const EMPTY_RULES: EgressRuleView[] = [];
 
 interface Args {
   agentId: string | null;
@@ -49,6 +59,7 @@ export function useSandboxSettingsSave({
   dirtyFields,
 }: Args) {
   const showConfirm = useStore((s) => s.showConfirm);
+  const { data: serverRules = EMPTY_RULES } = useEgressRulesForAgent(agentId);
   const updateAgent = useUpdateAgent();
   const applyHarnessConfig = useApplyHarnessConfig();
   const setAgentConnections = useSetAgentConnections();
@@ -58,19 +69,16 @@ export function useSandboxSettingsSave({
 
   return handleSubmit(async (values) => {
     if (!agentId || !dirty) return;
-    const gatewayRestartHosts = net.pendingAdds
-      .filter(
-        (a) =>
-          a.method !== "*" ||
-          a.pathPattern !== "*" ||
-          splitHostPort(a.host).port != null,
-      )
-      .map((a) => a.host);
+    const gatewayRestart = stagedGatewayRestart({
+      current: serverRules,
+      adds: net.pendingAdds.map(toPromotionRule),
+      removeIds: [...net.pendingDeletes],
+    });
     if (
-      gatewayRestartHosts.length > 0 &&
+      gatewayRestart.willRestart &&
       !(await showConfirm(
-        `Rule changes for ${gatewayRestartHosts.length === 1 ? `"${gatewayRestartHosts[0]}"` : `${gatewayRestartHosts.length} hosts`} need a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted.`,
-        "Restart network gateway?",
+        describeGatewayRestart(gatewayRestart),
+        GATEWAY_RESTART_TITLE,
         { confirmLabel: "Save & restart" },
       ))
     ) {
