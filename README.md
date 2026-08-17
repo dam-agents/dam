@@ -69,7 +69,7 @@ For contributors working on the DAM platform itself.
 ### Prerequisites
 
 - [mise](https://mise.jdx.dev)
-- Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.)
+- Docker-compatible runtime (Docker Desktop, Rancher Desktop, Colima, etc.) -- note that Podman is _not_ supported
 - macOS or Linux
 
 ### Local Setup
