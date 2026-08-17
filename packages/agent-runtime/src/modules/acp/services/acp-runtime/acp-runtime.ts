@@ -112,7 +112,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent(frame) {
-      if (agent && !agentExited) agent.send(frame);
+      if (!agent || agentExited) return false;
+      agent.send(frame);
+      return true;
     },
   });
 
@@ -279,6 +281,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
       pendingFromAgent.clear();
+      promptScheduler.clear();
       deps.backgroundWork?.clear();
     });
     return a;

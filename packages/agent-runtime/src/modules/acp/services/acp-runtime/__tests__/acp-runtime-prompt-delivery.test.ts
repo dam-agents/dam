@@ -16,7 +16,14 @@ import { createWorld, frames, promptTextsOf } from "./acp-world.js";
  * queued: true or false) when the runtime takes it, platform/promptStarted
  * when it is forwarded to the harness. A prompt without a promptId gets no
  * notifications and works exactly as before.
+ *
+ * The queue lives and dies with the harness process. When the harness
+ * exits, every active turn and queued prompt is dropped, nothing is ever
+ * forwarded to the dead process, and the runtime reports idle.
  */
+
+const flushMicrotasks = (): Promise<void> =>
+  new Promise((resolve) => setImmediate(resolve));
 
 const SESSION = "sess-delivery";
 
@@ -186,5 +193,33 @@ describe("acp-runtime: prompt delivery", () => {
     expect(texts[32]).toBe("task 32");
     expect(texts).not.toContain("one too many");
     expect(alice.reply(132)?.result).toEqual({ stopReason: "end_turn" });
+  });
+
+  /**
+   * TEST_SCENARIO: The harness dies while one prompt runs and another waits
+   * in the queue. The turn and the queue must die with the process: the
+   * runtime must report idle right away, or a dead harness blocks idle
+   * reporting and env recycling forever. And a response line that arrives
+   * after the exit must not promote the queued prompt — there is no process
+   * to run it, so forwarding it would record a turn that never started.
+   */
+  it("should drop turn state when the harness dies and never promote onto the dead process", async () => {
+    const world = createWorld();
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(promptWithId(2, SESSION, "first task", "p-1"));
+    alice.send(promptWithId(3, SESSION, "second task", "p-2"));
+
+    world.harness().exit();
+    await flushMicrotasks();
+
+    expect(world.runtime.status().idle).toBe(true);
+
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    expect(promptTextsOf(world.harness())).toEqual(["first task"]);
+    expect(world.runtime.status().idle).toBe(true);
   });
 });

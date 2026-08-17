@@ -37,7 +37,7 @@ export interface PromptScheduler {
 }
 
 export interface PromptSchedulerDeps {
-  sendToAgent: (frame: unknown) => void;
+  sendToAgent: (frame: unknown) => boolean;
 }
 
 /**
@@ -47,6 +47,9 @@ export interface PromptSchedulerDeps {
  * scheduler tells the sender each prompt's fate itself — accepted, queued,
  * started — over the sender's own channel, discards a leaver's queued
  * prompts, and answers the runtime's busy/idle questions about turn state.
+ * A turn becomes active only when the harness actually took the frame:
+ * sendToAgent reports delivery, and on failure the prompt stays queued and
+ * no promptStarted is sent.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -72,9 +75,9 @@ export function createPromptScheduler(
     );
   }
 
-  function start(entry: PromptSubmission): void {
+  function start(entry: PromptSubmission): boolean {
+    if (!deps.sendToAgent(entry.frame)) return false;
     activeTurns.set(entry.sessionId, entry.outboundId);
-    deps.sendToAgent(entry.frame);
     if (entry.promptId !== null) {
       sendToChannel(
         entry.channel,
@@ -86,6 +89,7 @@ export function createPromptScheduler(
         ),
       );
     }
+    return true;
   }
 
   function refuse(entry: PromptSubmission): void {
@@ -117,8 +121,9 @@ export function createPromptScheduler(
         return "queued";
       }
       notifyAccepted(submission, false);
-      start(submission);
-      return "started";
+      if (start(submission)) return "started";
+      queues.set(submission.sessionId, [submission]);
+      return "queued";
     },
 
     onPromptResponse(sessionId, outboundId) {
@@ -131,9 +136,11 @@ export function createPromptScheduler(
         queues.delete(sessionId);
         return { turnEnded: true };
       }
-      const next = queue.shift()!;
-      if (queue.length === 0) queues.delete(sessionId);
-      start(next);
+      const next = queue[0]!;
+      if (start(next)) {
+        queue.shift();
+        if (queue.length === 0) queues.delete(sessionId);
+      }
       return { turnEnded: true };
     },
 
