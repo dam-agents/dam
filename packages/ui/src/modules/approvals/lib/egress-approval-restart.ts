@@ -7,16 +7,13 @@ import type {
 import { useStore } from "../../../store.js";
 import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
 import {
-  describeGatewayRestart,
-  GATEWAY_RESTART_TITLE,
+  confirmGatewayRestart,
   stagedGatewayRestart,
 } from "../../egress-rules/gateway-restart.js";
 
 const EMPTY: EgressRuleView[] = [];
 
 export interface EgressApprovalRestart {
-  narrowRestarts: boolean;
-  hostRestarts: boolean;
   confirmNarrow: (confirmLabel: string) => Promise<boolean>;
   confirmHost: (confirmLabel: string) => Promise<boolean>;
   permanentTooltip: string;
@@ -50,32 +47,19 @@ export function useEgressApprovalRestart(
     ? stagedGatewayRestart({ current: agentRules, adds: [hostRule] })
     : null;
 
-  const confirmFor =
-    (impact: ReturnType<typeof stagedGatewayRestart> | null) =>
-    async (confirmLabel: string) => {
-      if (!impact?.willRestart) return true;
-      return showConfirm(
-        describeGatewayRestart(impact),
-        GATEWAY_RESTART_TITLE,
-        {
-          confirmLabel,
-        },
-      );
-    };
-
   const inspectionNote = payload
     ? ` Needs request inspection for ${payload.host}${narrow?.willRestart ? ", which restarts the network gateway (~5–15s)" : ""}.`
     : "";
 
   return {
-    narrowRestarts: narrow?.willRestart ?? false,
-    hostRestarts: host?.willRestart ?? false,
-    confirmNarrow: confirmFor(narrow),
-    confirmHost: confirmFor(host),
+    confirmNarrow: (confirmLabel) =>
+      confirmGatewayRestart(showConfirm, narrow, confirmLabel),
+    confirmHost: (confirmLabel) =>
+      confirmGatewayRestart(showConfirm, host, confirmLabel),
     permanentTooltip: `Allow this exact path on this host (writes a rule).${inspectionNote}`,
     denyForeverTooltip: `Deny this exact path on this host (writes a deny rule).${inspectionNote}`,
     allowHostTooltip: payload
-      ? `Allow all requests to ${payload.host} (writes a wildcard rule). No request inspection, so the gateway keeps running.`
+      ? `Allow all requests to ${payload.host} (writes a wildcard rule). Never restarts the network gateway.`
       : "Allow all requests to this host (writes a wildcard rule).",
   };
 }

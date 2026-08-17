@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
@@ -26,7 +27,14 @@ export const egressRulesRouter = t.router({
     .input(egressRuleGetInputSchema)
     .query(async ({ ctx, input }) => {
       const rule = await ctx.egressRules.get(input.id);
-      checkAgentBinding(ctx, rule.agentId);
+      try {
+        checkAgentBinding(ctx, rule.agentId);
+      } catch {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "egress rule not found",
+        });
+      }
       return rule;
     }),
 

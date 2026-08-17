@@ -79,31 +79,33 @@ export function buildCreateCommand(deps: {
         }
 
         const egress = deps.createEgressService(host);
-        const existing = await egress.listForAgent(resolved.value.id);
-        if (!existing.ok) {
-          printServiceError(existing.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
-        const impact = gatewayRestartImpact({
-          current: existing.value,
-          adds: [
-            {
-              host: opts.host,
-              method: opts.method,
-              pathPattern: opts.path,
-              source: "manual",
-            },
-          ],
-        });
-        if (impact.willRestart && !opts.yes) {
-          if (!process.stdin.isTTY) {
-            process.stderr.write(
-              "error: this rule restarts the network gateway; pass --yes on non-interactive stdin\n",
-            );
-            process.exit(EXIT_INVALID_INPUT);
+        if (!opts.yes) {
+          const existing = await egress.listForAgent(resolved.value.id);
+          if (!existing.ok) {
+            printServiceError(existing.error, host);
+            process.exit(EXIT_RUNTIME_FAILURE);
           }
-          process.stderr.write(gatewayRestartNotice(impact));
-          if (!(await confirm("Continue?"))) exitCancelled(opts);
+          const impact = gatewayRestartImpact({
+            current: existing.value,
+            adds: [
+              {
+                host: opts.host,
+                method: opts.method,
+                pathPattern: opts.path,
+                source: "manual",
+              },
+            ],
+          });
+          if (impact.willRestart) {
+            if (!process.stdin.isTTY) {
+              process.stderr.write(
+                "error: this rule restarts the network gateway; pass --yes on non-interactive stdin\n",
+              );
+              process.exit(EXIT_INVALID_INPUT);
+            }
+            process.stderr.write(gatewayRestartNotice(impact));
+            if (!(await confirm("Continue?"))) exitCancelled(opts);
+          }
         }
 
         const result = await egress.create({

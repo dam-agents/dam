@@ -62,17 +62,19 @@ export function buildRevokeCommand(deps: {
             process.exit(EXIT_RUNTIME_FAILURE);
           }
         }
-        if (current.ok) {
+        if (current.ok && !opts.yes) {
           const siblings = await egress.listForAgent(current.value.agentId);
           if (!siblings.ok) {
-            printServiceError(siblings.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
+            process.stderr.write(
+              "error: could not read the sandbox's rules to tell whether revoking restarts the network gateway; re-run with --yes to revoke anyway\n",
+            );
+            process.exit(EXIT_INVALID_INPUT);
           }
           const impact = gatewayRestartImpact({
             current: siblings.value,
             removeIds: [id],
           });
-          if (impact.willRestart && !opts.yes) {
+          if (impact.willRestart) {
             if (!process.stdin.isTTY) {
               process.stderr.write(
                 "error: this revoke restarts the network gateway; pass --yes on non-interactive stdin\n",

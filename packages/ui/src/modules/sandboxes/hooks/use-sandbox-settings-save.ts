@@ -20,8 +20,7 @@ import {
 } from "../../egress-rules/api/mutations.js";
 import { useEgressRulesForAgent } from "../../egress-rules/api/queries.js";
 import {
-  describeGatewayRestart,
-  GATEWAY_RESTART_TITLE,
+  confirmGatewayRestart,
   stagedGatewayRestart,
   toPromotionRule,
 } from "../../egress-rules/gateway-restart.js";
@@ -75,11 +74,10 @@ export function useSandboxSettingsSave({
       removeIds: [...net.pendingDeletes],
     });
     if (
-      gatewayRestart.willRestart &&
-      !(await showConfirm(
-        describeGatewayRestart(gatewayRestart),
-        GATEWAY_RESTART_TITLE,
-        { confirmLabel: "Save & restart" },
+      !(await confirmGatewayRestart(
+        showConfirm,
+        gatewayRestart,
+        "Save & restart",
       ))
     ) {
       return;

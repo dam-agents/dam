@@ -3,10 +3,8 @@ import {
   type EgressPreset,
   type EgressRuleView,
   formatEgressRuleSource,
-  gatewayRestartImpact,
-  type PromotionRule,
 } from "api-server-api";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +23,8 @@ import {
 } from "../api/mutations.js";
 import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
 import {
+  confirmGatewayRestart,
   describeGatewayRestart,
-  GATEWAY_RESTART_TITLE,
   stagedGatewayRestart,
   toPromotionRule,
 } from "../gateway-restart.js";
@@ -96,26 +94,27 @@ export function AgentEgressEditor({
   const stagedMode = staged !== undefined;
   const showConfirm = useStore((s) => s.showConfirm);
 
-  const pendingRemoveIds = stagedMode ? [...staged.pendingDeletes] : [];
-  const pendingAdds: PromotionRule[] = [
-    ...(stagedMode ? staged.pendingAdds.map(toPromotionRule) : []),
-    ...(draft.host.trim().length > 0 ? [toPromotionRule(draft)] : []),
-  ];
-  const pendingRestart = stagedGatewayRestart({
-    current: serverRules,
-    adds: pendingAdds,
-    removeIds: pendingRemoveIds,
-  });
-  const demotedByStagedDeletes = new Set(
-    gatewayRestartImpact({ current: serverRules, removeIds: pendingRemoveIds })
-      .demoted,
-  );
-
-  const canAdd =
+  const draftIsComplete =
     draft.host.trim().length > 0 &&
     draft.method.trim().length > 0 &&
-    draft.pathPattern.trim().length > 0 &&
-    !createRule.isPending;
+    draft.pathPattern.trim().length > 0;
+  const canAdd = draftIsComplete && !createRule.isPending;
+
+  const stagedAdds = staged?.pendingAdds;
+  const stagedDeletes = staged?.pendingDeletes;
+  const pendingRestart = useMemo(
+    () =>
+      stagedGatewayRestart({
+        current: serverRules,
+        adds: [
+          ...(stagedAdds?.map(toPromotionRule) ?? []),
+          ...(draftIsComplete ? [toPromotionRule(draft)] : []),
+        ],
+        removeIds: stagedDeletes ? [...stagedDeletes] : [],
+      }),
+    [serverRules, stagedAdds, stagedDeletes, draft, draftIsComplete],
+  );
+  const demotedByStagedDeletes = new Set(pendingRestart.demotedByRemovals);
 
   const onAddRule = async () => {
     if (!canAdd) return;
@@ -134,14 +133,7 @@ export function AgentEgressEditor({
       current: serverRules,
       adds: [toPromotionRule(next)],
     });
-    if (
-      impact.willRestart &&
-      !(await showConfirm(
-        describeGatewayRestart(impact),
-        GATEWAY_RESTART_TITLE,
-        { confirmLabel: "Add & restart" },
-      ))
-    )
+    if (!(await confirmGatewayRestart(showConfirm, impact, "Add & restart")))
       return;
     createRule.mutate(
       { agentId, ...next, ...splitHostPort(next.host) },
@@ -184,14 +176,7 @@ export function AgentEgressEditor({
       current: serverRules,
       removeIds: [rule.id],
     });
-    if (
-      impact.willRestart &&
-      !(await showConfirm(
-        describeGatewayRestart(impact),
-        GATEWAY_RESTART_TITLE,
-        { confirmLabel: "Revoke & restart" },
-      ))
-    )
+    if (!(await confirmGatewayRestart(showConfirm, impact, "Revoke & restart")))
       return;
     revokeRule.mutate({ id: rule.id });
   };

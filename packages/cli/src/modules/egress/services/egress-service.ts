@@ -69,9 +69,9 @@ export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
       } catch (e) {
         if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
           const reason = e instanceof Error ? e.message : String(e);
-          return /no procedure found on path/i.test(reason)
-            ? err({ kind: "rule-lookup-unsupported", reason })
-            : err({ kind: "rule-not-found", id });
+          return /egress rule not found/i.test(reason)
+            ? err({ kind: "rule-not-found", id })
+            : err({ kind: "rule-lookup-unsupported", reason });
         }
         return classifyTrpcError(e);
       }

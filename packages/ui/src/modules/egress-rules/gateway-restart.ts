@@ -8,6 +8,7 @@ export interface StagedGatewayRestart {
   promoted: string[];
   demoted: string[];
   reapplied: string[];
+  demotedByRemovals: string[];
   willRestart: boolean;
 }
 
@@ -44,9 +45,13 @@ export function stagedGatewayRestart(input: {
     promoted: afterAll.promoted,
     demoted: afterAll.demoted,
     reapplied: afterDeletes.demoted.filter((h) => !stillDemoted.has(h)),
+    demotedByRemovals: afterDeletes.demoted,
     willRestart: afterAll.willRestart || afterDeletes.willRestart,
   };
 }
+
+const SANDBOX_KEEPS_RUNNING =
+  "The sandbox keeps running — its outbound requests are briefly interrupted.";
 
 export function describeGatewayRestart(impact: StagedGatewayRestart): string {
   const clauses = [
@@ -57,7 +62,31 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
     impact.reapplied.length > 0 &&
       `rebuild request inspection for ${formatHosts(impact.reapplied)}`,
   ].filter((c): c is string => c !== false);
-  return `The network gateway restarts (~5–15s) to ${joinClauses(clauses)}. The sandbox keeps running — its outbound requests are briefly interrupted.`;
+  if (clauses.length === 0) {
+    return `The network gateway restarts (~5–15s). ${SANDBOX_KEEPS_RUNNING}`;
+  }
+  return `The network gateway restarts (~5–15s) to ${joinClauses(clauses)}. ${SANDBOX_KEEPS_RUNNING}`;
+}
+
+export async function confirmGatewayRestart(
+  showConfirm: (
+    message: string,
+    title?: string,
+    options?: { confirmLabel?: string },
+  ) => Promise<boolean>,
+  impact: StagedGatewayRestart | null,
+  confirmLabel: string,
+): Promise<boolean> {
+  if (!impact?.willRestart) return true;
+  try {
+    return await showConfirm(
+      describeGatewayRestart(impact),
+      GATEWAY_RESTART_TITLE,
+      { confirmLabel },
+    );
+  } catch {
+    return false;
+  }
 }
 
 function formatHosts(hosts: readonly string[]): string {
