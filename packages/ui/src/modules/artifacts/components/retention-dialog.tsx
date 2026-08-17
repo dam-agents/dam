@@ -11,20 +11,13 @@ import {
   Modal,
 } from "@/components/modal";
 import { Select } from "@/components/ui/select";
-import { formatDate, timeUntil } from "@/lib/format-time";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
-import { deletionState } from "../lib/format.js";
+import { deletionDate, deletionSummary } from "../lib/format.js";
 
 const KEEP = "keep";
 const NEVER = "never";
-
-const SCHEDULED_DATE_FORMAT: Intl.DateTimeFormatOptions = {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-};
 
 const RETENTION_OPTIONS = [
   { value: NEVER, label: "Never delete" },
@@ -41,24 +34,12 @@ interface Props {
 
 export function RetentionDialog({ artifact, onClose }: Props) {
   const scheduled = artifact.expiresAt;
-  const scheduledDate = scheduled
-    ? formatDate(scheduled, SCHEDULED_DATE_FORMAT)
-    : null;
+  const scheduledDate = scheduled ? deletionDate(scheduled) : null;
   const [choice, setChoice] = useState<string>(
     scheduledDate === null ? NEVER : KEEP,
   );
   const sharing = useSetArtifactSharing();
-  const deletion = deletionState(scheduled);
-
-  const statusText = () => {
-    if (deletion.state === "never")
-      return "This artifact is kept until you delete it.";
-    if (deletion.state === "active")
-      return `Currently deletes on ${scheduledDate} — ${timeUntil(scheduled)}.`;
-    return deletion.restoreLeft
-      ? `Deletion is pending since ${scheduledDate} — ${deletion.restoreLeft} left to restore it.`
-      : `Deletion is pending since ${scheduledDate}.`;
-  };
+  const statusText = deletionSummary(scheduled);
 
   const save = () => {
     if (choice === KEEP) {
@@ -75,7 +56,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
           emitToast({
             kind: "success",
             message: expiresAt
-              ? `This artifact deletes on ${formatDate(expiresAt, SCHEDULED_DATE_FORMAT)}.`
+              ? `This artifact deletes on ${deletionDate(expiresAt)}.`
               : "Automatic deletion turned off — this artifact is kept until you delete it.",
           });
           onClose();
@@ -104,7 +85,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
             </p>
           </div>
 
-          <p className="text-sm text-muted-foreground">{statusText()}</p>
+          <p className="text-sm text-muted-foreground">{statusText}</p>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-foreground">
