@@ -161,11 +161,11 @@ leave an orphaned (unreachable) object in the store, never a dangling row.
 The database enforces the composition with foreign keys: version rows cascade
 with their artifact, and folder deletion detaches its artifacts. Deleting a
 folder ungroups its artifacts (their share state is untouched).
-The **expiry sweep** runs as a scheduled platform periodic job (its own
+The **retention sweep** runs as a scheduled platform periodic job (its own
 queue and worker lane) — one execution per period across replicas, with the
 tick itself idempotent —
-and permanently removes artifacts — private ones included — whose expiry
-passed more than the grace window ago. Agent deletion does
+and permanently removes artifacts — private ones included — whose retention
+date passed more than the grace window ago. Agent deletion does
 **not** touch artifacts — attribution simply points at a name that no longer
 resolves.
 
