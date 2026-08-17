@@ -23,7 +23,7 @@ export function CodingAgentsView() {
   });
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
-  const createCodingAgent = () => navigateToCreateSandbox();
+  const createCodingAgent = () => navigateToCreateSandbox("general-purpose");
 
   return (
     <div>

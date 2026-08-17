@@ -28,6 +28,7 @@ interface EntryPoint {
 const ENTRY_POINTS: EntryPoint[] = [
   {
     choice: "sandbox",
+    startingPoint: "general-purpose",
     icon: ContainerSoftware,
     title: "Create a coding agent",
     description:

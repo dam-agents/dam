@@ -37,8 +37,8 @@ export function IconRail({
 } = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
-  const navExpanded = useStore((s) => s.navExpanded);
-  const setNavExpanded = useStore((s) => s.setNavExpanded);
+  const expandedNav = useStore((s) => s.sidebarExpanded);
+  const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
@@ -103,65 +103,66 @@ export function IconRail({
     <>
       <nav
         className={cn(
-          "hidden md:flex flex-col h-full bg-card border-r border-border shrink-0 transition-[width]",
-          navExpanded ? "w-[232px] px-2" : "w-[56px] items-center",
+          "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0 transition-[width]",
+          expandedNav ? "w-[232px]" : "w-[56px]",
         )}
         data-testid="app-sidebar"
       >
         <div
           className={cn(
-            "flex pt-2",
-            navExpanded
-              ? "w-full items-center justify-between gap-2"
-              : "flex-col items-center gap-1",
+            "flex items-center pt-2",
+            expandedNav ? "w-full justify-between gap-2" : "justify-center",
           )}
         >
-          <button
-            type="button"
-            onClick={sandboxes.navigate}
-            aria-label={getBrand().name}
-            className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <BrandLogo />
-          </button>
-          <Tooltip
-            content={navExpanded ? "Collapse navigation" : "Expand navigation"}
-            side="right"
-          >
-            <button
-              type="button"
-              onClick={() => setNavExpanded(!navExpanded)}
-              aria-label={
-                navExpanded ? "Collapse navigation" : "Expand navigation"
-              }
-              aria-expanded={navExpanded}
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {navExpanded ? <Close size={16} /> : <SidePanelOpen size={16} />}
-            </button>
-          </Tooltip>
+          {expandedNav ? (
+            <>
+              <button
+                type="button"
+                onClick={sandboxes.navigate}
+                aria-label={getBrand().name}
+                className="rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <BrandLogo />
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpandedNav(false)}
+                aria-label="Collapse navigation"
+                aria-expanded={true}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Close size={16} />
+              </button>
+            </>
+          ) : (
+            <Tooltip content="Expand navigation" side="right">
+              <button
+                type="button"
+                onClick={() => setExpandedNav(true)}
+                aria-label="Expand navigation"
+                aria-expanded={false}
+                className="group relative flex h-10 w-10 items-center justify-center rounded-lg text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <BrandLogo className="transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0" />
+                <SidePanelOpen
+                  size={20}
+                  className="absolute opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                />
+              </button>
+            </Tooltip>
+          )}
         </div>
-        <div
-          className={cn(
-            "flex flex-col gap-1",
-            navExpanded ? "w-full mt-2" : "items-center",
-          )}
-        >
-          <RailItem {...sandboxes} expanded={navExpanded} />
-          <RailItem {...codingAgents} expanded={navExpanded} />
-          <RailItem {...experiments} expanded={navExpanded} />
-          <RailItem {...knowledgeBases} expanded={navExpanded} />
+        <div className="flex flex-col gap-1">
+          <RailItem {...sandboxes} expanded={expandedNav} />
+          <RailItem {...codingAgents} expanded={expandedNav} />
+          <RailItem {...experiments} expanded={expandedNav} />
+          <RailItem {...knowledgeBases} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
-        <div
-          className={cn(
-            "flex flex-col gap-1 mb-2",
-            navExpanded ? "w-full" : "items-center",
-          )}
-        >
-          <RailItem {...inbox} expanded={navExpanded} />
-          <RailItem {...artifacts} expanded={navExpanded} />
-          <RailItem {...settings} expanded={navExpanded} />
+        <div className="mb-2 flex flex-col gap-1">
+          <RailItem {...inbox} expanded={expandedNav} />
+          <RailItem {...artifacts} expanded={expandedNav} />
+          <RailItem {...settings} expanded={expandedNav} />
         </div>
       </nav>
 
@@ -196,11 +197,12 @@ function RailItem({
     <button
       type="button"
       onClick={navigate}
-      aria-label={label}
+      aria-label={
+        expanded ? undefined : badge > 0 ? `${label}, ${badge} pending` : label
+      }
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-10 items-center rounded-lg transition-colors",
-        expanded ? "w-full gap-3 px-3" : "w-10 justify-center",
+        "flex h-10 w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
         active
           ? "text-primary bg-muted"
           : "text-foreground/80 hover:text-foreground hover:bg-muted",

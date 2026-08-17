@@ -14,11 +14,14 @@ import {
   createDialogSlice,
   type DialogSlice,
 } from "./modules/platform/store/dialog.js";
-import { createNavSlice, type NavSlice } from "./modules/platform/store/nav.js";
 import {
   createNavigationSlice,
   type NavigationSlice,
 } from "./modules/platform/store/navigation.js";
+import {
+  createSidebarSlice,
+  type SidebarSlice,
+} from "./modules/platform/store/sidebar.js";
 import {
   createThemeSlice,
   type ThemeSlice,
@@ -43,7 +46,7 @@ export type { SessionError } from "./modules/sessions/store/sessions.js";
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
-  NavSlice &
+  SidebarSlice &
   AgentsSlice &
   SessionsSlice &
   ExperimentsSlice &
@@ -55,7 +58,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
-  ...createNavSlice(...a),
+  ...createSidebarSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createExperimentsSlice(...a),
