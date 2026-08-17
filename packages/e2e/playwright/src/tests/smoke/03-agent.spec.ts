@@ -34,15 +34,15 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   });
 
   await test.step("open app", async () => {
-    await page.addInitScript(() =>
-      sessionStorage.setItem("platform-first-run-routed", "1"),
-    );
     await page.goto(baseUrl);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
   });
 
   await test.step("pick the mock image", async () => {
-    await page.getByRole("button", { name: /create sandbox/i }).click();
+    await page
+      .getByRole("button", { name: /create sandbox|create a coding agent/i })
+      .first()
+      .click();
     await page.getByTestId("starting-point-general-purpose").click();
     await page.getByTestId(`template-card-${harnessName}`).click();
     await page.getByRole("button", { name: /continue/i }).click();

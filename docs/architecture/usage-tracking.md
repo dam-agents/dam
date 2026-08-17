@@ -77,11 +77,11 @@ The subsystem reads from but does not own:
 
 - **Other Postgres tables** (`pending_approvals`, `agent_skills`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables. (Session-derived views were retired when sessions became agent-owned.)
 
-The subsystem produces no events of its own and exposes no domain operations to other modules — it is a sink for the event bus and a reader for SQL.
+The subsystem is otherwise a sink for the event bus and a reader for SQL. It owns exactly one domain operation — a user reporting which way in they chose, which it turns into an event on that same bus — and everything else it stores arrives as another module's event.
 
 ## Write path
 
-The api-server emits domain events on every meaningful user interaction (auth, channel turn, schedule fire, OAuth connect/disconnect, file import), the contribution-delivery health transitions (apply failed / recovered / gave up), plus every agent lifecycle event (`AgentCreated` / `AgentDeleted`). These events already exist for the platform's own purposes; the usage subsystem only adds subscribers.
+The api-server emits domain events on every meaningful user interaction (auth, channel turn, schedule fire, OAuth connect/disconnect, file import), the contribution-delivery health transitions (apply failed / recovered / gave up), plus every agent lifecycle event (`AgentCreated` / `AgentDeleted`). Those events already exist for the platform's own purposes, so for them the usage subsystem only adds subscribers; the entry-point choice below is the one it emits itself.
 
 Two sagas subscribe to the bus:
 

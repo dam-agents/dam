@@ -3,7 +3,9 @@
 -- than generated, like every other usage_* view — they are aggregates that
 -- don't belong in schema.ts.
 --
--- Both exclude core-team traffic, as every pilot view does.
+-- Both exclude core-team traffic, as every pilot view does. "First" means the
+-- earliest choice still in the table: retention ages rows out at 180 days, so a
+-- user whose first choice predates that reads as having started with a later one.
 
 CREATE VIEW "usage_entry_point_choices_30d" AS
   SELECT

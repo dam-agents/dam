@@ -33,7 +33,7 @@ Each card is a local `EntryPointCard` built on `CardButton` (`@/components/ui/ca
 
 | Icon        | Title                    | Description                                                                          | Action                                       |
 | ----------- | ------------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------- |
-| `Cube`      | Create a coding agent    | Work with your preferred coding agent, credentials, and tools in an isolated environment. | `navigateToCreateSandbox()`                  |
+| `ContainerSoftware` | Create a coding agent | Work with your preferred coding agent, credentials, and tools in an isolated environment. | `navigateToCreateSandbox()`                  |
 | `Chemistry` | Begin an experiment      | Run one goal across many variants at once and compare results.                       | `navigateToCreateSandbox("experiment")`      |
 | `Book`      | Start a knowledge base   | Organize and converse with data sourced from repos, documents, and more (LLM wiki).   | `navigateToCreateSandbox("knowledge-base")`  |
 

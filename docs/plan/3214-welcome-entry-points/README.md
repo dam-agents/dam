@@ -40,7 +40,8 @@ Fire-and-forget from the UI: the call is started, navigation happens immediately
 | #   | Title                                    | Scope                                                                                                                    | Depends on |
 | --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------- |
 | 01 ✅ | Record the entry-point choice          | Domain event, `usage` tRPC module and service, `persist-activity` subscriber, two reporting views, architecture-doc update | —          |
-| 02  | Welcome the new user on the empty Home    | The hero and three entry cards on Home's empty state; removal of the first-run redirect                                   | 01         |
+| 02 ✅ | Welcome the new user on the empty Home  | The hero and three entry cards on Home's empty state; removal of the first-run redirect                                   | 01         |
+| 03  | Coding agents page and updated left nav   | Folds in [#3233](https://github.com/dam-agents/dam/issues/3233): the Coding agents page and nav item, Artifacts moved down, an expandable nav | 02         |
 
 ## Conventions & glossary
 
