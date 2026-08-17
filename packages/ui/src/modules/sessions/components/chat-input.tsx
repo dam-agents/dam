@@ -216,7 +216,7 @@ export function ChatInput({
               size="icon-sm"
               className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loadingSession}
+              disabled={loadingSession || !key}
               aria-label="Attach file"
               tooltip="Attach file"
             >
@@ -231,7 +231,7 @@ export function ChatInput({
               onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
-              disabled={loadingSession}
+              disabled={loadingSession || !key}
             />
             {showStop && (
               <Button
@@ -252,7 +252,7 @@ export function ChatInput({
                 size="icon-sm"
                 className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || loadingSession}
+                disabled={sendDisabled || loadingSession || !key}
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >

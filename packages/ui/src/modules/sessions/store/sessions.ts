@@ -10,7 +10,7 @@ import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
-import { loadDraftSnapshot, saveDraftSnapshot } from "../lib/draft-snapshot.js";
+import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
 import {
   SESSION_CATEGORIES,
   type SessionCategory,
@@ -45,7 +45,7 @@ export interface SessionsSlice {
   consumeDroppedAttachments: (key: string) => void;
   pruneDrafts: (agentId: string, liveSessionIds: readonly string[]) => void;
   clearAgentDrafts: (agentId: string) => void;
-  mergeForeignDrafts: (foreign: Record<string, SessionDraft>) => void;
+  applyForeignDraft: (key: string, draft: SessionDraft | null) => void;
   setBusy: (busy: boolean) => void;
 
   deleteSession: (sessionId: string) => Promise<boolean>;
@@ -62,10 +62,22 @@ export const createSessionsSlice: StateCreator<
   const updateDrafts = (
     recipe: (drafts: Record<string, SessionDraft>) => boolean,
   ) => {
-    const drafts = { ...get().drafts };
+    const before = get().drafts;
+    const drafts = { ...before };
     if (!recipe(drafts)) return;
     set({ drafts });
-    saveDraftSnapshot(drafts);
+    for (const key of new Set([
+      ...Object.keys(before),
+      ...Object.keys(drafts),
+    ])) {
+      if (before[key] === drafts[key]) continue;
+      draftWriter.write(key, drafts[key] ?? null);
+    }
+  };
+
+  const openDraftKey = (): string | null => {
+    const agentId = get().selectedAgent;
+    return agentId === null ? null : draftKey(agentId, get().sessionId);
   };
 
   const dropAgentKeys = (agentId: string, doomed: (key: string) => boolean) => {
@@ -151,16 +163,17 @@ export const createSessionsSlice: StateCreator<
       dropAgentKeys(agentId, (key) => !keep.has(key));
     },
     clearAgentDrafts: (agentId) => dropAgentKeys(agentId, () => true),
-    mergeForeignDrafts: (foreign) =>
-      updateDrafts((drafts) => {
-        let changed = false;
-        for (const [key, entry] of Object.entries(foreign)) {
-          if (key in drafts) continue;
-          drafts[key] = entry;
-          changed = true;
-        }
-        return changed;
-      }),
+    applyForeignDraft: (key, draft) => {
+      if (key === openDraftKey()) return;
+      const drafts = { ...get().drafts };
+      if (draft === null) {
+        if (!(key in drafts)) return;
+        delete drafts[key];
+      } else {
+        drafts[key] = draft;
+      }
+      set({ drafts });
+    },
     setBusy: (busy) => set({ busy }),
 
     resetChatContext: () =>

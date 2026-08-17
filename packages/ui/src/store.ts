@@ -22,7 +22,10 @@ import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
-import { onForeignDraftChange } from "./modules/sessions/lib/draft-snapshot.js";
+import {
+  flushDraftsOnHide,
+  onForeignDraftChange,
+} from "./modules/sessions/lib/draft-snapshot.js";
 import {
   createPermissionsSlice,
   type PermissionsSlice,
@@ -62,6 +65,12 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createPermissionsSlice(...a),
 }));
 
-onForeignDraftChange((foreign) =>
-  useStore.getState().mergeForeignDrafts(foreign),
+const stopForeignDrafts = onForeignDraftChange((key, draft) =>
+  useStore.getState().applyForeignDraft(key, draft),
 );
+const stopDraftFlush = flushDraftsOnHide();
+
+export function stopDraftSync(): void {
+  stopForeignDrafts();
+  stopDraftFlush();
+}

@@ -2,65 +2,48 @@ import { z } from "zod";
 
 import type { SessionDraft } from "./draft-key.js";
 
-export const DRAFTS_STORAGE_KEY = "platform-drafts";
+export const DRAFT_STORAGE_PREFIX = "platform-draft:";
+
+const WRITE_BATCH_MS = 300;
 
 const persistedDraftSchema = z.object({
+  version: z.literal(1),
   text: z.string(),
   attachmentNames: z.array(z.string()),
 });
 
-const draftSnapshotSchema = z.object({
-  version: z.literal(1),
-  drafts: z.record(z.string(), persistedDraftSchema),
-});
-
-export type DraftSnapshot = z.infer<typeof draftSnapshotSchema>;
+type PersistedDraft = z.infer<typeof persistedDraftSchema>;
 
 export interface DraftStore {
+  keys(): string[];
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 const localStore: DraftStore = {
+  keys: () => Object.keys(localStorage),
   getItem: (key) => localStorage.getItem(key),
   setItem: (key, value) => localStorage.setItem(key, value),
+  removeItem: (key) => localStorage.removeItem(key),
 };
 
-export function loadDraftSnapshot(
-  store: DraftStore = localStore,
-): Record<string, SessionDraft> {
-  let raw: string | null = null;
-  try {
-    raw = store.getItem(DRAFTS_STORAGE_KEY);
-  } catch {}
-  if (!raw) return {};
+function parseDraftEntry(raw: string): SessionDraft | null {
   let json: unknown;
   try {
     json = JSON.parse(raw);
-  } catch (err) {
-    console.warn("[drafts] discarding unreadable platform-drafts:", err);
-    return {};
+  } catch {
+    return null;
   }
-  const parsed = draftSnapshotSchema.safeParse(json);
-  if (!parsed.success) {
-    console.warn(
-      "[drafts] schema mismatch on platform-drafts, discarding:",
-      parsed.error.issues,
-    );
-    return {};
-  }
-  const drafts: Record<string, SessionDraft> = {};
-  for (const [key, row] of Object.entries(parsed.data.drafts)) {
-    if (row.text.length === 0 && row.attachmentNames.length === 0) continue;
-    drafts[key] = {
-      text: row.text,
-      attachments: [],
-      ...(row.attachmentNames.length > 0
-        ? { droppedAttachmentNames: row.attachmentNames }
-        : {}),
-    };
-  }
-  return drafts;
+  const parsed = persistedDraftSchema.safeParse(json);
+  if (!parsed.success) return null;
+  const { text, attachmentNames: names } = parsed.data;
+  if (text.length === 0 && names.length === 0) return null;
+  return {
+    text,
+    attachments: [],
+    ...(names.length > 0 ? { droppedAttachmentNames: names } : {}),
+  };
 }
 
 function attachmentNames(draft: SessionDraft): string[] {
@@ -71,32 +54,127 @@ function attachmentNames(draft: SessionDraft): string[] {
   return [...staged, ...(draft.droppedAttachmentNames ?? [])];
 }
 
-export function saveDraftSnapshot(
-  drafts: Record<string, SessionDraft>,
+export function loadDraftSnapshot(
   store: DraftStore = localStore,
-): void {
-  const rows: DraftSnapshot["drafts"] = {};
-  for (const [key, draft] of Object.entries(drafts)) {
-    const names = attachmentNames(draft);
-    if (draft.text.trim().length === 0 && names.length === 0) continue;
-    rows[key] = { text: draft.text, attachmentNames: names };
-  }
+): Record<string, SessionDraft> {
+  let storageKeys: string[] = [];
   try {
+    storageKeys = store.keys();
+  } catch {
+    return {};
+  }
+  const drafts: Record<string, SessionDraft> = {};
+  for (const storageKey of storageKeys) {
+    if (!storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
+    let raw: string | null = null;
+    try {
+      raw = store.getItem(storageKey);
+    } catch {}
+    if (raw === null) continue;
+    const draft = parseDraftEntry(raw);
+    if (draft === null) {
+      console.warn(`[drafts] discarding unreadable ${storageKey}`);
+      try {
+        store.removeItem(storageKey);
+      } catch {}
+      continue;
+    }
+    drafts[storageKey.slice(DRAFT_STORAGE_PREFIX.length)] = draft;
+  }
+  return drafts;
+}
+
+function writeDraftEntry(
+  key: string,
+  draft: SessionDraft | null,
+  store: DraftStore,
+): void {
+  const storageKey = `${DRAFT_STORAGE_PREFIX}${key}`;
+  const names = draft === null ? [] : attachmentNames(draft);
+  const blank =
+    draft === null || (draft.text.trim().length === 0 && names.length === 0);
+  try {
+    if (blank) {
+      store.removeItem(storageKey);
+      return;
+    }
     store.setItem(
-      DRAFTS_STORAGE_KEY,
-      JSON.stringify({ version: 1, drafts: rows } satisfies DraftSnapshot),
+      storageKey,
+      JSON.stringify({
+        version: 1,
+        text: draft.text,
+        attachmentNames: names,
+      } satisfies PersistedDraft),
     );
   } catch (err) {
-    console.warn("[drafts] could not persist platform-drafts:", err);
+    console.warn(`[drafts] could not persist ${storageKey}:`, err);
   }
 }
 
+export interface DraftWriter {
+  write(key: string, draft: SessionDraft | null): void;
+  flush(): void;
+}
+
+export function createDraftWriter(
+  store: DraftStore = localStore,
+  batchMs: number = WRITE_BATCH_MS,
+): DraftWriter {
+  const queued = new Map<string, SessionDraft>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const flush = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    for (const [key, draft] of queued) writeDraftEntry(key, draft, store);
+    queued.clear();
+  };
+
+  return {
+    write(key, draft) {
+      if (draft === null) {
+        queued.delete(key);
+        writeDraftEntry(key, null, store);
+        return;
+      }
+      queued.set(key, draft);
+      if (timer === null) timer = setTimeout(flush, batchMs);
+    },
+    flush,
+  };
+}
+
+export const draftWriter = createDraftWriter();
+
 export function onForeignDraftChange(
-  merge: (drafts: Record<string, SessionDraft>) => void,
-): void {
-  if (typeof window === "undefined") return;
-  window.addEventListener("storage", (e) => {
-    if (e.key !== DRAFTS_STORAGE_KEY || e.newValue === null) return;
-    merge(loadDraftSnapshot({ getItem: () => e.newValue, setItem: () => {} }));
-  });
+  apply: (key: string, draft: SessionDraft | null) => void,
+): () => void {
+  if (typeof window === "undefined") return () => {};
+  const listener = (e: StorageEvent) => {
+    if (!e.key?.startsWith(DRAFT_STORAGE_PREFIX)) return;
+    const key = e.key.slice(DRAFT_STORAGE_PREFIX.length);
+    if (e.newValue === null) {
+      apply(key, null);
+      return;
+    }
+    const draft = parseDraftEntry(e.newValue);
+    if (draft !== null) apply(key, draft);
+  };
+  window.addEventListener("storage", listener);
+  return () => window.removeEventListener("storage", listener);
+}
+
+export function flushDraftsOnHide(
+  writer: DraftWriter = draftWriter,
+): () => void {
+  if (typeof window === "undefined") return () => {};
+  const flush = () => writer.flush();
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", flush);
+  return () => {
+    window.removeEventListener("pagehide", flush);
+    document.removeEventListener("visibilitychange", flush);
+  };
 }
