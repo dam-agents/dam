@@ -98,16 +98,15 @@ export function ChatInput({
                 mimeType: file.type || "application/octet-stream",
                 size: file.size,
               };
-          const state = useStore.getState();
-          const current = state.drafts[key] ?? EMPTY_DRAFT;
-          state.setDraft(key, {
+          const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
+          setDraft(key, {
             attachments: [...current.attachments, attachment],
           });
         };
         reader.readAsDataURL(file);
       }
     },
-    [key],
+    [key, setDraft],
   );
 
   const removeAttachment = useCallback(

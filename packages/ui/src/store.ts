@@ -22,6 +22,7 @@ import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
+import { onForeignDraftChange } from "./modules/sessions/lib/draft-snapshot.js";
 import {
   createPermissionsSlice,
   type PermissionsSlice,
@@ -60,3 +61,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),
 }));
+
+onForeignDraftChange((foreign) =>
+  useStore.getState().mergeForeignDrafts(foreign),
+);

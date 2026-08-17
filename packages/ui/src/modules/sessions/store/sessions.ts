@@ -10,11 +10,7 @@ import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
-import {
-  loadDraftSnapshot,
-  onForeignDraftChange,
-  saveDraftSnapshot,
-} from "../lib/draft-snapshot.js";
+import { loadDraftSnapshot, saveDraftSnapshot } from "../lib/draft-snapshot.js";
 import {
   SESSION_CATEGORIES,
   type SessionCategory,
@@ -84,8 +80,6 @@ export const createSessionsSlice: StateCreator<
       return changed;
     });
   };
-
-  onForeignDraftChange((foreign) => get().mergeForeignDrafts(foreign));
 
   return {
     sessionId: null,
