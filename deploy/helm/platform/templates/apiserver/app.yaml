@@ -451,6 +451,16 @@ spec:
               readOnly: true
             {{- end }}
           {{- if .Values.probes.enabled }}
+          # Startup shields boot from liveness: migrations run before any
+          # listener exists, and at >1 replica the losers of the migration
+          # advisory lock block until the winner finishes — killing them
+          # mid-wait would wedge the roll. 10 min budget, then liveness arms.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
           # Readiness gates on the Keycloak JWKS warm-up (503 until the key
           # set has been fetched once), so a rolling update keeps the old pod
           # serving until this pod can verify tokens. Liveness stays on the
