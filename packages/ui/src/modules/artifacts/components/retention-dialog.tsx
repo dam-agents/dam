@@ -12,7 +12,7 @@ import { formatDate, timeUntil } from "@/lib/format-time";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
-import { RESTORE_WINDOW_DAYS } from "../lib/format.js";
+import { deletionState, RESTORE_WINDOW_DAYS } from "../lib/format.js";
 
 const KEEP = "keep";
 const NEVER = "never";
@@ -45,6 +45,17 @@ export function RetentionDialog({ artifact, onClose }: Props) {
     scheduledDate === null ? NEVER : KEEP,
   );
   const sharing = useSetArtifactSharing();
+  const deletion = deletionState(scheduled);
+
+  const statusText = () => {
+    if (deletion.state === "never")
+      return "This artifact is kept until you delete it.";
+    if (deletion.state === "active")
+      return `Currently deletes on ${scheduledDate} — ${timeUntil(scheduled)}.`;
+    return deletion.restoreLeft
+      ? `Deletion is pending since ${scheduledDate} — ${deletion.restoreLeft} left to restore it.`
+      : `Deletion is pending since ${scheduledDate}.`;
+  };
 
   const save = () => {
     if (choice === KEEP) {
@@ -90,11 +101,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
             </p>
           </div>
 
-          <p className="text-sm text-muted-foreground">
-            {scheduled
-              ? `Currently deletes on ${scheduledDate} — ${timeUntil(scheduled)}.`
-              : "This artifact is kept until you delete it."}
-          </p>
+          <p className="text-sm text-muted-foreground">{statusText()}</p>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-foreground">
