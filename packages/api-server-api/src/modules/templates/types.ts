@@ -29,6 +29,7 @@ export interface TemplateSpec {
   category?: TemplateCategory;
   tags?: string[];
   docsUrl?: string;
+  releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental?: boolean;
   mounts?: Mount[];

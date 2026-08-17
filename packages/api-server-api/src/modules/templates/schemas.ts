@@ -40,6 +40,7 @@ export const templateSpecSchema = z
     category: templateCategorySchema,
     tags: z.array(z.string()).optional(),
     docsUrl: z.string().optional(),
+    releaseNotesUrl: z.string().optional(),
     setupNote: z.object({ title: z.string(), body: z.string() }).optional(),
     experimental: z.boolean().optional(),
     mounts: z.array(mountSchema).optional(),

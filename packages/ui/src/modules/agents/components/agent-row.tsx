@@ -21,6 +21,7 @@ import {
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
+import { UpdateAvailableAction } from "./update-available-action.js";
 
 interface Props {
   agent: AgentView;
@@ -28,7 +29,10 @@ interface Props {
   subtitle: string;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
+  updatePending: boolean;
+  updateBusy: boolean;
   onSelect: () => void;
+  onUpdate: () => void;
   onConfigure: () => void;
   configureLabel: string;
   onWake: () => void;
@@ -44,7 +48,10 @@ export function AgentRow({
   subtitle,
   temporaryDraw,
   deletePending,
+  updatePending,
+  updateBusy,
   onSelect,
+  onUpdate,
   onConfigure,
   configureLabel,
   onWake,
@@ -93,7 +100,12 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {}
+        <UpdateAvailableAction
+          agent={agent}
+          pending={updatePending}
+          busy={updateBusy}
+          onUpdate={onUpdate}
+        />
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage

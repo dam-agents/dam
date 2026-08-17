@@ -92,6 +92,7 @@ export interface TemplateView {
   category: "harness" | "preconfigured";
   tags?: string[];
   docsUrl?: string;
+  releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
   vm: boolean;

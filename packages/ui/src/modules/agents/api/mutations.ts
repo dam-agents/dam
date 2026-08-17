@@ -161,12 +161,14 @@ export function useRestartAgentMutation() {
   });
 }
 
-export function useUpgradeAgentMutation() {
+export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to upgrade sandbox",
+      ...(opts?.silent
+        ? { suppressErrorToast: true }
+        : { errorToast: "Failed to update sandbox" }),
     },
   });
 }

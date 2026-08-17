@@ -1,6 +1,5 @@
 import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,8 +15,10 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
+import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
+import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
@@ -35,6 +36,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
+  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
 
   const onStop = async () => {
     const schedules = await fetchSchedulesForAgent(agent.id);
@@ -72,22 +74,15 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   return (
     <PageHeader
       title={agent.name}
-      adornment={
-        <>
-          <StatusBadge state={display.state} />
-          {agent.templateUpdate && (
-            <Badge
-              variant="accent"
-              className="shrink-0"
-              title={`Template update available: ${agent.templateUpdate.toImage}`}
-            >
-              Update available
-            </Badge>
-          )}
-        </>
-      }
+      adornment={<StatusBadge state={display.state} />}
       actions={
         <>
+          <UpdateAvailableAction
+            agent={agent}
+            pending={updatingId === agent.id}
+            busy={updatingId !== null || updatingAll}
+            onUpdate={() => void updateOne(agent)}
+          />
           <Tooltip content="Open chat">
             <Button
               size="icon"
