@@ -463,6 +463,7 @@ export {
   egressRuleApplyPresetInputSchema,
   egressRuleCreateInputSchema,
   egressRuleCurrentPresetInputSchema,
+  egressRuleGetInputSchema,
   egressRuleListForAgentInputSchema,
   egressRuleRevokeInputSchema,
   egressRuleUpdateInputSchema,

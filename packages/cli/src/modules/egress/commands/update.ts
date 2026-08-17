@@ -1,5 +1,10 @@
 import { Command, Option } from "commander";
-import { formatEgressRuleInline, formatEgressRuleSource } from "api-server-api";
+import {
+  formatEgressRuleInline,
+  formatEgressRuleSource,
+  gatewayRestartImpact,
+} from "api-server-api";
+import { gatewayRestartNotice } from "../domain/restart-notice.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
@@ -32,7 +37,7 @@ export function buildUpdateCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("-y, --yes", "skip the path-level restart confirmation")
+    .option("-y, --yes", "skip the gateway restart confirmation")
     .option("--json", "emit the updated rule as JSON")
     .addHelpText(
       "after",
@@ -71,23 +76,61 @@ export function buildUpdateCommand(deps: {
           },
         });
 
-        const requiresRestart =
-          (opts.method !== undefined && opts.method !== "*") ||
-          (opts.path !== undefined && opts.path !== "*");
-        if (requiresRestart && !opts.yes) {
-          if (!process.stdin.isTTY) {
+        const egress = deps.createEgressService(host);
+        const current = await egress.get(id);
+        if (!current.ok) {
+          const failure = current.error;
+          if (failure.kind === "rule-not-found") {
             process.stderr.write(
-              "error: path-level rules require --yes on non-interactive stdin\n",
+              `error: network access rule not found: ${failure.id}\n`,
             );
-            process.exit(EXIT_INVALID_INPUT);
+            process.exit(EXIT_RULE_NOT_FOUND);
+          } else if (failure.kind === "rule-lookup-unsupported") {
+            if (!opts.yes) {
+              process.stderr.write(
+                "error: this server is too old to report whether this change restarts the network gateway; re-run with --yes to apply it anyway\n",
+              );
+              process.exit(EXIT_INVALID_INPUT);
+            }
+          } else {
+            printServiceError(failure, host);
+            process.exit(EXIT_RUNTIME_FAILURE);
           }
-          process.stderr.write(
-            "This rule requires path-level enforcement (non-wildcard method/path) and will restart the agent (~5–15s).\n",
-          );
-          if (!(await confirm("Continue?"))) exitCancelled(opts);
         }
 
-        const result = await deps.createEgressService(host).update({
+        if (current.ok) {
+          const rule = current.value;
+          const siblings = await egress.listForAgent(rule.agentId);
+          if (!siblings.ok) {
+            printServiceError(siblings.error, host);
+            process.exit(EXIT_RUNTIME_FAILURE);
+          }
+          const impact = gatewayRestartImpact({
+            current: siblings.value,
+            removeIds: [id],
+            adds: [
+              {
+                host: rule.host,
+                ...(rule.port ? { port: rule.port } : {}),
+                method: opts.method ?? rule.method,
+                pathPattern: opts.path ?? rule.pathPattern,
+                source: "manual",
+              },
+            ],
+          });
+          if (impact.willRestart && !opts.yes) {
+            if (!process.stdin.isTTY) {
+              process.stderr.write(
+                "error: this change restarts the network gateway; pass --yes on non-interactive stdin\n",
+              );
+              process.exit(EXIT_INVALID_INPUT);
+            }
+            process.stderr.write(gatewayRestartNotice(impact));
+            if (!(await confirm("Continue?"))) exitCancelled(opts);
+          }
+        }
+
+        const result = await egress.update({
           id,
           method: opts.method,
           pathPattern: opts.path,

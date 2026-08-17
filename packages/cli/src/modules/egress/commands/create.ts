@@ -1,5 +1,6 @@
 import { Command, Option } from "commander";
-import { formatEgressRuleInline } from "api-server-api";
+import { formatEgressRuleInline, gatewayRestartImpact } from "api-server-api";
+import { gatewayRestartNotice } from "../domain/restart-notice.js";
 import type { AgentService } from "../../agent/index.js";
 import { createAgentResolver } from "../../agent/index.js";
 import {
@@ -39,7 +40,7 @@ export function buildCreateCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("-y, --yes", "skip the path-level restart confirmation")
+    .option("-y, --yes", "skip the gateway restart confirmation")
     .option("--json", "emit the created rule as JSON")
     .addHelpText(
       "after",
@@ -77,21 +78,35 @@ export function buildCreateCommand(deps: {
           process.exit(exitCodeForResolveError(resolved.error));
         }
 
-        const requiresRestart = opts.method !== "*" || opts.path !== "*";
-        if (requiresRestart && !opts.yes) {
+        const egress = deps.createEgressService(host);
+        const existing = await egress.listForAgent(resolved.value.id);
+        if (!existing.ok) {
+          printServiceError(existing.error, host);
+          process.exit(EXIT_RUNTIME_FAILURE);
+        }
+        const impact = gatewayRestartImpact({
+          current: existing.value,
+          adds: [
+            {
+              host: opts.host,
+              method: opts.method,
+              pathPattern: opts.path,
+              source: "manual",
+            },
+          ],
+        });
+        if (impact.willRestart && !opts.yes) {
           if (!process.stdin.isTTY) {
             process.stderr.write(
-              "error: path-level rules require --yes on non-interactive stdin\n",
+              "error: this rule restarts the network gateway; pass --yes on non-interactive stdin\n",
             );
             process.exit(EXIT_INVALID_INPUT);
           }
-          process.stderr.write(
-            "This rule requires path-level enforcement (non-wildcard method/path) and will restart the agent (~5–15s).\n",
-          );
+          process.stderr.write(gatewayRestartNotice(impact));
           if (!(await confirm("Continue?"))) exitCancelled(opts);
         }
 
-        const result = await deps.createEgressService(host).create({
+        const result = await egress.create({
           agentId: resolved.value.id,
           host: opts.host,
           method: opts.method,

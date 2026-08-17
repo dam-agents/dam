@@ -8,6 +8,7 @@ import {
   egressRuleApplyPresetInputSchema,
   egressRuleCreateInputSchema,
   egressRuleCurrentPresetInputSchema,
+  egressRuleGetInputSchema,
   egressRuleListForAgentInputSchema,
   egressRuleRevokeInputSchema,
   egressRuleUpdateInputSchema,
@@ -19,6 +20,14 @@ export const egressRulesRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.egressRules.listForAgent(input.agentId);
+    }),
+
+  get: readAgentProcedure
+    .input(egressRuleGetInputSchema)
+    .query(async ({ ctx, input }) => {
+      const rule = await ctx.egressRules.get(input.id);
+      checkAgentBinding(ctx, rule.agentId);
+      return rule;
     }),
 
   currentPreset: readAgentProcedure

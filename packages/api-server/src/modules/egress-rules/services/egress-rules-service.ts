@@ -54,6 +54,28 @@ export function createEgressRulesService(
       return rows.map(toView);
     },
 
+    async get(id) {
+      const rule = await deps.repo.getById(id);
+      if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
+        if (rule) {
+          securityLog("warn", "authz.owner_mismatch", {
+            category: "authz",
+            actor: deps.ownerSub,
+            actorKind: "user",
+            agentId: rule.agentId,
+            decision: "deny",
+            reason: "not-owner",
+            detail: { surface: "egress-rule.get", ruleId: id },
+          });
+        }
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "egress rule not found",
+        });
+      }
+      return toView(rule);
+    },
+
     async currentPreset(agentId) {
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return "none";
       return deps.repo.getPresetForAgent(agentId);
