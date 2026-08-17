@@ -44,6 +44,7 @@ import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-s
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
+  channelRpcRequestSchema,
   type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
@@ -654,6 +655,7 @@ export async function bootstrap() {
   const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
     bus: redisBus,
     service: "channels",
+    requestSchema: channelRpcRequestSchema,
     claim: async (id) =>
       (await sharedRedis.set(
         `rpc:claim:channels:${id}`,

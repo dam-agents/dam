@@ -50,7 +50,8 @@ describe("session presence", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("pins on first acquire, unpins on last release", async () => {
+  // TEST_SCENARIO: release must only drop this replica's key — an eager annotation clear races another replica's acquire (reconnect landing elsewhere) and can unpin a live socket; the two-tick reconcile owns clearing.
+  it("pins on first acquire; last release drops the key and leaves the clear to reconcile", async () => {
     const redis = fakeRedis();
     const repo = fakeRepo();
     const presence = createSessionPresence(repo, redis);
@@ -67,8 +68,12 @@ describe("session presence", () => {
 
     r2();
     await vi.advanceTimersByTimeAsync(1);
-    expect(repo.annotated.has("a1")).toBe(false);
     expect(redis.keys.size).toBe(0);
+    expect(repo.annotated.has("a1")).toBe(true);
+
+    await presence.reconcile();
+    await presence.reconcile();
+    expect(repo.annotated.has("a1")).toBe(false);
     presence.close();
   });
 

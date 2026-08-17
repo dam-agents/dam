@@ -13,18 +13,35 @@ const {
 const { server: harnessApiServer } = startHarnessApiServerApp(harnessDeps);
 const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp(extAuthzDeps);
 
+const closed = (s: { close(cb?: () => void): unknown }) =>
+  new Promise<void>((resolve) => void s.close(() => resolve()));
+
 let shuttingDown = false;
 const onSignal = (): void => {
   if (shuttingDown) return;
   shuttingDown = true;
   void (async () => {
     process.stderr.write("shutting down...\n");
-    apiServer.close();
-    harnessApiServer.close();
+    const listenersClosed = Promise.all([
+      closed(apiServer),
+      closed(harnessApiServer),
+    ]);
     extAuthzGrpcServer.tryShutdown(() => {});
     trpcWs.drain();
     await trpcWs.close();
     closeRelays();
+    const closeIdle = (s: unknown) =>
+      (s as { closeIdleConnections?: () => void }).closeIdleConnections?.();
+    const reap = setInterval(() => {
+      closeIdle(apiServer);
+      closeIdle(harnessApiServer);
+    }, 1_000);
+    reap.unref();
+    await Promise.race([
+      listenersClosed,
+      new Promise((resolve) => setTimeout(resolve, 25_000)),
+    ]);
+    clearInterval(reap);
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await cleanup();
     const flushOtel = (globalThis as Record<symbol, unknown>)[

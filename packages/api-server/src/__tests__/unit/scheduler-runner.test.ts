@@ -85,7 +85,10 @@ describe("scheduler-runner fire", () => {
   it("commits the trigger event, then pokes the agent awake", async () => {
     const { runner, calls, fires } = makeDeps();
 
-    await runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z"));
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
 
     expect(calls).toEqual([
       `bump:${AGENT_ID}`,
@@ -100,12 +103,20 @@ describe("scheduler-runner fire", () => {
   it("derives the trigger event id from the job's fireAt, not the wall clock", async () => {
     const { runner, events } = makeDeps();
 
-    await runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:00:00Z"));
-    await runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:00:00Z"));
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:00:00Z"),
+    );
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:00:00Z"),
+    );
 
     expect(events).toHaveLength(2);
     expect(events[0]!).toBe(events[1]!);
-    expect(events[0]!).toBe(`${SCHEDULE_ID}:${Date.parse("2026-06-12T10:00:00Z")}`);
+    expect(events[0]!).toBe(
+      `${SCHEDULE_ID}:${Date.parse("2026-06-12T10:00:00Z")}`,
+    );
   });
 
   // TEST_SCENARIO: a transient bump/wake failure must reach BullMQ so the attempts policy retries the occurrence — after the failure is recorded and the next occurrence re-armed.

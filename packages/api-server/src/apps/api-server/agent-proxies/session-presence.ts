@@ -104,15 +104,7 @@ export function createSessionPresence(
         if (n > 0) open.set(agentId, n);
         else {
           open.delete(agentId);
-          chain(agentId, () =>
-            redis
-              .del(replicaKey(agentId))
-              .then(() => anyReplicaHolds(agentId))
-              .then((held) => {
-                if (!held) return set(agentId, false);
-              })
-              .catch(() => set(agentId, false)),
-          );
+          chain(agentId, () => redis.del(replicaKey(agentId)).catch(() => {}));
         }
       };
     },

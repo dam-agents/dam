@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { ChannelType } from "api-server-api";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
@@ -150,20 +151,22 @@ export interface ChannelManager {
   supportsMessageReactions(): Promise<boolean>;
 }
 
-export type ChannelRpcRequest = {
-  method:
-    | "listConversations"
-    | "postMessage"
-    | "reply"
-    | "react"
-    | "declineTurn"
-    | "handOffTurn"
-    | "describeUsers"
-    | "supportsUserLookup"
-    | "describeMessageReactions"
-    | "supportsMessageReactions";
-  args: unknown[];
-};
+export const channelRpcRequestSchema = z.object({
+  method: z.enum([
+    "listConversations",
+    "postMessage",
+    "reply",
+    "react",
+    "declineTurn",
+    "handOffTurn",
+    "describeUsers",
+    "supportsUserLookup",
+    "describeMessageReactions",
+    "supportsMessageReactions",
+  ]),
+  args: z.array(z.unknown()),
+});
+export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
 
