@@ -32,6 +32,7 @@ export type Route =
   | { view: "slack-bind" }
   | { view: "sandbox-new" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
+  | { view: "coding-agents" }
   | { view: "experiments" }
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
@@ -78,6 +79,7 @@ export function parseRoute(path: string): Route {
       sandboxSection: section.success ? section.data : "setup",
     };
   }
+  if (path === "/coding-agents") return { view: "coding-agents" };
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
   if (path === "/knowledge-bases/new") return { view: "sandbox-new" };
@@ -128,6 +130,8 @@ export function routeToPath(route: Route): string {
         ? base
         : `${base}/${route.sandboxSection}`;
     }
+    case "coding-agents":
+      return "/coding-agents";
     case "experiments":
       return "/experiments";
     case "knowledge-bases":

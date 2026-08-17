@@ -23,6 +23,7 @@ type ParameterlessView =
   | "inbox"
   | "terms"
   | "artifacts"
+  | "coding-agents"
   | "experiments"
   | "knowledge-bases"
   | "sandbox-new";

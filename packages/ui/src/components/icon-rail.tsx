@@ -2,10 +2,13 @@ import {
   Book,
   type CarbonIconType,
   Chemistry,
+  Close,
+  ContainerSoftware,
   Email,
   Folders,
   Home,
   Settings,
+  SidePanelOpen,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -34,6 +37,8 @@ export function IconRail({
 } = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const navExpanded = useStore((s) => s.navExpanded);
+  const setNavExpanded = useStore((s) => s.setNavExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
@@ -47,6 +52,13 @@ export function IconRail({
     active: view === "list",
     badge: 0,
     navigate: () => setView("list"),
+  };
+  const codingAgents: Destination = {
+    label: "Coding agents",
+    icon: ContainerSoftware,
+    active: view === "coding-agents",
+    badge: 0,
+    navigate: () => setView("coding-agents"),
   };
   const experiments: Destination = {
     label: "Experiments",
@@ -90,10 +102,20 @@ export function IconRail({
   return (
     <>
       <nav
-        className="hidden md:flex flex-col items-center h-full w-[56px] bg-card border-r border-border shrink-0"
+        className={cn(
+          "hidden md:flex flex-col h-full bg-card border-r border-border shrink-0 transition-[width]",
+          navExpanded ? "w-[232px] px-2" : "w-[56px] items-center",
+        )}
         data-testid="app-sidebar"
       >
-        <div className="flex items-center justify-center pt-2">
+        <div
+          className={cn(
+            "flex pt-2",
+            navExpanded
+              ? "w-full items-center justify-between gap-2"
+              : "flex-col items-center gap-1",
+          )}
+        >
           <button
             type="button"
             onClick={sandboxes.navigate}
@@ -102,18 +124,44 @@ export function IconRail({
           >
             <BrandLogo />
           </button>
+          <Tooltip
+            content={navExpanded ? "Collapse navigation" : "Expand navigation"}
+            side="right"
+          >
+            <button
+              type="button"
+              onClick={() => setNavExpanded(!navExpanded)}
+              aria-label={
+                navExpanded ? "Collapse navigation" : "Expand navigation"
+              }
+              aria-expanded={navExpanded}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {navExpanded ? <Close size={16} /> : <SidePanelOpen size={16} />}
+            </button>
+          </Tooltip>
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <RailItem {...sandboxes} />
-          <RailItem {...experiments} />
-          <RailItem {...knowledgeBases} />
-          <RailItem {...artifacts} />
+        <div
+          className={cn(
+            "flex flex-col gap-1",
+            navExpanded ? "w-full mt-2" : "items-center",
+          )}
+        >
+          <RailItem {...sandboxes} expanded={navExpanded} />
+          <RailItem {...codingAgents} expanded={navExpanded} />
+          <RailItem {...experiments} expanded={navExpanded} />
+          <RailItem {...knowledgeBases} expanded={navExpanded} />
         </div>
         <div className="flex-1" />
-        {}
-        <div className="flex flex-col items-center gap-1 mb-2">
-          <RailItem {...inbox} />
-          <RailItem {...settings} />
+        <div
+          className={cn(
+            "flex flex-col gap-1 mb-2",
+            navExpanded ? "w-full" : "items-center",
+          )}
+        >
+          <RailItem {...inbox} expanded={navExpanded} />
+          <RailItem {...artifacts} expanded={navExpanded} />
+          <RailItem {...settings} expanded={navExpanded} />
         </div>
       </nav>
 
@@ -121,10 +169,11 @@ export function IconRail({
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
           {[
             sandboxes,
+            codingAgents,
             experiments,
             knowledgeBases,
-            artifacts,
             inbox,
+            artifacts,
             settings,
           ].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
@@ -135,22 +184,36 @@ export function IconRail({
   );
 }
 
-function RailItem({ label, icon: Icon, active, badge, navigate }: Destination) {
+function RailItem({
+  label,
+  icon: Icon,
+  active,
+  badge,
+  navigate,
+  expanded,
+}: Destination & { expanded: boolean }) {
+  const button = (
+    <button
+      type="button"
+      onClick={navigate}
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex h-10 items-center rounded-lg transition-colors",
+        expanded ? "w-full gap-3 px-3" : "w-10 justify-center",
+        active
+          ? "text-primary bg-muted"
+          : "text-foreground/80 hover:text-foreground hover:bg-muted",
+      )}
+    >
+      <IconWithBadge icon={Icon} badge={badge} />
+      {expanded && <span className="truncate text-sm">{label}</span>}
+    </button>
+  );
+  if (expanded) return button;
   return (
     <Tooltip content={label} side="right">
-      <button
-        type="button"
-        onClick={navigate}
-        aria-label={label}
-        className={cn(
-          "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
-          active
-            ? "text-primary bg-muted"
-            : "text-foreground/80 hover:text-foreground hover:bg-muted",
-        )}
-      >
-        <IconWithBadge icon={Icon} badge={badge} />
-      </button>
+      {button}
     </Tooltip>
   );
 }

@@ -7,13 +7,11 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
 import { BudgetMeter } from "../../budgets/components/budget-meter.js";
-import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
-import { AgentRow } from "../components/agent-row.js";
+import { SandboxList } from "../components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../components/welcome-entry-points.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
-import { isKnowledgeBase } from "../utils/agent-kind.js";
+import { useSandboxRowActions } from "../hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 export function ListView() {
@@ -22,48 +20,15 @@ export function ListView() {
   const { visible: agents, drawByDriver } = splitTemporarySandboxes(
     agentsData?.list ?? [],
   );
+  const { stopSandbox, deleteSandbox } = useSandboxRowActions({
+    deleteAgent,
+    suspend,
+  });
 
   const outdated = agents.filter((a) => a.templateUpdate);
   const showUpdateAllBanner = outdated.length > 1;
 
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const selectAgent = useStore((s) => s.selectAgent);
-  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
-  const showConfirm = useStore((s) => s.showConfirm);
-
-  const stopSandbox = async (agent: AgentView) => {
-    const schedules = await fetchSchedulesForAgent(agent.id);
-    const scheduleNote =
-      schedules.length > 0 ? (
-        <>
-          {" "}
-          This sandbox has <strong>{schedules.length} schedule(s)</strong> — the
-          next fire will start it again.
-        </>
-      ) : null;
-    const msg = (
-      <>
-        Stop sandbox <strong className="text-foreground">"{agent.name}"</strong>
-        ? It stays stopped until you start it.{scheduleNote}
-      </>
-    );
-    if (!(await showConfirm(msg, "Stop Sandbox"))) return;
-    suspend.stop(agent.id);
-  };
-
-  const deleteSandbox = async (agent: AgentView) => {
-    const msg = (
-      <>
-        Delete sandbox{" "}
-        <strong className="text-foreground">"{agent.name}"</strong>? This will
-        also delete <strong>all persistent data</strong> and cannot be undone.
-      </>
-    );
-    if (!(await showConfirm(msg, "Delete Sandbox", { kind: "destructive" })))
-      return;
-    deleteAgent.mutate({ id: agent.id });
-  };
 
   return (
     <div>
@@ -117,26 +82,15 @@ export function ListView() {
         </Callout>
       )}
 
-      <div className="flex flex-col gap-3">
-        {initialLoaded &&
-          agents.map((agent) => {
-            const kb = isKnowledgeBase(agent);
-            return (
-              <AgentRow
-                key={agent.id}
-                {...rowProps(agent)}
-                temporaryDraw={drawByDriver.get(agent.id)}
-                onSelect={() =>
-                  kb ? openKnowledgeBase(agent.id) : selectAgent(agent.id)
-                }
-                onConfigure={() => navigateToSandboxHome(agent.id)}
-                configureLabel="Configure sandbox"
-                onStop={() => void stopSandbox(agent)}
-                onDelete={() => void deleteSandbox(agent)}
-              />
-            );
-          })}
-      </div>
+      {initialLoaded && (
+        <SandboxList
+          agents={agents}
+          drawByDriver={drawByDriver}
+          rowProps={rowProps}
+          onStop={(agent) => void stopSandbox(agent)}
+          onDelete={(agent) => void deleteSandbox(agent)}
+        />
+      )}
     </div>
   );
 }

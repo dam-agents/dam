@@ -14,6 +14,7 @@ import {
   createDialogSlice,
   type DialogSlice,
 } from "./modules/platform/store/dialog.js";
+import { createNavSlice, type NavSlice } from "./modules/platform/store/nav.js";
 import {
   createNavigationSlice,
   type NavigationSlice,
@@ -42,6 +43,7 @@ export type { SessionError } from "./modules/sessions/store/sessions.js";
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
+  NavSlice &
   AgentsSlice &
   SessionsSlice &
   ExperimentsSlice &
@@ -53,6 +55,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
+  ...createNavSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createExperimentsSlice(...a),

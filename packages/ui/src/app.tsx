@@ -7,6 +7,7 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
@@ -117,6 +118,8 @@ function MainApp() {
                 <SettingsView />
               ) : view === "inbox" ? (
                 <InboxView />
+              ) : view === "coding-agents" ? (
+                <CodingAgentsView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
               ) : view === "knowledge-bases" ? (
