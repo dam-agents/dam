@@ -472,6 +472,16 @@ export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
+export type {
+  GatewayRestartImpact,
+  GatewayRestartImpactInput,
+  PromotionRule,
+} from "./modules/egress-rules/promotion.js";
+export {
+  gatewayRestartImpact,
+  needsL7Promotion,
+  promotedHosts,
+} from "./modules/egress-rules/promotion.js";
 
 export {
   platformTurnEndedNotificationSchema,

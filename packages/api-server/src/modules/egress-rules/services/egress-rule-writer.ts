@@ -1,10 +1,9 @@
-import type { EgressRuleSource } from "api-server-api";
+import { promotedHosts, type EgressRuleSource } from "api-server-api";
 import type {
   EgressRulesRepository,
   NewEgressRule,
 } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
-import { promotedHosts } from "../domain/l7-promotion.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 
 export interface CreateEgressRuleWriterDeps {
