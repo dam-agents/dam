@@ -71,6 +71,7 @@ export function hintFor(
     case EventType.ContributionApplyFailed:
     case EventType.ContributionRecovered:
     case EventType.ContributionApplyGaveUp:
+    case EventType.EntryPointChosen:
       return null;
     default: {
       const unhandled: never = event;

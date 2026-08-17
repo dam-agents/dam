@@ -514,6 +514,15 @@ export {
 } from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
 
+export type {
+  EntryPointChoice,
+  UsageService,
+} from "./modules/usage/types.js";
+export {
+  entryPointChoiceSchema,
+  entryPointChosenInputSchema,
+} from "./modules/usage/schemas.js";
+
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";
 

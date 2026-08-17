@@ -1,10 +1,10 @@
 # Usage tracking
 
-Last verified: 2026-06-12
+Last verified: 2026-08-17
 
 ## Overview
 
-A **usage tracking** subsystem captures semantically-meaningful user activity in Postgres, shapes it into SQL views, and exposes those views to a dedicated inspector role through an HTML report and a JSON endpoint. It is operator-facing — daily-active users by surface, channel turns by Agent, schedule fires, OAuth connection lifecycle, file-import volumes, contribution-delivery health — not product-analytics.
+A **usage tracking** subsystem captures semantically-meaningful user activity in Postgres, shapes it into SQL views, and exposes those views to a dedicated inspector role through an HTML report and a JSON endpoint. It is operator-facing — daily-active users by surface, channel turns by Agent, schedule fires, OAuth connection lifecycle, file-import volumes, contribution-delivery health, which way in a new user chooses — and coarse by design: aggregates over meaningful interactions, not a product-analytics platform.
 
 Three design choices follow from the operator framing:
 
@@ -23,6 +23,7 @@ flowchart LR
   user-schedule[scheduled trigger fires]
   user-oauth[user connects / removes OAuth app]
   user-import[user imports a file bundle]
+  user-entry[new user picks a way in]
 
   agent-create[agent CM created / deleted]
 
@@ -45,6 +46,7 @@ flowchart LR
   user-schedule --> bus
   user-oauth --> bus
   user-import --> bus
+  user-entry --> bus
 
   agent-create --> bus
   boot -.startup K8s scan.-> postgres
@@ -83,12 +85,14 @@ The api-server emits domain events on every meaningful user interaction (auth, c
 
 Two sagas subscribe to the bus:
 
-- **persist-activity** — writes one `activity_events` row per `UserAuthenticated`, `ChannelTurnRelayed`, `ScheduleFired`, `ConnectionCreated`, `ConnectionRemoved`, `FilesImported`, `ContributionApplyFailed`, `ContributionRecovered`, or `ContributionApplyGaveUp`. The auth subscriber also upserts `actor_roles` with the user's core-role flag.
+- **persist-activity** — writes one `activity_events` row per `UserAuthenticated`, `ChannelTurnRelayed`, `ScheduleFired`, `ConnectionCreated`, `ConnectionRemoved`, `FilesImported`, `EntryPointChosen`, `ContributionApplyFailed`, `ContributionRecovered`, or `ContributionApplyGaveUp`. The auth subscriber also upserts `actor_roles` with the user's core-role flag.
 - **persist-agents** — writes one `agents` row per `AgentCreated`, marks deleted on `AgentDeleted`. A startup bootstrap separately backfills the table from the K8s API for agents that pre-dated the saga.
 
 Both sagas write through a repository layer that applies HMAC-SHA256 to every Keycloak `sub` immediately before INSERT — `actor_sub`, `owner_sub`, and `actor_roles.actor_sub` all go through the same pseudonymizer. The repository is the single chokepoint; emit sites and sagas continue to deal in raw subs in-memory.
 
 Concurrency is bounded — each subscriber uses an RxJS `mergeMap` with a per-stream concurrency cap so a burst (api-server restart, silent-renew storm) cannot saturate the Postgres connection pool. The auth subscriber additionally exploits a partial unique index — one row per (sub, surface, day) — so heavy auth traffic does not bloat the table.
+
+**One recorded interaction is an intent rather than a completed operation.** Every other event is a by-product of something the api-server did. The entry choice a new user makes on the empty home screen is a click that may lead nowhere — counting the users who choose a way in and then abandon it is the point of recording it — so the browser reports it through an owner-scoped procedure whose only effect is to emit the event. It names no Agent and carries no outcome of its own; from the write path down it is an ordinary row.
 
 The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents saga and the startup bootstrap run unconditionally because the `agents` table is also useful to consumers outside usage.
 

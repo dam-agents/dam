@@ -20,6 +20,7 @@ import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
 import type { TemplatesService } from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
+import type { UsageService } from "./modules/usage/types.js";
 
 export interface UserIdentity {
   sub: string;
@@ -49,6 +50,7 @@ export interface ApiContext {
   liveEvents: LiveEventsService;
   metrics: MetricsService;
   terms: TermsService;
+  usage: UsageService;
   e2e: E2eService;
   apiKeys: ApiKeysService;
   budgets: BudgetsService;
