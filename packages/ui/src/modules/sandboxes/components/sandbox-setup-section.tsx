@@ -4,6 +4,7 @@ import { FormField } from "@/components/form-field";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
+import { READ_ONLY_FIELD } from "@/components/ui/read-only-field";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
@@ -14,9 +15,6 @@ import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
-
-export const READ_ONLY_FIELD =
-  "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
 
 type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
 

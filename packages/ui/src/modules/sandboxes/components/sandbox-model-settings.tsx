@@ -6,6 +6,10 @@ import {
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
 import { ModelSettingsPanel } from "../../sessions/components/model-settings-panel.js";
+import {
+  OptionField,
+  ReadOnlyOptionFace,
+} from "../../sessions/components/option-field.js";
 import type { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
 import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
@@ -34,11 +38,23 @@ export function SandboxModelSettings({
     );
   }
 
-  if (!operable && (!hasCatalog || origin === "none")) {
+  if (!operable && !hasCatalog) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        Start the agent to load and edit its model settings.
+        Start the sandbox to load and edit its model settings.
       </Fallback>
+    );
+  }
+
+  if (!operable && origin === "none") {
+    return (
+      <Section agentId={agentId} comingUp={comingUp}>
+        {status?.catalog?.options.map((group) => (
+          <OptionField key={group.id} title={group.name}>
+            <ReadOnlyOptionFace label="Unknown" hint="Start sandbox to view" />
+          </OptionField>
+        ))}
+      </Section>
     );
   }
 
@@ -90,7 +106,7 @@ function ModelSettingsSkeleton() {
   );
 }
 
-function Fallback({
+function Section({
   agentId,
   comingUp,
   children,
@@ -105,9 +121,23 @@ function Fallback({
         <SectionLabel>Model settings</SectionLabel>
         <WakeToEditButton agentId={agentId} comingUp={comingUp} />
       </div>
-      <Callout inset>
-        <p className="text-sm text-muted-foreground">{children}</p>
-      </Callout>
+      <Callout inset>{children}</Callout>
     </section>
+  );
+}
+
+function Fallback({
+  agentId,
+  comingUp,
+  children,
+}: {
+  agentId: string;
+  comingUp: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Section agentId={agentId} comingUp={comingUp}>
+      <p className="text-sm text-muted-foreground">{children}</p>
+    </Section>
   );
 }
