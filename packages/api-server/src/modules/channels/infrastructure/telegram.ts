@@ -362,7 +362,6 @@ export function createTelegramWorker(deps: {
     chat: Chat;
     adapter: ReturnType<typeof createTelegramAdapter>;
   } | null = null;
-  let startFailed = false;
   let username: string | null = deps.configuredBotUsername ?? null;
   const lastThread = new Map<string, Thread>();
 
@@ -550,7 +549,7 @@ export function createTelegramWorker(deps: {
     },
 
     async start() {
-      if (bot || startFailed) return;
+      if (bot) return;
       try {
         const adapter = createTelegramAdapter({ botToken, mode: "polling" });
         const chat = new Chat({
@@ -592,10 +591,10 @@ export function createTelegramWorker(deps: {
           `[telegram] platform bot started${username ? ` (@${username})` : ""}\n`,
         );
       } catch (err) {
-        startFailed = true;
         process.stderr.write(
           `[telegram] failed to start platform bot: ${err instanceof Error ? err.message : String(err)}\n`,
         );
+        throw err;
       }
     },
 

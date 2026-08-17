@@ -5,6 +5,7 @@ export type BusListener = (payload: string) => void;
 export interface RedisBus {
   publish(channel: string, payload: string): Promise<void>;
   subscribe(channel: string, listener: BusListener): () => void;
+  onReconnect?(listener: () => void): () => void;
   close(): Promise<void>;
 }
 
@@ -27,6 +28,20 @@ export function createRedisBus(
   const listeners = new Map<string, Set<BusListener>>();
   const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const SUBSCRIBE_RETRY_MS = 3_000;
+
+  const reconnectListeners = new Set<() => void>();
+  let everReady = false;
+  subscriber.on("ready", () => {
+    if (!everReady) {
+      everReady = true;
+      return;
+    }
+    for (const fn of reconnectListeners) {
+      try {
+        fn();
+      } catch {}
+    }
+  });
 
   subscriber.on("message", (channel, payload) => {
     const set = listeners.get(channel);
@@ -91,6 +106,11 @@ export function createRedisBus(
           void subscriber.unsubscribe(channel).catch(() => {});
         }
       };
+    },
+
+    onReconnect(listener) {
+      reconnectListeners.add(listener);
+      return () => reconnectListeners.delete(listener);
     },
 
     async close() {

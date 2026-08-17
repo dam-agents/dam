@@ -139,6 +139,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     config.namespace,
     deps.agentsRepo,
     deps.sessionPresence,
+    deps.redisBus,
   );
   const sshRelay = createSshRelay(
     config.namespace,
@@ -169,5 +170,13 @@ export function startApiServerApp(deps: ApiServerDeps) {
     }),
   );
 
-  return { server, trpcWs };
+  return {
+    server,
+    trpcWs,
+    closeRelays() {
+      acpRelay.close();
+      terminalRelay.close();
+      sshRelay.close();
+    },
+  };
 }

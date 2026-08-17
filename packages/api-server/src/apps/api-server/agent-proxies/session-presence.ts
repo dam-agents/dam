@@ -29,6 +29,20 @@ export function createSessionPresence(
   const replicaKey = (agentId: string) =>
     `${KEY_PREFIX}${agentId}:${replicaId}`;
 
+  const writes = new Map<string, Promise<void>>();
+  function chain(agentId: string, op: () => Promise<unknown>): Promise<void> {
+    const prev = writes.get(agentId) ?? Promise.resolve();
+    const next = prev
+      .then(op, op)
+      .then(() => {})
+      .catch(() => {});
+    writes.set(agentId, next);
+    void next.then(() => {
+      if (writes.get(agentId) === next) writes.delete(agentId);
+    });
+    return next;
+  }
+
   async function scanAgentIds(pattern: string): Promise<Set<string>> {
     const ids = new Set<string>();
     let cursor = "0";
@@ -57,23 +71,29 @@ export function createSessionPresence(
 
   const heartbeat = setInterval(() => {
     for (const agentId of open.keys()) {
-      redis
-        .set(replicaKey(agentId), "1", "EX", KEY_TTL_SECONDS)
-        .catch(() => {});
-      set(agentId, true);
+      chain(agentId, async () => {
+        await redis
+          .set(replicaKey(agentId), "1", "EX", KEY_TTL_SECONDS)
+          .catch(() => {});
+        await set(agentId, true);
+      });
     }
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
+
+  let missingLastTick = new Set<string>();
 
   return {
     acquire(agentId) {
       const before = open.get(agentId) ?? 0;
       open.set(agentId, before + 1);
       if (before === 0) {
-        redis
-          .set(replicaKey(agentId), "1", "EX", KEY_TTL_SECONDS)
-          .catch(() => {});
-        set(agentId, true);
+        chain(agentId, async () => {
+          await redis
+            .set(replicaKey(agentId), "1", "EX", KEY_TTL_SECONDS)
+            .catch(() => {});
+          await set(agentId, true);
+        });
       }
 
       let released = false;
@@ -84,31 +104,36 @@ export function createSessionPresence(
         if (n > 0) open.set(agentId, n);
         else {
           open.delete(agentId);
-          void redis
-            .del(replicaKey(agentId))
-            .then(() => anyReplicaHolds(agentId))
-            .then((held) => {
-              if (!held) set(agentId, false);
-            })
-            .catch(() => {
-              set(agentId, false);
-            });
+          chain(agentId, () =>
+            redis
+              .del(replicaKey(agentId))
+              .then(() => anyReplicaHolds(agentId))
+              .then((held) => {
+                if (!held) return set(agentId, false);
+              })
+              .catch(() => set(agentId, false)),
+          );
         }
       };
     },
 
     async reconcile() {
       const active = await scanAgentIds(`${KEY_PREFIX}*`);
-      if (active.size === 0 && open.size > 0) return;
       const annotated = await repo.listAgentIdsWithAnnotation(
         ACTIVE_SESSION_KEY,
         "true",
       );
+      const missingNow = new Set<string>();
       for (const agentId of annotated) {
+        if (open.has(agentId)) continue;
         if (active.has(agentId)) continue;
         if (await anyReplicaHolds(agentId)) continue;
-        await set(agentId, false);
+        missingNow.add(agentId);
+        if (missingLastTick.has(agentId)) {
+          await chain(agentId, () => set(agentId, false));
+        }
       }
+      missingLastTick = missingNow;
     },
 
     close() {

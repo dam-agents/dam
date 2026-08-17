@@ -9,7 +9,6 @@ import type { AcpClient } from "../../core/acp-client.js";
 import type { DomainEvent } from "../../events.js";
 import { EventType } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 
@@ -70,7 +69,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     gw,
     events,
     async mention() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: "U1",
         channel: "C1",

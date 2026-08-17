@@ -66,6 +66,11 @@ export function createKeycloakUserDirectory(
   const subCache = new Map<string, CachedUser>();
   const emailToSubCache = new Map<string, CachedLookup>();
 
+  function cachePut<T>(cache: Map<string, T>, key: string, value: T): void {
+    if (cache.size >= 10_000) cache.clear();
+    cache.set(key, value);
+  }
+
   async function getAdminToken(): Promise<string> {
     const now = Date.now() / 1000;
     if (tokenCache && tokenCache.expiresAt > now + TOKEN_MARGIN_SECONDS) {
@@ -120,11 +125,11 @@ export function createKeycloakUserDirectory(
         process.stderr.write(
           `[keycloak-user-directory] user lookup ${sub} failed: ${res.status}\n`,
         );
-        subCache.set(sub, { user: null, expiresAt: now + LOOKUP_TTL_MS });
+        cachePut(subCache, sub, { user: null, expiresAt: now + LOOKUP_TTL_MS });
         return null;
       }
       const user = toDirectoryUser((await res.json()) as KeycloakUserRecord);
-      subCache.set(sub, { user, expiresAt: now + LOOKUP_TTL_MS });
+      cachePut(subCache, sub, { user, expiresAt: now + LOOKUP_TTL_MS });
       return user;
     } catch (err) {
       process.stderr.write(
@@ -154,14 +159,14 @@ export function createKeycloakUserDirectory(
       const sub =
         users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ??
         null;
-      emailToSubCache.set(email, {
+      cachePut(emailToSubCache, email, {
         email: sub,
         expiresAt: now + LOOKUP_TTL_MS,
       });
       if (sub) {
         const lookedUp = users.find((u) => u.id === sub);
         if (lookedUp) {
-          subCache.set(sub, {
+          cachePut(subCache, sub, {
             user: toDirectoryUser(lookedUp),
             expiresAt: now + LOOKUP_TTL_MS,
           });

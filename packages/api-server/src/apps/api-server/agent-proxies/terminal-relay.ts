@@ -8,6 +8,7 @@ import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
+import { sanitizeCloseCode } from "./acp-relay.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -20,7 +21,6 @@ export interface TerminalRelay {
     head: Buffer,
     agentId: string,
   ): void;
-  closeSession(agentId: string, sessionId: string): void;
   close(): void;
 }
 
@@ -28,7 +28,7 @@ export function createTerminalRelay(
   namespace: string,
   repo: AgentsRepository,
   presence: SessionPresence,
-  bus?: RedisBus,
+  bus: RedisBus,
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
@@ -51,7 +51,7 @@ export function createTerminalRelay(
     }
   }
 
-  const unsubscribeEvict = bus?.subscribe(EVICT_CHANNEL, (payload) => {
+  const unsubscribeEvict = bus.subscribe(EVICT_CHANNEL, (payload) => {
     try {
       const { key, from } = JSON.parse(payload) as {
         key: string;
@@ -60,10 +60,6 @@ export function createTerminalRelay(
       if (from !== replicaId) evictLocal(key, "superseded");
     } catch {}
   });
-
-  function closeSession(agentId: string, sessionId: string) {
-    evictLocal(clientKey(agentId, sessionId), "session mode changed");
-  }
 
   async function handleUpgrade(
     req: IncomingMessage,
@@ -84,10 +80,7 @@ export function createTerminalRelay(
 
       const key = clientKey(agentId, sessionId);
       evictLocal(key, "superseded");
-      void bus?.publish(
-        EVICT_CHANNEL,
-        JSON.stringify({ key, from: replicaId }),
-      );
+      void bus.publish(EVICT_CHANNEL, JSON.stringify({ key, from: replicaId }));
       activeClients.set(key, client);
 
       const release = presence.acquire(agentId);
@@ -169,7 +162,10 @@ export function createTerminalRelay(
           upstream.on("close", (code, reason) => {
             if (client.readyState !== WebSocket.OPEN) return;
             try {
-              client.close(code, reason.toString() || "upstream closed");
+              client.close(
+                sanitizeCloseCode(code),
+                reason.toString() || "upstream closed",
+              );
             } catch {
               client.terminate();
             }
@@ -202,9 +198,15 @@ export function createTerminalRelay(
 
   return {
     handleUpgrade,
-    closeSession,
     close() {
-      unsubscribeEvict?.();
+      unsubscribeEvict();
+      for (const client of wss.clients) {
+        try {
+          client.close(1001, "server shutting down");
+        } catch {
+          client.terminate();
+        }
+      }
     },
   };
 }

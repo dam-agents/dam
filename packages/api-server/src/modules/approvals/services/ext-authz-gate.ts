@@ -212,10 +212,6 @@ async function waitForVerdict(
   deps: CreateExtAuthzGateDeps,
   id: string,
 ): Promise<SettledVerdict> {
-  const initial = await deps.repo.getPending(id);
-  if (initial && initial.status === "resolved")
-    return { verdict: verdictOf(initial.verdict), reason: "hold-resolved" };
-
   return new Promise<SettledVerdict>((resolve) => {
     let settled = false;
     const settle = (s: SettledVerdict) => {
@@ -225,11 +221,20 @@ async function waitForVerdict(
       resolve(s);
     };
 
-    const unsubscribe = deps.bus.subscribe(`approval:${id}`, async () => {
+    const checkResolved = async () => {
       const row = await deps.repo.getPending(id);
       if (!row || row.status !== "resolved") return;
       settle({ verdict: verdictOf(row.verdict), reason: "hold-resolved" });
-    });
+    };
+
+    const unsubscribe = deps.bus.subscribe(
+      `approval:${id}`,
+      () => void checkResolved(),
+    );
+    void checkResolved();
+
+    const poll = setInterval(() => void checkResolved(), 15_000);
+    poll.unref();
 
     const timeout = setTimeout(async () => {
       await deps.repo.expirePending(id).catch((err) => {
@@ -244,6 +249,7 @@ async function waitForVerdict(
 
     function cleanup() {
       unsubscribe();
+      clearInterval(poll);
       clearTimeout(timeout);
     }
   });

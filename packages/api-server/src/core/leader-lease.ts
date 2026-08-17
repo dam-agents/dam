@@ -32,6 +32,16 @@ export function createLeaderLease(opts: {
   let timer: NodeJS.Timeout | null = null;
   let transition: Promise<void> = Promise.resolve();
 
+  const releaseKey = () =>
+    opts.redis
+      .eval(
+        `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`,
+        1,
+        key,
+        id,
+      )
+      .catch(() => {});
+
   const transitionTo = (next: boolean) => {
     transition = transition.then(async () => {
       if (held === next) return;
@@ -40,6 +50,15 @@ export function createLeaderLease(opts: {
         await (next ? opts.onAcquired() : opts.onLost());
       } catch (err) {
         log(`${next ? "acquire" : "release"} handler failed: ${err}`);
+        if (next) {
+          held = false;
+          try {
+            await opts.onLost();
+          } catch (lostErr) {
+            log(`release handler failed: ${lostErr}`);
+          }
+          await releaseKey();
+        }
       }
     });
     return transition;
@@ -86,16 +105,7 @@ export function createLeaderLease(opts: {
       timer = null;
       const wasHeld = held;
       await transitionTo(false);
-      if (wasHeld) {
-        await opts.redis
-          .eval(
-            `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`,
-            1,
-            key,
-            id,
-          )
-          .catch(() => {});
-      }
+      if (wasHeld) await releaseKey();
     },
   };
 }

@@ -7,7 +7,6 @@ import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const C_ONE = "C-ONE";
@@ -74,7 +73,7 @@ function harness(opts?: {
     freshKeys,
     resumed,
     async mention(channel: string, ts: string) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: "U1",
         channel,

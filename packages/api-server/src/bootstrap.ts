@@ -24,6 +24,7 @@ import {
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
+  connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
@@ -216,6 +217,7 @@ export async function bootstrap() {
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
+  connectScanCacheBus(redisBus);
 
   const periodicJobs = createPeriodicJobs({
     connection: bullConnection,
@@ -465,6 +467,13 @@ export async function bootstrap() {
     },
   });
   usage.start();
+  if (config.activityTrackingEnabled) {
+    await periodicJobs.register(
+      "activity-retention",
+      7 * 24 * 60 * 60 * 1000,
+      () => usage.retentionTick(),
+    );
+  }
 
   const audit = composeAuditModule();
   audit.start();
@@ -666,10 +675,7 @@ export async function bootstrap() {
   const channelLease = createLeaderLease({
     redis: sharedRedis,
     name: "channels",
-    onAcquired: async () => {
-      const channelsByInstance = await listChannelsByOwner(db, "")();
-      await channelManager.bootstrap(channelsByInstance);
-    },
+    onAcquired: () => channelManager.bootstrap(),
     onLost: () => channelManager.standDown(),
   });
 

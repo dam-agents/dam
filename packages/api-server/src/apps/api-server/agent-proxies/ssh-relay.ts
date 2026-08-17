@@ -18,6 +18,7 @@ export interface SshRelay {
     head: Buffer,
     agentId: string,
   ): void;
+  close(): void;
 }
 
 export function createSshRelay(
@@ -136,5 +137,16 @@ export function createSshRelay(
     });
   }
 
-  return { handleUpgrade };
+  return {
+    handleUpgrade,
+    close() {
+      for (const client of wss.clients) {
+        try {
+          client.close(1001, "server shutting down");
+        } catch {
+          client.terminate();
+        }
+      }
+    },
+  };
 }

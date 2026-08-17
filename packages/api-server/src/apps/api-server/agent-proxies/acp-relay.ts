@@ -12,6 +12,8 @@ import type { RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
 
 const DEBOUNCE_MS = 30_000;
+const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
+const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -71,7 +73,7 @@ function isResponse(msg: unknown): msg is JsonRpcResponse {
 
 const lastActivityTimestamps = new Map<string, number>();
 
-function sanitizeCloseCode(code: number): number {
+export function sanitizeCloseCode(code: number): number {
   if (
     code === 1000 ||
     (code >= 1001 &&
@@ -89,6 +91,8 @@ function shouldUpdateActivity(agentId: string): boolean {
   const now = Date.now();
   const last = lastActivityTimestamps.get(agentId) ?? 0;
   if (now - last < DEBOUNCE_MS) return false;
+  if (lastActivityTimestamps.size >= ACTIVITY_MAP_MAX_ENTRIES)
+    lastActivityTimestamps.clear();
   lastActivityTimestamps.set(agentId, now);
   return true;
 }
@@ -217,7 +221,17 @@ export function createAcpRelay(
         data: Buffer | ArrayBuffer | Buffer[];
         isBinary: boolean;
       }[] = [];
+      let pendingBytes = 0;
       client.on("message", (data, isBinary) => {
+        pendingBytes += (data as Buffer).byteLength ?? 0;
+        if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
+          try {
+            client.close(1013, "buffer full");
+          } catch {
+            client.terminate();
+          }
+          return;
+        }
         pending.push({ data: data as Buffer, isBinary });
       });
 
@@ -336,5 +350,16 @@ export function createAcpRelay(
     });
   }
 
-  return { handleUpgrade };
+  return {
+    handleUpgrade,
+    close() {
+      for (const client of wss.clients) {
+        try {
+          client.close(1001, "server shutting down");
+        } catch {
+          client.terminate();
+        }
+      }
+    },
+  };
 }

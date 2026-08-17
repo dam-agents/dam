@@ -18,7 +18,10 @@ export function createOwnerActiveProbe(deps: {
     if (hit !== undefined && hit > now()) return true;
     try {
       const active = await deps.directory.isActive(sub);
-      if (active) activeUntil.set(sub, now() + ttlMs);
+      if (active) {
+        if (activeUntil.size >= 10_000) activeUntil.clear();
+        activeUntil.set(sub, now() + ttlMs);
+      }
       return active;
     } catch {
       return true;

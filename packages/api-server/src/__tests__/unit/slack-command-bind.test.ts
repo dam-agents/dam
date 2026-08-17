@@ -11,7 +11,6 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import { EventType, type DomainEvent } from "../../events.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 configureLogger({ level: "error", write: () => {} });
@@ -87,7 +86,7 @@ function harness(opts: {
     pendingMap,
     unbindCalls,
     async command(text: string, userId = "U-1", channelId = "C-1") {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       return gw.fireCommand({ text, userId, channelId });
     },
   };

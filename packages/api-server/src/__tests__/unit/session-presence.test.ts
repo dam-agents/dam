@@ -98,11 +98,14 @@ describe("session presence", () => {
     presence.close();
   });
 
-  it("reconcile clears pins no replica holds, spares held ones", async () => {
+  it("reconcile clears unheld pins after two ticks, spares held ones", async () => {
     const redis = fakeRedis();
     redis.keys.set("presence:agent:held:other-replica", "1");
     const repo = fakeRepo(new Set(["held", "orphaned"]));
     const presence = createSessionPresence(repo, redis);
+
+    await presence.reconcile();
+    expect(repo.annotated.has("orphaned")).toBe(true);
 
     await presence.reconcile();
     expect(repo.annotated.has("held")).toBe(true);
@@ -110,13 +113,14 @@ describe("session presence", () => {
     presence.close();
   });
 
-  it("reconcile refuses an empty scan while this replica holds sessions", async () => {
+  it("reconcile never clears an agent this replica holds, even after a Redis flush", async () => {
     const redis = fakeRedis();
     const repo = fakeRepo(new Set(["a1"]));
     const presence = createSessionPresence(repo, redis);
 
     presence.acquire("a1");
     redis.keys.clear();
+    await presence.reconcile();
     await presence.reconcile();
     expect(repo.annotated.has("a1")).toBe(true);
     presence.close();

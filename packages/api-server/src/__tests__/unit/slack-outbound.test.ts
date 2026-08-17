@@ -10,7 +10,6 @@ import {
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
@@ -69,11 +68,11 @@ function harness(opts: {
       text: string,
       options?: Parameters<typeof worker.postMessage>[2],
     ) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect().catch(() => {});
       return worker.postMessage("agent-1", text, options);
     },
     async list() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect().catch(() => {});
       return worker.listConversations("agent-1");
     },
     messages: () => gw.readOutbound().filter((r) => r.kind === "message"),

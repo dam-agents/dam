@@ -12,7 +12,6 @@ import {
 } from "../../modules/channels/infrastructure/agent-footer.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -106,7 +105,7 @@ describe("slack cross-agent history attribution", () => {
       { ts: "0.3", user: "U999", text: "thanks all" },
     ]);
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -188,7 +187,7 @@ describe("slack cross-agent history attribution", () => {
       { ts: "0.2", user: "U999", text: "ok" },
     ]);
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -210,7 +209,7 @@ describe("slack cross-agent history attribution", () => {
     const h = harness();
     h.gw.setHistory([{ ts: "0.1", user: "U999", text: "just humans here" }]);
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -244,7 +243,7 @@ describe("slack cross-agent history attribution", () => {
       },
     ]);
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -279,7 +278,7 @@ describe("slack cross-agent history attribution", () => {
       },
     ]);
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -296,7 +295,7 @@ describe("slack cross-agent history attribution", () => {
   it("names the conversation as a shared channel or group DM, with a permalink, in a channel mention", async () => {
     const h = harness();
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -314,7 +313,7 @@ describe("slack cross-agent history attribution", () => {
   it("recognizes a 1:1 DM by the conversation id", async () => {
     const h = harness("D123");
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireDirectMessage({
       user: "U999",
       channel: "D123",
@@ -331,7 +330,7 @@ describe("slack cross-agent history attribution", () => {
     const h = harness();
     h.gw.getPermalink = async () => null;
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",
@@ -350,7 +349,7 @@ describe("slack cross-agent history attribution", () => {
       throw new Error("missing_scope");
     };
 
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect();
     await h.gw.fireMention({
       user: "U999",
       channel: "C1",

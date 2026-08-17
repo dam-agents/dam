@@ -74,6 +74,39 @@ describe("leader lease", () => {
     await second.stop();
   });
 
+  it("releases the lease when onAcquired fails, so another replica can win", async () => {
+    const redis = fakeRedis();
+    const events: string[] = [];
+    const broken = createLeaderLease({
+      redis,
+      name: "channels",
+      onAcquired: () => {
+        events.push("+a");
+        throw new Error("slack gateway failed to connect");
+      },
+      onLost: () => void events.push("-a"),
+      log: () => {},
+    });
+    const healthy = createLeaderLease({
+      redis,
+      name: "channels",
+      onAcquired: () => void events.push("+b"),
+      onLost: () => void events.push("-b"),
+      log: () => {},
+    });
+
+    await broken.start();
+    expect(broken.isLeader()).toBe(false);
+    expect(redis.store.has("leader:channels")).toBe(false);
+
+    await healthy.start();
+    expect(healthy.isLeader()).toBe(true);
+    expect(events).toEqual(["+a", "-a", "+b"]);
+
+    await broken.stop();
+    await healthy.stop();
+  });
+
   it("stands down when Redis is unreachable rather than acting as leader", async () => {
     const redis = fakeRedis();
     const lease = createLeaderLease({
