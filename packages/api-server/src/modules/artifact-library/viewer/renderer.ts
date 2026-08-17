@@ -330,10 +330,7 @@ export function renderDownloadInner(input: {
 </html>`;
 }
 
-export function renderExpired(input: {
-  withinGrace: boolean;
-  expiredAt: Date;
-}): string {
+export function renderExpired(input: { withinGrace: boolean }): string {
   const { heading, detail } = input.withinGrace
     ? {
         heading: "This artifact is scheduled for deletion",
