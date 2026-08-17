@@ -34,6 +34,7 @@ export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
+  onSetRetention: (artifact: LibraryArtifact) => void;
 }
 
 interface Props extends ArtifactRowActions {
@@ -47,6 +48,7 @@ export function ArtifactRow({
   onPreview,
   onRename,
   onShare,
+  onSetRetention,
 }: Props) {
   const expiry = expiryState(artifact.expiresAt);
   const prefetchPreview = usePrefetchArtifactPreview();
@@ -112,6 +114,7 @@ export function ArtifactRow({
                 artifact={artifact}
                 onRename={onRename}
                 onShare={onShare}
+                onSetRetention={onSetRetention}
               />
             </DropdownMenuContent>
           </DropdownMenu>

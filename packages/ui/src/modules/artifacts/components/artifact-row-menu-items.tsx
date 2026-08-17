@@ -12,10 +12,12 @@ export function ArtifactRowMenuItems({
   artifact,
   onRename,
   onShare,
+  onSetRetention,
 }: {
   artifact: LibraryArtifact;
   onRename: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
+  onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
   const deleteArtifact = useArtifactDeletion();
 
@@ -31,6 +33,9 @@ export function ArtifactRowMenuItems({
         Download
       </DropdownMenuItem>
       <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => onSetRetention(artifact)}>
+        Delete after…
+      </DropdownMenuItem>
       <DropdownMenuItem
         tone="danger"
         onSelect={() => void deleteArtifact(artifact)}

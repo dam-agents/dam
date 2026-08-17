@@ -20,6 +20,7 @@ import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
 import { RenameArtifactDialog } from "../components/rename-artifact-dialog.js";
+import { RetentionDialog } from "../components/retention-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 
@@ -43,6 +44,8 @@ export function ArtifactsView() {
     null,
   );
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
+  const [retentionTarget, setRetentionTarget] =
+    useState<LibraryArtifact | null>(null);
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -79,6 +82,7 @@ export function ArtifactsView() {
     onPreview: setPreviewTarget,
     onRename: setRenameTarget,
     onShare: setShareTarget,
+    onSetRetention: setRetentionTarget,
   };
 
   const copyFolderLink = async (folder: ArtifactFolder) => {
@@ -211,6 +215,12 @@ export function ArtifactsView() {
         <ShareDialog
           artifact={shareTarget}
           onClose={() => setShareTarget(null)}
+        />
+      )}
+      {retentionTarget && (
+        <RetentionDialog
+          artifact={retentionTarget}
+          onClose={() => setRetentionTarget(null)}
         />
       )}
       {previewTarget && (

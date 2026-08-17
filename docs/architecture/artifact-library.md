@@ -140,8 +140,11 @@ flowchart LR
 
 - **Artifacts** is a top-level destination in the navigation rail: the whole
   library grouped by folder, with search, upload, folder management, sharing
-  controls, and in-app previews that reuse the chat file-viewer stack
-  (markdown prose, highlighted code, inline images).
+  controls, a separate delete-after (retention) control, and in-app previews
+  that reuse the chat file-viewer stack (markdown prose, highlighted code,
+  inline images). Retention is reached from the artifact's own menu rather than
+  the sharing dialog, and stays available whatever the artifact's visibility —
+  it governs deletion, not the link.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
 - The chat view carries the same library twice over: an **Artifacts section**
