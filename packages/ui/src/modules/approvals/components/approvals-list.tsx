@@ -21,6 +21,7 @@ import {
   useDenyForever,
   useDismissApproval,
 } from "../api/mutations.js";
+import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 import { isHeldCallStillLive } from "../lib/hold.js";
 
 const STATUS_LABEL: Record<ApprovalView["status"], string> = {
@@ -75,6 +76,7 @@ function ApprovalRow({
   const dismiss = useDismissApproval();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const agentName = useAgentDisplayName(row.agentId);
+  const restart = useEgressApprovalRestart(row);
   const { title, subtitle } = describeApprovalPayload(row.payload);
   const live = isHeldCallStillLive(row);
   const inflight =
@@ -139,8 +141,12 @@ function ApprovalRow({
             variant="outline"
             size="xs"
             disabled={inflight}
-            onClick={() => approvePermanent.mutate({ id: row.id })}
-            tooltip="Allow this exact path on this host (writes a rule)"
+            onClick={() => {
+              void restart
+                .confirmNarrow("Allow & restart")
+                .then((ok) => ok && approvePermanent.mutate({ id: row.id }));
+            }}
+            tooltip={restart.permanentTooltip}
           >
             <CheckmarkFilled size={11} /> Allow permanently
           </Button>
@@ -151,8 +157,12 @@ function ApprovalRow({
               size="xs"
               className="min-w-0 max-w-full"
               disabled={inflight}
-              onClick={() => approveHost.mutate({ id: row.id })}
-              tooltip={`Allow all requests to ${hostLabel} (writes a wildcard rule)`}
+              onClick={() => {
+                void restart
+                  .confirmHost("Allow & restart")
+                  .then((ok) => ok && approveHost.mutate({ id: row.id }));
+              }}
+              tooltip={restart.allowHostTooltip}
             >
               <Globe size={11} />
               <span className="truncate">Allow {hostLabel}</span>
@@ -179,8 +189,12 @@ function ApprovalRow({
             tone="danger"
             size="xs"
             disabled={inflight}
-            onClick={() => denyForever.mutate({ id: row.id })}
-            tooltip="Deny this exact path on this host (writes a deny rule)"
+            onClick={() => {
+              void restart
+                .confirmNarrow("Deny & restart")
+                .then((ok) => ok && denyForever.mutate({ id: row.id }));
+            }}
+            tooltip={restart.denyForeverTooltip}
           >
             <Misuse size={11} /> Deny forever
           </Button>
