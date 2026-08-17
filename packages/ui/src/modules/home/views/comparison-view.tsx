@@ -131,11 +131,21 @@ export function ComparisonView() {
 
       <CardEntry
         number={0}
-        title="Compute Resources + Schedules"
-        description="Sidebar cards as they appear on the feed home page. Compute: interactive cell meter. Schedules: upcoming runs with 'New' button."
+        title="Compute Resources"
+        description="Interactive cell meter showing CPU/memory usage."
       >
         <div className="space-y-4 max-w-xs">
           <ComputePreview />
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={1}
+        title="Schedules Overview"
+        description="Read-only list of all schedules sorted by next run. Shows top 5 in the sidebar; 'See all' opens a modal with the full list. No toggles — click a schedule to navigate to its config page."
+      >
+        <div className="max-w-[320px]">
+          <ScheduleOverviewWidget />
         </div>
       </CardEntry>
     </div>
@@ -2096,7 +2106,131 @@ function ReadyVariant5() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SCHEDULED SECTION VARIANTS
+   SCHEDULE OVERVIEW WIDGET (sidebar — read-only, top 5 + "See all" modal)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const SCHEDULE_OVERVIEW_DATA = [
+  { name: "Daily brand audit", cadence: "Weekdays 9:00 AM", nextRun: "3h", lastResult: "success" as const, agent: "brand-asset-generator" },
+  { name: "Nightly test suite", cadence: "Daily 2:00 AM", nextRun: "14h", lastResult: "failed" as const, agent: "backend-refactor" },
+  { name: "Weekly report generation", cadence: "Mon 8:00 AM", nextRun: "2d", lastResult: "success" as const, agent: "reporting-agent" },
+  { name: "Dependency vulnerability scan", cadence: "Every 6h", nextRun: "4h", lastResult: "success" as const, agent: "security-scanner" },
+  { name: "Performance benchmark", cadence: "Daily 3:00 AM", nextRun: "15h", lastResult: "success" as const, agent: "perf-monitor" },
+  { name: "Data pipeline sync", cadence: "Every 30m", nextRun: "12m", lastResult: "success" as const, agent: "data-pipeline" },
+  { name: "Slack digest summary", cadence: "Weekdays 5:00 PM", nextRun: "7h", lastResult: "success" as const, agent: "reporting-agent" },
+  { name: "Model fine-tune checkpoint", cadence: "Every 12h", nextRun: "8h", lastResult: "success" as const, agent: "ml-trainer" },
+  { name: "Stale PR cleanup", cadence: "Fri 4:00 PM", nextRun: "4d", lastResult: "success" as const, agent: "backend-refactor" },
+  { name: "Cost anomaly detector", cadence: "Every 1h", nextRun: "45m", lastResult: "failed" as const, agent: "cost-monitor" },
+];
+
+function parseNextRun(t: string): number {
+  const num = parseInt(t);
+  if (t.includes("m")) return num;
+  if (t.includes("h")) return num * 60;
+  if (t.includes("d")) return num * 60 * 24;
+  return num;
+}
+
+const SORTED_SCHEDULES = [...SCHEDULE_OVERVIEW_DATA].sort((a, b) => parseNextRun(a.nextRun) - parseNextRun(b.nextRun));
+
+function ScheduleOverviewWidget() {
+  const [modalOpen, setModalOpen] = useState(false);
+  const top5 = SORTED_SCHEDULES.slice(0, 5);
+
+  return (
+    <>
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[15px] font-semibold text-foreground">
+            Schedules
+            <span className="text-[14px] font-normal text-muted-foreground ml-1.5">
+              ({SORTED_SCHEDULES.length})
+            </span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            See all
+          </button>
+        </div>
+
+        <div className="space-y-0.5">
+          {top5.map((s, i) => (
+            <button
+              key={i}
+              type="button"
+              className="group w-full flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/50"
+            >
+              <span className={cn(
+                "w-2 h-2 rounded-full shrink-0",
+                s.lastResult === "failed" ? "bg-destructive" : "bg-emerald-500",
+              )} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] text-foreground truncate">{s.name}</p>
+                <p className="text-[14px] text-muted-foreground truncate">{s.agent} · {s.cadence}</p>
+              </div>
+              <span className="text-[14px] text-muted-foreground tabular-nums shrink-0">
+                {s.nextRun}
+              </span>
+              <span className="text-muted-foreground/20 group-hover:text-foreground transition-colors">→</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* "See all" modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-[520px] max-h-[70vh] rounded-2xl border border-border bg-card shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+              <h2 className="text-[16px] font-semibold text-foreground">
+                All schedules
+                <span className="text-[14px] font-normal text-muted-foreground ml-1.5">
+                  ({SORTED_SCHEDULES.length})
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Close size={16} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-2 py-2">
+              {SORTED_SCHEDULES.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="group w-full flex items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                >
+                  <span className={cn(
+                    "w-2 h-2 rounded-full shrink-0",
+                    s.lastResult === "failed" ? "bg-destructive" : "bg-emerald-500",
+                  )} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] text-foreground truncate">{s.name}</p>
+                    <p className="text-[14px] text-muted-foreground truncate">{s.agent} · {s.cadence}</p>
+                  </div>
+                  <span className="text-[14px] text-muted-foreground tabular-nums shrink-0">
+                    in {s.nextRun}
+                  </span>
+                  <span className="text-muted-foreground/20 group-hover:text-foreground transition-colors">→</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCHEDULED SECTION VARIANTS (legacy — toggle-based designs, kept for reference)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const SCHED_DATA = [

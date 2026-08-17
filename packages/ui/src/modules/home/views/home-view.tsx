@@ -30,7 +30,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -628,115 +627,111 @@ function ReadySection() {
   );
 }
 
-function CountdownRing({ time, failed }: { time: string; failed?: boolean }) {
-  const num = parseInt(time);
-  const unit = time.replace(/[0-9]/g, "");
-  const maxMinutes = unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
-  const currentMinutes = unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
-  const progress = Math.max(0.05, 1 - currentMinutes / maxMinutes);
-  const circumference = 2 * Math.PI * 18;
-  const offset = circumference * (1 - progress);
-
-  return (
-    <div className="relative w-[48px] h-[48px] flex items-center justify-center">
-      <svg width="48" height="48" className="absolute -rotate-90">
-        <circle
-          cx="24" cy="24" r="18"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          className="text-muted/50"
-        />
-        <circle
-          cx="24" cy="24" r="18"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          className={failed ? "text-destructive" : "text-emerald-500"}
-        />
-      </svg>
-      <span className="text-[14px] font-bold tabular-nums text-foreground">{time}</span>
-    </div>
-  );
-}
-
 function ScheduledSection() {
-  const [toggles, setToggles] = useState<Record<number, boolean>>({});
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const failedItems = SCHEDULED_CARDS.filter((s) => s.lastResult === "failed");
-  const activeItems = SCHEDULED_CARDS.filter((s) => s.lastResult !== "failed" && s.enabled);
-  const disabledItems = SCHEDULED_CARDS.filter((s) => !s.enabled);
+  const sorted = [...SCHEDULED_CARDS].sort((a, b) => {
+    const parse = (t: string) => {
+      const num = parseInt(t);
+      if (t.includes("m")) return num;
+      if (t.includes("h")) return num * 60;
+      if (t.includes("d")) return num * 60 * 24;
+      return num;
+    };
+    return parse(a.nextRun) - parse(b.nextRun);
+  });
 
-  function BentoTile({ s, i, large }: { s: typeof SCHEDULED_CARDS[number]; i: number; large?: boolean }) {
-    const enabled = toggles[i] ?? s.enabled;
-    const failed = s.lastResult === "failed";
-
-    return (
-      <div
-        className={cn(
-          "relative rounded-xl border bg-card p-4 transition-opacity",
-          large ? "col-span-2 row-span-2" : "",
-          failed && "border-destructive/40 shadow-[0_0_20px_-4px] shadow-destructive/20",
-          !enabled && "opacity-40",
-          !failed && "border-border",
-        )}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className={cn(
-              "font-semibold text-foreground truncate",
-              large ? "text-[16px]" : "text-[14px]",
-            )}>
-              {s.name}
-            </p>
-            <p className="text-[14px] text-muted-foreground truncate mt-0.5">
-              {s.agentName}
-            </p>
-          </div>
-          <CountdownRing time={s.nextRun} failed={failed} />
-        </div>
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-[14px] text-muted-foreground">{s.cadence}</span>
-          <Switch
-            checked={enabled}
-            onCheckedChange={() => setToggles((p) => ({ ...p, [i]: !enabled }))}
-            label={s.name}
-          />
-        </div>
-        {failed && (
-          <div className="mt-2 rounded-md bg-destructive/10 px-2 py-1">
-            <span className="text-[14px] text-destructive font-medium">Last run failed</span>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const top5 = sorted.slice(0, 5);
 
   return (
-    <section className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[16px] font-semibold text-foreground">
-          Scheduled{" "}
-          <span className="text-[14px] font-normal text-muted-foreground">
-            ({SCHEDULED_CARDS.length})
-          </span>
-        </h2>
-      </div>
-      <div className="grid grid-cols-2 gap-3 auto-rows-min">
-        {failedItems.map((s, i) => (
-          <BentoTile key={`f-${i}`} s={s} i={SCHEDULED_CARDS.indexOf(s)} large />
-        ))}
-        {activeItems.map((s, i) => (
-          <BentoTile key={`a-${i}`} s={s} i={SCHEDULED_CARDS.indexOf(s)} />
-        ))}
-        {disabledItems.map((s, i) => (
-          <BentoTile key={`d-${i}`} s={s} i={SCHEDULED_CARDS.indexOf(s)} />
-        ))}
-      </div>
-    </section>
+    <>
+      <section className="rounded-2xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[15px] font-semibold text-foreground">
+            Schedules
+            <span className="text-[14px] font-normal text-muted-foreground ml-1.5">
+              ({sorted.length})
+            </span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => setModalOpen(true)}
+            className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            See all
+          </button>
+        </div>
+
+        <div className="space-y-0.5">
+          {top5.map((s, i) => (
+            <button
+              key={i}
+              type="button"
+              className="group w-full flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/50"
+            >
+              <span className={cn(
+                "w-2 h-2 rounded-full shrink-0",
+                s.lastResult === "failed" ? "bg-destructive" : "bg-emerald-500",
+              )} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] text-foreground truncate">{s.name}</p>
+                <p className="text-[14px] text-muted-foreground truncate">{s.agentName} · {s.cadence}</p>
+              </div>
+              <span className="text-[14px] text-muted-foreground tabular-nums shrink-0">
+                {s.nextRun}
+              </span>
+              <span className="text-muted-foreground/20 group-hover:text-foreground transition-colors">→</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-[520px] max-h-[70vh] rounded-2xl border border-border bg-card shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+              <h2 className="text-[16px] font-semibold text-foreground">
+                All schedules
+                <span className="text-[14px] font-normal text-muted-foreground ml-1.5">
+                  ({sorted.length})
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Close size={16} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-2 py-2">
+              {sorted.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="group w-full flex items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                >
+                  <span className={cn(
+                    "w-2 h-2 rounded-full shrink-0",
+                    s.lastResult === "failed" ? "bg-destructive" : "bg-emerald-500",
+                  )} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] text-foreground truncate">{s.name}</p>
+                    <p className="text-[14px] text-muted-foreground truncate">{s.agentName} · {s.cadence}</p>
+                  </div>
+                  <span className="text-[14px] text-muted-foreground tabular-nums shrink-0">
+                    {s.nextRun}
+                  </span>
+                  <span className="text-muted-foreground/20 group-hover:text-foreground transition-colors">→</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
