@@ -39,13 +39,13 @@ dedicated **share host**.
   whoever holds the link may view, and guarding the link is the sharer's
   responsibility (deliberately: a second factor sent alongside a leaked link
   leaks with it).
-- An optional **expiry** bounds the *artifact's* lifetime — it is a retention
-  setting, not just a link setting, and applies regardless of visibility (a
-  private artifact with an expiry is deleted the same way; storage lifecycle
-  is a separate concern from sharing). On the public side, an expired link
-  answers "gone" (with a distinct "recently expired" page during a grace
-  window in which the owner can still renew); once the grace window passes, a
-  background sweep hard-deletes the content.
+- An optional **retention** date bounds the *artifact's* lifetime — it schedules
+  permanent deletion, not link expiry, and applies regardless of visibility (a
+  private artifact is deleted the same way; storage lifecycle is a separate
+  concern from sharing). On the public side, a past-due link answers "gone"
+  (with a distinct "scheduled for deletion" page during a grace window in which
+  the owner can still restore it by choosing a new date); once the grace window
+  passes, a background sweep hard-deletes the content.
 - A folder has a public page of its own, listing only the *shared* artifacts
   inside it; a folder with nothing shared is indistinguishable from a
   nonexistent one.
