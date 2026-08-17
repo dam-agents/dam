@@ -22,7 +22,7 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 
 RUN uv python install 3.11 &&\
     uv venv --python 3.11 "$OPENEVOLVE_VENV" &&\
-    uv pip install --python "$OPENEVOLVE_VENV/bin/python" "openevolve==${OPENEVOLVE_VERSION}" "setuptools>=83.0.0" &&\
+    uv pip install --python "$OPENEVOLVE_VENV/bin/python" "openevolve==${OPENEVOLVE_VERSION}" "setuptools>=83.0.0" "msgpack>=1.2.1" &&\
     chown -R 65532:0 /opt/openevolve-venv /opt/uv
 
 # Put the venv (and thus `openevolve-run`, `python`) ahead of the base tools.

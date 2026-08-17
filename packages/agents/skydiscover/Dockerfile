@@ -33,7 +33,8 @@ RUN uv python install 3.11 &&\
     uv pip install --python "$SKYDISCOVER_VENV/bin/python" \
       "skydiscover @ git+https://github.com/skydiscover-ai/skydiscover@${SKYDISCOVER_REF}" \
       scipy \
-      "setuptools>=83.0.0" &&\
+      "setuptools>=83.0.0" \
+      "msgpack>=1.2.1" &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/skydiscover-venv /opt/uv
 
