@@ -8,7 +8,7 @@ argument-hint: "[what the issue is about]"
 
 # File an Issue
 
-Draft a GitHub issue and file it after the user approves. For the content shape — the issue types (epic, feature, task, bug, research task), style, and the per-type templates — follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md). This skill layers the workflow (understand → decide type → research → dedupe → draft → approve → file) on top of those guidelines.
+Draft a GitHub issue and file it after the user approves. For the content shape, follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md) — the whole document, every section. This skill layers the workflow (understand → decide type → research → dedupe → draft → attribute → approve → file) on top of those guidelines.
 
 ## Workflow
 
@@ -41,11 +41,20 @@ Draft a GitHub issue and file it after the user approves. For the content shape 
 
 5. **Draft inline.** Produce the draft following [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md), using the decided type's template. Present the full draft (title + body, plus the Epic line if one was suggested) in the chat. Do not file yet.
 
-6. **Get explicit approval.** Ask whether to file as-is or revise. NEVER file without explicit approval. Approval covers the type and any epic suggestion too — if the user changes either, that's a revision.
+6. **Decide whether the body needs a Filed by footer.** You file under a credential you don't own, so check whether that credential's owner is the person who asked — see **Attribution** in the guidelines doc for the rule, the format, and the fallback order.
+
+   ```sh
+   gh api user --jq .login                                   # the account you file as
+   gh api "search/users?q=<name-or-email>" --jq '.items[].login'   # the requester
+   ```
+
+   Same person: no footer — GitHub already credits them. Different person: append the footer at the end of the body you present in step 5, so the approved body already carries it. Never credit the account you file as instead of the requester.
+
+7. **Get explicit approval.** Ask whether to file as-is or revise. NEVER file without explicit approval. Approval covers the type and any epic suggestion too — if the user changes either, that's a revision.
 
    **Every revision invalidates the previous approval.** If the user requests any change after approving — even a small one — you must present the revised draft and get a fresh, explicit "file it" before sending to GitHub. Do not assume the original approval carries over.
 
-7. **File via `gh` CLI.** Use `gh issue create`. Infer the repo from context (current working directory's git remote, or a repo mentioned earlier in the session). If unclear, ask. Then apply the relationships (below) and return the issue URL.
+8. **File via `gh` CLI.** Use `gh issue create`. Infer the repo from context (current working directory's git remote, or a repo mentioned earlier in the session). If unclear, ask. Then apply the relationships (below) and return the issue URL.
 
 ## Filing
 
@@ -53,7 +62,7 @@ After approval, file with `gh issue create`. Do not use the GitHub MCP tools (`m
 
 - `--repo owner/repo` — infer from git remote or prior context; ask if ambiguous
 - `--title "..."` — exactly as approved
-- `--body "..."` — exactly as approved, minus the **Epic** line (it's draft metadata, applied as the parent relationship below, not body text); pass via a HEREDOC so markdown formatting survives
+- `--body "..."` — exactly as approved, including the **Filed by** footer if step 6 called for one, minus the **Epic** line (it's draft metadata, applied as the parent relationship below, not body text); pass via a HEREDOC so markdown formatting survives
 - `--label foo --label bar` — only if the user specified labels
 
 Example:
@@ -67,6 +76,10 @@ gh issue create --repo owner/repo --title "Short declarative title" --body "$(ca
 ## Proposed solution
 
 ...
+
+---
+
+_Filed by @requester-handle_
 EOF
 )"
 ```
