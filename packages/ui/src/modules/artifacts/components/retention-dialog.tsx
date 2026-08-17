@@ -1,4 +1,7 @@
-import type { LibraryArtifact } from "api-server-api";
+import {
+  ARTIFACT_RESTORE_WINDOW_DAYS,
+  type LibraryArtifact,
+} from "api-server-api";
 import { useState } from "react";
 
 import {
@@ -12,7 +15,7 @@ import { formatDate, timeUntil } from "@/lib/format-time";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
-import { deletionState, RESTORE_WINDOW_DAYS } from "../lib/format.js";
+import { deletionState } from "../lib/format.js";
 
 const KEEP = "keep";
 const NEVER = "never";
@@ -97,7 +100,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
               private.
             </p>
             <p className="text-sm text-muted-foreground">
-              {`You can still restore it for ${RESTORE_WINDOW_DAYS} days afterwards by choosing a new date.`}
+              {`You can still restore it for ${ARTIFACT_RESTORE_WINDOW_DAYS} days afterwards by choosing a new date.`}
             </p>
           </div>
 

@@ -200,6 +200,7 @@ export {
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,
+  ARTIFACT_RESTORE_WINDOW_DAYS,
   artifactInternalLink,
 } from "./modules/artifact-library/types.js";
 export type {

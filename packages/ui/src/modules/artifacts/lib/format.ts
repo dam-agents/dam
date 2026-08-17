@@ -1,8 +1,8 @@
+import { ARTIFACT_RESTORE_WINDOW_DAYS } from "api-server-api";
+
 import { largestUnit } from "@/lib/format-time";
 
-export const RESTORE_WINDOW_DAYS = 7;
-
-const RESTORE_WINDOW_MS = RESTORE_WINDOW_DAYS * 86_400_000;
+const RESTORE_WINDOW_MS = ARTIFACT_RESTORE_WINDOW_DAYS * 86_400_000;
 
 export type DeletionState =
   | { state: "never" }
