@@ -6,6 +6,7 @@ import type { ArtifactService } from "../artifacts/services/artifact-service.js"
 import { downloadFileName } from "./domain/artifact-kind.js";
 import { stagingKey } from "./domain/storage-key.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
+import type { ApiVariables } from "../../core/http-context.js";
 
 export interface ArtifactLibraryRoutesDeps {
   artifactLibraryFor: (
@@ -17,7 +18,7 @@ export interface ArtifactLibraryRoutesDeps {
 
 export function createArtifactLibraryRoutes(deps: ArtifactLibraryRoutesDeps) {
   const routes = new Hono<{
-    Variables: { user: UserIdentity; roles: string[]; surface: string };
+    Variables: ApiVariables;
   }>();
 
   routes.post("/upload", async (c) => {

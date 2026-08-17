@@ -388,7 +388,7 @@ export function startPersistActivitySaga(
             await deps.insert({
               type: "artifact_deleted",
               actorSub: event.actorSub,
-              agentId: null,
+              agentId: event.agentId ?? null,
               surface: event.surface ?? null,
               outcome: "success",
               payload: { artifactId: event.artifactId },

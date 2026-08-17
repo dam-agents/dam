@@ -52,11 +52,8 @@ import type {
 } from "./admission/index.js";
 import type { SessionPresence } from "./agent-proxies/index.js";
 
-export type ApiVariables = {
-  user: UserIdentity;
-  roles: string[];
-  surface: string;
-};
+import type { ApiVariables } from "../../core/http-context.js";
+export type { ApiVariables };
 
 export interface ApiServerDeps {
   config: Config;

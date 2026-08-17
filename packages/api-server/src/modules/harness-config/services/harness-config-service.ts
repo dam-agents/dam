@@ -73,6 +73,8 @@ export function createHarnessConfigService(deps: {
         type: EventType.HarnessConfigChanged,
         agentId,
         ownerSub: deps.ownerSub,
+        actorSub: deps.ownerSub,
+        surface: deps.surface,
       });
       try {
         await deps.snapshotRepo.merge(
@@ -86,13 +88,6 @@ export function createHarnessConfigService(deps: {
           "harness-config: recording the declared snapshot failed",
         );
       }
-      emit({
-        type: EventType.HarnessConfigChanged,
-        agentId,
-        ownerSub: deps.ownerSub,
-        actorSub: deps.ownerSub,
-        surface: deps.surface,
-      });
     },
   };
 

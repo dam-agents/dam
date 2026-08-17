@@ -180,9 +180,17 @@ moment can produce both:
   ones no person asked for — the expiry sweep deletes artifacts on a timer and
   raises a delete like any other.
 - **Usage.** Publish, share, view, and delete are recorded as
-  [Activity Events](usage-tracking.md). Share is raised only when visibility
-  actually changes, so extending an expiry on a private artifact is not counted
-  as sharing, and a view is the only record a share link was ever opened.
+  [Activity Events](usage-tracking.md). Share is raised only on the transition
+  *into* public, so neither extending an expiry nor revoking a link counts as
+  sharing. A view is what places an opening in time — the artifact's own
+  counter is a lifetime total that cannot say when, or whether the link was
+  opened at all after some date.
+
+  Only the person-driven ones are recorded. An event carries an actor exactly
+  when a person caused it, and the usage subscriber ignores anything without
+  one, so the timer sweep's deletes never reach the activity log even though
+  they raise the same event. That rule is what keeps machine activity out of
+  every number on this page.
 
 A publish carries the producing agent, and whether a person or an agent filed
 it is the question worth asking of this feature — so the two are distinguished

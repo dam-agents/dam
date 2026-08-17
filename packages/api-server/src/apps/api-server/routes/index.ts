@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import type { AuthConfig, UserIdentity } from "api-server-api";
+import type { AuthConfig } from "api-server-api";
 import {
   composeArtifactLibraryForOwner,
   createArtifactLibraryRoutes,

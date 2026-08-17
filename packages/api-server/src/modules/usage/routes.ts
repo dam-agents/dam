@@ -2,7 +2,7 @@ import { Hono, type Context, type Next } from "hono";
 import type { UserIdentity } from "api-server-api";
 
 type AppEnv = {
-  Variables: { user: UserIdentity; roles: string[]; surface: string };
+  Variables: ApiVariables;
 };
 import {
   isViewName,
@@ -13,6 +13,7 @@ import {
 } from "./services/report-service.js";
 import { renderHtmlReport, type ViewResult } from "./html-report.js";
 import { securityLog } from "../../core/security-log.js";
+import type { ApiVariables } from "../../core/http-context.js";
 
 export type UsageRoutesDeps = {
   service: ReportService;

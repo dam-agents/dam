@@ -9,7 +9,7 @@ import type { ApprovalsRelayService } from "../../../modules/approvals/compose.j
 import type { SessionPresence } from "./session-presence.js";
 import type { RelayActor } from "./upgrade.js";
 import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
-import { emit, EventType, type TurnOutcome } from "../../../events.js";
+import { emit, EventType } from "../../../events.js";
 
 const DEBOUNCE_MS = 30_000;
 
@@ -169,7 +169,11 @@ export function createAcpRelay(
 
       function trackIfPrompt(parsed: unknown): void {
         if (!isPrompt(parsed)) return;
-        if (parsed.params?._meta?.platform?.initiator === "system") return;
+        if (
+          actor.surface === "ui" &&
+          parsed.params?._meta?.platform?.initiator === "system"
+        )
+          return;
         emit({
           type: EventType.SessionTurnRelayed,
           agentId,
@@ -191,7 +195,6 @@ export function createAcpRelay(
         isBinary: boolean;
       }[] = [];
       client.on("message", (data, isBinary) => {
-        if (!isBinary) trackIfPrompt(tryParse(data));
         pending.push({ data: data as Buffer, isBinary });
       });
 
@@ -229,6 +232,7 @@ export function createAcpRelay(
           }
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
+              if (!msg.isBinary) trackIfPrompt(tryParse(msg.data));
               upstream.send(msg.data, { binary: msg.isBinary });
             }
           }
@@ -236,10 +240,10 @@ export function createAcpRelay(
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
+            if (upstream.readyState !== WebSocket.OPEN) return;
+
             const parsed = isBinary ? null : tryParse(data);
             if (parsed !== null) trackIfPrompt(parsed);
-
-            if (upstream.readyState !== WebSocket.OPEN) return;
 
             if (!passive && shouldUpdateActivity(agentId)) {
               repo

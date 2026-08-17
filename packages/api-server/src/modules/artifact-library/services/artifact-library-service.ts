@@ -424,7 +424,7 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(updated.agentId ? { agentId: updated.agentId } : {}),
       });
-      if (updated.visibility !== before.visibility) {
+      if (updated.visibility === "public" && before.visibility !== "public") {
         emit({
           type: EventType.ArtifactShared,
           actorSub: owner,

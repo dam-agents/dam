@@ -4,11 +4,11 @@
 
 What the platform records when someone uses it. Each row is one domain event: the name it is emitted under, the `activity_events.type` it is stored as, and the part of the system it fires from.
 
-This table is generated from the source, so it cannot drift from what the code actually emits. Conceptual background — why these are collected, how actors are pseudonymized, what the numbers do and do not mean — is in [usage tracking](architecture/usage-tracking.md).
+The table is generated from the source, so it cannot drift from what the code actually emits. The prose around it is not — treat a sentence as a claim to check, and the table as the fact. Conceptual background — why these are collected, how actors are pseudonymized, what the numbers do and do not mean — is in [usage tracking](architecture/usage-tracking.md).
 
 A row type shown as `prefix_<action>` is stored with the action substituted, so `experiment_<action>` is written as `experiment_started`, `experiment_stopped` or `experiment_deleted`.
 
-Events marked *elsewhere* are consumed, but not by the activity log: they drive live UI updates, the `agents` mirror, or channel management. They will not appear in `activity_events`, so they answer nothing about usage.
+Events marked *elsewhere* are consumed, but not by the activity log — they drive live UI updates, the `agents` mirror, channel management, or cleanup when an agent goes away. They will not appear in `activity_events`, so they answer nothing about usage.
 
 | Event | Stored as | Fired from |
 | --- | --- | --- |
@@ -55,7 +55,7 @@ Events marked *elsewhere* are consumed, but not by the activity log: they drive 
 
 ## Deliberately not recorded
 
-User-facing components that emit no event, and why.
+User-facing components with no usage instrumentation, and why. Some raise events for other purposes; none of them reach the activity log.
 
 | Component | Reason |
 | --- | --- |

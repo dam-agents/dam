@@ -1,7 +1,6 @@
 import { request as httpRequest } from "node:http";
 import { Readable, Transform } from "node:stream";
 import type { Context } from "hono";
-import type { UserIdentity } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType, type TurnOutcome } from "../../../events.js";

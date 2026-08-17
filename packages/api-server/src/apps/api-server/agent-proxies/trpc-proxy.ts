@@ -1,5 +1,4 @@
 import type { Context } from "hono";
-import type { UserIdentity } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {

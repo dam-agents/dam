@@ -197,7 +197,10 @@ export function createExperimentsService(
     }
   }
 
-  async function launchRun(id: string): Promise<Experiment> {
+  async function launchRun(
+    id: string,
+    action?: "started" | "stopped" | "deleted",
+  ): Promise<Experiment> {
     const row = await repo.get(id, owner);
     if (!row) throw new TRPCError({ code: "NOT_FOUND" });
     await deps.pin?.set(row.driverAgentId);
@@ -224,7 +227,7 @@ export function createExperimentsService(
         message: "the experiment could not be launched",
       });
     }
-    emitChanged(id, row.driverAgentId);
+    emitChanged(id, row.driverAgentId, action);
     return toView((await repo.get(id, owner))!);
   }
 
@@ -372,9 +375,7 @@ export function createExperimentsService(
         executedAt: now(),
         lastActivityAt: now(),
       });
-      const launched = await launchRun(runId);
-      emitChanged(runId, source.driverAgentId, "started");
-      return launched;
+      return launchRun(runId, "started");
     },
 
     async stop(id) {

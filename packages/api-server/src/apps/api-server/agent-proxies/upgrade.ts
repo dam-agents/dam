@@ -91,13 +91,15 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
 
     const surface = clientSurface(admitted.principal, deps.surfaceAttribution);
     logWsAttach(user.sub, site);
-    emit({
-      type: EventType.AgentRelayAttached,
-      agentId,
-      actorSub: user.sub,
-      surface,
-      relay: relayKind,
-    });
+    if (url.searchParams.get("passive") !== "1") {
+      emit({
+        type: EventType.AgentRelayAttached,
+        agentId,
+        actorSub: user.sub,
+        surface,
+        relay: relayKind,
+      });
+    }
     return { ok: true, user, surface };
   };
 }

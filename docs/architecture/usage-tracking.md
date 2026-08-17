@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-13
+Last verified: 2026-08-17
 
 ## Overview
 
@@ -83,7 +83,7 @@ The subsystem produces no events of its own and exposes no domain operations to 
 
 The api-server emits domain events on every meaningful user interaction (auth, channel turn, session turn, relay attach, schedule fire, connect/disconnect, file import), the contribution-delivery health transitions (apply failed / recovered / gave up), plus every agent lifecycle event (`AgentCreated` / `AgentDeleted`). Most already exist for the platform's own purposes and the usage subsystem only adds subscribers; the direct-path interactions below are the exception, recorded at the relay because nothing else had reason to notice them.
 
-Three properties of that stream are load-bearing for anyone reading the numbers:
+Six properties of that stream are load-bearing for anyone reading the numbers:
 
 - **A turn counts the same whichever way the user reached the agent.** Conversations arrive over two different transports — a Channel, or the relay the browser chat and the CLI share — and only the Channel side was ever recorded, so the platform's most-used surface produced no turns at all. Both now emit.
 

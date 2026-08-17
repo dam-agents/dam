@@ -25,6 +25,21 @@ const ENUM_NAME = "EventType";
 const EMIT_FN = "emit";
 const SUBSCRIBE_FN = "ofType";
 
+const KNOWN_UNCONSUMED = [
+  [
+    "AgentUpdated",
+    "Emitted on agent edit. The live-update switch must name it to stay exhaustive, but its arm returns null and nothing else subscribes.",
+  ],
+  [
+    "AgentRestarted",
+    "Emitted on restart. Same as AgentUpdated — named for exhaustiveness, acted on nowhere.",
+  ],
+  [
+    "AgentWoken",
+    "Emitted on wake. Same as AgentUpdated — named for exhaustiveness, acted on nowhere.",
+  ],
+];
+
 const NOT_TRACKED = [
   ["e2e", "Test-only surface, never reachable by a user."],
   [
@@ -62,7 +77,7 @@ function parse(file) {
     file,
     readFileSync(file, "utf8"),
     ts.ScriptTarget.Latest,
-    false,
+    true,
   );
 }
 
@@ -95,11 +110,76 @@ function eachReference(source, onReference) {
       const { line } = source.getLineAndCharacterOfPosition(
         node.getStart(source),
       );
-      onReference(node.name.text, inside, line + 1);
+      onReference(node.name.text, inside, line + 1, node);
     }
     ts.forEachChild(node, (child) => visit(child, inside));
   };
   visit(source, null);
+}
+
+function subscriptionVerbs(source) {
+  const verbs = new Set([SUBSCRIBE_FN]);
+  const callsOfType = (node) => {
+    let found = false;
+    const scan = (n) => {
+      if (found) return;
+      if (ts.isCallExpression(n) && calleeName(n) === SUBSCRIBE_FN) {
+        found = true;
+        return;
+      }
+      ts.forEachChild(n, scan);
+    };
+    scan(node);
+    return found;
+  };
+  const visit = (node) => {
+    const named =
+      (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name);
+    if (named && node.body && callsOfType(node.body)) {
+      verbs.add(node.name.text);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      (ts.isArrowFunction(node.initializer) ||
+        ts.isFunctionExpression(node.initializer)) &&
+      callsOfType(node.initializer)
+    ) {
+      verbs.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return verbs;
+}
+
+function inSwitchArm(node) {
+  let n = node;
+  while (n && !ts.isCaseClause(n)) n = n.parent;
+  return Boolean(n);
+}
+
+function ignoredByCaseArm(node) {
+  let clause = node;
+  while (clause && !ts.isCaseClause(clause)) clause = clause.parent;
+  if (!clause) return false;
+  const block = clause.parent;
+  if (!block || !ts.isCaseBlock(block)) return false;
+  let i = block.clauses.indexOf(clause);
+  while (i < block.clauses.length && block.clauses[i].statements.length === 0)
+    i++;
+  const arm = block.clauses[i];
+  if (!arm) return false;
+  return arm.statements.every(
+    (st) =>
+      ts.isReturnStatement(st) &&
+      (!st.expression ||
+        st.expression.kind === ts.SyntaxKind.NullKeyword ||
+        (ts.isIdentifier(st.expression) && st.expression.text === "undefined")),
+  );
 }
 
 function record(index, member, site) {
@@ -203,11 +283,11 @@ function renderDoc(members, emitted, rowTypes) {
     "",
     "What the platform records when someone uses it. Each row is one domain event: the name it is emitted under, the `activity_events.type` it is stored as, and the part of the system it fires from.",
     "",
-    "This table is generated from the source, so it cannot drift from what the code actually emits. Conceptual background — why these are collected, how actors are pseudonymized, what the numbers do and do not mean — is in [usage tracking](architecture/usage-tracking.md).",
+    "The table is generated from the source, so it cannot drift from what the code actually emits. The prose around it is not — treat a sentence as a claim to check, and the table as the fact. Conceptual background — why these are collected, how actors are pseudonymized, what the numbers do and do not mean — is in [usage tracking](architecture/usage-tracking.md).",
     "",
     "A row type shown as `prefix_<action>` is stored with the action substituted, so `experiment_<action>` is written as `experiment_started`, `experiment_stopped` or `experiment_deleted`.",
     "",
-    "Events marked *elsewhere* are consumed, but not by the activity log: they drive live UI updates, the `agents` mirror, or channel management. They will not appear in `activity_events`, so they answer nothing about usage.",
+    "Events marked *elsewhere* are consumed, but not by the activity log — they drive live UI updates, the `agents` mirror, channel management, or cleanup when an agent goes away. They will not appear in `activity_events`, so they answer nothing about usage.",
     "",
     `| Event | Stored as | Fired from |`,
     `| --- | --- | --- |`,
@@ -229,7 +309,7 @@ function renderDoc(members, emitted, rowTypes) {
     "",
     "## Deliberately not recorded",
     "",
-    "User-facing components that emit no event, and why.",
+    "User-facing components with no usage instrumentation, and why. Some raise events for other purposes; none of them reach the activity log.",
     "",
     "| Component | Reason |",
     "| --- | --- |",
@@ -247,6 +327,7 @@ if (!members)
 
 const emitted = new Map();
 const consumed = new Map();
+const mentioned = new Map();
 const unknown = new Map();
 
 for (const file of sourceFileNames()) {
@@ -256,11 +337,17 @@ for (const file of sourceFileNames()) {
 
   const source = parse(file);
   const where = relative(REPO_ROOT, file);
-  eachReference(source, (member, insideCall, line) => {
+  const verbs = subscriptionVerbs(source);
+  eachReference(source, (member, insideCall, line, node) => {
     const site = `${where}:${line}`;
     if (!members.includes(member)) record(unknown, member, site);
     else if (insideCall === EMIT_FN) record(emitted, member, site);
-    else record(consumed, member, site);
+    else if (insideCall !== null && verbs.has(insideCall))
+      record(consumed, member, site);
+    else if (node && ignoredByCaseArm(node)) record(mentioned, member, site);
+    else if (insideCall === null && node && inSwitchArm(node))
+      record(consumed, member, site);
+    else record(mentioned, member, site);
   });
 }
 
@@ -309,8 +396,14 @@ for (const member of members) {
       `${member}: consumed at ${uses[0]} but never emitted — the subscriber can never run`,
     );
   } else if (uses.length === 0) {
+    if (!KNOWN_UNCONSUMED.some(([name]) => name === member)) {
+      problems.push(
+        `${member}: emitted at ${emits[0]} but nothing consumes it — the interaction is dropped`,
+      );
+    }
+  } else if (KNOWN_UNCONSUMED.some(([name]) => name === member)) {
     problems.push(
-      `${member}: emitted at ${emits[0]} but nothing consumes it — the interaction is dropped`,
+      `${member}: listed as unconsumed but is consumed at ${uses[0]} — drop it from KNOWN_UNCONSUMED`,
     );
   }
 }

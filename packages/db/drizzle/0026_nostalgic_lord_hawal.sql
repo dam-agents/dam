@@ -18,19 +18,42 @@
 -- table that already violates it, and migrations run on api-server startup,
 -- so leaving them would refuse to boot. The delete keeps the earliest row of
 -- each group, ordered by (occurred_at, id) so ties resolve deterministically.
--- It uses `=` rather than IS NOT DISTINCT FROM to match the index exactly:
--- Postgres treats NULLs as distinct, so NULL-keyed rows are not duplicates
--- and must not be swept.
+--
+-- It ranks within each group rather than joining the table to itself. A
+-- self-join enumerates every ordered pair inside a group, so cost grows with
+-- the square of the group size — and a group is one user on one agent for one
+-- day, which the reconnect loop can fill with thousands of rows. Measured on
+-- postgres:16, a single 8,640-row group took 23 seconds that way and 63ms
+-- this way. That matters beyond speed: Drizzle runs every pending migration
+-- inside one transaction, awaited during startup, so a slow sweep is a boot
+-- that a liveness probe kills and replays from the beginning.
+--
+-- The NOT NULL guards are load-bearing and are what keeps this equivalent to
+-- the index. PARTITION BY groups NULLs together; a unique index treats them
+-- as distinct. Without the guards this would delete exactly the rows the
+-- index does not consider duplicates.
 
-DELETE FROM activity_events a
-USING activity_events b
-WHERE a.type = 'relay_attached'
-  AND b.type = 'relay_attached'
-  AND a.actor_sub = b.actor_sub
-  AND a.agent_id = b.agent_id
-  AND (a.payload ->> 'relay') = (b.payload ->> 'relay')
-  AND date_trunc('day', a.occurred_at AT TIME ZONE 'UTC')
-    = date_trunc('day', b.occurred_at AT TIME ZONE 'UTC')
-  AND (a.occurred_at, a.id) > (b.occurred_at, b.id);
+DELETE FROM activity_events
+WHERE id IN (
+  SELECT id
+  FROM (
+    SELECT
+      id,
+      row_number() OVER (
+        PARTITION BY
+          actor_sub,
+          agent_id,
+          payload ->> 'relay',
+          date_trunc('day', occurred_at AT TIME ZONE 'UTC')
+        ORDER BY occurred_at, id
+      ) AS rn
+    FROM activity_events
+    WHERE type = 'relay_attached'
+      AND actor_sub IS NOT NULL
+      AND agent_id IS NOT NULL
+      AND payload ->> 'relay' IS NOT NULL
+  ) ranked
+  WHERE rn > 1
+);
 --> statement-breakpoint
 CREATE UNIQUE INDEX "activity_events_relay_dedup_idx" ON "activity_events" USING btree ("actor_sub","agent_id",("payload" ->> 'relay'),date_trunc('day', "occurred_at" AT TIME ZONE 'UTC')) WHERE "activity_events"."type" = 'relay_attached';

@@ -1,5 +1,4 @@
 import { serve } from "@hono/node-server";
-import type { UserIdentity } from "api-server-api";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
 import {

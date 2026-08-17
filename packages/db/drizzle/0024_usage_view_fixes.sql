@@ -97,15 +97,24 @@ CREATE VIEW "usage_connections_by_user" AS
 -- Adds vs removes per user. Both sides are now emitted for every auth kind
 -- (they were not: only OAuth-callback completions used to emit an add, while
 -- every delete emitted a remove — which could make removes exceed adds).
+--
+-- The provider counts deliberately exclude rows with no templateId rather
+-- than folding them into one 'unknown' bucket: a legacy row predates the
+-- field, and COUNT(DISTINCT …) over a shared placeholder collapses N unknown
+-- providers into 1, so a column named for a count of providers would report
+-- fewer than the truth. They are surfaced as their own count instead, which
+-- says how much of the window the provider columns cannot speak for.
 CREATE VIEW "usage_connection_churn_by_user" AS
   SELECT
     actor_sub,
     COUNT(*) FILTER (WHERE type = 'connection_added') AS adds,
     COUNT(*) FILTER (WHERE type = 'connection_removed') AS removes,
-    COUNT(DISTINCT COALESCE(payload->>'templateId', 'unknown'))
+    COUNT(DISTINCT payload->>'templateId')
       FILTER (WHERE type = 'connection_added') AS providers_added,
-    COUNT(DISTINCT COALESCE(payload->>'templateId', 'unknown'))
-      FILTER (WHERE type = 'connection_removed') AS providers_removed
+    COUNT(DISTINCT payload->>'templateId')
+      FILTER (WHERE type = 'connection_removed') AS providers_removed,
+    COUNT(*) FILTER (WHERE payload->>'templateId' IS NULL)
+      AS rows_without_provider
   FROM activity_events
   WHERE type IN ('connection_added', 'connection_removed')
     AND actor_sub IS NOT NULL
