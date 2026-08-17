@@ -2,7 +2,6 @@ import { Renew } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -12,6 +11,7 @@ import type { AgentView } from "../../../types.js";
 import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { AgentRow } from "../components/agent-row.js";
+import { WelcomeEntryPoints } from "../components/welcome-entry-points.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../utils/agent-kind.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
@@ -87,14 +87,7 @@ export function ListView() {
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
-      {initialLoaded && agents.length === 0 && (
-        <PageEmptyState
-          title="No sandboxes yet"
-          message="Create your first sandbox to get started."
-          actionLabel="Create sandbox"
-          onAction={() => navigateToCreateSandbox()}
-        />
-      )}
+      {initialLoaded && agents.length === 0 && <WelcomeEntryPoints />}
 
       {initialLoaded && showUpdateAllBanner && (
         <Callout

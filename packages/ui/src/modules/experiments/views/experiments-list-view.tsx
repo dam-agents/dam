@@ -1,8 +1,8 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
@@ -50,19 +50,12 @@ export function ExperimentsListView() {
       {!initialLoaded && <ListSkeleton rows={3} rowHeight={72} />}
 
       {initialLoaded && groups.length === 0 && (
-        <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
-          <h2 className="text-base font-semibold text-foreground">
-            No experiments yet
-          </h2>
-          <p className="max-w-[520px] text-sm text-muted-foreground">
-            An experiment runs one goal across several variants at once and
-            charts each result live, so you can compare them. Create an
-            experiment sandbox and its agent will help you design the first one.
-          </p>
-          <Button className="mt-1" onClick={createExperimentSandbox}>
-            Create experiment
-          </Button>
-        </Card>
+        <PageEmptyState
+          title="No experiments yet"
+          message="An experiment runs one goal across several variants at once and charts each result live, so you can compare them. Create an experiment sandbox and its agent will help you design the first one."
+          actionLabel="Create experiment"
+          onAction={createExperimentSandbox}
+        />
       )}
 
       <div className="flex flex-col gap-9">
