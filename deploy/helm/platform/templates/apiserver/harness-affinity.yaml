@@ -1,4 +1,7 @@
-{{- $harnessSvc := printf "%s-apiserver-harness" .Release.Name -}}
+{{- /* Must mirror app.yaml's Service naming exactly — a DestinationRule for a
+   hostname that doesn't exist is accepted silently and pins nothing. */ -}}
+{{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" -}}
 # Pins each harness caller to one api-server replica.
 #
 # The api-server holds MCP streamable-HTTP sessions in process, one map per

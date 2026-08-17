@@ -100,6 +100,16 @@ spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "platform.apiserver.serviceAccountName" . }}
       terminationGracePeriodSeconds: 45
+      # Preferred, not required: replicas should not share a node fate, but a
+      # single-node cluster (lima dev) must still schedule.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: apiserver
+              app.kubernetes.io/instance: {{ .Release.Name }}
       # ndots:1 so external hostnames (e.g. an MCP server's domain during
       # OAuth/DCR discovery in connections.create) resolve absolute-first.
       # The default ndots:5 expands sub-5-dot FQDNs against node-inherited

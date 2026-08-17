@@ -263,6 +263,12 @@ postgres:
 # the source of truth for anything durable).
 redis:
   enabled: true
+  # -- Use an external Redis instead of the bundled single-replica one:
+  # set `enabled: false` and point this at it (redis://host:port). Auth, if
+  # any, goes in the URL — the bundled auth Secret is not created when
+  # disabled. Required when disabling: the api-server refuses to boot
+  # without a Redis.
+  externalUrl: ""
   # -- Extra annotations for the StatefulSet object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}

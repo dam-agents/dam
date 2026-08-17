@@ -1,0 +1,20 @@
+{{- if gt (int (.Values.apiServer.replicas | default 1)) 1 }}
+# Without this, a node drain may evict every api-server replica at once and
+# the RollingUpdate guarantees buy nothing against planned disruptions.
+# Only rendered at >1 replica: minAvailable:1 on a single replica would
+# block drains outright.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
