@@ -372,8 +372,9 @@ export function createExperimentsService(
         executedAt: now(),
         lastActivityAt: now(),
       });
+      const launched = await launchRun(runId);
       emitChanged(runId, source.driverAgentId, "started");
-      return launchRun(runId);
+      return launched;
     },
 
     async stop(id) {

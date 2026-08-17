@@ -456,13 +456,15 @@ export function createConnectionsService(deps: {
           affectedAgents: affectedAgents.length,
         },
       });
-      emit({
-        type: EventType.ConnectionRemoved,
-        actorSub: deps.ownerId,
-        connectionKey: conn.id,
-        templateId: conn.templateId,
-        kind: template?.category === "mcp" ? "mcp" : "oauth_app",
-      });
+      if (deriveStatus(conn) !== "pending") {
+        emit({
+          type: EventType.ConnectionRemoved,
+          actorSub: deps.ownerId,
+          connectionKey: conn.id,
+          templateId: conn.templateId,
+          kind: template?.category === "mcp" ? "mcp" : "oauth_app",
+        });
+      }
     },
 
     async getAgentConnections(agentId: string): Promise<AgentConnections> {

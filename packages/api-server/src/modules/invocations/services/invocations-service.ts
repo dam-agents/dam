@@ -161,13 +161,6 @@ export function createInvocationsService(deps: {
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,
       });
-      emit({
-        type: EventType.InvocationSpawned,
-        targetAgentId: targetId,
-        driverAgentId: input.driverAgentId,
-        ownerSub: deps.owner,
-      });
-
       let agent;
       try {
         agent = await deps.agents.create({
@@ -187,6 +180,12 @@ export function createInvocationsService(deps: {
         await deps.repo.delete(targetId).catch(() => {});
         throw err;
       }
+      emit({
+        type: EventType.InvocationSpawned,
+        targetAgentId: targetId,
+        driverAgentId: input.driverAgentId,
+        ownerSub: deps.owner,
+      });
 
       const task = buildInvocationPrompt({
         prompt: input.prompt,

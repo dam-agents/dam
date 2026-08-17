@@ -409,7 +409,7 @@ export function createArtifactLibraryService(
     },
 
     async setSharing(id, input: ArtifactSharingInput) {
-      await requireArtifact(id);
+      const before = await requireArtifact(id);
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.visibility !== undefined) patch.visibility = input.visibility;
       if (input.expiresInHours !== undefined)
@@ -422,13 +422,15 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(updated.agentId ? { agentId: updated.agentId } : {}),
       });
-      emit({
-        type: EventType.ArtifactShared,
-        actorSub: owner,
-        artifactId: id,
-        visibility: updated.visibility,
-        surface,
-      });
+      if (updated.visibility !== before.visibility) {
+        emit({
+          type: EventType.ArtifactShared,
+          actorSub: owner,
+          artifactId: id,
+          visibility: updated.visibility,
+          surface,
+        });
+      }
       return toLibraryArtifact(updated, shareBaseUrl);
     },
 

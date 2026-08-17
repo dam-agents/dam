@@ -11,6 +11,7 @@ import {
 } from "../../../modules/agents/index.js";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
+import type { ApiVariables } from "../deps.js";
 
 const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set([
   "content-type",
@@ -38,7 +39,7 @@ export interface ImportProxyDeps {
 }
 
 type ImportCtx = Context<{
-  Variables: { user: UserIdentity; roles: string[]; surface: string };
+  Variables: ApiVariables;
 }>;
 
 export function createImportProxy(deps: ImportProxyDeps) {

@@ -21,6 +21,7 @@ interface JsonRpcRequest {
     sessionId?: string;
     options?: { optionId: string; kind?: string }[];
     toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown };
+    _meta?: { platform?: { initiator?: string } };
   };
 }
 
@@ -168,6 +169,7 @@ export function createAcpRelay(
 
       function trackIfPrompt(parsed: unknown): void {
         if (!isPrompt(parsed)) return;
+        if (parsed.params?._meta?.platform?.initiator === "system") return;
         emit({
           type: EventType.SessionTurnRelayed,
           agentId,
@@ -189,6 +191,7 @@ export function createAcpRelay(
         isBinary: boolean;
       }[] = [];
       client.on("message", (data, isBinary) => {
+        if (!isBinary) trackIfPrompt(tryParse(data));
         pending.push({ data: data as Buffer, isBinary });
       });
 
@@ -226,7 +229,6 @@ export function createAcpRelay(
           }
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
-              if (!msg.isBinary) trackIfPrompt(tryParse(msg.data));
               upstream.send(msg.data, { binary: msg.isBinary });
             }
           }
@@ -234,6 +236,9 @@ export function createAcpRelay(
 
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
+            const parsed = isBinary ? null : tryParse(data);
+            if (parsed !== null) trackIfPrompt(parsed);
+
             if (upstream.readyState !== WebSocket.OPEN) return;
 
             if (!passive && shouldUpdateActivity(agentId)) {
@@ -251,10 +256,7 @@ export function createAcpRelay(
               return;
             }
 
-            const parsed = tryParse(data);
-
             upstream.send(data, { binary: false });
-            trackIfPrompt(parsed);
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });
 

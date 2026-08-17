@@ -31,7 +31,9 @@ export interface UsageModuleDeps {
   listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
 }
 
-type AppEnv = { Variables: { user: UserIdentity; roles: string[] } };
+type AppEnv = {
+  Variables: { user: UserIdentity; roles: string[]; surface: string };
+};
 
 export interface UsageModule {
   mount(app: Hono<AppEnv>): void;

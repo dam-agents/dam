@@ -157,7 +157,7 @@ CREATE VIEW "usage_auth_users_7d" AS
     actor_sub,
     MIN(occurred_at) AS first_seen,
     MAX(occurred_at) AS last_seen,
-    COUNT(*) AS active_days
+    COUNT(DISTINCT date_trunc('day', occurred_at AT TIME ZONE 'UTC')) AS active_days
   FROM activity_events
   WHERE type = 'auth'
     AND occurred_at >= NOW() - INTERVAL '7 days'
@@ -212,7 +212,7 @@ CREATE VIEW "usage_multi_surface_users" AS
     actor_sub,
     array_agg(DISTINCT surface ORDER BY surface) AS surfaces,
     COUNT(DISTINCT surface) AS surface_count,
-    COUNT(*) AS active_days_total,
+    COUNT(DISTINCT date_trunc('day', occurred_at AT TIME ZONE 'UTC')) AS active_days_total,
     MAX(occurred_at) AS last_seen
   FROM activity_events
   WHERE type = 'auth'

@@ -6,11 +6,11 @@ import {
 } from "../../../modules/artifact-library/index.js";
 import { createSlackOAuthRoutes } from "../../../modules/channels/infrastructure/slack-oauth.js";
 import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastructure/telegram-oauth.js";
-import type { ApiServerDeps } from "../deps.js";
+import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
 import { createBrandRoutes } from "./brand.js";
 
-type App = Hono<{ Variables: { user: UserIdentity; roles: string[] } }>;
+type App = Hono<{ Variables: ApiVariables }>;
 
 export function mountRoutes(app: App, boot: ApiServerDeps): void {
   const { config, terms, jwksWarmup } = boot;
