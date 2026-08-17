@@ -52,7 +52,7 @@ export interface ArtifactAgentDownloadTicket {
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string },
+    attribution?: { agentId: string; internal?: boolean },
   ): Promise<LibraryArtifact>;
   resolveContentRef(
     id: string,
@@ -334,15 +334,17 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(attribution?.agentId ? { agentId: attribution.agentId } : {}),
       });
-      emit({
-        type: EventType.ArtifactPublished,
-        actorSub: owner,
-        artifactId: row.id,
-        agentId: attribution?.agentId ?? null,
-        kind: row.kind,
-        visibility: row.visibility,
-        surface,
-      });
+      if (!attribution?.internal) {
+        emit({
+          type: EventType.ArtifactPublished,
+          actorSub: owner,
+          artifactId: row.id,
+          agentId: attribution?.agentId ?? null,
+          kind: row.kind,
+          visibility: row.visibility,
+          surface,
+        });
+      }
       return toLibraryArtifact(row, shareBaseUrl);
     },
 

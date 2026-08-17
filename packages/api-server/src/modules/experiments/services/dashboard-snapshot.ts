@@ -67,7 +67,7 @@ export function createDashboardSnapshotter(deps: {
         kind: "html",
         ...(folderId ? { folderId } : {}),
       },
-      { agentId: row.driverAgentId },
+      { agentId: row.driverAgentId, internal: true },
     );
     await repo.patchDashboardArtifact(experimentId, results.id);
     emit({
