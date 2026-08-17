@@ -109,7 +109,7 @@ export function ArtifactsView() {
         title="Artifacts"
         description={
           hasContent
-            ? "Pages and files created by you and your agents. Share with a link, set an expiry."
+            ? "Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
             : undefined
         }
         actions={

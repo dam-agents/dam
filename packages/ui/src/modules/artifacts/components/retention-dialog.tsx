@@ -12,6 +12,7 @@ import { formatDate, timeUntil } from "@/lib/format-time";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
+import { RESTORE_WINDOW_DAYS } from "../lib/format.js";
 
 const KEEP = "keep";
 const NEVER = "never";
@@ -41,7 +42,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
     ? formatDate(scheduled, SCHEDULED_DATE_FORMAT)
     : null;
   const [choice, setChoice] = useState<string>(
-    scheduled === null ? NEVER : KEEP,
+    scheduledDate === null ? NEVER : KEEP,
   );
   const sharing = useSetArtifactSharing();
 
@@ -60,7 +61,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
           emitToast({
             kind: "success",
             message: expiresAt
-              ? `This artifact deletes on ${formatDate(expiresAt)}.`
+              ? `This artifact deletes on ${formatDate(expiresAt, SCHEDULED_DATE_FORMAT)}.`
               : "Automatic deletion turned off — this artifact is kept until you delete it.",
           });
           onClose();
@@ -85,8 +86,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
               private.
             </p>
             <p className="text-sm text-muted-foreground">
-              You can still restore it for 7 days afterwards by choosing a new
-              date.
+              {`You can still restore it for ${RESTORE_WINDOW_DAYS} days afterwards by choosing a new date.`}
             </p>
           </div>
 

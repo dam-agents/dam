@@ -3,7 +3,7 @@ import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 
-import { expiryState } from "../lib/format.js";
+import { deletionState } from "../lib/format.js";
 
 const KIND_PRESENTATION: Record<
   ArtifactKind,
@@ -35,8 +35,8 @@ export function ArtifactStatusBadge({
 }: {
   artifact: LibraryArtifact;
 }) {
-  if (expiryState(artifact.expiresAt).state === "expired") {
-    return <Badge variant="danger">Expired</Badge>;
+  if (deletionState(artifact.expiresAt).state === "expired") {
+    return <Badge variant="danger">Deleting soon</Badge>;
   }
   if (artifact.visibility !== "public") {
     return <Badge variant="muted">Private</Badge>;

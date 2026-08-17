@@ -91,7 +91,7 @@ carry a select.
 | #  | Done | Title | Scope | Depends on |
 |----|------|-------|-------|------------|
 | 01 | ✅ | [Move retention out of the Share dialog](./01-retention-out-of-share-dialog.md) | New retention dialog, new row-menu action, ungated by visibility; expiry removed from `ShareDialog` | — |
-| 02 | ☐ | [Say "deletes", not "expires"](./02-deletes-not-expires-vocabulary.md) | Row label, badge, page subtitle, share-host expired page, MCP tool description | 01 |
+| 02 | ✅ | [Say "deletes", not "expires"](./02-deletes-not-expires-vocabulary.md) | Row label, badge, page subtitle, share-host expired page, MCP tool description | 01 |
 
 Slice 01 is the fix that matters: it alone closes the reported confusion and
 makes a pending deletion visible and cancellable. Slice 02 is copy-only.
