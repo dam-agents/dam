@@ -13,10 +13,7 @@ export async function processEvents(
   for (const e of events) {
     const { key, ts } = splitEventId(e.id);
     const state = stateStore.read();
-    if (
-      e.version <= state.lastAppliedVersion ||
-      ts <= (state.eventRuns[key] ?? 0)
-    ) {
+    if (ts <= (state.eventRuns[key] ?? 0)) {
       log(`[runtime] event ${e.id} already run; skipping`);
       settled.push(e.id);
       continue;
