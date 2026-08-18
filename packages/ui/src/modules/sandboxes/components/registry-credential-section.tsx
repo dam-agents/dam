@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { labelVariants } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
 
 export interface RegistryCredential {
@@ -85,9 +86,7 @@ export function RegistryCredentialSection({
             />
           </FormField>
           {partial && (
-            <p className="text-xs text-destructive">
-              Enter server, username, and password — or clear all three to skip.
-            </p>
+            <FormError message="Enter server, username, and password — or clear all three to skip." />
           )}
         </div>
       )}

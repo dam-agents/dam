@@ -76,7 +76,7 @@ export function ImageSection({
           selected={customImage.trim().length > 0}
           onChange={onCustomImageChange}
           onSubmit={onSubmit}
-          registry={registry}
+          registry={customImage.trim().length > 0 ? registry : undefined}
         />
       </CardList>
     </section>

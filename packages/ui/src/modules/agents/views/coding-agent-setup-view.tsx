@@ -5,10 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import {
-  EMPTY_REGISTRY_CREDENTIAL,
-  registryFilledCount,
-} from "../../sandboxes/components/registry-credential-section.js";
+import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
@@ -24,6 +21,12 @@ import {
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
+import {
+  buildCodingAgentSetupInput,
+  type CodingAgentSetupDraft,
+  hasPartialRegistryCredential,
+  isCodingAgentSetupComplete,
+} from "../lib/create-agent-input.js";
 
 const RETURN_PATH = routeToPath({ view: "coding-agent-new" });
 
@@ -59,38 +62,23 @@ export function CodingAgentSetupView() {
     }
   }, [isLoading, harnesses, form.templateId, form.customImage, update]);
 
-  const image = form.customImage.trim();
-  const registryFilled = registryFilledCount(registryCredential);
-  const registryPartial = registryFilled > 0 && registryFilled < 3;
-  const canCreate =
-    form.name.trim().length > 0 &&
-    form.providerRef !== null &&
-    (form.templateId !== null || image.length > 0) &&
-    !registryPartial &&
-    !createAgent.isPending;
+  const draft: CodingAgentSetupDraft = {
+    name: form.name,
+    templateId: form.templateId,
+    customImage: form.customImage,
+    providerRef: form.providerRef,
+    connectionIds: form.connectionIds,
+    registryCredential,
+  };
+  const registryPartial = hasPartialRegistryCredential(draft);
+  const canCreate = isCodingAgentSetupComplete(draft) && !createAgent.isPending;
 
   const create = async () => {
     if (!canCreate) return;
-    const connectionIds = [
-      ...form.connectionIds,
-      ...(form.providerRef ? [form.providerRef.id] : []),
-    ];
     try {
-      const agent = await createAgent.mutateAsync({
-        name: form.name.trim(),
-        egressPreset: "trusted",
-        ...(image ? { image } : { templateId: form.templateId ?? undefined }),
-        ...(connectionIds.length ? { appConnectionIds: connectionIds } : {}),
-        ...(image && registryFilled === 3
-          ? {
-              registryCredential: {
-                server: registryCredential.server.trim(),
-                username: registryCredential.username.trim(),
-                password: registryCredential.password,
-              },
-            }
-          : {}),
-      });
+      const agent = await createAgent.mutateAsync(
+        buildCodingAgentSetupInput(draft),
+      );
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);
