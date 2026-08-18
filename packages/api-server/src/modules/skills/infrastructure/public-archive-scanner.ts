@@ -4,10 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as tar from "tar";
 import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
+import type { SourcePathReason } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { detectHost } from "../domain/git-host.js";
-import type { SourcePathReason } from "../domain/scan-failure.js";
 
 export class PublicArchiveNotFoundError extends Error {
   constructor(gitUrl: string) {
@@ -19,10 +19,10 @@ export class PublicArchiveNotFoundError extends Error {
 export class SkillSourcePathError extends Error {
   constructor(
     readonly reason: SourcePathReason,
-    readonly path: string,
+    readonly subPath: string,
     readonly version: string,
   ) {
-    super(`skill source path ${reason}: ${path}`);
+    super(`skill source path ${reason}: ${subPath}`);
     this.name = "SkillSourcePathError";
   }
 }

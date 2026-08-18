@@ -1,3 +1,4 @@
+import type { SourcePathReason } from "agent-runtime-api";
 import type { ScanFailure, ScanFailureCode } from "api-server-api";
 
 const COPY: Record<ScanFailureCode, Omit<ScanFailure, "code">> = {
@@ -49,8 +50,6 @@ export function scanFailure(
 ): ScanFailure {
   return { code, ...COPY[code], ...override };
 }
-
-export type SourcePathReason = "path-missing" | "path-empty";
 
 export function sourcePathFailure(
   reason: SourcePathReason,

@@ -43,7 +43,9 @@ export type {
   SkillsService,
   SkillUninstallInput,
   SkillWriteLocalInput,
+  SourcePathReason,
 } from "./modules/skills/types.js";
+export { SOURCE_PATH_REASONS } from "./modules/skills/types.js";
 export {
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,

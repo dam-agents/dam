@@ -81,6 +81,10 @@ export interface GitHubErrorBody {
   provider?: string;
 }
 
+export const SOURCE_PATH_REASONS = ["path-missing", "path-empty"] as const;
+
+export type SourcePathReason = (typeof SOURCE_PATH_REASONS)[number];
+
 export type SkillsDomainError =
   | { kind: "InvalidSkillName"; name: string; reason: string }
   | { kind: "InvalidSkillPath"; path: string; reason: string }
@@ -89,6 +93,13 @@ export type SkillsDomainError =
   | { kind: "SkillAlreadyExists"; names: string[] }
   | { kind: "PayloadTooLarge"; detail: string }
   | { kind: "SourceFetchFailed"; source: string; detail: string }
+  | {
+      kind: "SourcePathNotFound";
+      source: string;
+      path: string;
+      version?: string;
+    }
+  | { kind: "SourcePathEmpty"; source: string; path: string; version?: string }
   | {
       kind: "UpstreamGitHubError";
       method: string;

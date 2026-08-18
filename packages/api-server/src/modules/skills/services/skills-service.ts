@@ -45,6 +45,7 @@ import { isUniqueViolation } from "../../../core/db-errors.js";
 import {
   AgentRuntimeClientError,
   AgentRuntimeConflictError,
+  AgentRuntimeSourcePathError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
@@ -291,7 +292,15 @@ async function scanForSource(
     if (hasScanFailure(err)) throw err;
     if (err instanceof SkillSourcePathError) {
       throw scanFailureToTrpc(
-        sourcePathFailure(err.reason, { path: err.path, version: err.version }),
+        sourcePathFailure(err.reason, {
+          path: err.subPath,
+          version: err.version,
+        }),
+      );
+    }
+    if (err instanceof AgentRuntimeSourcePathError && src.path) {
+      throw scanFailureToTrpc(
+        sourcePathFailure(err.reason, { path: src.path, version: err.version }),
       );
     }
     getLogger().error(

@@ -6,6 +6,7 @@ import type {
   SkillsDomainError,
 } from "agent-runtime-api";
 import { dedupeByName, err, ok } from "agent-runtime-api";
+import type { SourcePathReason } from "agent-runtime-api";
 import {
   detectGithubOwnerRepo,
   type DetectedOwnerRepo,
@@ -19,6 +20,20 @@ export interface ScanDeps {
   git: GitProtocolClient;
   repo: LocalSkillRepository;
   log: (msg: string) => void;
+}
+
+function sourcePathError(
+  reason: SourcePathReason,
+  source: string,
+  subPath: string,
+  version?: string,
+): Result<never, SkillsDomainError> {
+  return err({
+    kind: reason === "path-missing" ? "SourcePathNotFound" : "SourcePathEmpty",
+    source,
+    path: subPath,
+    ...(version !== undefined ? { version } : {}),
+  });
 }
 
 export async function runScan(
@@ -89,9 +104,12 @@ async function scanGitClone(
     const cloned = await deps.git.cloneShallow(source, tmp, 50);
     if (!cloned.ok) return cloned;
 
-    const skillDirs = await deps.repo.findSkillDirsInClone(tmp, subPath);
+    const outcome = await deps.repo.findSkillDirsInClone(tmp, subPath);
+    if (outcome.kind !== "found") {
+      return sourcePathError(outcome.kind, source, outcome.subPath);
+    }
     const out: ScannedSkill[] = [];
-    for (const rel of skillDirs) {
+    for (const rel of outcome.dirs) {
       const absDir = path.join(tmp, rel);
       const fm = await deps.repo.readSkillManifest(absDir);
       const versionRes = await deps.git.lastTouchingSha(tmp, rel);
@@ -117,9 +135,12 @@ async function collectSkills(
   version: string,
   subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  const skillDirs = await deps.repo.findSkillDirsInClone(repoDir, subPath);
+  const outcome = await deps.repo.findSkillDirsInClone(repoDir, subPath);
+  if (outcome.kind !== "found") {
+    return sourcePathError(outcome.kind, source, outcome.subPath, version);
+  }
   const out = await Promise.all(
-    skillDirs.map(async (rel) => {
+    outcome.dirs.map(async (rel) => {
       const absDir = path.join(repoDir, rel);
       const fm = await deps.repo.readSkillManifest(absDir);
       const contentHash = await deps.repo.hashSkillDir(absDir);
