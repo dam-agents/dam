@@ -12,7 +12,6 @@ const canonicalPaths = [
   "/terms",
   "/telegram/bind",
   "/slack/bind",
-  "/sandboxes/new",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/coding-agents",
@@ -31,8 +30,8 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it("parses /sandboxes/new as the wizard, not a sandbox id", () => {
-    expect(parseRoute("/sandboxes/new").view).toBe("sandbox-new");
+  it("parses the legacy /sandboxes/new as the coding agent setup page", () => {
+    expect(parseRoute("/sandboxes/new").view).toBe("coding-agent-new");
   });
 
   it("parses /knowledge-bases/new as its setup page, not a KB id", () => {

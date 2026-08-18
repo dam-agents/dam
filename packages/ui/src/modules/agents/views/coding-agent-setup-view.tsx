@@ -17,9 +17,11 @@ import {
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { imageCatalogue } from "../../sandboxes/lib/image-catalogue.js";
+import {
+  imageCatalogue,
+  KINDED_HARNESS_TEMPLATE_ID,
+} from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
-import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/wizard-snapshot.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 

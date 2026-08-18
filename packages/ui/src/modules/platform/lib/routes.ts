@@ -30,7 +30,6 @@ export type Route =
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
-  | { view: "sandbox-new" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "coding-agents" }
   | { view: "coding-agent-new" }
@@ -71,7 +70,7 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (path === "/sandboxes/new") return { view: "sandbox-new" };
+  if (path === "/sandboxes/new") return { view: "coding-agent-new" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -127,8 +126,6 @@ export function routeToPath(route: Route): string {
       return "/telegram/bind";
     case "slack-bind":
       return "/slack/bind";
-    case "sandbox-new":
-      return "/sandboxes/new";
     case "sandbox-home": {
       const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
       return route.sandboxSection === "setup"

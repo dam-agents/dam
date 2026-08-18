@@ -21,7 +21,6 @@ import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
-import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -57,7 +56,6 @@ export default function App() {
 }
 
 const SETUP_VIEWS = new Set<Route["view"]>([
-  "sandbox-new",
   "coding-agent-new",
   "experiment-new",
   "knowledge-base-new",
@@ -111,9 +109,7 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
-          {view === "sandbox-new" ? (
-            <SandboxWizardView />
-          ) : view === "sandbox-home" ? (
+          {view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />

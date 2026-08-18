@@ -24,7 +24,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "vm-sandboxes",
     label: "VM sandboxes",
     description:
-      "Adds the “Run as a virtual machine” switch to the create-sandbox wizard, revealing images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container.",
+      "Reveals images that boot a full VM — systemd, docker and k3s inside the sandbox — instead of a container, in the coding agent’s image list.",
   },
   {
     id: "session-costs",

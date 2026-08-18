@@ -38,14 +38,16 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
   });
 
-  await test.step("pick the mock image", async () => {
+  await test.step("open the coding agent setup page", async () => {
     await page
       .getByRole("button", { name: /create sandbox|create a coding agent/i })
       .first()
       .click();
-    await page.getByTestId("starting-point-general-purpose").click();
+    await expect(page.getByTestId("provider-select")).toBeVisible();
+  });
+
+  await test.step("pick the mock image", async () => {
     await page.getByTestId(`template-card-${harnessName}`).click();
-    await page.getByRole("button", { name: /continue/i }).click();
   });
 
   await test.step("name the sandbox and connect a provider", async () => {
@@ -57,8 +59,6 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog).toBeHidden();
-
-    await page.getByRole("button", { name: /continue/i }).click();
   });
 
   await test.step("grant the connection and create", async () => {
@@ -77,7 +77,7 @@ test("create a mock agent with the connection attached", async ({ page }) => {
       page.getByTestId(`catalog-connection-${connectionId}`),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: /create sandbox/i }).click();
+    await page.getByRole("button", { name: /create coding agent/i }).click();
   });
 
   await test.step("agent reaches running", async () => {
