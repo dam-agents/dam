@@ -8,9 +8,9 @@ import {
 } from "../events.js";
 import { getLogger } from "../core/logger.js";
 import { formatError } from "../core/format-error.js";
-import { recordTurn } from "../core/turn-metrics.js";
+import { toTurnSurface, type TurnMetrics } from "../core/turn-metrics.js";
 
-export function startTurnMetricsSaga(): Subscription {
+export function startTurnMetricsSaga(turns: TurnMetrics): Subscription {
   const sub = new Subscription();
 
   function on<T extends ChannelTurnRelayed | SessionTurnRelayed>(
@@ -22,7 +22,7 @@ export function startTurnMetricsSaga(): Subscription {
         .pipe(ofType<T>(type))
         .subscribe((event) => {
           try {
-            recordTurn(surfaceOf(event));
+            turns.recordTurn(toTurnSurface(surfaceOf(event)));
           } catch (err) {
             getLogger().error(
               { sourceEvent: type, reason: formatError(err) },

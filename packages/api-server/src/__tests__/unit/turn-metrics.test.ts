@@ -1,6 +1,5 @@
 /** TEST_OVERVIEW: the turn counter that makes browser and messenger turns
  *  comparable — one OTel series per originating surface, fed from the bus. */
-import { metrics } from "@opentelemetry/api";
 import {
   AggregationTemporality,
   InMemoryMetricExporter,
@@ -11,14 +10,16 @@ import type { Subscription } from "rxjs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emit, EventType } from "../../events.js";
 import {
-  recordTurn,
-  resetTurnMetricsForTest,
+  createTurnMetrics,
+  toTurnSurface,
+  type TurnMetrics,
 } from "../../core/turn-metrics.js";
 import { startTurnMetricsSaga } from "../../sagas/turn-metrics.js";
 
 describe("turn metrics", () => {
   let reader: PeriodicExportingMetricReader;
   let meterProvider: MeterProvider;
+  let turns: TurnMetrics;
   let saga: Subscription | null = null;
 
   beforeEach(() => {
@@ -27,16 +28,13 @@ describe("turn metrics", () => {
       exportIntervalMillis: 3_600_000,
     });
     meterProvider = new MeterProvider({ readers: [reader] });
-    metrics.setGlobalMeterProvider(meterProvider);
-    resetTurnMetricsForTest();
+    turns = createTurnMetrics(meterProvider.getMeter("test"));
   });
 
   afterEach(async () => {
     saga?.unsubscribe();
     saga = null;
     await meterProvider.shutdown();
-    metrics.disable();
-    resetTurnMetricsForTest();
   });
 
   async function seriesBySurface() {
@@ -55,7 +53,7 @@ describe("turn metrics", () => {
   /** TEST_SCENARIO: the surface must be the only dimension, and it must be the
    *  attribute key a dashboard groups on. */
   it("counts one turn against its surface", async () => {
-    recordTurn("ui");
+    turns.recordTurn("ui");
 
     expect(await seriesBySurface()).toEqual(new Map([["ui", 1]]));
   });
@@ -63,8 +61,8 @@ describe("turn metrics", () => {
   /** TEST_SCENARIO: the whole point is comparing surfaces, so each must
    *  accumulate on its own series rather than into one total. */
   it("keeps every surface on its own series", async () => {
-    for (const surface of ["ui", "ui", "slack", "telegram", "cli"])
-      recordTurn(surface);
+    for (const surface of ["ui", "ui", "slack", "telegram", "cli"] as const)
+      turns.recordTurn(surface);
 
     expect(await seriesBySurface()).toEqual(
       new Map([
@@ -80,7 +78,7 @@ describe("turn metrics", () => {
    *  caller's token; channel turns carry their messenger. Both must land on the
    *  same counter or the counts are not comparable. */
   it("counts relay turns and channel turns from the bus", async () => {
-    saga = startTurnMetricsSaga();
+    saga = startTurnMetricsSaga(turns);
 
     emit({
       type: EventType.SessionTurnRelayed,
@@ -115,7 +113,7 @@ describe("turn metrics", () => {
   /** TEST_SCENARIO: a failed channel turn is still a turn someone drove, so it
    *  counts — the counter measures what was asked, not what came back. */
   it("counts a failed turn the same as a successful one", async () => {
-    saga = startTurnMetricsSaga();
+    saga = startTurnMetricsSaga(turns);
 
     emit({
       type: EventType.ChannelTurnRelayed,
@@ -128,13 +126,21 @@ describe("turn metrics", () => {
     expect(await seriesBySurface()).toEqual(new Map([["slack", 1]]));
   });
 
-  /** TEST_SCENARIO: telemetry is off by default, so an unregistered meter
-   *  provider must be a no-op rather than break a turn. */
-  it("is a no-op when no meter provider is registered", async () => {
-    await meterProvider.shutdown();
-    metrics.disable();
-    resetTurnMetricsForTest();
+  /** TEST_SCENARIO: the events type their surface as a bare string, so an
+   *  unrecognized value must fall into a known bucket rather than mint a new
+   *  time series per value. */
+  it("folds an unrecognized surface into the other bucket", async () => {
+    saga = startTurnMetricsSaga(turns);
 
-    expect(() => recordTurn("ui")).not.toThrow();
+    emit({
+      type: EventType.SessionTurnRelayed,
+      agentId: "agent-1",
+      actorSub: "user-1",
+      surface: "surface-that-does-not-exist",
+    });
+
+    expect(await seriesBySurface()).toEqual(new Map([["other", 1]]));
+    expect(toTurnSurface("ui")).toBe("ui");
+    expect(toTurnSurface("")).toBe("other");
   });
 });

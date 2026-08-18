@@ -1,22 +1,36 @@
-import { metrics, type Counter } from "@opentelemetry/api";
+import { metrics, type Meter } from "@opentelemetry/api";
 
 const SCOPE = "platform-apiserver";
 
-let counter: Counter | null = null;
+export const TURN_SURFACES = [
+  "ui",
+  "cli",
+  "other",
+  "slack",
+  "telegram",
+] as const;
 
-function getCounter(): Counter {
-  if (!counter) {
-    counter = metrics.getMeter(SCOPE).createCounter("platform.turn.total", {
-      description: "Turns submitted to an agent, by originating surface",
-    });
-  }
-  return counter;
+export type TurnSurface = (typeof TURN_SURFACES)[number];
+
+export function toTurnSurface(raw: string): TurnSurface {
+  return (TURN_SURFACES as readonly string[]).includes(raw)
+    ? (raw as TurnSurface)
+    : "other";
 }
 
-export function recordTurn(surface: string): void {
-  getCounter().add(1, { "platform.turn.surface": surface });
+export interface TurnMetrics {
+  recordTurn(surface: TurnSurface): void;
 }
 
-export function resetTurnMetricsForTest(): void {
-  counter = null;
+export function createTurnMetrics(
+  meter: Meter = metrics.getMeter(SCOPE),
+): TurnMetrics {
+  const total = meter.createCounter("platform.turn.total", {
+    description: "Turns submitted to an agent, by originating surface",
+  });
+  return {
+    recordTurn(surface) {
+      total.add(1, { "platform.turn.surface": surface });
+    },
+  };
 }
