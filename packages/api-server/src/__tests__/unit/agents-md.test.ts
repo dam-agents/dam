@@ -8,11 +8,24 @@ describe("buildAppendAgentsMdCommand", () => {
     expect(command).not.toMatch(/[^>]> /);
   });
 
-  it("links CLAUDE.md to AGENTS.md only when nothing is there yet", () => {
+  it("links CLAUDE.md to AGENTS.md only when nothing is there yet, dangling links included", () => {
     const command = buildAppendAgentsMdCommand("hello");
     expect(command).toContain(
-      '[ -e "$HOME/.claude/CLAUDE.md" ] || ln -s "$HOME/.agents/AGENTS.md" "$HOME/.claude/CLAUDE.md"',
+      '[ -e "$HOME/.claude/CLAUDE.md" ] || [ -L "$HOME/.claude/CLAUDE.md" ] || ln -s "$HOME/.agents/AGENTS.md" "$HOME/.claude/CLAUDE.md"',
     );
+  });
+
+  it("skips the append when the section's first non-empty line is already present", () => {
+    const command = buildAppendAgentsMdCommand("\n## Purpose\nbody");
+    expect(command).toContain(
+      `grep -qsxF '## Purpose' "$HOME/.agents/AGENTS.md" || printf`,
+    );
+  });
+
+  it("appends unconditionally when the section has no non-empty line", () => {
+    const command = buildAppendAgentsMdCommand("\n\n");
+    expect(command).not.toContain("grep");
+    expect(command).toContain('>> "$HOME/.agents/AGENTS.md"');
   });
 
   it("creates the directories before writing", () => {

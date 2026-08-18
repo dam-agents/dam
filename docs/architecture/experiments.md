@@ -44,14 +44,14 @@ destination has nothing to show and the user has nothing to click.
 So creating one is a first-class flow: an **experiment sandbox** is an Agent
 carrying the `experiment` [Agent Kind](knowledge-bases.md) whose Install Command
 copies the `dam-experiment` authoring skill and an `/experiment-onboard` command
-out of a path staged in the image, and appends a sandbox-purpose note to
-`~/.agents/AGENTS.md` so every session — not only the greeted first one — opens
-knowing that "experiment" means a platform Experiment. AGENTS.md is the source
-of truth and a symlink makes Claude Code read it, mirroring the image's
-`/etc/AGENTS.md` pattern at `$HOME` level. The note rides the shared append-only
-primitive (`buildAppendAgentsMdCommand` in the agents module), so later writers
-compose instead of clobbering each other.
-It rides the same kinded-create rail as a
+out of a path staged in the image, and appends a sandbox-purpose note to the
+pod's user-level AGENTS.md so every session — not only the greeted first one —
+opens knowing that "experiment" means a platform Experiment. AGENTS.md is the
+source of truth and a symlink makes Claude Code read it, mirroring the image's
+`/etc/AGENTS.md` pattern at `$HOME` level. The note rides a shared append
+primitive in the agents module that skips sections already present, so a
+replayed install or a later writer composes instead of duplicating or
+clobbering. It rides the same kinded-create rail as a
 Knowledge Base, differing only in the marker and the command; nothing is fetched
 over the network, because the kit ships with the image. The skill used to be baked
 into every Claude Code sandbox's seeded workspace — moving it behind the marker is
