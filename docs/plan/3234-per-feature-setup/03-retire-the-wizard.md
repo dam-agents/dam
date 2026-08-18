@@ -23,7 +23,9 @@ Keep the path resolving — it is in browser histories, and `app.tsx` skips its 
 - `hooks/use-sandbox-wizard.ts`
 - Its branch in `app.tsx`, and `navigateToCreateSandbox` in `modules/platform/store/navigation.ts` once nothing calls it.
 
-Keep everything the setup pages compose: `steps/harness-card.tsx`, `steps/workload-card.tsx`, `steps/kb-template-card.tsx`, `steps/custom-image-card.tsx`, `steps/selectable-card.tsx`, `steps/card-content.tsx`, `steps/card-tags.tsx`, `card-list.tsx`, `registry-credential-section.tsx`, `granted-connections-panel.tsx`, `lib/image-catalogue.ts`, `lib/sandbox-name.ts`, `lib/provider-connections.ts`.
+Keep everything the setup pages compose: `steps/harness-card.tsx`, `steps/kb-template-card.tsx`, `steps/custom-image-card.tsx`, `steps/selectable-card.tsx`, `steps/card-content.tsx`, `steps/card-tags.tsx`, `card-list.tsx`, `registry-credential-section.tsx`, `granted-connections-panel.tsx`, `lib/sandbox-name.ts`, `lib/provider-connections.ts`.
+
+Two more things fall dead now that specialized images are not offered: `steps/workload-card.tsx`, whose only caller was the wizard's starting-point step, and the `preconfigured` half of `lib/image-catalogue.ts`. Delete the card; reduce the catalogue to the harness list it still serves, keeping its `vm-sandboxes` filtering. Grep first — if anything outside the wizard reads `preconfigured`, stop and report rather than deleting.
 
 `step-header.tsx` may be used outside the wizard — grep before deleting, and the same for every file above. `NETWORK_PRESETS` currently lives in `setup-step.tsx`; grep for it, because the sandbox settings surface may import it from there.
 

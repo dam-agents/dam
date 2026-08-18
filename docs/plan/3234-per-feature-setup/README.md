@@ -27,7 +27,7 @@ Today all three funnel through one three-step wizard whose first step asks "whic
 **Decisions taken with the user.** These are settled; do not relitigate them while implementing:
 
 - **Size and network access leave creation.** Neither appears in the prototype. A new sandbox takes the template's size and the `trusted` egress preset, both editable in sandbox settings immediately after creation. `egressPreset` still reaches the create call — as a constant, not a question.
-- **Specialized images live in the coding-agent page's image grid**, as a labelled group after the harnesses, keeping their experimental badge. The chart ships seven of them enabled (`k-search`, `nous`, `openevolve`, `shinkaevolve`, `gepa`, `adaevolve`, `evox`), the newest added twelve days before this plan, so they must stay creatable. The prototype shows only harnesses; this is a deliberate addition.
+- **Specialized images are not offered at all.** The image grid lists harnesses only, as the prototype draws it. Specialized sandboxes are being retired and will return in a later design iteration as part of experiments, so the `preconfigured` category needs no home here. Consequence to be aware of: the chart still ships seven of them enabled (`k-search`, `nous`, `openevolve`, `shinkaevolve`, `gepa`, `adaevolve`, `evox`), so until those entries go, they are installed but not creatable from the UI. Removing them from the chart is not this feature's job.
 - **Routes are resource-shaped** (`/coding-agents/new`, not the prototype's `/agent-setup`), matching the rest of the app.
 - **The wizard is deleted**, not kept alongside. `/sandboxes/new` redirects to the coding-agent page.
 

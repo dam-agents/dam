@@ -21,8 +21,8 @@ Reuse the shell, the name, provider and connections sections from slice 01. Pass
 
 Source the lists from `lib/image-catalogue.ts` — it already splits templates into `harnesses` and `preconfigured`, and already hides VM images unless the `vm-sandboxes` feature flag is on (read it with `useFeatures()`, as `sandbox-wizard-view.tsx` does).
 
-- **Harnesses** first, in a two-column grid of `steps/harness-card.tsx`. Preselect `claude-code` on first mount when it is installed — do not hard-fail when it is not; a platform can ship without it.
-- **Specialized** second, under its own `SectionLabel`, using `steps/workload-card.tsx` (which already renders the experimental badge). The prototype omits this group; it is a deliberate addition, because the chart ships seven of these enabled. When none are installed — as on a dev cluster with only `claude-code` and `mock` — render nothing rather than an empty group.
+- **Harnesses only**, in a two-column grid of `steps/harness-card.tsx`. Preselect `claude-code` on first mount when it is installed — do not hard-fail when it is not; a platform can ship without it.
+- **No specialized group.** The `preconfigured` half of the catalogue is deliberately not offered: specialized sandboxes are being retired and will return later as part of experiments. Do not render them, and do not add a fallback that lists them.
 - A `setupNote` on the chosen template still has to reach the user: today `steps/setup-step.tsx` renders it as an info callout on step 2. Show it under the image grid once a template that has one is picked.
 
 ### 3. Custom image
@@ -49,7 +49,7 @@ Leave `/sandboxes/new` alone — slice 03 redirects it.
 
 - [ ] `mise run --force ui:check`, `--force ui:test` and `--force common:check:comment-types` pass.
 - [ ] `/coding-agents/new` opens with a generated name, Claude Code selected, and LiteLLM selected where the user has one.
-- [ ] Every installed harness appears; specialized images appear in their own labelled group with the experimental badge; a cluster with no specialized images shows no empty group.
+- [ ] Every installed harness appears, and no specialized (`preconfigured`) image appears anywhere on the page.
 - [ ] VM images appear only when the `vm-sandboxes` flag is on.
 - [ ] Picking a template clears a typed custom image, and typing a custom image clears the template selection.
 - [ ] A template's `setupNote` is shown when that template is chosen.
@@ -69,6 +69,6 @@ Then on the dev server at `localhost:5173`:
 1. Reach the page from Home's card, from the Coding agents page button, and from Home's "Create sandbox" button.
 2. Confirm the defaults, create with Claude Code, and confirm the sandbox reaches running and opens in chat.
 3. Type a custom image and confirm the template selection clears; fill one registry field only and confirm creation is blocked with an explanation; complete the three and confirm it creates.
-4. Note in your report whether specialized images could be exercised — the dev cluster installs only `claude-code` and `mock`, so the group is likely absent there, and its rendering is then verified only by the type-checker.
+4. Confirm the grid lists only harnesses. The dev cluster installs only `claude-code` and `mock`, both harnesses, so also check the code path: nothing on the page reads the catalogue's `preconfigured` list.
 
 Run this, then print a short manual smoke-test guide so the user can confirm it by hand.
