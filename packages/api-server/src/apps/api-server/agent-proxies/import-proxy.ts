@@ -1,7 +1,6 @@
 import { request as httpRequest } from "node:http";
 import { Readable, Transform } from "node:stream";
 import type { Context } from "hono";
-import type { UserIdentity } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType, type TurnOutcome } from "../../../events.js";
@@ -11,6 +10,7 @@ import {
 } from "../../../modules/agents/index.js";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
+import type { ApiVariables } from "../deps.js";
 
 const PROXY_RESPONSE_HEADER_ALLOWLIST = new Set([
   "content-type",
@@ -38,7 +38,7 @@ export interface ImportProxyDeps {
 }
 
 type ImportCtx = Context<{
-  Variables: { user: UserIdentity; roles: string[] };
+  Variables: ApiVariables;
 }>;
 
 export function createImportProxy(deps: ImportProxyDeps) {
@@ -92,6 +92,7 @@ export function createImportProxy(deps: ImportProxyDeps) {
         type: EventType.FilesImported,
         actorSub: user.sub,
         agentId,
+        surface: c.get("surface"),
         outcome,
         bytes: length,
       });

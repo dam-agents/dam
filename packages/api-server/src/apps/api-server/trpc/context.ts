@@ -68,7 +68,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     liveEvents,
   } = boot;
 
-  return (user: UserIdentity): ApiContext => {
+  return (user: UserIdentity, surface: string): ApiContext => {
     const { templates, readSpec: readTemplateSpec } =
       composeTemplatesModule(templatesRepo);
     const connections = composeConnectionsForOwner({
@@ -156,6 +156,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { knowledgeBases } = composeKnowledgeBasesForOwner({
       owner: user.sub,
+      surface,
       agents,
       runtimeMutator,
       wakeAgent: async (agentId) => {
@@ -163,6 +164,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
     });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
+      surface,
       db,
       artifacts,
       owner: user.sub,
@@ -171,6 +173,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
+      surface,
       artifactLibrary,
       agents,
       pin: {
@@ -184,8 +187,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         await agentsRepo.wakeIfHibernated(agentId);
       },
     });
-    const { features } = composeFeaturesForOwner({ db, owner: user.sub });
+    const { features } = composeFeaturesForOwner({
+      db,
+      owner: user.sub,
+      surface,
+    });
     const skills = composeSkillsModule({
+      surface,
       api,
       namespace: config.namespace,
       owner: user.sub,
@@ -217,11 +225,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
-    const files = composeFilesModule(api, config.namespace, user.sub);
-    const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
+    const files = composeFilesModule(api, config.namespace, user.sub, surface);
+    const apiKeys = apiKeysModule.createService({
+      ownerSub: user.sub,
+      surface,
+    });
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
       ownerSub: user.sub,
+      surface,
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,

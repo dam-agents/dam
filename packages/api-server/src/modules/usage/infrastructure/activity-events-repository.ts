@@ -5,12 +5,20 @@ import type { ActivityEventRow } from "../domain/types.js";
 
 export function insertActivityEvent(db: Db, pseudo: SubPseudonymizer) {
   return async (row: ActivityEventRow): Promise<void> => {
+    const { externalActorId, ownerSub, ...rest } = row;
     await db
       .insert(activityEvents)
       .values({
         id: randomUUID(),
-        ...row,
+        ...rest,
         actorSub: pseudo.hashSub(row.actorSub),
+        payload: {
+          ...row.payload,
+          ...(externalActorId
+            ? { externalActorId: pseudo.hashSub(externalActorId) }
+            : {}),
+          ...(ownerSub ? { ownerSub: pseudo.hashSub(ownerSub) } : {}),
+        },
       })
       .onConflictDoNothing();
   };

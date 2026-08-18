@@ -7,7 +7,9 @@ import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import type { SessionPresence } from "./session-presence.js";
+import type { RelayActor } from "./upgrade.js";
 import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
+import { emit, EventType } from "../../../events.js";
 
 const DEBOUNCE_MS = 30_000;
 
@@ -19,6 +21,7 @@ interface JsonRpcRequest {
     sessionId?: string;
     options?: { optionId: string; kind?: string }[];
     toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown };
+    _meta?: { platform?: { initiator?: string } };
   };
 }
 
@@ -47,6 +50,10 @@ function isRequest(msg: unknown): msg is JsonRpcRequest {
 
 function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
   return isRequest(msg) && msg.method === "session/request_permission";
+}
+
+function isPrompt(msg: unknown): msg is JsonRpcRequest {
+  return isRequest(msg) && msg.method === "session/prompt";
 }
 
 function isResponse(msg: unknown): msg is JsonRpcResponse {
@@ -112,6 +119,7 @@ export function createAcpRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
@@ -157,6 +165,21 @@ export function createAcpRelay(
             options,
           })
           .catch(() => {});
+      }
+
+      function trackIfPrompt(parsed: unknown): void {
+        if (!isPrompt(parsed)) return;
+        if (
+          actor.surface === "ui" &&
+          parsed.params?._meta?.platform?.initiator === "system"
+        )
+          return;
+        emit({
+          type: EventType.SessionTurnRelayed,
+          agentId,
+          actorSub: actor.sub,
+          surface: actor.surface,
+        });
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
@@ -209,6 +232,7 @@ export function createAcpRelay(
           }
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
+              if (!msg.isBinary) trackIfPrompt(tryParse(msg.data));
               upstream.send(msg.data, { binary: msg.isBinary });
             }
           }
@@ -217,6 +241,9 @@ export function createAcpRelay(
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
+
+            const parsed = isBinary ? null : tryParse(data);
+            if (parsed !== null) trackIfPrompt(parsed);
 
             if (!passive && shouldUpdateActivity(agentId)) {
               repo
@@ -232,8 +259,6 @@ export function createAcpRelay(
               upstream.send(data, { binary: true });
               return;
             }
-
-            const parsed = tryParse(data);
 
             upstream.send(data, { binary: false });
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);

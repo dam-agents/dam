@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import { TRPCError } from "@trpc/server";
 import type {
   ApiKeyCreateInput,
@@ -13,6 +14,7 @@ const MAX_ACTIVE_KEYS_PER_OWNER = 50;
 
 export interface ApiKeysServiceDeps {
   ownerSub: string;
+  surface: string;
   list: (ownerSub: string) => Promise<ApiKeyRow[]>;
   insert: (row: {
     id: string;
@@ -103,12 +105,24 @@ export function createApiKeysService(deps: ApiKeysServiceDeps): ApiKeysService {
         expiresAt,
       });
 
+      emit({
+        type: EventType.ApiKeyChanged,
+        action: "created",
+        actorSub: deps.ownerSub,
+        surface: deps.surface,
+      });
       return { key: rowToView(row), plaintext: token };
     },
 
     async revoke(id: string) {
       const ok = await deps.revoke(id, deps.ownerSub);
       if (!ok) throw new TRPCError({ code: "NOT_FOUND" });
+      emit({
+        type: EventType.ApiKeyChanged,
+        action: "revoked",
+        actorSub: deps.ownerSub,
+        surface: deps.surface,
+      });
     },
   };
 }

@@ -1,5 +1,4 @@
 import { serve } from "@hono/node-server";
-import type { UserIdentity } from "api-server-api";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
 import {
@@ -21,7 +20,7 @@ import {
   relayRoute,
   selfAuthenticated,
 } from "./agent-proxies/index.js";
-import type { ApiServerDeps } from "./deps.js";
+import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
 import {
   createApiContextFactory,
@@ -63,9 +62,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     authenticatePrincipal(deps.auth.verify, token, site);
   const termsGate = createTermsGate({ terms: deps.terms });
 
-  const app = new Hono<{
-    Variables: { user: UserIdentity; roles: string[] };
-  }>();
+  const app = new Hono<{ Variables: ApiVariables }>();
 
   app.use("*", deps.shareHostGate);
   app.use("*", securityHeaders);
@@ -128,6 +125,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     authenticate,
     verifyOwner,
     isTermsAccepted: deps.isTermsAccepted,
+    surfaceAttribution: deps.surfaceAttribution,
   });
   const acpRelay = createAcpRelay(
     config.namespace,

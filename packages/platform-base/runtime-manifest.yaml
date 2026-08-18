@@ -1,7 +1,7 @@
 # Default manifest for platform-base. Built-in drivers (env, file, mcp-entry,
 # skill-ref, trigger, schedule-reset, workspace-seed) are on by default, so this
 # declares nothing. Concrete images add a `drivers:` entry only to configure,
-# override, or disable a kind — see docs/architecture/connections.md.
+# override, or disable a kind — see docs/architecture/runtime-delivery.md.
 manifestVersion: 1
 
 drivers: {}

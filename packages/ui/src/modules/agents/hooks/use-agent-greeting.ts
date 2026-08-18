@@ -43,6 +43,6 @@ export function useAgentGreeting(opts: AgentGreetingOptions) {
     }
     if (setupReady === false) return;
     greetedForAgentRef.current = agentId;
-    void sendPrompt(command, undefined, { hidden: true });
+    void sendPrompt(command, undefined, { hidden: true, initiator: "system" });
   }, [armed, agentId, sessions, setupReady, command, sendPrompt]);
 }

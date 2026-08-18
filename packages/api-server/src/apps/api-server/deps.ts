@@ -52,6 +52,9 @@ import type {
 } from "./admission/index.js";
 import type { SessionPresence } from "./agent-proxies/index.js";
 
+import type { ApiVariables } from "../../core/http-context.js";
+export type { ApiVariables };
+
 export interface ApiServerDeps {
   config: Config;
   periodicJobs: PeriodicJobs;
@@ -76,9 +79,7 @@ export interface ApiServerDeps {
   contributionsProgress: ContributionsProgressPort;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
-  mountUsageRoutes: (
-    app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
-  ) => void;
+  mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   metricsReader: MetricsReader | null;
   terms: TermsService;

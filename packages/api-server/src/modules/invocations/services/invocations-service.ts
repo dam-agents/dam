@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
 import {
   type AgentsService,
@@ -160,7 +161,6 @@ export function createInvocationsService(deps: {
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,
       });
-
       let agent;
       try {
         agent = await deps.agents.create({
@@ -180,6 +180,12 @@ export function createInvocationsService(deps: {
         await deps.repo.delete(targetId).catch(() => {});
         throw err;
       }
+      emit({
+        type: EventType.InvocationSpawned,
+        targetAgentId: targetId,
+        driverAgentId: input.driverAgentId,
+        ownerSub: deps.owner,
+      });
 
       const task = buildInvocationPrompt({
         prompt: input.prompt,

@@ -6,14 +6,17 @@ import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import type { IsAcceptedPort } from "../../../modules/terms/index.js";
 import {
+  clientSurface,
   hasAgentBinding,
   hasScope,
   logWsAttach,
   upgradeSourceIp,
   type Authenticate,
   type AuthDenialKind,
+  type SurfaceAttribution,
   type WsAuthSite,
 } from "../admission/auth.js";
+import { emit, EventType } from "../../../events.js";
 import {
   checkWsTermsAccepted,
   type TermsDenialKind,
@@ -28,13 +31,14 @@ export type RelayAdmissionDenialKind =
   | RelayDenialKind;
 
 export type RelayAdmissionResult =
-  | { ok: true; user: UserIdentity }
+  | { ok: true; user: UserIdentity; surface: string }
   | { ok: false; kind: RelayAdmissionDenialKind };
 
 export interface RelayAdmissionDeps {
   authenticate: Authenticate;
   verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
   isTermsAccepted: IsAcceptedPort;
+  surfaceAttribution: SurfaceAttribution;
 }
 
 export type RelayAdmission = (
@@ -85,20 +89,36 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
     );
     if (termsDenied) return { ok: false, kind: termsDenied };
 
+    const surface = clientSurface(admitted.principal, deps.surfaceAttribution);
     logWsAttach(user.sub, site);
-    return { ok: true, user };
+    if (url.searchParams.get("passive") !== "1") {
+      emit({
+        type: EventType.AgentRelayAttached,
+        agentId,
+        actorSub: user.sub,
+        surface,
+        relay: relayKind,
+      });
+    }
+    return { ok: true, user, surface };
   };
 }
 
 interface UpgradeTarget {
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
 }
+export interface RelayActor {
+  sub: string;
+  surface: string;
+}
+
 interface RelayTarget {
   handleUpgrade(
     req: IncomingMessage,
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ): void;
 }
 
@@ -165,6 +185,9 @@ export function relayRoute(
       socket.destroy();
       return;
     }
-    relay.handleUpgrade(req, socket, head, agentId);
+    relay.handleUpgrade(req, socket, head, agentId, {
+      sub: admitted.user.sub,
+      surface: admitted.surface,
+    });
   };
 }

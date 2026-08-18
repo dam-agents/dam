@@ -36,6 +36,7 @@ function makeHarness() {
   };
   const service = createKnowledgeBasesService({
     owner: "user-1",
+    surface: "ui",
     agents: {
       async create(input) {
         calls.createInputs.push(input);

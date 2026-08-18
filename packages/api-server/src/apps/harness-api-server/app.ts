@@ -78,6 +78,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       db,
       artifacts,
       owner,
+      surface: "mcp",
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary;
 
@@ -96,6 +97,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     composeSkills: (owner) =>
       composeSkillsModule({
+        surface: "mcp",
         api,
         namespace: config.namespace,
         owner,
@@ -112,6 +114,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       composeExperimentsForOwner({
         db,
         owner,
+        surface: "mcp",
         artifactLibrary: artifactLibraryFor(owner),
         pin: experimentPin,
       }).experiments,

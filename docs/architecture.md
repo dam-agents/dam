@@ -64,7 +64,8 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, reusable named selections a user carries between sandboxes, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
-- [connections](architecture/connections.md) — unified Connection / Contribution model, runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, agent-side driver model.
+- [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
+- [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [experiments](architecture/experiments.md) — driver-authored Python loop scripts observed live: declared skeleton + trace of scored spans, versioned script artifacts, prepare→Execute workflow, dashboard-artifact live view.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link on a dedicated share host, with folders, expiry, and versions.

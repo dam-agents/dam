@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-08-13
+Last verified: 2026-08-17
 
 ## Overview
 
@@ -190,6 +190,24 @@ driver Agent against the idle checker's hibernation (the
 `agent-platform.ai/experiment-active` annotation, subordinate to a user hard
 stop); reaching any terminal state releases the pin — the sweep is therefore
 also what un-pins a crashed run's driver.
+
+## Domain events
+
+Every change to an experiment raises a single event type on the in-process
+bus — plan registrations, span batches, terminal transitions and sweep reaps
+alike. It is advisory and non-durable, and its everyday consumer is the live
+hint that keeps an open browser's Trace Feed current without polling.
+
+Start, Stop, and Delete are different: each is a person choosing to use the
+feature, so exactly those three carry the acting person and the action, and
+are recorded as [Activity Events](usage-tracking.md). Everything the loop or
+the platform raises on its own — the script's reports, a failed launch, the
+inactivity sweep's reaps — names no actor, and the usage subscriber ignores
+anything without one. A run the sweep failed and a run the script finished
+look the same here: neither is a person doing something, and neither reaches
+the activity log. The lineage's platform-written artifacts (dashboard, script
+clone, results) are marked internal on publish, so they never count as
+publishes either — [artifact-library](artifact-library.md) owns that rule.
 
 ## Where the code lives
 

@@ -88,7 +88,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
       inner = renderImageInner(rawUrl, artifact.title);
     else inner = downloadInner();
 
-    viewer.recordView(artifact.id);
+    viewer.recordView(artifact);
     return c.html(
       renderWrapper({
         title: artifact.title,
