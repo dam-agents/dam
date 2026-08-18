@@ -1,60 +1,23 @@
-const ADJECTIVES = [
-  "swift",
-  "calm",
-  "brave",
-  "clever",
-  "bright",
-  "gentle",
-  "bold",
-  "quiet",
-  "lucky",
-  "sunny",
-  "cosmic",
-  "amber",
-  "misty",
-  "nimble",
-  "mellow",
-  "stellar",
-  "crimson",
-  "golden",
-  "silent",
-  "breezy",
-  "frosty",
-  "jolly",
-  "rustic",
-  "velvet",
-] as const;
+export type SandboxNameKind = "coding-agent" | "experiment" | "knowledge-base";
 
-const NOUNS = [
-  "otter",
-  "falcon",
-  "river",
-  "panda",
-  "maple",
-  "comet",
-  "willow",
-  "sparrow",
-  "cedar",
-  "harbor",
-  "meadow",
-  "badger",
-  "lynx",
-  "heron",
-  "ember",
-  "pebble",
-  "glacier",
-  "fern",
-  "robin",
-  "canyon",
-  "lantern",
-  "beacon",
-  "grove",
-  "summit",
-] as const;
+const PREFIX: Record<SandboxNameKind, string> = {
+  "coding-agent": "codingagent",
+  experiment: "experiment",
+  "knowledge-base": "knowledgebase",
+};
 
-const pick = <T>(arr: readonly T[]): T =>
-  arr[Math.floor(Math.random() * arr.length)]!;
-
-export function generateSandboxName(): string {
-  return `${pick(ADJECTIVES)}-${pick(NOUNS)}`;
+export function nextSandboxName(
+  kind: SandboxNameKind,
+  takenNames: Iterable<string>,
+): string {
+  const prefix = PREFIX[kind];
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  let highest = 0;
+  for (const taken of takenNames) {
+    const match = pattern.exec(taken.trim().toLowerCase());
+    if (!match) continue;
+    const ordinal = Number(match[1]);
+    if (Number.isSafeInteger(ordinal) && ordinal > highest) highest = ordinal;
+  }
+  return `${prefix}-${highest + 1}`;
 }

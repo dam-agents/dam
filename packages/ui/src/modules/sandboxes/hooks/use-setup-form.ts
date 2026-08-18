@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
 import { emitToast } from "../../../lib/toast.js";
-import { generateSandboxName } from "../lib/sandbox-name.js";
+import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
 
 export type SetupFlow = "coding-agent" | "experiment" | "knowledge-base";
 
@@ -61,10 +61,7 @@ export function useSetupForm(
   const [form, setForm] = useState<SetupForm>(() => {
     const restored = load(flow);
     if (restored) return restored;
-    const fresh = setupFormSchema.parse({
-      name: generateSandboxName(),
-      ...defaults,
-    });
+    const fresh = setupFormSchema.parse({ name: "", ...defaults });
     save(flow, fresh);
     return fresh;
   });
@@ -79,6 +76,9 @@ export function useSetupForm(
     },
     [flow],
   );
+
+  const setName = useCallback((name: string) => update({ name }), [update]);
+  usePrefilledSandboxName(flow, form.name, setName);
 
   const reset = useCallback(() => {
     try {
