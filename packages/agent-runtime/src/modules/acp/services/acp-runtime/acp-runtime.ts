@@ -1,11 +1,5 @@
 import { performance } from "node:perf_hooks";
-import {
-  buildPlatformPromptAcceptedNotification,
-  buildPlatformPromptStartedNotification,
-  buildPlatformTurnEndedNotification,
-  PROMPT_QUEUE_FULL_CODE,
-  PROMPT_QUEUE_FULL_MESSAGE,
-} from "api-server-api";
+import { buildPlatformTurnEndedNotification } from "api-server-api";
 
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
@@ -27,9 +21,8 @@ import type {
   BackgroundWorkRegistry,
   HeldSession,
 } from "../background-work-registry.js";
+import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionTranscript } from "./session-transcript.js";
-
-const PROMPT_QUEUE_CAP = 32;
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
@@ -68,21 +61,6 @@ export interface AcpRuntimeDeps {
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   isTerminalSessionActive?: (sessionId: string) => boolean;
-}
-
-interface ActivePrompt {
-  sessionId: string;
-  outboundId: number;
-  channel: ClientChannel | null;
-  originalId: JsonRpcId;
-}
-
-interface QueuedPrompt {
-  channel: ClientChannel;
-  outboundId: number;
-  originalId: JsonRpcId;
-  frame: unknown;
-  promptId: string | null;
 }
 
 interface OutboundMapping {
@@ -131,8 +109,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const nonViewerChannels = new Set<ClientChannel>();
   const pendingFromAgent = new Map<JsonRpcId, PendingAgentRequest>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
-  const activePromptBySession = new Map<string, ActivePrompt>();
-  const promptQueueBySession = new Map<string, QueuedPrompt[]>();
+
+  const promptScheduler = createPromptScheduler({
+    sendToAgent(frame) {
+      if (!agent || agentExited) return false;
+      agent.send(frame);
+      return true;
+    },
+  });
 
   const transcript = createSessionTranscript({
     logBytesCap,
@@ -297,6 +281,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       for (const t of idleReapTimers.values()) clearTimeout(t);
       idleReapTimers.clear();
       pendingFromAgent.clear();
+      promptScheduler.clear();
       deps.backgroundWork?.clear();
     });
     return a;
@@ -338,18 +323,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const t of idleReapTimers.values()) clearTimeout(t);
     idleReapTimers.clear();
     pendingFromAgent.clear();
-    activePromptBySession.clear();
-    promptQueueBySession.clear();
+    promptScheduler.clear();
     deps.backgroundWork?.clear();
     agent = null;
     old.kill();
   }
 
   function runtimeBusy(): boolean {
-    if (activePromptBySession.size > 0 || pendingFromAgent.size > 0)
-      return true;
-    for (const q of promptQueueBySession.values())
-      if (q.length > 0) return true;
+    if (promptScheduler.anyWork() || pendingFromAgent.size > 0) return true;
     return (deps.backgroundWork?.held().length ?? 0) > 0;
   }
 
@@ -364,12 +345,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     engagedSessions.delete(channel);
     nonViewerChannels.delete(channel);
     transcript.dropChannel(channel);
-
-    for (const [sid, queue] of promptQueueBySession) {
-      const kept = queue.filter((q) => q.channel !== channel);
-      if (kept.length) promptQueueBySession.set(sid, kept);
-      else promptQueueBySession.delete(sid);
-    }
+    promptScheduler.dropChannel(channel);
 
     for (const [sid, state] of bootstrapBySession) {
       if (state.initiatorChannel === channel) {
@@ -380,10 +356,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (keptWaiters.length !== state.waiters.length) {
         state.waiters = keptWaiters;
       }
-    }
-
-    for (const active of activePromptBySession.values()) {
-      if (active.channel === channel) active.channel = null;
     }
 
     for (const [outId, m] of outboundIdToClient) {
@@ -410,8 +382,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
     }
     transcript.forget(sessionId);
-    activePromptBySession.delete(sessionId);
-    promptQueueBySession.delete(sessionId);
+    promptScheduler.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
     maybeRecycleForEnv();
     const reap = idleReapTimers.get(sessionId);
@@ -426,8 +397,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!agent || agentExited) return;
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
-    if (activePromptBySession.has(sessionId)) return;
-    if (promptQueueBySession.has(sessionId)) return;
+    if (promptScheduler.hasWork(sessionId)) return;
     if (bootstrapBySession.has(sessionId)) return;
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
@@ -458,83 +428,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       sessionId,
       setTimeout(() => reapIdleSessionNow(sessionId), idleReapDelayMs),
     );
-  }
-
-  function sendErrorResponse(
-    channel: ClientChannel,
-    id: JsonRpcId,
-    message: string,
-    data?: { code: typeof PROMPT_QUEUE_FULL_CODE },
-  ): void {
-    sendToChannel(
-      channel,
-      JSON.stringify({
-        jsonrpc: "2.0",
-        id,
-        error: { code: -32000, message, ...(data ? { data } : {}) },
-      }),
-    );
-  }
-
-  function notifyPromptAccepted(
-    channel: ClientChannel,
-    sessionId: string,
-    promptId: string | null,
-    queued: boolean,
-  ): void {
-    if (promptId === null) return;
-    sendToChannel(
-      channel,
-      JSON.stringify(
-        buildPlatformPromptAcceptedNotification({
-          sessionId,
-          promptId,
-          queued,
-        }),
-      ),
-    );
-  }
-
-  function forwardPromptToAgent(
-    a: AgentProcess,
-    sessionId: string,
-    entry: {
-      channel: ClientChannel;
-      outboundId: number;
-      originalId: JsonRpcId;
-      frame: unknown;
-      promptId: string | null;
-    },
-  ): void {
-    activePromptBySession.set(sessionId, {
-      sessionId,
-      outboundId: entry.outboundId,
-      channel: entry.channel,
-      originalId: entry.originalId,
-    });
-    a.send(entry.frame);
-    if (entry.promptId !== null) {
-      sendToChannel(
-        entry.channel,
-        JSON.stringify(
-          buildPlatformPromptStartedNotification({
-            sessionId,
-            promptId: entry.promptId,
-          }),
-        ),
-      );
-    }
-  }
-
-  function advanceQueue(a: AgentProcess, sessionId: string): void {
-    const queue = promptQueueBySession.get(sessionId);
-    if (!queue || queue.length === 0) {
-      promptQueueBySession.delete(sessionId);
-      return;
-    }
-    const next = queue.shift()!;
-    if (queue.length === 0) promptQueueBySession.delete(sessionId);
-    forwardPromptToAgent(a, sessionId, next);
   }
 
   function serveLoadFromLog(
@@ -660,7 +553,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                   frame,
                   deps.sessionMetadata,
                   (sid) =>
-                    activePromptBySession.has(sid) ||
+                    promptScheduler.hasTurnInFlight(sid) ||
                     (deps.isTerminalSessionActive?.(sid) ?? false),
                 )
               : (frame as object);
@@ -674,13 +567,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
-          const active = activePromptBySession.get(sid);
-          const turnEnded =
-            active !== undefined && active.outboundId === outboundId;
-          if (turnEnded) {
-            activePromptBySession.delete(sid);
-            if (agent && !agentExited) advanceQueue(agent, sid);
-          }
+          const { turnEnded } = promptScheduler.onPromptResponse(
+            sid,
+            outboundId,
+          );
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           transcript.append(
@@ -847,7 +737,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.recordSeen(promptSessionId);
         const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
-        const willQueue = activePromptBySession.has(promptSessionId);
+        const willQueue = promptScheduler.hasTurnInFlight(promptSessionId);
         appendUserPromptToLog(
           promptSessionId,
           promptBlocks,
@@ -855,37 +745,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           willQueue,
         );
 
-        if (willQueue) {
-          const queue = promptQueueBySession.get(promptSessionId) ?? [];
-          if (queue.length >= PROMPT_QUEUE_CAP) {
-            outboundIdToClient.delete(outboundId);
-            sendErrorResponse(
-              channel,
-              frame.id,
-              `${PROMPT_QUEUE_FULL_MESSAGE} for session ${promptSessionId}`,
-              { code: PROMPT_QUEUE_FULL_CODE },
-            );
-            return;
-          }
-          queue.push({
-            channel,
-            outboundId,
-            originalId: frame.id,
-            frame: rewritten,
-            promptId,
-          });
-          promptQueueBySession.set(promptSessionId, queue);
-          notifyPromptAccepted(channel, promptSessionId, promptId, true);
-          return;
-        }
-        notifyPromptAccepted(channel, promptSessionId, promptId, false);
-        forwardPromptToAgent(a, promptSessionId, {
+        const fate = promptScheduler.submit({
+          sessionId: promptSessionId,
           channel,
           outboundId,
           originalId: frame.id,
           frame: rewritten,
           promptId,
         });
+        if (fate === "refused") outboundIdToClient.delete(outboundId);
         return;
       }
 
@@ -952,7 +820,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
       deps.log?.(
-        `env recycle deferred: ${activePromptBySession.size} turn(s), ` +
+        `env recycle deferred: ${promptScheduler.activeTurnCount()} turn(s), ` +
           `${pendingFromAgent.size} pending request(s), ` +
           `${deps.backgroundWork?.held().length ?? 0} background hold(s)` +
           (opts.force ? ` — forcing in ${envForceRecycleMs}ms` : ""),
