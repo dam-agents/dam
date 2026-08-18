@@ -9,6 +9,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { ArtifactRow } from "./artifact-row.js";
+import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 
 function ToolChip({ name }: { name: string }) {
@@ -21,6 +22,9 @@ function ToolChip({ name }: { name: string }) {
 
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
+  const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
+    null,
+  );
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
@@ -68,6 +72,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 artifact={artifact}
                 showAgent={false}
                 onPreview={setPreviewTarget}
+                onRename={setRenameTarget}
                 onShare={setShareTarget}
               />
             ))}
@@ -75,6 +80,12 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         </Card>
       )}
 
+      {renameTarget && (
+        <RenameArtifactDialog
+          artifact={renameTarget}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
       {shareTarget && (
         <ShareDialog
           artifact={shareTarget}

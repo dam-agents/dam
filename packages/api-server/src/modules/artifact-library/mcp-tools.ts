@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  ARTIFACT_TITLE_MAX_LENGTH,
   artifactInternalLink,
   artifactKindSchema,
   type LibraryArtifact,
@@ -79,7 +80,7 @@ export function registerArtifactLibraryTools(
     "create_artifact",
     "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library and optionally get a public share link. PREFER THIS for sharing work products with humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Set visibility='public' to mint a share link (the unguessable URL is the access control); add an expiry to bound its lifetime. The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
     {
-      title: z.string().min(1).max(300),
+      title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH),
       content: z
         .string()
         .optional()
@@ -260,7 +261,7 @@ export function registerArtifactLibraryTools(
     "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
     {
       id: z.string().min(1),
-      title: z.string().min(1).max(300).optional(),
+      title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH).optional(),
       content: z.string().optional(),
       upload_ref: z.string().optional(),
       file_name: z

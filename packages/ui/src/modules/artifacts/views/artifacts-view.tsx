@@ -19,6 +19,7 @@ import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js"
 import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
+import { RenameArtifactDialog } from "../components/rename-artifact-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 
@@ -38,6 +39,9 @@ export function ArtifactsView() {
   const [folderDialog, setFolderDialog] = useState<{
     folder: ArtifactFolder | null;
   } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
+    null,
+  );
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
@@ -73,6 +77,7 @@ export function ArtifactsView() {
 
   const rowActions = {
     onPreview: setPreviewTarget,
+    onRename: setRenameTarget,
     onShare: setShareTarget,
   };
 
@@ -194,6 +199,12 @@ export function ArtifactsView() {
         <FolderDialog
           folder={folderDialog.folder}
           onClose={() => setFolderDialog(null)}
+        />
+      )}
+      {renameTarget && (
+        <RenameArtifactDialog
+          artifact={renameTarget}
+          onClose={() => setRenameTarget(null)}
         />
       )}
       {shareTarget && (

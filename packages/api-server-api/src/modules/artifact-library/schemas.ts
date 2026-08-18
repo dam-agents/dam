@@ -11,7 +11,13 @@ export const artifactKindSchema = z.enum([
 
 export const artifactVisibilitySchema = z.enum(["private", "public"]);
 
-const titleSchema = z.string().trim().min(1, "title is required").max(300);
+export const ARTIFACT_TITLE_MAX_LENGTH = 300;
+
+const titleSchema = z
+  .string()
+  .trim()
+  .min(1, "title is required")
+  .max(ARTIFACT_TITLE_MAX_LENGTH);
 const fileNameSchema = z.string().trim().min(1).max(255);
 const expiresInHoursSchema = z
   .number()

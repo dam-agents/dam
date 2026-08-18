@@ -17,6 +17,7 @@ import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionBadge } from "./version-badge.js";
 
@@ -38,6 +39,9 @@ export function ChatArtifactsPanel({
   );
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
+    null,
+  );
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
 
   return (
@@ -65,10 +69,17 @@ export function ChatArtifactsPanel({
                   artifact.id === openArtifactId ? null : artifact.id,
                 )
               }
+              onRename={setRenameTarget}
               onShare={setShareTarget}
             />
           ))}
         </div>
+      )}
+      {renameTarget && (
+        <RenameArtifactDialog
+          artifact={renameTarget}
+          onClose={() => setRenameTarget(null)}
+        />
       )}
       {shareTarget && (
         <ShareDialog
@@ -84,11 +95,13 @@ function ArtifactListRow({
   artifact,
   active,
   onClick,
+  onRename,
   onShare,
 }: {
   artifact: LibraryArtifact;
   active: boolean;
   onClick: () => void;
+  onRename: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
 }) {
   return (
@@ -124,7 +137,11 @@ function ArtifactListRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <ArtifactRowMenuItems artifact={artifact} onShare={onShare} />
+            <ArtifactRowMenuItems
+              artifact={artifact}
+              onRename={onRename}
+              onShare={onShare}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
