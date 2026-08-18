@@ -61,7 +61,7 @@ The platform's own services emit their operational telemetry through an in-proce
 
 ### Turn counter
 
-[usage-tracking](usage-tracking.md) stores a row per turn on every surface, but its SQL read path exposes views for channel turns only — relay turns are recorded and not yet readable there. So this counter is both the time-series form of that fact, for a dashboard that wants a rate without SQL and the inspector role, and today the only queryable per-surface number for the surfaces that reach an agent through the relay. It is a subscriber on the same turn events that subsystem persists, so both sinks answer to one definition of a turn rather than each counting their own way. They are not guaranteed to agree in practice: each is separately enabled — the counter needs the SDK active, the log needs activity tracking on — and each fails independently, so treat a divergence as a sink being off or dropping, not as two different notions of a turn.
+This is a **deliberate second sink** on the turn events [usage-tracking](usage-tracking.md) persists: that subsystem owns the durable, per-user record and its SQL read surface, while this counter serves the operational read — a rate on a dashboard, reachable without SQL and without that subsystem's reader role. Both are fed from the same events, so the definition of a turn is shared rather than reimplemented. It is a subscriber on the same turn events that subsystem persists, so both sinks answer to one definition of a turn rather than each counting their own way. They are not guaranteed to agree in practice: each is separately enabled — the counter needs the SDK active, the log needs activity tracking on — and each fails independently, so treat a divergence as a sink being off or dropping, not as two different notions of a turn.
 
 Its one dimension is the **surface** that carried the turn, taken from the event — for a relay turn the surface the upgrade resolved from the caller's own credential, and for a channel turn its messenger. A failed turn counts like any other, because the counter measures what was asked rather than what came back.
 
@@ -85,10 +85,10 @@ The telemetry store is a **fourth durable substrate** beyond the three in [persi
 
 ## Relationship to logging and usage-tracking
 
-This subsystem is distinct from two neighbours and does not overlap them:
+This subsystem is distinct from two neighbours, and overlaps one of them on purpose:
 
 - [logging](logging.md) owns structured operational logs and the real-identity security audit trail, emitted to stdout.
-- [usage-tracking](usage-tracking.md) owns pseudonymized usage analytics in Postgres — an append-only activity log read through SQL views.
+- [usage-tracking](usage-tracking.md) owns pseudonymized usage analytics in Postgres — an append-only activity log read through SQL views. The [turn counter](#turn-counter) above is a **second sink on that subsystem's turn events**: the same fact, read operationally as a time series rather than analytically through SQL. Turn *volume* is therefore answerable from either side, and the split is by read pattern, not by what is counted.
 
 Telemetry here is the OpenTelemetry-native, explorable signal pipeline: a different store (columnar, not Postgres), a different shape (OTLP logs/traces/metrics), and a different read surface (the exploration UI). Postgres remains the right home for coarse usage analytics; it cannot serve high-volume telemetry, which is the reason this subsystem exists at all.
 
