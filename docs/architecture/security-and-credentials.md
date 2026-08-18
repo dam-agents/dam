@@ -602,7 +602,7 @@ with basis *place*.
 
 The in-pod `dam-run` CLI is a compatibility shim that runs its command
 as a regular local process in the same pod (see
-[agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)). It adds
+[agent-runtime](agent-runtime.md#dam-run--local-exec-shim)). It adds
 no privilege: the command runs inside the agent's existing sandbox, with
 the agent's existing egress boundary. The earlier remote-executor
 machinery (ephemeral `Run` pods borrowing the parent's gateway) was

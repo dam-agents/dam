@@ -1,9 +1,17 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { backgroundWorkReportSchema } from "agent-runtime-api";
-import { createBackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
+import { createFileDocumentStoreBackend } from "../../core/document-store.js";
+import { createBackgroundWorkRegistry } from "../../modules/background-work.js";
 
 function reportThrough(sessionId: string, body: unknown) {
-  const registry = createBackgroundWorkRegistry();
+  const registry = createBackgroundWorkRegistry({
+    stateBackend: createFileDocumentStoreBackend(
+      mkdtempSync(join(tmpdir(), "background-work-")),
+    ),
+  });
   const parsed = backgroundWorkReportSchema.safeParse(body);
   if (parsed.success) registry.report(sessionId, parsed.data.items);
   return { accepted: parsed.success, registry };
@@ -20,7 +28,7 @@ describe("the background-work report contract", () => {
 
     expect(accepted).toBe(true);
     expect(registry.hasWork("s1")).toBe(true);
-    expect(registry.held()[0]!.items[0]!.command).toHaveLength(500);
+    expect(registry.held()[0]!.command).toHaveLength(500);
   });
 
   it("clamps an over-long description too", () => {
@@ -29,7 +37,7 @@ describe("the background-work report contract", () => {
     });
 
     expect(accepted).toBe(true);
-    expect(registry.held()[0]!.items[0]!.description).toHaveLength(200);
+    expect(registry.held()[0]!.description).toHaveLength(200);
   });
 
   it("still holds when a reporter sends more items than the contract keeps", () => {
@@ -39,7 +47,7 @@ describe("the background-work report contract", () => {
 
     expect(accepted).toBe(true);
     expect(registry.hasWork("s1")).toBe(true);
-    expect(registry.held()[0]!.items).toHaveLength(64);
+    expect(registry.held()).toHaveLength(64);
   });
 
   it("accepts the empty report that releases a hold", () => {

@@ -159,8 +159,7 @@ prompts:
 ```bash
 # 2. Run it auto-approved, in the background (see AGENTS.md), and follow progress.
 cd "$dir"
-nohup nous run campaign.yaml --auto-approve --max-iterations 2 > campaign.log 2>&1 &
-echo $! > run.pid
+platform-bg nous run campaign.yaml --auto-approve --max-iterations 2 > run.pid
 nous status "$run_id" --watch
 
 # 3. When it finishes, harvest the findings into the wiki (see "Post-campaign knowledge").
@@ -310,8 +309,8 @@ Notes:
 **Reading liveness (don't be fooled):** `nous status --line` gives phase/iteration;
 for fine-grained progress watch the executor log mtime under `runs/iter-N/` (e.g.
 `runs/iter-N/inputs/executor_log.jsonl`) and the result-file count — they advance
-continuously during EXECUTE_ANALYZE. A backgrounded run's `campaign.log` only
-writes at phase transitions, so it looks frozen mid-phase — don't read "no new log
+continuously during EXECUTE_ANALYZE. A backgrounded run's stdout log (whose path
+`platform-bg` prints) only writes at phase transitions, so it looks frozen mid-phase — don't read "no new log
 lines" as "stuck". The `STUCK` marker is a ~5-min-silence heuristic that fires
 during legitimate long batches: treat it as "look closer", not "it died". Phases
 are long (DESIGN ~10–15 min) — poll infrequently with wide spacing; looking more
@@ -335,12 +334,17 @@ One bridge serves the whole pod — it's stateless per request (each POST carrie
 its own `channel` + text and does a fresh MCP call), so every campaign and
 session shares the single `127.0.0.1:8765` listener. Launches are idempotent and
 a duplicate start is a harmless no-op (the bridge exits cleanly if the port is
-already taken). Bridges in *other* agent pods are isolated — `127.0.0.1` is
+already taken; if it exits before its declaration lands, `platform-bg` reports
+that it could not declare it and exits 1 — that is the no-op, not a failure). Bridges in *other* agent pods are isolated — `127.0.0.1` is
 pod-local, and each posts only to its own agent's bound channel.
 
 ```bash
-# Start the shared bridge (idempotent — one per pod):
-nohup nous-channel-bridge > "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1 &
+# Start the shared bridge (idempotent — one per pod): probe first, launch only on
+# a refused connection. `exec` makes the declared process the bridge itself
+# rather than the wrapper shell; output stays at .bridge.log, not the path
+# platform-bg prints.
+curl -s -o /dev/null --max-time 2 -X POST http://127.0.0.1:8765/gate -d '{}' ||
+  platform-bg sh -c 'exec nous-channel-bridge >> "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1'
 ```
 
 ```yaml

@@ -198,15 +198,16 @@ Slack/Telegram").
 **Front-load `locked_parameters`** — auto-approve outright refuses a campaign
 with no locks. That inventory is what keeps a run defensible.
 
-**Always launch the campaign as a background process** so you stay responsive and
-can query state with `nous` while it runs. Keep the PID and the log in the
-campaign directory:
+**Always launch the campaign with `platform-bg`** so you stay responsive and can
+query state with `nous` while it runs. `platform-bg` backgrounds the command and
+tells the platform the process is deliberate — a bare `nohup … &` is
+indistinguishable from a process some finished job leaked, and the platform
+reaps those once the sandbox goes idle. It prints the PID; keep it and the log in
+the campaign directory:
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
-nohup nous run campaign.yaml --auto-approve --max-iterations <N> \
-  > campaign.log 2>&1 &
-echo $! > run.pid
+platform-bg nous run campaign.yaml --auto-approve --max-iterations <N> > run.pid
 ```
 
 Then report status without blocking: `nous status <run_id> --line` (see
@@ -231,8 +232,7 @@ channel, re-run the bridge check first — see "Reporting progress"):
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
-nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &
-echo $! > run.pid
+platform-bg nous resume campaign.yaml --auto-approve > run.pid
 ```
 
 There is no keep-awake step any more: because the pod doesn't idle-hibernate,
@@ -251,7 +251,7 @@ If the user sends "approve", "approve once", "yes", "confirm", or any similar va
    - Reply to the user explaining that the campaign is running with `--auto-approve` enabled and is proceeding automatically, so no manual approval is needed.
    - Show the current status of the campaign using `nous status <run_id> --line`.
 3. If it is NOT running and is stopped at a checkpoint (e.g., after a pod restart):
-   - Resume it in the background by running `cd "$NOUS_CAMPAIGN_PARENT/<run_id>" && nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &` and record the PID: `echo $! > run.pid` (per the "Long runs & recovery" section).
+   - Resume it in the background by running `cd "$NOUS_CAMPAIGN_PARENT/<run_id>" && platform-bg nous resume campaign.yaml --auto-approve > run.pid` (per the "Long runs & recovery" section).
 
 ## Monitoring a running campaign
 
@@ -263,8 +263,9 @@ and read the right signals:
   check the freshness (mtime) of the executor log under `runs/iter-N/` (e.g.
   `runs/iter-N/inputs/executor_log.jsonl`) and the count of result files — those
   move continuously during EXECUTE_ANALYZE.
-- **Do NOT judge progress by `campaign.log`.** It only writes at phase
-  transitions, so it looks frozen for many minutes while real work is happening.
+- **Do NOT judge progress by the campaign's stdout log** (`platform-bg` reports
+  its path when it starts the run). It only writes at phase transitions, so it
+  looks frozen for many minutes while real work is happening.
 - **`STUCK` means "look closer," not "dead."** It's a ~5-min-silence heuristic
   and fires during legitimate long batches. Confirm with the signals above before
   reacting.
@@ -290,12 +291,18 @@ list (a "channel type … not available" error means it isn't):
      tests whether anything is *listening* (a live bridge answers the empty body
      with 400 — that still means "up"); only a refused connection starts one:
      ```sh
-     curl -s -o /dev/null --max-time 2 -X POST http://127.0.0.1:8765/gate -d '{}' || \
-       { nohup nous-channel-bridge > "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1 & \
-         echo $! > "$NOUS_CAMPAIGN_PARENT/.bridge.pid"; }
+     curl -s -o /dev/null --max-time 2 -X POST http://127.0.0.1:8765/gate -d '{}' ||
+       platform-bg sh -c 'exec nous-channel-bridge >> "$NOUS_CAMPAIGN_PARENT/.bridge.log" 2>&1'
      ```
-     A race (two launches at once) is harmless: the loser hits the in-use port
-     and exits cleanly.
+     `exec` is load-bearing: without it the declared process is the wrapper
+     shell, which takes the declaration with it and hands the bridge to the
+     reaper. The single quotes are too — the inner shell expands
+     `$NOUS_CAMPAIGN_PARENT` and owns the redirect, which is what keeps the log
+     at `.bridge.log`; read that file, not the path `platform-bg` prints, which
+     stays empty for this shape. A race (two launches at once) is harmless: the
+     loser hits the in-use port and exits cleanly, and if it exits before its
+     declaration lands, `platform-bg` says it could not declare it and exits 1 —
+     that is the no-op, not a failure.
   2. Add a `channels:` block to `campaign.yaml`, with `channel=` set to the bound
      type (`slack` or `telegram`):
      ```yaml
@@ -332,8 +339,9 @@ first. These slash commands ship with the agent (`~/.claude/commands/`); the
 
 - **Per-campaign directory** = `$NOUS_CAMPAIGN_PARENT/<run_id>/` (`~/nous-campaigns`,
   on persistent `$HOME`). Holds `campaign.yaml`, the `repo/` clone, `run.pid`,
-  `campaign.log`, and Nous's own artifacts (`state.json`, `principles.json`,
-  `ledger.json`, `runs/iter-N/…`, `meta_findings.json`).
+  and Nous's own artifacts (`state.json`, `principles.json`, `ledger.json`,
+  `runs/iter-N/…`, `meta_findings.json`). The campaign's stdout log is pod-local
+  and disposable — `platform-bg` prints its path.
 - **Experiment worktrees** for per-arm experiments are created by Nous under the
   target clone (`repo/.nous-experiments/`) — that's by design; they're code for
   the target.

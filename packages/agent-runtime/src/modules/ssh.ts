@@ -1,4 +1,5 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import { spawnSupervised } from "../core/supervised-process.js";
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -131,13 +132,14 @@ export function spawnSshd(
 ): void {
   refreshSshEnvironment(envReader, prepared.homeDir, log);
   ws.binaryType = "nodebuffer";
-  const child = spawn(
+  const supervised = spawnSupervised(
     prepared.sshdPath,
     ["-i", "-e", "-f", prepared.configPath],
     {
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
+  const child = supervised.child;
 
   ws.on("message", (data: Buffer) => {
     if (child.stdin.writable) child.stdin.write(data);
@@ -172,9 +174,7 @@ export function spawnSshd(
   });
 
   const killChild = () => {
-    try {
-      child.kill("SIGKILL");
-    } catch {}
+    void supervised.terminate({ log });
   };
   ws.on("close", killChild);
   ws.on("error", killChild);

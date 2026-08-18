@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import type { Result, SkillsDomainError } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
+import { spawnSupervised } from "../../../core/supervised-process.js";
 
 const COMMAND_TIMEOUT_MS = 60_000;
 
@@ -34,6 +34,7 @@ export function createGitProtocolClient(): GitProtocolClient {
           "--depth",
           String(depth),
           ...(ref ? ["--branch", ref] : []),
+          "--end-of-options",
           url,
           dest,
         ]);
@@ -48,25 +49,55 @@ export function createGitProtocolClient(): GitProtocolClient {
     },
     async fetchAtSha(url, sha, dest) {
       try {
-        await runProc("git", ["init", "--quiet", dest]);
-        await runProc("git", ["-C", dest, "remote", "add", "origin", url]);
+        await runProc("git", ["init", "--quiet", "--end-of-options", dest]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "remote",
+          "add",
+          "--end-of-options",
+          "origin",
+          url,
+        ]);
         await runProc("git", [
           "-C",
           dest,
           "fetch",
           "--depth",
           "1",
+          "--end-of-options",
           "origin",
           sha,
         ]);
-        await runProc("git", ["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "checkout",
+          "--quiet",
+          "--end-of-options",
+          "FETCH_HEAD",
+        ]);
         return ok(undefined);
       } catch {}
       try {
         await fs.rm(dest, { recursive: true, force: true });
         await fs.mkdir(dest, { recursive: true });
-        await runProc("git", ["clone", "--quiet", "--no-local", url, dest]);
-        await runProc("git", ["-C", dest, "checkout", "--quiet", sha]);
+        await runProc("git", [
+          "clone",
+          "--quiet",
+          "--no-local",
+          "--end-of-options",
+          url,
+          dest,
+        ]);
+        await runProc("git", [
+          "-C",
+          dest,
+          "checkout",
+          "--quiet",
+          "--end-of-options",
+          sha,
+        ]);
         return ok(undefined);
       } catch (e) {
         return err({
@@ -99,15 +130,28 @@ export function createGitProtocolClient(): GitProtocolClient {
   };
 }
 
+const GIT_ALLOW_PROTOCOL = "https:http:ssh:git:file";
+
+const gitArgv = (cmd: string, args: string[]): string[] =>
+  cmd === "git" ? ["-c", "maintenance.auto=false", ...args] : args;
+
+const gitEnv = (cmd: string): { env: NodeJS.ProcessEnv } | undefined =>
+  cmd === "git" ? { env: { ...process.env, GIT_ALLOW_PROTOCOL } } : undefined;
+
 async function runProc(cmd: string, args: string[]): Promise<void> {
+  const argv = gitArgv(cmd, args);
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const supervised = spawnSupervised(cmd, argv, {
+      stdio: ["ignore", "pipe", "pipe"],
+      ...gitEnv(cmd),
+    });
+    const proc = supervised.child;
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
+      void supervised.terminate();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+          `${cmd} ${argv.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
         ),
       );
     }, COMMAND_TIMEOUT_MS);
@@ -118,6 +162,7 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
+      void supervised.terminate();
       if (code === 0) {
         resolve();
         return;
@@ -125,7 +170,7 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+          `${cmd} ${argv.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
         ),
       );
     });
@@ -133,15 +178,20 @@ async function runProc(cmd: string, args: string[]): Promise<void> {
 }
 
 async function runCapture(cmd: string, args: string[]): Promise<string> {
+  const argv = gitArgv(cmd, args);
   return await new Promise<string>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const supervised = spawnSupervised(cmd, argv, {
+      stdio: ["ignore", "pipe", "pipe"],
+      ...gitEnv(cmd),
+    });
+    const proc = supervised.child;
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
+      void supervised.terminate();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
+          `${cmd} ${argv.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
         ),
       );
     }, COMMAND_TIMEOUT_MS);
@@ -153,6 +203,7 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
     });
     proc.on("close", (code) => {
       clearTimeout(timer);
+      void supervised.terminate();
       if (code === 0) {
         resolve(Buffer.concat(stdoutChunks).toString("utf8"));
         return;
@@ -160,7 +211,7 @@ async function runCapture(cmd: string, args: string[]): Promise<string> {
       const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
       reject(
         new Error(
-          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
+          `${cmd} ${argv.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
         ),
       );
     });

@@ -27,6 +27,16 @@ import {
 import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
+import { readProcessEntry } from "./core/process-table.js";
+import {
+  TEARDOWN_GRACE_MS,
+  terminateSession,
+} from "./core/supervised-process.js";
+import { createOrphanReaper } from "./modules/orphan-reaper.js";
+import {
+  createBackgroundWorkRegistry,
+  declareProcessSchema,
+} from "./modules/background-work.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
@@ -111,11 +121,15 @@ if (envStore.ready()) podService?.refreshEnv();
 
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
+const backgroundWork = createBackgroundWorkRegistry({
+  stateBackend,
+  log: (msg) => process.stderr.write(`[background] ${msg}\n`),
+});
+
 const {
   runtime: acpRuntime,
   triggerDriver,
   sessionMetadata,
-  backgroundWork,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -124,7 +138,7 @@ const {
   stateBackend,
   envReader: envStore,
   isTerminalSessionActive: isPtySessionActive,
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  backgroundWork,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -158,6 +172,10 @@ const preparedSshd = await prepareSshd(homeDir, (msg) =>
   process.stderr.write(`[ssh] ${msg}\n`),
 );
 
+let sshConnections = 0;
+
+const ORPHAN_SWEEP_INTERVAL_MS = 60_000;
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -190,6 +208,7 @@ function isPtySessionActive(sessionId: string): boolean {
 
 interface PtySlot {
   pty: nodePty.IPty | null;
+  ptyStartTime: number | undefined;
   headless: InstanceType<typeof HeadlessTerminal>;
   serialize: InstanceType<typeof SerializeAddon>;
   client: WsWebSocket | null;
@@ -216,9 +235,15 @@ function killPtySlot(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot) return;
   if (slot.graceTimer) clearTimeout(slot.graceTimer);
+  const ptyPid = slot.pty?.pid;
   try {
     slot.pty?.kill();
   } catch {}
+  if (ptyPid !== undefined)
+    void terminateSession(ptyPid, {
+      leaderStartTime: slot.ptyStartTime,
+      log: (msg) => ptyLog(sessionId, msg),
+    });
   slot.headless.dispose();
   ptySlots.delete(sessionId);
   ptyLog(sessionId, "killed");
@@ -329,6 +354,7 @@ function attachPty(
       });
       const slot: PtySlot = {
         pty,
+        ptyStartTime: readProcessEntry(pty.pid)?.startTime,
         headless,
         serialize,
         client: ws,
@@ -366,6 +392,10 @@ function attachPty(
           slot.client.send(encodeExit(exitCode));
           slot.client.close(1000, "pty exited");
         }
+        void terminateSession(pty.pid, {
+          leaderStartTime: slot.ptyStartTime,
+          log: (msg) => ptyLog(sessionId, msg),
+        });
         slot.pty = null;
         slot.headless.dispose();
         ptySlots.delete(sessionId);
@@ -416,8 +446,11 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0,
+      idle: acp.idle && ptySlots.size === 0 && acp.backgroundWork.length === 0,
       backgroundWork: acp.backgroundWork,
+      engagedChannels: acp.engagedChannels,
+      terminals: ptySlots.size,
+      sshConnections,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -466,6 +499,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/declared-processes") {
+    void readJsonBody(req)
+      .then((body) => {
+        const parsed = declareProcessSchema.safeParse(body);
+        if (!parsed.success) {
+          res
+            .writeHead(400, { "Content-Type": "application/json", ...CORS })
+            .end(JSON.stringify({ error: parsed.error.message }));
+          return;
+        }
+        if (!backgroundWork.declare(parsed.data)) {
+          res
+            .writeHead(404, { "Content-Type": "application/json", ...CORS })
+            .end(
+              JSON.stringify({ error: `no such process: ${parsed.data.pid}` }),
+            );
+          return;
+        }
+        res.writeHead(204, CORS).end();
+      })
+      .catch((err: unknown) => {
+        res
+          .writeHead(400, { "Content-Type": "application/json", ...CORS })
+          .end(JSON.stringify({ error: String(err) }));
+      });
+    return;
+  }
+
   if (req.url?.startsWith("/api/trpc")) {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
@@ -501,11 +562,20 @@ server.on("upgrade", (req, socket, head) => {
       socket.destroy();
       return;
     }
-    sshWss.handleUpgrade(req, socket, head, (ws) =>
+    sshWss.handleUpgrade(req, socket, head, (ws) => {
+      sshConnections++;
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        sshConnections--;
+      };
+      ws.once("close", release);
+      ws.once("error", release);
       spawnSshd(ws, preparedSshd, envStore, (msg) =>
         process.stderr.write(`[ssh] ${msg}\n`),
-      ),
-    );
+      );
+    });
   } else {
     socket.destroy();
   }
@@ -584,15 +654,35 @@ setInterval(() => {
   } catch {}
 }, 10_000).unref();
 
+const orphanReaper = createOrphanReaper({
+  isQuiet: () => {
+    const acp = acpRuntime.status();
+    return (
+      acp.idle &&
+      acp.engagedChannels === 0 &&
+      ptySlots.size === 0 &&
+      sshConnections === 0
+    );
+  },
+  spared: () => backgroundWork.spared(),
+  log: (msg) => process.stderr.write(`[reaper] ${msg}\n`),
+});
+const reaperTimer = setInterval(
+  () => void orphanReaper.sweepIfQuiet(),
+  ORPHAN_SWEEP_INTERVAL_MS,
+);
+reaperTimer.unref();
+
 let shuttingDown = false;
 function gracefulShutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
   process.stderr.write(`[shutdown] ${signal} received, closing\n`);
   server.close();
+  clearInterval(reaperTimer);
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
   acpRuntime.shutdown();
-  setTimeout(() => process.exit(0), 3_000).unref();
+  setTimeout(() => process.exit(0), TEARDOWN_GRACE_MS + 2_000).unref();
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));

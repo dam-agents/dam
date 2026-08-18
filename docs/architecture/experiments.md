@@ -191,6 +191,15 @@ driver Agent against the idle checker's hibernation (the
 stop); reaching any terminal state releases the pin — the sweep is therefore
 also what un-pins a crashed run's driver.
 
+The pin is not the only thing keeping a run alive. The launch instruction starts
+the script through `platform-bg`, so the process is **declared** to the runtime:
+that is what stops the orphan reaper collecting it once the pod falls quiet, and
+it holds the pod busy on its own account, independently of the annotation. A run
+started outside that wrapper — a bare `nohup`, or a starter script that exits and
+leaves the work behind — is an undeclared orphan, and the sweep takes it at the
+next quiet minute even while the Experiment is still `Running`. See
+[agent-runtime](agent-runtime.md#reaping-orphaned-work).
+
 ## Where the code lives
 
 - Contract (resources, Trace Feed, REST payloads, tRPC router):
