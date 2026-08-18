@@ -23,6 +23,11 @@ import {
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
 import {
+  claimDraftsFor,
+  flushDraftsOnHide,
+  onForeignDraftChange,
+} from "./modules/sessions/lib/draft-snapshot.js";
+import {
   createPermissionsSlice,
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
@@ -60,3 +65,15 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createArtifactsSlice(...a),
   ...createPermissionsSlice(...a),
 }));
+
+let draftSyncStarted = false;
+
+export function startDraftSync(ownerId: string): void {
+  if (draftSyncStarted) return;
+  draftSyncStarted = true;
+  if (claimDraftsFor(ownerId)) useStore.setState({ drafts: {} });
+  onForeignDraftChange((key, draft) =>
+    useStore.getState().applyForeignDraft(key, draft),
+  );
+  flushDraftsOnHide();
+}

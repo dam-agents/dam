@@ -14,7 +14,7 @@ import { rememberReturnPath } from "./lib/return-path.js";
 import { routeToPath } from "./modules/platform/lib/routes.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
-import { useStore } from "./store.js";
+import { startDraftSync, useStore } from "./store.js";
 
 async function main() {
   const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
@@ -26,6 +26,7 @@ async function main() {
   }
 
   useStore.getState().hydrateRoute();
+  startDraftSync(user.profile.sub);
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

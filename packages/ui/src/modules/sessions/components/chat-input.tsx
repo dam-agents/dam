@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type RefObject,
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -16,8 +17,10 @@ import { cn } from "@/lib/utils";
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import { emitToast } from "../../../lib/toast.js";
+import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -37,52 +40,85 @@ export function ChatInput({
   onSend,
   onStop,
 }: ChatInputProps) {
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const agentId = useStore((s) => s.selectedAgent);
+  const sessionId = useStore((s) => s.sessionId);
+  const setDraft = useStore((s) => s.setDraft);
+  const clearDraft = useStore((s) => s.clearDraft);
+  const key = agentId ? draftKey(agentId, sessionId) : null;
+  const draft = useStore((s) =>
+    key ? (s.drafts[key] ?? EMPTY_DRAFT) : EMPTY_DRAFT,
+  );
+  const input = draft.text;
+  const attachments = draft.attachments;
+
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useAutoResize(textareaRef, input);
 
-  const addFiles = useCallback((files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      if (file.size > MAX_UPLOAD_BYTES) {
-        emitToast({
-          kind: "error",
-          message: `${file.name} exceeds ${formatBytes(MAX_UPLOAD_BYTES)} — skipped`,
-        });
-        continue;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const base64 = dataUrl.split(",")[1];
-        if (!base64) return;
-        if (IMAGE_MIME.includes(file.type)) {
-          setAttachments((prev) => [
-            ...prev,
-            { kind: "image", data: base64, mimeType: file.type },
-          ]);
-        } else {
-          setAttachments((prev) => [
-            ...prev,
-            {
-              kind: "file",
-              name: file.name,
-              data: base64,
-              mimeType: file.type || "application/octet-stream",
-              size: file.size,
-            },
-          ]);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  }, []);
+  const consumeDroppedAttachments = useStore(
+    (s) => s.consumeDroppedAttachments,
+  );
+  const droppedNames = draft.droppedAttachmentNames;
+  useEffect(() => {
+    if (!key || !droppedNames?.length) return;
+    const fresh = useStore.getState().drafts[key]?.droppedAttachmentNames;
+    if (!fresh?.length) return;
+    emitToast({
+      kind: "info",
+      message: `Draft restored without ${fresh.length} attachment${
+        fresh.length === 1 ? "" : "s"
+      }: ${fresh.join(", ")}`,
+    });
+    consumeDroppedAttachments(key);
+  }, [key, droppedNames, consumeDroppedAttachments]);
 
-  const removeAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      if (!key) return;
+      for (const file of Array.from(files)) {
+        if (file.size > MAX_UPLOAD_BYTES) {
+          emitToast({
+            kind: "error",
+            message: `${file.name} exceeds ${formatBytes(MAX_UPLOAD_BYTES)} — skipped`,
+          });
+          continue;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1];
+          if (!base64) return;
+          const attachment: Attachment = IMAGE_MIME.includes(file.type)
+            ? { kind: "image", data: base64, mimeType: file.type }
+            : {
+                kind: "file",
+                name: file.name,
+                data: base64,
+                mimeType: file.type || "application/octet-stream",
+                size: file.size,
+              };
+          const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
+          setDraft(key, {
+            attachments: [...current.attachments, attachment],
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+    [key, setDraft],
+  );
+
+  const removeAttachment = useCallback(
+    (index: number) => {
+      if (!key) return;
+      const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
+      setDraft(key, {
+        attachments: current.attachments.filter((_, i) => i !== index),
+      });
+    },
+    [key, setDraft],
+  );
 
   const onPaste = useCallback(
     (e: React.ClipboardEvent) => {
@@ -123,13 +159,15 @@ export function ChatInput({
   const sendDisabled = !isComputing && !hasContent;
 
   const send = useCallback(() => {
-    const text = input.trim();
-    const files = attachments.length > 0 ? attachments : undefined;
+    if (!key) return;
+    const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
+    const text = current.text.trim();
+    const files =
+      current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
-    setInput("");
-    setAttachments([]);
+    clearDraft(key);
     onSend(text, files);
-  }, [input, attachments, onSend]);
+  }, [key, clearDraft, onSend]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !isMobile()) {
@@ -178,7 +216,7 @@ export function ChatInput({
               size="icon-sm"
               className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loadingSession}
+              disabled={loadingSession || !key}
               aria-label="Attach file"
               tooltip="Attach file"
             >
@@ -188,12 +226,12 @@ export function ChatInput({
               ref={textareaRef}
               className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => key && setDraft(key, { text: e.target.value })}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
-              disabled={loadingSession}
+              disabled={loadingSession || !key}
             />
             {showStop && (
               <Button
@@ -214,7 +252,7 @@ export function ChatInput({
                 size="icon-sm"
                 className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || loadingSession}
+                disabled={sendDisabled || loadingSession || !key}
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >
