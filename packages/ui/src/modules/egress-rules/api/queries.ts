@@ -11,13 +11,15 @@ export const egressRulesKeys = {
     [...egressRulesKeys.all, "agent", agentId, "preset"] as const,
 };
 
+const RULES_ERROR_TOAST = "Couldn't load egress rules";
+
 export function useEgressRulesForAgent(agentId: string | null) {
   return useQuery({
     queryKey: egressRulesKeys.forAgent(agentId),
     queryFn: agentId
       ? () => api.egressRules.listForAgent.query({ agentId })
       : skipToken,
-    meta: { errorToast: "Couldn't load egress rules" },
+    meta: { errorToast: RULES_ERROR_TOAST },
   });
 }
 
@@ -26,6 +28,8 @@ export function fetchEgressRulesForAgent(agentId: string) {
     queryKey: egressRulesKeys.forAgent(agentId),
     queryFn: () => api.egressRules.listForAgent.query({ agentId }),
     staleTime: 0,
+    retry: false,
+    meta: { errorToast: RULES_ERROR_TOAST },
   });
 }
 

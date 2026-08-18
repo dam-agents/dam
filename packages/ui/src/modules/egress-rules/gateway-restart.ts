@@ -1,6 +1,14 @@
-import { gatewayRestartImpact, type PromotionRule } from "api-server-api";
+import {
+  gatewayRestartImpact,
+  promotedHosts,
+  type PromotionRule,
+} from "api-server-api";
 
+import type { DialogSlice } from "../platform/store/dialog.js";
+import { fetchEgressRulesForAgent } from "./api/queries.js";
 import { splitHostPort } from "./host-port.js";
+
+type ShowConfirm = DialogSlice["showConfirm"];
 
 export const GATEWAY_RESTART_TITLE = "Restart network gateway?";
 
@@ -74,12 +82,8 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
   return `The network gateway ${timing} to ${joinClauses(clauses)}. ${SANDBOX_KEEPS_RUNNING}`;
 }
 
-export async function confirmGatewayRestart(
-  showConfirm: (
-    message: string,
-    title?: string,
-    options?: { confirmLabel?: string },
-  ) => Promise<boolean>,
+async function confirmGatewayRestart(
+  showConfirm: ShowConfirm,
   impact: StagedGatewayRestart | null,
   confirmLabel: string,
 ): Promise<boolean> {
@@ -89,6 +93,30 @@ export async function confirmGatewayRestart(
       describeGatewayRestart(impact),
       GATEWAY_RESTART_TITLE,
       { confirmLabel },
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function confirmStagedGatewayRestart(
+  showConfirm: ShowConfirm,
+  agentId: string,
+  staged: {
+    adds?: readonly PromotionRule[];
+    removeIds?: readonly string[];
+  },
+  confirmLabel: string,
+): Promise<boolean> {
+  const adds = staged.adds ?? [];
+  const removeIds = staged.removeIds ?? [];
+  if (removeIds.length === 0 && promotedHosts(adds).length === 0) return true;
+  try {
+    const current = await fetchEgressRulesForAgent(agentId);
+    return await confirmGatewayRestart(
+      showConfirm,
+      stagedGatewayRestart({ current, adds, removeIds }),
+      confirmLabel,
     );
   } catch {
     return false;

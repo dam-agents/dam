@@ -21,13 +21,9 @@ import {
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../api/mutations.js";
+import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
 import {
-  fetchEgressRulesForAgent,
-  useEgressRulesForAgent,
-  useTrustedHosts,
-} from "../api/queries.js";
-import {
-  confirmGatewayRestart,
+  confirmStagedGatewayRestart,
   describeGatewayRestart,
   stagedGatewayRestart,
   toPromotionRule,
@@ -133,11 +129,14 @@ export function AgentEgressEditor({
       setDraft(EMPTY_DRAFT);
       return;
     }
-    const impact = stagedGatewayRestart({
-      current: await fetchEgressRulesForAgent(agentId),
-      adds: [toPromotionRule(next)],
-    });
-    if (!(await confirmGatewayRestart(showConfirm, impact, "Add & restart")))
+    if (
+      !(await confirmStagedGatewayRestart(
+        showConfirm,
+        agentId,
+        { adds: [toPromotionRule(next)] },
+        "Add & restart",
+      ))
+    )
       return;
     createRule.mutate(
       { agentId, ...next, ...splitHostPort(next.host) },
@@ -176,11 +175,14 @@ export function AgentEgressEditor({
       staged.togglePendingDelete(rule.id);
       return;
     }
-    const impact = stagedGatewayRestart({
-      current: await fetchEgressRulesForAgent(agentId),
-      removeIds: [rule.id],
-    });
-    if (!(await confirmGatewayRestart(showConfirm, impact, "Revoke & restart")))
+    if (
+      !(await confirmStagedGatewayRestart(
+        showConfirm,
+        agentId,
+        { removeIds: [rule.id] },
+        "Revoke & restart",
+      ))
+    )
       return;
     revokeRule.mutate({ id: rule.id });
   };

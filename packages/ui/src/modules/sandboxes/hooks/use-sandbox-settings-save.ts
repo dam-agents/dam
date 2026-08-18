@@ -17,10 +17,8 @@ import {
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../../egress-rules/api/mutations.js";
-import { fetchEgressRulesForAgent } from "../../egress-rules/api/queries.js";
 import {
-  confirmGatewayRestart,
-  stagedGatewayRestart,
+  confirmStagedGatewayRestart,
   toPromotionRule,
 } from "../../egress-rules/gateway-restart.js";
 import { splitHostPort } from "../../egress-rules/host-port.js";
@@ -64,15 +62,14 @@ export function useSandboxSettingsSave({
 
   return handleSubmit(async (values) => {
     if (!agentId || !dirty) return;
-    const gatewayRestart = stagedGatewayRestart({
-      current: await fetchEgressRulesForAgent(agentId),
-      adds: net.pendingAdds.map(toPromotionRule),
-      removeIds: [...net.pendingDeletes],
-    });
     if (
-      !(await confirmGatewayRestart(
+      !(await confirmStagedGatewayRestart(
         showConfirm,
-        gatewayRestart,
+        agentId,
+        {
+          adds: net.pendingAdds.map(toPromotionRule),
+          removeIds: [...net.pendingDeletes],
+        },
         "Save & restart",
       ))
     ) {
