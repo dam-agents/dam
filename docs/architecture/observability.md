@@ -61,7 +61,7 @@ The platform's own services emit their operational telemetry through an in-proce
 
 ### Turn counter
 
-[usage-tracking](usage-tracking.md) records a turn per turn on every surface and is the place to ask *how many*. This counter is the same fact as a time series, for a dashboard that wants a rate without going through SQL and the inspector role. It is a subscriber on the same turn events that subsystem persists, so the two cannot drift apart in what they count: a turn arrives on the counter exactly when a row arrives in the log.
+[usage-tracking](usage-tracking.md) records a turn per turn on every surface and is the place to ask *how many*. This counter is the same fact as a time series, for a dashboard that wants a rate without going through SQL and the inspector role. It is a subscriber on the same turn events that subsystem persists, so both sinks answer to one definition of a turn rather than each counting their own way. They are not guaranteed to agree in practice: each is separately enabled — the counter needs the SDK active, the log needs activity tracking on — and each fails independently, so treat a divergence as a sink being off or dropping, not as two different notions of a turn.
 
 Its one dimension is the **surface** that carried the turn, taken from the event — for a relay turn the surface the upgrade resolved from the caller's own credential, and for a channel turn its messenger. A failed turn counts like any other, because the counter measures what was asked rather than what came back.
 

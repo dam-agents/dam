@@ -13,8 +13,8 @@ import { emit, EventType } from "../../events.js";
 import {
   recordTurn,
   resetTurnMetricsForTest,
-  startTurnMetricsSaga,
 } from "../../core/turn-metrics.js";
+import { startTurnMetricsSaga } from "../../sagas/turn-metrics.js";
 
 describe("turn metrics", () => {
   let reader: PeriodicExportingMetricReader;
