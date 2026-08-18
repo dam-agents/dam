@@ -1,6 +1,6 @@
 ---
 name: dam-experiment
-description: Author a DAM Experiment — a Python loop script (produce/eval/select, genetic algorithms, benchmark sweeps) the platform observes live with a graph, per-stage progress, and score charts. Use when asked to create, plan, or run an experiment, an optimization loop, or an iterate-and-score campaign. Provides the python experiment_sdk (Experiment/stage/span + spawn) and the plan → "Start a new run" workflow.
+description: Use for any request to create, plan, set up, or run an experiment, compare models/prompts/approaches, test ideas and compare results, or build a benchmark sweep, optimization loop, or iterate-and-score campaign. Every experiment in this sandbox is a platform Experiment — a Python loop script (produce/eval/select, genetic algorithms) the platform observes live with a graph, per-stage progress, and score charts. Provides the python experiment_sdk (Experiment/stage/span + spawn) and the plan → "Start a new run" workflow.
 allowed-tools: Bash(python3 *), Write
 ---
 
