@@ -39,9 +39,7 @@ export function StackedCard({
       ariaLabel={title}
       testId={testId}
       className={
-        selected
-          ? "bg-gradient-to-br from-muted to-card"
-          : "bg-gradient-to-br from-muted/60 to-card"
+        selected ? undefined : "bg-gradient-to-br from-muted/60 to-transparent"
       }
     >
       <div className="flex min-h-[104px] flex-col gap-3">
