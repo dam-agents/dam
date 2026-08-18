@@ -29,6 +29,7 @@ import {
   type FeatureFlagChanged,
   type HarnessConfigChanged,
   type ApiKeyChanged,
+  type EntryPointChosen,
 } from "../../../events.js";
 import type { ActivityEventRow } from "../domain/types.js";
 
@@ -673,6 +674,30 @@ export function startPersistActivitySaga(
           } catch (err) {
             process.stderr.write(
               `[usage/persist-activity] ${type} insert failed: ${err}\n`,
+            );
+          }
+        }, STREAM_CONCURRENCY),
+      )
+      .subscribe(),
+  );
+
+  sub.add(
+    events$()
+      .pipe(
+        ofType<EntryPointChosen>(EventType.EntryPointChosen),
+        mergeMap(async (event) => {
+          try {
+            await deps.insert({
+              type: "entry_point_chosen",
+              actorSub: event.actorSub,
+              agentId: null,
+              surface: "ui",
+              outcome: "success",
+              payload: { choice: event.choice },
+            });
+          } catch (err) {
+            process.stderr.write(
+              `[usage/persist-activity] entry_point_chosen insert failed: ${err}\n`,
             );
           }
         }, STREAM_CONCURRENCY),

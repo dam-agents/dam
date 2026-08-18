@@ -22,6 +22,8 @@ export const VIEW_NAMES = [
   "usage_imports_by_agent",
   "usage_imports_by_user",
   "usage_imports_by_day_7d",
+  "usage_entry_point_choices_30d",
+  "usage_first_entry_point_by_user",
   "usage_core_actor_subs",
   "usage_core_agents",
 ] as const;

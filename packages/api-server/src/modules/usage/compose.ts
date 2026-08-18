@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
-import type { UserIdentity } from "api-server-api";
+import type { UsageService, UserIdentity } from "api-server-api";
+import { emit, EventType } from "../../events.js";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import {
   insertActivityEvent,
@@ -40,6 +41,14 @@ export interface UsageModule {
   mount(app: Hono<AppEnv>): void;
   start(): void;
   stop(): void;
+}
+
+export function composeUsageForOwner(ownerSub: string): UsageService {
+  return {
+    entryPointChosen: (choice) => {
+      emit({ type: EventType.EntryPointChosen, actorSub: ownerSub, choice });
+    },
+  };
 }
 
 export function composeUsageModule(deps: UsageModuleDeps): UsageModule {

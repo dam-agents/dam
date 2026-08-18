@@ -52,6 +52,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `InvocationSpawned` | `invocation_spawned` | invocations |
 | `FeatureFlagChanged` | `feature_flag_changed` | features |
 | `ApiKeyChanged` | `api_key_<action>` | api-keys |
+| `EntryPointChosen` | `entry_point_chosen` | usage |
 
 ## Deliberately not recorded
 

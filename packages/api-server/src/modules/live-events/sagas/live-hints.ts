@@ -84,6 +84,7 @@ export function hintFor(
     case EventType.InvocationSpawned:
     case EventType.FeatureFlagChanged:
     case EventType.ApiKeyChanged:
+    case EventType.EntryPointChosen:
       return null;
     default: {
       const unhandled: never = event;

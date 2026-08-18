@@ -19,6 +19,10 @@ import {
   type NavigationSlice,
 } from "./modules/platform/store/navigation.js";
 import {
+  createSidebarSlice,
+  type SidebarSlice,
+} from "./modules/platform/store/sidebar.js";
+import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
@@ -47,6 +51,7 @@ export type { SessionError } from "./modules/sessions/store/sessions.js";
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
+  SidebarSlice &
   AgentsSlice &
   SessionsSlice &
   ExperimentsSlice &
@@ -58,6 +63,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
+  ...createSidebarSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createExperimentsSlice(...a),

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Callout } from "@/components/ui/callout";
 
 interface Props {
   title: string;
@@ -19,13 +19,16 @@ export function PageEmptyState({
   onAction,
 }: Props) {
   return (
-    <Card className="flex flex-col items-center gap-3 border border-border px-6 py-12 text-center anim-in">
+    <Callout
+      tone="gradient"
+      className="flex flex-col items-start gap-3 p-6 anim-in"
+    >
       <h2 className="text-base font-semibold text-foreground">{title}</h2>
       <p className="max-w-[520px] text-sm text-muted-foreground">{message}</p>
       <Button className="mt-1" onClick={onAction}>
         {actionIcon}
         {actionLabel}
       </Button>
-    </Card>
+    </Callout>
   );
 }

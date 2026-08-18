@@ -1,3 +1,4 @@
+import type { EntryPointChoice } from "api-server-api";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -45,6 +46,7 @@ export enum EventType {
   InvocationSpawned = "InvocationSpawned",
   FeatureFlagChanged = "FeatureFlagChanged",
   ApiKeyChanged = "ApiKeyChanged",
+  EntryPointChosen = "EntryPointChosen",
 }
 
 export type UserAuthenticated = {
@@ -345,6 +347,12 @@ export type ApiKeyChanged = {
   surface: string;
 };
 
+export type EntryPointChosen = {
+  type: EventType.EntryPointChosen;
+  actorSub: string;
+  choice: EntryPointChoice;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -385,7 +393,8 @@ export type DomainEvent =
   | KindedAgentCreated
   | InvocationSpawned
   | FeatureFlagChanged
-  | ApiKeyChanged;
+  | ApiKeyChanged
+  | EntryPointChosen;
 
 const bus$ = new Subject<DomainEvent>();
 

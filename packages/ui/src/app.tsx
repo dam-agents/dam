@@ -5,7 +5,9 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
+import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
@@ -15,7 +17,6 @@ import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledg
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
-import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -57,7 +58,6 @@ function MainApp() {
 
   useLiveEvents();
   useAgentCrashToasts();
-  useFirstRunRedirect();
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -108,11 +108,18 @@ function MainApp() {
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />
           ) : (
-            <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
+            <div
+              className={cn(
+                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
+                view === "list" ? "max-w-[1200px]" : "max-w-[960px]",
+              )}
+            >
               {view === "settings" ? (
                 <SettingsView />
               ) : view === "inbox" ? (
                 <InboxView />
+              ) : view === "coding-agents" ? (
+                <CodingAgentsView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
               ) : view === "knowledge-bases" ? (

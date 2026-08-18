@@ -22,6 +22,7 @@ import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
   composeEgressRulesModule,
   createAgentL7HostsPort,
@@ -283,6 +284,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       liveEvents,
       metrics,
       terms,
+      usage: composeUsageForOwner(user.sub),
       e2e,
       apiKeys,
       budgets,
