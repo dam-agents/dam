@@ -7,11 +7,23 @@ import { dedupeByName, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import type { Skill } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { detectHost } from "../domain/git-host.js";
+import type { SourcePathReason } from "../domain/scan-failure.js";
 
 export class PublicArchiveNotFoundError extends Error {
   constructor(gitUrl: string) {
     super(`${gitUrl} is not a public GitHub repo`);
     this.name = "PublicArchiveNotFoundError";
+  }
+}
+
+export class SkillSourcePathError extends Error {
+  constructor(
+    readonly reason: SourcePathReason,
+    readonly path: string,
+    readonly version: string,
+  ) {
+    super(`skill source path ${reason}: ${path}`);
+    this.name = "SkillSourcePathError";
   }
 }
 
@@ -93,15 +105,35 @@ function subPathEscapes(subPath: string): boolean {
   return subPath.startsWith("/") || subPath.split("/").includes("..");
 }
 
+function isMissingDir(err: unknown): boolean {
+  const code = (err as { code?: string }).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
 async function findSkillDirs(
   repoDir: string,
+  version: string,
   subPath?: string,
 ): Promise<string[]> {
   if (subPath) {
     if (subPathEscapes(subPath)) {
       throw new Error(`skill source path rejected: ${subPath}`);
     }
-    return skillDirsUnder(repoDir, path.join(repoDir, subPath));
+    const root = path.join(repoDir, subPath);
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch (err) {
+      if (isMissingDir(err)) {
+        throw new SkillSourcePathError("path-missing", subPath, version);
+      }
+      throw err;
+    }
+    const dirs = await skillDirsIn(repoDir, root, entries);
+    if (dirs.length === 0) {
+      throw new SkillSourcePathError("path-empty", subPath, version);
+    }
+    return dirs;
   }
   const found: string[] = [];
   for (const root of SKILL_SOURCE_ROOTS) {
@@ -121,6 +153,14 @@ async function skillDirsUnder(
   } catch {
     return [];
   }
+  return skillDirsIn(repoDir, root, entries);
+}
+
+async function skillDirsIn(
+  repoDir: string,
+  root: string,
+  entries: import("node:fs").Dirent[],
+): Promise<string[]> {
   const out: string[] = [];
   for (const ent of entries) {
     if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
@@ -172,7 +212,7 @@ export async function scanPublicGithubArchive(
       throw new Error("tarball contained no directories");
     const repoDir = path.join(tmp, extracted[0].name);
 
-    const skillDirs = await findSkillDirs(repoDir, subPath);
+    const skillDirs = await findSkillDirs(repoDir, version, subPath);
     const scanned = await Promise.all(
       skillDirs.map(async (rel) => {
         const absDir = path.join(repoDir, rel);

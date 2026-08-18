@@ -23,6 +23,19 @@ const COPY: Record<ScanFailureCode, Omit<ScanFailure, "code">> = {
     detail:
       "The sandbox couldn't be reached to scan this source. Try re-scanning in a moment.",
   },
+  source_path_not_found: {
+    title: "This source's path isn't in the repository",
+    detail:
+      "The path configured on this source doesn't exist in the repository. " +
+      "Remove the source and add it again with the correct path, or with none.",
+  },
+  source_path_empty: {
+    title: "No skills under this source's path",
+    detail:
+      "The path configured on this source exists but holds no skill. " +
+      "Skills are found one level below the path. " +
+      "Remove the source and add it again with the correct path, or with none.",
+  },
   other: {
     title: "Can't load skills from this source",
     detail:
@@ -35,6 +48,27 @@ export function scanFailure(
   override?: Partial<Omit<ScanFailure, "code">>,
 ): ScanFailure {
   return { code, ...COPY[code], ...override };
+}
+
+export type SourcePathReason = "path-missing" | "path-empty";
+
+export function sourcePathFailure(
+  reason: SourcePathReason,
+  ctx: { path: string; version?: string },
+): ScanFailure {
+  const at = ctx.version ? ` at commit ${ctx.version.slice(0, 7)}` : "";
+  const where = `the repository${at}`;
+  const detail =
+    reason === "path-missing"
+      ? `The path ${JSON.stringify(ctx.path)} isn't a directory in ${where}. ` +
+        "Remove the source and add it again with the correct path, or with none."
+      : `The path ${JSON.stringify(ctx.path)} is a directory in ${where}, but holds no skill. ` +
+        "Skills are found one level below the path. " +
+        "Remove the source and add it again with the correct path, or with none.";
+  return scanFailure(
+    reason === "path-missing" ? "source_path_not_found" : "source_path_empty",
+    { detail },
+  );
 }
 
 export function scanFailureMessage(failure: ScanFailure): string {

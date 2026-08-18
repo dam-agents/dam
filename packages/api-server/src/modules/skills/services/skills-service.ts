@@ -50,7 +50,10 @@ import {
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { UnitOfWork } from "../../../core/unit-of-work.js";
 import { detectHost } from "../domain/git-host.js";
-import { PublicArchiveNotFoundError } from "../infrastructure/public-archive-scanner.js";
+import {
+  PublicArchiveNotFoundError,
+  SkillSourcePathError,
+} from "../infrastructure/public-archive-scanner.js";
 import type { ScanScope } from "../infrastructure/scan-cache.js";
 import { publishSkill as runPublishSkill } from "./publish-service.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";
@@ -60,6 +63,7 @@ import {
   scanFailureError,
   scanFailureToTrpc,
 } from "../infrastructure/upstream-to-trpc.js";
+import { sourcePathFailure } from "../domain/scan-failure.js";
 import type { GithubCredentialPort } from "../infrastructure/github-credential-port.js";
 import { getLogger } from "../../../core/logger.js";
 
@@ -285,6 +289,11 @@ async function scanForSource(
     return await runScanForSource(deps, src, agentId);
   } catch (err) {
     if (hasScanFailure(err)) throw err;
+    if (err instanceof SkillSourcePathError) {
+      throw scanFailureToTrpc(
+        sourcePathFailure(err.reason, { path: err.path, version: err.version }),
+      );
+    }
     getLogger().error(
       { err, source: src.gitUrl, path: src.path, agentId },
       "skills scan: unclassified failure",
