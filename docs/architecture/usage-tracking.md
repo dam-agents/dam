@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-17
+Last verified: 2026-08-18
 
 ## Overview
 
@@ -12,7 +12,7 @@ Three design choices follow from the operator framing:
 - **Storage is pseudonymized.** Every Keycloak `sub` written to Postgres is HMAC-SHA256 hashed with a per-install secret at the repository write boundary. Same input → same output, so cross-table joins and `GROUP BY sub` still work; reverse lookup requires the secret, which lives on the api-server pod. Pseudonymization, not anonymization — see [security-and-credentials](security-and-credentials.md) for the GDPR framing.
 - **Access is a separate role.** The `platform-inspector` realm role gates `/api/usage/*`. It is independent of the platform-access role: "can read aggregates" doesn't imply "can use the platform." The Helm chart auto-creates the role and an `inspectors` group mapped to it; operators grant access by adding Keycloak users to the group.
 
-The subsystem is the **api-server's** responsibility end-to-end. The controller does not participate; the agent-runtime does not participate. Writes happen in-process on the existing event bus; reads happen on a Keycloak-authenticated HTTP route mounted under the same Hono app.
+The subsystem is the **api-server's** responsibility end-to-end. The controller does not participate; the agent-runtime does not participate. Writes happen in-process on the existing event bus, fed by other modules' events plus one inbound tRPC mutation the subsystem owns — `usage.entryPointChosen`, the browser reporting which way in the user picked; reads happen on a Keycloak-authenticated HTTP route mounted under the same Hono app.
 
 ## Diagram
 
@@ -90,7 +90,7 @@ Two sagas subscribe to the bus:
 
 Both sagas write through a repository layer that applies HMAC-SHA256 to every Keycloak `sub` immediately before INSERT — `actor_sub`, `owner_sub`, and `actor_roles.actor_sub` all go through the same pseudonymizer. The repository is the single chokepoint; emit sites and sagas continue to deal in raw subs in-memory.
 
-Concurrency is bounded — each subscriber uses an RxJS `mergeMap` with a per-stream concurrency cap so a burst (api-server restart, silent-renew storm) cannot saturate the Postgres connection pool. The auth subscriber additionally exploits a partial unique index — one row per (sub, surface, day) — so heavy auth traffic does not bloat the table.
+Concurrency is bounded — each subscriber uses an RxJS `mergeMap` with a per-stream concurrency cap so a burst (api-server restart, silent-renew storm) cannot saturate the Postgres connection pool. Two subscribers additionally exploit a partial unique index and an `ON CONFLICT DO NOTHING` insert: auth keeps one row per (sub, surface, day) so heavy auth traffic does not bloat the table, and the entry-point choice keeps one row per sub so the first choice stands and a replayed call is discarded.
 
 **One recorded interaction is an intent rather than a completed operation.** Every other event is a by-product of something the api-server did. The entry choice a new user makes on the empty home screen is a click that may lead nowhere — counting the users who choose a way in and then abandon it is the point of recording it — so the browser reports it through an owner-scoped procedure whose only effect is to emit the event. It names no Agent and carries no outcome of its own; from the write path down it is an ordinary row.
 
@@ -154,6 +154,7 @@ Every pilot view applies `AND actor_sub NOT IN (SELECT … FROM usage_core_actor
 
 ## Trust boundaries
 
-- **Inspector role gates the read API.** Writes are unauthenticated to *the subsystem* — they originate inside the api-server process from already-authenticated user requests on other routes. The activity log inherits whatever trust boundary the originating route enforced.
+- **Inspector role gates the read API.** Most writes are unauthenticated to *the subsystem* — they originate inside the api-server process from already-authenticated user requests on other routes, and the activity log inherits whatever trust boundary the originating route enforced.
+- **One write route belongs to the subsystem.** `usage.entryPointChosen` is an owner-scoped tRPC mutation: the actor is the session's Keycloak `sub`, never a client-supplied field, and the input carries the choice alone. A caller can therefore only write about itself. Repeats are bounded by a partial unique index — one `entry_point_chosen` row per actor — so a client that replays the call cannot inflate the entry-point views.
 - **HMAC key gates re-identification.** Holding the key (an in-cluster K8s Secret mounted into the api-server pod) is what lets a reader correlate a pseudonym back to a Keycloak `sub`. Database-only access does not.
 - **Ad-hoc SQL is intentionally not exposed.** Earlier iterations included a `POST /api/usage/query` taking raw SQL. It was removed: an inspector with that endpoint can read other Postgres tables containing credential material (refresh tokens, HITL payloads). Inspectors get views; operators wanting psql go through `kubectl exec`.

@@ -176,6 +176,20 @@
       "when": 1786965238393,
       "tag": "0024_add_usage_entry_point_views",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787036190747,
+      "tag": "0025_drop_duplicate_entry_point_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787036202730,
+      "tag": "0026_tiny_frightful_four",
+      "breakpoints": true
     }
   ]
 }
