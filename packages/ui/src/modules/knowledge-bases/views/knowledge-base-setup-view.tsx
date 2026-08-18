@@ -12,10 +12,8 @@ import {
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { KbTemplateCard } from "../../sandboxes/components/steps/kb-template-card.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import {
-  KINDED_HARNESS_TEMPLATE_ID,
-  providerPolicy,
-} from "../../sandboxes/lib/wizard-snapshot.js";
+import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/wizard-snapshot.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { DEFAULT_KB_TEMPLATE_ID, KB_TEMPLATES } from "../lib/kb-templates.js";
 
@@ -88,7 +86,7 @@ export function KnowledgeBaseSetupView() {
       <ProviderSection
         selected={form.providerRef}
         onSelect={(providerRef) => update({ providerRef })}
-        policy={providerPolicy("knowledge-base")}
+        policy={setupProviderPolicy("knowledge-base")}
       />
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}

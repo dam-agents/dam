@@ -22,8 +22,8 @@ export function CodingAgentsView() {
     suspend,
   });
 
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
-  const createCodingAgent = () => navigateToCreateSandbox("general-purpose");
+  const setView = useStore((s) => s.setView);
+  const createCodingAgent = () => setView("coding-agent-new");
 
   return (
     <div>

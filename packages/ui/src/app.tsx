@@ -7,6 +7,7 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
@@ -18,7 +19,7 @@ import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledg
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
-import { parseRoute } from "./modules/platform/lib/routes.js";
+import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -55,6 +56,13 @@ export default function App() {
   return <MainApp />;
 }
 
+const SETUP_VIEWS = new Set<Route["view"]>([
+  "sandbox-new",
+  "coding-agent-new",
+  "experiment-new",
+  "knowledge-base-new",
+]);
+
 function MainApp() {
   const view = useStore((s) => s.view);
 
@@ -63,13 +71,7 @@ function MainApp() {
 
   useEffect(() => {
     const path = window.location.pathname;
-    const routed = parseRoute(path).view;
-    if (
-      routed === "sandbox-new" ||
-      routed === "experiment-new" ||
-      routed === "knowledge-base-new"
-    )
-      return;
+    if (SETUP_VIEWS.has(parseRoute(path).view)) return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -122,7 +124,9 @@ function MainApp() {
                 view === "list" ? "max-w-[1200px]" : "max-w-[960px]",
               )}
             >
-              {view === "settings" ? (
+              {view === "coding-agent-new" ? (
+                <CodingAgentSetupView />
+              ) : view === "settings" ? (
                 <SettingsView />
               ) : view === "inbox" ? (
                 <InboxView />

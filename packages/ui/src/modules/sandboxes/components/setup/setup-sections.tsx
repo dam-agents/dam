@@ -11,7 +11,7 @@ import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.
 import type { ProviderRef } from "../../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../../providers/components/provider-select.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
-import type { providerPolicy } from "../../lib/wizard-snapshot.js";
+import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
 
 export function NameSection({
@@ -42,7 +42,7 @@ export function ProviderSection({
 }: {
   selected: ProviderRef | null;
   onSelect: (ref: ProviderRef) => void;
-  policy: ReturnType<typeof providerPolicy>;
+  policy: ReturnType<typeof setupProviderPolicy>;
 }) {
   return (
     <section className="mb-8">

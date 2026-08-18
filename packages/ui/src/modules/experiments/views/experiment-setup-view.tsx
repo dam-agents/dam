@@ -9,10 +9,8 @@ import {
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import {
-  KINDED_HARNESS_TEMPLATE_ID,
-  providerPolicy,
-} from "../../sandboxes/lib/wizard-snapshot.js";
+import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/wizard-snapshot.js";
 import { useCreateExperimentSandbox } from "../api/mutations.js";
 
 const RETURN_PATH = routeToPath({ view: "experiment-new" });
@@ -64,7 +62,7 @@ export function ExperimentSetupView() {
       <ProviderSection
         selected={form.providerRef}
         onSelect={(providerRef) => update({ providerRef })}
-        policy={providerPolicy("experiment")}
+        policy={setupProviderPolicy("experiment")}
       />
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}

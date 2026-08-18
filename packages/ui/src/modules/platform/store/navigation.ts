@@ -24,6 +24,7 @@ type ParameterlessView =
   | "terms"
   | "artifacts"
   | "coding-agents"
+  | "coding-agent-new"
   | "experiments"
   | "experiment-new"
   | "knowledge-base-new"

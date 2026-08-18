@@ -28,7 +28,7 @@ export function ListView() {
   const outdated = agents.filter((a) => a.templateUpdate);
   const showUpdateAllBanner = outdated.length > 1;
 
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const setView = useStore((s) => s.setView);
 
   return (
     <div>
@@ -36,7 +36,7 @@ export function ListView() {
         title="Home"
         actions={
           agents.length > 0 ? (
-            <Button onClick={() => navigateToCreateSandbox()}>
+            <Button onClick={() => setView("coding-agent-new")}>
               Create sandbox
             </Button>
           ) : undefined

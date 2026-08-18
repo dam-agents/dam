@@ -14,13 +14,13 @@ import { externalLinkProps } from "@/lib/external-link";
 import { getBrand } from "../../../brand.js";
 import { DOCS_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
-import type { StartingPoint } from "../../sandboxes/lib/wizard-snapshot.js";
 import { useRecordEntryPoint } from "../../usage/api/mutations.js";
+
+type SetupView = "coding-agent-new" | "experiment-new" | "knowledge-base-new";
 
 interface EntryPoint {
   choice: EntryPointChoice;
-  setupView?: "experiment-new" | "knowledge-base-new";
-  startingPoint?: StartingPoint;
+  setupView: SetupView;
   icon: CarbonIconType;
   title: string;
   description: string;
@@ -29,7 +29,7 @@ interface EntryPoint {
 const ENTRY_POINTS: EntryPoint[] = [
   {
     choice: "sandbox",
-    startingPoint: "general-purpose",
+    setupView: "coding-agent-new",
     icon: ContainerSoftware,
     title: "Create a coding agent",
     description:
@@ -54,17 +54,12 @@ const ENTRY_POINTS: EntryPoint[] = [
 ];
 
 export function WelcomeEntryPoints() {
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const setView = useStore((s) => s.setView);
   const recordEntryPoint = useRecordEntryPoint();
 
   const enter = (entryPoint: EntryPoint) => {
     recordEntryPoint.mutate({ choice: entryPoint.choice });
-    if (entryPoint.setupView) {
-      setView(entryPoint.setupView);
-      return;
-    }
-    navigateToCreateSandbox(entryPoint.startingPoint);
+    setView(entryPoint.setupView);
   };
 
   return (

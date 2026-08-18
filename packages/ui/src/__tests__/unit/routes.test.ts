@@ -16,6 +16,7 @@ const canonicalPaths = [
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/coding-agents",
+  "/coding-agents/new",
   "/experiments",
   "/experiments/new",
   "/knowledge-bases",

@@ -33,6 +33,7 @@ export type Route =
   | { view: "sandbox-new" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "coding-agents" }
+  | { view: "coding-agent-new" }
   | { view: "experiments" }
   | { view: "experiment-new" }
   | { view: "knowledge-base-new" }
@@ -81,6 +82,7 @@ export function parseRoute(path: string): Route {
       sandboxSection: section.success ? section.data : "setup",
     };
   }
+  if (path === "/coding-agents/new") return { view: "coding-agent-new" };
   if (path === "/coding-agents") return { view: "coding-agents" };
   if (path === "/experiments") return { view: "experiments" };
   if (path === "/experiments/new") return { view: "experiment-new" };
@@ -135,6 +137,8 @@ export function routeToPath(route: Route): string {
     }
     case "coding-agents":
       return "/coding-agents";
+    case "coding-agent-new":
+      return "/coding-agents/new";
     case "experiments":
       return "/experiments";
     case "experiment-new":
