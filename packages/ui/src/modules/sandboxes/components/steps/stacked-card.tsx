@@ -42,7 +42,7 @@ export function StackedCard({
         selected ? undefined : "bg-gradient-to-br from-muted/60 to-transparent"
       }
     >
-      <div className="flex min-h-[104px] flex-col gap-3">
+      <div className="flex min-h-[96px] flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           {icon}
           {trailing}
