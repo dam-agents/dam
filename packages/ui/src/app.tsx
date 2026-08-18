@@ -11,8 +11,10 @@ import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ListView } from "./modules/agents/views/list-view.js";
 import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
+import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
@@ -61,7 +63,13 @@ function MainApp() {
 
   useEffect(() => {
     const path = window.location.pathname;
-    if (parseRoute(path).view === "sandbox-new") return;
+    const routed = parseRoute(path).view;
+    if (
+      routed === "sandbox-new" ||
+      routed === "experiment-new" ||
+      routed === "knowledge-base-new"
+    )
+      return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -122,6 +130,10 @@ function MainApp() {
                 <CodingAgentsView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
+              ) : view === "experiment-new" ? (
+                <ExperimentSetupView />
+              ) : view === "knowledge-base-new" ? (
+                <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
               ) : view === "artifacts" ? (

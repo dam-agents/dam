@@ -1,0 +1,113 @@
+import { knowledgeBaseTemplateIdSchema } from "api-server-api";
+import { useCallback, useEffect, useState } from "react";
+import { z } from "zod";
+
+import { emitToast } from "../../../lib/toast.js";
+import { generateSandboxName } from "../lib/sandbox-name.js";
+
+export type SetupFlow = "coding-agent" | "experiment" | "knowledge-base";
+
+export const setupFormSchema = z.object({
+  name: z.string(),
+  providerRef: z.object({ id: z.string() }).nullable().default(null),
+  connectionIds: z.array(z.string()).default([]),
+  templateId: z.string().nullable().default(null),
+  kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
+  customImage: z.string().default(""),
+});
+export type SetupForm = z.infer<typeof setupFormSchema>;
+
+export interface SetupFormState {
+  form: SetupForm;
+  update: (patch: Partial<SetupForm>) => void;
+  reset: () => void;
+}
+
+function storageKey(flow: SetupFlow): string {
+  return `platform-setup-${flow}`;
+}
+
+function save(flow: SetupFlow, form: SetupForm): void {
+  try {
+    sessionStorage.setItem(storageKey(flow), JSON.stringify(form));
+  } catch {}
+}
+
+function load(flow: SetupFlow, defaults: Partial<SetupForm>): SetupForm | null {
+  let raw: string | null = null;
+  try {
+    raw = sessionStorage.getItem(storageKey(flow));
+  } catch {}
+  if (!raw) return null;
+  const parsed = setupFormSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) {
+    console.warn(
+      `[setup-form] discarding unusable ${flow} draft:`,
+      parsed.error.issues,
+    );
+    return null;
+  }
+  return { ...defaults, ...parsed.data };
+}
+
+export function useSetupForm(
+  flow: SetupFlow,
+  defaults: Partial<SetupForm> = {},
+  returnPath?: string,
+): SetupFormState {
+  const [form, setForm] = useState<SetupForm>(() => {
+    const restored = load(flow, {});
+    if (restored) return restored;
+    const fresh = setupFormSchema.parse({
+      name: generateSandboxName(),
+      ...defaults,
+    });
+    save(flow, fresh);
+    return fresh;
+  });
+
+  const update = useCallback(
+    (patch: Partial<SetupForm>) => {
+      setForm((prev) => {
+        const next = { ...prev, ...patch };
+        save(flow, next);
+        return next;
+      });
+    },
+    [flow],
+  );
+
+  const reset = useCallback(() => {
+    try {
+      sessionStorage.removeItem(storageKey(flow));
+    } catch {}
+  }, [flow]);
+
+  useEffect(() => {
+    if (!returnPath) return;
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("oauth");
+    if (!result) return;
+    window.history.replaceState({}, "", returnPath);
+    const connectionId = params.get("connection");
+    if (result === "success" && connectionId) {
+      setForm((prev) => {
+        const next = {
+          ...prev,
+          connectionIds: [...new Set([...prev.connectionIds, connectionId])],
+        };
+        save(flow, next);
+        return next;
+      });
+      return;
+    }
+    if (result !== "success") {
+      emitToast({
+        kind: "error",
+        message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
+      });
+    }
+  }, [flow, returnPath]);
+
+  return { form, update, reset };
+}

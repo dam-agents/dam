@@ -25,6 +25,8 @@ type ParameterlessView =
   | "artifacts"
   | "coding-agents"
   | "experiments"
+  | "experiment-new"
+  | "knowledge-base-new"
   | "knowledge-bases"
   | "sandbox-new";
 

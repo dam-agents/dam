@@ -19,6 +19,7 @@ import { useRecordEntryPoint } from "../../usage/api/mutations.js";
 
 interface EntryPoint {
   choice: EntryPointChoice;
+  setupView?: "experiment-new" | "knowledge-base-new";
   startingPoint?: StartingPoint;
   icon: CarbonIconType;
   title: string;
@@ -36,7 +37,7 @@ const ENTRY_POINTS: EntryPoint[] = [
   },
   {
     choice: "experiment",
-    startingPoint: "experiment",
+    setupView: "experiment-new",
     icon: Chemistry,
     title: "Begin an experiment",
     description:
@@ -44,7 +45,7 @@ const ENTRY_POINTS: EntryPoint[] = [
   },
   {
     choice: "knowledge-base",
-    startingPoint: "knowledge-base",
+    setupView: "knowledge-base-new",
     icon: Book,
     title: "Start a knowledge base",
     description:
@@ -54,10 +55,15 @@ const ENTRY_POINTS: EntryPoint[] = [
 
 export function WelcomeEntryPoints() {
   const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
+  const setView = useStore((s) => s.setView);
   const recordEntryPoint = useRecordEntryPoint();
 
   const enter = (entryPoint: EntryPoint) => {
     recordEntryPoint.mutate({ choice: entryPoint.choice });
+    if (entryPoint.setupView) {
+      setView(entryPoint.setupView);
+      return;
+    }
     navigateToCreateSandbox(entryPoint.startingPoint);
   };
 
