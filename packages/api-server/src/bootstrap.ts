@@ -79,6 +79,7 @@ import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
+import { startTurnMetricsSaga } from "./core/turn-metrics.js";
 import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
@@ -397,6 +398,7 @@ export async function bootstrap() {
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
   );
+  const turnMetricsSub = startTurnMetricsSaga();
   const seedSources = parseSeedSources(config.skillSourcesSeed);
 
   const usage = composeUsageModule({
@@ -934,6 +936,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
+    turnMetricsSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();
