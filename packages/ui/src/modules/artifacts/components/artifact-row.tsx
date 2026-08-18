@@ -32,6 +32,7 @@ import { VersionBadge } from "./version-badge.js";
 
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
+  onRename: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
 }
 
@@ -44,6 +45,7 @@ export function ArtifactRow({
   artifact,
   showAgent = true,
   onPreview,
+  onRename,
   onShare,
 }: Props) {
   const expiry = expiryState(artifact.expiresAt);
@@ -106,7 +108,11 @@ export function ArtifactRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <ArtifactRowMenuItems artifact={artifact} onShare={onShare} />
+              <ArtifactRowMenuItems
+                artifact={artifact}
+                onRename={onRename}
+                onShare={onShare}
+              />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

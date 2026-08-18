@@ -71,7 +71,7 @@ showing the old title after a rename.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Rename an artifact from the row menu | Dialog, menu item, `onRename` plumbing, `get` invalidation | — |
+| 01 ✅ | Rename an artifact from the row menu | Dialog, menu item, `onRename` plumbing, `get` invalidation | — |
 
 The feature is one atomic commit. Splitting it would cut through a single behaviour.
 

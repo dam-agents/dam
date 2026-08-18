@@ -8,6 +8,7 @@ const invalidatesLibrary = [
 ];
 const invalidatesLibraryAndContent = [
   ...invalidatesLibrary,
+  trpc.artifactLibrary.get.queryKey(),
   trpc.artifactLibrary.getContent.queryKey(),
   trpc.artifactLibrary.preview.queryKey(),
 ];

@@ -195,6 +195,7 @@ export type {
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
+  ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
 } from "./modules/artifact-library/schemas.js";
 export {
