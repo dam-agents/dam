@@ -156,14 +156,14 @@ export function IconRail({
             </button>
           </Tooltip>
         </div>
-        <div className="mt-px flex flex-col gap-1">
+        <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
           <RailItem {...codingAgents} expanded={expandedNav} />
           <RailItem {...experiments} expanded={expandedNav} />
           <RailItem {...knowledgeBases} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
-        <div className="mb-2 flex flex-col gap-1">
+        <div className="mb-2 flex flex-col gap-px">
           <RailItem {...inbox} expanded={expandedNav} />
           <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...settings} expanded={expandedNav} />
