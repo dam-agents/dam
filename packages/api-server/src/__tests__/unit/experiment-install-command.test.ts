@@ -23,6 +23,13 @@ describe("buildExperimentInstallCommand", () => {
     expect(skillAt).toBeGreaterThan(commandsAt);
   });
 
+  it("records the sandbox purpose in AGENTS.md before the skill lands", () => {
+    const purposeAt = command.indexOf('"$HOME/.agents/AGENTS.md"');
+    const skillCopyAt = command.lastIndexOf(EXPERIMENT_SKILL_NAME);
+    expect(purposeAt).toBeGreaterThan(-1);
+    expect(skillCopyAt).toBeGreaterThan(purposeAt);
+  });
+
   it("fails the run rather than half-installing", () => {
     expect(command).toContain("set -eu");
   });

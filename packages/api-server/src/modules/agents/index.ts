@@ -40,6 +40,7 @@ export {
   AgentStoppedError,
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
+export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export {
   deleteChannelsByAgent,
   listChannelsByOwner,

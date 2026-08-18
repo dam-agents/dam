@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-08-17
+Last verified: 2026-08-18
 
 ## Overview
 
@@ -44,7 +44,14 @@ destination has nothing to show and the user has nothing to click.
 So creating one is a first-class flow: an **experiment sandbox** is an Agent
 carrying the `experiment` [Agent Kind](knowledge-bases.md) whose Install Command
 copies the `dam-experiment` authoring skill and an `/experiment-onboard` command
-out of a path staged in the image. It rides the same kinded-create rail as a
+out of a path staged in the image, and appends a sandbox-purpose note to
+`~/.agents/AGENTS.md` so every session — not only the greeted first one — opens
+knowing that "experiment" means a platform Experiment. AGENTS.md is the source
+of truth and a symlink makes Claude Code read it, mirroring the image's
+`/etc/AGENTS.md` pattern at `$HOME` level. The note rides the shared append-only
+primitive (`buildAppendAgentsMdCommand` in the agents module), so later writers
+compose instead of clobbering each other.
+It rides the same kinded-create rail as a
 Knowledge Base, differing only in the marker and the command; nothing is fetched
 over the network, because the kit ships with the image. The skill used to be baked
 into every Claude Code sandbox's seeded workspace — moving it behind the marker is
@@ -61,8 +68,8 @@ plan earns a container too. There is no backfill and nothing disappears.
 Opening a fresh experiment sandbox **greets the user**: the UI hidden-sends
 `/experiment-onboard` so the agent opens by asking what to optimize. It waits until the
 sandbox reports that skill among its installed skills, so it never runs a command
-the Install Command has not delivered yet — the copy installs the command before
-the skill precisely so the skill's presence implies both.
+the Install Command has not delivered yet — the skill is copied last precisely so
+its presence implies the command and the purpose note both landed.
 
 ## Resources
 
