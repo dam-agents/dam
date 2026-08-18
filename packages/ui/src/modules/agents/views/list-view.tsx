@@ -6,7 +6,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { useStore } from "../../../store.js";
 import { BudgetMeter } from "../../budgets/components/budget-meter.js";
 import { SandboxList } from "../components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../components/welcome-entry-points.js";
@@ -28,20 +27,9 @@ export function ListView() {
   const outdated = agents.filter((a) => a.templateUpdate);
   const showUpdateAllBanner = outdated.length > 1;
 
-  const setView = useStore((s) => s.setView);
-
   return (
     <div>
-      <PageHeader
-        title="Home"
-        actions={
-          agents.length > 0 ? (
-            <Button onClick={() => setView("coding-agent-new")}>
-              Create sandbox
-            </Button>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Home" />
 
       {initialLoaded && agents.length > 0 && (
         <>
