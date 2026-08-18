@@ -35,6 +35,7 @@ export type EgressRuleUpdateInput = z.infer<typeof egressRuleUpdateInputSchema>;
 
 export interface EgressRulesService {
   listForAgent(agentId: string): Promise<EgressRuleView[]>;
+  get(id: string): Promise<EgressRuleView>;
   currentPreset(agentId: string): Promise<EgressPreset>;
   trustedHosts(): Promise<readonly string[]>;
   create(input: EgressRuleCreateInput): Promise<EgressRuleView>;

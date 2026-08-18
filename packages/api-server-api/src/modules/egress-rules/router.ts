@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
@@ -8,6 +9,7 @@ import {
   egressRuleApplyPresetInputSchema,
   egressRuleCreateInputSchema,
   egressRuleCurrentPresetInputSchema,
+  egressRuleGetInputSchema,
   egressRuleListForAgentInputSchema,
   egressRuleRevokeInputSchema,
   egressRuleUpdateInputSchema,
@@ -19,6 +21,21 @@ export const egressRulesRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.egressRules.listForAgent(input.agentId);
+    }),
+
+  get: readAgentProcedure
+    .input(egressRuleGetInputSchema)
+    .query(async ({ ctx, input }) => {
+      const rule = await ctx.egressRules.get(input.id);
+      try {
+        checkAgentBinding(ctx, rule.agentId);
+      } catch {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "egress rule not found",
+        });
+      }
+      return rule;
     }),
 
   currentPreset: readAgentProcedure

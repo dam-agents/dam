@@ -19,6 +19,7 @@ import {
   useDenyForever,
   useDismissApproval,
 } from "../api/mutations.js";
+import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
 import { isHeldCallStillLive } from "../lib/hold.js";
 
 export function EgressApprovalToast({
@@ -35,6 +36,7 @@ export function EgressApprovalToast({
   const denyForever = useDenyForever();
   const dismiss = useDismissApproval();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const restart = useEgressApprovalRestart(row);
 
   if (row.payload.kind !== "ext_authz") return null;
   const { host, method, path } = row.payload;
@@ -87,7 +89,12 @@ export function EgressApprovalToast({
           size="sm"
           className="h-[26px] bg-background text-sm font-medium"
           disabled={inflight}
-          onClick={() => approvePermanent.mutate({ id: row.id })}
+          onClick={() => {
+            void restart
+              .confirmNarrow("Allow & restart")
+              .then((ok) => ok && approvePermanent.mutate({ id: row.id }));
+          }}
+          tooltip={restart.permanentTooltip}
         >
           <Security size={14} /> Always allow this request
         </Button>
@@ -96,7 +103,12 @@ export function EgressApprovalToast({
           size="sm"
           className="h-[26px] bg-background text-sm font-medium"
           disabled={inflight}
-          onClick={() => approveHost.mutate({ id: row.id })}
+          onClick={() => {
+            void restart
+              .confirmHost("Allow & restart")
+              .then((ok) => ok && approveHost.mutate({ id: row.id }));
+          }}
+          tooltip={restart.allowHostTooltip}
         >
           <Globe size={14} /> Always allow this host
         </Button>
@@ -121,8 +133,12 @@ export function EgressApprovalToast({
           size="sm"
           className="h-[26px] text-sm font-medium"
           disabled={inflight}
-          onClick={() => denyForever.mutate({ id: row.id })}
-          tooltip="Deny this exact path on this host (writes a deny rule)"
+          onClick={() => {
+            void restart
+              .confirmNarrow("Deny & restart")
+              .then((ok) => ok && denyForever.mutate({ id: row.id }));
+          }}
+          tooltip={restart.denyForeverTooltip}
         >
           <Locked size={14} /> Always deny this request
         </Button>

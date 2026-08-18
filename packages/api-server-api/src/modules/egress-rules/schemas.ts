@@ -38,6 +38,10 @@ export const egressRuleUpdateInputSchema = z.object({
   verdict: ruleVerdictSchema.optional(),
 });
 
+export const egressRuleGetInputSchema = z.object({
+  id: z.string().min(1),
+});
+
 export const egressRuleRevokeInputSchema = z.object({
   id: z.string().min(1),
 });

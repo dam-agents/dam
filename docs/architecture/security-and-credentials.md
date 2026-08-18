@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-14
+Last verified: 2026-08-17
 
 ## Overview
 
@@ -442,20 +442,23 @@ passthrough chains.
 port is invisible to the L4 catch-all (it sees only SNI), so the rule's
 host must be *promoted* onto a TLS-terminating chain to be enforceable
 over HTTPS. The promotion signal is the Agent resource's `l7Hosts` spec
-list (#2865). It is per-agent intent, exactly like connection grants:
-promoting a host on one agent re-renders and rolls only that agent's
-gateway, never a sibling's (#2867). Promoted hosts get an uncredentialed
-L7 chain (gate sees method/path; nothing is injected) and extend the leaf
-certificate's SAN list.
+list. It is per-agent intent, exactly like connection grants: promoting a
+host on one agent re-renders and rolls only that agent's gateway, never a
+sibling's. Promoted hosts get an uncredentialed L7 chain (gate sees
+method/path; nothing is injected) and extend the leaf certificate's SAN
+list.
 
 `l7Hosts` is a pure projection of the agent's active rules: the api-server
 recomputes it from the rule set after every create, edit, and revoke and
 writes it wholesale, so a host is demoted (dropped from interception) as
-soon as its last narrowing rule is gone. Connection-derived rules are
-excluded — their host is already TLS-terminated by the connection's own
-credential chain. Because each entry is interpolated into the gateway's
-Envoy bootstrap and cert SANs, the CRD constrains list items to DNS
-hostnames, so a rule host cannot inject config into the owner's gateway.
+soon as its last narrowing rule is gone. A roll follows any change to that
+set and nothing else, so the projection ships in the contract package:
+clients predict an interruption with the server's own rule, not the rule's
+shape. Connection-derived rules are excluded — their host is already
+TLS-terminated by the connection's own credential chain. Because each
+entry is interpolated into the gateway's Envoy bootstrap and cert SANs,
+the CRD constrains list items to DNS hostnames, so a rule host cannot
+inject config into the owner's gateway.
 That projection is a second write to the Agent CR that cannot share a
 transaction with the rule write, so a per-agent periodic reconcile
 re-derives it from the rules — converging a host whose patch failed, or
@@ -496,10 +499,9 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
   443) and the upstream sees a `host:port` authority. Only L7 chains honor
   ports: the SNI-miss L4 catch-all always dials 443, because a CONNECT's
   authority port is not recoverable after the tunnel handoff (SNI carries
-  no port). Port-scoped egress rules therefore promote their host onto the
-  L7 path, same as path-scoped rules. Allow-only (uncredentialed) chains
-  need no pinned port — they forward via the dynamic forward proxy, which
-  honors the inner request's own `Host:port`.
+  no port). Allow-only (uncredentialed) chains need no pinned port — they
+  forward via the dynamic forward proxy, which honors the inner request's
+  own `Host:port`.
 - **Upgrade tunneling** — chains that opt in tunnel HTTP Upgrade flows
   (WebSocket, and SPDY/3.1 for older Kubernetes clients) instead of
   rejecting them, so `kubectl exec` / `port-forward` / `logs -f` work
