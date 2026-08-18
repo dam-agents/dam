@@ -1,0 +1,859 @@
+<title>Card Interaction Patterns</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #141416;
+    --surface-hover: #1a1a1e;
+    --border: #2a2a2e;
+    --border-hover: #3a3a3e;
+    --text: #ededef;
+    --text-muted: #8b8b92;
+    --accent: #3b82f6;
+    --accent-muted: rgba(59, 130, 246, 0.08);
+    --gradient-from: rgba(40, 40, 44, 0.6);
+    --gradient-to: #141416;
+    --destructive: #ef4444;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f8f8f9;
+      --surface: #ffffff;
+      --surface-hover: #f3f3f5;
+      --border: #e4e4e7;
+      --border-hover: #d4d4d8;
+      --text: #09090b;
+      --text-muted: #71717a;
+      --accent: #2563eb;
+      --accent-muted: rgba(37, 99, 235, 0.06);
+      --gradient-from: rgba(244, 244, 245, 0.6);
+      --gradient-to: #ffffff;
+      --destructive: #dc2626;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --bg: #f8f8f9;
+    --surface: #ffffff;
+    --surface-hover: #f3f3f5;
+    --border: #e4e4e7;
+    --border-hover: #d4d4d8;
+    --text: #09090b;
+    --text-muted: #71717a;
+    --accent: #2563eb;
+    --accent-muted: rgba(37, 99, 235, 0.06);
+    --gradient-from: rgba(244, 244, 245, 0.6);
+    --gradient-to: #ffffff;
+    --destructive: #dc2626;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0a0a0b;
+    --surface: #141416;
+    --surface-hover: #1a1a1e;
+    --border: #2a2a2e;
+    --border-hover: #3a3a3e;
+    --text: #ededef;
+    --text-muted: #8b8b92;
+    --accent: #3b82f6;
+    --accent-muted: rgba(59, 130, 246, 0.08);
+    --gradient-from: rgba(40, 40, 44, 0.6);
+    --gradient-to: #141416;
+    --destructive: #ef4444;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0;
+    padding: 40px;
+    line-height: 1.5;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0 0 48px;
+    max-width: 640px;
+    line-height: 1.6;
+  }
+
+  .options {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+    max-width: 560px;
+  }
+
+  .option {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .option-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .option-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .option-description {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .precedent {
+    font-size: 14px;
+    color: var(--text-muted);
+    opacity: 0.7;
+    margin: 0;
+    font-style: italic;
+  }
+
+  .pros-cons {
+    display: flex;
+    gap: 16px;
+    margin-top: 4px;
+  }
+
+  .pros-cons span {
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+
+  .pro { color: #22c55e !important; }
+  .con { color: var(--destructive) !important; }
+
+  /* ─── Card demos ─── */
+
+  .demo-area {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  /* Pattern A: Clickable card */
+  .card-a {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .card-a:hover {
+    border-color: var(--border-hover);
+    background: linear-gradient(135deg, var(--surface-hover), var(--gradient-to));
+  }
+
+  .card-a .dismiss-x {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+  }
+
+  .card-a:hover .dismiss-x {
+    opacity: 1;
+  }
+
+  .card-a .dismiss-x:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  /* Pattern B: Hover action bar */
+  .card-b {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    padding: 20px;
+    transition: border-color 0.15s;
+  }
+
+  .card-b:hover {
+    border-color: var(--border-hover);
+  }
+
+  .card-b .hover-bar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .card-b:hover .hover-bar {
+    opacity: 1;
+  }
+
+  .hover-bar button {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .hover-bar button:hover {
+    color: var(--text);
+    border-color: var(--border-hover);
+  }
+
+  .hover-bar button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .hover-bar button.primary:hover {
+    opacity: 0.9;
+    color: white;
+  }
+
+  /* Pattern C: Current footer (for reference) */
+  .card-c {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card-c .footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    margin: 0 -20px -20px;
+    border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  }
+
+  .card-c .footer .spacer { flex: 1; }
+
+  /* Pattern D: Clickable card + inline always-visible X */
+  .card-d {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .card-d:hover {
+    border-color: var(--border-hover);
+    background: linear-gradient(135deg, var(--surface-hover), var(--gradient-to));
+  }
+
+  .card-d .dismiss-inline {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+  }
+
+  .card-d:hover .dismiss-inline {
+    opacity: 1;
+  }
+
+  .card-d .dismiss-inline:hover {
+    background: color-mix(in srgb, var(--destructive) 12%, transparent);
+    color: var(--destructive);
+  }
+
+  /* Pattern E: Card as link + overflow menu */
+  .card-e {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .card-e:hover {
+    border-color: var(--border-hover);
+    background: linear-gradient(135deg, var(--surface-hover), var(--gradient-to));
+  }
+
+  .card-e .overflow-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+  }
+
+  .card-e:hover .overflow-btn {
+    opacity: 1;
+  }
+
+  .card-e .overflow-btn:hover {
+    background: var(--surface-hover);
+  }
+
+  .card-e .overflow-menu {
+    position: absolute;
+    top: 42px;
+    right: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    display: none;
+    z-index: 10;
+    min-width: 140px;
+  }
+
+  .card-e .overflow-menu.open {
+    display: block;
+  }
+
+  .card-e .overflow-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .card-e .overflow-menu button:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  .card-e .overflow-menu button.destructive:hover {
+    color: var(--destructive);
+  }
+
+  /* Pattern F: Right-edge swipe hint / slide actions */
+  .card-f {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .card-f .card-content {
+    padding: 20px;
+    transition: transform 0.2s ease;
+    position: relative;
+    background: linear-gradient(135deg, var(--gradient-from), var(--gradient-to));
+    z-index: 1;
+  }
+
+  .card-f:hover .card-content {
+    border-color: var(--border-hover);
+  }
+
+  .card-f .slide-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    z-index: 0;
+  }
+
+  .card-f .slide-actions button {
+    height: 100%;
+    padding: 0 16px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    color: white;
+  }
+
+  .card-f .slide-actions .action-open {
+    background: var(--accent);
+  }
+
+  .card-f .slide-actions .action-dismiss {
+    background: var(--destructive);
+  }
+
+  .card-f:hover .card-content {
+    transform: translateX(-120px);
+  }
+
+  /* ─── Shared card internals ─── */
+
+  .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .card-meta svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    flex-shrink: 0;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .card-title.read {
+    font-weight: 400;
+  }
+
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .card-time {
+    font-size: 14px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .unread-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .artifact-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 40%, transparent);
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    margin-top: 8px;
+  }
+
+  .artifact-btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+    color: var(--text);
+  }
+
+  .artifact-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* Shared buttons */
+  .btn {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .btn:hover {
+    color: var(--text);
+    border-color: var(--border-hover);
+  }
+
+  .btn-ghost {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+
+  .btn-ghost:hover {
+    color: var(--text);
+  }
+
+  .separator {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0;
+    opacity: 0.3;
+  }
+
+  .note {
+    font-size: 14px;
+    color: var(--text-muted);
+    opacity: 0.6;
+    margin: 8px 0 0;
+    font-style: italic;
+  }
+</style>
+
+<h1>Card Interaction Patterns</h1>
+<p class="subtitle">
+  Exploring how users open sessions, dismiss cards, and access artifacts. Each pattern is shown as an interactive demo — hover over the cards to see the behavior.
+</p>
+
+<div class="options">
+
+  <!-- Pattern A -->
+  <div class="option">
+    <div class="option-header">
+      <span class="option-label">A — Clickable card surface + hover X to dismiss</span>
+      <p class="option-description">Entire card is the primary action (opens session). Dismiss X appears on hover in the top-right corner. Artifact button sits inline and stops event propagation.</p>
+      <p class="precedent">Used by: Linear, GitHub notifications, Slack messages, Apple Mail</p>
+      <div class="pros-cons">
+        <span class="pro">+ Largest hit target</span>
+        <span class="pro">+ Clean at rest</span>
+        <span class="con">- Dismiss hidden until hover</span>
+      </div>
+    </div>
+    <div class="demo-area">
+      <div class="card-a" onclick="this.style.outline='2px solid var(--accent)'; setTimeout(()=>this.style.outline='none', 300)">
+        <button class="dismiss-x" onclick="event.stopPropagation(); this.parentElement.style.opacity='0.3'" title="Dismiss">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+        <div class="card-top">
+          <div>
+            <div class="card-meta">
+              <svg viewBox="0 0 32 32"><path d="M28 12h-6V6h-2v6h-6v2h6v6h2v-6h6v-2z"/><path d="M17.74 30L16 29l4-7h6a2 2 0 002-2V8a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h9v2H6a4 4 0 01-4-4V8a4 4 0 014-4h20a4 4 0 014 4v12a4 4 0 01-4 4h-4.84z"/></svg>
+              <span>backend-refactor</span>
+            </div>
+            <p class="card-title">Refactor auth middleware</p>
+          </div>
+          <span class="card-time">
+            <span>45m ago</span>
+            <span class="unread-dot"></span>
+          </span>
+        </div>
+        <button class="artifact-btn" onclick="event.stopPropagation()">
+          <svg viewBox="0 0 32 32"><path d="M25.7 9.3l-7-7A.91.91 0 0018 2H8a2 2 0 00-2 2v24a2 2 0 002 2h16a2 2 0 002-2V10a.91.91 0 00-.3-.7zM18 4.4l5.6 5.6H18zM24 28H8V4h8v6a2 2 0 002 2h6z"/></svg>
+          <span>campaign-copy-v3.md</span>
+        </button>
+      </div>
+      <p class="note">Hover to reveal X. Click card = open session. Click artifact = opens artifact.</p>
+    </div>
+  </div>
+
+  <!-- Pattern B -->
+  <div class="option">
+    <div class="option-header">
+      <span class="option-label">B — Hover action bar (floating)</span>
+      <p class="option-description">No buttons visible at rest — card is pure content. On hover, a floating action bar appears in the top-right with all available actions. Card itself is not clickable.</p>
+      <p class="precedent">Used by: Notion pages list, Figma file browser, Vercel deployments</p>
+      <div class="pros-cons">
+        <span class="pro">+ Cleanest resting state</span>
+        <span class="pro">+ All actions equal weight</span>
+        <span class="con">- Requires hover (touch unfriendly)</span>
+        <span class="con">- Actions invisible until discovered</span>
+      </div>
+    </div>
+    <div class="demo-area">
+      <div class="card-b">
+        <div class="hover-bar">
+          <button class="primary">Open</button>
+          <button>Dismiss</button>
+        </div>
+        <div class="card-top">
+          <div>
+            <div class="card-meta">
+              <svg viewBox="0 0 32 32"><path d="M28 12h-6V6h-2v6h-6v2h6v6h2v-6h6v-2z"/><path d="M17.74 30L16 29l4-7h6a2 2 0 002-2V8a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h9v2H6a4 4 0 01-4-4V8a4 4 0 014-4h20a4 4 0 014 4v12a4 4 0 01-4 4h-4.84z"/></svg>
+              <span>backend-refactor</span>
+            </div>
+            <p class="card-title">Refactor auth middleware</p>
+          </div>
+          <span class="card-time">
+            <span>45m ago</span>
+            <span class="unread-dot"></span>
+          </span>
+        </div>
+        <button class="artifact-btn">
+          <svg viewBox="0 0 32 32"><path d="M25.7 9.3l-7-7A.91.91 0 0018 2H8a2 2 0 00-2 2v24a2 2 0 002 2h16a2 2 0 002-2V10a.91.91 0 00-.3-.7zM18 4.4l5.6 5.6H18zM24 28H8V4h8v6a2 2 0 002 2h6z"/></svg>
+          <span>campaign-copy-v3.md</span>
+        </button>
+      </div>
+      <p class="note">Hover to reveal action bar in top-right.</p>
+    </div>
+  </div>
+
+  <!-- Pattern C -->
+  <div class="option">
+    <div class="option-header">
+      <span class="option-label">C — Always-visible footer (current design)</span>
+      <p class="option-description">Dedicated footer row at the bottom of every card with explicit button labels. Clear and discoverable, but adds vertical height and creates a "form-like" feel.</p>
+      <p class="precedent">Used by: Jira cards, Azure DevOps, traditional dashboards</p>
+      <div class="pros-cons">
+        <span class="pro">+ Fully discoverable</span>
+        <span class="pro">+ Works on touch</span>
+        <span class="con">- Extra vertical space per card</span>
+        <span class="con">- Can feel heavy in a dense feed</span>
+      </div>
+    </div>
+    <div class="demo-area">
+      <div class="card-c">
+        <div class="card-top">
+          <div>
+            <div class="card-meta">
+              <svg viewBox="0 0 32 32"><path d="M28 12h-6V6h-2v6h-6v2h6v6h2v-6h6v-2z"/><path d="M17.74 30L16 29l4-7h6a2 2 0 002-2V8a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h9v2H6a4 4 0 01-4-4V8a4 4 0 014-4h20a4 4 0 014 4v12a4 4 0 01-4 4h-4.84z"/></svg>
+              <span>backend-refactor</span>
+            </div>
+            <p class="card-title">Refactor auth middleware</p>
+          </div>
+          <span class="card-time">
+            <span>45m ago</span>
+            <span class="unread-dot"></span>
+          </span>
+        </div>
+        <button class="artifact-btn">
+          <svg viewBox="0 0 32 32"><path d="M25.7 9.3l-7-7A.91.91 0 0018 2H8a2 2 0 00-2 2v24a2 2 0 002 2h16a2 2 0 002-2V10a.91.91 0 00-.3-.7zM18 4.4l5.6 5.6H18zM24 28H8V4h8v6a2 2 0 002 2h6z"/></svg>
+          <span>campaign-copy-v3.md</span>
+        </button>
+        <div class="footer">
+          <button class="btn">Go to session</button>
+          <span class="spacer"></span>
+          <button class="btn-ghost">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pattern D -->
+  <div class="option">
+    <div class="option-header">
+      <span class="option-label">D — Clickable card + always-visible subtle X</span>
+      <p class="option-description">Like Pattern A, but the X is always visible (at reduced opacity) so users know dismiss exists without needing to discover it on hover. X intensifies on hover.</p>
+      <p class="precedent">Used by: Chrome tabs, VS Code tabs, macOS notification center</p>
+      <div class="pros-cons">
+        <span class="pro">+ Dismiss always discoverable</span>
+        <span class="pro">+ Card is the primary action</span>
+        <span class="con">- X always present adds visual noise</span>
+      </div>
+    </div>
+    <div class="demo-area">
+      <div class="card-d" onclick="this.style.outline='2px solid var(--accent)'; setTimeout(()=>this.style.outline='none', 300)">
+        <button class="dismiss-inline" onclick="event.stopPropagation(); this.parentElement.style.opacity='0.3'" title="Dismiss">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+        <div class="card-top">
+          <div>
+            <div class="card-meta">
+              <svg viewBox="0 0 32 32"><path d="M28 12h-6V6h-2v6h-6v2h6v6h2v-6h6v-2z"/><path d="M17.74 30L16 29l4-7h6a2 2 0 002-2V8a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h9v2H6a4 4 0 01-4-4V8a4 4 0 014-4h20a4 4 0 014 4v12a4 4 0 01-4 4h-4.84z"/></svg>
+              <span>backend-refactor</span>
+            </div>
+            <p class="card-title">Refactor auth middleware</p>
+          </div>
+          <span class="card-time" style="margin-right: 28px;">
+            <span>45m ago</span>
+            <span class="unread-dot"></span>
+          </span>
+        </div>
+        <button class="artifact-btn" onclick="event.stopPropagation()">
+          <svg viewBox="0 0 32 32"><path d="M25.7 9.3l-7-7A.91.91 0 0018 2H8a2 2 0 00-2 2v24a2 2 0 002 2h16a2 2 0 002-2V10a.91.91 0 00-.3-.7zM18 4.4l5.6 5.6H18zM24 28H8V4h8v6a2 2 0 002 2h6z"/></svg>
+          <span>campaign-copy-v3.md</span>
+        </button>
+      </div>
+      <p class="note">X is always visible at 50% opacity. Hover card to intensify. Click card = open. Click X = dismiss.</p>
+    </div>
+  </div>
+
+  <!-- Pattern E -->
+  <div class="option">
+    <div class="option-header">
+      <span class="option-label">E — Clickable card + three-dot overflow menu</span>
+      <p class="option-description">Card click opens session. A three-dot menu on hover gives access to secondary actions (dismiss, copy link, etc). Scales well if you add more actions later.</p>
+      <p class="precedent">Used by: YouTube cards, Spotify playlists, Google Drive, Dropbox</p>
+      <div class="pros-cons">
+        <span class="pro">+ Scales to many actions</span>
+        <span class="pro">+ Clean surface</span>
+        <span class="con">- Extra click to dismiss</span>
+        <span class="con">- Menu pattern for a single action is overkill</span>
+      </div>
+    </div>
+    <div class="demo-area">
+      <div class="card-e" onclick="this.style.outline='2px solid var(--accent)'; setTimeout(()=>this.style.outline='none', 300)">
+        <button class="overflow-btn" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('open')">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>
+        </button>
+        <div class="overflow-menu" onclick="event.stopPropagation()">
+          <button onclick="this.parentElement.classList.remove('open')">Open session</button>
+          <button class="destructive" onclick="this.closest('.card-e').style.opacity='0.3'; this.parentElement.classList.remove('open')">Dismiss</button>
+        </div>
+        <div class="card-top">
+          <div>
+            <div class="card-meta">
+              <svg viewBox="0 0 32 32"><path d="M28 12h-6V6h-2v6h-6v2h6v6h2v-6h6v-2z"/><path d="M17.74 30L16 29l4-7h6a2 2 0 002-2V8a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h9v2H6a4 4 0 01-4-4V8a4 4 0 014-4h20a4 4 0 014 4v12a4 4 0 01-4 4h-4.84z"/></svg>
+              <span>backend-refactor</span>
+            </div>
+            <p class="card-title">Refactor auth middleware</p>
+          </div>
+          <span class="card-time">
+            <span>45m ago</span>
+            <span class="unread-dot"></span>
+          </span>
+        </div>
+        <button class="artifact-btn" onclick="event.stopPropagation()">
+          <svg viewBox="0 0 32 32"><path d="M25.7 9.3l-7-7A.91.91 0 0018 2H8a2 2 0 00-2 2v24a2 2 0 002 2h16a2 2 0 002-2V10a.91.91 0 00-.3-.7zM18 4.4l5.6 5.6H18zM24 28H8V4h8v6a2 2 0 002 2h6z"/></svg>
+          <span>campaign-copy-v3.md</span>
+        </button>
+      </div>
+      <p class="note">Hover to reveal &#x22ee; menu. Click card = open session. Click menu = secondary actions.</p>
+    </div>
+  </div>
+
+  <!-- Pattern F -->
+  <div class="option">
+    <div class="option-header">
+      <span class="option-label">F — Slide-to-reveal actions</span>
+      <p class="option-description">Content slides left on hover to reveal action buttons behind the card. Familiar from mobile email/messaging apps, adapted for desktop hover. Card click still opens session.</p>
+      <p class="precedent">Used by: iOS Mail, Superhuman, Things 3, Tweetbot</p>
+      <div class="pros-cons">
+        <span class="pro">+ Playful, satisfying interaction</span>
+        <span class="pro">+ Actions have clear color coding</span>
+        <span class="con">- Unfamiliar on desktop</span>
+        <span class="con">- Layout shift on hover is distracting in a feed</span>
+      </div>
+    </div>
+    <div class="demo-area">
+      <div class="card-f">
+        <div class="slide-actions">
+          <button class="action-open" onclick="event.stopPropagation()">Open</button>
+          <button class="action-dismiss" onclick="event.stopPropagation(); this.closest('.card-f').style.opacity='0.3'">Dismiss</button>
+        </div>
+        <div class="card-content" onclick="this.parentElement.style.outline='2px solid var(--accent)'; setTimeout(()=>this.parentElement.style.outline='none', 300)">
+          <div class="card-top">
+            <div>
+              <div class="card-meta">
+                <svg viewBox="0 0 32 32"><path d="M28 12h-6V6h-2v6h-6v2h6v6h2v-6h6v-2z"/><path d="M17.74 30L16 29l4-7h6a2 2 0 002-2V8a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h9v2H6a4 4 0 01-4-4V8a4 4 0 014-4h20a4 4 0 014 4v12a4 4 0 01-4 4h-4.84z"/></svg>
+                <span>backend-refactor</span>
+              </div>
+              <p class="card-title">Refactor auth middleware</p>
+            </div>
+            <span class="card-time">
+              <span>45m ago</span>
+              <span class="unread-dot"></span>
+            </span>
+          </div>
+          <button class="artifact-btn" onclick="event.stopPropagation()">
+            <svg viewBox="0 0 32 32"><path d="M25.7 9.3l-7-7A.91.91 0 0018 2H8a2 2 0 00-2 2v24a2 2 0 002 2h16a2 2 0 002-2V10a.91.91 0 00-.3-.7zM18 4.4l5.6 5.6H18zM24 28H8V4h8v6a2 2 0 002 2h6z"/></svg>
+            <span>campaign-copy-v3.md</span>
+          </button>
+        </div>
+      </div>
+      <p class="note">Hover to slide content left, revealing actions behind.</p>
+    </div>
+  </div>
+
+</div>
+
+<hr class="separator" style="margin: 56px 0 32px;">
+
+<div style="max-width: 560px;">
+  <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">Recommendation</h2>
+  <p style="font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 0;">
+    <strong style="color: var(--text);">Pattern A or D</strong> are the strongest fits here. The card's primary job is to take you to the session — making the entire surface clickable (like Linear's issue cards or GitHub's notification rows) gives maximum affordance with minimum chrome. Dismiss is secondary and infrequent, so hiding it behind hover (A) or showing it subtly (D) keeps the feed clean.
+  </p>
+  <p style="font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 16px 0 0;">
+    The current footer approach (C) is the safest for discoverability, but in a feed of 5-10 cards, the repeated button rows create visual weight that competes with the content. Pattern A eliminates that — the card IS the button.
+  </p>
+  <p style="font-size: 14px; color: var(--text-muted); line-height: 1.7; margin: 16px 0 0;">
+    Key insight: <strong style="color: var(--text);">the artifact button already demonstrates the right pattern</strong> — it's an inline interactive element inside content. "Open session" should follow the same logic: the card surface itself, not a labeled button inside it.
+  </p>
+</div>

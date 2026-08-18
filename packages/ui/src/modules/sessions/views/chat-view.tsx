@@ -1359,68 +1359,87 @@ export function ChatView() {
                                 ) : // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                 (p as any).kind === "experiment-setup" ? (
                                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                  (!(p as any).goal && experimentGoal) ? null : (
-                                  <ExperimentSetupCard
-                                    key={i}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    goal={(p as any).goal ?? undefined}
-                                    onGoalSelected={(goal) => {
-                                      setExperimentGoal(goal);
-                                      setMessages((prev: typeof messages) => [
-                                        ...prev,
-                                        {
-                                          id: `user-goal-${Date.now()}`,
-                                          role: "user" as const,
-                                          streaming: false,
-                                          parts: [
-                                            { kind: "text" as const, text: goal },
-                                          ],
-                                        },
-                                        {
-                                          id: `assistant-step2-${Date.now()}`,
-                                          role: "assistant" as const,
-                                          streaming: false,
-                                          parts: [
-                                            {
-                                              kind: "text" as const,
-                                              text: "Great choice. Now pick one or more frameworks to run it with:",
-                                            },
-                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                            { kind: "experiment-setup", goal } as any,
-                                          ],
-                                        },
-                                      ]);
-                                    }}
-                                    onSubmit={(payload) => {
-                                      const imageNames: Record<string, string> = {
-                                        nous: "NOUS",
-                                        openevolve: "OpenEvolve",
-                                        shinkaevolve: "ShinkaEvolve",
-                                        gepa: "GEPA",
-                                        "k-search": "K-Search",
-                                      };
-                                      const userText =
-                                        payload.imageIds.length === 0
-                                          ? "Skip frameworks — let the agent decide"
-                                          : payload.imageIds.length === 1
-                                            ? `Use ${imageNames[payload.imageIds[0]!] ?? payload.imageIds[0]}`
-                                            : `Horse race: ${payload.imageIds.map((id) => imageNames[id] ?? id).join(", ")}`;
-                                      setMessages((prev: typeof messages) => [
-                                        ...prev,
-                                        {
-                                          id: `user-frameworks-${Date.now()}`,
-                                          role: "user" as const,
-                                          streaming: false,
-                                          parts: [
-                                            { kind: "text" as const, text: userText },
-                                          ],
-                                        },
-                                      ]);
-                                      if (import.meta.env.VITE_MOCK) {
-                                        setTimeout(() => simulateExperimentCreation(payload), 100);
-                                      }
-                                    }}
-                                  />)
+                                  !(p as any).goal && experimentGoal ? null : (
+                                    <ExperimentSetupCard
+                                      key={i}
+                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                      goal={(p as any).goal ?? undefined}
+                                      onGoalSelected={(goal) => {
+                                        setExperimentGoal(goal);
+                                        setMessages((prev: typeof messages) => [
+                                          ...prev,
+                                          {
+                                            id: `user-goal-${Date.now()}`,
+                                            role: "user" as const,
+                                            streaming: false,
+                                            parts: [
+                                              {
+                                                kind: "text" as const,
+                                                text: goal,
+                                              },
+                                            ],
+                                          },
+                                          {
+                                            id: `assistant-step2-${Date.now()}`,
+                                            role: "assistant" as const,
+                                            streaming: false,
+                                            parts: [
+                                              {
+                                                kind: "text" as const,
+                                                text: "Great choice. Now pick one or more frameworks to run it with:",
+                                              },
+
+                                              {
+                                                kind: "experiment-setup",
+                                                goal,
+                                              } as any,
+                                            ],
+                                          },
+                                        ]);
+                                      }}
+                                      onSubmit={(payload) => {
+                                        const imageNames: Record<
+                                          string,
+                                          string
+                                        > = {
+                                          nous: "NOUS",
+                                          openevolve: "OpenEvolve",
+                                          shinkaevolve: "ShinkaEvolve",
+                                          gepa: "GEPA",
+                                          "k-search": "K-Search",
+                                        };
+                                        const userText =
+                                          payload.imageIds.length === 0
+                                            ? "Skip frameworks — let the agent decide"
+                                            : payload.imageIds.length === 1
+                                              ? `Use ${imageNames[payload.imageIds[0]!] ?? payload.imageIds[0]}`
+                                              : `Horse race: ${payload.imageIds.map((id) => imageNames[id] ?? id).join(", ")}`;
+                                        setMessages((prev: typeof messages) => [
+                                          ...prev,
+                                          {
+                                            id: `user-frameworks-${Date.now()}`,
+                                            role: "user" as const,
+                                            streaming: false,
+                                            parts: [
+                                              {
+                                                kind: "text" as const,
+                                                text: userText,
+                                              },
+                                            ],
+                                          },
+                                        ]);
+                                        if (import.meta.env.VITE_MOCK) {
+                                          setTimeout(
+                                            () =>
+                                              simulateExperimentCreation(
+                                                payload,
+                                              ),
+                                            100,
+                                          );
+                                        }
+                                      }}
+                                    />
+                                  )
                                 ) : (
                                   <ToolChip key={i} chip={p} />
                                 ),
@@ -1465,55 +1484,53 @@ export function ChatView() {
               <div className="pb-[16px]">
                 {/* eslint-disable @typescript-eslint/no-explicit-any */}
                 {!messages.some((m) =>
-                  m.parts.some(
-                    (p) => (p as any).kind === "wiki-setup",
-                  ),
+                  m.parts.some((p) => (p as any).kind === "wiki-setup"),
                 ) ? (
-                <ChatInputArea
-                  textareaRef={textareaRef}
-                  busy={busy}
-                  loadingSession={loadingSession}
-                  onSend={(text, attachments) => {
-                    const awaitingGoal =
-                      !experimentGoal &&
-                      messages.some((m) =>
-                        m.parts.some(
-                          (p) =>
-                            (p as any).kind === "experiment-setup" &&
-                            !(p as any).goal,
-                        ),
-                      );
-                    if (awaitingGoal && text.trim()) {
-                      const goal = text.trim();
-                      setExperimentGoal(goal);
-                      setMessages((prev: typeof messages) => [
-                        ...prev,
-                        {
-                          id: `user-goal-${Date.now()}`,
-                          role: "user" as const,
-                          streaming: false,
-                          parts: [{ kind: "text" as const, text: goal }],
-                        },
-                        {
-                          id: `assistant-step2-${Date.now()}`,
-                          role: "assistant" as const,
-                          streaming: false,
-                          parts: [
-                            {
-                              kind: "text" as const,
-                              text: "Great choice. Now pick one or more frameworks to run it with:",
-                            },
-                            { kind: "experiment-setup", goal } as any,
-                          ],
-                        },
-                      ]);
-                      return;
-                    }
-                    sendPrompt(text, attachments);
-                  }}
-                  onStop={stopAgent}
-                  discoveryTooltip={discoveryTooltip}
-                />
+                  <ChatInputArea
+                    textareaRef={textareaRef}
+                    busy={busy}
+                    loadingSession={loadingSession}
+                    onSend={(text, attachments) => {
+                      const awaitingGoal =
+                        !experimentGoal &&
+                        messages.some((m) =>
+                          m.parts.some(
+                            (p) =>
+                              (p as any).kind === "experiment-setup" &&
+                              !(p as any).goal,
+                          ),
+                        );
+                      if (awaitingGoal && text.trim()) {
+                        const goal = text.trim();
+                        setExperimentGoal(goal);
+                        setMessages((prev: typeof messages) => [
+                          ...prev,
+                          {
+                            id: `user-goal-${Date.now()}`,
+                            role: "user" as const,
+                            streaming: false,
+                            parts: [{ kind: "text" as const, text: goal }],
+                          },
+                          {
+                            id: `assistant-step2-${Date.now()}`,
+                            role: "assistant" as const,
+                            streaming: false,
+                            parts: [
+                              {
+                                kind: "text" as const,
+                                text: "Great choice. Now pick one or more frameworks to run it with:",
+                              },
+                              { kind: "experiment-setup", goal } as any,
+                            ],
+                          },
+                        ]);
+                        return;
+                      }
+                      sendPrompt(text, attachments);
+                    }}
+                    onStop={stopAgent}
+                    discoveryTooltip={discoveryTooltip}
+                  />
                 ) : null}
                 {/* eslint-enable @typescript-eslint/no-explicit-any */}
                 {!hasPendingPermission && harnessCurrent?.model && (

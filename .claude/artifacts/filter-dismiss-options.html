@@ -1,0 +1,315 @@
+<title>Filter & Dismiss Options</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #141416;
+    --border: #2a2a2e;
+    --border-light: #1f1f23;
+    --text: #ededef;
+    --text-muted: #8b8b92;
+    --accent: #3b82f6;
+    --accent-muted: rgba(59, 130, 246, 0.12);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #ffffff;
+      --surface: #f8f8f9;
+      --border: #e4e4e7;
+      --border-light: #f0f0f2;
+      --text: #09090b;
+      --text-muted: #71717a;
+      --accent: #2563eb;
+      --accent-muted: rgba(37, 99, 235, 0.08);
+    }
+  }
+
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #f8f8f9;
+    --border: #e4e4e7;
+    --border-light: #f0f0f2;
+    --text: #09090b;
+    --text-muted: #71717a;
+    --accent: #2563eb;
+    --accent-muted: rgba(37, 99, 235, 0.08);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0;
+    padding: 40px;
+    line-height: 1.5;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0 0 40px;
+  }
+
+  .options-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+    max-width: 720px;
+  }
+
+  .option {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .option-label {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+
+  .option-description {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: -8px 0 0;
+  }
+
+  .preview {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .preview-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .preview-title {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+  }
+
+  /* Option A: Two separate outline buttons */
+  .controls-a {
+    gap: 8px;
+  }
+
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-outline:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+
+  /* Option B: Segmented control / pill group */
+  .controls-b {
+    gap: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+  }
+
+  .btn-segment {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 10px;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-segment:hover {
+    color: var(--text);
+    background: var(--accent-muted);
+  }
+
+  .segment-divider {
+    width: 1px;
+    height: 14px;
+    background: var(--border);
+    margin: 0 2px;
+  }
+
+  /* Option C: Ghost text links with dot separator */
+  .controls-c {
+    gap: 6px;
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-ghost:hover {
+    color: var(--text);
+    background: var(--accent-muted);
+  }
+
+  .dot-sep {
+    color: var(--border);
+    font-size: 14px;
+  }
+
+  /* Option D: Single outline button with dismiss as text link */
+  .controls-d {
+    gap: 12px;
+  }
+
+  .btn-text {
+    font-size: 14px;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+  }
+
+  .btn-text:hover {
+    color: var(--text);
+    text-decoration-color: var(--text-muted);
+  }
+
+  /* Icon SVG */
+  .icon {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    flex-shrink: 0;
+  }
+</style>
+
+<h1>Filter & Dismiss All</h1>
+<p class="subtitle">Design options for the button pair that sits on the right side of the "Home" title row.</p>
+
+<div class="options-grid">
+
+  <!-- Option A -->
+  <div class="option">
+    <span class="option-label">A — Two outline buttons</span>
+    <p class="option-description">Current implementation. Clear affordance, consistent with "+ New" button pattern elsewhere. Both equally weighted.</p>
+    <div class="preview">
+      <div class="preview-row">
+        <span class="preview-title">Home</span>
+        <div class="controls controls-a">
+          <button class="btn-outline">
+            <svg class="icon" viewBox="0 0 32 32"><path d="M18 28h-4a2 2 0 01-2-2v-6H4V4h24v16h-8v6a2 2 0 01-2 2zm-4-2h4v-6h8V6H6v12h8z"/></svg>
+            All
+          </button>
+          <button class="btn-outline">Dismiss all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="option">
+    <span class="option-label">B — Segmented pill</span>
+    <p class="option-description">Groups the two actions into one visual unit. Reads as a toolbar. More compact, feels like related controls.</p>
+    <div class="preview">
+      <div class="preview-row">
+        <span class="preview-title">Home</span>
+        <div class="controls controls-b">
+          <button class="btn-segment">
+            <svg class="icon" viewBox="0 0 32 32"><path d="M18 28h-4a2 2 0 01-2-2v-6H4V4h24v16h-8v6a2 2 0 01-2 2zm-4-2h4v-6h8V6H6v12h8z"/></svg>
+            All
+          </button>
+          <span class="segment-divider"></span>
+          <button class="btn-segment">Dismiss all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="option">
+    <span class="option-label">C — Ghost buttons with separator</span>
+    <p class="option-description">Minimal chrome. Actions are there but don't compete with the title or the cards below. Quieter, more editorial.</p>
+    <div class="preview">
+      <div class="preview-row">
+        <span class="preview-title">Home</span>
+        <div class="controls controls-c">
+          <button class="btn-ghost">
+            <svg class="icon" viewBox="0 0 32 32"><path d="M18 28h-4a2 2 0 01-2-2v-6H4V4h24v16h-8v6a2 2 0 01-2 2zm-4-2h4v-6h8V6H6v12h8z"/></svg>
+            All
+          </button>
+          <span class="dot-sep">·</span>
+          <button class="btn-ghost">Dismiss all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option D -->
+  <div class="option">
+    <span class="option-label">D — Outline filter + text dismiss</span>
+    <p class="option-description">Gives filter more prominence (it's the primary action here — you use it often). Dismiss is secondary/destructive, so it's de-emphasized as a text link. Clear hierarchy between the two.</p>
+    <div class="preview">
+      <div class="preview-row">
+        <span class="preview-title">Home</span>
+        <div class="controls controls-d">
+          <button class="btn-outline">
+            <svg class="icon" viewBox="0 0 32 32"><path d="M18 28h-4a2 2 0 01-2-2v-6H4V4h24v16h-8v6a2 2 0 01-2 2zm-4-2h4v-6h8V6H6v12h8z"/></svg>
+            All
+          </button>
+          <button class="btn-text">Dismiss all</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

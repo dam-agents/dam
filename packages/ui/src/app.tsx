@@ -3,6 +3,7 @@ import { Component, type ErrorInfo, type ReactNode, useEffect } from "react";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLinkHelpIcon } from "./components/docs-link.js";
+import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { DemoStateProvider, DemoStrip } from "./mock/demo-state.js";
@@ -134,10 +135,7 @@ function MainApp() {
 
   // Temporary mock-only exploration routes — delete after design review
   const mockPath = protoPathname();
-  if (
-    import.meta.env.VITE_MOCK &&
-    mockPath === "/explore/configure"
-  ) {
+  if (import.meta.env.VITE_MOCK && mockPath === "/explore/configure") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -163,6 +161,7 @@ function MainApp() {
             </div>
           </main>
         </div>
+        <DialogOverlay />
       </div>
     );
   }
@@ -199,10 +198,7 @@ function MainApp() {
     );
   }
 
-  if (
-    import.meta.env.VITE_MOCK &&
-    mockPath === "/consistency"
-  ) {
+  if (import.meta.env.VITE_MOCK && mockPath === "/consistency") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -218,24 +214,15 @@ function MainApp() {
     );
   }
 
-  if (
-    import.meta.env.VITE_MOCK &&
-    mockPath === "/wiki-onboard"
-  ) {
+  if (import.meta.env.VITE_MOCK && mockPath === "/wiki-onboard") {
     setMockWikiOnboard(true);
   }
 
-  if (
-    import.meta.env.VITE_MOCK &&
-    mockPath === "/experiment-onboard"
-  ) {
+  if (import.meta.env.VITE_MOCK && mockPath === "/experiment-onboard") {
     setMockExperimentOnboard(true);
   }
 
-  if (
-    import.meta.env.VITE_MOCK &&
-    mockPath === "/experiment-setup"
-  ) {
+  if (import.meta.env.VITE_MOCK && mockPath === "/experiment-setup") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -263,10 +250,7 @@ function MainApp() {
     );
   }
 
-  if (
-    import.meta.env.VITE_MOCK &&
-    mockPath === "/agent-setup"
-  ) {
+  if (import.meta.env.VITE_MOCK && mockPath === "/agent-setup") {
     return (
       <div className="flex flex-col h-dvh bg-background overflow-hidden">
         <DemoStrip />
@@ -304,7 +288,8 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
-          <div className="fixed bottom-6 right-6 z-10">
+          <div className="fixed bottom-6 right-6 z-10 flex items-center gap-2">
+            <FloatingApprovalsPill />
             <DocsLinkHelpIcon />
           </div>
           {view === "sandbox-new" ? (

@@ -1,9 +1,4 @@
-import {
-  Add,
-  DocumentAdd,
-  FolderAdd,
-  Upload,
-} from "@carbon/icons-react";
+import { Add, DocumentAdd, FolderAdd, Upload } from "@carbon/icons-react";
 import type { CSSProperties } from "react";
 
 import { Button } from "@/components/ui/button";

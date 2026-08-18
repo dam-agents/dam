@@ -1,4 +1,5 @@
 import {
+  Add,
   Book,
   Chat,
   Checkmark,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,6 +35,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -40,6 +43,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import type { Schedule } from "../../../types.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useApproveHost,
@@ -51,6 +55,7 @@ import {
 import { usePendingApprovals } from "../../approvals/api/queries.js";
 import { isHeldCallStillLive } from "../../approvals/lib/hold.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
+import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
 import {
   seedMockSessions,
@@ -146,6 +151,169 @@ export function ComparisonView() {
       >
         <div className="max-w-[320px]">
           <ScheduleOverviewWidget />
+        </div>
+      </CardEntry>
+
+      {/* ═══════════════════════════════════════════════════════════════
+         FILTER VARIATIONS
+         ═══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Filter Variations" />
+
+      <FilterVariations />
+
+      {/* ═══════════════════════════════════════════════════════════════
+         FEED LENGTH — SIDEBAR VISIBILITY
+         ═══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Feed Length — Sidebar Visibility" />
+
+      <FeedLengthOptions />
+    </div>
+  );
+}
+
+function FeedLengthOptions() {
+  return (
+    <div className="space-y-8">
+      <p className="text-[14px] text-muted-foreground max-w-lg">
+        The 3 sidebar widgets (Compute + Spend + Schedules) can't all show on
+        screen at once without scrolling. Options for keeping everything
+        reachable:
+      </p>
+
+      {/* Option A: Paginated feed */}
+      <CardEntry
+        number={1}
+        title="Option A — Paginate Feed"
+        description="Show 10 cards per page. Short feed means sidebar is fully visible without scrolling. Simple numbered pagination at bottom of feed."
+      >
+        <div className="rounded-2xl border border-border bg-card/80 p-5 w-full max-w-lg">
+          <div className="space-y-2">
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <p className="text-[14px] text-muted-foreground text-center py-1">
+              … 10 cards max …
+            </p>
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+          </div>
+          <div className="flex items-center justify-center gap-2 pt-4 mt-4 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">←</span>
+            <span className="flex items-center justify-center w-7 h-7 rounded-md bg-foreground text-background text-[14px] font-medium">
+              1
+            </span>
+            <span className="flex items-center justify-center w-7 h-7 rounded-md text-[14px] text-muted-foreground hover:bg-muted">
+              2
+            </span>
+            <span className="flex items-center justify-center w-7 h-7 rounded-md text-[14px] text-muted-foreground hover:bg-muted">
+              3
+            </span>
+            <span className="text-[14px] text-muted-foreground">→</span>
+          </div>
+        </div>
+      </CardEntry>
+
+      {/* Option B: Load more */}
+      <CardEntry
+        number={2}
+        title="Option B — Load More"
+        description="Show first 6 cards, then a 'Show more' button. Less formal than pagination, more natural for a feed. Sidebar is visible on initial load."
+      >
+        <div className="rounded-2xl border border-border bg-card/80 p-5 w-full max-w-lg">
+          <div className="space-y-2">
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+            <div className="h-8 rounded-lg bg-muted/40 border border-border/50" />
+          </div>
+          <div className="flex justify-center pt-4 mt-4 border-t border-border">
+            <button
+              type="button"
+              className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Show 7 more ↓
+            </button>
+          </div>
+        </div>
+      </CardEntry>
+
+      {/* Option C: Compact sidebar */}
+      <CardEntry
+        number={3}
+        title="Option C — Compact Sidebar (Tabbed)"
+        description="Combine Compute + Spend into one tabbed widget. Reduces sidebar height by ~40%, makes Schedules visible without scrolling even with a long feed."
+      >
+        <div className="w-[320px] space-y-4">
+          {/* Combined compute/spend widget */}
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center gap-1 mb-3">
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded-md bg-foreground text-background text-[14px] font-medium"
+              >
+                Compute
+              </button>
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded-md text-[14px] text-muted-foreground"
+              >
+                Spend
+              </button>
+            </div>
+            <div className="h-[100px] rounded-lg bg-muted/30 border border-border/50 flex items-center justify-center">
+              <span className="text-[14px] text-muted-foreground">
+                Compute or Spend content
+              </span>
+            </div>
+          </div>
+          {/* Schedules stays as-is */}
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[15px] font-semibold text-foreground">
+                Schedules{" "}
+                <span className="text-[14px] font-normal text-muted-foreground">
+                  (10)
+                </span>
+              </span>
+              <span className="text-[14px] text-muted-foreground">See all</span>
+            </div>
+            <div className="space-y-1">
+              <div className="h-7 rounded bg-muted/30" />
+              <div className="h-7 rounded bg-muted/30" />
+              <div className="h-7 rounded bg-muted/30" />
+              <div className="h-7 rounded bg-muted/30" />
+              <div className="h-7 rounded bg-muted/30" />
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      {/* Option D: Sticky sidebar with internal scroll */}
+      <CardEntry
+        number={4}
+        title="Option D — Sidebar Internal Scroll"
+        description="Keep sidebar sticky but cap its height to viewport. If all 3 widgets don't fit, the sidebar scrolls internally. Feed scrolls normally. No changes to feed length."
+      >
+        <div className="w-[320px] rounded-2xl border border-border bg-card p-4 max-h-[300px] overflow-y-auto">
+          <p className="text-[14px] text-muted-foreground mb-3">
+            Sticky sidebar with{" "}
+            <code className="text-[14px]">max-h-[calc(100vh-2rem)]</code> and{" "}
+            <code className="text-[14px]">overflow-y-auto</code>
+          </p>
+          <div className="space-y-3">
+            <div className="h-[80px] rounded-lg bg-muted/30 border border-border/50 flex items-center justify-center">
+              <span className="text-[14px] text-muted-foreground">Compute</span>
+            </div>
+            <div className="h-[80px] rounded-lg bg-muted/30 border border-border/50 flex items-center justify-center">
+              <span className="text-[14px] text-muted-foreground">Spend</span>
+            </div>
+            <div className="h-[120px] rounded-lg bg-muted/30 border border-border/50 flex items-center justify-center">
+              <span className="text-[14px] text-muted-foreground">
+                Schedules
+              </span>
+            </div>
+          </div>
         </div>
       </CardEntry>
     </div>
@@ -488,7 +656,12 @@ export function ExperimentCard({
               View results
             </Button>
             {onDismiss && (
-              <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={onDismiss}
+              >
                 Dismiss
               </Button>
             )}
@@ -551,7 +724,12 @@ export function ScheduleCard({
           Edit schedule
         </Button>
         {onDismiss && (
-          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={onDismiss}
+          >
             Dismiss
           </Button>
         )}
@@ -679,7 +857,12 @@ export function SessionFinishedCard({
           {scheduled ? "View results" : "View session"}
         </Button>
         {onDismiss && (
-          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={onDismiss}
+          >
             Dismiss
           </Button>
         )}
@@ -748,7 +931,12 @@ export function ArtifactCard({
             View artifact
           </Button>
           {onDismiss && (
-            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={onDismiss}
+            >
               Dismiss
             </Button>
           )}
@@ -1438,10 +1626,10 @@ export function SpendPreview() {
   const maxCost = current.spenders[0].cost;
 
   return (
-    <div className="rounded-2xl border border-border bg-gradient-to-br from-muted/60 to-card p-6 flex flex-col">
+    <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
       <div className="flex items-center justify-between mb-1 min-h-[32px]">
         <p className="text-[14px] text-muted-foreground">Spend</p>
-        <div className="flex gap-0.5 rounded-lg bg-muted p-0.5 shrink-0">
+        <div className="flex gap-0.5 rounded-md bg-muted/40 border border-border/50 p-0.5 shrink-0">
           {["1d", "1w", "1m", "1y"].map((p, i) => (
             <button
               key={p}
@@ -1618,12 +1806,28 @@ export function ComputePreview() {
     <div className="rounded-2xl border border-border bg-card p-6 flex flex-col">
       <div className="flex items-center justify-between mb-1 min-h-[32px]">
         <p className="text-[14px] text-muted-foreground">Compute resources</p>
-        <Tooltip content={
-          <div className="flex flex-col gap-1 py-0.5">
-            <span className="text-[13px] font-medium text-popover-foreground">Need more compute?</span>
-            <span className="text-[13px] text-muted-foreground">Request in <a href="https://slack.com/app_redirect?channel=DAMBUDGET" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-500 hover:underline">#DAMBUDGET</a> on Slack</span>
-          </div>
-        } side="bottom">
+        <Tooltip
+          content={
+            <div className="flex flex-col gap-1 py-0.5">
+              <span className="text-[13px] font-medium text-popover-foreground">
+                Need more compute?
+              </span>
+              <span className="text-[13px] text-muted-foreground">
+                Request in{" "}
+                <a
+                  href="https://slack.com/app_redirect?channel=DAMBUDGET"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-blue-500 hover:underline"
+                >
+                  #DAMBUDGET
+                </a>{" "}
+                on Slack
+              </span>
+            </div>
+          }
+          side="bottom"
+        >
           <span className="text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-default">
             Need more?
           </span>
@@ -1713,8 +1917,8 @@ export function ComputePreview() {
               Awake
             </span>
             <span className="text-[14px] tabular-nums text-muted-foreground">
-              {awakeCount} {awakeCount === 1 ? "agent" : "agents"} ·{" "}
-              {awakeCpu} CPU · {awakeCpu} Gi
+              {awakeCount} {awakeCount === 1 ? "agent" : "agents"} · {awakeCpu}{" "}
+              CPU · {awakeCpu} Gi
             </span>
           </button>
         )}
@@ -1807,9 +2011,21 @@ function ReadyVariant1() {
   const [swiped, setSwiped] = useState<number | null>(null);
 
   const cards = [
-    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
-    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
-    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+    {
+      title: "Refactor auth middleware",
+      agent: "backend-refactor",
+      time: "45m ago",
+    },
+    {
+      title: "Spring campaign hero images",
+      agent: "brand-asset-generator",
+      time: "2h ago",
+    },
+    {
+      title: "Daily brand audit",
+      agent: "brand-asset-generator",
+      time: "6h ago",
+    },
   ];
 
   return (
@@ -1841,10 +2057,17 @@ function ReadyVariant1() {
                 <Chat size={16} className="text-muted-foreground" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-[16px] text-foreground truncate">{card.title}</h3>
-                <p className="text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+                <h3 className="text-[16px] text-foreground truncate">
+                  {card.title}
+                </h3>
+                <p className="text-[14px] text-muted-foreground">
+                  {card.agent} · {card.time}
+                </p>
               </div>
-              <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+              <ChevronRight
+                size={16}
+                className="text-muted-foreground shrink-0"
+              />
             </div>
           </div>
         );
@@ -1852,7 +2075,9 @@ function ReadyVariant1() {
       {dismissed.size === cards.length && (
         <div className="flex items-center gap-2 py-3">
           <Checkmark size={16} className="text-success" />
-          <span className="text-[14px] text-muted-foreground">All caught up</span>
+          <span className="text-[14px] text-muted-foreground">
+            All caught up
+          </span>
         </div>
       )}
     </div>
@@ -1864,9 +2089,21 @@ function ReadyVariant2() {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
 
   const cards = [
-    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
-    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
-    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+    {
+      title: "Refactor auth middleware",
+      agent: "backend-refactor",
+      time: "45m ago",
+    },
+    {
+      title: "Spring campaign hero images",
+      agent: "brand-asset-generator",
+      time: "2h ago",
+    },
+    {
+      title: "Daily brand audit",
+      agent: "brand-asset-generator",
+      time: "6h ago",
+    },
   ];
 
   const toggleCheck = (i: number) => {
@@ -1910,7 +2147,9 @@ function ReadyVariant2() {
         >
           {allChecked && <Checkmark size={16} className="text-white" />}
         </button>
-        <span className="text-[14px] text-muted-foreground">Mark all as read</span>
+        <span className="text-[14px] text-muted-foreground">
+          Mark all as read
+        </span>
       </div>
       {cards.map((card, i) => {
         if (dismissed.has(i)) return null;
@@ -1939,10 +2178,17 @@ function ReadyVariant2() {
               <Chat size={16} className="text-muted-foreground" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className={cn("text-[15px] text-foreground truncate", isChecked && "line-through")}>
+              <h3
+                className={cn(
+                  "text-[15px] text-foreground truncate",
+                  isChecked && "line-through",
+                )}
+              >
                 {card.title}
               </h3>
-              <p className="text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+              <p className="text-[14px] text-muted-foreground">
+                {card.agent} · {card.time}
+              </p>
             </div>
             <Button size="sm" variant="outline" disabled={isChecked}>
               Open
@@ -1953,7 +2199,9 @@ function ReadyVariant2() {
       {dismissed.size === cards.length && (
         <div className="flex items-center gap-2 px-4 py-3">
           <Checkmark size={16} className="text-success" />
-          <span className="text-[14px] text-muted-foreground">All caught up</span>
+          <span className="text-[14px] text-muted-foreground">
+            All caught up
+          </span>
         </div>
       )}
     </div>
@@ -1964,9 +2212,21 @@ function ReadyVariant3() {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
 
   const cards = [
-    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
-    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
-    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+    {
+      title: "Refactor auth middleware",
+      agent: "backend-refactor",
+      time: "45m ago",
+    },
+    {
+      title: "Spring campaign hero images",
+      agent: "brand-asset-generator",
+      time: "2h ago",
+    },
+    {
+      title: "Daily brand audit",
+      agent: "brand-asset-generator",
+      time: "6h ago",
+    },
   ];
 
   return (
@@ -1974,13 +2234,20 @@ function ReadyVariant3() {
       {cards.map((card, i) => {
         if (dismissed.has(i)) return null;
         return (
-          <Card key={i} className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4">
+          <Card
+            key={i}
+            className="flex min-h-[76px] items-start justify-between gap-3 border border-border p-4"
+          >
             <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
               <Chat size={16} className="text-muted-foreground" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[16px] text-foreground">{card.title}</h3>
-              <p className="mt-1 text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+              <h3 className="truncate text-[16px] text-foreground">
+                {card.title}
+              </h3>
+              <p className="mt-1 text-[14px] text-muted-foreground">
+                {card.agent} · {card.time}
+              </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Button size="sm">Open</Button>
@@ -1999,7 +2266,9 @@ function ReadyVariant3() {
       {dismissed.size === cards.length && (
         <div className="flex items-center gap-2 py-3">
           <Checkmark size={16} className="text-success" />
-          <span className="text-[14px] text-muted-foreground">All caught up</span>
+          <span className="text-[14px] text-muted-foreground">
+            All caught up
+          </span>
         </div>
       )}
     </div>
@@ -2010,9 +2279,21 @@ function ReadyVariant4() {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
 
   const cards = [
-    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
-    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
-    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
+    {
+      title: "Refactor auth middleware",
+      agent: "backend-refactor",
+      time: "45m ago",
+    },
+    {
+      title: "Spring campaign hero images",
+      agent: "brand-asset-generator",
+      time: "2h ago",
+    },
+    {
+      title: "Daily brand audit",
+      agent: "brand-asset-generator",
+      time: "6h ago",
+    },
   ];
 
   return (
@@ -2020,14 +2301,21 @@ function ReadyVariant4() {
       {cards.map((card, i) => {
         if (dismissed.has(i)) return null;
         return (
-          <div key={i} className="rounded-lg border border-border overflow-hidden">
+          <div
+            key={i}
+            className="rounded-lg border border-border overflow-hidden"
+          >
             <div className="flex items-start gap-3 p-4 bg-card">
               <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
                 <Chat size={16} className="text-muted-foreground" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="truncate text-[16px] text-foreground">{card.title}</h3>
-                <p className="mt-1 text-[14px] text-muted-foreground">{card.agent} · {card.time}</p>
+                <h3 className="truncate text-[16px] text-foreground">
+                  {card.title}
+                </h3>
+                <p className="mt-1 text-[14px] text-muted-foreground">
+                  {card.agent} · {card.time}
+                </p>
               </div>
             </div>
             <div className="flex items-center border-t border-border bg-muted/30 divide-x divide-border">
@@ -2051,7 +2339,9 @@ function ReadyVariant4() {
       {dismissed.size === cards.length && (
         <div className="flex items-center gap-2 py-3">
           <Checkmark size={16} className="text-success" />
-          <span className="text-[14px] text-muted-foreground">All caught up</span>
+          <span className="text-[14px] text-muted-foreground">
+            All caught up
+          </span>
         </div>
       )}
     </div>
@@ -2062,9 +2352,24 @@ function ReadyVariant5() {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
 
   const cards = [
-    { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago", icon: Chat },
-    { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago", icon: Folders },
-    { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago", icon: Time },
+    {
+      title: "Refactor auth middleware",
+      agent: "backend-refactor",
+      time: "45m ago",
+      icon: Chat,
+    },
+    {
+      title: "Spring campaign hero images",
+      agent: "brand-asset-generator",
+      time: "2h ago",
+      icon: Folders,
+    },
+    {
+      title: "Daily brand audit",
+      agent: "brand-asset-generator",
+      time: "6h ago",
+      icon: Time,
+    },
   ];
 
   return (
@@ -2073,7 +2378,10 @@ function ReadyVariant5() {
         if (dismissed.has(i)) return null;
         const Icon = card.icon;
         return (
-          <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors group">
+          <div
+            key={i}
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors group"
+          >
             <Icon size={16} className="text-muted-foreground shrink-0" />
             <span className="text-[15px] text-foreground truncate min-w-0 flex-1 cursor-pointer">
               {card.title}
@@ -2098,7 +2406,9 @@ function ReadyVariant5() {
       {dismissed.size === cards.length && (
         <div className="flex items-center gap-2 px-4 py-3">
           <Checkmark size={16} className="text-success" />
-          <span className="text-[14px] text-muted-foreground">All caught up</span>
+          <span className="text-[14px] text-muted-foreground">
+            All caught up
+          </span>
         </div>
       )}
     </div>
@@ -2110,16 +2420,76 @@ function ReadyVariant5() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const SCHEDULE_OVERVIEW_DATA = [
-  { name: "Daily brand audit", cadence: "Weekdays 9:00 AM", nextRun: "3h", lastResult: "success" as const, agent: "brand-asset-generator" },
-  { name: "Nightly test suite", cadence: "Daily 2:00 AM", nextRun: "14h", lastResult: "failed" as const, agent: "backend-refactor" },
-  { name: "Weekly report generation", cadence: "Mon 8:00 AM", nextRun: "2d", lastResult: "success" as const, agent: "reporting-agent" },
-  { name: "Dependency vulnerability scan", cadence: "Every 6h", nextRun: "4h", lastResult: "success" as const, agent: "security-scanner" },
-  { name: "Performance benchmark", cadence: "Daily 3:00 AM", nextRun: "15h", lastResult: "success" as const, agent: "perf-monitor" },
-  { name: "Data pipeline sync", cadence: "Every 30m", nextRun: "12m", lastResult: "success" as const, agent: "data-pipeline" },
-  { name: "Slack digest summary", cadence: "Weekdays 5:00 PM", nextRun: "7h", lastResult: "success" as const, agent: "reporting-agent" },
-  { name: "Model fine-tune checkpoint", cadence: "Every 12h", nextRun: "8h", lastResult: "success" as const, agent: "ml-trainer" },
-  { name: "Stale PR cleanup", cadence: "Fri 4:00 PM", nextRun: "4d", lastResult: "success" as const, agent: "backend-refactor" },
-  { name: "Cost anomaly detector", cadence: "Every 1h", nextRun: "45m", lastResult: "failed" as const, agent: "cost-monitor" },
+  {
+    name: "Daily brand audit",
+    cadence: "Weekdays 9:00 AM",
+    nextRun: "3h",
+    enabled: true,
+    agent: "brand-asset-generator",
+  },
+  {
+    name: "Nightly test suite",
+    cadence: "Daily 2:00 AM",
+    nextRun: "14h",
+    enabled: true,
+    agent: "backend-refactor",
+  },
+  {
+    name: "Weekly report generation",
+    cadence: "Mon 8:00 AM",
+    nextRun: "2d",
+    enabled: true,
+    agent: "reporting-agent",
+  },
+  {
+    name: "Dependency vulnerability scan",
+    cadence: "Every 6h",
+    nextRun: "4h",
+    enabled: false,
+    agent: "security-scanner",
+  },
+  {
+    name: "Performance benchmark",
+    cadence: "Daily 3:00 AM",
+    nextRun: "15h",
+    enabled: false,
+    agent: "perf-monitor",
+  },
+  {
+    name: "Data pipeline sync",
+    cadence: "Every 30m",
+    nextRun: "12m",
+    enabled: true,
+    agent: "data-pipeline",
+  },
+  {
+    name: "Slack digest summary",
+    cadence: "Weekdays 5:00 PM",
+    nextRun: "7h",
+    enabled: true,
+    agent: "reporting-agent",
+  },
+  {
+    name: "Model fine-tune checkpoint",
+    cadence: "Every 12h",
+    nextRun: "8h",
+    enabled: false,
+    agent: "ml-trainer",
+  },
+  {
+    name: "Stale PR cleanup",
+    cadence: "Fri 4:00 PM",
+    nextRun: "4d",
+    enabled: true,
+    agent: "backend-refactor",
+  },
+  {
+    name: "Cost anomaly detector",
+    cadence: "Every 1h",
+    nextRun: "45m",
+    enabled: true,
+    agent: "cost-monitor",
+  },
 ];
 
 function parseNextRun(t: string): number {
@@ -2130,59 +2500,158 @@ function parseNextRun(t: string): number {
   return num;
 }
 
-const SORTED_SCHEDULES = [...SCHEDULE_OVERVIEW_DATA].sort((a, b) => parseNextRun(a.nextRun) - parseNextRun(b.nextRun));
+const SORTED_SCHEDULES = [...SCHEDULE_OVERVIEW_DATA].sort(
+  (a, b) => parseNextRun(a.nextRun) - parseNextRun(b.nextRun),
+);
 
-function ScheduleOverviewWidget() {
-  const [modalOpen, setModalOpen] = useState(false);
+const SCHEDULE_AGENTS = [
+  {
+    id: "1",
+    name: "brand-asset-generator",
+    kind: undefined as string | undefined,
+  },
+  { id: "2", name: "backend-refactor", kind: undefined as string | undefined },
+  { id: "3", name: "security-scanner", kind: undefined as string | undefined },
+  { id: "4", name: "data-pipeline", kind: undefined as string | undefined },
+  { id: "5", name: "perf-monitor", kind: undefined as string | undefined },
+  { id: "6", name: "reporting-agent", kind: undefined as string | undefined },
+];
+
+function scheduleKindLabel(kind: string | undefined) {
+  if (kind === "experiment") return "Experiment";
+  return "Coding Agent";
+}
+
+export function ScheduleOverviewWidget() {
+  const showConfirm = useStore((s) => s.showConfirm);
+  const [listOpen, setListOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<
+    (typeof SORTED_SCHEDULES)[number] | null
+  >(null);
+  const [editEnabled, setEditEnabled] = useState(true);
+  const [selectedAgent, setSelectedAgent] = useState(SCHEDULE_AGENTS[0]!.id);
+  const [toggleOverrides, setToggleOverrides] = useState<Map<number, boolean>>(new Map());
   const top5 = SORTED_SCHEDULES.slice(0, 5);
+
+  const isEnabled = (idx: number) => toggleOverrides.get(idx) ?? SORTED_SCHEDULES[idx]!.enabled;
+
+  const onDelete = async () => {
+    if (
+      await showConfirm(
+        "Are you sure you want to delete this schedule?",
+        `Delete ${editingSchedule?.name}?`,
+        { kind: "destructive", confirmLabel: "Delete Schedule" },
+      )
+    )
+      setFormOpen(false);
+  };
+
+  const openEdit = (s: (typeof SORTED_SCHEDULES)[number]) => {
+    setEditingSchedule(s);
+    setEditEnabled(s.enabled);
+    const agent = SCHEDULE_AGENTS.find((a) => a.name === s.agent);
+    if (agent) setSelectedAgent(agent.id);
+    setFormOpen(true);
+  };
+
+  const openNew = () => {
+    setEditingSchedule(null);
+    setEditEnabled(true);
+    setSelectedAgent("");
+    setFormOpen(true);
+  };
+
+  const agentPicker = (
+    <FormField label="Agent" disableInset>
+      <select
+        value={selectedAgent}
+        onChange={(e) => setSelectedAgent(e.target.value)}
+        className={cn(
+          "h-[40px] w-full rounded-md border border-border bg-background px-3 text-[14px] focus:outline-none focus:ring-2 focus:ring-ring",
+          selectedAgent ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        <option value="" disabled>
+          Choose your agent
+        </option>
+        {SCHEDULE_AGENTS.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name} — {scheduleKindLabel(a.kind)}
+          </option>
+        ))}
+      </select>
+    </FormField>
+  );
 
   return (
     <>
-      <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[15px] font-semibold text-foreground">
+          <p className="text-[14px] text-muted-foreground">
             Schedules
-            <span className="text-[14px] font-normal text-muted-foreground ml-1.5">
-              ({SORTED_SCHEDULES.length})
-            </span>
-          </h3>
-          <button
-            type="button"
-            onClick={() => setModalOpen(true)}
-            className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+            <span className="ml-1.5">({SORTED_SCHEDULES.length})</span>
+          </p>
+          <Button
+            variant="outline"
+            size="xs"
+            className="text-[14px]"
+            onClick={openNew}
           >
-            See all
-          </button>
+            <Add size={16} /> New
+          </Button>
         </div>
 
         <div className="space-y-0.5">
-          {top5.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              className="group w-full flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/50"
-            >
-              <span className={cn(
-                "w-2 h-2 rounded-full shrink-0",
-                s.lastResult === "failed" ? "bg-destructive" : "bg-emerald-500",
-              )} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[14px] text-foreground truncate">{s.name}</p>
-                <p className="text-[14px] text-muted-foreground truncate">{s.agent} · {s.cadence}</p>
+          {top5.map((s, i) => {
+            const globalIdx = SORTED_SCHEDULES.indexOf(s);
+            const enabled = isEnabled(globalIdx);
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50",
+                  !enabled && "opacity-50",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => openEdit(s)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <p className="text-[14px] text-foreground truncate">{s.name}</p>
+                  <p className="text-[14px] text-muted-foreground truncate">
+                    {s.cadence}
+                  </p>
+                </button>
+                <Switch
+                  checked={enabled}
+                  onCheckedChange={() => {
+                    setToggleOverrides((prev) => new Map([...prev, [globalIdx, !enabled]]));
+                  }}
+                  className="shrink-0"
+                />
               </div>
-              <span className="text-[14px] text-muted-foreground tabular-nums shrink-0">
-                {s.nextRun}
-              </span>
-              <span className="text-muted-foreground/20 group-hover:text-foreground transition-colors">→</span>
-            </button>
-          ))}
+            );
+          })}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setListOpen(true)}
+          className="text-[14px] text-muted-foreground hover:text-foreground transition-colors mt-3 px-2"
+        >
+          See all
+        </button>
       </div>
 
-      {/* "See all" modal */}
-      {modalOpen && (
+      {/* "See all" list modal */}
+      {listOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setModalOpen(false)} />
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setListOpen(false)}
+          />
           <div className="relative z-10 w-full max-w-[520px] max-h-[70vh] rounded-2xl border border-border bg-card shadow-xl flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
               <h2 className="text-[16px] font-semibold text-foreground">
@@ -2193,37 +2662,94 @@ function ScheduleOverviewWidget() {
               </h2>
               <button
                 type="button"
-                onClick={() => setModalOpen(false)}
+                onClick={() => setListOpen(false)}
                 className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
                 <Close size={16} />
               </button>
             </div>
-
             <div className="overflow-y-auto flex-1 px-2 py-2">
-              {SORTED_SCHEDULES.map((s, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="group w-full flex items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
-                >
-                  <span className={cn(
-                    "w-2 h-2 rounded-full shrink-0",
-                    s.lastResult === "failed" ? "bg-destructive" : "bg-emerald-500",
-                  )} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[14px] text-foreground truncate">{s.name}</p>
-                    <p className="text-[14px] text-muted-foreground truncate">{s.agent} · {s.cadence}</p>
+              {SORTED_SCHEDULES.map((s, i) => {
+                const enabled = isEnabled(i);
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-muted/50",
+                      !enabled && "opacity-50",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setListOpen(false);
+                        openEdit(s);
+                      }}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <p className="text-[14px] text-foreground truncate">
+                        {s.name}
+                      </p>
+                      <p className="text-[14px] text-muted-foreground truncate">
+                        {s.cadence}
+                      </p>
+                    </button>
+                    <Switch
+                      checked={enabled}
+                      onCheckedChange={() => {
+                        setToggleOverrides((prev) => new Map([...prev, [i, !enabled]]));
+                      }}
+                      className="shrink-0"
+                    />
                   </div>
-                  <span className="text-[14px] text-muted-foreground tabular-nums shrink-0">
-                    in {s.nextRun}
-                  </span>
-                  <span className="text-muted-foreground/20 group-hover:text-foreground transition-colors">→</span>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Schedule form modal — same as home page feed, with toggle + delete for editing */}
+      {formOpen && (
+        <ScheduleFormModal
+          agentId={selectedAgent}
+          existing={
+            editingSchedule
+              ? ({
+                  id: "sched_demo_1",
+                  name: editingSchedule.name,
+                  agentId: selectedAgent,
+                  type: "rrule",
+                  cron: null,
+                  rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+                  timezone: "America/New_York",
+                  quietHours: [],
+                  task: "Run the scheduled task as configured.",
+                  enabled: editingSchedule.enabled,
+                  sessionMode: "fresh",
+                  createdBy: "user",
+                  status: null,
+                } satisfies Schedule)
+              : undefined
+          }
+          onClose={() => setFormOpen(false)}
+          onSaved={() => setFormOpen(false)}
+          title={editingSchedule ? "Edit schedule" : undefined}
+          submitLabel={editingSchedule ? "Save" : undefined}
+          headerSlot={agentPicker}
+          footerLeftSlot={
+            editingSchedule ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => void onDelete()}
+              >
+                Delete
+              </Button>
+            ) : undefined
+          }
+        />
       )}
     </>
   );
@@ -2234,16 +2760,86 @@ function ScheduleOverviewWidget() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const SCHED_DATA = [
-  { name: "Daily brand audit", cadence: "Weekdays 9:00 AM", nextRun: "3h", lastResult: "success", enabled: true, agent: "brand-asset-generator" },
-  { name: "Nightly test suite", cadence: "Daily 2:00 AM", nextRun: "14h", lastResult: "failed", enabled: true, agent: "backend-refactor" },
-  { name: "Weekly report generation", cadence: "Mon 8:00 AM", nextRun: "2d", lastResult: "success", enabled: true, agent: "reporting-agent" },
-  { name: "Dependency vulnerability scan", cadence: "Every 6h", nextRun: "4h", lastResult: "success", enabled: true, agent: "security-scanner" },
-  { name: "Performance benchmark", cadence: "Daily 3:00 AM", nextRun: "15h", lastResult: "success", enabled: true, agent: "perf-monitor" },
-  { name: "Data pipeline sync", cadence: "Every 30m", nextRun: "12m", lastResult: "success", enabled: true, agent: "data-pipeline" },
-  { name: "Slack digest summary", cadence: "Weekdays 5:00 PM", nextRun: "7h", lastResult: "success", enabled: true, agent: "reporting-agent" },
-  { name: "Model fine-tune checkpoint", cadence: "Every 12h", nextRun: "8h", lastResult: "success", enabled: false, agent: "ml-trainer" },
-  { name: "Stale PR cleanup", cadence: "Fri 4:00 PM", nextRun: "4d", lastResult: "success", enabled: true, agent: "backend-refactor" },
-  { name: "Cost anomaly detector", cadence: "Every 1h", nextRun: "45m", lastResult: "failed", enabled: true, agent: "cost-monitor" },
+  {
+    name: "Daily brand audit",
+    cadence: "Weekdays 9:00 AM",
+    nextRun: "3h",
+    lastResult: "success",
+    enabled: true,
+    agent: "brand-asset-generator",
+  },
+  {
+    name: "Nightly test suite",
+    cadence: "Daily 2:00 AM",
+    nextRun: "14h",
+    lastResult: "failed",
+    enabled: true,
+    agent: "backend-refactor",
+  },
+  {
+    name: "Weekly report generation",
+    cadence: "Mon 8:00 AM",
+    nextRun: "2d",
+    lastResult: "success",
+    enabled: true,
+    agent: "reporting-agent",
+  },
+  {
+    name: "Dependency vulnerability scan",
+    cadence: "Every 6h",
+    nextRun: "4h",
+    lastResult: "success",
+    enabled: true,
+    agent: "security-scanner",
+  },
+  {
+    name: "Performance benchmark",
+    cadence: "Daily 3:00 AM",
+    nextRun: "15h",
+    lastResult: "success",
+    enabled: true,
+    agent: "perf-monitor",
+  },
+  {
+    name: "Data pipeline sync",
+    cadence: "Every 30m",
+    nextRun: "12m",
+    lastResult: "success",
+    enabled: true,
+    agent: "data-pipeline",
+  },
+  {
+    name: "Slack digest summary",
+    cadence: "Weekdays 5:00 PM",
+    nextRun: "7h",
+    lastResult: "success",
+    enabled: true,
+    agent: "reporting-agent",
+  },
+  {
+    name: "Model fine-tune checkpoint",
+    cadence: "Every 12h",
+    nextRun: "8h",
+    lastResult: "success",
+    enabled: false,
+    agent: "ml-trainer",
+  },
+  {
+    name: "Stale PR cleanup",
+    cadence: "Fri 4:00 PM",
+    nextRun: "4d",
+    lastResult: "success",
+    enabled: true,
+    agent: "backend-refactor",
+  },
+  {
+    name: "Cost anomaly detector",
+    cadence: "Every 1h",
+    nextRun: "45m",
+    lastResult: "failed",
+    enabled: true,
+    agent: "cost-monitor",
+  },
 ];
 
 function ScheduledSectionVariants() {
@@ -2307,10 +2903,18 @@ function ScheduledVariant1() {
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       <div className="grid grid-cols-[1fr_120px_80px_60px_44px] gap-2 px-3 py-2 bg-muted/50 border-b border-border">
-        <span className="text-[14px] font-medium text-muted-foreground">Name</span>
-        <span className="text-[14px] font-medium text-muted-foreground">Cadence</span>
-        <span className="text-[14px] font-medium text-muted-foreground text-right">Next run</span>
-        <span className="text-[14px] font-medium text-muted-foreground text-center">Status</span>
+        <span className="text-[14px] font-medium text-muted-foreground">
+          Name
+        </span>
+        <span className="text-[14px] font-medium text-muted-foreground">
+          Cadence
+        </span>
+        <span className="text-[14px] font-medium text-muted-foreground text-right">
+          Next run
+        </span>
+        <span className="text-[14px] font-medium text-muted-foreground text-center">
+          Status
+        </span>
         <span />
       </div>
       {SCHED_DATA.map((s, i) => {
@@ -2326,22 +2930,36 @@ function ScheduledVariant1() {
             )}
           >
             <div className="min-w-0">
-              <span className="text-[14px] text-foreground truncate block">{s.name}</span>
-              <span className="text-[14px] text-muted-foreground truncate block">{s.agent}</span>
+              <span className="text-[14px] text-foreground truncate block">
+                {s.name}
+              </span>
+              <span className="text-[14px] text-muted-foreground truncate block">
+                {s.agent}
+              </span>
             </div>
-            <span className="text-[14px] text-muted-foreground tabular-nums truncate">{s.cadence}</span>
-            <span className="text-[14px] text-foreground tabular-nums text-right font-medium">{s.nextRun}</span>
+            <span className="text-[14px] text-muted-foreground tabular-nums truncate">
+              {s.cadence}
+            </span>
+            <span className="text-[14px] text-foreground tabular-nums text-right font-medium">
+              {s.nextRun}
+            </span>
             <div className="flex justify-center">
               <span
                 className={cn(
                   "w-2.5 h-2.5 rounded-full",
-                  failed ? "bg-destructive" : enabled ? "bg-emerald-500" : "bg-muted-foreground/30",
+                  failed
+                    ? "bg-destructive"
+                    : enabled
+                      ? "bg-emerald-500"
+                      : "bg-muted-foreground/30",
                 )}
               />
             </div>
             <Switch
               checked={enabled}
-              onCheckedChange={() => setToggles((p) => ({ ...p, [i]: !enabled }))}
+              onCheckedChange={() =>
+                setToggles((p) => ({ ...p, [i]: !enabled }))
+              }
               label={s.name}
             />
           </div>
@@ -2381,14 +2999,20 @@ function ScheduledVariant2() {
               onClick={() => setExpanded(isExpanded ? null : i)}
               className={cn(
                 "relative flex-shrink-0 w-[130px] rounded-xl border bg-card p-3 text-left transition-all",
-                isExpanded ? "ring-2 ring-accent/50 border-accent" : "border-border hover:border-foreground/20",
+                isExpanded
+                  ? "ring-2 ring-accent/50 border-accent"
+                  : "border-border hover:border-foreground/20",
                 !enabled && "opacity-40",
               )}
             >
               <div
                 className={cn(
                   "absolute top-0 left-3 right-3 h-[3px] rounded-b-full",
-                  failed ? "bg-destructive" : enabled ? "bg-emerald-500" : "bg-muted-foreground/20",
+                  failed
+                    ? "bg-destructive"
+                    : enabled
+                      ? "bg-emerald-500"
+                      : "bg-muted-foreground/20",
                 )}
               />
               <p className="text-[20px] font-bold text-foreground tabular-nums mt-1">
@@ -2408,10 +3032,16 @@ function ScheduledVariant2() {
       {expanded !== null && (
         <div className="rounded-lg border border-border bg-card p-4 flex items-center justify-between">
           <div>
-            <p className="text-[14px] font-medium text-foreground">{sorted[expanded].name}</p>
-            <p className="text-[14px] text-muted-foreground">{sorted[expanded].agent} · {sorted[expanded].cadence}</p>
+            <p className="text-[14px] font-medium text-foreground">
+              {sorted[expanded].name}
+            </p>
+            <p className="text-[14px] text-muted-foreground">
+              {sorted[expanded].agent} · {sorted[expanded].cadence}
+            </p>
             {sorted[expanded].lastResult === "failed" && (
-              <p className="text-[14px] text-destructive mt-1">Last run failed</p>
+              <p className="text-[14px] text-destructive mt-1">
+                Last run failed
+              </p>
             )}
           </div>
           <Switch
@@ -2432,14 +3062,17 @@ function ScheduledVariant3() {
   const [toggles, setToggles] = useState<Record<number, boolean>>({});
 
   const failedItems = SCHED_DATA.filter((s) => s.lastResult === "failed");
-  const activeItems = SCHED_DATA.filter((s) => s.lastResult !== "failed" && s.enabled);
+  const activeItems = SCHED_DATA.filter(
+    (s) => s.lastResult !== "failed" && s.enabled,
+  );
   const disabledItems = SCHED_DATA.filter((s) => !s.enabled);
 
   function CountdownRing({ time, failed }: { time: string; failed?: boolean }) {
     const num = parseInt(time);
     const unit = time.replace(/[0-9]/g, "");
     const maxMinutes = unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
-    const currentMinutes = unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
+    const currentMinutes =
+      unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
     const progress = Math.max(0.05, 1 - currentMinutes / maxMinutes);
     const circumference = 2 * Math.PI * 18;
     const offset = circumference * (1 - progress);
@@ -2448,14 +3081,18 @@ function ScheduledVariant3() {
       <div className="relative w-[48px] h-[48px] flex items-center justify-center">
         <svg width="48" height="48" className="absolute -rotate-90">
           <circle
-            cx="24" cy="24" r="18"
+            cx="24"
+            cy="24"
+            r="18"
             fill="none"
             stroke="currentColor"
             strokeWidth="3"
             className="text-muted/50"
           />
           <circle
-            cx="24" cy="24" r="18"
+            cx="24"
+            cy="24"
+            r="18"
             fill="none"
             stroke="currentColor"
             strokeWidth="3"
@@ -2465,12 +3102,22 @@ function ScheduledVariant3() {
             className={failed ? "text-destructive" : "text-emerald-500"}
           />
         </svg>
-        <span className="text-[14px] font-bold tabular-nums text-foreground">{time}</span>
+        <span className="text-[14px] font-bold tabular-nums text-foreground">
+          {time}
+        </span>
       </div>
     );
   }
 
-  function BentoTile({ s, i, large }: { s: typeof SCHED_DATA[number]; i: number; large?: boolean }) {
+  function BentoTile({
+    s,
+    i,
+    large,
+  }: {
+    s: (typeof SCHED_DATA)[number];
+    i: number;
+    large?: boolean;
+  }) {
     const enabled = toggles[i] ?? s.enabled;
     const failed = s.lastResult === "failed";
 
@@ -2479,17 +3126,20 @@ function ScheduledVariant3() {
         className={cn(
           "relative rounded-xl border bg-card p-4 transition-opacity",
           large ? "col-span-2 row-span-2" : "",
-          failed && "border-destructive/40 shadow-[0_0_20px_-4px] shadow-destructive/20",
+          failed &&
+            "border-destructive/40 shadow-[0_0_20px_-4px] shadow-destructive/20",
           !enabled && "opacity-40",
           !failed && "border-border",
         )}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className={cn(
-              "font-semibold text-foreground truncate",
-              large ? "text-[16px]" : "text-[14px]",
-            )}>
+            <p
+              className={cn(
+                "font-semibold text-foreground truncate",
+                large ? "text-[16px]" : "text-[14px]",
+              )}
+            >
               {s.name}
             </p>
             <p className="text-[14px] text-muted-foreground truncate mt-0.5">
@@ -2508,7 +3158,9 @@ function ScheduledVariant3() {
         </div>
         {failed && (
           <div className="mt-2 rounded-md bg-destructive/10 px-2 py-1">
-            <span className="text-[14px] text-destructive font-medium">Last run failed</span>
+            <span className="text-[14px] text-destructive font-medium">
+              Last run failed
+            </span>
           </div>
         )}
       </div>
@@ -2583,30 +3235,75 @@ function BentoHome1() {
   return (
     <div className="rounded-2xl border border-border bg-card/50 p-4 space-y-4">
       {/* Header */}
-      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">Home</h1>
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">
+        Home
+      </h1>
 
       {/* Main bento: tall left + stacked right */}
       <div className="grid grid-cols-3 gap-3 auto-rows-min">
         {/* LEFT: Ready for review — spans 2 cols, tall */}
         <div className="col-span-2 row-span-3 rounded-xl border border-border bg-card p-5">
-          <h2 className="text-[14px] font-semibold text-foreground mb-3">Ready for review</h2>
+          <h2 className="text-[14px] font-semibold text-foreground mb-3">
+            Ready for review
+          </h2>
           <div className="space-y-2">
             {[
-              { title: "Refactor auth middleware", agent: "backend-refactor", time: "45m ago" },
-              { title: "Spring campaign hero images", agent: "brand-asset-generator", time: "2h ago" },
-              { title: "Daily brand audit", agent: "brand-asset-generator", time: "6h ago" },
-              { title: "Nightly performance report", agent: "reporting-agent", time: "8h ago" },
-              { title: "Spring palette experiment", agent: "color-palette-testing", time: "10h ago" },
+              {
+                title: "Refactor auth middleware",
+                agent: "backend-refactor",
+                time: "45m ago",
+              },
+              {
+                title: "Spring campaign hero images",
+                agent: "brand-asset-generator",
+                time: "2h ago",
+              },
+              {
+                title: "Daily brand audit",
+                agent: "brand-asset-generator",
+                time: "6h ago",
+              },
+              {
+                title: "Nightly performance report",
+                agent: "reporting-agent",
+                time: "8h ago",
+              },
+              {
+                title: "Spring palette experiment",
+                agent: "color-palette-testing",
+                time: "10h ago",
+              },
             ].map((item, i) => (
-              <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2.5">
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2.5"
+              >
                 <div className="min-w-0">
-                  <p className="text-[14px] font-medium text-foreground truncate">{item.title}</p>
-                  <p className="text-[14px] text-muted-foreground">{item.agent}</p>
+                  <p className="text-[14px] font-medium text-foreground truncate">
+                    {item.title}
+                  </p>
+                  <p className="text-[14px] text-muted-foreground">
+                    {item.agent}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[14px] text-muted-foreground tabular-nums">{item.time}</span>
-                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+                  <span className="text-[14px] text-muted-foreground tabular-nums">
+                    {item.time}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[14px]"
+                  >
+                    Open
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[14px] text-muted-foreground"
+                  >
+                    Dismiss
+                  </Button>
                 </div>
               </div>
             ))}
@@ -2617,52 +3314,91 @@ function BentoHome1() {
         <div className="col-span-1 rounded-xl border border-destructive/30 bg-gradient-to-br from-destructive/5 to-card p-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="w-2 h-2 rounded-full bg-destructive" />
-            <h2 className="text-[14px] font-semibold text-foreground">Needs attention</h2>
+            <h2 className="text-[14px] font-semibold text-foreground">
+              Needs attention
+            </h2>
           </div>
-          <p className="text-[14px] text-foreground font-medium">GET api.figma.com</p>
-          <p className="text-[14px] text-muted-foreground">brand-asset-generator · 3m ago</p>
+          <p className="text-[14px] text-foreground font-medium">
+            GET api.figma.com
+          </p>
+          <p className="text-[14px] text-muted-foreground">
+            brand-asset-generator · 3m ago
+          </p>
           <div className="flex gap-2 mt-3">
-            <Button size="sm" variant="outline" className="h-7 text-[14px] flex-1">Allow</Button>
-            <Button size="sm" variant="ghost" className="h-7 text-[14px] flex-1 text-muted-foreground">Deny</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-[14px] flex-1"
+            >
+              Allow
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[14px] flex-1 text-muted-foreground"
+            >
+              Deny
+            </Button>
           </div>
         </div>
 
         {/* RIGHT MID: Active — compact */}
         <div className="col-span-1 rounded-xl border border-border bg-card p-4">
-          <h2 className="text-[14px] font-semibold text-foreground mb-2">Active</h2>
+          <h2 className="text-[14px] font-semibold text-foreground mb-2">
+            Active
+          </h2>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[14px] text-foreground truncate">Implement dark mode toggle</span>
+              <span className="text-[14px] text-foreground truncate">
+                Implement dark mode toggle
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[14px] text-foreground truncate">Spring palette experiment</span>
+              <span className="text-[14px] text-foreground truncate">
+                Spring palette experiment
+              </span>
             </div>
           </div>
         </div>
 
         {/* RIGHT BOTTOM: Spend */}
         <div className="col-span-1 rounded-xl border border-border bg-card p-4">
-          <h2 className="text-[14px] font-semibold text-foreground mb-1">Spend</h2>
-          <p className="text-[24px] font-bold text-foreground tabular-nums">$31.57</p>
+          <h2 className="text-[14px] font-semibold text-foreground mb-1">
+            Spend
+          </h2>
+          <p className="text-[24px] font-bold text-foreground tabular-nums">
+            $31.57
+          </p>
           <p className="text-[14px] text-muted-foreground">this month</p>
         </div>
       </div>
 
       {/* Bottom strip: Scheduled bento */}
       <div className="rounded-xl border border-border bg-card p-4">
-        <h2 className="text-[14px] font-semibold text-foreground mb-3">Scheduled</h2>
+        <h2 className="text-[14px] font-semibold text-foreground mb-3">
+          Scheduled
+        </h2>
         <div className="grid grid-cols-5 gap-2">
           {SCHED_DATA.slice(0, 5).map((s, i) => {
             const failed = s.lastResult === "failed";
             return (
-              <div key={i} className={cn(
-                "rounded-lg border p-3 text-center",
-                failed ? "border-destructive/40 bg-destructive/5" : "border-border bg-muted/30",
-              )}>
-                <p className="text-[18px] font-bold tabular-nums text-foreground">{s.nextRun}</p>
-                <p className="text-[14px] text-muted-foreground truncate mt-0.5">{s.name}</p>
+              <div
+                key={i}
+                className={cn(
+                  "rounded-lg border p-3 text-center",
+                  failed
+                    ? "border-destructive/40 bg-destructive/5"
+                    : "border-border bg-muted/30",
+                )}
+              >
+                <p className="text-[18px] font-bold tabular-nums text-foreground">
+                  {s.nextRun}
+                </p>
+                <p className="text-[14px] text-muted-foreground truncate mt-0.5">
+                  {s.name}
+                </p>
               </div>
             );
           })}
@@ -2676,52 +3412,112 @@ function BentoHome2() {
   return (
     <div className="rounded-2xl border border-border bg-card/50 p-4 space-y-3">
       {/* Header */}
-      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">Home</h1>
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">
+        Home
+      </h1>
 
       {/* Row 1: Alert banner — full width, no card wrapper */}
       <div className="flex items-center gap-4 rounded-xl border border-destructive/30 bg-gradient-to-r from-destructive/8 to-transparent px-5 py-3">
         <span className="w-2.5 h-2.5 rounded-full bg-destructive shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-foreground">1 item needs attention</p>
-          <p className="text-[14px] text-muted-foreground">brand-asset-generator wants to access api.figma.com</p>
+          <p className="text-[14px] font-semibold text-foreground">
+            1 item needs attention
+          </p>
+          <p className="text-[14px] text-muted-foreground">
+            brand-asset-generator wants to access api.figma.com
+          </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button size="sm" variant="outline" className="h-7 text-[14px]">Allow once</Button>
-          <Button size="sm" variant="outline" className="h-7 text-[14px]">Always allow</Button>
-          <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Deny</Button>
+          <Button size="sm" variant="outline" className="h-7 text-[14px]">
+            Allow once
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-[14px]">
+            Always allow
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[14px] text-muted-foreground"
+          >
+            Deny
+          </Button>
         </div>
       </div>
 
       {/* Row 2: Ready for review — bento sub-grid (2 large + 3 small) */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[14px] font-semibold text-foreground">Ready for review <span className="font-normal text-muted-foreground">(5)</span></h2>
-          <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground transition-colors">Dismiss all</button>
+          <h2 className="text-[14px] font-semibold text-foreground">
+            Ready for review{" "}
+            <span className="font-normal text-muted-foreground">(5)</span>
+          </h2>
+          <button
+            type="button"
+            className="text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Dismiss all
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-2">
           {/* 2 large cards */}
           <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-[14px] font-semibold text-foreground">Refactor auth middleware</p>
-            <p className="text-[14px] text-muted-foreground mt-0.5">backend-refactor · 45m ago</p>
+            <p className="text-[14px] font-semibold text-foreground">
+              Refactor auth middleware
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-0.5">
+              backend-refactor · 45m ago
+            </p>
             <div className="flex gap-2 mt-3">
-              <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
-              <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+              <Button size="sm" variant="outline" className="h-7 text-[14px]">
+                Open
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-[14px] text-muted-foreground"
+              >
+                Dismiss
+              </Button>
             </div>
           </div>
           <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-[14px] font-semibold text-foreground">Spring campaign hero images</p>
-            <p className="text-[14px] text-muted-foreground mt-0.5">brand-asset-generator · 2h ago</p>
+            <p className="text-[14px] font-semibold text-foreground">
+              Spring campaign hero images
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-0.5">
+              brand-asset-generator · 2h ago
+            </p>
             <div className="flex gap-2 mt-3">
-              <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
-              <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+              <Button size="sm" variant="outline" className="h-7 text-[14px]">
+                Open
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-[14px] text-muted-foreground"
+              >
+                Dismiss
+              </Button>
             </div>
           </div>
           {/* 3 small cards in a row below */}
           <div className="col-span-2 grid grid-cols-3 gap-2">
-            {["Daily brand audit", "Nightly performance report", "Spring palette experiment"].map((t, i) => (
-              <div key={i} className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 flex items-center justify-between">
+            {[
+              "Daily brand audit",
+              "Nightly performance report",
+              "Spring palette experiment",
+            ].map((t, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 flex items-center justify-between"
+              >
                 <p className="text-[14px] text-foreground truncate">{t}</p>
-                <button type="button" className="text-[14px] text-muted-foreground hover:text-foreground shrink-0 ml-2">Dismiss</button>
+                <button
+                  type="button"
+                  className="text-[14px] text-muted-foreground hover:text-foreground shrink-0 ml-2"
+                >
+                  Dismiss
+                </button>
               </div>
             ))}
           </div>
@@ -2731,57 +3527,110 @@ function BentoHome2() {
       {/* Row 3: Active + Spend side by side */}
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2 rounded-xl border border-border bg-card p-4">
-          <h2 className="text-[14px] font-semibold text-foreground mb-3">Active</h2>
+          <h2 className="text-[14px] font-semibold text-foreground mb-3">
+            Active
+          </h2>
           <div className="flex gap-3">
             <div className="flex-1 rounded-lg bg-muted/40 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[14px] font-medium text-foreground">Implement dark mode toggle</span>
+                <span className="text-[14px] font-medium text-foreground">
+                  Implement dark mode toggle
+                </span>
               </div>
-              <p className="text-[14px] text-muted-foreground">frontend-agent · 12m</p>
+              <p className="text-[14px] text-muted-foreground">
+                frontend-agent · 12m
+              </p>
             </div>
             <div className="flex-1 rounded-lg bg-muted/40 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[14px] font-medium text-foreground">Spring palette — warm vs cool</span>
+                <span className="text-[14px] font-medium text-foreground">
+                  Spring palette — warm vs cool
+                </span>
               </div>
-              <p className="text-[14px] text-muted-foreground">color-palette-testing · 45m</p>
+              <p className="text-[14px] text-muted-foreground">
+                color-palette-testing · 45m
+              </p>
             </div>
           </div>
         </div>
         <div className="col-span-1 rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <h2 className="text-[14px] font-semibold text-foreground">This month</h2>
-          <p className="text-[28px] font-bold text-foreground tabular-nums">$31.57</p>
-          <p className="text-[14px] text-muted-foreground">4 agents · 12 sessions</p>
+          <h2 className="text-[14px] font-semibold text-foreground">
+            This month
+          </h2>
+          <p className="text-[28px] font-bold text-foreground tabular-nums">
+            $31.57
+          </p>
+          <p className="text-[14px] text-muted-foreground">
+            4 agents · 12 sessions
+          </p>
         </div>
       </div>
 
       {/* Row 4: Scheduled — countdown ring grid */}
       <div className="rounded-xl border border-border bg-card p-5">
-        <h2 className="text-[14px] font-semibold text-foreground mb-3">Scheduled <span className="font-normal text-muted-foreground">(10)</span></h2>
+        <h2 className="text-[14px] font-semibold text-foreground mb-3">
+          Scheduled{" "}
+          <span className="font-normal text-muted-foreground">(10)</span>
+        </h2>
         <div className="grid grid-cols-5 gap-3">
           {SCHED_DATA.slice(0, 10).map((s, i) => {
             const failed = s.lastResult === "failed";
             const num = parseInt(s.nextRun);
             const unit = s.nextRun.replace(/[0-9]/g, "");
-            const maxMinutes = unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
-            const currentMinutes = unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
+            const maxMinutes =
+              unit === "m" ? 60 : unit === "h" ? 24 * 60 : 7 * 24 * 60;
+            const currentMinutes =
+              unit === "m" ? num : unit === "h" ? num * 60 : num * 24 * 60;
             const progress = Math.max(0.05, 1 - currentMinutes / maxMinutes);
             const circumference = 2 * Math.PI * 16;
             const offset = circumference * (1 - progress);
             return (
-              <div key={i} className={cn(
-                "rounded-lg border p-3 flex flex-col items-center gap-1.5",
-                failed ? "border-destructive/40 bg-destructive/5" : !s.enabled ? "border-border opacity-40" : "border-border",
-              )}>
+              <div
+                key={i}
+                className={cn(
+                  "rounded-lg border p-3 flex flex-col items-center gap-1.5",
+                  failed
+                    ? "border-destructive/40 bg-destructive/5"
+                    : !s.enabled
+                      ? "border-border opacity-40"
+                      : "border-border",
+                )}
+              >
                 <div className="relative w-[40px] h-[40px] flex items-center justify-center">
                   <svg width="40" height="40" className="absolute -rotate-90">
-                    <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted/40" />
-                    <circle cx="20" cy="20" r="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className={failed ? "text-destructive" : "text-emerald-500"} />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      className="text-muted/40"
+                    />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={offset}
+                      strokeLinecap="round"
+                      className={
+                        failed ? "text-destructive" : "text-emerald-500"
+                      }
+                    />
                   </svg>
-                  <span className="text-[14px] font-bold tabular-nums text-foreground">{s.nextRun}</span>
+                  <span className="text-[14px] font-bold tabular-nums text-foreground">
+                    {s.nextRun}
+                  </span>
                 </div>
-                <p className="text-[14px] text-foreground text-center truncate w-full">{s.name}</p>
+                <p className="text-[14px] text-foreground text-center truncate w-full">
+                  {s.name}
+                </p>
               </div>
             );
           })}
@@ -2793,22 +3642,64 @@ function BentoHome2() {
 
 function BentoHome3() {
   const items = [
-    { kind: "attention", span: "col-span-2", title: "GET api.figma.com", sub: "brand-asset-generator · 3m ago" },
-    { kind: "ready", span: "col-span-1", title: "Refactor auth middleware", sub: "backend-refactor · 45m ago" },
-    { kind: "ready", span: "col-span-1", title: "Spring campaign hero images", sub: "brand-asset-generator · 2h ago" },
-    { kind: "active", span: "col-span-1", title: "Implement dark mode toggle", sub: "frontend-agent · running 12m" },
-    { kind: "active", span: "col-span-1", title: "Spring palette experiment", sub: "color-palette-testing · running 45m" },
-    { kind: "ready", span: "col-span-1", title: "Daily brand audit", sub: "brand-asset-generator · 6h ago" },
+    {
+      kind: "attention",
+      span: "col-span-2",
+      title: "GET api.figma.com",
+      sub: "brand-asset-generator · 3m ago",
+    },
+    {
+      kind: "ready",
+      span: "col-span-1",
+      title: "Refactor auth middleware",
+      sub: "backend-refactor · 45m ago",
+    },
+    {
+      kind: "ready",
+      span: "col-span-1",
+      title: "Spring campaign hero images",
+      sub: "brand-asset-generator · 2h ago",
+    },
+    {
+      kind: "active",
+      span: "col-span-1",
+      title: "Implement dark mode toggle",
+      sub: "frontend-agent · running 12m",
+    },
+    {
+      kind: "active",
+      span: "col-span-1",
+      title: "Spring palette experiment",
+      sub: "color-palette-testing · running 45m",
+    },
+    {
+      kind: "ready",
+      span: "col-span-1",
+      title: "Daily brand audit",
+      sub: "brand-asset-generator · 6h ago",
+    },
     { kind: "spend", span: "col-span-1", title: "$31.57", sub: "this month" },
-    { kind: "ready", span: "col-span-1", title: "Nightly performance report", sub: "reporting-agent · 8h ago" },
-    { kind: "ready", span: "col-span-1", title: "Spring palette — warm vs cool", sub: "color-palette-testing · 10h ago" },
+    {
+      kind: "ready",
+      span: "col-span-1",
+      title: "Nightly performance report",
+      sub: "reporting-agent · 8h ago",
+    },
+    {
+      kind: "ready",
+      span: "col-span-1",
+      title: "Spring palette — warm vs cool",
+      sub: "color-palette-testing · 10h ago",
+    },
     { kind: "schedule", span: "col-span-2", title: "Schedules", sub: "" },
   ];
 
   const kindStyles: Record<string, string> = {
-    attention: "border-destructive/40 bg-gradient-to-br from-destructive/8 to-card",
+    attention:
+      "border-destructive/40 bg-gradient-to-br from-destructive/8 to-card",
     ready: "border-border bg-card hover:border-foreground/20",
-    active: "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-card",
+    active:
+      "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-card",
     spend: "border-border bg-card",
     schedule: "border-border bg-card",
   };
@@ -2823,7 +3714,9 @@ function BentoHome3() {
 
   return (
     <div className="rounded-2xl border border-border bg-card/50 p-4 space-y-4">
-      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">Home</h1>
+      <h1 className="text-[24px] font-semibold tracking-[-0.65px] text-foreground">
+        Home
+      </h1>
 
       <div className="grid grid-cols-2 gap-2.5">
         {items.map((item, i) => {
@@ -2831,61 +3724,154 @@ function BentoHome3() {
 
           if (item.kind === "schedule") {
             return (
-              <div key={i} className={cn("rounded-xl border p-4", item.span, kindStyles[item.kind])}>
+              <div
+                key={i}
+                className={cn(
+                  "rounded-xl border p-4",
+                  item.span,
+                  kindStyles[item.kind],
+                )}
+              >
                 <div className="flex items-center gap-2 mb-3">
-                  <span className={cn("px-2 py-0.5 rounded-full text-[14px] font-medium", label.color)}>{label.text}</span>
-                  <span className="text-[14px] text-muted-foreground">10 schedules</span>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 rounded-full text-[14px] font-medium",
+                      label.color,
+                    )}
+                  >
+                    {label.text}
+                  </span>
+                  <span className="text-[14px] text-muted-foreground">
+                    10 schedules
+                  </span>
                 </div>
                 <div className="grid grid-cols-5 gap-2">
                   {SCHED_DATA.slice(0, 5).map((s, j) => {
                     const failed = s.lastResult === "failed";
                     return (
-                      <div key={j} className={cn(
-                        "rounded-lg p-2 text-center border",
-                        failed ? "border-destructive/30 bg-destructive/5" : "border-border bg-muted/20",
-                      )}>
-                        <p className="text-[16px] font-bold tabular-nums text-foreground">{s.nextRun}</p>
-                        <p className="text-[14px] text-muted-foreground truncate">{s.name}</p>
+                      <div
+                        key={j}
+                        className={cn(
+                          "rounded-lg p-2 text-center border",
+                          failed
+                            ? "border-destructive/30 bg-destructive/5"
+                            : "border-border bg-muted/20",
+                        )}
+                      >
+                        <p className="text-[16px] font-bold tabular-nums text-foreground">
+                          {s.nextRun}
+                        </p>
+                        <p className="text-[14px] text-muted-foreground truncate">
+                          {s.name}
+                        </p>
                       </div>
                     );
                   })}
                 </div>
-                <p className="text-[14px] text-muted-foreground mt-2">+5 more schedules</p>
+                <p className="text-[14px] text-muted-foreground mt-2">
+                  +5 more schedules
+                </p>
               </div>
             );
           }
 
           if (item.kind === "spend") {
             return (
-              <div key={i} className={cn("rounded-xl border p-4 flex flex-col justify-center", item.span, kindStyles[item.kind])}>
-                <span className={cn("px-2 py-0.5 rounded-full text-[14px] font-medium self-start mb-2", label.color)}>{label.text}</span>
-                <p className="text-[32px] font-bold text-foreground tabular-nums leading-none">{item.title}</p>
-                <p className="text-[14px] text-muted-foreground mt-1">{item.sub}</p>
+              <div
+                key={i}
+                className={cn(
+                  "rounded-xl border p-4 flex flex-col justify-center",
+                  item.span,
+                  kindStyles[item.kind],
+                )}
+              >
+                <span
+                  className={cn(
+                    "px-2 py-0.5 rounded-full text-[14px] font-medium self-start mb-2",
+                    label.color,
+                  )}
+                >
+                  {label.text}
+                </span>
+                <p className="text-[32px] font-bold text-foreground tabular-nums leading-none">
+                  {item.title}
+                </p>
+                <p className="text-[14px] text-muted-foreground mt-1">
+                  {item.sub}
+                </p>
               </div>
             );
           }
 
           return (
-            <div key={i} className={cn("rounded-xl border p-4 transition-colors", item.span, kindStyles[item.kind])}>
+            <div
+              key={i}
+              className={cn(
+                "rounded-xl border p-4 transition-colors",
+                item.span,
+                kindStyles[item.kind],
+              )}
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className={cn("px-2 py-0.5 rounded-full text-[14px] font-medium shrink-0", label.color)}>{label.text}</span>
+                <span
+                  className={cn(
+                    "px-2 py-0.5 rounded-full text-[14px] font-medium shrink-0",
+                    label.color,
+                  )}
+                >
+                  {label.text}
+                </span>
                 {item.kind === "active" && (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 )}
               </div>
-              <p className="text-[14px] font-semibold text-foreground mt-2 truncate">{item.title}</p>
-              <p className="text-[14px] text-muted-foreground mt-0.5">{item.sub}</p>
+              <p className="text-[14px] font-semibold text-foreground mt-2 truncate">
+                {item.title}
+              </p>
+              <p className="text-[14px] text-muted-foreground mt-0.5">
+                {item.sub}
+              </p>
               {item.kind === "attention" && (
                 <div className="flex gap-2 mt-3">
-                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Allow once</Button>
-                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Always allow</Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Deny</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[14px]"
+                  >
+                    Allow once
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[14px]"
+                  >
+                    Always allow
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[14px] text-muted-foreground"
+                  >
+                    Deny
+                  </Button>
                 </div>
               )}
               {item.kind === "ready" && (
                 <div className="flex gap-2 mt-3">
-                  <Button size="sm" variant="outline" className="h-7 text-[14px]">Open</Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-[14px] text-muted-foreground">Dismiss</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[14px]"
+                  >
+                    Open
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[14px] text-muted-foreground"
+                  >
+                    Dismiss
+                  </Button>
                 </div>
               )}
             </div>
@@ -2906,7 +3892,9 @@ function Bento1CardVariants() {
     <div className="space-y-8">
       {/* ─── Experiments ─── */}
       <div className="space-y-3">
-        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Experiments</p>
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">
+          Experiments
+        </p>
         <div className="space-y-4 max-w-xl">
           <B1ExperimentRunning />
           <B1ExperimentFinished />
@@ -2915,7 +3903,9 @@ function Bento1CardVariants() {
 
       {/* ─── Coding Agent ─── */}
       <div className="space-y-3">
-        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Coding Agent</p>
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">
+          Coding Agent
+        </p>
         <div className="space-y-4 max-w-xl">
           <B1CodingRunning />
           <B1CodingFinished />
@@ -2925,7 +3915,9 @@ function Bento1CardVariants() {
 
       {/* ─── Knowledge Base ─── */}
       <div className="space-y-3">
-        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Knowledge Base</p>
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">
+          Knowledge Base
+        </p>
         <div className="space-y-4 max-w-xl">
           <B1KnowledgeIngestionRunning />
           <B1KnowledgeIngestionFinished />
@@ -2936,7 +3928,9 @@ function Bento1CardVariants() {
 
       {/* ─── Scheduled ─── */}
       <div className="space-y-3">
-        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">Scheduled</p>
+        <p className="text-[14px] font-semibold text-foreground tracking-wide uppercase opacity-60">
+          Scheduled
+        </p>
         <div className="space-y-4 max-w-xl">
           <B1ScheduleExperimentRunning />
           <B1ScheduleExperimentFinished />
@@ -2956,29 +3950,54 @@ function Bento1CardVariants() {
 function B1ExperimentRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Experiment — Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Experiment — Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Spring palette — warm vs cool <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
-            <p className="text-[14px] text-muted-foreground mt-1">color-palette-testing</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Spring palette — warm vs cool{" "}
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle ml-1"
+                size="md"
+              />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              color-palette-testing
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">12m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            12m
+          </span>
         </div>
         <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
           <div className="flex items-center gap-1.5">
             <div className="flex gap-px">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={cn("w-[3px] rounded-full", i < 3 ? "bg-blue-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+                <div
+                  key={i}
+                  className={cn(
+                    "w-[3px] rounded-full",
+                    i < 3 ? "bg-blue-500/70" : "bg-muted-foreground/20",
+                  )}
+                  style={{ height: `${8 + i * 2}px` }}
+                />
               ))}
             </div>
-            <span className="text-[14px] tabular-nums text-muted-foreground">48 runs</span>
+            <span className="text-[14px] tabular-nums text-muted-foreground">
+              48 runs
+            </span>
           </div>
           <span className="text-[14px] text-muted-foreground">·</span>
-          <span className="text-[14px] tabular-nums text-muted-foreground">3 variants</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">
+            3 variants
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -2988,28 +4007,49 @@ function B1ExperimentRunning() {
 function B1ExperimentFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Experiment — Finished with dashboard</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Experiment — Finished with dashboard
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Spring palette — warm vs cool</p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">color-palette-testing</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Spring palette — warm vs cool
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              color-palette-testing
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">10h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            10h ago
+          </span>
         </div>
         <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
           <div className="flex items-center gap-1.5">
             <div className="flex gap-px">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={cn("w-[3px] rounded-full", i < 4 ? "bg-amber-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+                <div
+                  key={i}
+                  className={cn(
+                    "w-[3px] rounded-full",
+                    i < 4 ? "bg-amber-500/70" : "bg-muted-foreground/20",
+                  )}
+                  style={{ height: `${8 + i * 2}px` }}
+                />
               ))}
             </div>
-            <span className="text-[14px] tabular-nums text-muted-foreground">120 runs</span>
+            <span className="text-[14px] tabular-nums text-muted-foreground">
+              120 runs
+            </span>
           </div>
           <span className="text-[14px] text-muted-foreground">·</span>
-          <span className="text-[14px] tabular-nums font-medium text-foreground">0.87</span>
+          <span className="text-[14px] tabular-nums font-medium text-foreground">
+            0.87
+          </span>
           <span className="text-[14px] text-muted-foreground">·</span>
-          <span className="text-[14px] tabular-nums text-muted-foreground">3 variants</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">
+            3 variants
+          </span>
         </div>
         <button
           type="button"
@@ -3020,8 +4060,16 @@ function B1ExperimentFinished() {
           <span className="text-[14px] font-mono opacity-60">HTML</span>
         </button>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3033,17 +4081,31 @@ function B1ExperimentFinished() {
 function B1CodingRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Coding Agent — Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Coding Agent — Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Implement dark mode toggle <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
-            <p className="text-[14px] text-muted-foreground mt-1">frontend-agent</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Implement dark mode toggle{" "}
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle ml-1"
+                size="md"
+              />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              frontend-agent
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">12m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            12m
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -3053,18 +4115,34 @@ function B1CodingRunning() {
 function B1CodingFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Coding Agent — Finished</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Coding Agent — Finished
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Refactor auth middleware</p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">backend-refactor</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Refactor auth middleware
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              backend-refactor
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">45m ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            45m ago
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3074,14 +4152,22 @@ function B1CodingFinished() {
 function B1CodingFinishedArtifact() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Coding Agent — Finished with artifact</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Coding Agent — Finished with artifact
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Generate marketing copy</p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">copywriting-agent</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Generate marketing copy
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              copywriting-agent
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">1h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            1h ago
+          </span>
         </div>
         <button
           type="button"
@@ -3092,8 +4178,16 @@ function B1CodingFinishedArtifact() {
           <span className="text-[14px] font-mono opacity-60">MD</span>
         </button>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3105,23 +4199,39 @@ function B1CodingFinishedArtifact() {
 function B1KnowledgeIngestionRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Ingestion Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Knowledge Base — Ingestion Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Ingest API documentation <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
-            <p className="text-[14px] text-muted-foreground mt-1">knowledge-ingestion</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Ingest API documentation{" "}
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle ml-1"
+                size="md"
+              />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              knowledge-ingestion
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">8m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            8m
+          </span>
         </div>
         <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
           <Book size={16} className="text-blue-500/70 shrink-0" />
-          <span className="text-[14px] text-muted-foreground">142 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground">
+            142 documents indexed
+          </span>
           <span className="text-[14px] text-muted-foreground/50">·</span>
           <span className="text-[14px] text-muted-foreground">processing…</span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -3131,24 +4241,42 @@ function B1KnowledgeIngestionRunning() {
 function B1KnowledgeIngestionFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Ingestion Finished</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Knowledge Base — Ingestion Finished
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Ingest API documentation</p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">knowledge-ingestion</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Ingest API documentation
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              knowledge-ingestion
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">2h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            2h ago
+          </span>
         </div>
         <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
           <Book size={16} className="text-muted-foreground shrink-0" />
-          <span className="text-[14px] text-muted-foreground">312 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground">
+            312 documents indexed
+          </span>
           <span className="text-[14px] text-muted-foreground/50">·</span>
           <span className="text-[14px] font-medium text-foreground">ready</span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3158,17 +4286,31 @@ function B1KnowledgeIngestionFinished() {
 function B1KnowledgeSessionRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Session Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Knowledge Base — Session Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Research competitor pricing models <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" /></p>
-            <p className="text-[14px] text-muted-foreground mt-1">market-research-kb</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Research competitor pricing models{" "}
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle ml-1"
+                size="md"
+              />
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              market-research-kb
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">5m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            5m
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -3178,18 +4320,34 @@ function B1KnowledgeSessionRunning() {
 function B1KnowledgeSessionFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Knowledge Base — Session Finished</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Knowledge Base — Session Finished
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[14px] font-semibold text-foreground leading-snug">Research competitor pricing models</p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">market-research-kb</p>
+            <p className="text-[14px] font-semibold text-foreground leading-snug">
+              Research competitor pricing models
+            </p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              market-research-kb
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">30m ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            30m ago
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3201,33 +4359,55 @@ function B1KnowledgeSessionFinished() {
 function B1ScheduleExperimentRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Experiment Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — Experiment Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
               <Time size={16} className="text-muted-foreground shrink-0" />
               Weekly performance regression sweep
-              <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle"
+                size="md"
+              />
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1">perf-testing-agent</p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              perf-testing-agent
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">6m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            6m
+          </span>
         </div>
         <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
           <div className="flex items-center gap-1.5">
             <div className="flex gap-px">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={cn("w-[3px] rounded-full", i < 2 ? "bg-blue-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+                <div
+                  key={i}
+                  className={cn(
+                    "w-[3px] rounded-full",
+                    i < 2 ? "bg-blue-500/70" : "bg-muted-foreground/20",
+                  )}
+                  style={{ height: `${8 + i * 2}px` }}
+                />
               ))}
             </div>
-            <span className="text-[14px] tabular-nums text-muted-foreground">24 runs</span>
+            <span className="text-[14px] tabular-nums text-muted-foreground">
+              24 runs
+            </span>
           </div>
           <span className="text-[14px] text-muted-foreground">·</span>
-          <span className="text-[14px] tabular-nums text-muted-foreground">2 variants</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">
+            2 variants
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -3237,7 +4417,9 @@ function B1ScheduleExperimentRunning() {
 function B1ScheduleExperimentFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Experiment Finished with dashboard</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — Experiment Finished with dashboard
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3245,23 +4427,40 @@ function B1ScheduleExperimentFinished() {
               <Time size={16} className="text-muted-foreground shrink-0" />
               Weekly performance regression sweep
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">perf-testing-agent</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              perf-testing-agent
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">12h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            12h ago
+          </span>
         </div>
         <div className="flex items-center gap-3 mt-1.5 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
           <div className="flex items-center gap-1.5">
             <div className="flex gap-px">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={cn("w-[3px] rounded-full", i < 4 ? "bg-amber-500/70" : "bg-muted-foreground/20")} style={{ height: `${8 + i * 2}px` }} />
+                <div
+                  key={i}
+                  className={cn(
+                    "w-[3px] rounded-full",
+                    i < 4 ? "bg-amber-500/70" : "bg-muted-foreground/20",
+                  )}
+                  style={{ height: `${8 + i * 2}px` }}
+                />
               ))}
             </div>
-            <span className="text-[14px] tabular-nums text-muted-foreground">86 runs</span>
+            <span className="text-[14px] tabular-nums text-muted-foreground">
+              86 runs
+            </span>
           </div>
           <span className="text-[14px] text-muted-foreground">·</span>
-          <span className="text-[14px] tabular-nums font-medium text-foreground">0.94</span>
+          <span className="text-[14px] tabular-nums font-medium text-foreground">
+            0.94
+          </span>
           <span className="text-[14px] text-muted-foreground">·</span>
-          <span className="text-[14px] tabular-nums text-muted-foreground">2 variants</span>
+          <span className="text-[14px] tabular-nums text-muted-foreground">
+            2 variants
+          </span>
         </div>
         <button
           type="button"
@@ -3272,8 +4471,16 @@ function B1ScheduleExperimentFinished() {
           <span className="text-[14px] font-mono opacity-60">HTML</span>
         </button>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3283,27 +4490,40 @@ function B1ScheduleExperimentFinished() {
 function B1ScheduleKBIngestionRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — KB Ingestion Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — KB Ingestion Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
               <Time size={16} className="text-muted-foreground shrink-0" />
               Nightly docs re-index
-              <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle"
+                size="md"
+              />
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1">knowledge-ingestion</p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              knowledge-ingestion
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">4m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            4m
+          </span>
         </div>
         <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/20">
           <Book size={16} className="text-blue-500/70 shrink-0" />
-          <span className="text-[14px] text-muted-foreground">89 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground">
+            89 documents indexed
+          </span>
           <span className="text-[14px] text-muted-foreground/50">·</span>
           <span className="text-[14px] text-muted-foreground">processing…</span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -3313,7 +4533,9 @@ function B1ScheduleKBIngestionRunning() {
 function B1ScheduleKBIngestionFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — KB Ingestion Finished</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — KB Ingestion Finished
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3321,19 +4543,33 @@ function B1ScheduleKBIngestionFinished() {
               <Time size={16} className="text-muted-foreground shrink-0" />
               Nightly docs re-index
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">knowledge-ingestion</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              knowledge-ingestion
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">5h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            5h ago
+          </span>
         </div>
         <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-muted/40 border border-border/40">
           <Book size={16} className="text-muted-foreground shrink-0" />
-          <span className="text-[14px] text-muted-foreground">512 documents indexed</span>
+          <span className="text-[14px] text-muted-foreground">
+            512 documents indexed
+          </span>
           <span className="text-[14px] text-muted-foreground/50">·</span>
           <span className="text-[14px] font-medium text-foreground">ready</span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3343,21 +4579,32 @@ function B1ScheduleKBIngestionFinished() {
 function B1ScheduleSessionRunning() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Session Running</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — Session Running
+      </p>
       <div className="rounded-xl border border-blue-500/30 bg-blue-500/[0.03] p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-1.5">
               <Time size={16} className="text-muted-foreground shrink-0" />
               Nightly dependency check
-              <WorkingDots className="text-blue-500 inline-flex align-middle" size="md" />
+              <WorkingDots
+                className="text-blue-500 inline-flex align-middle"
+                size="md"
+              />
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1">maintenance-bot</p>
+            <p className="text-[14px] text-muted-foreground mt-1">
+              maintenance-bot
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">3m</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            3m
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-blue-500/20">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
         </div>
       </div>
     </div>
@@ -3367,7 +4614,9 @@ function B1ScheduleSessionRunning() {
 function B1ScheduleSessionFinished() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Session Finished</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — Session Finished
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3375,13 +4624,25 @@ function B1ScheduleSessionFinished() {
               <Time size={16} className="text-muted-foreground shrink-0" />
               Nightly dependency check
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">maintenance-bot</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              maintenance-bot
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">3h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            3h ago
+          </span>
         </div>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3391,7 +4652,9 @@ function B1ScheduleSessionFinished() {
 function B1ScheduleSessionFinishedArtifact() {
   return (
     <div className="space-y-1">
-      <p className="text-[14px] text-muted-foreground mb-2">Scheduled — Session Finished with artifact</p>
+      <p className="text-[14px] text-muted-foreground mb-2">
+        Scheduled — Session Finished with artifact
+      </p>
       <div className="rounded-xl border border-border bg-gradient-to-br from-muted/60 to-card p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -3399,9 +4662,13 @@ function B1ScheduleSessionFinishedArtifact() {
               <Time size={16} className="text-muted-foreground shrink-0" />
               Daily brand audit
             </p>
-            <p className="text-[14px] text-muted-foreground mt-1.5">brand-asset-generator</p>
+            <p className="text-[14px] text-muted-foreground mt-1.5">
+              brand-asset-generator
+            </p>
           </div>
-          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">6h ago</span>
+          <span className="text-[14px] text-muted-foreground/50 whitespace-nowrap shrink-0">
+            6h ago
+          </span>
         </div>
         <button
           type="button"
@@ -3412,8 +4679,16 @@ function B1ScheduleSessionFinishedArtifact() {
           <span className="text-[14px] font-mono opacity-60">PDF</span>
         </button>
         <div className="flex items-center gap-2 py-3 -mx-5 -mb-5 px-5 border-t border-border/40">
-          <Button size="sm" variant="outline" className="h-8 text-[14px]">Go to session</Button>
-          <Button size="sm" variant="ghost" className="h-8 text-[14px] text-muted-foreground ml-auto">Dismiss</Button>
+          <Button size="sm" variant="outline" className="h-8 text-[14px]">
+            Go to session
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-[14px] text-muted-foreground ml-auto"
+          >
+            Dismiss
+          </Button>
         </div>
       </div>
     </div>
@@ -3424,17 +4699,27 @@ function B1ScheduleSessionFinishedArtifact() {
    Feed Cards — Final Designs (Full State Matrix)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function FeedActiveCard({ icon, agentName, title, duration, statsPill, scheduled }: {
+export function FeedActiveCard({
+  icon,
+  agentName,
+  title,
+  duration,
+  statsPill,
+  scheduled,
+  onClick,
+}: {
   icon: React.ReactNode;
   agentName: string;
   title: string;
   duration: string;
   statsPill?: React.ReactNode;
   scheduled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200 hover:shadow-lg"
     >
       <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
@@ -3443,25 +4728,45 @@ function FeedActiveCard({ icon, agentName, title, duration, statsPill, scheduled
       </div>
       <p className="text-[15px] font-semibold text-foreground leading-snug">
         {title}
-        <WorkingDots className="text-blue-500 inline-flex align-middle ml-1" size="md" />
+        <WorkingDots
+          className="text-blue-500 inline-flex align-middle ml-1"
+          size="md"
+        />
       </p>
       {statsPill}
       <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
         <div className="flex items-center gap-1.5">
           <span className="text-[14px] text-muted-foreground">{duration}</span>
           {scheduled && (
-            <span className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <span
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer"
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
               · Edit schedule
             </span>
           )}
         </div>
-        <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">→</span>
+        <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">
+          →
+        </span>
       </div>
     </button>
   );
 }
 
-function FeedFinishedCard({ icon, agentName, title, time, unread, artifact, statsPill, scheduled }: {
+export function FeedFinishedCard({
+  icon,
+  agentName,
+  title,
+  time,
+  unread,
+  artifact,
+  statsPill,
+  scheduled,
+  onDismiss,
+  onArtifactClick,
+  onClick,
+}: {
   icon: React.ReactNode;
   agentName: string;
   title: string;
@@ -3470,9 +4775,15 @@ function FeedFinishedCard({ icon, agentName, title, time, unread, artifact, stat
   artifact?: { name: string };
   statsPill?: React.ReactNode;
   scheduled?: boolean;
+  onDismiss?: () => void;
+  onArtifactClick?: () => void;
+  onClick?: () => void;
 }) {
   return (
-    <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200 cursor-pointer hover:shadow-lg">
+    <div
+      className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200 cursor-pointer hover:shadow-lg"
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
@@ -3481,12 +4792,18 @@ function FeedFinishedCard({ icon, agentName, title, time, unread, artifact, stat
           </div>
           <p className="text-[15px] font-semibold text-foreground leading-snug">
             {title}
-            {unread && <span className="inline-block w-2 h-2 rounded-full bg-blue-500 align-middle ml-1.5" />}
+            {unread && (
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 align-middle ml-1.5" />
+            )}
           </p>
         </div>
         <button
           type="button"
           className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            onDismiss?.();
+          }}
         >
           Dismiss
         </button>
@@ -3496,7 +4813,10 @@ function FeedFinishedCard({ icon, agentName, title, time, unread, artifact, stat
         <button
           type="button"
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border/50 bg-muted/40 hover:bg-muted/70 hover:border-border transition-all text-[14px] text-muted-foreground hover:text-foreground mt-3"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            onArtifactClick?.();
+          }}
         >
           <Document size={16} className="shrink-0" />
           <span className="truncate max-w-[160px]">{artifact.name}</span>
@@ -3506,23 +4826,41 @@ function FeedFinishedCard({ icon, agentName, title, time, unread, artifact, stat
         <div className="flex items-center gap-1.5">
           <span className="text-[14px] text-muted-foreground">{time}</span>
           {scheduled && (
-            <span className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <span
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground/60 hover:text-muted-foreground transition-all cursor-pointer"
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
               · Edit schedule
             </span>
           )}
         </div>
-        <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">→</span>
+        <span className="w-[24px] text-center text-muted-foreground/20 transition-all duration-200 group-hover:text-foreground group-hover:translate-x-0.5">
+          →
+        </span>
       </div>
     </div>
   );
 }
 
-function experimentPill(runs: string, status: string, statusColor?: string) {
+export function experimentPill(
+  runs: string,
+  status: string,
+  statusColor?: string,
+) {
   return (
     <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
-      <span className="text-[14px] text-muted-foreground tabular-nums">{runs}</span>
+      <span className="text-[14px] text-muted-foreground tabular-nums">
+        {runs}
+      </span>
       <span className="text-[14px] text-muted-foreground/40">·</span>
-      <span className={cn("text-[14px] tabular-nums", statusColor || "text-muted-foreground")}>{status}</span>
+      <span
+        className={cn(
+          "text-[14px] tabular-nums",
+          statusColor || "text-muted-foreground",
+        )}
+      >
+        {status}
+      </span>
     </div>
   );
 }
@@ -3531,44 +4869,151 @@ function FeedCodingAgentCards() {
   let n = 0;
   return (
     <div className="space-y-6 max-w-xl">
-      <CardEntry number={++n} title="Active — Ongoing Session" description="Code icon. Working dots. Arrow on hover. No dismiss (still active).">
-        <FeedActiveCard icon={<Code size={16} className="shrink-0" />} agentName="frontend-agent" title="Implement dark mode toggle" duration="12m" />
+      <CardEntry
+        number={++n}
+        title="Active — Ongoing Session"
+        description="Code icon. Working dots. Arrow on hover. No dismiss (still active)."
+      >
+        <FeedActiveCard
+          icon={<Code size={16} className="shrink-0" />}
+          agentName="frontend-agent"
+          title="Implement dark mode toggle"
+          duration="12m"
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Time icon replaces agent icon for scheduled runs. 'Edit schedule' appears on hover in footer (tertiary).">
-        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="maintenance-bot" title="Nightly dependency update" duration="4m" scheduled />
+      <CardEntry
+        number={++n}
+        title="Active — Scheduled Ongoing Session"
+        description="Time icon replaces agent icon for scheduled runs. 'Edit schedule' appears on hover in footer (tertiary)."
+      >
+        <FeedActiveCard
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="maintenance-bot"
+          title="Nightly dependency update"
+          duration="4m"
+          scheduled
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Unread)" description="Blue dot = unread. Dismiss on hover. Arrow on hover.">
-        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="backend-refactor" title="Refactor auth middleware" time="45m ago" unread />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Unread)"
+        description="Blue dot = unread. Dismiss on hover. Arrow on hover."
+      >
+        <FeedFinishedCard
+          icon={<Code size={16} className="shrink-0" />}
+          agentName="backend-refactor"
+          title="Refactor auth middleware"
+          time="45m ago"
+          unread
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Artifact chip independently clickable. Card click → session.">
-        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="copywriting-agent" title="Generate marketing copy" time="1h ago" unread artifact={{ name: "campaign-copy-v3.md" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Unread)"
+        description="Artifact chip independently clickable. Card click → session."
+      >
+        <FeedFinishedCard
+          icon={<Code size={16} className="shrink-0" />}
+          agentName="copywriting-agent"
+          title="Generate marketing copy"
+          time="1h ago"
+          unread
+          artifact={{ name: "campaign-copy-v3.md" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Time icon shows scheduled. 'Edit schedule' tertiary link in footer on hover.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="maintenance-bot" title="Nightly dependency check" time="3h ago" unread />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Unread)"
+        description="Time icon shows scheduled. 'Edit schedule' tertiary link in footer on hover."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="maintenance-bot"
+          title="Nightly dependency check"
+          time="3h ago"
+          unread
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled + artifact combo.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="report-agent" title="Weekly code coverage report" time="6h ago" unread artifact={{ name: "coverage-report-aug14.pdf" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Unread)"
+        description="Scheduled + artifact combo."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="report-agent"
+          title="Weekly code coverage report"
+          time="6h ago"
+          unread
+          artifact={{ name: "coverage-report-aug14.pdf" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Read)" description="No blue dot. Already visited. Dismiss still available.">
-        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="backend-refactor" title="Refactor auth middleware" time="45m ago" unread={false} />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Read)"
+        description="No blue dot. Already visited. Dismiss still available."
+      >
+        <FeedFinishedCard
+          icon={<Code size={16} className="shrink-0" />}
+          agentName="backend-refactor"
+          title="Refactor auth middleware"
+          time="45m ago"
+          unread={false}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read state with artifact.">
-        <FeedFinishedCard icon={<Code size={16} className="shrink-0" />} agentName="copywriting-agent" title="Generate marketing copy" time="1h ago" unread={false} artifact={{ name: "campaign-copy-v3.md" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Read)"
+        description="Read state with artifact."
+      >
+        <FeedFinishedCard
+          icon={<Code size={16} className="shrink-0" />}
+          agentName="copywriting-agent"
+          title="Generate marketing copy"
+          time="1h ago"
+          unread={false}
+          artifact={{ name: "campaign-copy-v3.md" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled session.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="maintenance-bot" title="Nightly dependency check" time="3h ago" unread={false} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Read)"
+        description="Read scheduled session."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="maintenance-bot"
+          title="Nightly dependency check"
+          time="3h ago"
+          unread={false}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="report-agent" title="Weekly code coverage report" time="6h ago" unread={false} artifact={{ name: "coverage-report-aug14.pdf" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Read)"
+        description="Read scheduled + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="report-agent"
+          title="Weekly code coverage report"
+          time="6h ago"
+          unread={false}
+          artifact={{ name: "coverage-report-aug14.pdf" }}
+        />
       </CardEntry>
     </div>
   );
@@ -3578,44 +5023,151 @@ function FeedKnowledgeBaseCards() {
   let n = 0;
   return (
     <div className="space-y-6 max-w-xl">
-      <CardEntry number={++n} title="Active — Ongoing Session" description="Book icon for knowledge base agents.">
-        <FeedActiveCard icon={<Book size={16} className="shrink-0" />} agentName="docs-indexer" title="Re-index API documentation" duration="8m" />
+      <CardEntry
+        number={++n}
+        title="Active — Ongoing Session"
+        description="Book icon for knowledge base agents."
+      >
+        <FeedActiveCard
+          icon={<Book size={16} className="shrink-0" />}
+          agentName="docs-indexer"
+          title="Re-index API documentation"
+          duration="8m"
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Scheduled knowledge base run. 'Edit schedule' tertiary in footer.">
-        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Sync Confluence pages" duration="2m" scheduled />
+      <CardEntry
+        number={++n}
+        title="Active — Scheduled Ongoing Session"
+        description="Scheduled knowledge base run. 'Edit schedule' tertiary in footer."
+      >
+        <FeedActiveCard
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="wiki-sync"
+          title="Sync Confluence pages"
+          duration="2m"
+          scheduled
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Unread)" description="Knowledge base session completed.">
-        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="docs-indexer" title="Re-index API documentation" time="20m ago" unread />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Unread)"
+        description="Knowledge base session completed."
+      >
+        <FeedFinishedCard
+          icon={<Book size={16} className="shrink-0" />}
+          agentName="docs-indexer"
+          title="Re-index API documentation"
+          time="20m ago"
+          unread
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Knowledge base produced an artifact.">
-        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="research-agent" title="Competitive analysis sweep" time="1h ago" unread artifact={{ name: "competitor-matrix.csv" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Unread)"
+        description="Knowledge base produced an artifact."
+      >
+        <FeedFinishedCard
+          icon={<Book size={16} className="shrink-0" />}
+          agentName="research-agent"
+          title="Competitive analysis sweep"
+          time="1h ago"
+          unread
+          artifact={{ name: "competitor-matrix.csv" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Scheduled knowledge base run finished.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Sync Confluence pages" time="4h ago" unread />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Unread)"
+        description="Scheduled knowledge base run finished."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="wiki-sync"
+          title="Sync Confluence pages"
+          time="4h ago"
+          unread
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Weekly knowledge digest" time="8h ago" unread artifact={{ name: "digest-aug14.md" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Unread)"
+        description="Scheduled + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="wiki-sync"
+          title="Weekly knowledge digest"
+          time="8h ago"
+          unread
+          artifact={{ name: "digest-aug14.md" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Read)" description="Already reviewed.">
-        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="docs-indexer" title="Re-index API documentation" time="20m ago" unread={false} />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Read)"
+        description="Already reviewed."
+      >
+        <FeedFinishedCard
+          icon={<Book size={16} className="shrink-0" />}
+          agentName="docs-indexer"
+          title="Re-index API documentation"
+          time="20m ago"
+          unread={false}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read with artifact.">
-        <FeedFinishedCard icon={<Book size={16} className="shrink-0" />} agentName="research-agent" title="Competitive analysis sweep" time="1h ago" unread={false} artifact={{ name: "competitor-matrix.csv" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Read)"
+        description="Read with artifact."
+      >
+        <FeedFinishedCard
+          icon={<Book size={16} className="shrink-0" />}
+          agentName="research-agent"
+          title="Competitive analysis sweep"
+          time="1h ago"
+          unread={false}
+          artifact={{ name: "competitor-matrix.csv" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Sync Confluence pages" time="4h ago" unread={false} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Read)"
+        description="Read scheduled."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="wiki-sync"
+          title="Sync Confluence pages"
+          time="4h ago"
+          unread={false}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="wiki-sync" title="Weekly knowledge digest" time="8h ago" unread={false} artifact={{ name: "digest-aug14.md" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Read)"
+        description="Read scheduled + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="wiki-sync"
+          title="Weekly knowledge digest"
+          time="8h ago"
+          unread={false}
+          artifact={{ name: "digest-aug14.md" }}
+        />
       </CardEntry>
     </div>
   );
@@ -3625,44 +5177,161 @@ function FeedExperimentCards() {
   let n = 0;
   return (
     <div className="space-y-6 max-w-xl">
-      <CardEntry number={++n} title="Active — Ongoing Session" description="Chemistry icon + stats pill with live variant count.">
-        <FeedActiveCard icon={<Chemistry size={16} className="shrink-0" />} agentName="perf-testing-agent" title="Weekly performance regression sweep" duration="6m" statsPill={experimentPill("24 runs", "2 live", "text-blue-500")} />
+      <CardEntry
+        number={++n}
+        title="Active — Ongoing Session"
+        description="Chemistry icon + stats pill with live variant count."
+      >
+        <FeedActiveCard
+          icon={<Chemistry size={16} className="shrink-0" />}
+          agentName="perf-testing-agent"
+          title="Weekly performance regression sweep"
+          duration="6m"
+          statsPill={experimentPill("24 runs", "2 live", "text-blue-500")}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Scheduled experiment in progress. 'Edit schedule' tertiary in footer.">
-        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" duration="3m" scheduled statsPill={experimentPill("8 runs", "1 live", "text-blue-500")} />
+      <CardEntry
+        number={++n}
+        title="Active — Scheduled Ongoing Session"
+        description="Scheduled experiment in progress. 'Edit schedule' tertiary in footer."
+      >
+        <FeedActiveCard
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="nightly-bench"
+          title="Nightly latency benchmark"
+          duration="3m"
+          scheduled
+          statsPill={experimentPill("8 runs", "1 live", "text-blue-500")}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Unread)" description="Experiment complete with final stats.">
-        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="color-palette-testing" title="Spring palette — warm vs cool" time="10h ago" unread statsPill={experimentPill("120 runs", "best 0.87")} />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Unread)"
+        description="Experiment complete with final stats."
+      >
+        <FeedFinishedCard
+          icon={<Chemistry size={16} className="shrink-0" />}
+          agentName="color-palette-testing"
+          title="Spring palette — warm vs cool"
+          time="10h ago"
+          unread
+          statsPill={experimentPill("120 runs", "best 0.87")}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Experiment produced a report artifact.">
-        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="prompt-optimizer" title="System prompt A/B test" time="2h ago" unread statsPill={experimentPill("50 runs", "best 0.92")} artifact={{ name: "prompt-results.json" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Unread)"
+        description="Experiment produced a report artifact."
+      >
+        <FeedFinishedCard
+          icon={<Chemistry size={16} className="shrink-0" />}
+          agentName="prompt-optimizer"
+          title="System prompt A/B test"
+          time="2h ago"
+          unread
+          statsPill={experimentPill("50 runs", "best 0.92")}
+          artifact={{ name: "prompt-results.json" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Scheduled experiment finished.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread statsPill={experimentPill("200 runs", "p95 42ms")} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Unread)"
+        description="Scheduled experiment finished."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="nightly-bench"
+          title="Nightly latency benchmark"
+          time="5h ago"
+          unread
+          statsPill={experimentPill("200 runs", "p95 42ms")}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled experiment + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread statsPill={experimentPill("200 runs", "p95 42ms")} artifact={{ name: "bench-aug14.csv" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Unread)"
+        description="Scheduled experiment + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="nightly-bench"
+          title="Nightly latency benchmark"
+          time="5h ago"
+          unread
+          statsPill={experimentPill("200 runs", "p95 42ms")}
+          artifact={{ name: "bench-aug14.csv" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Read)" description="Read experiment.">
-        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="color-palette-testing" title="Spring palette — warm vs cool" time="10h ago" unread={false} statsPill={experimentPill("120 runs", "best 0.87")} />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Read)"
+        description="Read experiment."
+      >
+        <FeedFinishedCard
+          icon={<Chemistry size={16} className="shrink-0" />}
+          agentName="color-palette-testing"
+          title="Spring palette — warm vs cool"
+          time="10h ago"
+          unread={false}
+          statsPill={experimentPill("120 runs", "best 0.87")}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read experiment + artifact.">
-        <FeedFinishedCard icon={<Chemistry size={16} className="shrink-0" />} agentName="prompt-optimizer" title="System prompt A/B test" time="2h ago" unread={false} statsPill={experimentPill("50 runs", "best 0.92")} artifact={{ name: "prompt-results.json" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Read)"
+        description="Read experiment + artifact."
+      >
+        <FeedFinishedCard
+          icon={<Chemistry size={16} className="shrink-0" />}
+          agentName="prompt-optimizer"
+          title="System prompt A/B test"
+          time="2h ago"
+          unread={false}
+          statsPill={experimentPill("50 runs", "best 0.92")}
+          artifact={{ name: "prompt-results.json" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled experiment.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread={false} statsPill={experimentPill("200 runs", "p95 42ms")} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Read)"
+        description="Read scheduled experiment."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="nightly-bench"
+          title="Nightly latency benchmark"
+          time="5h ago"
+          unread={false}
+          statsPill={experimentPill("200 runs", "p95 42ms")}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled experiment + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="nightly-bench" title="Nightly latency benchmark" time="5h ago" unread={false} statsPill={experimentPill("200 runs", "p95 42ms")} artifact={{ name: "bench-aug14.csv" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Read)"
+        description="Read scheduled experiment + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="nightly-bench"
+          title="Nightly latency benchmark"
+          time="5h ago"
+          unread={false}
+          statsPill={experimentPill("200 runs", "p95 42ms")}
+          artifact={{ name: "bench-aug14.csv" }}
+        />
       </CardEntry>
     </div>
   );
@@ -3672,44 +5341,151 @@ function FeedChannelCards() {
   let n = 0;
   return (
     <div className="space-y-6 max-w-xl">
-      <CardEntry number={++n} title="Active — Ongoing Session" description="Hashtag icon indicates Slack channel origin. Agent name shown (not channel name).">
-        <FeedActiveCard icon={<Hashtag size={16} className="shrink-0" />} agentName="brand-asset-generator" title="Generate brand audit report" duration="7m" />
+      <CardEntry
+        number={++n}
+        title="Active — Ongoing Session"
+        description="Hashtag icon indicates Slack channel origin. Agent name shown (not channel name)."
+      >
+        <FeedActiveCard
+          icon={<Hashtag size={16} className="shrink-0" />}
+          agentName="brand-asset-generator"
+          title="Generate brand audit report"
+          duration="7m"
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Active — Scheduled Ongoing Session" description="Scheduled channel session. Time icon + 'Edit schedule' tertiary.">
-        <FeedActiveCard icon={<Time size={16} className="shrink-0" />} agentName="standup-summarizer" title="Summarize overnight PRs" duration="2m" scheduled />
+      <CardEntry
+        number={++n}
+        title="Active — Scheduled Ongoing Session"
+        description="Scheduled channel session. Time icon + 'Edit schedule' tertiary."
+      >
+        <FeedActiveCard
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="standup-summarizer"
+          title="Summarize overnight PRs"
+          duration="2m"
+          scheduled
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Unread)" description="Channel session completed. Blue dot = unread.">
-        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="brand-asset-generator" title="Generate brand audit report" time="30m ago" unread />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Unread)"
+        description="Channel session completed. Blue dot = unread."
+      >
+        <FeedFinishedCard
+          icon={<Hashtag size={16} className="shrink-0" />}
+          agentName="brand-asset-generator"
+          title="Generate brand audit report"
+          time="30m ago"
+          unread
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Unread)" description="Channel session produced an artifact.">
-        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="copywriting-agent" title="Draft release notes for v2.4" time="1h ago" unread artifact={{ name: "release-notes-v2.4.md" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Unread)"
+        description="Channel session produced an artifact."
+      >
+        <FeedFinishedCard
+          icon={<Hashtag size={16} className="shrink-0" />}
+          agentName="copywriting-agent"
+          title="Draft release notes for v2.4"
+          time="1h ago"
+          unread
+          artifact={{ name: "release-notes-v2.4.md" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Unread)" description="Scheduled channel session finished.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="standup-summarizer" title="Summarize overnight PRs" time="6h ago" unread />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Unread)"
+        description="Scheduled channel session finished."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="standup-summarizer"
+          title="Summarize overnight PRs"
+          time="6h ago"
+          unread
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Unread)" description="Scheduled channel session + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="velocity-tracker" title="Weekly team velocity digest" time="12h ago" unread artifact={{ name: "velocity-week33.pdf" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Unread)"
+        description="Scheduled channel session + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="velocity-tracker"
+          title="Weekly team velocity digest"
+          time="12h ago"
+          unread
+          artifact={{ name: "velocity-week33.pdf" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session (Read)" description="Already reviewed channel session.">
-        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="brand-asset-generator" title="Generate brand audit report" time="30m ago" unread={false} />
+      <CardEntry
+        number={++n}
+        title="Finished Session (Read)"
+        description="Already reviewed channel session."
+      >
+        <FeedFinishedCard
+          icon={<Hashtag size={16} className="shrink-0" />}
+          agentName="brand-asset-generator"
+          title="Generate brand audit report"
+          time="30m ago"
+          unread={false}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Session with Artifact (Read)" description="Read channel session with artifact.">
-        <FeedFinishedCard icon={<Hashtag size={16} className="shrink-0" />} agentName="copywriting-agent" title="Draft release notes for v2.4" time="1h ago" unread={false} artifact={{ name: "release-notes-v2.4.md" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Session with Artifact (Read)"
+        description="Read channel session with artifact."
+      >
+        <FeedFinishedCard
+          icon={<Hashtag size={16} className="shrink-0" />}
+          agentName="copywriting-agent"
+          title="Draft release notes for v2.4"
+          time="1h ago"
+          unread={false}
+          artifact={{ name: "release-notes-v2.4.md" }}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session (Read)" description="Read scheduled channel session.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="standup-summarizer" title="Summarize overnight PRs" time="6h ago" unread={false} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session (Read)"
+        description="Read scheduled channel session."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="standup-summarizer"
+          title="Summarize overnight PRs"
+          time="6h ago"
+          unread={false}
+        />
       </CardEntry>
 
-      <CardEntry number={++n} title="Finished Scheduled Session with Artifact (Read)" description="Read scheduled channel session + artifact.">
-        <FeedFinishedCard scheduled icon={<Time size={16} className="shrink-0" />} agentName="velocity-tracker" title="Weekly team velocity digest" time="12h ago" unread={false} artifact={{ name: "velocity-week33.pdf" }} />
+      <CardEntry
+        number={++n}
+        title="Finished Scheduled Session with Artifact (Read)"
+        description="Read scheduled channel session + artifact."
+      >
+        <FeedFinishedCard
+          scheduled
+          icon={<Time size={16} className="shrink-0" />}
+          agentName="velocity-tracker"
+          title="Weekly team velocity digest"
+          time="12h ago"
+          unread={false}
+          artifact={{ name: "velocity-week33.pdf" }}
+        />
       </CardEntry>
     </div>
   );
@@ -3719,21 +5495,41 @@ function FeedNeedsAttentionCards() {
   let n = 0;
   return (
     <div className="space-y-6 max-w-xl">
-      <CardEntry number={++n} title="Network Request" description="Agent requesting external network access. Standard border, pulsing amber dot. Allow + overflow menu. Not dismissible.">
-        <div className="rounded-2xl border border-border bg-card/80 p-5 transition-colors">
-          <div className="flex items-center justify-between gap-3">
+      <CardEntry
+        number={++n}
+        title="Network Request"
+        description="Consistent with other feed cards. Amber dot + agent name, title, request details, actions in footer. Dismiss on hover."
+      >
+        <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                <span>Needs attention</span>
+                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                <span>brand-asset-generator</span>
               </div>
-              <p className="text-[15px] text-foreground">
-                brand-asset-generator
-                <span className="text-muted-foreground font-normal text-[14px] ml-2">wants to access</span>
+              <p className="text-[15px] font-semibold text-foreground leading-snug">
+                Wants to access network
               </p>
-              <p className="font-mono text-[14px] text-muted-foreground mt-0.5 truncate">GET api.figma.com</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              GET api.figma.com
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              /v1/files/abc123
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">3m ago</span>
+            <div className="flex items-center gap-2">
               <Button size="sm">Allow</Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -3743,9 +5539,18 @@ function FeedNeedsAttentionCards() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem>Allow permanently</DropdownMenuItem>
-                  <DropdownMenuItem>Allow all of api.figma.com</DropdownMenuItem>
+                  <DropdownMenuItem>
+                    Allow all of api.figma.com
+                  </DropdownMenuItem>
                   <DropdownMenuItem>Deny this request</DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive">Deny permanently</DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive">
+                    Deny permanently
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="-mx-1" />
+                  <DropdownMenuItem>
+                    <Settings size={16} />
+                    Network settings
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -3753,21 +5558,41 @@ function FeedNeedsAttentionCards() {
         </div>
       </CardEntry>
 
-      <CardEntry number={++n} title="Tool Request" description="Agent requesting tool execution approval. Same card pattern, different context.">
-        <div className="rounded-2xl border border-border bg-card/80 p-5 transition-colors">
-          <div className="flex items-center justify-between gap-3">
+      <CardEntry
+        number={++n}
+        title="Tool Request"
+        description="Same consistent structure. Amber dot + agent name, title, tool info in stats-pill, actions in footer. Dismiss on hover."
+      >
+        <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
-                <span>Needs attention</span>
+                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                <span>backend-refactor</span>
               </div>
-              <p className="text-[15px] text-foreground">
-                backend-refactor
-                <span className="text-muted-foreground font-normal text-[14px] ml-2">wants to run</span>
+              <p className="text-[15px] font-semibold text-foreground leading-snug">
+                Wants to run a command
               </p>
-              <p className="font-mono text-[14px] text-muted-foreground mt-0.5 truncate">bash_execute</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              bash_execute
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              npm run build
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">1m ago</span>
+            <div className="flex items-center gap-2">
               <Button size="sm">Allow</Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -3779,7 +5604,14 @@ function FeedNeedsAttentionCards() {
                   <DropdownMenuItem>Allow permanently</DropdownMenuItem>
                   <DropdownMenuItem>Allow all bash commands</DropdownMenuItem>
                   <DropdownMenuItem>Deny this request</DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive">Deny permanently</DropdownMenuItem>
+                  <DropdownMenuItem className="text-destructive">
+                    Deny permanently
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="-mx-1" />
+                  <DropdownMenuItem>
+                    <Settings size={16} />
+                    Network settings
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -3787,15 +5619,694 @@ function FeedNeedsAttentionCards() {
         </div>
       </CardEntry>
 
-      <CardEntry number={++n} title="All Cleared — Empty Feed" description="Shown when all items dismissed or no activity.">
+      <CardEntry
+        number={++n}
+        title="Resolved — Allowed permanently"
+        description="After actioning a network request. Dot gone, rule shown in footer, dismiss on hover, Network settings link."
+      >
+        <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                <span>brand-asset-generator</span>
+              </div>
+              <p className="text-[15px] font-semibold text-foreground leading-snug">
+                Wants to access network
+              </p>
+            </div>
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              GET api.figma.com
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              /v1/files/abc123
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">3m ago</span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-[14px] text-muted-foreground">
+                <Checkmark size={16} />
+                Allowed permanently
+              </span>
+              <button
+                type="button"
+                className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Settings size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={++n}
+        title="Resolved — Allowed all of host"
+        description="After allowing all requests to a host. Shows the broader rule, dismiss on hover."
+      >
+        <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                <span>brand-asset-generator</span>
+              </div>
+              <p className="text-[15px] font-semibold text-foreground leading-snug">
+                Wants to access network
+              </p>
+            </div>
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              POST api.openai.com
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              /v1/chat/completions
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">8m ago</span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-[14px] text-muted-foreground">
+                <Checkmark size={16} />
+                Allowed all of api.openai.com
+              </span>
+              <button
+                type="button"
+                className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Settings size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={++n}
+        title="Resolved — Denied permanently"
+        description="After denying permanently. Destructive rule text, dismiss on hover."
+      >
+        <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                <span>backend-refactor</span>
+              </div>
+              <p className="text-[15px] font-semibold text-foreground leading-snug">
+                Wants to run a command
+              </p>
+            </div>
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              bash_execute
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              rm -rf /tmp/cache
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">12m ago</span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-[14px] text-destructive">
+                <Checkmark size={16} />
+                Denied permanently
+              </span>
+              <button
+                type="button"
+                className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Settings size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={++n}
+        title="Resolved — Allowed all tool commands"
+        description="After allowing all commands for a tool type. Tool-level rule, dismiss on hover."
+      >
+        <div className="group rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+                <span>backend-refactor</span>
+              </div>
+              <p className="text-[15px] font-semibold text-foreground leading-snug">
+                Wants to run a command
+              </p>
+            </div>
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-[14px] text-muted-foreground hover:text-foreground transition-all shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              bash_execute
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              npm run build
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">5m ago</span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-[14px] text-muted-foreground">
+                <Checkmark size={16} />
+                Allowed all bash commands
+              </span>
+              <button
+                type="button"
+                className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Settings size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={++n}
+        title="Expired — Network request"
+        description="Request expired. Gray dot, 'Expired' tag, 'Set a rule' button with limited options (no Allow/Deny this request)."
+      >
+        <div className="rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/40 shrink-0" />
+            <span>brand-asset-generator</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-[15px] font-semibold text-foreground leading-snug">
+              Wants to access network
+            </p>
+            <span className="text-[14px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              Expired
+            </span>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              GET api.figma.com
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              /v1/files/abc123
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">2h ago</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Set a rule
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem>Allow permanently</DropdownMenuItem>
+                <DropdownMenuItem>Allow all of api.figma.com</DropdownMenuItem>
+                <DropdownMenuItem className="text-destructive">
+                  Deny permanently
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="-mx-1" />
+                <DropdownMenuItem>
+                  <Settings size={16} />
+                  Network settings
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={++n}
+        title="Expired — Tool request"
+        description="Same expired pattern for tool requests. Gray dot, 'Expired' tag, limited rule-setting options."
+      >
+        <div className="rounded-2xl border border-border bg-card/80 p-5 text-left w-full transition-all duration-200">
+          <div className="flex items-center gap-1.5 mb-1 text-[14px] text-muted-foreground">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/40 shrink-0" />
+            <span>backend-refactor</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-[15px] font-semibold text-foreground leading-snug">
+              Wants to run a command
+            </p>
+            <span className="text-[14px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              Expired
+            </span>
+          </div>
+          <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-muted/40 border border-border/50 mt-3">
+            <span className="font-mono text-[14px] text-muted-foreground">
+              bash_execute
+            </span>
+            <span className="text-[14px] text-muted-foreground/40">·</span>
+            <span className="font-mono text-[14px] text-muted-foreground truncate">
+              npm run build
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-3 mt-4 -mx-5 -mb-5 px-5 border-t border-border">
+            <span className="text-[14px] text-muted-foreground">1h ago</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Set a rule
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem>Allow permanently</DropdownMenuItem>
+                <DropdownMenuItem>Allow all bash commands</DropdownMenuItem>
+                <DropdownMenuItem className="text-destructive">
+                  Deny permanently
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="-mx-1" />
+                <DropdownMenuItem>
+                  <Settings size={16} />
+                  Network settings
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardEntry>
+
+      <CardEntry
+        number={++n}
+        title="All Cleared — Empty Feed"
+        description="Shown when all items dismissed or no activity."
+      >
         <div className="rounded-xl border border-border bg-card/80 p-10 text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Checkmark size={16} className="text-emerald-500" />
-            <span className="text-[14px] font-medium text-foreground">All clear</span>
+            <span className="text-[14px] font-medium text-foreground">
+              All clear
+            </span>
           </div>
-          <p className="text-[14px] text-muted-foreground">Nothing waiting for review. You're all caught up.</p>
+          <p className="text-[14px] text-muted-foreground">
+            Nothing waiting for review. You're all caught up.
+          </p>
         </div>
       </CardEntry>
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Filter Variations
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const SOURCE_TYPES = ["Agents", "Experiments", "Knowledge bases", "Channels", "Schedules"] as const;
+
+function FilterVariations() {
+  return (
+    <div className="space-y-12">
+      <p className="text-[14px] text-muted-foreground max-w-lg">
+        The current filter handles status and time, but can't exclude source
+        types (Channels, Schedules, Read items). These variations explore ways
+        to add source-level filtering.
+      </p>
+
+      <FilterVariationA />
+      <FilterVariationB />
+      <FilterVariationC />
+      <FilterVariationD />
+    </div>
+  );
+}
+
+function FilterVariationA() {
+  const [enabled, setEnabled] = useState<Set<string>>(new Set(SOURCE_TYPES));
+
+  const toggle = (source: string) => {
+    setEnabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(source)) next.delete(source);
+      else next.add(source);
+      return next;
+    });
+  };
+
+  return (
+    <CardEntry
+      number={1}
+      title="Variation A — Multi-select Chip Bar"
+      description="A row of toggleable chips below the dropdowns. Each represents a source type and can be toggled off to hide that category. State is always visible at a glance."
+    >
+      <div className="space-y-3 max-w-lg">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Everything
+            <ChevronDown size={16} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            All time
+            <ChevronDown size={16} />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {SOURCE_TYPES.map((source) => (
+            <button
+              key={source}
+              type="button"
+              onClick={() => toggle(source)}
+              className={cn(
+                "rounded-full px-3 py-1 text-[14px] font-medium transition-colors",
+                enabled.has(source)
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {enabled.has(source) && <Check size={14} className="inline mr-1 -ml-0.5" />}
+              {source}
+            </button>
+          ))}
+        </div>
+        <p className="text-[14px] text-muted-foreground italic">
+          Showing: {[...enabled].join(", ") || "Nothing"}
+        </p>
+      </div>
+    </CardEntry>
+  );
+}
+
+function FilterVariationB() {
+  const [enabled, setEnabled] = useState<Set<string>>(new Set(SOURCE_TYPES));
+  const [open, setOpen] = useState(false);
+
+  const toggle = (source: string) => {
+    setEnabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(source)) next.delete(source);
+      else next.add(source);
+      return next;
+    });
+  };
+
+  const allOn = enabled.size === SOURCE_TYPES.length;
+  const label = allOn ? "All sources" : `${enabled.size} sources`;
+
+  return (
+    <CardEntry
+      number={2}
+      title="Variation B — Third 'Source' Dropdown (Multi-select)"
+      description="Add a third dropdown that opens a checklist menu. Uncheck items to exclude them. Compact single row, familiar pattern, scales to more categories."
+    >
+      <div className="space-y-3 max-w-lg">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Everything
+            <ChevronDown size={16} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            All time
+            <ChevronDown size={16} />
+          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              className={cn(
+                "inline-flex items-center gap-1 text-[14px] transition-colors",
+                allOn
+                  ? "text-muted-foreground hover:text-foreground"
+                  : "text-foreground font-medium",
+              )}
+            >
+              {label}
+              <ChevronDown size={16} className={cn("transition-transform", open && "rotate-180")} />
+            </button>
+            {open && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-50 rounded-md border border-border bg-card shadow-md py-1 min-w-[180px]">
+                  {SOURCE_TYPES.map((source) => (
+                    <button
+                      key={source}
+                      type="button"
+                      onClick={() => toggle(source)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[14px] text-left transition-colors hover:bg-muted/50"
+                    >
+                      <span
+                        className={cn(
+                          "flex items-center justify-center w-4 h-4 rounded border transition-colors",
+                          enabled.has(source)
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : "border-border",
+                        )}
+                      >
+                        {enabled.has(source) && <Check size={12} />}
+                      </span>
+                      <span className={enabled.has(source) ? "text-foreground" : "text-muted-foreground"}>
+                        {source}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <p className="text-[14px] text-muted-foreground italic">
+          Showing: {[...enabled].join(", ") || "Nothing"}
+        </p>
+      </div>
+    </CardEntry>
+  );
+}
+
+function FilterVariationC() {
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState("all");
+  const [included, setIncluded] = useState<Set<string>>(new Set(["Channels", "Schedules"]));
+
+  const STATUSES = ["All", "Needs attention", "In progress", "Unread"] as const;
+  const INCLUDABLE = ["Channels", "Schedules"] as const;
+
+  const toggleInclude = (item: string) => {
+    setIncluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(item)) next.delete(item);
+      else next.add(item);
+      return next;
+    });
+  };
+
+  const statusLabel = STATUSES.find((s) => s.toLowerCase().replace(/ /g, "-") === status) ?? "All";
+
+  return (
+    <CardEntry
+      number={3}
+      title="Variation C — Combined Status + Include Dropdown"
+      description="Single dropdown with status options at top, divider, then include toggles for source types. Fewest top-level controls, no separate time filter."
+    >
+      <div className="space-y-3 max-w-lg">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              className={cn(
+                "inline-flex items-center gap-1 text-[14px] transition-colors",
+                "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {statusLabel}
+              <ChevronDown size={16} className={cn("transition-transform", open && "rotate-180")} />
+            </button>
+            {open && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-50 rounded-md border border-border bg-card shadow-md py-1 min-w-[200px]">
+                  {STATUSES.map((s) => {
+                    const key = s.toLowerCase().replace(/ /g, "-");
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          setStatus(key);
+                        }}
+                        className={cn(
+                          "w-full text-left px-3 py-1.5 text-[14px] transition-colors",
+                          status === key
+                            ? "text-foreground font-medium"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                        )}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                  <div className="border-t border-border my-1" />
+                  <p className="px-3 py-1 text-[12px] text-muted-foreground font-medium uppercase tracking-wide">
+                    Include
+                  </p>
+                  {INCLUDABLE.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => toggleInclude(item)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[14px] text-left transition-colors hover:bg-muted/50"
+                    >
+                      <span
+                        className={cn(
+                          "flex items-center justify-center w-4 h-4 rounded border transition-colors",
+                          included.has(item)
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : "border-border",
+                        )}
+                      >
+                        {included.has(item) && <Check size={12} />}
+                      </span>
+                      <span className={included.has(item) ? "text-foreground" : "text-muted-foreground"}>
+                        {item}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <p className="text-[14px] text-muted-foreground italic">
+          Status: {statusLabel} · Including: {[...included].join(", ") || "None"}
+        </p>
+      </div>
+    </CardEntry>
+  );
+}
+
+function FilterVariationD() {
+  const [excludeOpen, setExcludeOpen] = useState(false);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+
+  const EXCLUDABLE = ["Channels", "Schedules", "Read items", "Experiments", "Knowledge bases"] as const;
+  const available = EXCLUDABLE.filter((item) => !excluded.has(item));
+
+  const addExclusion = (item: string) => {
+    setExcluded((prev) => new Set([...prev, item]));
+    setExcludeOpen(false);
+  };
+
+  const removeExclusion = (item: string) => {
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      next.delete(item);
+      return next;
+    });
+  };
+
+  return (
+    <CardEntry
+      number={4}
+      title="Variation D — Exclude Pills (Additive)"
+      description="Keep the two dropdowns as-is. A '+ Filter' button adds exclude pills as needed. Zero noise in default state, explicit about what's excluded, easy to undo one at a time."
+    >
+      <div className="space-y-3 max-w-lg">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Everything
+            <ChevronDown size={16} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[14px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            All time
+            <ChevronDown size={16} />
+          </button>
+          {[...excluded].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => removeExclusion(item)}
+              className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[14px] text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+            >
+              <X size={14} className="shrink-0" />
+              {item}
+            </button>
+          ))}
+          {available.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setExcludeOpen(!excludeOpen)}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-[14px] text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+              >
+                <Add size={14} className="shrink-0" />
+                Filter
+              </button>
+              {excludeOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setExcludeOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-50 rounded-md border border-border bg-card shadow-md py-1 min-w-[160px]">
+                    <p className="px-3 py-1 text-[12px] text-muted-foreground font-medium uppercase tracking-wide">
+                      Exclude
+                    </p>
+                    {available.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => addExclusion(item)}
+                        className="w-full text-left px-3 py-1.5 text-[14px] text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        <p className="text-[14px] text-muted-foreground italic">
+          Excluding: {excluded.size > 0 ? [...excluded].join(", ") : "Nothing (showing all)"}
+        </p>
+      </div>
+    </CardEntry>
   );
 }

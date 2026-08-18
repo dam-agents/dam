@@ -18,10 +18,8 @@ import { cn } from "@/lib/utils";
 import { getBrand } from "../brand.js";
 import { useDemoState } from "../mock/demo-state.js";
 import { protoNavigate, protoPathname } from "../mock/proto-navigate.js";
-import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
 import { useStore } from "../store.js";
 
-const EMPTY: never[] = [];
 const STORAGE_KEY = "sidebar-expanded";
 
 function useExpanded() {
@@ -58,12 +56,7 @@ export function IconRail({
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
 
-  const { data: approvals = EMPTY } = useApprovalsForOwner();
   const { state: demoState } = useDemoState();
-  const pendingCount =
-    demoState === "empty"
-      ? 0
-      : approvals.filter((r) => r.status === "pending").length;
 
   const pathname = protoPathname();
   const onMockRoute = [
@@ -82,7 +75,7 @@ export function IconRail({
     label: "Home",
     icon: Home,
     active: view === "home" && !onMockRoute,
-    badge: pendingCount,
+    badge: 0,
     navigate: () => {
       if (onMockRoute) {
         protoNavigate("/");
@@ -107,7 +100,10 @@ export function IconRail({
   const experiments: Destination = {
     label: "Experiments",
     icon: Chemistry,
-    active: view === "experiments" || pathname === "/experiment-setup" || pathname === "/experiment-onboard",
+    active:
+      view === "experiments" ||
+      pathname === "/experiment-setup" ||
+      pathname === "/experiment-onboard",
     badge: 0,
     navigate: () => {
       if (onMockRoute) {

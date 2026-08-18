@@ -1,0 +1,319 @@
+<title>Home Prototype Script</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f8f8f8;
+    --border: #e8e8e8;
+    --text: #1a1a1a;
+    --text-secondary: #6b6b6b;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --section-num: #c4c4c4;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #999999;
+      --accent: #60a5fa;
+      --accent-light: #1e293b;
+      --section-num: #444444;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #f0f0f0;
+    --text-secondary: #999999;
+    --accent: #60a5fa;
+    --accent-light: #1e293b;
+    --section-num: #444444;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.6;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px;
+  }
+
+  .subtitle {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin: 0 0 48px;
+  }
+
+  .section {
+    margin-bottom: 40px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section:last-of-type {
+    border-bottom: none;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .section-num {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--section-num);
+    font-variant-numeric: tabular-nums;
+    min-width: 20px;
+  }
+
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .location {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+  }
+
+  .talk-points {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .talk-points li {
+    position: relative;
+    padding: 6px 0 6px 20px;
+    font-size: 15px;
+    color: var(--text);
+  }
+
+  .talk-points li::before {
+    content: "–";
+    position: absolute;
+    left: 0;
+    color: var(--text-secondary);
+  }
+
+  .talk-points li em {
+    font-style: normal;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .demo-action {
+    display: block;
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .transition-note {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-style: italic;
+    margin-top: 12px;
+  }
+</style>
+
+<h1>Home Page Prototype — Video Script</h1>
+<p class="subtitle">Walk through features spatially, top-to-bottom, left-to-right. ~3–4 min recording.</p>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">01</span>
+    <span class="section-title">Opening & Layout</span>
+  </div>
+  <span class="location">Full page</span>
+  <ul class="talk-points">
+    <li>New two-column activity feed layout — replaces the old section-based home (Ready / Running / Scheduled)</li>
+    <li>Everything lives in a single chronological feed on the left, contextual widgets pinned on the right</li>
+    <li>Greeting + large "Activity" heading anchors the page</li>
+  </ul>
+  <p class="transition-note">→ Move attention to the filter bar</p>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">02</span>
+    <span class="section-title">Feed Filtering</span>
+  </div>
+  <span class="location">Top of feed — left column</span>
+  <ul class="talk-points">
+    <li>Two-dropdown filter bar: <strong>Status</strong> (Everything / In progress / Unread / Read / Needs attention) and <strong>Time</strong> (All time / 24h / 7d / 30d)</li>
+    <li>Stats summary shows "X running · Y to review" at a glance</li>
+    <li>"Clear all" bulk dismisses everything in one click</li>
+  </ul>
+  <span class="demo-action">Demo: toggle Status to "In progress" → only active cards. Switch to "Needs attention" → only approval cards. Reset to "Everything".</span>
+  <p class="transition-note">→ Scroll down into the feed cards</p>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">03</span>
+    <span class="section-title">Active Session Cards</span>
+  </div>
+  <span class="location">Feed — left column</span>
+  <ul class="talk-points">
+    <li>Live sessions show animated working dots, elapsed duration, and agent name</li>
+    <li>Experiment cards include a stats pill (e.g. "24 runs · 2 live")</li>
+    <li>Scheduled sessions are marked with the clock icon</li>
+    <li>Click any card → navigates directly to that agent's session</li>
+  </ul>
+  <span class="demo-action">Demo: click an active card to show navigation.</span>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">04</span>
+    <span class="section-title">Finished Session Cards</span>
+  </div>
+  <span class="location">Feed — left column</span>
+  <ul class="talk-points">
+    <li>Unread blue dot indicator for sessions you haven't visited</li>
+    <li>Artifact button inline on the card — click opens the <strong>artifact preview modal</strong> (same as production: renders HTML/Markdown/PDF in sandboxed iframe)</li>
+    <li>Experiment cards show result stats (e.g. "120 runs · best 0.87")</li>
+    <li>Hover reveals a "Dismiss" button on every card</li>
+    <li>Dismiss animates: fade + scale, then height collapse</li>
+    <li>Click the card body → navigates to the session</li>
+  </ul>
+  <span class="demo-action">Demo: hover to show Dismiss, click artifact button to open preview modal, dismiss a card to show animation.</span>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">05</span>
+    <span class="section-title">Approval Cards (Needs Attention)</span>
+  </div>
+  <span class="location">Feed — left column (inline, not a separate section)</span>
+  <ul class="talk-points">
+    <li>Network and tool approval requests appear inline in the feed with amber indicator</li>
+    <li>Full action set: Allow, Allow permanently, Allow all of host, Deny, Deny permanently</li>
+    <li>After actioning, card <strong>transforms into its full resolved state</strong> — shows what action was taken (e.g. "Allowed permanently") with checkmark, instead of disappearing</li>
+    <li>Denied actions show in red, allowed in muted</li>
+    <li>Hoverable dismiss on both pending AND resolved approval cards</li>
+    <li>Settings button on resolved cards links to network/tool settings</li>
+  </ul>
+  <span class="demo-action">Demo: Allow a request → card transforms to resolved state. Hover → Dismiss button appears. Dismiss → card animates out.</span>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">06</span>
+    <span class="section-title">Pagination</span>
+  </div>
+  <span class="location">Bottom of feed — left column</span>
+  <ul class="talk-points">
+    <li>Feed is paginated (10 items per page) — avoids layout jumps from infinite scroll</li>
+    <li>Previous / Next buttons with page counter</li>
+    <li>Changing page scrolls to top automatically</li>
+  </ul>
+  <span class="demo-action">Demo: click Next → page scrolls to top showing the next batch.</span>
+  <p class="transition-note">→ Move to the right sidebar</p>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">07</span>
+    <span class="section-title">Sidebar — Compute Resources</span>
+  </div>
+  <span class="location">Right column — top widget</span>
+  <ul class="talk-points">
+    <li>Live agent list with CPU/memory usage bars</li>
+    <li>Running vs stopped state indicators (green dot vs grey)</li>
+    <li>Total resource summary at top</li>
+    <li>Aligned flush with the first feed card</li>
+  </ul>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">08</span>
+    <span class="section-title">Sidebar — Spend</span>
+  </div>
+  <span class="location">Right column — middle widget</span>
+  <ul class="talk-points">
+    <li>Period toggle (1d / 1w / 1m / 1y) with consistent styling</li>
+    <li>Total spend as large number, per-agent breakdown bars below</li>
+    <li>Updates live as you switch periods</li>
+  </ul>
+  <span class="demo-action">Demo: click through the period tabs to show spend changing.</span>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">09</span>
+    <span class="section-title">Sidebar — Schedules</span>
+  </div>
+  <span class="location">Right column — bottom widget</span>
+  <ul class="talk-points">
+    <li>Top 5 schedules listed with cadence and next-run time</li>
+    <li><strong>Toggle switches actually work</strong> — enable/disable schedules inline without opening a form</li>
+    <li>"See all" opens a full list modal with the same toggles</li>
+    <li>Click a schedule → opens pre-filled edit form</li>
+    <li>"New" button → opens create schedule form with agent picker</li>
+  </ul>
+  <span class="demo-action">Demo: toggle a schedule off (goes dim), click "See all" to show full list, toggle one there too.</span>
+  <p class="transition-note">→ Navigate away from home to show the floating pill</p>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">10</span>
+    <span class="section-title">Floating Approvals Pill</span>
+  </div>
+  <span class="location">Bottom-right corner — all pages except home</span>
+  <ul class="talk-points">
+    <li>Persistent badge in the bottom-right showing pending approval count</li>
+    <li>Only appears when there are approvals needing attention — hides at zero</li>
+    <li>Click to expand into a mini panel with full approval cards (same actions as feed)</li>
+    <li>Resolved state transforms in-place (same full card pattern)</li>
+    <li>Hoverable dismiss on pending and resolved cards</li>
+    <li>Lets you handle approvals without leaving your current context</li>
+  </ul>
+  <span class="demo-action">Demo: navigate to an agent page, show the pill, expand it, approve one → transforms to resolved. Dismiss → collapses. When all dismissed → pill disappears.</span>
+  <p class="transition-note">→ Navigate to the Components page</p>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">11</span>
+    <span class="section-title">Components Page (for devs)</span>
+  </div>
+  <span class="location">/compare route</span>
+  <ul class="talk-points">
+    <li>All card variations rendered side-by-side as a component reference</li>
+    <li>Active cards: coding agent, experiment (with stats pill), scheduled</li>
+    <li>Finished cards: plain, with artifact, with experiment stats, scheduled variants</li>
+    <li>Approval cards: network request, tool request, and all resolved states (allowed, denied, permanently)</li>
+    <li>Sidebar widgets: Compute, Spend, Schedules — each in their final form</li>
+    <li>Devs can inspect every state without needing to trigger it in the prototype</li>
+  </ul>
+  <span class="demo-action">Demo: scroll through the components page showing the variety of card states and sidebar widgets.</span>
+</div>

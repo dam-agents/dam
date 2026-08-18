@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -11,7 +9,6 @@ import type { AgentView } from "../../../types.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 import { useUpgradeAgentMutation } from "../api/mutations.js";
 import { AgentRow } from "../components/agent-row.js";
-import { SandboxDetailModal } from "../components/sandbox-detail-modal.js";
 import { UpdatesAvailableBanner } from "../components/updates-available-banner.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
@@ -24,11 +21,10 @@ export function ListView() {
   );
 
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
   const upgrade = useUpgradeAgentMutation();
   const { state: demoState } = useDemoState();
-
-  const [modalAgent, setModalAgent] = useState<AgentView | null>(null);
 
   const sandboxes = agents.filter((a) => !a.kind);
 
@@ -111,7 +107,7 @@ export function ListView() {
                 key={agent.id}
                 {...rowProps(agent)}
                 temporaryDraw={drawByDriver.get(agent.id)}
-                onSelect={() => setModalAgent(agent)}
+                onSelect={() => selectAgent(agent.id)}
                 onStop={() => void stopSandbox(agent)}
                 onDelete={() => void deleteSandbox(agent)}
                 onUpdate={
@@ -123,17 +119,6 @@ export function ListView() {
             ))}
           </div>
         </>
-      )}
-
-      {modalAgent && (
-        <SandboxDetailModal
-          agent={modalAgent}
-          onClose={() => setModalAgent(null)}
-          onOpenConfigure={() => {
-            setModalAgent(null);
-            navigateToSandboxHome(modalAgent.id);
-          }}
-        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { Information } from "@carbon/icons-react";
+import { Close, Information } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 
@@ -55,6 +55,18 @@ interface Props {
   existing?: Schedule;
   onClose: () => void;
   onSaved: () => void;
+  /** Optional slot rendered above the Name field (e.g. an agent picker). */
+  headerSlot?: React.ReactNode;
+  /** Override the modal title. */
+  title?: string;
+  /** Slot rendered in the footer's left side (e.g. a delete button). */
+  footerLeftSlot?: React.ReactNode;
+  /** Slot rendered in the header row to the left of the close button (e.g. a toggle). */
+  headerRightSlot?: React.ReactNode;
+  /** Override the submit button label. */
+  submitLabel?: string;
+  /** Slot rendered just before the Cancel button (e.g. a toggle). */
+  footerPreCancel?: React.ReactNode;
 }
 
 export function ScheduleFormModal({
@@ -62,6 +74,12 @@ export function ScheduleFormModal({
   existing,
   onClose,
   onSaved,
+  headerSlot,
+  title,
+  footerLeftSlot,
+  headerRightSlot,
+  submitLabel,
+  footerPreCancel,
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
@@ -112,13 +130,27 @@ export function ScheduleFormModal({
   return (
     <Modal>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-        <DialogHeader>
+        <DialogHeader className="flex items-start justify-between gap-4">
           <h2 className="text-[16px] font-semibold text-foreground">
-            {existing ? "Edit schedule" : "Create a new Schedule"}
+            {title ?? (existing ? "Edit schedule" : "Create a new Schedule")}
           </h2>
+          <div className="flex items-center gap-2">
+            {headerRightSlot}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              aria-label="Close"
+              className="text-muted-foreground"
+            >
+              <Close size={18} />
+            </Button>
+          </div>
         </DialogHeader>
 
         <DialogBody className="flex flex-col gap-4">
+          {headerSlot}
           <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
               className="h-[40px]"
@@ -296,13 +328,21 @@ export function ScheduleFormModal({
           </div>
         </DialogBody>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? "…" : existing ? "Save" : "Create"}
-          </Button>
+        <DialogFooter
+          className={footerLeftSlot ? "!justify-between" : undefined}
+        >
+          {footerLeftSlot && <div className="mr-auto">{footerLeftSlot}</div>}
+          <div className="flex items-center gap-3">
+            {footerPreCancel}
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending
+                ? "…"
+                : (submitLabel ?? (existing ? "Save" : "Create"))}
+            </Button>
+          </div>
         </DialogFooter>
       </form>
     </Modal>
