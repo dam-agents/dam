@@ -12,6 +12,19 @@ apiServer:
     repository: platform-api-server
     tag: latest
     pullPolicy: Never
+  # The catalogue default (500m) is a chat-workload sizing. On this VM every
+  # agent, driver and experiment status poll funnels through this one pod while
+  # a nous campaign drives the node's load average past its core count — at
+  # half a core the event loop misses its health probe, the kubelet restarts
+  # the container, and every driver polling through the waypoint takes a 503
+  # it cannot retry. The control plane must outrank the workloads it serves.
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "1Gi"
 
 controller:
   image:
@@ -86,12 +99,19 @@ agentTemplates:
     # catalog's 4Gi limit OOM-killed the container mid-iteration. Sized so one
     # heavy campaign fits; the campaign prompt should still bound its own
     # parallelism (serial arms) so memory pressure doesn't skew latency numbers.
+    #
+    # The CPU ceiling is deliberately half the memory-driven sizing: at 4 the
+    # worker's boot burst (a ~13 MB upstream fetch plus a dozen concurrent
+    # egress dials) could take half the 8-core VM and starve ztunnel, which
+    # terminated the driver's in-flight status poll through the waypoint and
+    # killed the run with a synthesized 503. Memory is the resource nous
+    # actually runs out of; CPU only needs to be enough not to crowd the mesh.
     resources:
       requests:
         cpu: "1"
         memory: "2Gi"
       limits:
-        cpu: "4"
+        cpu: "2"
         memory: "8Gi"
 
   openevolve:

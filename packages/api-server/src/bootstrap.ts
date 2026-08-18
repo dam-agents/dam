@@ -749,6 +749,9 @@ export async function bootstrap() {
         surface: "system",
         shareBaseUrl: config.shareBaseUrl,
       }).artifactLibrary,
+    // Lazily wrapped: harnessAgentsServiceFor is declared below this call, and
+    // the sweep only resolves it once a reap fires.
+    agentsFor: (owner) => harnessAgentsServiceFor(owner),
   });
   await periodicJobs.register(
     "experiment-inactivity-sweep",

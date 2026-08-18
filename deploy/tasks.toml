@@ -344,7 +344,15 @@ istio_install_if_missing istio-cni istio/cni \
   --set profile=ambient \
   --set cni.cniBinDir=/var/lib/rancher/k3s/data/cni \
   --set cni.cniConfDir=/var/lib/rancher/k3s/agent/etc/cni/net.d
-istio_install_if_missing ztunnel istio/ztunnel
+# ztunnel proxies every mesh hop, including the experiment SDK's status polls
+# from a driver to the api-server harness. Its chart default requests only
+# 200m, so a bursting agent pod (a nous worker boots with a large upstream
+# fetch and many concurrent dials) can outbid it on this single-node VM;
+# starved, ztunnel terminates in-flight connections and the client sees a
+# synthesized 503 with no retry anywhere in the path. Guarantee it a core.
+istio_install_if_missing ztunnel istio/ztunnel \
+  --set resources.requests.cpu=1 \
+  --set resources.requests.memory=512Mi
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/ztunnel --timeout=120s
 kubectl --kubeconfig="$KUBECONFIG" -n istio-system rollout status ds/istio-cni-node --timeout=120s
 

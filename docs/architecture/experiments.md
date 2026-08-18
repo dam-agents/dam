@@ -152,14 +152,27 @@ missing experiment reads as unknown. Events append only while the experiment
 is `running` — Stop closes the trace, so a stopped loop dies on its next
 call. Every accepted batch bumps the liveness clock.
 
-**Stop has teeth.** Closing the trace alone would let a loop parked inside a
-`spawn()` poll run to the invocation deadline, so Stop also fails the
-experiment's running Invocations (eagerly reaping their targets) — which
-unblocks waiting `spawn()` calls at once — and new spawns stamped with a
-non-running experiment's span are rejected, so a loop that catches the
-failure and retries dies too. A loop doing pure local compute exits at its
-next report; the released pin lets the idle checker reclaim a truly silent
-one.
+**Every terminal transition has teeth.** Closing the trace alone would let a
+loop parked inside a `spawn()` poll run to the invocation deadline, so going
+terminal also fails the experiment's running Invocations (eagerly reaping
+their targets) — which unblocks waiting `spawn()` calls at once — and new
+spawns stamped with a non-running experiment's span are rejected, so a loop
+that catches the failure and retries dies too. A loop doing pure local compute
+exits at its next report; the released pin lets the idle checker reclaim a
+truly silent one.
+
+This applies to **all three** terminal paths — Stop, the script's own `finish`
+(`completed` *and* `failed`), and the inactivity sweep — not Stop alone. The
+ledger is closed in every case, so a surviving target can no longer report into
+the run; leaving it alive only holds its pod and its owner's budget until the
+invocation TTL, which is hours for a long campaign. `completed` is included
+deliberately: a loop that returns without awaiting a spawn orphans its target
+exactly like one that died mid-poll. The Agent Sweep is not a backstop here —
+it reclaims a Sweepable target only once that target hibernates, and a template
+may disable hibernation outright (the `nous` catalogue entry pins
+`hibernationTimeout: "0s"` so a detached campaign is not killed mid-run),
+leaving the invocation liveness deadline as the sole remaining bound. The reap
+is best-effort on every path: a failed cancel never blocks the transition.
 
 **The worker image is a design-time choice.** Which image a loop spawns decides
 what the experiment can do, so the platform makes the catalogue part of

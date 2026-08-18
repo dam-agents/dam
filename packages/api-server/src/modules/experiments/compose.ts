@@ -25,6 +25,37 @@ export interface ExperimentPinPort {
 
 const FEED_INVOCATIONS_MAX = 500;
 
+/** Fail an experiment's still-running Invocations and reap their targets.
+ *  Shared by the owner-scoped service (Stop and finish) and the boot-level
+ *  inactivity sweep, so every terminal path sheds its targets the same way —
+ *  the Agent Sweep only reclaims a Sweepable target once it hibernates, which
+ *  a never-hibernating template (see the nous catalogue entry) never does. */
+async function cancelExperimentInvocations(deps: {
+  invocationsRepo: ReturnType<typeof createInvocationsRepository>;
+  agents: AgentsService | undefined;
+  driverAgentId: string;
+  experimentId: string;
+  reason: string;
+}): Promise<void> {
+  const failed = await deps.invocationsRepo.failAllRunningByExperiment(
+    deps.driverAgentId,
+    deps.experimentId,
+    deps.reason,
+  );
+  for (const invocationId of failed) {
+    try {
+      await deps.agents?.delete(invocationId);
+    } catch {
+      // Sweepable is the backstop — the Agent Sweep reaps it on hibernate.
+    }
+  }
+}
+
+/** Compose the owner-scoped Experiments service. Owner is bound here so the
+ *  same factory backs the tRPC context and the harness REST routes without
+ *  either passing an owner through request input. `artifactLibrary` must be
+ *  the same owner's composition — script versions and dashboards are published
+ *  into that owner's library, attributed to the driver agent. */
 export function composeExperimentsForOwner(opts: {
   db: Db;
   owner: string;
@@ -90,18 +121,14 @@ export function composeExperimentsForOwner(opts: {
       if (!spanRef) return null;
       return spanRef.slice(0, spanRef.indexOf("/"));
     },
-    cancelInvocations: async (driverAgentId, experimentId) => {
-      const failed = await invocationsRepo.failAllRunningByExperiment(
+    cancelInvocations: (driverAgentId, experimentId, reason) =>
+      cancelExperimentInvocations({
+        invocationsRepo,
+        agents: opts.agents,
         driverAgentId,
         experimentId,
-        "experiment stopped",
-      );
-      for (const invocationId of failed) {
-        try {
-          await opts.agents?.delete(invocationId);
-        } catch {}
-      }
-    },
+        reason,
+      }),
   });
   return { experiments };
 }
@@ -112,8 +139,13 @@ export function composeExperimentInactivitySweep(opts: {
   batchSize: number;
   pin?: ExperimentPinPort;
   artifactLibraryFor?: (owner: string) => ArtifactLibraryServiceImpl;
+  /** Owner-scoped agents factory, for reaping the reaped run's targets. The
+   *  sweep is owner-agnostic, so it resolves one per row (same shape as the
+   *  invocation liveness sweep). Omitted compositions just don't reap. */
+  agentsFor?: (owner: string) => AgentsService;
 }): ExperimentInactivitySweep {
   const repo = createExperimentsRepository(opts.db);
+  const invocationsRepo = createInvocationsRepository(opts.db);
   const snapshot = opts.artifactLibraryFor
     ? createDashboardSnapshotter({
         db: opts.db,
@@ -134,6 +166,22 @@ export function composeExperimentInactivitySweep(opts: {
       owner: string;
       driverAgentId: string;
     }) => {
+      // The script process is gone (that is what the sweep detects), so any
+      // target it spawned is orphaned — nothing will ever collect its result.
+      // Shed it here rather than leaving it to the invocation TTL.
+      try {
+        await cancelExperimentInvocations({
+          invocationsRepo,
+          agents: opts.agentsFor?.(owner),
+          driverAgentId,
+          experimentId: id,
+          reason: "experiment reaped for inactivity",
+        });
+      } catch (err) {
+        process.stderr.write(
+          `[experiment-inactivity] invocation cancel ${id} failed: ${err instanceof Error ? err.message : err}\n`,
+        );
+      }
       if (opts.pin && !(await repo.hasRunningForDriver(driverAgentId))) {
         await opts.pin.clear(driverAgentId);
       }
