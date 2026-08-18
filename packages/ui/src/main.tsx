@@ -26,7 +26,7 @@ async function main() {
   }
 
   useStore.getState().hydrateRoute();
-  startDraftSync();
+  startDraftSync(user.profile.sub);
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

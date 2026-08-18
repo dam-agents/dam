@@ -4,6 +4,8 @@ import type { SessionDraft } from "./draft-key.js";
 
 export const DRAFT_STORAGE_PREFIX = "platform-draft:";
 
+const DRAFT_OWNER_KEY = "platform-draft-owner";
+
 const WRITE_BATCH_MS = 300;
 
 const persistedDraftSchema = z.object({
@@ -111,6 +113,21 @@ function writeDraftEntry(
   }
 }
 
+function removeAllDraftEntries(store: DraftStore): void {
+  let storageKeys: string[] = [];
+  try {
+    storageKeys = store.keys();
+  } catch {
+    return;
+  }
+  for (const storageKey of storageKeys) {
+    if (!storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
+    try {
+      store.removeItem(storageKey);
+    } catch {}
+  }
+}
+
 export interface DraftWriter {
   write(key: string, draft: SessionDraft | null): void;
   flush(): void;
@@ -151,23 +168,31 @@ export function createDraftWriter(
     flush,
     clearAll() {
       discardQueue();
-      let storageKeys: string[] = [];
-      try {
-        storageKeys = store.keys();
-      } catch {
-        return;
-      }
-      for (const storageKey of storageKeys) {
-        if (!storageKey.startsWith(DRAFT_STORAGE_PREFIX)) continue;
-        try {
-          store.removeItem(storageKey);
-        } catch {}
-      }
+      removeAllDraftEntries(store);
     },
   };
 }
 
 export const draftWriter = createDraftWriter();
+
+export function claimDraftsFor(
+  ownerId: string,
+  store: DraftStore = localStore,
+): boolean {
+  let previous: string | null = null;
+  try {
+    previous = store.getItem(DRAFT_OWNER_KEY);
+  } catch {
+    return false;
+  }
+  if (previous === ownerId) return false;
+  const foreign = previous !== null;
+  if (foreign) removeAllDraftEntries(store);
+  try {
+    store.setItem(DRAFT_OWNER_KEY, ownerId);
+  } catch {}
+  return foreign;
+}
 
 export function onForeignDraftChange(
   apply: (key: string, draft: SessionDraft | null) => void,

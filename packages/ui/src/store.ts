@@ -23,6 +23,7 @@ import {
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
 import {
+  claimDraftsFor,
   flushDraftsOnHide,
   onForeignDraftChange,
 } from "./modules/sessions/lib/draft-snapshot.js";
@@ -67,9 +68,10 @@ export const useStore = create<PlatformStore>()((...a) => ({
 
 let draftSyncStarted = false;
 
-export function startDraftSync(): void {
+export function startDraftSync(ownerId: string): void {
   if (draftSyncStarted) return;
   draftSyncStarted = true;
+  if (claimDraftsFor(ownerId)) useStore.setState({ drafts: {} });
   onForeignDraftChange((key, draft) =>
     useStore.getState().applyForeignDraft(key, draft),
   );
