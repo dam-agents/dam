@@ -4,7 +4,7 @@ Last verified: 2026-08-18
 
 ## Overview
 
-A **usage tracking** subsystem captures semantically-meaningful user activity in Postgres, shapes it into SQL views, and exposes those views to a dedicated inspector role through an HTML report and a JSON endpoint. It is operator-facing — daily-active users by surface, channel turns by Agent, schedule fires, OAuth connection lifecycle, file-import volumes, contribution-delivery health, which way in a new user chooses — and coarse by design: aggregates over meaningful interactions, not a product-analytics platform.
+A **usage tracking** subsystem captures semantically-meaningful user activity in Postgres, shapes it into SQL views, and exposes those views to a dedicated inspector role through an HTML report and a JSON endpoint. It is operator-facing — daily-active users by surface, turns by Agent, schedule fires, connection lifecycle by provider, skill and artifact activity, file-import volumes, contribution-delivery health, which way in a new user chooses — not product-analytics.
 
 Three design choices follow from the operator framing:
 
@@ -20,8 +20,9 @@ The subsystem is the **api-server's** responsibility end-to-end. The controller 
 flowchart LR
   user-auth[user authenticates]
   user-channel[Slack / Telegram user sends message]
+  user-direct[user prompts or attaches a shell from the UI / CLI]
   user-schedule[scheduled trigger fires]
-  user-oauth[user connects / removes OAuth app]
+  user-oauth[user connects / removes a Connection]
   user-import[user imports a file bundle]
   user-entry[new user picks a way in]
 
@@ -43,6 +44,7 @@ flowchart LR
 
   user-auth --> bus
   user-channel --> bus
+  user-direct --> bus
   user-schedule --> bus
   user-oauth --> bus
   user-import --> bus
@@ -81,11 +83,25 @@ The subsystem is otherwise a sink for the event bus and a reader for SQL. It own
 
 ## Write path
 
-The api-server emits domain events on every meaningful user interaction (auth, channel turn, schedule fire, OAuth connect/disconnect, file import), the contribution-delivery health transitions (apply failed / recovered / gave up), plus every agent lifecycle event (`AgentCreated` / `AgentDeleted`). Those events already exist for the platform's own purposes, so for them the usage subsystem only adds subscribers; the entry-point choice below is the one it emits itself.
+The api-server emits domain events on every meaningful user interaction (auth, channel turn, session turn, relay attach, schedule fire, connect/disconnect, file import), the contribution-delivery health transitions (apply failed / recovered / gave up), plus every agent lifecycle event (`AgentCreated` / `AgentDeleted`). Most already exist for the platform's own purposes and the usage subsystem only adds subscribers; the direct-path interactions below are the exception, recorded at the relay because nothing else had reason to notice them, as is the entry-point choice, which this subsystem emits from its own mutation.
+
+Six properties of that stream are load-bearing for anyone reading the numbers:
+
+- **A turn counts the same whichever way the user reached the agent.** Conversations arrive over two different transports — a Channel, or the relay the browser chat and the CLI share — and only the Channel side was ever recorded, so the platform's most-used surface produced no turns at all. Both now emit.
+
+- **A session turn is counted when the prompt is sent, not when the reply lands.** Recording it on completion made the count depend on the transport surviving the whole turn, and the relay does not: a reconnect mid-turn dropped the socket, the turn was booked as a failure, and the reply arrived on a new socket that never saw the prompt and so counted as nothing. The bias fell entirely on long-running turns — the ones that matter most. Counting the send removes the dependency, and it is also the honest unit: what the user did is ask, and whether an answer came back is a question about the agent and its provider, not about platform usage. The cost is that abandonment is no longer visible; that was judged the cheaper loss, since an outcome skewed by network and provider failures would be read as product signal. The send is counted where the prompt is accepted from the client rather than where it is forwarded, so one abandoned during a cold start still counts — that window is exactly where a user waits longest.
+
+- **Only prompts a person typed are counted.** The UI sends one itself: opening a Kinded Agent that has no sessions yet fires a hidden greeting, so counting every prompt frame would make a sandbox someone opened once and abandoned read as having held a conversation — and that is precisely the sandbox the number needs to expose. Machine-originated prompts therefore mark themselves on the wire and the relay skips them. An unmarked prompt still counts, so a client that does not know about the marker is over- rather than under-recorded: a missing turn is invisible, an extra one is at least explicable.
+
+- **Connect events cover every authentication kind, not just OAuth.** A connection reaches its connected state either at creation or — for OAuth alone — when its authorization callback lands, so the event fires at whichever of those two points completes it. Emitting at both would double-count OAuth; emitting only at the callback (as it once did) left every non-OAuth connection invisible and could make disconnects outnumber connects.
+- **A connection event names its provider, not just its grant.** A Connection's identifier is per-grant and its record is destroyed on disconnect, so the provider must ride the event or the answer to *which providers do people connect* dies with the Connection.
+- **Some interactions leave no state behind, and those are the ones the event is load-bearing for.** A skill installed from a source is recoverable from the agent's own record; a Local Skill deliberately writes none, so the event is the only trace a user ever authored one. A share-link view is anonymous by construction and the artifact carries only a lifetime counter, so the event is what places those views in time. Where an event is the *sole* record, losing it loses the fact — which is the argument for recording an interaction even when its state is uninteresting.
 
 Two sagas subscribe to the bus:
 
-- **persist-activity** — writes one `activity_events` row per `UserAuthenticated`, `ChannelTurnRelayed`, `ScheduleFired`, `ConnectionCreated`, `ConnectionRemoved`, `FilesImported`, `EntryPointChosen`, `ContributionApplyFailed`, `ContributionRecovered`, or `ContributionApplyGaveUp`. The auth subscriber also upserts `actor_roles` with the user's core-role flag.
+- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. The auth subscriber also upserts `actor_roles` with the user's core-role flag.
+
+Where an interaction already leaves durable, timestamped state, the event is not redundant with it: **the state tables hold raw Keycloak subs and the activity log holds pseudonymized ones**. A table keyed by raw subs cannot be filtered against the pseudonymized core-team set, and cannot be shown to an inspector without exposing an identifier. Routing an interaction through an event is what puts it in the one space where it can be both joined and read safely — which is the reason to record something even when its state is already persisted.
 - **persist-agents** — writes one `agents` row per `AgentCreated`, marks deleted on `AgentDeleted`. A startup bootstrap separately backfills the table from the K8s API for agents that pre-dated the saga.
 
 Both sagas write through a repository layer that applies HMAC-SHA256 to every Keycloak `sub` immediately before INSERT — `actor_sub`, `owner_sub`, and `actor_roles.actor_sub` all go through the same pseudonymizer. The repository is the single chokepoint; emit sites and sagas continue to deal in raw subs in-memory.
@@ -94,11 +110,17 @@ Concurrency is bounded — each subscriber uses an RxJS `mergeMap` with a per-st
 
 **One recorded interaction is an intent rather than a completed operation.** Every other event is a by-product of something the api-server did. The entry choice a new user makes on the empty home screen is a click that may lead nowhere — counting the users who choose a way in and then abandon it is the point of recording it — so the browser reports it through an owner-scoped procedure whose only effect is to emit the event. It names no Agent and carries no outcome of its own; from the write path down it is an ordinary row.
 
+Both halves of an event are gated mechanically. A type in the registry is a promise that something raises it and something acts on it, and either half can go missing without breaking the build — an unsubscribed event still compiles and still fires, which from the emit site is indistinguishable from working instrumentation while the interaction reaches no table. A check wired into `mise run check` parses the api-server sources and fails when a registry entry has no emit site, or none that consumes it. It keys on emission, which goes through a single chokepoint, rather than on subscription, which has several legitimate forms — a saga spelling its subscription a new way would otherwise fail a correct build, and a gate that flags correct code teaches people to work around it. Where it cannot follow a reference, it reports rather than passes. It proves both ends exist, not that the consumer does anything useful; judging that stays with review.
+
+What it does not cover is a module that never reaches the bus at all — the failure that produced these gaps. Nothing mechanical catches that without a hand-maintained list of modules, which is a list that goes stale and can be satisfied without collecting anything, so the gate is deliberately scoped to the invariant it can actually hold.
+
 The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents saga and the startup bootstrap run unconditionally because the `agents` table is also useful to consumers outside usage.
 
 ## Pseudonymization
 
-Every Keycloak `sub` written to Postgres is replaced with `HMAC-SHA256(key, sub)` rendered as a 64-char hex string. The key — `ACTIVITY_HMAC_KEY` — is a per-install secret auto-generated by the Helm chart on first install and persisted across upgrades.
+Every actor identifier written to Postgres is replaced with `HMAC-SHA256(key, value)` rendered as a 64-char hex string. The key — `ACTIVITY_HMAC_KEY` — is a per-install secret auto-generated by the Helm chart on first install and persisted across upgrades.
+
+That covers Keycloak `sub`s **and** the messenger-native id of an actor who has no platform identity at all — the Telegram user driving a relay. Both name a real person, so storing one in the clear beside a hashed one would spend the cost of pseudonymization without buying its protection. The messenger id keeps its own field rather than sharing the actor column, which stays Keycloak-`sub` space so cross-table joins remain sound. Real identity is deliberately retained on the other side of the split: the [logging](logging.md) audit trail records the raw value, because an investigation needs to know who, and that stream is governed at the log sink instead.
 
 What this protects against:
 

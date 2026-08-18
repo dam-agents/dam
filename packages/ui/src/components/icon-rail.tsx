@@ -206,14 +206,16 @@ function RailItem({
       }
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-10 w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
+        "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
         active
           ? "text-primary bg-muted"
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} />
-      {expanded && <span className="truncate text-sm">{label}</span>}
+      {expanded && (
+        <span className="truncate text-sm font-medium">{label}</span>
+      )}
     </button>
   );
   if (expanded) return button;

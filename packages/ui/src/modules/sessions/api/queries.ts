@@ -6,6 +6,7 @@ import {
 } from "api-server-api";
 
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
 import { listAgentSessions } from "./acp-session-ops.js";
 
 const STATUS_POLL_MS = 5_000;
@@ -98,6 +99,13 @@ export function useAcpSessions(
     queryFn: live
       ? async () => {
           const sessions = await listAgentSessions(agentId);
+          const store = useStore.getState();
+          if (store.selectedAgent === agentId) {
+            store.pruneDrafts(
+              agentId,
+              sessions.map((s) => s.sessionId),
+            );
+          }
           const allowed: string[] = [
             SessionType.Regular,
             SessionType.ExperimentExecute,

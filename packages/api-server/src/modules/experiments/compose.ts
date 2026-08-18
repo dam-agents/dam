@@ -28,6 +28,7 @@ const FEED_INVOCATIONS_MAX = 500;
 export function composeExperimentsForOwner(opts: {
   db: Db;
   owner: string;
+  surface: string;
   artifactLibrary: ArtifactLibraryServiceImpl;
   pin?: ExperimentPinPort;
   runtimeMutator?: RuntimeMutator;
@@ -35,13 +36,14 @@ export function composeExperimentsForOwner(opts: {
   agents?: AgentsService;
 }): { experiments: ExperimentsService } {
   const invocationsRepo = createInvocationsRepository(opts.db);
-  const { agents, runtimeMutator, wakeAgent, owner } = opts;
+  const { agents, runtimeMutator, wakeAgent, owner, surface } = opts;
   const kindedRail =
     agents && runtimeMutator && wakeAgent
-      ? { owner, agents, runtimeMutator, wakeAgent }
+      ? { owner, surface, agents, runtimeMutator, wakeAgent }
       : null;
   const experiments = createExperimentsService({
     owner: opts.owner,
+    surface: opts.surface,
     repo: createExperimentsRepository(opts.db),
     artifactLibrary: opts.artifactLibrary,
     snapshotDashboard: createDashboardSnapshotter({

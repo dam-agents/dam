@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-08-14
+Last verified: 2026-08-17
 
 ## Overview
 
@@ -90,7 +90,7 @@ Each CR carries strict single-writer ownership, made structural by the status su
 
 There is no stored desired state — the former `desiredState` latch is eliminated. Wake is a one-off activity poke, the controller hibernates on idleness, and running-vs-hibernated is recorded as observed status; see [agent-lifecycle](agent-lifecycle.md).
 
-High-frequency, out-of-band signals live on **annotations** rather than `status`, so they are independently patchable without a spec or status write: the last-activity timestamp and active-session marker that drive hibernation, and the roll trigger the api-server bumps to force a rolling restart of the pair. Connection and secret grants are intent and moved from annotations into `spec`. (Credential `env` rides the runtime channel; see [connections.md](connections.md).)
+High-frequency, out-of-band signals live on **annotations** rather than `status`, so they are independently patchable without a spec or status write: the last-activity timestamp and active-session marker that drive hibernation, and the roll trigger the api-server bumps to force a rolling restart of the pair. Connection and secret grants are intent and moved from annotations into `spec`. (Credential `env` rides the runtime channel; see [runtime delivery](runtime-delivery.md).)
 
 Two domain resources are deliberately not CRDs:
 

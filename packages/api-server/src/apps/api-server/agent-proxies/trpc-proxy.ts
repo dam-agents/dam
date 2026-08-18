@@ -1,5 +1,4 @@
 import type { Context } from "hono";
-import type { UserIdentity } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
@@ -8,6 +7,7 @@ import {
 } from "../../../modules/agents/index.js";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import { clientIp, hasAgentBinding, hasScope } from "../admission/auth.js";
+import type { ApiVariables } from "../deps.js";
 
 export interface AgentTrpcProxyDeps {
   namespace: string;
@@ -15,7 +15,7 @@ export interface AgentTrpcProxyDeps {
   ensureReady: (agentId: string) => Promise<unknown>;
 }
 
-type ProxyCtx = Context<{ Variables: { user: UserIdentity; roles: string[] } }>;
+type ProxyCtx = Context<{ Variables: ApiVariables }>;
 
 export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
   return async (c: ProxyCtx) => {

@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-07-30
+Last verified: 2026-08-17
 
 ## Overview
 
@@ -165,6 +165,39 @@ and permanently removes artifacts — private ones included — whose expiry
 passed more than the grace window ago. Agent deletion does
 **not** touch artifacts — attribution simply points at a name that no longer
 resolves.
+
+## Domain events
+
+Every mutation raises a domain event on the in-process bus. They are advisory
+and non-durable: nothing here is the system of record, and no artifact event
+reaches the security audit trail.
+
+Two different consumers read them, and the split matters because the same
+moment can produce both:
+
+- **Live updates.** Create, update, delete, and folder changes exist so an open
+  browser refreshes without polling. They fire on every mutation, including
+  ones no person asked for — the expiry sweep deletes artifacts on a timer and
+  raises a delete like any other.
+- **Usage.** Publish, share, view, and delete are recorded as
+  [Activity Events](usage-tracking.md). Share is raised only on the transition
+  *into* public, so neither extending an expiry nor revoking a link counts as
+  sharing. A view is what places an opening in time — the artifact's own
+  counter is a lifetime total that cannot say when, or whether the link was
+  opened at all after some date.
+
+  Only the person-driven ones are recorded. An event carries an actor exactly
+  when a person caused it, and the usage subscriber ignores anything without
+  one, so the timer sweep's deletes never reach the activity log even though
+  they raise the same event. That rule is what keeps machine activity out of
+  every number on this page.
+
+A publish carries the producing agent, and whether a person or an agent filed
+it is the question worth asking of this feature — so the two are distinguished
+rather than merged. Artifacts the platform writes for its own bookkeeping
+(an experiment's dashboard, script clone, or results snapshot) are marked
+internal by the caller and raise no publish at all: they are machinery, and
+counting them would report the platform's own writes as user activity.
 
 ## Where the code lives
 

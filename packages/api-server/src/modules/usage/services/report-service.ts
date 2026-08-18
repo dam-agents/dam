@@ -17,7 +17,7 @@ export const VIEW_NAMES = [
   "usage_skill_installs_by_user",
   "usage_egress_hosts_by_agent",
   "usage_connections_by_user",
-  "usage_connections_by_key",
+  "usage_connections_by_provider",
   "usage_connection_churn_by_user",
   "usage_imports_by_agent",
   "usage_imports_by_user",

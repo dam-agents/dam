@@ -26,6 +26,7 @@ function makeService(opts?: {
   };
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
+    surface: "ui",
     runtimeMutator: {
       bump: async (agentId, events) => {
         calls.bumps.push({ agentId, events });

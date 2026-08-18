@@ -9,7 +9,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import {
   useHarnessConfigStatus,
@@ -20,6 +19,7 @@ import {
   StaleModelCallout,
   unavailableModel,
 } from "./model-settings-snapshot.js";
+import { OptionField, ReadOnlyOptionFace } from "./option-field.js";
 
 interface Choice {
   id: string;
@@ -131,6 +131,9 @@ export function ModelSettingsPanel({
   );
 }
 
+const CLEARED_LABEL = "Default";
+const CLEARED_DESCRIPTION = "Determined by harness settings";
+
 function OptionGroup({
   title,
   choices,
@@ -145,61 +148,48 @@ function OptionGroup({
   onSelect: (id: string | null) => void;
 }) {
   const selected = value === null ? null : choices.find((c) => c.id === value);
-  const triggerClass =
-    "flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors";
-  const face = (
-    <>
-      <span className="truncate">{selected?.name ?? "Not set"}</span>
-      <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-    </>
-  );
+  if (disabled) {
+    return (
+      <OptionField title={title}>
+        <ReadOnlyOptionFace label={selected?.name ?? CLEARED_LABEL} />
+      </OptionField>
+    );
+  }
   return (
-    <div className="mb-4 last:mb-0">
-      <SectionLabel className="mb-1.5 block">{title}</SectionLabel>
-      {disabled ? (
-        <div
-          aria-disabled="true"
-          className={cn(triggerClass, "cursor-not-allowed opacity-50")}
-        >
-          {face}
-        </div>
-      ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              aria-label={title}
-              className={cn(
-                triggerClass,
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
-            >
-              {face}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+    <OptionField title={title}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label={title}
+            className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
+            <span className="truncate">{selected?.name ?? CLEARED_LABEL}</span>
+            <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+        >
+          <OptionItem
+            label={CLEARED_LABEL}
+            description={CLEARED_DESCRIPTION}
+            active={value === null}
+            onSelect={() => onSelect(null)}
+          />
+          {choices.map((c) => (
             <OptionItem
-              label="Not set"
-              description="Clears the key — the harness picks on its own"
-              active={value === null}
-              onSelect={() => onSelect(null)}
+              key={c.id}
+              label={c.name}
+              detail={c.name === c.id ? undefined : c.id}
+              description={c.description}
+              active={c.id === value}
+              onSelect={() => onSelect(c.id)}
             />
-            {choices.map((c) => (
-              <OptionItem
-                key={c.id}
-                label={c.name}
-                detail={c.name === c.id ? undefined : c.id}
-                description={c.description}
-                active={c.id === value}
-                onSelect={() => onSelect(c.id)}
-              />
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </OptionField>
   );
 }
 

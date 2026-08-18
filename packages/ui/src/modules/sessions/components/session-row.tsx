@@ -1,5 +1,6 @@
 import {
   Code,
+  Edit,
   Hashtag,
   OverflowMenuVertical,
   Time,
@@ -41,6 +42,7 @@ interface Props {
   working: boolean;
   needsApproval: boolean;
   unread?: boolean;
+  draft?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   onResume: () => void;
@@ -53,6 +55,7 @@ export function SessionRow({
   working,
   needsApproval,
   unread = false,
+  draft = false,
   backgroundWork = NO_WORK,
   cost,
   onResume,
@@ -145,6 +148,7 @@ export function SessionRow({
             ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
+            draft={draft}
             backgroundWork={backgroundWork}
           />
         </div>
@@ -220,6 +224,7 @@ function SessionIndicators({
   ambient,
   needsApproval,
   working,
+  draft,
   backgroundWork,
 }: {
   scheduled: boolean;
@@ -228,6 +233,7 @@ function SessionIndicators({
   ambient: boolean;
   needsApproval: boolean;
   working: boolean;
+  draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
@@ -237,7 +243,8 @@ function SessionIndicators({
     !channel &&
     !needsApproval &&
     !working &&
-    !hasBackgroundWork
+    !hasBackgroundWork &&
+    !draft
   )
     return null;
   return (
@@ -284,6 +291,16 @@ function SessionIndicators({
           className="working-dots-slow text-success"
           title={backgroundWorkLabel(backgroundWork)}
         />
+      ) : draft ? (
+        <span
+          data-testid="session-draft-marker"
+          role="img"
+          aria-label="Has a draft"
+          title="Has a draft"
+          className="inline-flex text-muted-foreground shrink-0"
+        >
+          <Edit size={16} />
+        </span>
       ) : null}
     </span>
   );

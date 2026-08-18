@@ -109,7 +109,7 @@ export interface ArtifactLibraryService {
   listVersions(id: string): Promise<ArtifactVersionInfo[]>;
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string },
+    attribution?: { agentId: string; internal?: boolean },
   ): Promise<LibraryArtifact>;
   update(id: string, input: ArtifactUpdateInput): Promise<LibraryArtifact>;
   setSharing(id: string, input: ArtifactSharingInput): Promise<LibraryArtifact>;

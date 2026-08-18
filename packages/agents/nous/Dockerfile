@@ -28,7 +28,8 @@ RUN uv python install 3.11 &&\
     uv venv --python 3.11 "$NOUS_VENV" &&\
     uv pip install --python "$NOUS_VENV/bin/python" \
       "git+https://github.com/AI-native-Systems-Research/agentic-strategy-evolution.git@${NOUS_REF}" \
-      "setuptools>=83.0.0" &&\
+      "setuptools>=83.0.0" \
+      "msgpack>=1.2.1" &&\
     chown -R 65532:0 /opt/nous-venv /opt/uv
 
 # Patch the installed campaign schema so `channels:` validates (Nous issue #296).

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import { TRPCError } from "@trpc/server";
 import type {
   LocalSkill,
@@ -86,6 +87,7 @@ export interface SkillsServiceDeps {
   runtimeProgress: RuntimeProgressPort;
   unitOfWork: UnitOfWork;
   owner: string;
+  surface: string;
   scanSource: (
     scope: ScanScope,
     gitUrl: string,
@@ -473,6 +475,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         result: "success",
         detail: { name: entry.name, version: entry.version, batch: true },
       });
+      emit({
+        type: EventType.AgentSkillChanged,
+        action: "installed",
+        agentId,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        origin: "source",
+        name: entry.name,
+        source: entry.source,
+      });
     }
     for (const entry of uninstall) {
       securityLog("info", "skill.uninstall", {
@@ -483,6 +495,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         target: entry.source,
         result: "success",
         detail: { name: entry.name, batch: true },
+      });
+      emit({
+        type: EventType.AgentSkillChanged,
+        action: "uninstalled",
+        agentId,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        origin: "source",
+        name: entry.name,
+        source: entry.source,
       });
     }
 
@@ -682,6 +704,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         result: "success",
         detail: { name: input.name, version: input.version },
       });
+      emit({
+        type: EventType.AgentSkillChanged,
+        action: "installed",
+        agentId: input.agentId,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        origin: "source",
+        name: input.name,
+        source: input.source,
+      });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return upsertSkillRef(
         current.filter(
@@ -711,6 +743,16 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         target: input.source,
         result: "success",
         detail: { name: input.name },
+      });
+      emit({
+        type: EventType.AgentSkillChanged,
+        action: "uninstalled",
+        agentId: input.agentId,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        origin: "source",
+        name: input.name,
+        source: input.source,
       });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
       return removeSkillRef(current, {
@@ -751,6 +793,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         }
         throw err;
       }
+      emit({
+        type: EventType.SkillSetSaved,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        skillCount: set.skills.length,
+      });
       securityLog("info", "skill.set.create", {
         category: "privileged",
         actor: deps.owner,
@@ -775,6 +823,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         });
       }
       await deps.skillSetsRepo.delete(id, deps.owner);
+      emit({
+        type: EventType.SkillSetDeleted,
+        actorSub: deps.owner,
+        surface: deps.surface,
+      });
       securityLog("info", "skill.set.delete", {
         category: "privileged",
         actor: deps.owner,
@@ -904,6 +957,17 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         result: "success",
         detail: { names: input.skills.map((s) => s.name) },
       });
+      for (const skill of input.skills) {
+        emit({
+          type: EventType.AgentSkillChanged,
+          action: "installed",
+          agentId: input.agentId,
+          actorSub: deps.owner,
+          surface: deps.surface,
+          origin: "local",
+          name: skill.name,
+        });
+      }
       return created;
     },
 
@@ -930,6 +994,15 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         result: "success",
         detail: { name: input.name },
       });
+      emit({
+        type: EventType.AgentSkillChanged,
+        action: "uninstalled",
+        agentId: input.agentId,
+        actorSub: deps.owner,
+        surface: deps.surface,
+        origin: "local",
+        name: input.name,
+      });
       return standaloneFor(deps, input.agentId, tracked);
     },
 
@@ -946,6 +1019,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const result = await runPublishSkill(
         {
           owner: deps.owner,
+          surface: deps.surface,
           resolveSource: (id) => resolveSource(deps, id),
           agentSkills: deps.agentSkillsRepo,
           agents: deps.agentsRepo,

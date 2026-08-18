@@ -33,13 +33,13 @@ export function WakeToEditButton({
   if (comingUp)
     return (
       <span className="flex h-9 items-center gap-1.5 text-sm font-medium text-muted-foreground">
-        Agent is starting…
+        Sandbox is starting…
         <Spinner />
       </span>
     );
   return (
     <Button variant="outline" size="sm" onClick={() => wakeAgent.wake(agentId)}>
-      <Play /> Start agent to edit
+      <Play /> Start sandbox to edit
     </Button>
   );
 }

@@ -33,6 +33,7 @@ function makeDeps(
   } as unknown as AgentRuntimeSkillsClient;
   const deps: PublishServiceDeps = {
     owner: "owner-1",
+    surface: "ui",
     resolveSource: async () => source,
     agentSkills: {
       appendPublish: vi.fn().mockResolvedValue(undefined),

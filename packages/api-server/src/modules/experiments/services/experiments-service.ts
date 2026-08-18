@@ -74,6 +74,7 @@ export class CustomDataTooLargeError extends Error {
 
 export interface ExperimentsServiceDeps {
   owner: string;
+  surface: string;
   repo: ExperimentsRepository;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocationsForExperiment: (
@@ -149,12 +150,17 @@ export function createExperimentsService(
 ): ExperimentsService {
   const { owner, repo, artifactLibrary } = deps;
 
-  const emitChanged = (experimentId: string, agentId: string) =>
+  const emitChanged = (
+    experimentId: string,
+    agentId: string,
+    action?: "started" | "stopped" | "deleted",
+  ) =>
     emit({
       type: EventType.ExperimentChanged,
       experimentId,
       agentId,
       ownerSub: owner,
+      ...(action ? { action, actorSub: owner, surface: deps.surface } : {}),
     });
   const now = deps.now ?? (() => new Date());
 
@@ -191,7 +197,10 @@ export function createExperimentsService(
     }
   }
 
-  async function launchRun(id: string): Promise<Experiment> {
+  async function launchRun(
+    id: string,
+    action?: "started" | "stopped" | "deleted",
+  ): Promise<Experiment> {
     const row = await repo.get(id, owner);
     if (!row) throw new TRPCError({ code: "NOT_FOUND" });
     await deps.pin?.set(row.driverAgentId);
@@ -218,7 +227,7 @@ export function createExperimentsService(
         message: "the experiment could not be launched",
       });
     }
-    emitChanged(id, row.driverAgentId);
+    emitChanged(id, row.driverAgentId, action);
     return toView((await repo.get(id, owner))!);
   }
 
@@ -333,7 +342,7 @@ export function createExperimentsService(
               kind: current.kind,
               ...(folderId ? { folderId } : {}),
             },
-            { agentId: source.driverAgentId },
+            { agentId: source.driverAgentId, internal: true },
           );
           return clone.id;
         } catch {
@@ -366,7 +375,7 @@ export function createExperimentsService(
         executedAt: now(),
         lastActivityAt: now(),
       });
-      return launchRun(runId);
+      return launchRun(runId, "started");
     },
 
     async stop(id) {
@@ -388,7 +397,7 @@ export function createExperimentsService(
           `[experiments] invocation cancel for ${id} failed: ${err instanceof Error ? err.message : err}\n`,
         );
       }
-      emitChanged(id, row.driverAgentId);
+      emitChanged(id, row.driverAgentId, "stopped");
       await releasePin(row.driverAgentId);
       await snapshotDashboard(id);
       return toView((await repo.get(id, owner))!);
@@ -404,7 +413,7 @@ export function createExperimentsService(
         });
       }
       await repo.delete(id, owner);
-      emitChanged(id, row.driverAgentId);
+      emitChanged(id, row.driverAgentId, "deleted");
     },
 
     async planRegister(driverAgentId, input: PlanRegisterInput) {
@@ -434,7 +443,7 @@ export function createExperimentsService(
             kind: "html",
             ...(captureFolderId ? { folderId: captureFolderId } : {}),
           },
-          { agentId: driverAgentId },
+          { agentId: driverAgentId, internal: true },
         );
         return dashboard.id;
       };
@@ -502,7 +511,7 @@ export function createExperimentsService(
           fileName,
           folderId,
         },
-        { agentId: driverAgentId },
+        { agentId: driverAgentId, internal: true },
       );
       const scriptArtifactId = scriptArtifact.id;
       const scriptVersion = scriptArtifact.version;
@@ -545,7 +554,7 @@ export function createExperimentsService(
               kind: "html",
               folderId,
             },
-            { agentId: driverAgentId },
+            { agentId: driverAgentId, internal: true },
           );
           dashboardArtifactId = dashboard.id;
         } catch {}

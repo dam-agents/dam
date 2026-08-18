@@ -27,8 +27,11 @@ import type {
 } from "./use-acp-connection.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
 
+export type PromptInitiator = "user" | "system";
+
 export interface SendPromptOptions {
   hidden?: boolean;
+  initiator?: PromptInitiator;
 }
 
 export interface UseAcpPromptOptions {
@@ -105,6 +108,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         return;
 
       const hidden = sendOpts?.hidden ?? false;
+      const initiator = sendOpts?.initiator;
 
       const intendedSessionId = useStore.getState().sessionId;
 
@@ -206,7 +210,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         const turn = connection.prompt({
           sessionId,
           prompt: promptBlocks,
-          _meta: { platform: { promptId, surface: "ui" } },
+          _meta: {
+            platform: {
+              promptId,
+              surface: "ui",
+              ...(initiator ? { initiator } : {}),
+            },
+          },
         });
         delivered = isOpen();
 

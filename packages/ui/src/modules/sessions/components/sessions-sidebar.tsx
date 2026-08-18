@@ -1,6 +1,7 @@
 import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import { type CSSProperties, useCallback, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,7 @@ import { useFeatures } from "../../features/api/queries.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
+import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import {
   SESSION_CATEGORIES,
   SESSION_CATEGORY_LABELS,
@@ -113,6 +115,9 @@ export function SessionsSidebar({
     [backgroundWork],
   );
 
+  const draftKeys = useStore(useShallow((s) => keysWithDraftContent(s.drafts)));
+  const draftKeySet = useMemo(() => new Set(draftKeys), [draftKeys]);
+
   const confirmDelete = useCallback(
     async (sid: string, title: string | null | undefined) => {
       const label = title || sid.slice(0, 12);
@@ -141,6 +146,10 @@ export function SessionsSidebar({
       s.updatedAt &&
       Date.parse(s.updatedAt) > Date.parse(s.seenAt),
     );
+    const draft =
+      s.mode !== SessionMode.Terminal &&
+      !!selectedAgent &&
+      draftKeySet.has(draftKey(selectedAgent, s.sessionId));
     return (
       <SessionRow
         key={s.sessionId}
@@ -149,6 +158,7 @@ export function SessionsSidebar({
         working={working}
         needsApproval={needsApproval}
         unread={unread}
+        draft={draft}
         backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts?.get(s.sessionId)}
         onResume={() => {

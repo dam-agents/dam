@@ -25,10 +25,43 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - Bold the key noun in a bullet when it introduces a concept (e.g. "**heartbeat** — a recurring self-scheduled check").
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
+- **Be brief.** One idea per sentence. Active voice. Cut filler, restatement, and any sentence that carries no new fact. A reader should get the problem from the first paragraph. Length is not thoroughness.
+- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
+- **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
+- **"As a user" always.** A user story's role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow. A narrow role makes the issue read as if it only serves that group, and it narrows how the team scopes the work.
+- **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix. "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer. Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads. A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves. A **task** is the exception — the work itself is the point, so its title may name the work ("Upgrade the node runtime"); it still must not name a chosen implementation. **Goal** states the user-visible outcome, not the mechanism. Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
+
+## Attribution
+
+GitHub credits the account that files the issue. **When that account is not the person who asked for the work, end the body with a Filed by footer** naming the person who did:
+
+- An **agent** files under a credential it does not own, so compare that credential's owner to the requester. Filing another person's ask needs the footer; filing the credential owner's own ask does not.
+- A **person filing on someone else's behalf** needs the footer too, for the same reason.
+- A person filing their own ask does **not** need it. GitHub already credits the right person, and a footer would just repeat the author.
+
+The format:
+
+```markdown
+---
+
+_Filed by @<github-handle>_
+```
+
+Use the requester's GitHub handle so the footer @-mentions them and they follow the thread. If the handle cannot be resolved, fall back in order: their full name, then their Slack handle. Write a fallback without the `@` sigil — GitHub resolves a bare first name to an unrelated real account, so `@` on anything but a handle credits a stranger:
+
+```markdown
+---
+
+_Filed by <full name or Slack handle>_
+```
+
+A best-effort footer beats a missing one; when the footer is required, never drop it because the handle is unknown, and never substitute the account that files.
+
+This is the one place a real person is named — see **No personal data** above. The footer credits a *team member* who asked for the work. It never names a user, a reporter, or a research participant.
 
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the change, not the component. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed.
+Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix, except in a **task**, whose title may name the work (see **State the problem, not the solution** above). Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the account you file as belongs to the person who asked — see [Attribution](#attribution).
 
 ### Epic
 
@@ -56,14 +89,20 @@ An epic defines the value, not a single fix, and gives enough shape that issues 
 ## Open Questions
 
 <Key decisions or unknowns.>
+
+<omit this footer if the account you file as belongs to the person who asked>
+
+---
+
+_Filed by @<github-handle>_
 ```
 
 ### Feature
 
-The **Problem** describes what's wrong or missing today from the user's point of view — a concrete scenario if it sharpens it, and why it matters. The **Goal** is what success looks like as user-visible outcome. The **User Stories** break the goal into the concrete things different users want to do and why. Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open.
+The **Problem** describes what's wrong or missing today from the user's point of view — a concrete scenario if it sharpens it, and why it matters. The **Goal** is what success looks like as user-visible outcome. The **User Stories** break the goal into the concrete things different users want to do and why. Keep it problem-first: if you have a solution in mind, put it under **Proposed solution** and explain the reasoning — otherwise leave it open. A feature is the type most likely to name a solution in its title; write the title from the **Problem**, not from the fix.
 
 ```markdown
-**Title:** <short, declarative>
+**Title:** <`UI - ` if the web UI; then short, declarative — the problem the user has, not the feature that fixes it>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -80,9 +119,9 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 ## User Stories
 
-<The value from each user's perspective, in the form "As a <role>, I want <capability> so that <benefit>." One per distinct need. For example: "As an operator, I want to see a schedule's last run status so that I can tell at a glance whether it's healthy.">
+<The value from the user's perspective, in the form "As a user, I want <capability> so that <benefit>." One per distinct need. The role is always "a user" — see **Style** above. For example: "As a user, I want to see a schedule's last run status so that I can tell at a glance whether it's healthy.">
 
-- As a <role>, I want <capability> so that <benefit>.
+- As a user, I want <capability> so that <benefit>.
 
 ## Scope
 
@@ -99,6 +138,12 @@ The **Problem** describes what's wrong or missing today from the user's point of
 ## Additional resources
 
 <optional — links to designs, research, related issues, docs, or other supporting material>
+
+<omit this footer if the account you file as belongs to the person who asked>
+
+---
+
+_Filed by @<github-handle>_
 ```
 
 ### Task
@@ -106,7 +151,7 @@ The **Problem** describes what's wrong or missing today from the user's point of
 A task states the work and what it unblocks. It's the one type where naming engineering work is expected — keep it as plain as the work allows.
 
 ```markdown
-**Title:** <short, declarative>
+**Title:** <`UI - ` if the web UI; then short, declarative — the work needed, not a chosen implementation>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -124,6 +169,12 @@ A task states the work and what it unblocks. It's the one type where naming engi
 ## Done when
 
 <The observable end state — how we know it's finished.>
+
+<omit this footer if the account you file as belongs to the person who asked>
+
+---
+
+_Filed by @<github-handle>_
 ```
 
 ### Bug
@@ -131,7 +182,7 @@ A task states the work and what it unblocks. It's the one type where naming engi
 Lead with observed vs. expected behavior. Reproduction steps should be minimal and numbered.
 
 ```markdown
-**Title:** <short, declarative — the misbehavior, not the suspected cause>
+**Title:** <`UI - ` if the web UI; then short, declarative — the misbehavior, not the suspected cause>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -153,6 +204,12 @@ Lead with observed vs. expected behavior. Reproduction steps should be minimal a
 ## Steps to Reproduce
 
 1. <minimal, numbered steps>
+
+<omit this footer if the account you file as belongs to the person who asked>
+
+---
+
+_Filed by @<github-handle>_
 ```
 
 ### Research Task
@@ -160,7 +217,7 @@ Lead with observed vs. expected behavior. Reproduction steps should be minimal a
 A research task defines what we need to learn and why, before committing to build. The value is the knowledge it produces, so it's done when it produces an answer someone can act on — not when "research happened."
 
 ```markdown
-**Title:** <short, declarative — the question, not the answer>
+**Title:** <`UI - ` if the web UI; then short, declarative — the question, not the answer>
 **Epic:** <#NNN — epic title, if one clearly fits>
 
 ## Context
@@ -194,4 +251,10 @@ A research task defines what we need to learn and why, before committing to buil
 ## Additional resources
 
 <optional — links to existing research, related issues, docs, or other supporting material>
+
+<omit this footer if the account you file as belongs to the person who asked>
+
+---
+
+_Filed by @<github-handle>_
 ```

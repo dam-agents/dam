@@ -204,16 +204,22 @@ export interface SurfaceAttribution {
   coreRole?: string;
 }
 
+export function clientSurface(
+  principal: VerifiedPrincipal,
+  attribution: SurfaceAttribution,
+): string {
+  return principal.azp === attribution.uiClientId
+    ? "ui"
+    : principal.azp === attribution.cliClientId
+      ? "cli"
+      : "other";
+}
+
 export function emitUserAuthenticated(
   principal: VerifiedPrincipal,
   attribution: SurfaceAttribution,
 ): void {
-  const surface =
-    principal.azp === attribution.uiClientId
-      ? "ui"
-      : principal.azp === attribution.cliClientId
-        ? "cli"
-        : "other";
+  const surface = clientSurface(principal, attribution);
   const isCore = attribution.coreRole
     ? principal.roles.includes(attribution.coreRole)
     : false;

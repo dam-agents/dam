@@ -23,7 +23,7 @@ drivers:
               name: "Fable"
               description: "Fable 5 · Most capable for the hardest, longest-running tasks"
             - value: opus
-              name: "Opus (recommended)"
+              name: "Opus"
               description: "Opus 5 · Best for everyday, complex tasks"
             - value: sonnet
               name: "Sonnet"
@@ -40,8 +40,8 @@ drivers:
               name: "Auto"
               description: "Use a model classifier to approve/deny permission prompts"
             - value: default
-              name: "Default"
-              description: "Standard behavior, prompts for dangerous operations"
+              name: "Ask for approvals"
+              description: "Ask for permission before dangerous operations"
             - value: acceptEdits
               name: "Accept Edits"
               description: "Auto-accept file edit operations"

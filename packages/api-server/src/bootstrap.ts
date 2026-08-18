@@ -738,6 +738,7 @@ export async function bootstrap() {
         db,
         artifacts,
         owner,
+        surface: "system",
         shareBaseUrl: config.shareBaseUrl,
       }).artifactLibrary,
   });

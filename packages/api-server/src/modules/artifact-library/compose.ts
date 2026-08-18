@@ -19,6 +19,7 @@ export interface ComposeArtifactLibraryForOwnerOpts {
   db: Db;
   artifacts: ArtifactService;
   owner: string;
+  surface: string;
   shareBaseUrl: string;
 }
 
@@ -30,6 +31,7 @@ export function composeArtifactLibraryForOwner(
       repo: createArtifactLibraryRepository(opts.db),
       artifacts: opts.artifacts,
       owner: opts.owner,
+      surface: opts.surface,
       shareBaseUrl: opts.shareBaseUrl,
     }),
   };

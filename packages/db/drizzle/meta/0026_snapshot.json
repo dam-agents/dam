@@ -1,6 +1,6 @@
 {
-  "id": "05f80a75-348d-4942-bcca-bcf62f15d43b",
-  "prevId": "ce599daa-862a-4e3c-9350-fe045d4521b6",
+  "id": "9609940f-cb40-4f3a-a9a3-d303c3d20dd5",
+  "prevId": "75ac02e2-3187-436b-b573-8edc2cc5b317",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -152,8 +152,8 @@
           "method": "btree",
           "with": {}
         },
-        "activity_events_entry_point_dedup_idx": {
-          "name": "activity_events_entry_point_dedup_idx",
+        "activity_events_relay_dedup_idx": {
+          "name": "activity_events_relay_dedup_idx",
           "columns": [
             {
               "expression": "actor_sub",
@@ -162,14 +162,26 @@
               "nulls": "last"
             },
             {
-              "expression": "type",
+              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"payload\" ->> 'relay')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "date_trunc('day', \"occurred_at\" AT TIME ZONE 'UTC')",
+              "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"activity_events\".\"type\" = 'entry_point_chosen'",
+          "where": "\"activity_events\".\"type\" = 'relay_attached'",
           "concurrently": false,
           "method": "btree",
           "with": {}

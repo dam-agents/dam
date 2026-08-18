@@ -4,6 +4,7 @@ import type {
   ArtifactRow,
   FolderRow,
 } from "../infrastructure/artifact-library-repository.js";
+import { emit, EventType } from "../../../events.js";
 
 export const EXPIRATION_GRACE_PERIOD_DAYS = 7;
 
@@ -41,7 +42,7 @@ export interface ShareViewerService {
     sizeBytes: number;
   } | null>;
   versionCount(artifactId: string): Promise<number>;
-  recordView(artifactId: string): void;
+  recordView(artifact: ArtifactRow): void;
 }
 
 export function createShareViewerService(deps: {
@@ -134,8 +135,13 @@ export function createShareViewerService(deps: {
       return prior.length + 1;
     },
 
-    recordView(artifactId) {
-      void repo.incrementViewCount(artifactId).catch(() => {});
+    recordView(artifact) {
+      void repo.incrementViewCount(artifact.id).catch(() => {});
+      emit({
+        type: EventType.ArtifactViewed,
+        artifactId: artifact.id,
+        ownerSub: artifact.owner,
+      });
     },
   };
 }

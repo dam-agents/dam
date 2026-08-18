@@ -23,6 +23,7 @@ import {
 } from "./sagas/activity-retention-job.js";
 import { createReportService } from "./services/report-service.js";
 import { createUsageRoutes } from "./routes.js";
+import type { ApiVariables } from "../../core/http-context.js";
 
 export interface UsageModuleDeps {
   db: Db;
@@ -32,7 +33,9 @@ export interface UsageModuleDeps {
   listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
 }
 
-type AppEnv = { Variables: { user: UserIdentity; roles: string[] } };
+type AppEnv = {
+  Variables: ApiVariables;
+};
 
 export interface UsageModule {
   mount(app: Hono<AppEnv>): void;

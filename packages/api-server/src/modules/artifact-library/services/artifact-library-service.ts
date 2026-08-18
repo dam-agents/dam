@@ -52,7 +52,7 @@ export interface ArtifactAgentDownloadTicket {
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string },
+    attribution?: { agentId: string; internal?: boolean },
   ): Promise<LibraryArtifact>;
   resolveContentRef(
     id: string,
@@ -74,6 +74,7 @@ export interface ArtifactLibraryDeps {
   repo: ArtifactLibraryRepository;
   artifacts: ArtifactService;
   owner: string;
+  surface: string;
   shareBaseUrl: string;
 }
 
@@ -129,7 +130,7 @@ function expiresAtFrom(expiresInHours: number | null | undefined): Date | null {
 export function createArtifactLibraryService(
   deps: ArtifactLibraryDeps,
 ): ArtifactLibraryServiceImpl {
-  const { repo, artifacts, owner, shareBaseUrl } = deps;
+  const { repo, artifacts, owner, shareBaseUrl, surface } = deps;
 
   async function requireOwnedFolder(folderId: string): Promise<FolderRow> {
     const folder = await repo.getFolder(folderId, owner);
@@ -333,6 +334,17 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(attribution?.agentId ? { agentId: attribution.agentId } : {}),
       });
+      if (!attribution?.internal) {
+        emit({
+          type: EventType.ArtifactPublished,
+          actorSub: owner,
+          artifactId: row.id,
+          agentId: attribution?.agentId ?? null,
+          kind: row.kind,
+          visibility: row.visibility,
+          surface,
+        });
+      }
       return toLibraryArtifact(row, shareBaseUrl);
     },
 
@@ -399,7 +411,7 @@ export function createArtifactLibraryService(
     },
 
     async setSharing(id, input: ArtifactSharingInput) {
-      await requireArtifact(id);
+      const before = await requireArtifact(id);
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.visibility !== undefined) patch.visibility = input.visibility;
       if (input.expiresInHours !== undefined)
@@ -412,6 +424,15 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(updated.agentId ? { agentId: updated.agentId } : {}),
       });
+      if (updated.visibility === "public" && before.visibility !== "public") {
+        emit({
+          type: EventType.ArtifactShared,
+          actorSub: owner,
+          artifactId: id,
+          visibility: updated.visibility,
+          surface,
+        });
+      }
       return toLibraryArtifact(updated, shareBaseUrl);
     },
 
@@ -425,6 +446,8 @@ export function createArtifactLibraryService(
         ...(deleted.artifact.agentId
           ? { agentId: deleted.artifact.agentId }
           : {}),
+        actorSub: owner,
+        surface,
       });
       await Promise.allSettled(
         [
