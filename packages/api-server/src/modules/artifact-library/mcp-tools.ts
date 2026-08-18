@@ -287,7 +287,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "set_artifact_sharing",
-    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and expiry (0 removes it). Expiry is retention, not link lifetime — an expired artifact is permanently deleted even if private.",
+    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private.",
     {
       id: z.string().min(1),
       visibility: z.enum(["private", "public"]).optional(),
@@ -296,7 +296,7 @@ export function registerArtifactLibraryTools(
         .int()
         .min(0)
         .optional()
-        .describe("Hours from now; 0 removes the expiry."),
+        .describe("Hours from now; 0 removes the deletion date."),
     },
     ({ id, visibility, expires_in_hours }) =>
       run(async () => {
