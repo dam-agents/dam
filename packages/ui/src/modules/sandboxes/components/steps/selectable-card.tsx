@@ -8,16 +8,24 @@ export function SelectableCard({
   onSelect,
   ariaLabel,
   testId,
+  className,
   children,
 }: {
   selected: boolean;
   onSelect: () => void;
   ariaLabel: string;
   testId?: string;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={cn(cardSelectionVariants({ selected }), "relative p-4")}>
+    <div
+      className={cn(
+        cardSelectionVariants({ selected }),
+        "relative p-4",
+        className,
+      )}
+    >
       {}
       <button
         type="button"

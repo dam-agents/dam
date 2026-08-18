@@ -5,7 +5,7 @@ import { SelectableCard } from "./selectable-card.js";
 
 export function CardIconTile({ icon: Icon }: { icon: CarbonIconType }) {
   return (
-    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
+    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
       <Icon className="size-5 text-muted-foreground" />
     </div>
   );
@@ -38,16 +38,21 @@ export function StackedCard({
       onSelect={onSelect}
       ariaLabel={title}
       testId={testId}
+      className={
+        selected
+          ? "bg-gradient-to-br from-muted to-card"
+          : "bg-gradient-to-br from-muted/60 to-card"
+      }
     >
-      <div className="flex min-h-[124px] flex-col gap-3">
-        <div className="flex">{icon}</div>
+      <div className="flex min-h-[104px] flex-col gap-3">
+        <div className="flex items-start justify-between gap-3">
+          {icon}
+          {trailing}
+        </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <p className="text-base font-semibold text-foreground">{title}</p>
-              {badge}
-            </div>
-            {trailing}
+          <div className="flex items-center gap-2">
+            <p className="text-base font-semibold text-foreground">{title}</p>
+            {badge}
           </div>
           {description && (
             <p className="text-sm text-muted-foreground">{description}</p>
