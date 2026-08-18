@@ -48,10 +48,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     if (resolution.state === "not-found") return c.html(renderNotFound(), 404);
     if (resolution.state === "expired")
       return c.html(
-        renderExpired({
-          withinGrace: resolution.withinGrace,
-          expiredAt: resolution.expiredAt,
-        }),
+        renderExpired({ withinGrace: resolution.withinGrace }),
         410,
       );
 

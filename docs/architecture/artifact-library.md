@@ -39,13 +39,13 @@ dedicated **share host**.
   whoever holds the link may view, and guarding the link is the sharer's
   responsibility (deliberately: a second factor sent alongside a leaked link
   leaks with it).
-- An optional **expiry** bounds the *artifact's* lifetime — it is a retention
-  setting, not just a link setting, and applies regardless of visibility (a
-  private artifact with an expiry is deleted the same way; storage lifecycle
-  is a separate concern from sharing). On the public side, an expired link
-  answers "gone" (with a distinct "recently expired" page during a grace
-  window in which the owner can still renew); once the grace window passes, a
-  background sweep hard-deletes the content.
+- An optional **retention** date bounds the *artifact's* lifetime — it schedules
+  permanent deletion, not link expiry, and applies regardless of visibility (a
+  private artifact is deleted the same way; storage lifecycle is a separate
+  concern from sharing). On the public side, a past-due link answers "gone"
+  (with a distinct "scheduled for deletion" page during a grace window in which
+  the owner can still restore it by choosing a new date); once the grace window
+  passes, a background sweep hard-deletes the content.
 - A folder has a public page of its own, listing only the *shared* artifacts
   inside it; a folder with nothing shared is indistinguishable from a
   nonexistent one.
@@ -140,8 +140,11 @@ flowchart LR
 
 - **Artifacts** is a top-level destination in the navigation rail: the whole
   library grouped by folder, with search, upload, folder management, sharing
-  controls, and in-app previews that reuse the chat file-viewer stack
-  (markdown prose, highlighted code, inline images).
+  controls, a separate delete-after (retention) control, and in-app previews
+  that reuse the chat file-viewer stack (markdown prose, highlighted code,
+  inline images). Retention is reached from the artifact's own menu rather than
+  the sharing dialog, and stays available whatever the artifact's visibility —
+  it governs deletion, not the link.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
 - The chat view carries the same library twice over: an **Artifacts section**
@@ -158,11 +161,11 @@ leave an orphaned (unreachable) object in the store, never a dangling row.
 The database enforces the composition with foreign keys: version rows cascade
 with their artifact, and folder deletion detaches its artifacts. Deleting a
 folder ungroups its artifacts (their share state is untouched).
-The **expiry sweep** runs as a scheduled platform periodic job (its own
+The **retention sweep** runs as a scheduled platform periodic job (its own
 queue and worker lane) — one execution per period across replicas, with the
 tick itself idempotent —
-and permanently removes artifacts — private ones included — whose expiry
-passed more than the grace window ago. Agent deletion does
+and permanently removes artifacts — private ones included — whose retention
+date passed more than the grace window ago. Agent deletion does
 **not** touch artifacts — attribution simply points at a name that no longer
 resolves.
 
@@ -177,11 +180,11 @@ moment can produce both:
 
 - **Live updates.** Create, update, delete, and folder changes exist so an open
   browser refreshes without polling. They fire on every mutation, including
-  ones no person asked for — the expiry sweep deletes artifacts on a timer and
-  raises a delete like any other.
+  ones no person asked for — the retention sweep deletes artifacts on a timer
+  and raises a delete like any other.
 - **Usage.** Publish, share, view, and delete are recorded as
   [Activity Events](usage-tracking.md). Share is raised only on the transition
-  *into* public, so neither extending an expiry nor revoking a link counts as
+  *into* public, so neither extending retention nor revoking a link counts as
   sharing. A view is what places an opening in time — the artifact's own
   counter is a lifetime total that cannot say when, or whether the link was
   opened at all after some date.

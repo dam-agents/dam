@@ -10,6 +10,7 @@ import { useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { ArtifactRow } from "./artifact-row.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
+import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 
 function ToolChip({ name }: { name: string }) {
@@ -26,6 +27,8 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
     null,
   );
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
+  const [retentionTarget, setRetentionTarget] =
+    useState<LibraryArtifact | null>(null);
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -74,6 +77,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 onPreview={setPreviewTarget}
                 onRename={setRenameTarget}
                 onShare={setShareTarget}
+                onSetRetention={setRetentionTarget}
               />
             ))}
           </div>
@@ -90,6 +94,12 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         <ShareDialog
           artifact={shareTarget}
           onClose={() => setShareTarget(null)}
+        />
+      )}
+      {retentionTarget && (
+        <RetentionDialog
+          artifact={retentionTarget}
+          onClose={() => setRetentionTarget(null)}
         />
       )}
       {previewTarget && (

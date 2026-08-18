@@ -1,7 +1,8 @@
+import { ARTIFACT_RESTORE_WINDOW_DAYS } from "api-server-api";
+
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
 import { emit, EventType } from "../../../events.js";
 import type { ArtifactLibraryRepository } from "../infrastructure/artifact-library-repository.js";
-import { EXPIRATION_GRACE_PERIOD_DAYS } from "./share-viewer-service.js";
 
 export interface ArtifactExpirySweeper {
   tick(): Promise<number>;
@@ -15,7 +16,7 @@ export function createArtifactExpirySweeper(deps: {
   return {
     async tick() {
       const cutoff = new Date(
-        Date.now() - EXPIRATION_GRACE_PERIOD_DAYS * 86_400_000,
+        Date.now() - ARTIFACT_RESTORE_WINDOW_DAYS * 86_400_000,
       );
       const rows = await deps.repo.listExpiredBefore(cutoff, deps.batchSize);
       let deletedCount = 0;

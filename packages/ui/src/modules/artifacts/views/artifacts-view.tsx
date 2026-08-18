@@ -20,11 +20,21 @@ import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
 import { RenameArtifactDialog } from "../components/rename-artifact-dialog.js";
+import { RetentionDialog } from "../components/retention-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];
+
+type ArtifactDialog =
+  | { kind: "upload" }
+  | { kind: "folder"; folder: ArtifactFolder | null }
+  | { kind: "rename"; artifact: LibraryArtifact }
+  | { kind: "share"; artifact: LibraryArtifact }
+  | { kind: "retention"; artifact: LibraryArtifact }
+  | { kind: "preview"; artifact: LibraryArtifact }
+  | { kind: "deleteFolder"; folder: ArtifactFolder };
 
 export function ArtifactsView() {
   const { data: artifacts = EMPTY_ARTIFACTS, isLoading: artifactsLoading } =
@@ -35,19 +45,10 @@ export function ArtifactsView() {
   const setView = useStore((s) => s.setView);
 
   const [search, setSearch] = useState("");
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [folderDialog, setFolderDialog] = useState<{
-    folder: ArtifactFolder | null;
-  } | null>(null);
-  const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
-    null,
-  );
-  const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
-  const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
-    null,
-  );
-  const [deleteFolderTarget, setDeleteFolderTarget] =
-    useState<ArtifactFolder | null>(null);
+  const [dialog, setDialog] = useState<ArtifactDialog | null>(null);
+  const closeDialog = () => setDialog(null);
+  const deleteFolderTarget =
+    dialog?.kind === "deleteFolder" ? dialog.folder : null;
 
   const deleteFolder = useDeleteFolder();
 
@@ -76,9 +77,21 @@ export function ArtifactsView() {
   );
 
   const rowActions = {
-    onPreview: setPreviewTarget,
-    onRename: setRenameTarget,
-    onShare: setShareTarget,
+    onPreview: (artifact: LibraryArtifact) =>
+      setDialog({ kind: "preview", artifact }),
+    onRename: (artifact: LibraryArtifact) =>
+      setDialog({ kind: "rename", artifact }),
+    onShare: (artifact: LibraryArtifact) =>
+      setDialog({ kind: "share", artifact }),
+    onSetRetention: (artifact: LibraryArtifact) =>
+      setDialog({ kind: "retention", artifact }),
+  };
+
+  const folderActions = {
+    onEditFolder: (folder: ArtifactFolder) =>
+      setDialog({ kind: "folder", folder }),
+    onDeleteFolder: (folder: ArtifactFolder) =>
+      setDialog({ kind: "deleteFolder", folder }),
   };
 
   const copyFolderLink = async (folder: ArtifactFolder) => {
@@ -105,7 +118,7 @@ export function ArtifactsView() {
         title="Artifacts"
         description={
           hasContent
-            ? "Pages and files created by you and your agents. Share with a link, set an expiry."
+            ? "Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
             : undefined
         }
         actions={
@@ -113,11 +126,11 @@ export function ArtifactsView() {
             <>
               <Button
                 variant="outline"
-                onClick={() => setFolderDialog({ folder: null })}
+                onClick={() => setDialog({ kind: "folder", folder: null })}
               >
                 New folder
               </Button>
-              <Button onClick={() => setUploadOpen(true)}>
+              <Button onClick={() => setDialog({ kind: "upload" })}>
                 Upload artifact
               </Button>
             </>
@@ -159,9 +172,8 @@ export function ArtifactsView() {
               key={folder.id}
               folder={folder}
               artifacts={byFolder.get(folder.id) ?? []}
-              onEditFolder={(f) => setFolderDialog({ folder: f })}
-              onDeleteFolder={setDeleteFolderTarget}
               onCopyFolderLink={copyFolderLink}
+              {...folderActions}
               {...rowActions}
             />
           ))}
@@ -173,9 +185,8 @@ export function ArtifactsView() {
               folders={experimentFolders}
               byFolder={byFolder}
               searching={search.trim().length > 0}
-              onEditFolder={(f) => setFolderDialog({ folder: f })}
-              onDeleteFolder={setDeleteFolderTarget}
               onCopyFolderLink={copyFolderLink}
+              {...folderActions}
               {...rowActions}
             />
           )}
@@ -189,40 +200,34 @@ export function ArtifactsView() {
         </p>
       )}
 
-      {uploadOpen && (
-        <UploadArtifactDialog
-          folders={folders}
-          onClose={() => setUploadOpen(false)}
-        />
+      {dialog?.kind === "upload" && (
+        <UploadArtifactDialog folders={folders} onClose={closeDialog} />
       )}
-      {folderDialog && (
-        <FolderDialog
-          folder={folderDialog.folder}
-          onClose={() => setFolderDialog(null)}
-        />
+      {dialog?.kind === "folder" && (
+        <FolderDialog folder={dialog.folder} onClose={closeDialog} />
       )}
-      {renameTarget && (
+      {dialog?.kind === "rename" && (
         <RenameArtifactDialog
-          artifact={renameTarget}
-          onClose={() => setRenameTarget(null)}
+          artifact={dialog.artifact}
+          onClose={closeDialog}
         />
       )}
-      {shareTarget && (
-        <ShareDialog
-          artifact={shareTarget}
-          onClose={() => setShareTarget(null)}
-        />
+      {dialog?.kind === "share" && (
+        <ShareDialog artifact={dialog.artifact} onClose={closeDialog} />
       )}
-      {previewTarget && (
+      {dialog?.kind === "retention" && (
+        <RetentionDialog artifact={dialog.artifact} onClose={closeDialog} />
+      )}
+      {dialog?.kind === "preview" && (
         <ArtifactPreviewDialog
-          artifact={previewTarget}
-          onClose={() => setPreviewTarget(null)}
+          artifact={dialog.artifact}
+          onClose={closeDialog}
         />
       )}
       <ConfirmDialog
         open={deleteFolderTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleteFolderTarget(null);
+          if (!open) closeDialog();
         }}
         kind="destructive"
         title={`Delete folder “${deleteFolderTarget?.name}”?`}
@@ -231,7 +236,7 @@ export function ArtifactsView() {
         onConfirm={() => {
           if (deleteFolderTarget)
             deleteFolder.mutate({ id: deleteFolderTarget.id });
-          setDeleteFolderTarget(null);
+          closeDialog();
         }}
       />
     </div>

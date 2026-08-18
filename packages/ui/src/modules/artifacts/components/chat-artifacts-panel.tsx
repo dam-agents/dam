@@ -18,6 +18,7 @@ import { useArtifacts } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
+import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionBadge } from "./version-badge.js";
 
@@ -43,6 +44,8 @@ export function ChatArtifactsPanel({
     null,
   );
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
+  const [retentionTarget, setRetentionTarget] =
+    useState<LibraryArtifact | null>(null);
 
   return (
     <SidebarSection
@@ -71,6 +74,7 @@ export function ChatArtifactsPanel({
               }
               onRename={setRenameTarget}
               onShare={setShareTarget}
+              onSetRetention={setRetentionTarget}
             />
           ))}
         </div>
@@ -87,6 +91,12 @@ export function ChatArtifactsPanel({
           onClose={() => setShareTarget(null)}
         />
       )}
+      {retentionTarget && (
+        <RetentionDialog
+          artifact={retentionTarget}
+          onClose={() => setRetentionTarget(null)}
+        />
+      )}
     </SidebarSection>
   );
 }
@@ -97,12 +107,14 @@ function ArtifactListRow({
   onClick,
   onRename,
   onShare,
+  onSetRetention,
 }: {
   artifact: LibraryArtifact;
   active: boolean;
   onClick: () => void;
   onRename: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
+  onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
   return (
     <div
@@ -141,6 +153,7 @@ function ArtifactListRow({
               artifact={artifact}
               onRename={onRename}
               onShare={onShare}
+              onSetRetention={onSetRetention}
             />
           </DropdownMenuContent>
         </DropdownMenu>

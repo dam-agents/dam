@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { usePrefetchArtifactPreview } from "../api/queries.js";
-import { expiryState } from "../lib/format.js";
+import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
@@ -34,6 +34,7 @@ export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
+  onSetRetention: (artifact: LibraryArtifact) => void;
 }
 
 interface Props extends ArtifactRowActions {
@@ -47,8 +48,9 @@ export function ArtifactRow({
   onPreview,
   onRename,
   onShare,
+  onSetRetention,
 }: Props) {
-  const expiry = expiryState(artifact.expiresAt);
+  const deletion = deletionState(artifact.expiresAt);
   const prefetchPreview = usePrefetchArtifactPreview();
   const warmPreview = () => {
     if (isRenderedKind(artifact.kind)) prefetchPreview(artifact.id);
@@ -61,7 +63,7 @@ export function ArtifactRow({
       onFocus={warmPreview}
       className={cn(
         "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/60",
-        expiry.state === "expired" && "opacity-55",
+        deletion.state === "expired" && "opacity-55",
       )}
       data-testid="artifact-row"
     >
@@ -77,16 +79,16 @@ export function ArtifactRow({
             <View size={12} />
             {artifact.viewCount}
           </span>
-          {expiry.state !== "never" && (
+          {deletion.state !== "never" && (
             <span
               className={cn(
                 "inline-flex items-center gap-1 whitespace-nowrap",
-                expiry.state === "expired" && "text-danger",
-                expiry.state === "active" && expiry.soon && "text-warning",
+                deletion.state === "expired" && "text-danger",
+                deletion.state === "active" && deletion.soon && "text-warning",
               )}
             >
               <Time size={12} />
-              {expiry.label}
+              {deletion.label}
             </span>
           )}
           <span className="hidden whitespace-nowrap sm:inline">
@@ -112,6 +114,7 @@ export function ArtifactRow({
                 artifact={artifact}
                 onRename={onRename}
                 onShare={onShare}
+                onSetRetention={onSetRetention}
               />
             </DropdownMenuContent>
           </DropdownMenu>

@@ -10,21 +10,11 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useCopy } from "@/hooks/use-copy";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
-
-const EXPIRY_OPTIONS = [
-  { value: "keep", label: "Keep current expiry" },
-  { value: "never", label: "Never expires" },
-  { value: "1", label: "1 hour" },
-  { value: "24", label: "1 day" },
-  { value: "168", label: "7 days" },
-  { value: "720", label: "30 days" },
-] as const;
 
 interface Props {
   artifact: LibraryArtifact;
@@ -33,22 +23,13 @@ interface Props {
 
 export function ShareDialog({ artifact, onClose }: Props) {
   const [isPublic, setIsPublic] = useState(artifact.visibility === "public");
-  const [expiry, setExpiry] = useState<string>(
-    artifact.expiresAt === null ? "never" : "keep",
-  );
   const shareUrl = artifact.shareUrl;
   const { copy, copied } = useCopy();
   const sharing = useSetArtifactSharing();
 
   const save = () => {
     sharing.mutate(
-      {
-        id: artifact.id,
-        visibility: isPublic ? "public" : "private",
-        ...(expiry === "keep"
-          ? {}
-          : { expiresInHours: expiry === "never" ? null : Number(expiry) }),
-      },
+      { id: artifact.id, visibility: isPublic ? "public" : "private" },
       {
         onSuccess: ({ shareUrl: savedUrl }) => {
           emitToast(
@@ -131,30 +112,6 @@ export function ShareDialog({ artifact, onClose }: Props) {
                   <Copy size={14} />
                 )}
               </Button>
-            </div>
-          )}
-
-          {isPublic && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">
-                Expiry
-              </span>
-              <Select
-                value={expiry}
-                onChange={(e) => setExpiry(e.target.value)}
-              >
-                {EXPIRY_OPTIONS.filter(
-                  (o) => o.value !== "keep" || artifact.expiresAt !== null,
-                ).map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-              <span className="text-xs text-muted-foreground">
-                An expired artifact is permanently deleted after a 7-day grace
-                period — even if it was made private again.
-              </span>
             </div>
           )}
         </div>

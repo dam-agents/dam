@@ -1,5 +1,7 @@
 export const ARTIFACT_INTERNAL_LINK_PREFIX = "platform://artifacts/";
 
+export const ARTIFACT_RESTORE_WINDOW_DAYS = 7;
+
 export function artifactInternalLink(id: string): string {
   return `${ARTIFACT_INTERNAL_LINK_PREFIX}${id}`;
 }
