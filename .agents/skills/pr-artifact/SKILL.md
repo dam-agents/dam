@@ -25,7 +25,8 @@ The goal is that someone who has never seen the branch can read the artifact top
    - **The problem** — what wasn't working / was missing before this PR.
    - **The shape** — the handful of moving parts and how they fit together now.
    - **Every decision** — what was chosen, what the alternatives were, why this one won. Ground each in real evidence (a commit, a comment, the code). Never invent a rationale.
-   - **Every problem encountered** — bugs, dead ends, tricky edge cases, things that fought back — and how each was resolved. This is the most valuable and most-skipped section. This is a high-level read, not a hunt for nits.
+   - **Every problem encountered** — bugs, dead ends, tricky edge cases, things that fought back — and how each was resolved. This is the most valuable and most-skipped section.
+   - **Technical impact** — where the change couples to the rest of the system, what its blast radius is, what other subsystems now depend on it or are affected. Describe it; don't grade it. This is a high-level read, not a hunt for nits.
 
 ## Artifact Construction
 
