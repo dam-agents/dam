@@ -62,13 +62,8 @@ export function IconRail({
   const onMockRoute = [
     "/agent-setup",
     "/experiment-setup",
-    "/experiment-onboard",
     "/kb-setup",
     "/compare",
-    "/layouts",
-    "/variations",
-    "/consistency",
-    "/wiki-onboard",
     "/explore/configure",
   ].includes(pathname);
   const home: Destination = {
@@ -102,8 +97,7 @@ export function IconRail({
     icon: Chemistry,
     active:
       view === "experiments" ||
-      pathname === "/experiment-setup" ||
-      pathname === "/experiment-onboard",
+      pathname === "/experiment-setup",
     badge: 0,
     navigate: () => {
       if (onMockRoute) {

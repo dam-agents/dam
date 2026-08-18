@@ -1597,8 +1597,8 @@ function FeedDashboardLayout() {
             <a
               href={
                 import.meta.env.VITE_PROTOTYPE
-                  ? "#/experiment-onboard"
-                  : "/experiment-onboard"
+                  ? "#/experiment-setup"
+                  : "/experiment-setup"
               }
               className="flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 no-underline transition-all hover:shadow-lg"
             >

@@ -14,10 +14,7 @@ import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { ComparisonView } from "./modules/home/views/comparison-view.js";
-import { ConsistencyView } from "./modules/home/views/consistency-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
-import { LayoutsView } from "./modules/home/views/layouts-view.js";
-import { VariationsView } from "./modules/home/views/variations-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
@@ -29,10 +26,6 @@ import { ExperimentSetupView } from "./modules/sandboxes/views/experiment-setup-
 import { KnowledgeBaseSetupView } from "./modules/sandboxes/views/knowledge-base-setup-view.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
-import {
-  setMockExperimentOnboard,
-  setMockWikiOnboard,
-} from "./modules/sessions/views/chat-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -166,61 +159,6 @@ function MainApp() {
     );
   }
 
-  if (import.meta.env.VITE_MOCK && mockPath === "/layouts") {
-    return (
-      <div className="flex flex-col h-dvh bg-background overflow-hidden">
-        <DemoStrip />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          <IconRail />
-          <main className="relative z-content flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-              <LayoutsView />
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  }
-
-  if (import.meta.env.VITE_MOCK && mockPath === "/variations") {
-    return (
-      <div className="flex flex-col h-dvh bg-background overflow-hidden">
-        <DemoStrip />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          <IconRail />
-          <main className="relative z-content flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-              <VariationsView />
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  }
-
-  if (import.meta.env.VITE_MOCK && mockPath === "/consistency") {
-    return (
-      <div className="flex flex-col h-dvh bg-background overflow-hidden">
-        <DemoStrip />
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          <IconRail />
-          <main className="relative z-content flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1200px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-              <ConsistencyView />
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  }
-
-  if (import.meta.env.VITE_MOCK && mockPath === "/wiki-onboard") {
-    setMockWikiOnboard(true);
-  }
-
-  if (import.meta.env.VITE_MOCK && mockPath === "/experiment-onboard") {
-    setMockExperimentOnboard(true);
-  }
 
   if (import.meta.env.VITE_MOCK && mockPath === "/experiment-setup") {
     return (
