@@ -53,6 +53,7 @@ export function RenameArtifactDialog({ artifact, onClose }: Props) {
           <span className="text-sm font-medium text-foreground">Title</span>
           <Input
             size="sm"
+            aria-label="Title"
             value={title}
             autoFocus
             maxLength={ARTIFACT_TITLE_MAX_LENGTH}

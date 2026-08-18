@@ -6,9 +6,12 @@ const invalidatesLibrary = [
   trpc.artifactLibrary.list.queryKey(),
   trpc.artifactLibrary.listFolders.queryKey(),
 ];
-const invalidatesLibraryAndContent = [
+const invalidatesLibraryAndArtifact = [
   ...invalidatesLibrary,
   trpc.artifactLibrary.get.queryKey(),
+];
+const invalidatesLibraryAndContent = [
+  ...invalidatesLibraryAndArtifact,
   trpc.artifactLibrary.getContent.queryKey(),
   trpc.artifactLibrary.preview.queryKey(),
 ];
@@ -37,7 +40,7 @@ export function useSetArtifactSharing() {
   return useMutation({
     ...trpc.artifactLibrary.setSharing.mutationOptions(),
     meta: {
-      invalidates: invalidatesLibrary,
+      invalidates: invalidatesLibraryAndArtifact,
       errorToast: "Failed to update sharing",
     },
   });
