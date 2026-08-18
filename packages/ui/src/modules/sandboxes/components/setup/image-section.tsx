@@ -1,10 +1,9 @@
 import { Callout } from "@/components/ui/callout";
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { TemplateView } from "../../../../types.js";
-import { CardList } from "../card-list.js";
+import { CardGrid, CardList } from "../card-list.js";
 import {
   CustomImageCard,
   type RegistryControls,
@@ -39,10 +38,10 @@ export function ImageSection({
       <SectionLabel spaced>Image</SectionLabel>
       {loading ? (
         <CardList>
-          <ListSkeleton rows={4} rowHeight={64} />
+          <ListSkeleton rows={2} rowHeight={156} />
         </CardList>
       ) : (
-        <Inset className="grid gap-3 sm:grid-cols-2">
+        <CardGrid>
           {harnesses.map((template) => (
             <HarnessCard
               key={template.id}
@@ -51,7 +50,7 @@ export function ImageSection({
               onSelect={() => onPickTemplate(template.id)}
             />
           ))}
-        </Inset>
+        </CardGrid>
       )}
 
       {setupNote && (
@@ -65,7 +64,7 @@ export function ImageSection({
 
       <div className="my-6 flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           or use a custom image
         </span>
         <span className="h-px flex-1 bg-border" />

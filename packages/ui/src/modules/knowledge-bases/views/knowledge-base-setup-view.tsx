@@ -3,7 +3,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import { CardList } from "../../sandboxes/components/card-list.js";
+import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -71,7 +71,7 @@ export function KnowledgeBaseSetupView() {
 
       <section className="mb-8">
         <SectionLabel spaced>Template</SectionLabel>
-        <CardList>
+        <CardGrid>
           {KB_TEMPLATES.map((template) => (
             <KbTemplateCard
               key={template.id}
@@ -80,7 +80,7 @@ export function KnowledgeBaseSetupView() {
               onSelect={() => update({ kbTemplateId: template.id })}
             />
           ))}
-        </CardList>
+        </CardGrid>
       </section>
 
       <ProviderSection
