@@ -144,10 +144,13 @@ flowchart LR
   that reuse the chat file-viewer stack (markdown prose, highlighted code,
   inline images). Retention is reached from the artifact's own menu rather than
   the sharing dialog, and stays available whatever the artifact's visibility —
-  it governs deletion, not the link. Folder membership is mutable after
-  creation: any artifact can be filed into a folder, moved to another, or
+  it governs deletion, not the link. Folder membership is mutable and
+  advisory: any artifact can be filed into any folder, moved to another, or
   taken out again from the library itself, so organising a library is not tied
-  to the moment each artifact was published.
+  to the moment each artifact was published. Nothing reads membership as a
+  claim about provenance — an [experiment](experiments.md) lineage folder is an
+  ordinary destination, and what a run produced is recorded by the experiment
+  rather than by where the artifact sits.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
 - The chat view carries the same library twice over: an **Artifacts section**

@@ -230,6 +230,8 @@ export function ArtifactsView() {
               byFolder={byFolder}
               searching={search.trim().length > 0}
               onCopyFolderLink={copyFolderLink}
+              drop={dropCallbacks}
+              hotFolderId={hotFolderId}
               {...folderActions}
               {...rowActions}
             />

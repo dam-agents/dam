@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/disclosure";
 
 import { useExperimentsAmbient } from "../../experiments/api/queries.js";
+import type { FolderDropCallbacks } from "../hooks/use-artifact-row-drag.js";
 import { folderDisplayName } from "../lib/folders.js";
 import type { ArtifactRowActions } from "./artifact-row.js";
 import {
@@ -25,6 +26,8 @@ interface Props extends ArtifactRowActions, FolderGroupActions {
   folders: ArtifactFolder[];
   byFolder: Map<string | null, LibraryArtifact[]>;
   searching: boolean;
+  drop?: FolderDropCallbacks;
+  hotFolderId?: string | null;
 }
 
 interface Cluster {
@@ -94,6 +97,8 @@ export function ExperimentsSection({
   folders,
   byFolder,
   searching,
+  drop,
+  hotFolderId,
   ...actions
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -154,6 +159,8 @@ export function ExperimentsSection({
               displayName={folderDisplayName(folder)}
               artifacts={artifacts}
               sections={partition(artifacts, clusters)}
+              drop={drop}
+              dropActive={hotFolderId === folder.id}
               {...actions}
             />
           );
