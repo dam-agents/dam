@@ -210,9 +210,11 @@ export function ambientGuidance(
           `${joinNames(peers.map((p) => p.name))} ` +
             `${peers.length === 1 ? "is" : "are"} also connected to this ` +
             "channel and read along here too. Agents take these messages one " +
-            "at a time, in a fixed order, so you are seeing this after the " +
-            "ones before you have finished. A message that names one of them " +
-            "is addressed to them, not to you — stay silent on it.",
+            "at a time, so you are seeing this after the ones before you " +
+            "finished — but which of them came before you is not fixed, so " +
+            "never reason about your position in the order. A message that " +
+            "names one of them is addressed to them, not to you — stay " +
+            "silent on it.",
         ]
       : []),
     ...(answeredAlready.length > 0

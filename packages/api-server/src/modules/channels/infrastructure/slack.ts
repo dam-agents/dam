@@ -101,6 +101,7 @@ import {
 import {
   defaultOf,
   matchRosterName,
+  orderAmbientReaders,
   routeMention,
   type RosterEntry,
 } from "./slack-routing.js";
@@ -2140,7 +2141,7 @@ export function createSlackWorker(
           const inThread = queue.threadTs !== null;
           const { kept, dropped } = batchFiles(batch);
           const answeredAlready: string[] = [];
-          for (const reader of readers) {
+          for (const reader of orderAmbientReaders(readers)) {
             securityLog("info", "channel.authz", {
               category: "channel",
               actor: null,

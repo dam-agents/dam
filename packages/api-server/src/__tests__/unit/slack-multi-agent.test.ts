@@ -204,17 +204,22 @@ describe("mention routing across several connected agents", () => {
 });
 
 describe("ambient read-along with several connected agents", () => {
-  it("runs the agents one at a time, in roster order", async () => {
+  /**
+   * TEST_SCENARIO: read-along agents must not run concurrently or they talk
+   * over each other. The default agent goes first wherever it sits in the
+   * roster; the rest follow in no guaranteed order.
+   */
+  it("runs the agents one at a time, the default first", async () => {
     const order: string[] = [];
     const h = harness(
       [
+        { instanceName: REVIEWER, name: "Reviewer", ambient: true },
         {
           instanceName: SCRIBE,
           name: "Scribe",
           isDefault: true,
           ambient: true,
         },
-        { instanceName: REVIEWER, name: "Reviewer", ambient: true },
       ],
       {
         onPrompt: async (agent) => {

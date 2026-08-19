@@ -35,6 +35,19 @@ export function defaultOf(roster: RosterEntry[]): RosterEntry | null {
   return roster.find((entry) => entry.isDefault) ?? roster[0] ?? null;
 }
 
+export function orderAmbientReaders(
+  readers: RosterEntry[],
+  rng: () => number = Math.random,
+): RosterEntry[] {
+  const primary = readers.filter((entry) => entry.isDefault);
+  const rest = readers.filter((entry) => !entry.isDefault);
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [rest[i], rest[j]] = [rest[j]!, rest[i]!];
+  }
+  return [...primary, ...rest];
+}
+
 export function matchRosterName(
   roster: RosterEntry[],
   candidate: string,

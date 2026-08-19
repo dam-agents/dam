@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   defaultOf,
   matchRosterName,
+  orderAmbientReaders,
   routeMention,
   stripLeadingMentions,
   type RosterEntry,
@@ -154,6 +155,64 @@ describe("routeMention", () => {
 
   it("returns null when no agent is connected", () => {
     expect(routeMention("<@U123> anyone?", [])).toBeNull();
+  });
+});
+
+describe("orderAmbientReaders", () => {
+  const names = (entries: RosterEntry[]) => entries.map((e) => e.name);
+
+  /**
+   * TEST_SCENARIO: the default agent is the conversation's primary — the one an
+   * unnamed mention reaches — so it gets first crack at a read-along message.
+   */
+  it("puts the default agent first", () => {
+    const readers = [
+      entry("Reviewer"),
+      entry("Scribe", { isDefault: true }),
+      entry("Release Captain"),
+    ];
+    expect(names(orderAmbientReaders(readers, () => 0))[0]).toBe("Scribe");
+  });
+
+  /**
+   * TEST_SCENARIO: beyond the default there is no meaningful order, so the rest
+   * are shuffled rather than left in a stable one that would quietly privilege
+   * the same agent on every message.
+   */
+  it("shuffles the non-default agents, driven by the supplied rng", () => {
+    const readers = [entry("A"), entry("B"), entry("C")];
+    const alwaysSwapWithFirst = () => 0;
+    expect(names(orderAmbientReaders(readers, alwaysSwapWithFirst))).toEqual([
+      "B",
+      "C",
+      "A",
+    ]);
+  });
+
+  it("keeps every reader exactly once, whatever the shuffle", () => {
+    const readers = [
+      entry("Scribe", { isDefault: true }),
+      entry("A"),
+      entry("B"),
+      entry("C"),
+    ];
+    const ordered = orderAmbientReaders(readers, () => 0.99);
+    expect(ordered).toHaveLength(4);
+    expect(new Set(names(ordered))).toEqual(new Set(["Scribe", "A", "B", "C"]));
+  });
+
+  /**
+   * TEST_SCENARIO: a default agent with ambient off never reaches this list, so
+   * there is no privileged position to award and the order is a plain shuffle.
+   */
+  it("has no privileged first entry when no reader is the default", () => {
+    const readers = [entry("A"), entry("B")];
+    expect(names(orderAmbientReaders(readers, () => 0))).toEqual(["B", "A"]);
+  });
+
+  it("handles a single reader and an empty list", () => {
+    expect(names(orderAmbientReaders([entry("Solo")]))).toEqual(["Solo"]);
+    expect(orderAmbientReaders([])).toEqual([]);
   });
 });
 
