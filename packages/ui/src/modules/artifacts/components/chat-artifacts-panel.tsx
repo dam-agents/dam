@@ -17,6 +17,7 @@ import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
@@ -43,6 +44,7 @@ export function ChatArtifactsPanel({
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
   );
+  const [moveTarget, setMoveTarget] = useState<LibraryArtifact | null>(null);
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [retentionTarget, setRetentionTarget] =
     useState<LibraryArtifact | null>(null);
@@ -73,6 +75,7 @@ export function ChatArtifactsPanel({
                 )
               }
               onRename={setRenameTarget}
+              onMove={setMoveTarget}
               onShare={setShareTarget}
               onSetRetention={setRetentionTarget}
             />
@@ -83,6 +86,12 @@ export function ChatArtifactsPanel({
         <RenameArtifactDialog
           artifact={renameTarget}
           onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {moveTarget && (
+        <MoveArtifactDialog
+          artifact={moveTarget}
+          onClose={() => setMoveTarget(null)}
         />
       )}
       {shareTarget && (
@@ -106,6 +115,7 @@ function ArtifactListRow({
   active,
   onClick,
   onRename,
+  onMove,
   onShare,
   onSetRetention,
 }: {
@@ -113,6 +123,7 @@ function ArtifactListRow({
   active: boolean;
   onClick: () => void;
   onRename: (artifact: LibraryArtifact) => void;
+  onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
@@ -152,6 +163,7 @@ function ArtifactListRow({
             <ArtifactRowMenuItems
               artifact={artifact}
               onRename={onRename}
+              onMove={onMove}
               onShare={onShare}
               onSetRetention={onSetRetention}
             />

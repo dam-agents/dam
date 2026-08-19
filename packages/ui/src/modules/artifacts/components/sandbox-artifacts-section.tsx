@@ -9,6 +9,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { ArtifactRow } from "./artifact-row.js";
+import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
@@ -26,6 +27,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
     null,
   );
+  const [moveTarget, setMoveTarget] = useState<LibraryArtifact | null>(null);
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
   const [retentionTarget, setRetentionTarget] =
     useState<LibraryArtifact | null>(null);
@@ -76,6 +78,7 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 showAgent={false}
                 onPreview={setPreviewTarget}
                 onRename={setRenameTarget}
+                onMove={setMoveTarget}
                 onShare={setShareTarget}
                 onSetRetention={setRetentionTarget}
               />
@@ -88,6 +91,12 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         <RenameArtifactDialog
           artifact={renameTarget}
           onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {moveTarget && (
+        <MoveArtifactDialog
+          artifact={moveTarget}
+          onClose={() => setMoveTarget(null)}
         />
       )}
       {shareTarget && (

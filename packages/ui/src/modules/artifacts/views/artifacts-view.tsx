@@ -1,6 +1,5 @@
 import { Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
-import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,10 +18,12 @@ import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js"
 import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
+import { MoveArtifactDialog } from "../components/move-artifact-dialog.js";
 import { RenameArtifactDialog } from "../components/rename-artifact-dialog.js";
 import { RetentionDialog } from "../components/retention-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
+import { isExperimentFolder, isUserFolder } from "../lib/folders.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];
@@ -31,6 +32,7 @@ type ArtifactDialog =
   | { kind: "upload" }
   | { kind: "folder"; folder: ArtifactFolder | null }
   | { kind: "rename"; artifact: LibraryArtifact }
+  | { kind: "move"; artifact: LibraryArtifact }
   | { kind: "share"; artifact: LibraryArtifact }
   | { kind: "retention"; artifact: LibraryArtifact }
   | { kind: "preview"; artifact: LibraryArtifact }
@@ -81,6 +83,8 @@ export function ArtifactsView() {
       setDialog({ kind: "preview", artifact }),
     onRename: (artifact: LibraryArtifact) =>
       setDialog({ kind: "rename", artifact }),
+    onMove: (artifact: LibraryArtifact) =>
+      setDialog({ kind: "move", artifact }),
     onShare: (artifact: LibraryArtifact) =>
       setDialog({ kind: "share", artifact }),
     onSetRetention: (artifact: LibraryArtifact) =>
@@ -100,12 +104,8 @@ export function ArtifactsView() {
       .then((url) => url ?? null);
   };
 
-  const experimentFolders = folders.filter((f) =>
-    f.name.startsWith(EXPERIMENT_FOLDER_PREFIX),
-  );
-  const userFolders = folders.filter(
-    (f) => !f.name.startsWith(EXPERIMENT_FOLDER_PREFIX),
-  );
+  const experimentFolders = folders.filter(isExperimentFolder);
+  const userFolders = folders.filter(isUserFolder);
 
   const ungrouped = byFolder.get(null) ?? [];
   const loading = artifactsLoading || foldersLoading;
@@ -211,6 +211,9 @@ export function ArtifactsView() {
           artifact={dialog.artifact}
           onClose={closeDialog}
         />
+      )}
+      {dialog?.kind === "move" && (
+        <MoveArtifactDialog artifact={dialog.artifact} onClose={closeDialog} />
       )}
       {dialog?.kind === "share" && (
         <ShareDialog artifact={dialog.artifact} onClose={closeDialog} />

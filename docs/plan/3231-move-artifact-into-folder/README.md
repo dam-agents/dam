@@ -98,7 +98,7 @@ as an option.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [Move to folder in the row menu](./01-move-to-folder-menu.md) | `MoveArtifactDialog` plus an `onMove` action wired into all three row surfaces | — |
+| 01 ✅ | [Move to folder in the row menu](./01-move-to-folder-menu.md) | `MoveArtifactDialog` plus an `onMove` action wired into all three row surfaces | — |
 | 02 | [Drag a library row onto a folder](./02-drag-row-onto-folder.md) | Draggable rows and folder-group drop targets in the library view | 01 |
 
 01 ships the whole goal on its own. 02 adds the accelerator on top of the same mutation call.

@@ -33,6 +33,7 @@ import { VersionBadge } from "./version-badge.js";
 export interface ArtifactRowActions {
   onPreview: (artifact: LibraryArtifact) => void;
   onRename: (artifact: LibraryArtifact) => void;
+  onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
   onSetRetention: (artifact: LibraryArtifact) => void;
 }
@@ -47,6 +48,7 @@ export function ArtifactRow({
   showAgent = true,
   onPreview,
   onRename,
+  onMove,
   onShare,
   onSetRetention,
 }: Props) {
@@ -113,6 +115,7 @@ export function ArtifactRow({
               <ArtifactRowMenuItems
                 artifact={artifact}
                 onRename={onRename}
+                onMove={onMove}
                 onShare={onShare}
                 onSetRetention={onSetRetention}
               />
