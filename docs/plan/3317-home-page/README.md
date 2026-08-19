@@ -90,7 +90,7 @@ list. Everything else reads contracts that already exist: `approvals.listForOwne
 | 02 ✅ | Feed filtering | Status filter and sources in/out | 01 |
 | 03 ✅ | Inline approval cards | Approvals in the feed with the full action set and their resolved state | 01 |
 | 04 ✅ | Dismiss, clear all, and `platform/markSeen` | Feed dismissal that survives a reload | 01 |
-| 05 | Compute and spend widgets | Per-agent CPU/memory bars; spend with its period toggle | 01 |
+| 05 ✅ | Compute and spend widgets | Per-agent CPU/memory bars; spend with its period toggle | 01 |
 | 06 ✅ | Owner-wide schedule list | The one contract change | — |
 | 07 | Schedules widget | Top-five list, "See all" modal, toggle, inline create and edit | 06 |
 | 08 | Floating approvals pill | The pill and its mini panel on every non-Home page | 03 |

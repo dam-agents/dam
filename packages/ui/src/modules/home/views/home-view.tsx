@@ -4,10 +4,12 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useFeed } from "../api/queries.js";
+import { ComputeWidget } from "../components/compute-widget.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
 import { FeedList } from "../components/feed-list.js";
 import { HomeGreeting } from "../components/home-greeting.js";
+import { SpendWidget } from "../components/spend-widget.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import {
   emptyStateFor,
@@ -60,6 +62,9 @@ export function HomeView() {
   const visible = filterFeed(live, status, included);
   const stats = feedStats(visible);
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
+  const workingAgentIds = new Set(
+    live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
+  );
 
   const toggleSource = (source: FeedSource) =>
     setIncluded((prev) => {
@@ -127,7 +132,13 @@ export function HomeView() {
             />
           )}
         </div>
-        <aside className="lg:col-start-2 lg:row-start-2" />
+        <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
+          <ComputeWidget
+            runningAgents={runningAgents}
+            workingAgentIds={workingAgentIds}
+          />
+          <SpendWidget />
+        </aside>
       </div>
     </div>
   );

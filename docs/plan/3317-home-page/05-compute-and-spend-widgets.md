@@ -19,10 +19,15 @@ reserved-versus-ceiling CPU and memory from `budgets.reserved`. Keep that as the
 it is the only place the **ceiling** comes from, since `BudgetReserved` is owner-wide totals with no
 per-agent breakdown.
 
-The per-agent bars the prototype draws come from the agent list instead: each `Agent` carries
-`spec.resources.requests` and `spec.resources.limits` (see `AgentSpecCR` in
-`packages/api-server-api/src/crd-types.gen.ts`). Sum or display those per agent against the ceiling
-from `budgets.reserved`.
+The prototype draws a **row of cells, one per compute unit** — not bars — coloured by state, with a
+legend below. It models CPU and Gi as one number, which no real install guarantees: a dev cluster runs
+4 cores against 8 Gi. Key the cells on **CPU**, headline `used/ceiling CPU`, and carry memory in the
+legend rows and the per-cell tooltip. `AgentView.size` gives each agent's `{ cpu, memory }` quantity
+strings; parse them with `parseCpuMilli`/`parseMemoryMi` from `modules/sandboxes/lib/quantity.ts`.
+
+The prototype's *running* vs *awake* split means "has work in flight" vs "pod up but idle". Take the
+working set from the feed's in-progress items rather than dialling ACP again, so the page keeps one
+fan-out.
 
 Two things to get right:
 
@@ -55,8 +60,10 @@ let it grow into a page-level range.
 disables itself. Honour that by rendering nothing rather than an error — an install without metrics
 must not show a broken widget. Follow `usage-view.tsx` for what "unavailable" looks like.
 
-Keep the detail out. Spend by model, by day and by agent already have a home in the existing usage
-view; this widget is the at-a-glance figure with a link to that view if one is warranted.
+The prototype's `SpendPreview` shows the **top three spenders** under the total, each with a bar
+relative to the largest — take that. Keep the deeper detail out: spend by model and by day already have
+a home in the existing usage view. Drop any agent whose cost rounds to `$0.00`, or the row renders as a
+hairline bar that reads like a bug.
 
 ### 3. The column
 
@@ -67,12 +74,12 @@ other, and neither may blank the feed.
 ## Acceptance criteria
 
 - [ ] `mise run --force ui:check`, `--force ui:test` and `--force common:check:comment-types` pass.
-- [ ] The compute widget shows the owner-wide ceiling and a bar per agent, labelled as allocated.
+- [ ] The compute widget shows the owner-wide CPU ceiling as cells, labelled as allocated, with memory in the legend.
 - [ ] A hibernated sandbox is not shown as holding compute.
 - [ ] The help tooltip explains what allocated means.
 - [ ] The spend toggle changes the figures across 1d / 1w / 1m / 1y.
 - [ ] With metrics unavailable, the spend widget renders nothing and no error is surfaced.
-- [ ] The spend widget carries no by-model / by-day / by-agent breakdown.
+- [ ] The spend widget shows the top three spenders and no by-model / by-day breakdown.
 - [ ] Formatters and the meter sub-component are reused from `modules/budgets`, not duplicated.
 - [ ] Home has exactly one period control, inside the spend widget.
 
