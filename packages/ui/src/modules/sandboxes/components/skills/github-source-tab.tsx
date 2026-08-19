@@ -52,6 +52,10 @@ export function GithubSourceTab({
             placeholder="skills/"
             {...register("path")}
           />
+          <p className="text-sm text-muted-foreground">
+            Repo subdirectory holding the skills, such as <code>skills/</code>.
+            Leave empty to search the usual locations.
+          </p>
         </div>
       </DialogBody>
 

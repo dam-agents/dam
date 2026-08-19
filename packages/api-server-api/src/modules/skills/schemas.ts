@@ -44,6 +44,8 @@ export const scanFailureCodes = [
   "needs_sandbox",
   "repo_unreachable",
   "agent_unreachable",
+  "source_path_not_found",
+  "source_path_empty",
   "other",
 ] as const;
 

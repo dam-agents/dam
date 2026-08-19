@@ -9,6 +9,7 @@ import type {
   Result,
   SkillOrigin,
   SkillsDomainError,
+  SourcePathReason,
 } from "agent-runtime-api";
 import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
 import { parseFrontmatter } from "../domain/frontmatter.js";
@@ -20,6 +21,10 @@ const FRONTMATTER_READ_BYTES = 8 * 1024;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_SKILL_BYTES = 5 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 60_000;
+
+export type CloneScanOutcome =
+  | { kind: "found"; dirs: string[] }
+  | { kind: SourcePathReason; subPath: string };
 
 export interface LocalSkillRepository {
   listLocal: (
@@ -64,7 +69,7 @@ export interface LocalSkillRepository {
   findSkillDirsInClone: (
     repoDir: string,
     subPath?: string,
-  ) => Promise<string[]>;
+  ) => Promise<CloneScanOutcome>;
   resolveSkillDirInClone: (
     repoDir: string,
     name: SkillName,
@@ -450,20 +455,38 @@ export function subPathEscapes(subPath: string): boolean {
   return subPath.startsWith("/") || subPath.split("/").includes("..");
 }
 
+function isMissingDir(err: unknown): boolean {
+  const code = (err as { code?: string }).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
 async function findSkillDirsInClone(
   repoDir: string,
   subPath?: string,
-): Promise<string[]> {
+): Promise<CloneScanOutcome> {
   if (subPath && subPathEscapes(subPath)) {
     throw new Error(`skill source path rejected: ${subPath}`);
   }
-  if (subPath) return skillDirsUnder(repoDir, path.join(repoDir, subPath));
+  if (subPath) {
+    const root = path.join(repoDir, subPath);
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch (err) {
+      if (isMissingDir(err)) return { kind: "path-missing", subPath };
+      throw err;
+    }
+    const dirs = await skillDirsIn(repoDir, root, entries);
+    return dirs.length > 0
+      ? { kind: "found", dirs }
+      : { kind: "path-empty", subPath };
+  }
   const found: string[] = [];
   for (const root of SKILL_SOURCE_ROOTS) {
     found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
   }
-  if (found.length > 0) return found;
-  return skillDirsUnder(repoDir, repoDir);
+  if (found.length > 0) return { kind: "found", dirs: found };
+  return { kind: "found", dirs: await skillDirsUnder(repoDir, repoDir) };
 }
 
 async function skillDirsUnder(
@@ -476,6 +499,14 @@ async function skillDirsUnder(
   } catch {
     return [];
   }
+  return skillDirsIn(repoDir, root, entries);
+}
+
+async function skillDirsIn(
+  repoDir: string,
+  root: string,
+  entries: import("node:fs").Dirent[],
+): Promise<string[]> {
   const out: string[] = [];
   for (const ent of entries) {
     if (!ent.isDirectory() || ent.name.startsWith(".")) continue;

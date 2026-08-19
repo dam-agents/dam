@@ -10,7 +10,7 @@ import {
   skillScanInputSchema,
   skillWriteLocalInputSchema,
 } from "./schemas.js";
-import type { SkillsDomainError } from "./types.js";
+import type { SkillsDomainError, SourcePathReason } from "./types.js";
 
 function toTrpcError(error: SkillsDomainError): TRPCError {
   switch (error.kind) {
@@ -48,6 +48,28 @@ function toTrpcError(error: SkillsDomainError): TRPCError {
       return new TRPCError({
         code: "BAD_GATEWAY",
         message: `failed to fetch source ${error.source}: ${error.detail}`,
+      });
+    case "SourcePathNotFound":
+      return new TRPCError({
+        code: "BAD_REQUEST",
+        message: `source path ${JSON.stringify(error.path)} is not a directory in ${error.source}`,
+        cause: {
+          sourcePath: {
+            reason: "path-missing" satisfies SourcePathReason,
+            version: error.version,
+          },
+        },
+      });
+    case "SourcePathEmpty":
+      return new TRPCError({
+        code: "BAD_REQUEST",
+        message: `source path ${JSON.stringify(error.path)} holds no skill in ${error.source}`,
+        cause: {
+          sourcePath: {
+            reason: "path-empty" satisfies SourcePathReason,
+            version: error.version,
+          },
+        },
       });
     case "UpstreamGitHubError":
       return new TRPCError({
