@@ -919,7 +919,7 @@ export function createSlackWorker(
     const now = Date.now();
     const cached = agentNameCache.get(instanceName);
     if (cached && cached.expiresAt > now) return cached.name;
-    let name = instanceName;
+    let name: string;
     try {
       const agent = await agents().get(instanceName);
       name = agent?.name?.trim() || instanceName;

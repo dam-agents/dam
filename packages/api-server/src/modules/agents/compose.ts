@@ -104,7 +104,8 @@ export function composeAgentsModule(deps: {
         upsertChannel: (tx, agentId, channel) =>
           upsertChannelTx(tx, owner, agentId, channel),
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
-        claimDefaultIfVacant: claimSlackDefaultIfVacantTx,
+        claimDefaultIfVacant: (tx, agentId, slackChannelId) =>
+          claimSlackDefaultIfVacantTx(tx, owner, agentId, slackChannelId),
       },
       findSlackBindings: findSlackBindingsByChannelId(deps.db),
       telegramBinding: deps.telegramBinding,

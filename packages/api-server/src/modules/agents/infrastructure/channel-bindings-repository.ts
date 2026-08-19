@@ -196,7 +196,7 @@ export function deleteSlackChannelBinding(db: Db) {
 }
 
 const noDefaultYet = (slackChannelId: string) =>
-  sql`NOT EXISTS (SELECT 1 FROM channels d WHERE d.type = 'slack' AND d.config->>'slackChannelId' = ${slackChannelId} AND d.config->>'default' = 'true')`;
+  sql`NOT EXISTS (SELECT 1 FROM ${channels} d WHERE d.${sql.raw(channels.type.name)} = ${ChannelType.Slack} AND d.${sql.raw(channels.config.name)}->>'slackChannelId' = ${slackChannelId} AND d.${sql.raw(channels.config.name)}->>'default' = 'true')`;
 
 const MARK_DEFAULT = sql`${channels.config} || '{"default": true}'::jsonb`;
 
@@ -206,6 +206,7 @@ export function isSlackDefaultUniqueViolation(e: unknown): boolean {
 
 async function claimDefault(
   runner: Db | Tx,
+  owner: string,
   agentId: string,
   slackChannelId: string,
 ): Promise<boolean> {
@@ -216,6 +217,7 @@ async function claimDefault(
       .where(
         and(
           eq(channels.agentId, agentId),
+          eq(channels.owner, owner),
           slackChannelIs(slackChannelId),
           noDefaultYet(slackChannelId),
         ),
@@ -230,10 +232,11 @@ async function claimDefault(
 
 export function claimSlackDefaultIfVacantTx(
   tx: Tx,
+  owner: string,
   agentId: string,
   slackChannelId: string,
 ): Promise<boolean> {
-  return claimDefault(tx, agentId, slackChannelId);
+  return claimDefault(tx, owner, agentId, slackChannelId);
 }
 
 class NoSuchBinding extends Error {}

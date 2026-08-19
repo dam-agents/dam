@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { getBrand } from "../../../../brand.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDisconnectSlack } from "../../../agents/api/mutations.js";
@@ -78,14 +79,23 @@ function SlackChannelRow({
   const showConfirm = useStore((s) => s.showConfirm);
   const disconnectSlack = useDisconnectSlack();
 
+  const brandShort = getBrand().short;
+
   const handleDisconnect = async () => {
     if (
       await showConfirm(
-        `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.${
-          channel.default
-            ? ` It is that channel's default agent, so mentions with no agent name will reach no one until an agent's owner claims the default with the in-chat \`default\` command.`
-            : ""
-        }`,
+        <p>
+          Mentions in <strong>{channel.slackChannelId}</strong> will stop
+          reaching this sandbox.
+          {channel.default ? (
+            <>
+              {" "}
+              It is that channel&apos;s default agent, so mentions with no agent
+              name will reach no one until an agent&apos;s owner runs{" "}
+              <code>/{brandShort} default &lt;agent&gt;</code> in Slack.
+            </>
+          ) : null}
+        </p>,
         "Disconnect Slack channel?",
         { kind: "destructive", confirmLabel: "Disconnect" },
       )

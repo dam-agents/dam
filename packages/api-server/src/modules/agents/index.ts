@@ -49,8 +49,6 @@ export {
   deleteSlackChannelByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
-  claimSlackDefaultIfVacantTx,
   setSlackChannelDefault,
-  isSlackDefaultUniqueViolation,
   type SlackBindingRow,
 } from "./infrastructure/channel-bindings-repository.js";
