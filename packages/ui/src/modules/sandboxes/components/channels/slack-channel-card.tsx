@@ -1,6 +1,7 @@
 import { Add, OverflowMenuHorizontal } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -82,7 +83,7 @@ function SlackChannelRow({
       await showConfirm(
         `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.${
           channel.default
-            ? " It is the channel's default agent, so mentions there with no agent name will reach no one until another agent's owner claims the default."
+            ? ` It is that channel's default agent, so mentions with no agent name will reach no one until an agent's owner claims the default with the in-chat \`default\` command.`
             : ""
         }`,
         "Disconnect Slack channel?",
@@ -98,14 +99,18 @@ function SlackChannelRow({
   return (
     <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] text-foreground">
-          {channel.slackChannelId}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="truncate text-[15px] text-foreground">
+            {channel.slackChannelId}
+          </p>
+          {channel.default && (
+            <Badge variant="muted" className="shrink-0">
+              Default
+            </Badge>
+          )}
+        </div>
         <p className="truncate text-sm text-muted-foreground">
           {channel.ambient ? "Ambient on" : "Ambient off"}
-          {channel.default
-            ? " · Default agent — a mention with no name reaches this sandbox"
-            : " · Reached by name"}
         </p>
       </div>
       <DropdownMenu>

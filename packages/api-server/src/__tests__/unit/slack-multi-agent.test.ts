@@ -554,3 +554,61 @@ describe("a conversation with no default agent", () => {
     expect(ack).toContain("/dam default");
   });
 });
+
+describe("handing off a read-along turn", () => {
+  /**
+   * TEST_SCENARIO: ambient turns build their own turn records, and a hand-off
+   * rebuilds the message from them. If they omit the text, the receiving agent
+   * is handed an empty message and answers nothing.
+   */
+  it("carries the real message text, not an empty body", async () => {
+    const h = harness(
+      [
+        {
+          instanceName: SCRIBE,
+          name: "Scribe",
+          isDefault: true,
+          ambient: true,
+        },
+        { instanceName: REVIEWER, name: "Reviewer" },
+      ],
+      {
+        onPrompt: async (agent, worker) => {
+          if (agent === SCRIBE) await worker().handOffTurn(SCRIBE, "Reviewer");
+        },
+      },
+    );
+    await h.channelMessage("who owns the deploy script?");
+    const handed = h.promptsFor(REVIEWER)[0];
+    expect(handed).toBeDefined();
+    expect(handed).toContain("who owns the deploy script?");
+    expect(handed).toContain("handed this message to you");
+  });
+
+  /**
+   * TEST_SCENARIO: a turn may only leave the agent once — otherwise one message
+   * could be handed to every connected agent in sequence.
+   */
+  it("refuses a second hand-off of the same turn", async () => {
+    const outcomes: unknown[] = [];
+    const h = harness(
+      [
+        { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+        { instanceName: REVIEWER, name: "Reviewer" },
+      ],
+      {
+        onPrompt: async (agent, worker) => {
+          if (agent !== SCRIBE) return;
+          outcomes.push(await worker().handOffTurn(SCRIBE, "Reviewer"));
+          outcomes.push(await worker().handOffTurn(SCRIBE, "Reviewer"));
+        },
+      },
+    );
+    await h.mention("<@U-BOT> a question");
+    await tick();
+    expect(outcomes[0]).toMatchObject({ ok: true });
+    expect(outcomes[1]).toMatchObject({
+      error: expect.stringContaining("cannot be handed on twice"),
+    });
+  });
+});

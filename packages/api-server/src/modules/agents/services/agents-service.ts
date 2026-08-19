@@ -549,7 +549,7 @@ export function createAgentsService(deps: {
 
     if (!txResult.ok) return txResult;
 
-    await deps.claimSlackDefaultIfVacant(id, slackChannelId);
+    if (!existing) await deps.claimSlackDefaultIfVacant(id, slackChannelId);
 
     emit({
       type: EventType.SlackConnected,

@@ -488,7 +488,7 @@ export function createMcpSession(
       });
       if ("error" in result) return errorResult(result.error);
       return textResult(
-        `Handed to ${result.agent}. It will answer in the thread; post nothing further.`,
+        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
       );
     },
   );

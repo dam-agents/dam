@@ -99,7 +99,6 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 import {
-  defaultOf,
   matchRosterName,
   orderAmbientReaders,
   routeMention,
@@ -907,13 +906,30 @@ export function createSlackWorker(
     }
   }
 
+  const AGENT_NAME_TTL_MS = 30_000;
+  const agentNameCache = new Map<string, { name: string; expiresAt: number }>();
+
   async function resolveAgentName(instanceName: string): Promise<string> {
+    const now = Date.now();
+    const cached = agentNameCache.get(instanceName);
+    if (cached && cached.expiresAt > now) return cached.name;
+    let name = instanceName;
     try {
       const agent = await agents().get(instanceName);
-      return agent?.name?.trim() || instanceName;
+      name = agent?.name?.trim() || instanceName;
     } catch {
-      return instanceName;
+      name = instanceName;
     }
+    if (agentNameCache.size > 500) {
+      for (const [key, entry] of agentNameCache) {
+        if (entry.expiresAt <= now) agentNameCache.delete(key);
+      }
+    }
+    agentNameCache.set(instanceName, {
+      name,
+      expiresAt: now + AGENT_NAME_TTL_MS,
+    });
+    return name;
   }
 
   async function resolveRoster(slackChannelId: string): Promise<RosterEntry[]> {
@@ -2039,7 +2055,7 @@ export function createSlackWorker(
     replyThreadTs: string;
     eventTs: string;
     hasThread: boolean;
-    messages: Array<{ text: string; eventTs: string }>;
+    messages: Array<{ text: string; eventTs: string; slackUserId?: string }>;
     images: FetchedImage[];
     files: FetchedFile[];
     droppedFiles: string[];
@@ -2055,6 +2071,9 @@ export function createSlackWorker(
       channel: args.channel,
       threadTs: args.hasThread ? args.replyThreadTs : m.eventTs,
       eventTs: m.eventTs,
+      text: m.text,
+      slackUserId: m.slackUserId ?? args.externalActorId,
+      hasThread: args.hasThread,
     }));
     const droppedNote = renderWithheldNote(
       args.droppedFiles.map((name) => ({
@@ -2313,7 +2332,11 @@ export function createSlackWorker(
               replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
               eventTs: last.eventTs,
               hasThread: inThread,
-              messages: batch.map(({ text, eventTs }) => ({ text, eventTs })),
+              messages: batch.map(({ text, eventTs, slackUserId }) => ({
+                text,
+                eventTs,
+                slackUserId,
+              })),
               images: batch.flatMap((m) => m.images),
               files: kept,
               droppedFiles: dropped.map((f) => f.name),
@@ -2545,6 +2568,18 @@ export function createSlackWorker(
             "This message was already handed to you by another agent, so it " +
             "cannot be handed on again. Answer it, or say why you can't.",
         };
+      if (ref.handedOff)
+        return {
+          error:
+            "You already handed this message to another agent — it cannot be " +
+            "handed on twice.",
+        };
+      if (!ref.text)
+        return {
+          error:
+            "This turn carries no message text to hand over. Answer it " +
+            "yourself, or reply explaining who should.",
+        };
 
       const roster = await resolveRoster(ref.channel);
       const { matches } = matchRosterName(roster, targetName);
@@ -2597,7 +2632,7 @@ export function createSlackWorker(
         ambient: target.ambient,
         roster,
         forwardedFrom: self,
-      }).catch((err) => {
+      }).catch(async (err) => {
         getLogger().warn(
           {
             agentId: target.instanceName,
@@ -2607,6 +2642,15 @@ export function createSlackWorker(
           },
           "slack.hand_off.failed",
         );
+        if (!ref.slackUserId) return;
+        await gateway
+          ?.postEphemeral({
+            channel: ref.channel,
+            user: ref.slackUserId,
+            threadTs: ref.threadTs,
+            text: `\`${self}\` passed your message to \`${target.name}\`, but it couldn't pick it up. Try again, or address \`${self}\` directly.`,
+          })
+          .catch(() => {});
       });
 
       getLogger().info(
