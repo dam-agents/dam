@@ -70,12 +70,13 @@ function harness(opts: {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: async () => null,
+      resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
         opts.boundChannelId ? [opts.boundChannelId] : [],
     },
     async () => {},
     async () => {},
+    async () => null,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

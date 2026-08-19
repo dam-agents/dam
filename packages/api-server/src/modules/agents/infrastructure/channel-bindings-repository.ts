@@ -85,15 +85,28 @@ export async function listChannelsByAgentTx(
   return rows.map(toChannelConfig);
 }
 
+function releasedSlackChannelIds(
+  rows: { type: string; config: unknown }[],
+): string[] {
+  return rows
+    .filter((r) => r.type === ChannelType.Slack)
+    .map((r) => (r.config as { slackChannelId?: string }).slackChannelId)
+    .filter((id): id is string => !!id);
+}
+
 export function deleteChannelsByAgent(db: Db) {
-  return async (agentId: string): Promise<void> => {
-    await db.delete(channels).where(eq(channels.agentId, agentId));
+  return async (agentId: string): Promise<string[]> => {
+    const deleted = await db
+      .delete(channels)
+      .where(eq(channels.agentId, agentId))
+      .returning({ type: channels.type, config: channels.config });
+    return releasedSlackChannelIds(deleted);
   };
 }
 
 export function deleteChannelByType(db: Db, owner: string) {
-  return async (agentId: string, type: ChannelType): Promise<void> => {
-    await db
+  return async (agentId: string, type: ChannelType): Promise<string[]> => {
+    const deleted = await db
       .delete(channels)
       .where(
         and(
@@ -101,17 +114,23 @@ export function deleteChannelByType(db: Db, owner: string) {
           eq(channels.owner, owner),
           eq(channels.type, type),
         ),
-      );
+      )
+      .returning({ type: channels.type, config: channels.config });
+    return releasedSlackChannelIds(deleted);
   };
 }
 
 export function deleteChannelsByAgentIds(db: Db, owner: string) {
-  return async (agentIds: string[]): Promise<void> => {
-    if (agentIds.length === 0) return;
+  return async (agentIds: string[]): Promise<string[]> => {
+    if (agentIds.length === 0) return [];
     const condition = owner
       ? and(inArray(channels.agentId, agentIds), eq(channels.owner, owner))
       : inArray(channels.agentId, agentIds);
-    await db.delete(channels).where(condition);
+    const deleted = await db
+      .delete(channels)
+      .where(condition)
+      .returning({ type: channels.type, config: channels.config });
+    return releasedSlackChannelIds(deleted);
   };
 }
 
@@ -124,40 +143,47 @@ export function allChannelAgentIds(db: Db) {
   };
 }
 
-export function findBySlackChannelId(db: Db) {
-  return async (
-    slackChannelId: string,
-  ): Promise<{
-    agentId: string;
-    owner: string;
-    ambient?: boolean;
-  } | null> => {
+export interface SlackBindingRow {
+  agentId: string;
+  owner: string;
+  ambient: boolean;
+  isDefault: boolean;
+}
+
+const slackChannelIs = (slackChannelId: string) =>
+  and(
+    eq(channels.type, ChannelType.Slack),
+    sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+  );
+
+export function findSlackBindingsByChannelId(db: Db) {
+  return async (slackChannelId: string): Promise<SlackBindingRow[]> => {
     const rows = await db
       .select({
         agentId: channels.agentId,
         owner: channels.owner,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
+        isDefault: sql<string | null>`${channels.config}->>'default'`,
+        createdAt: channels.createdAt,
       })
       .from(channels)
-      .where(
-        and(
-          eq(channels.type, ChannelType.Slack),
-          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    if (!row) return null;
-    return {
+      .where(slackChannelIs(slackChannelId))
+      .orderBy(channels.createdAt, channels.agentId);
+    return rows.map((row) => ({
       agentId: row.agentId,
       owner: row.owner,
-      ...(row.ambient === "true" ? { ambient: true } : {}),
-    };
+      ambient: row.ambient === "true",
+      isDefault: row.isDefault === "true",
+    }));
   };
 }
 
 export function setSlackChannelAmbient(db: Db) {
-  return async (slackChannelId: string, ambient: boolean): Promise<void> => {
+  return async (
+    agentId: string,
+    slackChannelId: string,
+    ambient: boolean,
+  ): Promise<void> => {
     await db
       .update(channels)
       .set({
@@ -166,28 +192,61 @@ export function setSlackChannelAmbient(db: Db) {
           : sql`${channels.config} - 'ambient'`,
       })
       .where(
-        and(
-          eq(channels.type, ChannelType.Slack),
-          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
-        ),
+        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
       );
   };
 }
 
 export function isSlackChannelUniqueViolation(e: unknown): boolean {
-  return isUniqueViolation(e, "channels_slack_channel_unique_idx");
+  return isUniqueViolation(e, "channels_slack_agent_channel_idx");
 }
 
 export function deleteSlackChannelBinding(db: Db) {
-  return async (slackChannelId: string): Promise<void> => {
+  return async (agentId: string, slackChannelId: string): Promise<void> => {
     await db
       .delete(channels)
       .where(
-        and(
-          eq(channels.type, ChannelType.Slack),
-          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
-        ),
+        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
       );
+  };
+}
+
+const noDefaultYet = (slackChannelId: string) =>
+  sql`NOT EXISTS (SELECT 1 FROM channels d WHERE d.type = 'slack' AND d.config->>'slackChannelId' = ${slackChannelId} AND d.config->>'default' = 'true')`;
+
+const MARK_DEFAULT = sql`${channels.config} || '{"default": true}'::jsonb`;
+
+export function claimSlackDefaultIfVacant(db: Db) {
+  return async (agentId: string, slackChannelId: string): Promise<boolean> => {
+    const claimed = await db
+      .update(channels)
+      .set({ config: MARK_DEFAULT })
+      .where(
+        and(
+          eq(channels.agentId, agentId),
+          slackChannelIs(slackChannelId),
+          noDefaultYet(slackChannelId),
+        ),
+      )
+      .returning({ agentId: channels.agentId });
+    return claimed.length > 0;
+  };
+}
+
+export function promoteSlackDefault(db: Db) {
+  return async (slackChannelId: string): Promise<string | null> => {
+    const promoted = await db
+      .update(channels)
+      .set({ config: MARK_DEFAULT })
+      .where(
+        and(
+          slackChannelIs(slackChannelId),
+          noDefaultYet(slackChannelId),
+          sql`${channels.agentId} = (SELECT o.agent_id FROM channels o WHERE o.type = 'slack' AND o.config->>'slackChannelId' = ${slackChannelId} ORDER BY o.created_at, o.agent_id LIMIT 1)`,
+        ),
+      )
+      .returning({ agentId: channels.agentId });
+    return promoted[0]?.agentId ?? null;
   };
 }
 

@@ -26,12 +26,20 @@ export const channels = pgTable(
     owner: text("owner").notNull(),
     type: text("type").notNull(),
     config: jsonb("config").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("channels_agent_type_idx").on(table.agentId, table.type),
-    uniqueIndex("channels_slack_channel_unique_idx")
-      .on(sql`(${table.config}->>'slackChannelId')`)
+    uniqueIndex("channels_slack_agent_channel_idx")
+      .on(table.agentId, sql`(${table.config}->>'slackChannelId')`)
       .where(sql`${table.type} = 'slack'`),
+    uniqueIndex("channels_slack_default_agent_idx")
+      .on(sql`(${table.config}->>'slackChannelId')`)
+      .where(
+        sql`${table.type} = 'slack' AND ${table.config}->>'default' = 'true'`,
+      ),
   ],
 );
 

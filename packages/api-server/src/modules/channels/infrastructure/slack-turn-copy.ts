@@ -14,13 +14,49 @@ export interface SlackTurnReach {
   ambient: boolean;
 }
 
+export interface SlackTurnRoster {
+  peers: { name: string; isDefault: boolean }[];
+  selfIsDefault: boolean;
+}
+
 export function botHistoryLabel(brand: { name: string }): string {
   return `the ${brand.name} bot (unattributed)`;
+}
+
+function joinNames(names: string[]): string {
+  const quoted = names.map((name) => `"${name}"`);
+  if (quoted.length <= 1) return quoted[0] ?? "";
+  return `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
+}
+
+function rosterSentences(
+  roster: SlackTurnRoster,
+  agentName: string | null,
+): string {
+  const defaultPeer = roster.peers.find((peer) => peer.isDefault);
+  const bare = roster.selfIsDefault
+    ? "A mention with no name after it reaches you — you are this " +
+      "conversation's default agent, so unaddressed questions land with you."
+    : defaultPeer
+      ? `A mention with no name after it reaches "${defaultPeer.name}", this ` +
+        "conversation's default agent — not you."
+      : "A mention with no name after it reaches this conversation's default " +
+        "agent.";
+  const self = agentName ? `"${agentName}"` : "your own name";
+  return (
+    `You are not the only agent here: ${joinNames(roster.peers.map((p) => p.name))} ` +
+    `${roster.peers.length === 1 ? "is" : "are"} also connected to this ` +
+    "conversation. A mention that starts with an agent's name reaches that " +
+    `agent, so a mention starting with ${self} reaches you. ${bare} When a ` +
+    "message would be better answered by one of the others, hand it to them " +
+    `with ${TOOL}hand_off_to_agent rather than answering outside what you know.`
+  );
 }
 
 function identitySentences(
   identity: SlackBotIdentity,
   reach: SlackTurnReach,
+  roster?: SlackTurnRoster,
 ): string {
   const { brand, botUserId, agentName } = identity;
   const tagged = botUserId ? ` (${botUserId} in the text)` : "";
@@ -47,7 +83,10 @@ function identitySentences(
     "agent here posts through this one bot, so a post from it is yours only " +
     (agentName
       ? `if its footer reads "${agentName}".`
-      : "if its footer names you.")
+      : "if its footer names you.") +
+    (roster && roster.peers.length > 0
+      ? ` ${rosterSentences(roster, agentName)}`
+      : "")
   );
 }
 
@@ -59,6 +98,7 @@ export function slackTurnContract(ctx: {
   permalink: string | null;
   identity: SlackBotIdentity;
   reach: SlackTurnReach;
+  roster?: SlackTurnRoster;
 }): string {
   const batchCount = ctx.batch?.count ?? 1;
   const multi = batchCount > 1;
@@ -81,7 +121,7 @@ export function slackTurnContract(ctx: {
     : `messageTs="${ctx.eventTs}"`;
   return [
     "<how-to-respond>",
-    identitySentences(ctx.identity, ctx.reach),
+    identitySentences(ctx.identity, ctx.reach, ctx.roster),
     "Nothing you write as plain text is delivered to Slack — only tool " +
       "calls reach the channel. To respond, call one of:",
     replyBullet,
@@ -119,16 +159,37 @@ export function slackTurnContract(ctx: {
 export function addressedGuidance(ctx: {
   isDirectMessage: boolean;
   botUserId: string | null;
+  forwardedFrom?: string;
+  ambiguousName?: string | null;
 }): string {
-  return [
-    "<addressed-to-you>",
-    ctx.isDirectMessage
+  const opening = ctx.forwardedFrom
+    ? `"${ctx.forwardedFrom}", another agent connected to this conversation, ` +
+      "handed this message to you because it judged you the better one to " +
+      "answer it. Treat it as addressed to you."
+    : ctx.isDirectMessage
       ? "This is a 1:1 direct message with you — every message here is " +
         "addressed to you."
       : "You were @-mentioned: this message is addressed to you" +
         (ctx.botUserId
           ? `, and the mention of ${ctx.botUserId} in it is you.`
-          : "."),
+          : ".");
+  return [
+    "<addressed-to-you>",
+    opening,
+    ...(ctx.ambiguousName
+      ? [
+          `The message opens with the name "${ctx.ambiguousName}", but more ` +
+            "than one agent connected here answers to it, so it came to you " +
+            "as this conversation's default agent. Say that plainly rather " +
+            "than guessing which one was meant.",
+        ]
+      : []),
+    ...(ctx.forwardedFrom
+      ? [
+          "This message was already handed on once, so you cannot hand it on " +
+            "again — answer it, or say why you can't.",
+        ]
+      : []),
     `Answer it. Only call ${TOOL}no_reply_needed when it genuinely needs no ` +
       "response — one you have already handled, for instance.",
     "</addressed-to-you>",
@@ -138,9 +199,38 @@ export function addressedGuidance(ctx: {
 export function ambientGuidance(
   brand: { name: string; short: string },
   agentName: string | null,
+  roster?: SlackTurnRoster,
+  answeredAlready: string[] = [],
 ): string {
+  const peers = roster?.peers ?? [];
   return [
     "<reading-along>",
+    ...(peers.length > 0
+      ? [
+          `${joinNames(peers.map((p) => p.name))} ` +
+            `${peers.length === 1 ? "is" : "are"} also connected to this ` +
+            "channel and read along here too. Agents take these messages one " +
+            "at a time, in a fixed order, so you are seeing this after the " +
+            "ones before you have finished. A message that names one of them " +
+            "is addressed to them, not to you — stay silent on it.",
+        ]
+      : []),
+    ...(answeredAlready.length > 0
+      ? [
+          `${joinNames(answeredAlready)} already replied to this in the ` +
+            "channel, before you. Read what they said before deciding: add " +
+            "something only if you have something they did not cover, and " +
+            "stay silent rather than repeating or contradicting them for the " +
+            "sake of it.",
+        ]
+      : [
+          ...(peers.length > 0
+            ? [
+                "Nobody before you has replied to this, so it is still " +
+                  "unanswered — do not assume one of the others will take it.",
+              ]
+            : []),
+        ]),
     "You are reading along in a shared Slack channel; the following " +
       "message(s) were not @-mentions. A message that calls you by name — " +
       `"${brand.name}", "${brand.short}", ` +

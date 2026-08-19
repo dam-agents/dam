@@ -270,9 +270,9 @@ export interface SlackBindingPort {
 export function executeSlackBind(deps: {
   owner: string | undefined;
   getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
-  findChannelBinding: (
+  findChannelBindings: (
     slackChannelId: string,
-  ) => Promise<{ agentId: string } | null>;
+  ) => Promise<{ agentId: string }[]>;
   connectShared: (
     agentId: string,
     slackChannelId: string,
@@ -301,8 +301,9 @@ export function executeSlackBind(deps: {
     const agent = await deps.getAgent(agentId);
     if (!agent) return err({ type: "AgentNotFound" as const });
 
-    const existing = await deps.findChannelBinding(flow.slackChannelId);
-    if (existing) return err({ type: "ChannelAlreadyBound" as const });
+    const existing = await deps.findChannelBindings(flow.slackChannelId);
+    if (existing.some((b) => b.agentId === agentId))
+      return err({ type: "ChannelAlreadyBound" as const });
 
     const connected = await deps.connectShared(agentId, flow.slackChannelId);
     if (!connected.ok) {
@@ -325,12 +326,16 @@ export function executeSlackBind(deps: {
     });
 
     const isDm = flow.slackChannelId.startsWith("D");
+    const alongside =
+      existing.length === 1 ? "one agent" : `${existing.length} agents`;
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
       isDm
         ? `This DM is now connected to ${agent.name}. Message it here; run the unbind command to disconnect.`
-        : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
+        : existing.length > 0
+          ? `${agent.name} is now connected to this channel, alongside ${alongside} already here. Start a mention with an agent's name to reach that one; a mention with no name goes to the channel's default agent. Run the unbind command to disconnect.`
+          : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
     );
     if ("error" in post) {
       securityLog("warn", "channel.chat_bound.notify_failed", {
@@ -445,12 +450,15 @@ export function createAgentsService(deps: {
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (agentId: string, channel: ChannelConfig) => Promise<void>;
-  deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
+  deleteChannelByType: (
+    agentId: string,
+    type: ChannelType,
+  ) => Promise<string[]>;
   deleteSlackChannelByAgent: (
     agentId: string,
     slackChannelId: string,
   ) => Promise<boolean>;
-  deleteChannelsByAgentIds: (agentIds: string[]) => Promise<void>;
+  deleteChannelsByAgentIds: (agentIds: string[]) => Promise<string[]>;
   unitOfWork: UnitOfWork;
   channelsTxRepo: {
     upsertChannel: (
@@ -460,10 +468,19 @@ export function createAgentsService(deps: {
     ) => Promise<void>;
     listByAgent: (tx: Tx, agentId: string) => Promise<ChannelConfig[]>;
   };
-  findSlackChannelBinding: (slackChannelId: string) => Promise<{
-    agentId: string;
-    ambient?: boolean;
-  } | null>;
+  findSlackBindings: (slackChannelId: string) => Promise<
+    {
+      agentId: string;
+      owner: string;
+      ambient: boolean;
+      isDefault: boolean;
+    }[]
+  >;
+  claimSlackDefaultIfVacant: (
+    agentId: string,
+    slackChannelId: string,
+  ) => Promise<boolean>;
+  promoteSlackDefault: (slackChannelId: string) => Promise<string | null>;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
 }): AgentsService {
@@ -511,9 +528,9 @@ export function createAgentsService(deps: {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
-    const existing = await deps.findSlackChannelBinding(slackChannelId);
-    if (existing && existing.agentId !== id)
-      return err({ type: "ChannelAlreadyBound" as const });
+    const existing = (await deps.findSlackBindings(slackChannelId)).find(
+      (b) => b.agentId === id,
+    );
 
     const requestedAmbient = ambient === true;
 
@@ -523,6 +540,7 @@ export function createAgentsService(deps: {
           type: ChannelType.Slack,
           slackChannelId,
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(existing?.isDefault ? { default: true } : {}),
         });
       } catch (e) {
         if (isSlackChannelUniqueViolation(e)) {
@@ -535,6 +553,8 @@ export function createAgentsService(deps: {
     });
 
     if (!txResult.ok) return txResult;
+
+    await deps.claimSlackDefaultIfVacant(id, slackChannelId);
 
     emit({
       type: EventType.SlackConnected,
@@ -1049,13 +1069,19 @@ export function createAgentsService(deps: {
       if (!infra) return null;
 
       if (slackChannelId === undefined) {
-        await deps.deleteChannelByType(id, ChannelType.Slack);
+        const releasedAll = await deps.deleteChannelByType(
+          id,
+          ChannelType.Slack,
+        );
+        for (const channelId of releasedAll)
+          await deps.promoteSlackDefault(channelId);
         emit({ type: EventType.SlackDisconnected, agentId: id });
         return project(infra);
       }
 
       const released = await deps.deleteSlackChannelByAgent(id, slackChannelId);
       if (released) {
+        await deps.promoteSlackDefault(slackChannelId);
         emit({
           type: EventType.SlackDisconnected,
           agentId: id,
@@ -1111,7 +1137,7 @@ export function createAgentsService(deps: {
           const infra = await deps.repo.get(id, deps.owner);
           return infra ? { id: infra.id, name: infra.name } : null;
         },
-        findChannelBinding: deps.findSlackChannelBinding,
+        findChannelBindings: deps.findSlackBindings,
         connectShared: (id, slackChannelId) =>
           connectSlackImpl(id, slackChannelId),
         binding,

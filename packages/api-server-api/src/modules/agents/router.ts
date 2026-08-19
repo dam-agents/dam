@@ -187,7 +187,7 @@ export const agentsRouter = t.router({
         case "ChannelAlreadyBound":
           throw new TRPCError({
             code: "CONFLICT",
-            message: "Slack channel already bound",
+            message: "This agent is already connected to that Slack channel",
           });
       }
     }),
@@ -228,7 +228,7 @@ export const agentsRouter = t.router({
         case "ChannelAlreadyBound":
           throw new TRPCError({
             code: "CONFLICT",
-            message: "This channel is already connected to an agent",
+            message: "That agent is already connected to this channel",
           });
       }
     }),

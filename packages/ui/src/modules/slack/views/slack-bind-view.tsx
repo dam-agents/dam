@@ -72,7 +72,7 @@ export function SlackBindView() {
   }
   if (isLoading) {
     return (
-      <Page title="Connect this channel to an agent">
+      <Page title="Connect an agent to this channel">
         <ListSkeleton rows={3} />
       </Page>
     );
@@ -96,7 +96,7 @@ export function SlackBindView() {
   const hasAgents = displayedAgents.length > 0;
 
   return (
-    <Page title="Connect this channel to an agent">
+    <Page title="Connect an agent to this channel">
       <p className="text-sm text-muted-foreground">
         {hasAgents
           ? "Everyone in this Slack channel will be able to use the agent you pick. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn."
@@ -154,8 +154,13 @@ function BindSuccess({
     >
       <p className="text-sm text-muted-foreground">
         This channel is now connected to <strong>{agentName}</strong>. Return to
-        Slack — the bot has posted a confirmation. Run{" "}
-        <code>/{brandShort} unbind</code> there to disconnect.
+        Slack — the bot has posted a confirmation. A channel can hold several
+        agents: start a mention with an agent's name to reach that one, or
+        mention the bot with no name to reach the channel's default agent. Run{" "}
+        <code>
+          /{brandShort} unbind {agentName}
+        </code>{" "}
+        there to disconnect this one.
       </p>
       <DashboardButton label="Go to dashboard" />
     </Page>

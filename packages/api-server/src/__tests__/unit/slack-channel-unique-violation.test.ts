@@ -3,7 +3,7 @@ import { isSlackChannelUniqueViolation } from "../../modules/agents/infrastructu
 
 const driverError = {
   code: "23505",
-  constraint_name: "channels_slack_channel_unique_idx",
+  constraint_name: "channels_slack_agent_channel_idx",
 };
 
 class DrizzleQueryErrorLike extends Error {
@@ -45,7 +45,7 @@ describe("isSlackChannelUniqueViolation", () => {
     expect(
       isSlackChannelUniqueViolation({
         code: "23503",
-        constraint_name: "channels_slack_channel_unique_idx",
+        constraint_name: "channels_slack_agent_channel_idx",
       }),
     ).toBe(false);
   });

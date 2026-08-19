@@ -87,15 +87,18 @@ function harness(opts?: {
     createMemoryTtlStore<SlackOAuthPending>(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: async () => ({
-        instanceName: "agent-1",
-        owner: OWNER,
-        mode: "shared" as const,
-        ambient: true,
-      }),
+      resolveSlackBindings: async () => [
+        {
+          instanceName: "agent-1",
+          owner: OWNER,
+          ambient: true,
+          isDefault: true,
+        },
+      ],
     } as never,
     async () => {},
     async () => {},
+    async () => null,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

@@ -36,8 +36,8 @@ async function harness(opts?: {
       opts?.postError ? { error: opts.postError } : { ok: true as const },
     ),
   };
-  const findChannelBinding = vi.fn(async () =>
-    opts?.boundTo ? { agentId: opts.boundTo } : null,
+  const findChannelBindings = vi.fn(async () =>
+    opts?.boundTo ? [{ agentId: opts.boundTo }] : [],
   );
   const connectShared = vi.fn(
     async (): Promise<ConnectSlackResult> =>
@@ -50,12 +50,12 @@ async function harness(opts?: {
     owner: opts?.owner === undefined ? OWNER : opts.owner,
     getAgent: async (id) =>
       id === "agent-1" ? { id: "agent-1", name: "my-agent" } : null,
-    findChannelBinding,
+    findChannelBindings,
     connectShared,
     binding,
   });
 
-  return { run, store, flowId, binding, findChannelBinding, connectShared };
+  return { run, store, flowId, binding, findChannelBindings, connectShared };
 }
 
 describe("slack bind flow", () => {
@@ -96,23 +96,34 @@ describe("slack bind flow", () => {
     });
   });
 
-  it("rejects an already-bound channel outright, keeping the flow alive", async () => {
+  /**
+   * TEST_SCENARIO: a channel may hold several agents, so joining one that
+   * another agent already serves succeeds instead of being refused.
+   */
+  it("connects alongside an agent already in the channel", async () => {
     const h = await harness({ boundTo: "agent-2" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
-      ok: false,
-      error: { type: "ChannelAlreadyBound" },
+      ok: true,
+      value: { channelTitle: "general" },
     });
-    expect(h.connectShared).not.toHaveBeenCalled();
-    expect(await h.store.peek(h.flowId)).not.toBe(null);
+    expect(h.connectShared).toHaveBeenCalledWith("agent-1", "C-1");
+    const [, , text] = vi.mocked(h.binding.postMessage).mock.calls[0]!;
+    expect(text).toContain("alongside one agent");
+    expect(text).toContain("Start a mention with an agent's name");
   });
 
-  it("also refuses re-binding the SAME agent (no in-place override)", async () => {
+  /**
+   * TEST_SCENARIO: the same agent twice in one conversation is still refused —
+   * that is what the remaining uniqueness rule protects.
+   */
+  it("refuses re-binding the SAME agent, keeping the flow alive", async () => {
     const h = await harness({ boundTo: "agent-1" });
     expect(await h.run("agent-1", h.flowId)).toEqual({
       ok: false,
       error: { type: "ChannelAlreadyBound" },
     });
     expect(h.connectShared).not.toHaveBeenCalled();
+    expect(await h.store.peek(h.flowId)).not.toBe(null);
   });
 
   it("maps a lost connect race to ChannelAlreadyBound", async () => {

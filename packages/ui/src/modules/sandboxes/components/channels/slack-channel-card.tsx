@@ -80,7 +80,11 @@ function SlackChannelRow({
   const handleDisconnect = async () => {
     if (
       await showConfirm(
-        `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.`,
+        `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.${
+          channel.default
+            ? " It is the channel's default agent, so if other agents are connected there, the longest-connected one takes over unnamed mentions."
+            : ""
+        }`,
         "Disconnect Slack channel?",
         { kind: "destructive", confirmLabel: "Disconnect" },
       )
@@ -99,6 +103,9 @@ function SlackChannelRow({
         </p>
         <p className="truncate text-sm text-muted-foreground">
           {channel.ambient ? "Ambient on" : "Ambient off"}
+          {channel.default
+            ? " · Default agent — a mention with no name reaches this sandbox"
+            : " · Reached by name"}
         </p>
       </div>
       <DropdownMenu>
