@@ -183,14 +183,18 @@ export function createConnectionsService(deps: {
         clientSecret,
       }),
     );
-    await deps.secretStore.putFields(auth.accessTokenRef, {
-      [auth.clientSecretRef.field]: clientSecret,
-      access_token: minted.accessToken,
-      ...buildConnectionSdsFields(conn.contributions, minted.accessToken),
-    });
-    await deps.repo.updateAuth(conn.id, {
-      ...withoutRefreshFailureMarker(auth),
-      expiresAt: minted.expiresAt,
+    await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+      const fresh = await deps.repo.get(conn.id, deps.ownerId);
+      if (!fresh || fresh.auth.kind !== "client-credentials") return;
+      await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
+        [fresh.auth.clientSecretRef.field]: clientSecret,
+        access_token: minted.accessToken,
+        ...buildConnectionSdsFields(fresh.contributions, minted.accessToken),
+      });
+      await deps.repo.updateAuth(conn.id, {
+        ...withoutRefreshFailureMarker(fresh.auth),
+        expiresAt: minted.expiresAt,
+      });
     });
   }
 
@@ -208,17 +212,21 @@ export function createConnectionsService(deps: {
       });
       return { privateKeyPem, minted };
     });
-    await deps.secretStore.putFields(auth.accessTokenRef, {
-      [auth.privateKeyRef.field]: rotated.privateKeyPem,
-      access_token: rotated.minted.accessToken,
-      ...buildConnectionSdsFields(
-        conn.contributions,
-        rotated.minted.accessToken,
-      ),
-    });
-    await deps.repo.updateAuth(conn.id, {
-      ...withoutRefreshFailureMarker(auth),
-      expiresAt: rotated.minted.expiresAt,
+    await deps.connectionLock(gitHubAppMintLockKey(conn.id), async () => {
+      const fresh = await deps.repo.get(conn.id, deps.ownerId);
+      if (!fresh || fresh.auth.kind !== "github-app") return;
+      await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
+        [fresh.auth.privateKeyRef.field]: rotated.privateKeyPem,
+        access_token: rotated.minted.accessToken,
+        ...buildConnectionSdsFields(
+          fresh.contributions,
+          rotated.minted.accessToken,
+        ),
+      });
+      await deps.repo.updateAuth(conn.id, {
+        ...withoutRefreshFailureMarker(fresh.auth),
+        expiresAt: rotated.minted.expiresAt,
+      });
     });
   }
 
@@ -240,15 +248,17 @@ export function createConnectionsService(deps: {
 
     try {
       await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh || fresh.auth.kind !== "oauth") return;
         const next = await refreshOAuthAccessToken({
-          conn,
-          auth,
+          conn: fresh,
+          auth: fresh.auth,
           engine: deps.oauthEngine,
           templates: deps.templates,
           secretStore: deps.secretStore,
         });
         await deps.repo.updateAuth(conn.id, {
-          ...withoutRefreshFailureMarker(auth),
+          ...withoutRefreshFailureMarker(fresh.auth),
           expiresAt: next.expiresAt,
         });
       });
@@ -409,11 +419,11 @@ export function createConnectionsService(deps: {
         case "none":
           break;
       }
+      await deps.repo.delete(id, deps.ownerId);
+
       for (const path of paths) {
         await deps.secretStore.delete({ path });
       }
-
-      await deps.repo.delete(id, deps.ownerId);
 
       if (affectedAgents.length > 0) {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);
@@ -423,14 +433,19 @@ export function createConnectionsService(deps: {
         ]);
         for (const agentId of affectedAgents) {
           try {
-            const grantedConnections =
-              await deps.repo.listConnectionsForAgent(agentId);
-            await deps.fanOut.apply({
-              agentId,
-              ownerId: deps.ownerId,
-              grantedConnections,
-              allOwnerConnectionIds,
-            });
+            await deps.connectionLock(
+              `agent:connections:${agentId}`,
+              async () => {
+                const grantedConnections =
+                  await deps.repo.listConnectionsForAgent(agentId);
+                await deps.fanOut.apply({
+                  agentId,
+                  ownerId: deps.ownerId,
+                  grantedConnections,
+                  allOwnerConnectionIds,
+                });
+              },
+            );
           } catch (err) {
             securityLog("warn", "connection.delete.fanout_failed", {
               category: "credential",
@@ -657,6 +672,9 @@ export function createConnectionsService(deps: {
           contributions,
         });
       } catch (err) {
+        if (secretPath) {
+          await deps.secretStore.delete({ path: secretPath }).catch(() => {});
+        }
         if (isUniqueViolation(err)) {
           throw new TRPCError({
             code: "CONFLICT",

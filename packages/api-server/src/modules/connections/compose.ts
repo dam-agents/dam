@@ -91,6 +91,7 @@ export function composeConnectionsForOwner(opts: {
   brandName: string;
 }): ConnectionsService {
   const repo = createConnectionsRepository(opts.db);
+  const connectionLock = createXactLock(opts.db);
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
@@ -116,6 +117,7 @@ export function composeConnectionsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
     ownerId: opts.ownerId,
     callbackUrl: opts.oauthCallbackUrl,
+    connectionLock,
   });
 
   return createConnectionsService({
@@ -129,6 +131,6 @@ export function composeConnectionsForOwner(opts: {
     githubAppEngine: opts.githubAppEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
-    connectionLock: createXactLock(opts.db),
+    connectionLock,
   });
 }

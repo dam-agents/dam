@@ -353,7 +353,13 @@ export async function remintOne(
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
   await withLock(connectionRefreshLockKey(conn.id), async () => {
     const current = await readAuth(deps.db, conn.id);
-    if (!current || current.kind !== "client-credentials") return;
+    if (
+      !current ||
+      current.kind !== "client-credentials" ||
+      current.expiresAt !== auth.expiresAt
+    ) {
+      return;
+    }
 
     const next = await mintClientCredentialsToken(deps.engine, {
       connectionRef: `connection:${conn.id}:${conn.templateId}`,
@@ -361,7 +367,7 @@ export async function remintOne(
       clientSecret,
     });
 
-    await deps.secretStore.putFields(auth.accessTokenRef, {
+    await deps.secretStore.putFields(current.accessTokenRef, {
       access_token: next.accessToken,
       ...buildConnectionSdsFields(conn.contributions, next.accessToken),
     });
@@ -400,7 +406,8 @@ export async function remintGitHubAppOne(
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
   await withLock(gitHubAppMintLockKey(conn.id), async () => {
-    const current = (await readGitHubAppAuth(deps.db, conn.id)) ?? auth;
+    const current = await readGitHubAppAuth(deps.db, conn.id);
+    if (!current || current.expiresAt !== auth.expiresAt) return;
 
     const next = await mintGitHubAppToken(deps.githubAppEngine, {
       connectionRef: `connection:${conn.id}:${conn.templateId}`,
@@ -408,7 +415,7 @@ export async function remintGitHubAppOne(
       privateKeyPem,
     });
 
-    await deps.secretStore.putFields(auth.accessTokenRef, {
+    await deps.secretStore.putFields(current.accessTokenRef, {
       access_token: next.accessToken,
       ...buildConnectionSdsFields(conn.contributions, next.accessToken),
     });

@@ -17,6 +17,8 @@ import { upsertGitconfigContribution } from "../domain/gitconfig-contribution.js
 import { resolveGitHubIdentity } from "../infrastructure/github-identity.js";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import type { XactLock } from "../../../core/xact-lock.js";
+import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 
@@ -48,6 +50,7 @@ export function createOAuthFlowService(deps: {
   runtimeMutator: RuntimeMutator;
   ownerId: string;
   callbackUrl: string;
+  connectionLock: XactLock;
 }): OAuthFlowService {
   return {
     async startOAuth(connectionId, opts): Promise<{ authUrl: string }> {
@@ -101,35 +104,38 @@ export function createOAuthFlowService(deps: {
       const provider = await buildProvider(conn, conn.auth, deps);
       const tokens = await deps.engine.exchange({ ...pending, provider }, code);
 
-      const sdsFields = buildConnectionSdsFields(
-        conn.contributions,
-        tokens.accessToken,
-      );
-      const fields: Record<string, string> = {
-        access_token: tokens.accessToken,
-        ...sdsFields,
-      };
-      if (tokens.refreshToken && pending.ctx.refreshTokenRef) {
-        fields.refresh_token = tokens.refreshToken;
-      }
-      await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
-
       const isReauth =
         conn.auth.kind === "oauth" &&
         (conn.auth.connectedAt !== undefined ||
           conn.auth.expiresAt !== undefined);
 
-      if (conn.auth.kind === "oauth") {
+      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+        const fresh = await deps.repo.get(conn.id, pending.ctx.ownerId);
+        if (!fresh || fresh.auth.kind !== "oauth") return;
+
+        const sdsFields = buildConnectionSdsFields(
+          fresh.contributions,
+          tokens.accessToken,
+        );
+        const fields: Record<string, string> = {
+          access_token: tokens.accessToken,
+          ...sdsFields,
+        };
+        if (tokens.refreshToken && pending.ctx.refreshTokenRef) {
+          fields.refresh_token = tokens.refreshToken;
+        }
+        await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
+
         const updatedAuth: ConnectionAuthConfig = {
-          ...withoutRefreshFailureMarker(conn.auth),
+          ...withoutRefreshFailureMarker(fresh.auth),
           connectedAt: Math.floor(Date.now() / 1000),
-          scopes: tokens.scopes ?? pending.provider.scopes ?? conn.auth.scopes,
+          scopes: tokens.scopes ?? pending.provider.scopes ?? fresh.auth.scopes,
           ...(tokens.expiresAt !== undefined
             ? { expiresAt: tokens.expiresAt }
             : {}),
         };
         await deps.repo.updateAuth(conn.id, updatedAuth);
-      }
+      });
 
       const template = deps.templates.get(conn.templateId);
       securityLog("info", "oauth.token_mint", {
