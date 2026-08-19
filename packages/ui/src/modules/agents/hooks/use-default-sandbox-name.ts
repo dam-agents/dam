@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
-import {
-  nextSandboxName,
-  type SandboxNameKind,
-} from "../../sandboxes/lib/sandbox-name.js";
 import { useAgents } from "../api/queries.js";
+import { nextSandboxName, type SandboxNameKind } from "../lib/sandbox-name.js";
 import {
   isCodingAgent,
   isExperimentSandbox,
@@ -17,11 +14,12 @@ const MATCHES_KIND = {
   "knowledge-base": isKnowledgeBase,
 } as const;
 
-export function useDefaultSandboxName(kind: SandboxNameKind): string | null {
+function useDefaultSandboxName(kind: SandboxNameKind): string {
   const { data } = useAgents();
   return useMemo(() => {
-    if (!data) return null;
-    const taken = data.list.filter(MATCHES_KIND[kind]).map((a) => a.name);
+    const taken = (data?.list ?? [])
+      .filter(MATCHES_KIND[kind])
+      .map((a) => a.name);
     return nextSandboxName(kind, taken);
   }, [data, kind]);
 }
@@ -32,10 +30,14 @@ export function usePrefilledSandboxName(
   setName: (name: string) => void,
 ): void {
   const suggestion = useDefaultSandboxName(kind);
-  const prefilled = useRef(false);
+  const suggested = useRef<string | null>(null);
   useEffect(() => {
-    if (prefilled.current || suggestion === null) return;
-    prefilled.current = true;
-    if (name.length === 0) setName(suggestion);
+    const stillOurs =
+      suggested.current === null
+        ? name.trim().length === 0
+        : name === suggested.current;
+    if (!stillOurs || name === suggestion) return;
+    suggested.current = suggestion;
+    setName(suggestion);
   }, [suggestion, name, setName]);
 }
