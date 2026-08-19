@@ -80,7 +80,7 @@ export function HomeView() {
               included={included}
               onToggleSource={toggleSource}
             />
-            {visible.length > 0 && (
+            {stats.running + stats.toReview > 0 && (
               <div className="flex items-center gap-4">
                 <p className="text-sm text-muted-foreground tabular-nums">
                   <span className="font-medium text-foreground">

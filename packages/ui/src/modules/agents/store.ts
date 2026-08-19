@@ -126,12 +126,12 @@ export const createAgentsSlice: StateCreator<
     history.pushState(
       null,
       "",
-      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "list" }),
+      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "home" }),
     );
     get().resetChatContext();
     set({
       selectedAgent: null,
-      view: fromKnowledgeBase ? "knowledge-bases" : "list",
+      view: fromKnowledgeBase ? "knowledge-bases" : "home",
     });
   },
 });

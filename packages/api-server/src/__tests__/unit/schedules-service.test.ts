@@ -121,8 +121,7 @@ describe("createRRule createdBy", () => {
 });
 
 describe("listForOwner", () => {
-  // TEST_SCENARIO: an owner-wide read is an authorization boundary — a manual smoke test cannot
-  // show the absence of another owner's rows, so pin that the service scopes the query itself.
+  // TEST_SCENARIO: an owner-wide read is an authorization boundary a smoke test cannot cover.
   it("asks the repository only for the caller's own schedules", async () => {
     const seen: { owner?: string; limit?: number }[] = [];
     const repo = {
@@ -143,19 +142,42 @@ describe("listForOwner", () => {
     ]);
   });
 
-  it("never lets a caller choose whose schedules it reads", async () => {
+  // TEST_SCENARIO: an agent-bound API key must not read schedules for sandboxes it is refused on.
+  it("drops schedules outside an agent-bound caller's binding", async () => {
     const repo = {
-      async listForOwner(owner: string) {
-        return owner === OWNER
-          ? [{ id: "mine", agentId: "agent-1", name: "mine", spec: makeCurrent().spec }]
-          : [{ id: "theirs", agentId: "agent-9", name: "theirs", spec: makeCurrent().spec }];
+      async listForOwner() {
+        return [
+          {
+            id: "a",
+            agentId: "agent-1",
+            name: "mine",
+            spec: makeCurrent().spec,
+          },
+          {
+            id: "b",
+            agentId: "agent-9",
+            name: "other",
+            spec: makeCurrent().spec,
+          },
+        ];
       },
     } as unknown as SchedulesRepository;
     const runner = { async sync() {} } as unknown as SchedulerRunner;
-    const service = createSchedulesService({ repo, runner, owner: OWNER });
 
-    const rows = await service.listForOwner();
+    const bound = createSchedulesService({
+      repo,
+      runner,
+      owner: OWNER,
+      agentBinding: ["agent-1"],
+    });
+    const unbound = createSchedulesService({
+      repo,
+      runner,
+      owner: OWNER,
+      agentBinding: "*",
+    });
 
-    expect(rows.map((r) => r.id)).toEqual(["mine"]);
+    expect((await bound.listForOwner()).map((r) => r.id)).toEqual(["a"]);
+    expect((await unbound.listForOwner()).map((r) => r.id)).toEqual(["a", "b"]);
   });
 });

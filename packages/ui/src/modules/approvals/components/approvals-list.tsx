@@ -99,7 +99,7 @@ function ApprovalRow({
               size="xs"
               className={action.id === "allow-host" ? "min-w-0 max-w-full" : ""}
               disabled={action.disabled}
-              onClick={action.run}
+              onClick={() => void action.run()}
               tooltip={action.tooltip}
             >
               <action.icon size={11} />

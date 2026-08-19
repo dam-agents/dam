@@ -29,9 +29,8 @@ export function FeedApprovalCard({ approval, agentName, meta }: Props) {
   const allowOnce = actions.find((a) => a.id === "allow-once");
   const rest = actions.filter((a) => a.id !== "allow-once");
 
-  const act = (run: () => void, resolvedLabel: string) => {
-    run();
-    setResolved(resolvedLabel);
+  const act = async (run: () => Promise<boolean>, resolvedLabel: string) => {
+    if (await run()) setResolved(resolvedLabel);
   };
 
   return (
@@ -80,7 +79,7 @@ export function FeedApprovalCard({ approval, agentName, meta }: Props) {
                 size="sm"
                 disabled={allowOnce.disabled}
                 tooltip={allowOnce.tooltip}
-                onClick={() => act(allowOnce.run, allowOnce.resolvedLabel)}
+                onClick={() => void act(allowOnce.run, allowOnce.resolvedLabel)}
               >
                 Allow
               </Button>
@@ -103,7 +102,8 @@ export function FeedApprovalCard({ approval, agentName, meta }: Props) {
                     key={action.id}
                     disabled={action.disabled}
                     className={action.danger ? "text-destructive" : undefined}
-                    onSelect={() => act(action.run, action.resolvedLabel)}
+                    onSelect={() => void act(action.run, action.resolvedLabel)}
+                    title={action.tooltip}
                   >
                     {action.label}
                   </DropdownMenuItem>
