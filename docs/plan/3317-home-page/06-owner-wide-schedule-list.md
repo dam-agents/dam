@@ -9,8 +9,10 @@ over the rest. `schedules.list` today requires an `agentId` and checks the calle
 agent, so there is no way to ask for "my schedules". This is the plan's only contract change; slice 07
 builds the widget on top of it.
 
-This is server-side TypeScript — apply `/typescript-engineering` and read
-[the schedules architecture page](../../architecture/) for the subsystem before changing its surface.
+This is server-side TypeScript — apply `/typescript-engineering`. There is no `schedules.md`; the
+subsystem is documented in [agent-lifecycle](../../architecture/agent-lifecycle.md) — Postgres rows
+owned by the api-server, each armed as a delayed job on a Redis-backed queue, with quiet-hours
+skipping and per-schedule session continuity. Read that before changing its surface.
 Note the plan's other slices are UI; keep this one narrow.
 
 ## Implementation plan

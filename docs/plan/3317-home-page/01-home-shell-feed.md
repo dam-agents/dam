@@ -32,7 +32,10 @@ separate query so a slow or failing one cannot blank the others:
   below — never dial or query a hibernated agent.
 - **In-progress work.** `agents.backgroundWork` per running agent (tRPC, `readAgentProcedure`, takes
   `{ id }`). Returns `SessionBackgroundWork[] | null`; `null` is a 404 and means "nothing to show",
-  not an error to surface.
+  not an error to surface. It carries **no timestamp** — the shape is
+  `{ sessionId, items: [{ id, description?, command? }] }` — so the feed takes the sort key from the
+  session the work belongs to, joining `sessionId` against the ACP session list below. In-progress
+  therefore depends on that dial too; it is not an ACP-free path.
 - **Unread sessions.** `listAgentSessions(agentId)` from
   `modules/sessions/api/acp-session-ops.ts` per running agent — this is an ACP dial, so it is the
   expensive one. Unread is `Date.parse(updatedAt) > Date.parse(seenAt)`, exactly as
@@ -47,7 +50,9 @@ an unavailable backend as "render nothing" rather than an error.
 ### 3. Feed item shape — `modules/home/lib/feed-item.ts`
 
 A discriminated union over the three kinds, each carrying the timestamp the feed sorts on and the
-agent it belongs to. Keep it a pure mapping from query results to items, with no React in the file, so
+agent it belongs to. Sort keys: an approval's own `createdAt`; for unread and in-progress, the
+session's `updatedAt`. An in-progress item whose session is missing from the ACP list has no sort key —
+put it at the top rather than dropping it, since it is by definition happening now. Keep it a pure mapping from query results to items, with no React in the file, so
 the ordering rule is testable without a renderer. Sort newest first; break ties on a stable id so the
 list does not reshuffle between refetches.
 
@@ -59,9 +64,13 @@ render nothing there rather than a placeholder.
 
 Register the view: `home` in `modules/platform/lib/routes.ts` at `/`, the `ParameterlessView` union in
 `modules/platform/store/navigation.ts`, the round-trip fixture in `src/__tests__/unit/routes.test.ts`,
-and the render branch in `app.tsx`. `/` currently resolves to the `list` view — keep `list` resolving
-so slice 09 can decide its fate deliberately; this slice may mount Home behind a route of its own
-(`/home`) if that keeps the diff honest, as long as slice 09 makes `/` land here.
+and the render branch in `app.tsx`.
+
+**Home takes `/` in this slice.** `/` resolves to the `list` view today; repoint it to Home now rather
+than staging it behind a second route. Keep `list` reachable on a route of its own so nothing is
+stranded and the sandbox inventory stays available — slice 09 decides whether it survives. Anything
+that navigated to `list` as "go home" (`setView("list")` call sites, the rail's Home destination)
+should now reach Home; grep for them and repoint.
 
 ### 5. Cards — `modules/home/components/`
 
@@ -87,7 +96,8 @@ prototype's `BlockedCardsStacked` and `RunningSection`, and the read/unread trea
 - [ ] The unread predicate lives in one place and `sessions-sidebar.tsx` uses it.
 - [ ] With no sandboxes, Home shows the entry points rather than an empty feed.
 - [ ] With sandboxes but none running, the feed still shows pending approvals.
-- [ ] The route round-trips through `parseRoute`/`routeToPath`.
+- [ ] `/` resolves to Home, the route round-trips through `parseRoute`/`routeToPath`, and nothing that
+      meant "go home" still lands on the old view.
 
 ## Smoke test
 

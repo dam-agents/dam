@@ -14,13 +14,10 @@ Apply the `/react-ui-engineering` skill.
 
 ## Implementation plan
 
-### 1. Home becomes the landing route
+### 1. Settle the old Home view
 
-Slice 01 may have mounted Home beside the existing `list` view rather than at `/`. Settle it here:
-`/` resolves to Home in `modules/platform/lib/routes.ts`, and the round-trip fixture in
-`src/__tests__/unit/routes.test.ts` reflects it.
-
-Decide what happens to `modules/agents/views/list-view.tsx`, today's Home — the sandbox inventory with
+Slice 01 already made `/` resolve to Home and left `list` reachable on its own route. Decide here
+what happens to `modules/agents/views/list-view.tsx`, today's Home — the sandbox inventory with
 the budget meter and the sandbox list. Home's compute widget (05) supersedes the meter, and the sandbox
 list has its own destinations now (Coding agents, Experiments, Knowledge bases). Either keep it on a
 route of its own or delete it; grep for every entry point first, and if you delete it, take
@@ -80,7 +77,7 @@ Home replacing the inbox as the landing surface is a behavioral change to a desc
 - [ ] `mise run --force ui:check`, `--force ui:test`, `--force e2e-playwright:check`,
       `--force docs:check` and `--force common:check:comment-types` pass.
 - [ ] `mise run --force test` passes.
-- [ ] `/` lands on Home; `/inbox` resolves to Home and `routeToPath` never emits it.
+- [ ] `/inbox` resolves to Home and `routeToPath` never emits it.
 - [ ] No file imports the deleted view; nothing the feed or pill needs was deleted with it.
 - [ ] The pending count sits on Home in both the rail and the mobile bar, and Inbox appears in neither.
 - [ ] `grep -ri inbox packages/ui docs` returns nothing describing a current surface.

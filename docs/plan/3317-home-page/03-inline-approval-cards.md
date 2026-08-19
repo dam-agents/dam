@@ -9,7 +9,9 @@ Approvals appear in the feed after slice 01 but do nothing. This slice gives the
 set inline, so a user never leaves Home to unblock an agent. It is also the slice slice 08 reuses for
 the floating pill, and the reason slice 09 can retire `/inbox`.
 
-Apply the `/react-ui-engineering` skill.
+Apply the `/react-ui-engineering` skill. Egress approvals — rule match, hold, approval — are described
+in [security-and-credentials](../../architecture/security-and-credentials.md); read that before
+changing how one is actioned.
 
 ## Implementation plan
 
