@@ -30,16 +30,24 @@ export type Route =
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
-  | { view: "sandbox-new" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "coding-agents" }
+  | { view: "coding-agent-new" }
   | { view: "experiments" }
+  | { view: "experiment-new" }
+  | { view: "knowledge-base-new" }
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
   | { view: "knowledge-base-config"; agentId: string }
   | { view: "artifacts" };
 
 export type View = Route["view"];
+
+export const RETIRED_PATHS = new Set([
+  "/sandboxes",
+  "/sandboxes/",
+  "/sandboxes/new",
+]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
 const sandboxHomeRe = new RegExp(
@@ -68,7 +76,7 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (path === "/sandboxes/new") return { view: "sandbox-new" };
+  if (RETIRED_PATHS.has(path)) return { view: "list" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -79,10 +87,12 @@ export function parseRoute(path: string): Route {
       sandboxSection: section.success ? section.data : "setup",
     };
   }
+  if (path === "/coding-agents/new") return { view: "coding-agent-new" };
   if (path === "/coding-agents") return { view: "coding-agents" };
   if (path === "/experiments") return { view: "experiments" };
+  if (path === "/experiments/new") return { view: "experiment-new" };
   if (path === "/knowledge-bases") return { view: "knowledge-bases" };
-  if (path === "/knowledge-bases/new") return { view: "sandbox-new" };
+  if (path === "/knowledge-bases/new") return { view: "knowledge-base-new" };
   const knowledgeBaseConfigMatch = path.match(
     /^\/knowledge-bases\/([^/]+)\/settings$/,
   );
@@ -122,8 +132,6 @@ export function routeToPath(route: Route): string {
       return "/telegram/bind";
     case "slack-bind":
       return "/slack/bind";
-    case "sandbox-new":
-      return "/sandboxes/new";
     case "sandbox-home": {
       const base = `/sandboxes/${encodeURIComponent(route.agentId)}`;
       return route.sandboxSection === "setup"
@@ -132,10 +140,16 @@ export function routeToPath(route: Route): string {
     }
     case "coding-agents":
       return "/coding-agents";
+    case "coding-agent-new":
+      return "/coding-agents/new";
     case "experiments":
       return "/experiments";
+    case "experiment-new":
+      return "/experiments/new";
     case "knowledge-bases":
       return "/knowledge-bases";
+    case "knowledge-base-new":
+      return "/knowledge-bases/new";
     case "knowledge-base-chat":
       return `/knowledge-bases/${encodeURIComponent(route.agent)}`;
     case "knowledge-base-config":

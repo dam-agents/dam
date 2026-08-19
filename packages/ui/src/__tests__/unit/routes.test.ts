@@ -12,12 +12,14 @@ const canonicalPaths = [
   "/terms",
   "/telegram/bind",
   "/slack/bind",
-  "/sandboxes/new",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/coding-agents",
+  "/coding-agents/new",
   "/experiments",
+  "/experiments/new",
   "/knowledge-bases",
+  "/knowledge-bases/new",
   "/knowledge-bases/kb-1",
   "/knowledge-bases/kb-1/settings",
   "/artifacts",
@@ -28,12 +30,15 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it("parses /sandboxes/new as the wizard, not a sandbox id", () => {
-    expect(parseRoute("/sandboxes/new").view).toBe("sandbox-new");
-  });
+  it.each(["/sandboxes", "/sandboxes/", "/sandboxes/new"])(
+    "sends the retired %s to Home",
+    (path) => {
+      expect(parseRoute(path).view).toBe("list");
+    },
+  );
 
-  it("parses the legacy /knowledge-bases/new as the wizard, not a KB id", () => {
-    expect(parseRoute("/knowledge-bases/new").view).toBe("sandbox-new");
+  it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
+    expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");
   });
 });
 

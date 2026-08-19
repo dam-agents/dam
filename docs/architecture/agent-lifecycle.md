@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-17
+Last verified: 2026-08-18
 
 ## Overview
 
@@ -54,7 +54,7 @@ sequenceDiagram
 
 ### Create
 
-Every sandbox is created through one wizard, whatever it will be used for. Its first step asks what the sandbox is *for* rather than which image to boot: an experiment sandbox, a knowledge base, a specialized image, a general-purpose harness, or a custom image address. The first two are **Agent Kinds** — the choice stamps a marker and pins a harness image the user never sees — so finishing the wizard dispatches to the owning module's create rather than the plain agent create, which is what guarantees a marked agent gets its Install Command. The remaining three differ only in how the image is picked and take the plain path. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
+Creation is per-purpose: each kind of thing a user can create has its own setup form, asking only what that kind needs. Experiment sandboxes and knowledge bases are **Agent Kinds** — the flow stamps a marker and pins a harness image the user never sees — so their forms dispatch to the owning module's create rather than the plain agent create, which is what guarantees a marked agent gets its Install Command. Any other sandbox picks an image and takes the plain path. A new sandbox takes its template's size and the trusted egress preset, both editable on the sandbox afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
 

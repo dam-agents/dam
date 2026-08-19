@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-08-17
+Last verified: 2026-08-19
 
 ## Overview
 
@@ -15,7 +15,7 @@ Two pieces make an Agent a Knowledge Base:
 
 The owner-scoped knowledge-bases module owns creation and nothing else — reads ride the agents surface. Create is a composition of existing rails:
 
-1. **Agent create** with the Kind marker, passing the standard create choices through (provider and catalog connections, size, egress preset) plus the picked KB template. The UI pins the Claude Code harness image and hides it (one image, not a user choice); the server still accepts any image, so that choice can fold into the KB template later.
+1. **Agent create** with the Kind marker, passing the create choices through (provider and catalog connections) plus the picked KB template, on the trusted egress preset and the template's size. The UI pins the Claude Code harness image and hides it (one image, not a user choice); the server still accepts any image, so that choice can fold into the KB template later.
 2. **Install Command delivery** over the `workspace-command` rail — a one-shot runtime-channel event alongside `workspace-seed`, on the same durable outbox schedules and Experiments use ([runtime delivery](runtime-delivery.md#event-lifecycle), [agent-lifecycle](agent-lifecycle.md#trigger-fire)). The event survives the pod not being up yet — including an agent parked over budget — and is delivered once the agent is Ready. agent-runtime runs the command in the workspace, in the pod's environment, so egress rides the paired gateway exactly as a harness process would. It runs once: the plugin writes a sentinel on success, so a redelivery (or a pod killed mid-run before the outbox settled) never double-runs a completed install. A failed run stays pending and retries on the next wake until it succeeds or the event's TTL lapses.
 3. **Wake**, so the freshly created agent comes up and runs the bootstrap before the user does anything. No session is opened and no turn runs — the command mutates the workspace, then the user chats with the ready-made knowledge base.
 
@@ -23,7 +23,7 @@ The module has no persistence of its own: a Knowledge Base is exactly the owner'
 
 ## UI
 
-Knowledge Bases is a feature-gated destination ([features](features.md)) with a list and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Creation is **not** its own form: it is the `knowledge-base` starting point on the shared [sandbox wizard](agent-lifecycle.md)'s first step, which pins the Claude Code harness, hides it, and reveals the KB Template picker; the wizard's finish dispatches to this module's create. The KB list's own create button enters that wizard with the starting point pre-picked.
+Knowledge Bases is a feature-gated destination ([features](features.md)) with a list and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Creation **is** its own form: a single page asking for a name, a KB Template, a provider and connections, with the harness image pinned and never shown and the toolkit template preselected. Both the KB list's create button and the Home entry card land on it directly, and submitting dispatches to this module's create — see [agent-lifecycle](agent-lifecycle.md#create).
 
 Opening a KB that has no sessions yet **greets the user**: the UI runs `/wiki-onboard` as a hidden first turn (reaches the agent, renders no user bubble, surfaces no error — a greeting that breaks before it says anything leaves no trace, while one interrupted mid-stream keeps what it already said), so a fresh KB opens with the agent introducing itself rather than an empty chat. This is why every template's bootstrap installs that command. The greeting mechanism is shared with experiments.
 

@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { labelVariants } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
 
 export interface RegistryCredential {
@@ -60,7 +61,8 @@ export function RegistryCredentialSection({
           <p className="text-xs text-muted-foreground">
             Credentials to pull this image from a private registry. Stored with
             the sandbox and used only by the cluster to pull the image — never
-            exposed to the agent.
+            exposed to the agent. Kept in this page only: leaving it, including
+            to authorize a connection, clears them.
           </p>
           <FormField label="Server" labelInset>
             <Input
@@ -85,9 +87,7 @@ export function RegistryCredentialSection({
             />
           </FormField>
           {partial && (
-            <p className="text-xs text-destructive">
-              Enter server, username, and password — or clear all three to skip.
-            </p>
+            <FormError message="Enter server, username, and password — or clear all three to skip." />
           )}
         </div>
       )}

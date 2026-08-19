@@ -3,13 +3,6 @@ import type { StateCreator } from "zustand";
 import { resolveReturnPathname } from "../../../lib/return-path.js";
 import type { PlatformStore } from "../../../store.js";
 import {
-  clearSnapshot,
-  EMPTY_SNAPSHOT,
-  saveSnapshot,
-  type StartingPoint,
-  startingPointDefaults,
-} from "../../sandboxes/lib/wizard-snapshot.js";
-import {
   parseRoute,
   routeToNavigationState,
   routeToPath,
@@ -24,9 +17,11 @@ type ParameterlessView =
   | "terms"
   | "artifacts"
   | "coding-agents"
+  | "coding-agent-new"
   | "experiments"
-  | "knowledge-bases"
-  | "sandbox-new";
+  | "experiment-new"
+  | "knowledge-base-new"
+  | "knowledge-bases";
 
 export interface NavigationSlice {
   view: View;
@@ -35,7 +30,6 @@ export interface NavigationSlice {
   sandboxSection: SandboxSection;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
-  navigateToCreateSandbox: (startingPoint?: StartingPoint) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToExperiments: () => void;
@@ -80,18 +74,6 @@ export const createNavigationSlice: StateCreator<
   setView: (v) => {
     history.pushState(null, "", routeToPath({ view: v }));
     set(routeToNavigationState({ view: v }));
-  },
-  navigateToCreateSandbox: (startingPoint) => {
-    if (startingPoint) {
-      saveSnapshot({
-        ...EMPTY_SNAPSHOT,
-        ...startingPointDefaults(startingPoint),
-      });
-    } else {
-      clearSnapshot();
-    }
-    history.pushState(null, "", routeToPath({ view: "sandbox-new" }));
-    set({ view: "sandbox-new", agentId: null });
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";

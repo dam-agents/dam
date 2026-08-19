@@ -18,8 +18,8 @@ export function KnowledgeBasesListView() {
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
   );
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
-  const createKnowledgeBase = () => navigateToCreateSandbox("knowledge-base");
+  const setView = useStore((s) => s.setView);
+  const createKnowledgeBase = () => setView("knowledge-base-new");
   const showConfirm = useStore((s) => s.showConfirm);
 
   const deleteKnowledgeBase = async (agent: AgentView) => {

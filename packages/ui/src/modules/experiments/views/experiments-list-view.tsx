@@ -18,7 +18,6 @@ export function ExperimentsListView() {
   const { data: summaries } = useDriverSummaries();
   const { data: agentsData } = useAgents();
   const selectAgent = useStore((s) => s.selectAgent);
-  const navigateToCreateSandbox = useStore((s) => s.navigateToCreateSandbox);
   const setView = useStore((s) => s.setView);
   const deleteExperiment = useDeleteExperiment();
   const [deleteTarget, setDeleteTarget] = useState<LineageRow | null>(null);
@@ -29,7 +28,7 @@ export function ExperimentsListView() {
     isExperimentSandbox,
   );
   const initialLoaded = summaries !== undefined && agentsData !== undefined;
-  const createExperimentSandbox = () => navigateToCreateSandbox("experiment");
+  const createExperimentSandbox = () => setView("experiment-new");
 
   return (
     <div>

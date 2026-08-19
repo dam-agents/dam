@@ -1,6 +1,13 @@
-import { CardButton } from "@/components/ui/card-button";
+import { type CarbonIconType, Document, Network_3 } from "@carbon/icons-react";
+import type { KnowledgeBaseTemplateId } from "api-server-api";
 
 import type { KbTemplate } from "../../../knowledge-bases/lib/kb-templates.js";
+import { CardIconTile, StackedCard } from "./stacked-card.js";
+
+const KB_TEMPLATE_ICON: Record<KnowledgeBaseTemplateId, CarbonIconType> = {
+  "llm-wiki": Network_3,
+  "plain-wiki": Document,
+};
 
 interface Props {
   template: KbTemplate;
@@ -10,15 +17,13 @@ interface Props {
 
 export function KbTemplateCard({ template, selected, onSelect }: Props) {
   return (
-    <CardButton
-      onClick={onSelect}
+    <StackedCard
+      icon={<CardIconTile icon={KB_TEMPLATE_ICON[template.id]} />}
+      title={template.name}
+      description={template.description}
       selected={selected}
-      className="w-full px-4 py-3"
-    >
-      <p className="text-base font-medium text-foreground leading-[1.2]">
-        {template.name}
-      </p>
-      <p className="text-sm text-muted-foreground">{template.description}</p>
-    </CardButton>
+      onSelect={onSelect}
+      testId={`kb-template-card-${template.id}`}
+    />
   );
 }

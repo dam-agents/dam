@@ -1,9 +1,11 @@
 import { Box } from "@carbon/icons-react";
 
+import { Badge } from "@/components/ui/badge";
+
 import type { ProviderPresetType, TemplateView } from "../../../../types.js";
 import { CardIcon } from "../../../providers/components/card-icon.js";
-import { CardContent } from "./card-content.js";
-import { SelectableCard } from "./selectable-card.js";
+import { CardTags } from "./card-tags.js";
+import { CardIconTile, StackedCard } from "./stacked-card.js";
 
 const HARNESS_PRESET: Record<string, ProviderPresetType> = {
   codex: "openai",
@@ -32,11 +34,7 @@ function HarnessIcon({ templateId }: { templateId: string }) {
   if (preset) {
     return <CardIcon provider={preset} size="md" />;
   }
-  return (
-    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
-      <Box className="size-5 text-muted-foreground" />
-    </div>
-  );
+  return <CardIconTile icon={Box} />;
 }
 
 export function HarnessCard({
@@ -49,18 +47,21 @@ export function HarnessCard({
   onSelect: () => void;
 }) {
   return (
-    <SelectableCard
+    <StackedCard
+      icon={<HarnessIcon templateId={template.id} />}
+      title={template.name}
+      description={template.description}
+      badge={
+        template.experimental ? (
+          <Badge variant="warning" className="shrink-0">
+            Alpha
+          </Badge>
+        ) : undefined
+      }
+      trailing={<CardTags tags={template.tags} />}
       selected={selected}
       onSelect={onSelect}
-      ariaLabel={template.name}
       testId={`template-card-${template.id}`}
-    >
-      <div className="flex items-start gap-3">
-        <HarnessIcon templateId={template.id} />
-        <div className="min-w-0 flex-1">
-          <CardContent template={template} />
-        </div>
-      </div>
-    </SelectableCard>
+    />
   );
 }
