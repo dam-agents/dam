@@ -148,7 +148,7 @@ export function IconRail({
                 <>
                   <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
                   <SidePanelOpen
-                    size={20}
+                    size={16}
                     className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
                   />
                 </>
@@ -212,7 +212,7 @@ function RailItem({
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
-      <IconWithBadge icon={Icon} badge={badge} />
+      <IconWithBadge icon={Icon} badge={badge} size={16} />
       {expanded && (
         <span className="truncate text-sm font-medium">{label}</span>
       )}
@@ -251,13 +251,15 @@ function BottomBarItem({
 function IconWithBadge({
   icon: Icon,
   badge,
+  size = 20,
 }: {
   icon: CarbonIconType;
   badge: number;
+  size?: number;
 }) {
   return (
-    <span className="relative flex h-5 w-5 items-center justify-center">
-      <Icon size={20} />
+    <span className="relative flex items-center justify-center">
+      <Icon size={size} />
       {badge > 0 && (
         <Badge
           variant="default"
