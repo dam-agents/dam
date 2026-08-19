@@ -54,13 +54,13 @@ export function CodingAgentSetupView() {
 
   const preselected = useRef(false);
   useEffect(() => {
-    if (preselected.current || isLoading) return;
+    if (preselected.current || harnesses.length === 0) return;
     preselected.current = true;
     if (form.templateId !== null || form.customImage.trim().length > 0) return;
     if (harnesses.some((t) => t.id === KINDED_HARNESS_TEMPLATE_ID)) {
       update({ templateId: KINDED_HARNESS_TEMPLATE_ID });
     }
-  }, [isLoading, harnesses, form.templateId, form.customImage, update]);
+  }, [harnesses, form.templateId, form.customImage, update]);
 
   const draft: CodingAgentSetupDraft = {
     name: form.name,

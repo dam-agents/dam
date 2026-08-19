@@ -79,7 +79,9 @@ export function buildCodingAgentSetupInput(
     name: draft.name.trim(),
     egressPreset: "trusted",
     ...(image ? { image } : { templateId: draft.templateId! }),
-    appConnectionIds: [...draft.connectionIds, draft.providerRef!.id],
+    appConnectionIds: [
+      ...new Set([...draft.connectionIds, draft.providerRef!.id]),
+    ],
     ...(image && registryFilledCount(credential) === 3
       ? {
           registryCredential: {

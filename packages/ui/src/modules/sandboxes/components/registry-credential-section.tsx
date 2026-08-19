@@ -61,7 +61,8 @@ export function RegistryCredentialSection({
           <p className="text-xs text-muted-foreground">
             Credentials to pull this image from a private registry. Stored with
             the sandbox and used only by the cluster to pull the image — never
-            exposed to the agent.
+            exposed to the agent. Kept in this page only: leaving it, including
+            to authorize a connection, clears them.
           </p>
           <FormField label="Server" labelInset>
             <Input

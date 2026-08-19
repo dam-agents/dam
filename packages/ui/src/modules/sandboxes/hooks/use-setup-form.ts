@@ -33,13 +33,16 @@ function save(flow: SetupFlow, form: SetupForm): void {
   } catch {}
 }
 
-function load(flow: SetupFlow, defaults: Partial<SetupForm>): SetupForm | null {
-  let raw: string | null = null;
+function load(flow: SetupFlow): SetupForm | null {
+  let stored: unknown;
   try {
-    raw = sessionStorage.getItem(storageKey(flow));
-  } catch {}
-  if (!raw) return null;
-  const parsed = setupFormSchema.safeParse(JSON.parse(raw));
+    const raw = sessionStorage.getItem(storageKey(flow));
+    if (!raw) return null;
+    stored = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const parsed = setupFormSchema.safeParse(stored);
   if (!parsed.success) {
     console.warn(
       `[setup-form] discarding unusable ${flow} draft:`,
@@ -47,7 +50,7 @@ function load(flow: SetupFlow, defaults: Partial<SetupForm>): SetupForm | null {
     );
     return null;
   }
-  return { ...defaults, ...parsed.data };
+  return parsed.data;
 }
 
 export function useSetupForm(
@@ -56,7 +59,7 @@ export function useSetupForm(
   returnPath?: string,
 ): SetupFormState {
   const [form, setForm] = useState<SetupForm>(() => {
-    const restored = load(flow, {});
+    const restored = load(flow);
     if (restored) return restored;
     const fresh = setupFormSchema.parse({
       name: generateSandboxName(),
@@ -101,12 +104,13 @@ export function useSetupForm(
       });
       return;
     }
-    if (result !== "success") {
-      emitToast({
-        kind: "error",
-        message: `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
-      });
-    }
+    emitToast({
+      kind: "error",
+      message:
+        result === "success"
+          ? "Connection authorized, but no connection was returned."
+          : `Connection authorization failed: ${params.get("message") ?? "unknown error"}`,
+    });
   }, [flow, returnPath]);
 
   return { form, update, reset };

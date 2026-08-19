@@ -38,9 +38,12 @@ export function KnowledgeBaseSetupView() {
     !createKnowledgeBase.isPending;
 
   const create = async () => {
+    if (!canCreate) return;
     const connectionIds = [
-      ...form.connectionIds,
-      ...(form.providerRef ? [form.providerRef.id] : []),
+      ...new Set([
+        ...form.connectionIds,
+        ...(form.providerRef ? [form.providerRef.id] : []),
+      ]),
     ];
     try {
       const agent = await createKnowledgeBase.mutateAsync({
