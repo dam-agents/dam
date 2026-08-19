@@ -168,6 +168,54 @@ export const channelRpcRequestSchema = z.object({
 });
 export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
 
+const okOrErrorSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  z.object({ error: z.string() }),
+]);
+const channelUserSchema = z.object({
+  id: z.string(),
+  username: z.string().optional(),
+  realName: z.string().optional(),
+  displayName: z.string().optional(),
+  title: z.string().optional(),
+  pronouns: z.string().optional(),
+  email: z.string().optional(),
+  timezone: z.string().optional(),
+  timezoneLabel: z.string().optional(),
+  statusText: z.string().optional(),
+  statusEmoji: z.string().optional(),
+  isBot: z.boolean().optional(),
+  isDeleted: z.boolean().optional(),
+  error: z.string().optional(),
+});
+const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
+  listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
+  postMessage: okOrErrorSchema,
+  reply: okOrErrorSchema,
+  react: okOrErrorSchema,
+  declineTurn: okOrErrorSchema,
+  describeUsers: z.union([
+    z.object({ users: z.array(channelUserSchema) }),
+    z.object({ error: z.string() }),
+  ]),
+  supportsUserLookup: z.boolean(),
+  describeMessageReactions: z.union([
+    z.object({
+      reactions: z.array(
+        z.object({
+          name: z.string(),
+          count: z.number(),
+          users: z.array(z.string()),
+        }),
+      ),
+      conversationId: z.string(),
+      messageTs: z.string(),
+    }),
+    z.object({ error: z.string() }),
+  ]),
+  supportsMessageReactions: z.boolean(),
+};
+
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
 
 export function createChannelManager(deps: {
@@ -196,7 +244,9 @@ export function createChannelManager(deps: {
     local: () => Promise<T>,
   ): Promise<T> {
     if (isLeader() || !rpc) return local();
-    return rpc.call({ method, args }) as Promise<T>;
+    return rpcResponseSchemas[method].parse(
+      await rpc.call({ method, args }),
+    ) as T;
   }
 
   async function dispatchResult<T>(

@@ -85,7 +85,9 @@ export function createTerminalRelay(
       activeClients.set(key, client);
 
       const release = presence.acquire(agentId);
+      let clientGone = false;
       client.once("close", () => {
+        clientGone = true;
         release();
         if (activeClients.get(key) === client) activeClients.delete(key);
       });
@@ -125,7 +127,7 @@ export function createTerminalRelay(
             }),
         )
         .then((upstream) => {
-          if (bufferOverflow) {
+          if (clientGone || bufferOverflow) {
             try {
               upstream.close();
             } catch {}
@@ -134,6 +136,7 @@ export function createTerminalRelay(
           client.off("message", buffer);
           for (const { data, isBinary } of pending)
             upstream.send(data, { binary: isBinary });
+          pending.length = 0;
 
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;

@@ -28,7 +28,7 @@ const onSignal = (): void => {
     ]);
     extAuthzGrpcServer.tryShutdown(() => {});
     trpcWs.drain();
-    await trpcWs.close();
+    const wsClosed = Promise.resolve(trpcWs.close()).catch(() => {});
     closeRelays();
     const closeIdle = (s: unknown) =>
       (s as { closeIdleConnections?: () => void }).closeIdleConnections?.();
@@ -38,7 +38,7 @@ const onSignal = (): void => {
     }, 1_000);
     reap.unref();
     await Promise.race([
-      listenersClosed,
+      Promise.all([listenersClosed, wsClosed]),
       new Promise((resolve) => setTimeout(resolve, 25_000)),
     ]);
     clearInterval(reap);
