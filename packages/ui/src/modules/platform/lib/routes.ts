@@ -23,6 +23,7 @@ export const sandboxSectionSchema = z.enum([
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
+  | { view: "home" }
   | { view: "list" }
   | { view: "chat"; agent: string; session?: string }
   | { view: "settings"; settingsTab: SettingsTab }
@@ -43,11 +44,7 @@ export type Route =
 
 export type View = Route["view"];
 
-export const RETIRED_PATHS = new Set([
-  "/sandboxes",
-  "/sandboxes/",
-  "/sandboxes/new",
-]);
+export const RETIRED_PATHS = new Set(["/sandboxes/", "/sandboxes/new"]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
 const sandboxHomeRe = new RegExp(
@@ -76,7 +73,8 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (RETIRED_PATHS.has(path)) return { view: "list" };
+  if (path === "/sandboxes") return { view: "list" };
+  if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -107,13 +105,15 @@ export function parseRoute(path: string): Route {
       view: "knowledge-base-chat",
       agent: decodeURIComponent(knowledgeBaseChatMatch[1]!),
     };
-  return { view: "list" };
+  return { view: "home" };
 }
 
 export function routeToPath(route: Route): string {
   switch (route.view) {
-    case "list":
+    case "home":
       return "/";
+    case "list":
+      return "/sandboxes";
     case "chat": {
       const base = `/chat/${encodeURIComponent(route.agent)}`;
       return route.session

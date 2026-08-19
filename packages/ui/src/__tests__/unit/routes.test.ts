@@ -4,6 +4,7 @@ import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 
 const canonicalPaths = [
   "/",
+  "/sandboxes",
   "/chat/agent-1",
   "/chat/agent-1/sess-1",
   "/settings",
@@ -29,6 +30,13 @@ describe("route round-trip", () => {
   it.each(canonicalPaths)("routeToPath(parseRoute(%s)) is identity", (path) => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
+
+  it.each(["/sandboxes/", "/sandboxes/new"])(
+    "sends the retired %s to Home",
+    (path) => {
+      expect(parseRoute(path).view).toBe("home");
+    },
+  );
 
   it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
     expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");

@@ -30,12 +30,11 @@ separate query so a slow or failing one cannot blank the others:
   `status === "pending"`.
 - **Running agents.** `useAgents()` filtered to `state === "running"`. This list bounds both sources
   below — never dial or query a hibernated agent.
-- **In-progress work.** `agents.backgroundWork` per running agent (tRPC, `readAgentProcedure`, takes
-  `{ id }`). Returns `SessionBackgroundWork[] | null`; `null` is a 404 and means "nothing to show",
-  not an error to surface. It carries **no timestamp** — the shape is
-  `{ sessionId, items: [{ id, description?, command? }] }` — so the feed takes the sort key from the
-  session the work belongs to, joining `sessionId` against the ACP session list below. In-progress
-  therefore depends on that dial too; it is not an ACP-free path.
+- **In-progress work.** `session.running` on the ACP session list — the same signal
+  `sessions-sidebar.tsx` already uses to mark a session working. Do **not** use
+  `agents.backgroundWork` for this: that is the harness's *optional* in-flight background-jobs set
+  (a session holding the pod awake), not "the agent is mid-turn", so an ordinary working session
+  never appears in it. It also carries no timestamp.
 - **Unread sessions.** `listAgentSessions(agentId)` from
   `modules/sessions/api/acp-session-ops.ts` per running agent — this is an ACP dial, so it is the
   expensive one. Unread is `Date.parse(updatedAt) > Date.parse(seenAt)`, exactly as
@@ -43,9 +42,15 @@ separate query so a slow or failing one cannot blank the others:
   `modules/home/lib/unread.ts` and have the sidebar import it rather than duplicating the rule.
 
 Model the per-agent fan-out with TanStack Query's `useQueries` so each agent's result caches and
-retries independently. Give the ACP-backed query a longer `staleTime` than the tRPC ones — it is the
-costly call — and keep `retry: false`, following `modules/metrics/api/queries.ts` which already treats
-an unavailable backend as "render nothing" rather than an error.
+retries independently, and keep `retry: false`, following `modules/metrics/api/queries.ts` which
+already treats an unavailable backend as "render nothing" rather than an error.
+
+**The feed must poll.** Nothing invalidates the ACP session list: `modules/live-events/invalidation.ts`
+covers `approvals`, `agents`, `schedules`, `harnessConfig`, `experiments` and `artifacts` — there is no
+sessions topic — so without a `refetchInterval` the feed only refreshes on remount. Poll the session
+query, and be aware of the cost: `withConnection` opens and closes a WebSocket per call, so one
+running agent at a 15s interval is ~240 upgrades an hour. Making this genuinely event-driven needs a
+sessions topic on the live-events bus, which is a backend change outside this plan.
 
 ### 3. Feed item shape — `modules/home/lib/feed-item.ts`
 

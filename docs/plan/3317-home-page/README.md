@@ -38,6 +38,12 @@ rewrite its data layer against live queries:
 - `modules/home/components/ready-section.tsx` and `ReadySection` in the view are dead code from an
   earlier checkpoint — no call sites, never rendered. There is no "Ready for you" section.
 
+**The prototype page runs at a 15px root font-size; the app runs at 16px.** Tailwind spacing is
+rem-based, so the same classes compute ~7% larger in the app — `p-5` is 18.75px there and 20px here,
+`py-3` 11.25 against 12. Copying classes faithfully still yields a taller component, and the gap
+compounds with nesting. Measure against the prototype and trim the app side to match, biasing slightly
+under rather than over. Do not chase parity by rewriting the root font-size.
+
 **The feed is current state, not history.** This is the decision the whole plan rests on. The feed
 carries exactly three things, all of them "now":
 
@@ -80,7 +86,7 @@ list. Everything else reads contracts that already exist: `approvals.listForOwne
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Home module, two-column shell, feed spine | The route, the layout, the three feed sources, chronological ordering | — |
+| 01 ✅ | Home module, two-column shell, feed spine | The route, the layout, the three feed sources, chronological ordering | — |
 | 02 | Feed filtering | Status filter and sources in/out | 01 |
 | 03 | Inline approval cards | Approvals in the feed with the full action set and their resolved state | 01 |
 | 04 | Dismiss, clear all, and `platform/markSeen` | Feed dismissal that survives a reload | 01 |

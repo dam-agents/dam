@@ -49,9 +49,9 @@ export function IconRail({
   const sandboxes: Destination = {
     label: "Home",
     icon: Home,
-    active: view === "list",
+    active: view === "home",
     badge: 0,
-    navigate: () => setView("list"),
+    navigate: () => setView("home"),
   };
   const codingAgents: Destination = {
     label: "Coding agents",

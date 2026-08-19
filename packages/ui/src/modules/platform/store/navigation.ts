@@ -12,6 +12,7 @@ import {
 } from "../lib/routes.js";
 
 type ParameterlessView =
+  | "home"
   | "list"
   | "inbox"
   | "terms"

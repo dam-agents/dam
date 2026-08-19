@@ -14,6 +14,7 @@ import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
+import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
@@ -117,10 +118,14 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "list" ? "max-w-[1200px]" : "max-w-[960px]",
+                view === "list" || view === "home"
+                  ? "max-w-[1200px]"
+                  : "max-w-[960px]",
               )}
             >
-              {view === "coding-agent-new" ? (
+              {view === "home" ? (
+                <HomeView />
+              ) : view === "coding-agent-new" ? (
                 <CodingAgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
