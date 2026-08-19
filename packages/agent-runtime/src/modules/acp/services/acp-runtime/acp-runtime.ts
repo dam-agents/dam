@@ -21,6 +21,10 @@ import type {
   BackgroundWorkRegistry,
   HeldSession,
 } from "../background-work-registry.js";
+import {
+  createHarnessLease,
+  type HarnessTeardownReason,
+} from "./harness-lease.js";
 import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
@@ -97,13 +101,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.backgroundWorkRecheckMs ?? DEFAULT_BACKGROUND_WORK_RECHECK_MS;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
-  let envReady = deps.envReadyAtBoot ?? true;
-  const warmWaiters = new Set<() => void>();
-  let warmTimer: ReturnType<typeof setTimeout> | null = null;
-  let agent: AgentProcess | null = null;
-  let agentExited = false;
-  let envRefreshPending = false;
-  let envForceTimer: ReturnType<typeof setTimeout> | null = null;
   let sessionCloseSupported = true;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
@@ -111,11 +108,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const outboundIdToClient = new Map<number, OutboundMapping>();
 
   const promptScheduler = createPromptScheduler({
-    sendToAgent(frame) {
-      if (!agent || agentExited) return false;
-      agent.send(frame);
-      return true;
-    },
+    sendToAgent: (frame) => lease.send(frame),
   });
 
   const transcript = createSessionTranscript({
@@ -134,6 +127,66 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let nextOutboundId = 1;
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const teardownCloseByReason: Record<
+    HarnessTeardownReason,
+    { code: number; message: string }
+  > = {
+    "agent-exited": { code: 1011, message: "agent exited" },
+    "env-recycle": { code: 1011, message: "agent recycled for env change" },
+    shutdown: { code: 1000, message: "shutdown" },
+  };
+
+  function teardownRuntime(reason: HarnessTeardownReason): void {
+    const close = teardownCloseByReason[reason];
+    for (const channel of engagedSessions.keys()) {
+      channel.close(close.code, close.message);
+    }
+    engagedSessions.clear();
+    transcript.clear();
+    bootstrapBySession.clear();
+    for (const t of orphanTimers.values()) clearTimeout(t);
+    orphanTimers.clear();
+    for (const t of idleReapTimers.values()) clearTimeout(t);
+    idleReapTimers.clear();
+    pendingFromAgent.clear();
+    promptScheduler.clear();
+    deps.backgroundWork?.clear();
+  }
+
+  function describeBusy(): string {
+    return (
+      `${promptScheduler.activeTurnCount()} turn(s), ` +
+      `${pendingFromAgent.size} pending request(s), ` +
+      `${deps.backgroundWork?.held().length ?? 0} background hold(s)`
+    );
+  }
+
+  const lease = createHarnessLease({
+    spawnAgent: deps.spawnAgent,
+    onFrame(line) {
+      const start = performance.now();
+      handleAgentLine(line);
+      const ms = performance.now() - start;
+      if (ms >= 250) {
+        const method =
+          (parseFrame(line) as { method?: string } | null)?.method ??
+          "response";
+        deps.log?.(
+          `slow frame ${Math.round(ms)}ms (${line.length}B, ${method})`,
+        );
+      }
+    },
+    onTeardown: teardownRuntime,
+    busy: runtimeBusy,
+    describeBusy,
+    envReadyAtBoot: deps.envReadyAtBoot ?? true,
+    warmStartTimeoutMs,
+    envForceRecycleMs,
+    log(msg) {
+      deps.log?.(msg);
+    },
+  });
 
   function engage(channel: ClientChannel, sessionId: string): void {
     const sessions = engagedSessions.get(channel);
@@ -215,7 +268,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
     }
     const existing = orphanTimers.get(sessionId);
-    const shouldRun = hasPending && !engaged && !agentExited;
+    const shouldRun = hasPending && !engaged;
     if (shouldRun && !existing) {
       orphanTimers.set(
         sessionId,
@@ -229,13 +282,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function expireSession(sessionId: string): void {
     orphanTimers.delete(sessionId);
-    if (!agent || agentExited) return;
     const toExpire: JsonRpcId[] = [];
     for (const [id, req] of pendingFromAgent) {
       if (req.sessionId === sessionId) toExpire.push(id);
     }
     for (const id of toExpire) {
-      agent.send({
+      lease.send({
         jsonrpc: "2.0",
         id,
         error: {
@@ -245,88 +297,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
       pendingFromAgent.delete(id);
     }
-    if (toExpire.length > 0) maybeRecycleForEnv();
-  }
-
-  function ensureAgent(): AgentProcess | null {
-    if (agent && !agentExited) return agent;
-    if (agentExited) return null;
-
-    const a = deps.spawnAgent();
-    agent = a;
-    a.onLine((line) => {
-      const start = performance.now();
-      handleAgentLine(line);
-      const ms = performance.now() - start;
-      if (ms >= 250) {
-        const method =
-          (parseFrame(line) as { method?: string } | null)?.method ??
-          "response";
-        deps.log?.(
-          `slow frame ${Math.round(ms)}ms (${line.length}B, ${method})`,
-        );
-      }
-    });
-    a.exited.then(() => {
-      if (agent !== a) return;
-      agentExited = true;
-      for (const channel of engagedSessions.keys()) {
-        channel.close(1011, "agent exited");
-      }
-      engagedSessions.clear();
-      transcript.clear();
-      bootstrapBySession.clear();
-      for (const t of orphanTimers.values()) clearTimeout(t);
-      orphanTimers.clear();
-      for (const t of idleReapTimers.values()) clearTimeout(t);
-      idleReapTimers.clear();
-      pendingFromAgent.clear();
-      promptScheduler.clear();
-      deps.backgroundWork?.clear();
-    });
-    return a;
-  }
-
-  function markEnvReady(): void {
-    if (envReady) return;
-    envReady = true;
-    if (warmTimer) {
-      clearTimeout(warmTimer);
-      warmTimer = null;
-    }
-    for (const release of [...warmWaiters]) release();
-    warmWaiters.clear();
-  }
-
-  if (!envReady) warmTimer = setTimeout(markEnvReady, warmStartTimeoutMs);
-
-  function clearEnvForceTimer(): void {
-    if (envForceTimer) {
-      clearTimeout(envForceTimer);
-      envForceTimer = null;
-    }
-  }
-
-  function recycleAgentForEnv(): void {
-    clearEnvForceTimer();
-    envRefreshPending = false;
-    const old = agent;
-    if (!old || agentExited) return;
-    deps.log?.("recycling harness to apply env change");
-    for (const channel of engagedSessions.keys())
-      channel.close(1011, "agent recycled for env change");
-    engagedSessions.clear();
-    transcript.clear();
-    bootstrapBySession.clear();
-    for (const t of orphanTimers.values()) clearTimeout(t);
-    orphanTimers.clear();
-    for (const t of idleReapTimers.values()) clearTimeout(t);
-    idleReapTimers.clear();
-    pendingFromAgent.clear();
-    promptScheduler.clear();
-    deps.backgroundWork?.clear();
-    agent = null;
-    old.kill();
+    if (toExpire.length > 0) lease.maybeRecycle();
   }
 
   function runtimeBusy(): boolean {
@@ -334,11 +305,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (deps.backgroundWork?.held().length ?? 0) > 0;
   }
 
-  function maybeRecycleForEnv(): void {
-    if (envRefreshPending && !runtimeBusy()) recycleAgentForEnv();
-  }
-
-  deps.backgroundWork?.onRelease(() => maybeRecycleForEnv());
+  deps.backgroundWork?.onRelease(() => lease.maybeRecycle());
 
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);
@@ -373,8 +340,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   function tearDownSession(sessionId: string): void {
-    if (agent && !agentExited && sessionCloseSupported) {
-      agent.send({
+    if (sessionCloseSupported) {
+      lease.send({
         jsonrpc: "2.0",
         id: nextOutboundId++,
         method: "session/close",
@@ -384,7 +351,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript.forget(sessionId);
     promptScheduler.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
-    maybeRecycleForEnv();
+    lease.maybeRecycle();
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
       clearTimeout(reap);
@@ -394,7 +361,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function reapIdleSessionNow(sessionId: string): void {
     idleReapTimers.delete(sessionId);
-    if (!agent || agentExited) return;
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
     if (promptScheduler.hasWork(sessionId)) return;
@@ -580,7 +546,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             ),
           );
           maybeCloseIdleSession(sid);
-          if (turnEnded) maybeRecycleForEnv();
+          if (turnEnded) lease.maybeRecycle();
         }
       }
       return;
@@ -599,11 +565,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
   }
 
-  function handleClientMessage(
-    a: AgentProcess,
-    channel: ClientChannel,
-    data: string,
-  ): void {
+  function handleClientMessage(channel: ClientChannel, data: string): void {
     const frame = parseFrame(data);
     if (!frame) {
       deps.log?.(`dropping non-JSON client message: ${data}`);
@@ -615,7 +577,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (!pending) return;
       pendingFromAgent.delete(frame.id);
       if (pending.sessionId) updateOrphanTimerForSession(pending.sessionId);
-      a.send(frame);
+      lease.send(frame);
       return;
     }
 
@@ -671,7 +633,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           method: "session/load",
           params: { sessionId: paramsSid, cwd: ".", mcpServers: [] },
         };
-        a.send(rewriteCwd(loadFrame, deps.workingDir));
+        lease.send(rewriteCwd(loadFrame, deps.workingDir));
         return;
       }
 
@@ -757,13 +719,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
-      a.send(rewritten);
+      lease.send(rewritten);
       return;
     }
 
     const notifSid = extractParamsSessionId(frame);
     if (notifSid) engage(channel, notifSid);
-    a.send(rewriteCwd(frame, deps.workingDir));
+    lease.send(rewriteCwd(frame, deps.workingDir));
   }
 
   return {
@@ -771,29 +733,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       engagedSessions.set(channel, new Set());
       if (opts?.viewer === false) nonViewerChannels.add(channel);
       const buffered: string[] = [];
-      let live: AgentProcess | null = null;
+      let live = false;
       const release = (): void => {
         if (live) return;
-        const a = ensureAgent();
-        if (!a) {
+        if (!lease.ensure()) {
           channel.close(1011, "agent process is not running");
           return;
         }
-        live = a;
-        for (const data of buffered) handleClientMessage(a, channel, data);
+        live = true;
+        for (const data of buffered) handleClientMessage(channel, data);
         buffered.length = 0;
       };
       channel.onMessage((data) => {
-        if (live) handleClientMessage(live, channel, data);
+        if (live) handleClientMessage(channel, data);
         else buffered.push(data);
       });
+      let cancelReady: () => void = () => {};
       channel.onClose(() => {
-        warmWaiters.delete(release);
+        cancelReady();
         detach(channel);
       });
-
-      if (envReady) release();
-      else warmWaiters.add(release);
+      cancelReady = lease.whenReady(release);
     },
 
     status() {
@@ -809,41 +769,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
 
     refreshEnv(opts) {
-      if (!envReady) {
-        markEnvReady();
-        return;
-      }
-      if (!agent || agentExited) return;
-      envRefreshPending = true;
-      if (!runtimeBusy()) {
-        recycleAgentForEnv();
-        return;
-      }
-      deps.log?.(
-        `env recycle deferred: ${promptScheduler.activeTurnCount()} turn(s), ` +
-          `${pendingFromAgent.size} pending request(s), ` +
-          `${deps.backgroundWork?.held().length ?? 0} background hold(s)` +
-          (opts.force ? ` — forcing in ${envForceRecycleMs}ms` : ""),
-      );
-      if (opts.force && !envForceTimer)
-        envForceTimer = setTimeout(recycleAgentForEnv, envForceRecycleMs);
+      lease.refreshEnv(opts);
     },
 
     shutdown() {
-      for (const channel of engagedSessions.keys())
-        channel.close(1000, "shutdown");
-      engagedSessions.clear();
-      transcript.clear();
-      bootstrapBySession.clear();
-      for (const t of orphanTimers.values()) clearTimeout(t);
-      orphanTimers.clear();
-      for (const t of idleReapTimers.values()) clearTimeout(t);
-      idleReapTimers.clear();
-      deps.backgroundWork?.clear();
-      clearEnvForceTimer();
-      if (warmTimer) clearTimeout(warmTimer);
-      warmWaiters.clear();
-      if (agent && !agentExited) agent.kill();
+      lease.shutdown();
     },
   };
 }
