@@ -1,4 +1,4 @@
-# 04 — Dismiss, clear all, and `platform/markSeen`
+# 04 — Dismiss and clear all
 
 **Depends on:** 01-home-shell-feed
 **Part of:** A Home page — see [README](./README.md)
@@ -20,40 +20,36 @@ session metadata store and the in-flight reporting contract are described there.
 
 ### 1. What dismissal means per kind
 
-- **Unread session** — dismissal is marking read. It persists, via the new ext-method below.
-- **Approval** — not dismissible from the feed's dismiss affordance. Approvals already have their own
-  `dismiss` mutation with server-side meaning (slice 03); do not overload the feed control with it.
-- **Running session** — not dismissible. It clears itself when the work finishes.
+Dismissal **hides a feed item and nothing else**. It does not resolve an approval and does not mark a
+session read — a settled decision, taken after the read-state approach below was already built.
 
-So "clear all" marks every unread item read and leaves approvals and running work untouched. Make that
-visible in the control's copy — a "clear all" that silently skips two thirds of the feed needs to say
-so.
+- **Approval** — dismissible. The request stays pending and stays resolvable in the session, and the
+  rail badge keeps counting it, so nothing is hidden-but-forgotten.
+- **Unread session** — dismissible.
+- **Running session** — not dismissible; it clears when the work finishes.
 
-### 2. The ext-method — `packages/agent-runtime`
+So "clear all" hides everything on screen except in-progress work, and says so.
 
-`packages/agent-runtime/src/modules/acp/services/acp-runtime/acp-runtime.ts` already dispatches
-`platform/deleteSession` around line 858. Add `platform/markSeen` beside it, taking a session id and
-calling `sessionMetadata.recordSeen(sessionId)` —
-`modules/acp/infrastructure/session-metadata-store.ts` already exposes exactly that method, currently
-called only from `server.ts` and from three places inside `acp-runtime.ts` when a session is loaded,
-engaged or prompted.
+### 2. Identifying what was dismissed
 
-Keep it idempotent and silent on an unknown session id: `recordSeen` already no-ops when the entry is
-missing, and a dismissal racing a session deletion must not error.
+Dismissed keys live in `localStorage` for now; a server-side store belongs to
+[#3100](https://github.com/dam-agents/dam/issues/3100) rather than a bespoke table here. Both keys
+carry a version, because neither raw id is safe to hide on forever:
 
-This changes no ACP-facing behavior for harnesses — it is a platform ext-method, like its neighbour.
+- `approval:<id>:<createdAt>` — an `acp_native` approval's id is
+  `` `acpnative:${agentId}:${rpcId}` ``, and `rpcId` is the harness's JSON-RPC counter, which restarts.
+  Without `createdAt`, dismissing one tool call would silently swallow an unrelated later one that
+  reused the same rpc id.
+- `session:<agentId>:<sessionId>:<updatedAt>` — so a session that speaks again comes back instead of
+  being hidden for good.
 
-### 3. The client call — `modules/sessions/api/acp-session-ops.ts`
+Cap the stored set and drop the oldest, and accept two limits: dismissals are per-browser, and a
+chatty session mints a new key every time it changes.
 
-Add `markAgentSessionSeen(agentId, sessionId)` next to `deleteAgentSession`, which is the pattern to
-copy. Note `deleteAgentSession` does **not** pass `{ passive: true }` — decide deliberately whether
-marking seen should be passive, and prefer passive: dismissing a feed item must never wake a pod. Since
-the feed only shows unread for running sandboxes, the pod is up either way, but passive keeps the
-guarantee honest.
+### 3. `platform/markSeen`
 
-`modules/sessions/api/queries.ts` already has `setSessionSeen(agentId, sessionId)`, which is only an
-optimistic cache write. Keep it, and call it alongside the new durable call so the item disappears
-immediately.
+The runtime ext-method the earlier approach needed is already shipped, and now has no caller. Leave it
+in place — a future explicit "mark as read" wants exactly it — but do not wire dismissal to it.
 
 ### 4. The UI
 

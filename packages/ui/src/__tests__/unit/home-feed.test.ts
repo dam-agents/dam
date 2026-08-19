@@ -53,8 +53,7 @@ describe("sortFeedItems", () => {
     expect(sorted.map((i) => i.id)).toEqual(["new", "mid", "old"]);
   });
 
-  // TEST_SCENARIO: in-progress work can arrive without a timestamp; it is happening now, so it leads
-  // rather than being dropped or sinking to the bottom.
+  // TEST_SCENARIO: undated work is happening now, so it leads rather than being dropped.
   it("leads with an item that has no timestamp", () => {
     const sorted = sortFeedItems([
       unread("dated", "2026-08-19T12:00:00Z"),
@@ -135,8 +134,7 @@ describe("emptyStateFor", () => {
     expect(state.tone).toBe("filtered");
   });
 
-  // TEST_SCENARIO: with nothing running, unread and in-progress are unknowable rather than absent —
-  // but an approval filter is still answerable, so it keeps its own message.
+  // TEST_SCENARIO: with nothing running, unread is unknowable but approvals are still answerable.
   it("explains a stopped sandbox except when the user asked about approvals", () => {
     const noAgents = { allSourcesExcluded: false, noRunningAgents: true };
 

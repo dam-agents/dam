@@ -3,12 +3,12 @@ import { useState } from "react";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
-import { useMarkSessionsSeen } from "../api/mutations.js";
 import { useFeed } from "../api/queries.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
 import { FeedList } from "../components/feed-list.js";
 import { HomeGreeting } from "../components/home-greeting.js";
+import { useDismissals } from "../hooks/use-dismissals.js";
 import {
   emptyStateFor,
   FEED_SOURCES,
@@ -28,7 +28,7 @@ export function HomeView() {
     loadingApprovals,
   } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
-  const markSeen = useMarkSessionsSeen();
+  const { isDismissed, dismiss } = useDismissals();
 
   const [status, setStatus] = useState<FeedStatus>("all");
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
@@ -56,9 +56,10 @@ export function HomeView() {
     );
   }
 
-  const visible = filterFeed(items, status, included);
+  const live = items.filter((item) => !isDismissed(item));
+  const visible = filterFeed(live, status, included);
   const stats = feedStats(visible);
-  const dismissible = visible.filter((item) => item.kind === "unread");
+  const dismissible = visible.filter((item) => item.kind !== "in-progress");
 
   const toggleSource = (source: FeedSource) =>
     setIncluded((prev) => {
@@ -72,8 +73,8 @@ export function HomeView() {
     <div>
       <HomeGreeting title="Activity" />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between pb-1">
+        <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
+          <div className="flex w-full items-center justify-between">
             <FeedFilterBar
               status={status}
               onStatusChange={setStatus}
@@ -96,17 +97,9 @@ export function HomeView() {
                 {dismissible.length > 0 && (
                   <button
                     type="button"
-                    disabled={markSeen.isPending}
-                    onClick={() =>
-                      markSeen.mutate(
-                        dismissible.map((item) => ({
-                          agentId: item.agentId,
-                          sessionId: item.session.sessionId,
-                        })),
-                      )
-                    }
-                    title="Marks unread items read. Approvals and running work stay."
-                    className="text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                    onClick={() => dismiss(dismissible)}
+                    title="Hides these from Home. Nothing is resolved or marked read; running work stays."
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Clear all
                   </button>
@@ -114,6 +107,8 @@ export function HomeView() {
               </div>
             )}
           </div>
+        </div>
+        <div className="space-y-3 lg:col-start-1 lg:row-start-2">
           {loadingApprovals && items.length === 0 ? (
             <ListSkeleton rows={3} rowHeight={116} />
           ) : visible.length > 0 ? (
@@ -121,9 +116,7 @@ export function HomeView() {
               items={visible}
               agents={agents}
               onOpenSession={openAgentSession}
-              onDismissUnread={(agentId, sessionId) =>
-                markSeen.mutate([{ agentId, sessionId }])
-              }
+              onDismiss={(item) => dismiss([item])}
             />
           ) : (
             <FeedEmptyState
@@ -134,7 +127,7 @@ export function HomeView() {
             />
           )}
         </div>
-        <aside />
+        <aside className="lg:col-start-2 lg:row-start-2" />
       </div>
     </div>
   );

@@ -94,17 +94,6 @@ export async function deleteAgentSession(
   );
 }
 
-export async function markAgentSessionSeen(
-  agentId: string,
-  sessionId: string,
-): Promise<void> {
-  await withConnection(
-    agentId,
-    (conn) => conn.extMethod("platform/markSeen", { sessionId }),
-    { passive: true },
-  );
-}
-
 export async function setSessionMode(
   agentId: string,
   sessionId: string,

@@ -19,9 +19,15 @@ interface Props {
   approval: ApprovalView;
   agentName: string;
   meta: string;
+  onDismiss: () => void;
 }
 
-export function FeedApprovalCard({ approval, agentName, meta }: Props) {
+export function FeedApprovalCard({
+  approval,
+  agentName,
+  meta,
+  onDismiss,
+}: Props) {
   const { actions, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval);
   const [resolved, setResolved] = useState<string | null>(null);
@@ -47,6 +53,14 @@ export function FeedApprovalCard({ approval, agentName, meta }: Props) {
             {approvalHeadline(approval)}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          title="Hides this from Home. The request stays pending — resolve it in the session."
+          className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+        >
+          Dismiss
+        </button>
       </div>
 
       <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
