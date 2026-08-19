@@ -29,6 +29,7 @@ function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
   const enqueued: Date[] = [];
+  const ensured: Date[] = [];
   const events: string[] = [];
 
   const repo = {
@@ -50,6 +51,9 @@ function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
   const queue = {
     async enqueue(_id: string, fireAt: Date) {
       enqueued.push(fireAt);
+    },
+    async ensure(_id: string, fireAt: Date) {
+      ensured.push(fireAt);
     },
     async cancel() {},
     async close() {},
@@ -78,7 +82,7 @@ function makeDeps(opts?: { wakeError?: Error; storedNextRun?: string }) {
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
 
-  return { runner, calls, fires, enqueued, events };
+  return { runner, calls, fires, enqueued, ensured, events };
 }
 
 describe("scheduler-runner fire", () => {
@@ -139,11 +143,23 @@ describe("scheduler-runner fire", () => {
   // TEST_SCENARIO: concurrent replica boots must converge on the stored nextRun — clock-derived fire times give each replica its own jobId and a duplicate trigger.
   it("restoreAll reuses a stored future nextRun instead of recomputing", async () => {
     const stored = "2026-06-12T10:45:00.000Z";
-    const { runner, enqueued } = makeDeps({ storedNextRun: stored });
+    const { runner, enqueued, ensured } = makeDeps({ storedNextRun: stored });
 
     await runner.restoreAll();
 
-    expect(enqueued).toHaveLength(1);
-    expect(enqueued[0]!.toISOString()).toBe(stored);
+    expect(ensured).toHaveLength(1);
+    expect(ensured[0]!.toISOString()).toBe(stored);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a replica booting mid-deploy while a fire is due must not skip to the next occurrence — the due fire runs late rather than never.
+  it("restoreAll keeps an overdue stored nextRun instead of skipping past it", async () => {
+    const stored = "2026-06-12T10:00:00.000Z";
+    const { runner, ensured } = makeDeps({ storedNextRun: stored });
+
+    await runner.restoreAll();
+
+    expect(ensured).toHaveLength(1);
+    expect(ensured[0]!.toISOString()).toBe(stored);
   });
 });

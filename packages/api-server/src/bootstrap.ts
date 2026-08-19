@@ -870,6 +870,9 @@ export async function bootstrap() {
       `[schedules] restoreAll failed: ${(err as Error).message}\n`,
     );
   });
+  await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
+    schedulesBoot.runner.restoreAll(),
+  );
 
   const { readSpec: harnessReadTemplateSpec } =
     composeTemplatesModule(templatesRepo);

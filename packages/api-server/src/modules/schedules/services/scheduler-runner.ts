@@ -64,21 +64,27 @@ export function createSchedulerRunner(
       log(`fire: schedule ${scheduleId} failed: ${result}`);
     }
 
-    const ownerSub = await deps.repo.getOwnerById(scheduleId);
-    if (ownerSub) {
-      emit({
-        type: EventType.ScheduleFired,
-        scheduleId,
-        agentId: sched.agentId,
-        ownerSub,
-        mode: sched.spec.sessionMode ?? "fresh",
-        outcome,
-      });
-    }
-
     const next = nextFireAt(sched.spec, now());
     await deps.repo.recordFire(scheduleId, result, next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
+
+    try {
+      const ownerSub = await deps.repo.getOwnerById(scheduleId);
+      if (ownerSub) {
+        emit({
+          type: EventType.ScheduleFired,
+          scheduleId,
+          agentId: sched.agentId,
+          ownerSub,
+          mode: sched.spec.sessionMode ?? "fresh",
+          outcome,
+        });
+      }
+    } catch (err) {
+      log(
+        `fire: schedule ${scheduleId} emit failed: ${(err as Error).message}`,
+      );
+    }
     if (outcome === "failure") throw new Error(result);
   }
 
@@ -123,12 +129,9 @@ export function createSchedulerRunner(
       const enabled = await deps.repo.listAllEnabled();
       for (const s of enabled) {
         const stored = s.status?.nextRun ? new Date(s.status.nextRun) : null;
-        const next =
-          stored && stored.getTime() > now().getTime()
-            ? stored
-            : nextFireAt(s.spec, now());
-        await deps.repo.setNextRun(s.id, next);
-        if (next) await deps.queue.enqueue(s.id, next, now());
+        const next = stored ?? nextFireAt(s.spec, now());
+        if (!stored) await deps.repo.setNextRun(s.id, next);
+        if (next) await deps.queue.ensure(s.id, next, now());
       }
       log(`restored ${enabled.length} schedules`);
     },
