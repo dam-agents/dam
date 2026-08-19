@@ -1,28 +1,12 @@
-import {
-  Checkmark,
-  CheckmarkFilled,
-  Close,
-  Globe,
-  Misuse,
-  SettingsAdjust,
-} from "@carbon/icons-react";
+import { SettingsAdjust } from "@carbon/icons-react";
 import { type ApprovalView, describeApprovalPayload } from "api-server-api";
 import { useMemo } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import { useStore } from "../../../store.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
-import {
-  useApproveHost,
-  useApproveOnce,
-  useApprovePermanent,
-  useDenyForever,
-  useDismissApproval,
-} from "../api/mutations.js";
-import { useEgressApprovalRestart } from "../lib/egress-approval-restart.js";
-import { isHeldCallStillLive } from "../lib/hold.js";
+import { useApprovalActions } from "../hooks/use-approval-actions.js";
 
 const STATUS_LABEL: Record<ApprovalView["status"], string> = {
   pending: "pending",
@@ -69,26 +53,10 @@ function ApprovalRow({
   row: ApprovalView;
   density: "compact" | "full";
 }) {
-  const approveOnce = useApproveOnce();
-  const approvePermanent = useApprovePermanent();
-  const approveHost = useApproveHost();
-  const denyForever = useDenyForever();
-  const dismiss = useDismissApproval();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const agentName = useAgentDisplayName(row.agentId);
-  const restart = useEgressApprovalRestart(row);
+  const { actions, inflight, hostLabel, expiredNote, openSettings } =
+    useApprovalActions(row);
   const { title, subtitle } = describeApprovalPayload(row.payload);
-  const live = isHeldCallStillLive(row);
-  const inflight =
-    approveOnce.isPending ||
-    approvePermanent.isPending ||
-    approveHost.isPending ||
-    denyForever.isPending ||
-    dismiss.isPending;
-  const expired = row.status === "expired";
-  const allowOnceDisabled = row.type === "ext_authz" ? !live : false;
-  const hostLabel = row.payload.kind === "ext_authz" ? row.payload.host : null;
-  const showHostActions = hostLabel !== null;
 
   return (
     <li className="border-b border-border px-3 py-3 flex flex-col gap-2">
@@ -122,89 +90,29 @@ function ApprovalRow({
       </div>
       {row.status !== "resolved" && (
         <div className="flex flex-wrap gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            disabled={inflight || allowOnceDisabled}
-            onClick={() => approveOnce.mutate({ id: row.id })}
-            tooltip={
-              allowOnceDisabled
-                ? "Original request already failed; pick Allow permanently to allow future retries"
-                : undefined
-            }
-          >
-            <Checkmark size={11} /> Allow once
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            disabled={inflight}
-            onClick={() => {
-              void restart
-                .confirmNarrow("Allow & restart")
-                .then((ok) => ok && approvePermanent.mutate({ id: row.id }));
-            }}
-            tooltip={restart.permanentTooltip}
-          >
-            <CheckmarkFilled size={11} /> Allow permanently
-          </Button>
-          {showHostActions && (
+          {actions.map((action) => (
             <Button
+              key={action.id}
               type="button"
               variant="outline"
+              tone={action.danger ? "danger" : undefined}
               size="xs"
-              className="min-w-0 max-w-full"
-              disabled={inflight}
-              onClick={() => {
-                void restart
-                  .confirmHost("Allow & restart")
-                  .then((ok) => ok && approveHost.mutate({ id: row.id }));
-              }}
-              tooltip={restart.allowHostTooltip}
+              className={action.id === "allow-host" ? "min-w-0 max-w-full" : ""}
+              disabled={action.disabled}
+              onClick={action.run}
+              tooltip={action.tooltip}
             >
-              <Globe size={11} />
-              <span className="truncate">Allow {hostLabel}</span>
+              <action.icon size={11} />
+              <span className="truncate">{action.label}</span>
             </Button>
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            tone="danger"
-            size="xs"
-            disabled={inflight || !live}
-            onClick={() => dismiss.mutate({ id: row.id })}
-            tooltip={
-              !live
-                ? "Original request already failed; nothing to dismiss"
-                : "Deny this single request — re-prompts on the next attempt"
-            }
-          >
-            <Close size={11} /> Dismiss
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            tone="danger"
-            size="xs"
-            disabled={inflight}
-            onClick={() => {
-              void restart
-                .confirmNarrow("Deny & restart")
-                .then((ok) => ok && denyForever.mutate({ id: row.id }));
-            }}
-            tooltip={restart.denyForeverTooltip}
-          >
-            <Misuse size={11} /> Deny forever
-          </Button>
-          {showHostActions && (
+          ))}
+          {hostLabel !== null && (
             <Button
               type="button"
               variant="ghost"
               size="xs"
               disabled={inflight}
-              onClick={() => navigateToSandboxHome(row.agentId)}
+              onClick={openSettings}
               tooltip="Open this agent's settings (connections, network access, environment)"
             >
               <SettingsAdjust size={11} /> Customize…
@@ -212,11 +120,8 @@ function ApprovalRow({
           )}
         </div>
       )}
-      {expired && row.type === "ext_authz" && (
-        <p className="text-[11px] text-muted-foreground">
-          The original request already failed. Allow permanently writes a rule
-          that future retries match.
-        </p>
+      {expiredNote && (
+        <p className="text-[11px] text-muted-foreground">{expiredNote}</p>
       )}
     </li>
   );

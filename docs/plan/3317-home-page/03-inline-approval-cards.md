@@ -47,6 +47,21 @@ So the resolved card is a within-session affordance — it survives until the qu
 page reloads, and then the approval is simply gone. Do not build anything that implies persisted
 history, and do not add a client-side store to fake it.
 
+### 3b. Two places the prototype is wrong
+
+The prototype calls the approve/deny mutations directly and ignores two rules the real list enforces.
+Keep the real ones:
+
+- **Restart confirmations.** `approvePermanent`, `approveHost` and `denyForever` write gateway rules
+  and can restart the network gateway, so they go through `useEgressApprovalRestart`'s
+  `confirmNarrow`/`confirmHost` first.
+- **Liveness.** "Allow once" is disabled for an `ext_authz` approval whose held call has died, and
+  "Deny this request" is disabled when the call is no longer live — both with tooltips saying why.
+
+**Feed layout.** The detail chip holds an arbitrarily long string (a URL, a shell command). `1fr` is
+`minmax(auto, 1fr)`, so without `minmax(0,1fr)` on the grid column and `min-w-0` on the chip, a long
+unbreakable string widens the whole feed column instead of truncating.
+
 ### 4. Optimistic behavior and failure
 
 Follow whatever `approvals-list.tsx` does today for pending state and errors — if it invalidates

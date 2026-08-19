@@ -2,7 +2,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
 import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
@@ -18,13 +18,16 @@ export const homeKeys = {
 
 export interface Feed {
   items: FeedItem[];
+  agents: readonly AgentView[];
   runningAgents: readonly AgentView[];
   hasAgents: boolean;
+  loadingAgents: boolean;
   loadingApprovals: boolean;
 }
 
 export function useFeed(): Feed {
   const agents = useAgentsList();
+  const agentsQuery = useAgents();
   const approvals = useApprovalsForOwner();
 
   const runningAgents = useMemo(
@@ -53,8 +56,10 @@ export function useFeed(): Feed {
 
   return {
     items,
+    agents,
     runningAgents,
     hasAgents: agents.length > 0,
+    loadingAgents: agentsQuery.isPending,
     loadingApprovals: approvals.isPending,
   };
 }

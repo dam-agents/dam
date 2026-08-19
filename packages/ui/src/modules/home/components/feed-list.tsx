@@ -1,11 +1,11 @@
-import { Chemistry, Code, Time, WarningAlt } from "@carbon/icons-react";
-import { describeApprovalPayload } from "api-server-api";
+import { Chemistry, Code, Time } from "@carbon/icons-react";
 
 import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import type { AgentView } from "../../../types.js";
 import type { FeedItem } from "../lib/feed-item.js";
+import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCard } from "./feed-card.js";
 
 const HOUR_MS = 3_600_000;
@@ -47,13 +47,11 @@ export function FeedList({ items, agents, onOpenSession }: Props) {
       {items.map((item) => {
         const meta = item.at ? timeAgo(item.at, now) : "—";
         if (item.kind === "approval") {
-          const { title } = describeApprovalPayload(item.approval.payload);
           return (
-            <FeedCard
+            <FeedApprovalCard
               key={item.id}
-              icon={<WarningAlt size={16} className="shrink-0" />}
+              approval={item.approval}
               agentName={nameOf(item.agentId)}
-              title={title}
               meta={meta}
             />
           );

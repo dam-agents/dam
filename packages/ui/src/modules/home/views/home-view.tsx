@@ -18,13 +18,32 @@ import {
 } from "../lib/feed-filter.js";
 
 export function HomeView() {
-  const { items, runningAgents, hasAgents, loadingApprovals } = useFeed();
+  const {
+    items,
+    agents,
+    runningAgents,
+    hasAgents,
+    loadingAgents,
+    loadingApprovals,
+  } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
 
   const [status, setStatus] = useState<FeedStatus>("all");
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
     () => new Set(FEED_SOURCES),
   );
+
+  if (loadingAgents) {
+    return (
+      <div>
+        <HomeGreeting title="Activity" />
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <ListSkeleton rows={3} rowHeight={126} />
+          <aside />
+        </div>
+      </div>
+    );
+  }
 
   if (!hasAgents) {
     return (
@@ -49,7 +68,7 @@ export function HomeView() {
   return (
     <div>
       <HomeGreeting title="Activity" />
-      <div className="grid items-start gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-3">
           <div className="flex items-center justify-between pb-1">
             <FeedFilterBar
@@ -77,7 +96,7 @@ export function HomeView() {
           ) : visible.length > 0 ? (
             <FeedList
               items={visible}
-              agents={runningAgents}
+              agents={agents}
               onOpenSession={openAgentSession}
             />
           ) : (
