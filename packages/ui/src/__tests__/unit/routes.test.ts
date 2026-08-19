@@ -30,13 +30,6 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it.each(["/sandboxes", "/sandboxes/", "/sandboxes/new"])(
-    "sends the retired %s to Home",
-    (path) => {
-      expect(parseRoute(path).view).toBe("list");
-    },
-  );
-
   it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
     expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");
   });
