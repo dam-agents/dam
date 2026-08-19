@@ -43,6 +43,12 @@ export type Route =
 
 export type View = Route["view"];
 
+export const RETIRED_PATHS = new Set([
+  "/sandboxes",
+  "/sandboxes/",
+  "/sandboxes/new",
+]);
+
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
 const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
@@ -70,7 +76,7 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (path === "/sandboxes/new") return { view: "coding-agent-new" };
+  if (RETIRED_PATHS.has(path)) return { view: "list" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {

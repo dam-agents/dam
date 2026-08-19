@@ -30,9 +30,12 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it("parses the legacy /sandboxes/new as the coding agent setup page", () => {
-    expect(parseRoute("/sandboxes/new").view).toBe("coding-agent-new");
-  });
+  it.each(["/sandboxes", "/sandboxes/", "/sandboxes/new"])(
+    "sends the retired %s to Home",
+    (path) => {
+      expect(parseRoute(path).view).toBe("list");
+    },
+  );
 
   it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
     expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");
