@@ -119,3 +119,43 @@ describe("createRRule createdBy", () => {
     expect(getCreated()?.spec.createdBy).toBe("agent");
   });
 });
+
+describe("listForOwner", () => {
+  // TEST_SCENARIO: an owner-wide read is an authorization boundary — a manual smoke test cannot
+  // show the absence of another owner's rows, so pin that the service scopes the query itself.
+  it("asks the repository only for the caller's own schedules", async () => {
+    const seen: { owner?: string; limit?: number }[] = [];
+    const repo = {
+      async listForOwner(owner: string, limit?: number) {
+        seen.push({ owner, limit });
+        return [];
+      },
+    } as unknown as SchedulesRepository;
+    const runner = { async sync() {} } as unknown as SchedulerRunner;
+    const service = createSchedulesService({ repo, runner, owner: OWNER });
+
+    await service.listForOwner();
+    await service.listForOwner(5);
+
+    expect(seen).toEqual([
+      { owner: OWNER, limit: undefined },
+      { owner: OWNER, limit: 5 },
+    ]);
+  });
+
+  it("never lets a caller choose whose schedules it reads", async () => {
+    const repo = {
+      async listForOwner(owner: string) {
+        return owner === OWNER
+          ? [{ id: "mine", agentId: "agent-1", name: "mine", spec: makeCurrent().spec }]
+          : [{ id: "theirs", agentId: "agent-9", name: "theirs", spec: makeCurrent().spec }];
+      },
+    } as unknown as SchedulesRepository;
+    const runner = { async sync() {} } as unknown as SchedulerRunner;
+    const service = createSchedulesService({ repo, runner, owner: OWNER });
+
+    const rows = await service.listForOwner();
+
+    expect(rows.map((r) => r.id)).toEqual(["mine"]);
+  });
+});

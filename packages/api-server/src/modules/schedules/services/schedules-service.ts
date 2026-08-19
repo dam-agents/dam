@@ -43,6 +43,7 @@ export function createSchedulesService(deps: {
 
   return {
     list: (agentId) => deps.repo.list(agentId, deps.owner),
+    listForOwner: (limit) => deps.repo.listForOwner(deps.owner, limit),
     get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {

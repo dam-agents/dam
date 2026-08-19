@@ -25,6 +25,16 @@ export function useSchedules(agentId: string | null) {
   });
 }
 
+export function useOwnerSchedules(limit?: number) {
+  return useQuery({
+    ...trpc.schedules.listForOwner.queryOptions(
+      limit === undefined ? undefined : { limit },
+    ),
+    staleTime: 5000,
+    meta: { errorToast: "Couldn't refresh schedules" },
+  });
+}
+
 export function useScheduleSessions(
   agentId: string | null,
   scheduleId: string | null,

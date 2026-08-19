@@ -5,6 +5,7 @@ import { scheduleSpecSchema } from "api-server-api";
 
 export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
+  listForOwner(owner: string, limit?: number): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
   getById(id: string): Promise<Schedule | null>;
   getOwnerById(id: string): Promise<string | null>;
@@ -58,6 +59,18 @@ function rowToSchedule(row: InternalRow): Schedule {
 
 export function createSchedulesRepository(db: Db): SchedulesRepository {
   return {
+    async listForOwner(owner, limit): Promise<Schedule[]> {
+      const query = db
+        .select()
+        .from(schedulesTable)
+        .where(eq(schedulesTable.owner, owner))
+        .orderBy(asc(schedulesTable.nextRun), asc(schedulesTable.createdAt));
+      const rows = (await (limit === undefined
+        ? query
+        : query.limit(limit))) as InternalRow[];
+      return rows.map(rowToSchedule);
+    },
+
     async list(agentId, owner): Promise<Schedule[]> {
       const rows = (await db
         .select()
