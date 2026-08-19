@@ -6,6 +6,7 @@ import {
   View,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
+import { useCallback, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,10 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { usePrefetchArtifactPreview } from "../api/queries.js";
+import {
+  type ArtifactDragCallbacks,
+  useArtifactRowDrag,
+} from "../hooks/use-artifact-row-drag.js";
 import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
@@ -41,11 +46,13 @@ export interface ArtifactRowActions {
 interface Props extends ArtifactRowActions {
   artifact: LibraryArtifact;
   showAgent?: boolean;
+  drag?: ArtifactDragCallbacks;
 }
 
 export function ArtifactRow({
   artifact,
   showAgent = true,
+  drag,
   onPreview,
   onRename,
   onMove,
@@ -57,15 +64,30 @@ export function ArtifactRow({
   const warmPreview = () => {
     if (isRenderedKind(artifact.kind)) prefetchPreview(artifact.id);
   };
+  const [dragging, setDragging] = useState(false);
+  const startDrag = useCallback(() => {
+    setDragging(true);
+    drag?.onStart();
+  }, [drag]);
+  const endDrag = useCallback(() => {
+    setDragging(false);
+    drag?.onEnd();
+  }, [drag]);
+  const dragProps = useArtifactRowDrag(artifact.id, {
+    onStart: startDrag,
+    onEnd: endDrag,
+  });
 
   return (
     <div
       {...clickableProps(() => onPreview(artifact))}
+      {...(drag ? dragProps : {})}
       onMouseEnter={warmPreview}
       onFocus={warmPreview}
       className={cn(
         "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/60",
         deletion.state === "expired" && "opacity-55",
+        dragging && "opacity-50",
       )}
       data-testid="artifact-row"
     >
@@ -101,6 +123,7 @@ export function ArtifactRow({
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <ArtifactStatusBadge artifact={artifact} />
         <div
+          draggable={false}
           className={cn("flex gap-0.5", HOVER_ACTION)}
           onClick={(e) => e.stopPropagation()}
         >

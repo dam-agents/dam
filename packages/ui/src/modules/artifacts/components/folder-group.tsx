@@ -24,7 +24,19 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
+import {
+  type FolderDropCallbacks,
+  useFolderDropTarget,
+} from "../hooks/use-artifact-row-drag.js";
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";
+
+const INERT_DROP: FolderDropCallbacks = {
+  onStart: () => {},
+  onEnd: () => {},
+  onEnter: () => {},
+  onLeave: () => {},
+  onDrop: () => {},
+};
 
 export interface FolderGroupActions {
   onEditFolder: (folder: ArtifactFolder) => void;
@@ -44,6 +56,8 @@ interface Props extends ArtifactRowActions, Partial<FolderGroupActions> {
   defaultCollapsed?: boolean;
   nested?: boolean;
   sections?: FolderSection[];
+  drop?: FolderDropCallbacks;
+  dropActive?: boolean;
 }
 
 export function FolderGroup({
@@ -53,21 +67,29 @@ export function FolderGroup({
   defaultCollapsed = false,
   nested = false,
   sections,
+  drop,
+  dropActive = false,
   onEditFolder,
   onDeleteFolder,
   onCopyFolderLink,
   ...rowActions
 }: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const dropTarget = useFolderDropTarget(
+    folder?.id ?? null,
+    drop ?? INERT_DROP,
+  );
   const { copy } = useCopy();
   const sharedCount = artifacts.filter((a) => a.visibility === "public").length;
   const Wrapper = nested ? "div" : Card;
 
   return (
     <Wrapper
+      {...(drop ? dropTarget : {})}
       className={cn(
         "overflow-hidden",
         nested ? "border-t border-border/60" : "anim-in",
+        dropActive && "ring-2 ring-primary ring-inset",
       )}
     >
       <div className="group flex select-none items-center pr-3.5 transition-colors hover:bg-muted/60">
@@ -152,6 +174,7 @@ export function FolderGroup({
                   <ArtifactRow
                     key={artifact.id}
                     artifact={artifact}
+                    drag={drop}
                     {...rowActions}
                   />
                 ))}
@@ -162,6 +185,7 @@ export function FolderGroup({
               <ArtifactRow
                 key={artifact.id}
                 artifact={artifact}
+                drag={drop}
                 {...rowActions}
               />
             ))
