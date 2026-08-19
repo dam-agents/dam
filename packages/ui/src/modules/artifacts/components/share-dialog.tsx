@@ -15,6 +15,7 @@ import { useCopy } from "@/hooks/use-copy";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
+import { toastCopyOutcome } from "../lib/share-link.js";
 
 interface Props {
   artifact: LibraryArtifact;
@@ -104,7 +105,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 size="icon-sm"
                 aria-label="Copy link"
                 tooltip="Copy link"
-                onClick={() => void copy(shareUrl)}
+                onClick={() => void copy(shareUrl).then(toastCopyOutcome)}
               >
                 {copied ? (
                   <Checkmark size={14} className="text-success" />
