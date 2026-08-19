@@ -87,7 +87,7 @@ list. Everything else reads contracts that already exist: `approvals.listForOwne
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | Home module, two-column shell, feed spine | The route, the layout, the three feed sources, chronological ordering | — |
-| 02 | Feed filtering | Status filter and sources in/out | 01 |
+| 02 ✅ | Feed filtering | Status filter and sources in/out | 01 |
 | 03 | Inline approval cards | Approvals in the feed with the full action set and their resolved state | 01 |
 | 04 | Dismiss, clear all, and `platform/markSeen` | Feed dismissal that survives a reload | 01 |
 | 05 | Compute and spend widgets | Per-agent CPU/memory bars; spend with its period toggle | 01 |

@@ -47,10 +47,11 @@ Empty results need their own state per filter: "nothing in progress" reads diffe
 needs your attention", and a user who filtered themselves into an empty list must be able to tell that
 from a genuinely quiet system. Show the active filter in the empty message.
 
-### 4. Counts
+### 4. Stats readout
 
-The prototype shows a count beside the status options. Derive counts from the unfiltered list so they
-stay stable as the user switches — a count that changes because of the filter it labels is a bug.
+The status options carry no counts. The prototype puts a readout to the right of the control —
+`N running · M to review` — counted over the **visible** feed, so it describes what you are looking at.
+It hides when the feed is empty, because the empty state says it instead.
 
 ## Acceptance criteria
 
@@ -58,8 +59,10 @@ stay stable as the user switches — a count that changes because of the filter 
 - [ ] Each status option shows only matching items; *Everything* shows the union.
 - [ ] Excluding schedules or channels removes only those, and re-including restores them.
 - [ ] Changing a filter fires no new network request.
-- [ ] Counts are computed from the unfiltered list and do not move when the filter changes.
-- [ ] An empty result names the active filter rather than implying the system is idle.
+- [ ] The status and source controls are one dropdown, as the prototype draws it — not two.
+- [ ] The stats readout shows running and to-review counts over the visible feed.
+- [ ] An empty result renders the empty-state card and names the active filter rather than implying the
+      system is idle.
 - [ ] There is no page-level time-range control anywhere on Home.
 - [ ] The filter predicates are pure and live outside the components.
 

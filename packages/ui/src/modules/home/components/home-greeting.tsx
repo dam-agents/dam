@@ -6,7 +6,7 @@ function greetingFor(hour: number): string {
 
 export function HomeGreeting({ title }: { title: string }) {
   return (
-    <div className="pb-4">
+    <div className="pb-10">
       <p className="mb-1 text-[18px] text-muted-foreground">
         {greetingFor(new Date().getHours())}
       </p>
