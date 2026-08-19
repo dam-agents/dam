@@ -12,8 +12,12 @@ interface SessionLog {
   nextSeq: number;
   totalBytes: number;
   truncated: boolean;
-  metadata: unknown;
+  metadata: CachedMetadata;
 }
+
+export type CachedMetadata =
+  | { cached: true; value: unknown }
+  | { cached: false };
 
 export interface SessionTranscript {
   append(sessionId: string, line: string): void;
@@ -26,7 +30,7 @@ export interface SessionTranscript {
   catchUp(channel: ClientChannel, sessionId: string): void;
   advanceToTail(channel: ClientChannel, sessionId: string): void;
   cacheMetadata(sessionId: string, result: unknown): void;
-  metadataOf(sessionId: string): unknown;
+  metadataOf(sessionId: string): CachedMetadata;
   forget(sessionId: string): void;
   dropChannel(channel: ClientChannel): void;
   clear(): void;
@@ -57,7 +61,7 @@ export function createSessionTranscript(
         nextSeq: 1,
         totalBytes: 0,
         truncated: false,
-        metadata: null,
+        metadata: { cached: false },
       };
       sessionLogs.set(sessionId, log);
     }
@@ -160,11 +164,11 @@ export function createSessionTranscript(
 
     cacheMetadata(sessionId, result) {
       const log = getOrCreateLog(sessionId);
-      if (log.metadata === null) log.metadata = result;
+      if (!log.metadata.cached) log.metadata = { cached: true, value: result };
     },
 
     metadataOf(sessionId) {
-      return sessionLogs.get(sessionId)?.metadata ?? null;
+      return sessionLogs.get(sessionId)?.metadata ?? { cached: false };
     },
 
     forget(sessionId) {

@@ -436,7 +436,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
   ): void {
     const metadata = transcript.metadataOf(sessionId);
-    if (metadata === null) {
+    if (!metadata.cached) {
       throw new Error(
         `serveLoadFromLog called for ${sessionId} without cached metadata`,
       );
@@ -446,7 +446,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: metadata,
+      result: metadata.value,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -457,7 +457,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
   ): void {
     const metadata = transcript.metadataOf(sessionId);
-    if (metadata === null) {
+    if (!metadata.cached) {
       throw new Error(
         `serveResumeFromLog called for ${sessionId} without cached metadata`,
       );
@@ -467,7 +467,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: metadata,
+      result: metadata.value,
     });
     sendToChannel(channel, rewriteAuthError(response));
   }
@@ -526,7 +526,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const boot = bootstrapBySession.get(sid);
           if (boot) {
             bootstrapBySession.delete(sid);
-            const loadFailed = transcript.metadataOf(sid) === null;
+            const loadFailed = !transcript.metadataOf(sid).cached;
             for (const waiter of boot.waiters) {
               if (!waiter.channel.isOpen()) continue;
               if (loadFailed) {
@@ -642,7 +642,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata.set(paramsSid, { ...current, ...incomingMeta });
         }
         engage(channel, paramsSid);
-        if (transcript.metadataOf(paramsSid) !== null) {
+        if (transcript.metadataOf(paramsSid).cached) {
           serveResumeFromLog(channel, frame.id, paramsSid);
           return;
         }
@@ -676,7 +676,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (method === "session/load" && paramsSid) {
-        if (transcript.metadataOf(paramsSid) !== null) {
+        if (transcript.metadataOf(paramsSid).cached) {
           serveLoadFromLog(channel, frame.id, paramsSid);
           return;
         }
