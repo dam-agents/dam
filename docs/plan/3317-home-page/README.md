@@ -89,7 +89,7 @@ list. Everything else reads contracts that already exist: `approvals.listForOwne
 | 01 ✅ | Home module, two-column shell, feed spine | The route, the layout, the three feed sources, chronological ordering | — |
 | 02 ✅ | Feed filtering | Status filter and sources in/out | 01 |
 | 03 ✅ | Inline approval cards | Approvals in the feed with the full action set and their resolved state | 01 |
-| 04 | Dismiss, clear all, and `platform/markSeen` | Feed dismissal that survives a reload | 01 |
+| 04 ✅ | Dismiss, clear all, and `platform/markSeen` | Feed dismissal that survives a reload | 01 |
 | 05 | Compute and spend widgets | Per-agent CPU/memory bars; spend with its period toggle | 01 |
 | 06 | Owner-wide schedule list | The one contract change | — |
 | 07 | Schedules widget | Top-five list, "See all" modal, toggle, inline create and edit | 06 |
@@ -128,6 +128,24 @@ graph LR
   `--force api-server:check` and `--force api-server:test`.
 - No code comments except the registered typed prefixes. Never hardcode the brand.
 - Home is the landing route for every signed-in user, including one with no sandboxes.
+
+## Verifying a backend slice
+
+The dev cluster runs **built images**, not your working tree, so a change outside `packages/ui` is
+invisible to it until that service is rebuilt and reloaded:
+
+| Changed | Rebuild with | Cost |
+| --- | --- | --- |
+| `packages/agent-runtime` (slice 04) | `mise run cluster:build-agent` | restarts agent pods, killing in-flight sessions |
+| `packages/api-server` (slice 06) | `mise run cluster:build-apiserver` | restarts the api-server pod |
+
+Both build images, so both can hit the VPN/MTU hang this cluster is prone to. Until the rebuild, a new
+tRPC procedure answers `No procedure found` and a new ACP ext-method falls through to the
+unknown-method path — which for a session-scoped request still `engage`s the session, so it can look
+like it worked while actually erroring. Do not read that as success, and do not tune error handling
+against it.
+
+The UI dev server proxies to the cluster, so `packages/ui` changes need no rebuild at all.
 
 ## Whole-feature smoke test
 

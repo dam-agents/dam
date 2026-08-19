@@ -16,6 +16,7 @@ interface Props {
   items: readonly FeedItem[];
   agents: readonly AgentView[];
   onOpenSession: (agentId: string, sessionId: string) => void;
+  onDismissUnread: (agentId: string, sessionId: string) => void;
 }
 
 function sessionIcon(
@@ -35,7 +36,12 @@ function tickFor(items: readonly FeedItem[], from: number): number {
   return youngest < HOUR_MS ? MINUTE_MS : COARSE_TICK_MS;
 }
 
-export function FeedList({ items, agents, onOpenSession }: Props) {
+export function FeedList({
+  items,
+  agents,
+  onOpenSession,
+  onDismissUnread,
+}: Props) {
   const tick = tickFor(items, Date.now());
   const now = useNow(tick);
 
@@ -67,6 +73,11 @@ export function FeedList({ items, agents, onOpenSession }: Props) {
             working={item.kind === "in-progress"}
             unread={item.kind === "unread"}
             onOpen={() => onOpenSession(item.agentId, session.sessionId)}
+            onDismiss={
+              item.kind === "unread"
+                ? () => onDismissUnread(item.agentId, session.sessionId)
+                : undefined
+            }
           />
         );
       })}

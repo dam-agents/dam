@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
+import { useMarkSessionsSeen } from "../api/mutations.js";
 import { useFeed } from "../api/queries.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
@@ -27,6 +28,7 @@ export function HomeView() {
     loadingApprovals,
   } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
+  const markSeen = useMarkSessionsSeen();
 
   const [status, setStatus] = useState<FeedStatus>("all");
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
@@ -56,6 +58,7 @@ export function HomeView() {
 
   const visible = filterFeed(items, status, included);
   const stats = feedStats(visible);
+  const dismissible = visible.filter((item) => item.kind === "unread");
 
   const toggleSource = (source: FeedSource) =>
     setIncluded((prev) => {
@@ -78,17 +81,37 @@ export function HomeView() {
               onToggleSource={toggleSource}
             />
             {visible.length > 0 && (
-              <p className="text-sm text-muted-foreground tabular-nums">
-                <span className="font-medium text-foreground">
-                  {stats.running}
-                </span>{" "}
-                running
-                <span className="mx-1.5 text-border">·</span>
-                <span className="font-medium text-foreground">
-                  {stats.toReview}
-                </span>{" "}
-                to review
-              </p>
+              <div className="flex items-center gap-4">
+                <p className="text-sm text-muted-foreground tabular-nums">
+                  <span className="font-medium text-foreground">
+                    {stats.running}
+                  </span>{" "}
+                  running
+                  <span className="mx-1.5 text-border">·</span>
+                  <span className="font-medium text-foreground">
+                    {stats.toReview}
+                  </span>{" "}
+                  to review
+                </p>
+                {dismissible.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={markSeen.isPending}
+                    onClick={() =>
+                      markSeen.mutate(
+                        dismissible.map((item) => ({
+                          agentId: item.agentId,
+                          sessionId: item.session.sessionId,
+                        })),
+                      )
+                    }
+                    title="Marks unread items read. Approvals and running work stay."
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             )}
           </div>
           {loadingApprovals && items.length === 0 ? (
@@ -98,6 +121,9 @@ export function HomeView() {
               items={visible}
               agents={agents}
               onOpenSession={openAgentSession}
+              onDismissUnread={(agentId, sessionId) =>
+                markSeen.mutate([{ agentId, sessionId }])
+              }
             />
           ) : (
             <FeedEmptyState
