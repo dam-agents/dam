@@ -44,6 +44,7 @@ function harness(
     ) => Promise<void> | void;
     linkedSub?: string | null;
     bindings?: AgentSpec[];
+    termsAccepted?: (sub: string) => boolean;
   } = {},
 ) {
   const gw = createFakeSlackGateway();
@@ -109,7 +110,7 @@ function harness(
       return true;
     },
     { name: "DAM", short: "dam" },
-    async () => true,
+    async (sub: string) => hooks.termsAccepted?.(sub) ?? true,
     "http://ui",
     stubTurnAttendance(),
     stubWorkspaceFiles(),
@@ -610,5 +611,112 @@ describe("handing off a read-along turn", () => {
     expect(outcomes[1]).toMatchObject({
       error: expect.stringContaining("cannot be handed on twice"),
     });
+  });
+});
+
+describe("hand-off refusals and signals the review named", () => {
+  const OTHER_OWNER = "kc|owner-2";
+
+  it("refuses a hand-off when the target's owner has not accepted the terms", async () => {
+    let outcome: unknown;
+    const h = harness(
+      [
+        { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+        { instanceName: REVIEWER, name: "Reviewer", owner: OTHER_OWNER },
+      ],
+      {
+        termsAccepted: (sub) => sub !== OTHER_OWNER,
+        onPrompt: async (agent, worker) => {
+          if (agent === SCRIBE)
+            outcome = await worker().handOffTurn(SCRIBE, "Reviewer");
+        },
+      },
+    );
+    await h.mention("<@U-BOT> a question");
+    await tick();
+    expect(outcome).toMatchObject({
+      error: expect.stringContaining("cannot take turns yet"),
+    });
+    expect(h.promptsFor(REVIEWER)).toHaveLength(0);
+  });
+
+  it("refuses a hand-off to an ambiguous target name", async () => {
+    let outcome: unknown;
+    const h = harness(
+      [
+        { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+        { instanceName: REVIEWER, name: "Twin" },
+        { instanceName: "agent-third", name: "Twin" },
+      ],
+      {
+        onPrompt: async (agent, worker) => {
+          if (agent === SCRIBE)
+            outcome = await worker().handOffTurn(SCRIBE, "Twin");
+        },
+      },
+    );
+    await h.mention("<@U-BOT> a question");
+    expect(outcome).toMatchObject({
+      error: expect.stringContaining("More than one agent"),
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: the ambiguity has to reach the agent that inherits the turn,
+   * or it answers as though the message were addressed to it plainly.
+   */
+  it("tells the default agent which name it could not resolve", async () => {
+    const h = harness([
+      { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+      { instanceName: REVIEWER, name: "Twin" },
+      { instanceName: "agent-third", name: "Twin" },
+    ]);
+    await h.mention("<@U-BOT> Twin have a look");
+    const prompt = h.promptsFor(SCRIBE)[0]!;
+    expect(prompt).toContain("Twin");
+    expect(prompt).toContain(
+      "more than one agent connected here answers to it",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: a reaction is an acknowledgement, not an answer. Counting it
+   * as a reply would tell later readers a question was handled when it wasn't.
+   */
+  it("does not count a reaction-only turn as an earlier reply", async () => {
+    const h = harness(
+      [
+        {
+          instanceName: SCRIBE,
+          name: "Scribe",
+          isDefault: true,
+          ambient: true,
+        },
+        { instanceName: REVIEWER, name: "Reviewer", ambient: true },
+      ],
+      {
+        onPrompt: async (agent, worker) => {
+          if (agent === SCRIBE) await worker().react(SCRIBE, { emoji: "eyes" });
+        },
+      },
+    );
+    await h.channelMessage("who owns the deploy script?");
+    const second = h.promptsFor(REVIEWER)[0]!;
+    expect(second).toContain("Nobody before you has replied");
+    expect(second).not.toContain("already replied");
+  });
+
+  /**
+   * TEST_SCENARIO: only agents with ambient on receive plain messages, so the
+   * guidance must not claim a mentions-only peer is reading along.
+   */
+  it("does not tell a reader that a mentions-only peer reads along", async () => {
+    const h = harness([
+      { instanceName: SCRIBE, name: "Scribe", isDefault: true, ambient: true },
+      { instanceName: REVIEWER, name: "Reviewer" },
+    ]);
+    await h.channelMessage("idle chatter");
+    const prompt = h.promptsFor(SCRIBE)[0]!;
+    expect(prompt).not.toContain("read along here too");
   });
 });

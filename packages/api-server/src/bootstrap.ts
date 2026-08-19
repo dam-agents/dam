@@ -18,7 +18,6 @@ import {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
-  claimSlackDefaultIfVacant,
   setSlackChannelDefault,
   createAgentSweep,
 } from "./modules/agents/index.js";

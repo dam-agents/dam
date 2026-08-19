@@ -204,26 +204,36 @@ export function isSlackDefaultUniqueViolation(e: unknown): boolean {
   return isUniqueViolation(e, "channels_slack_default_agent_idx");
 }
 
-export function claimSlackDefaultIfVacant(db: Db) {
-  return async (agentId: string, slackChannelId: string): Promise<boolean> => {
-    try {
-      const claimed = await db
-        .update(channels)
-        .set({ config: MARK_DEFAULT })
-        .where(
-          and(
-            eq(channels.agentId, agentId),
-            slackChannelIs(slackChannelId),
-            noDefaultYet(slackChannelId),
-          ),
-        )
-        .returning({ agentId: channels.agentId });
-      return claimed.length > 0;
-    } catch (e) {
-      if (isSlackDefaultUniqueViolation(e)) return false;
-      throw e;
-    }
-  };
+async function claimDefault(
+  runner: Db | Tx,
+  agentId: string,
+  slackChannelId: string,
+): Promise<boolean> {
+  try {
+    const claimed = await runner
+      .update(channels)
+      .set({ config: MARK_DEFAULT })
+      .where(
+        and(
+          eq(channels.agentId, agentId),
+          slackChannelIs(slackChannelId),
+          noDefaultYet(slackChannelId),
+        ),
+      )
+      .returning({ agentId: channels.agentId });
+    return claimed.length > 0;
+  } catch (e) {
+    if (isSlackDefaultUniqueViolation(e)) return false;
+    throw e;
+  }
+}
+
+export function claimSlackDefaultIfVacantTx(
+  tx: Tx,
+  agentId: string,
+  slackChannelId: string,
+): Promise<boolean> {
+  return claimDefault(tx, agentId, slackChannelId);
 }
 
 class NoSuchBinding extends Error {}

@@ -464,6 +464,11 @@ export function createAgentsService(deps: {
       channel: ChannelConfig,
     ) => Promise<void>;
     listByAgent: (tx: Tx, agentId: string) => Promise<ChannelConfig[]>;
+    claimDefaultIfVacant: (
+      tx: Tx,
+      agentId: string,
+      slackChannelId: string,
+    ) => Promise<boolean>;
   };
   findSlackBindings: (slackChannelId: string) => Promise<
     {
@@ -473,10 +478,6 @@ export function createAgentsService(deps: {
       isDefault: boolean;
     }[]
   >;
-  claimSlackDefaultIfVacant: (
-    agentId: string,
-    slackChannelId: string,
-  ) => Promise<boolean>;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
 }): AgentsService {
@@ -543,13 +544,30 @@ export function createAgentsService(deps: {
         }
         throw e;
       }
+      const claimedDefault = existing
+        ? false
+        : await deps.channelsTxRepo.claimDefaultIfVacant(
+            tx,
+            id,
+            slackChannelId,
+          );
       const channels = await deps.channelsTxRepo.listByAgent(tx, id);
-      return ok({ channels });
+      return ok({ channels, claimedDefault });
     });
 
     if (!txResult.ok) return txResult;
 
-    if (!existing) await deps.claimSlackDefaultIfVacant(id, slackChannelId);
+    if (txResult.value.claimedDefault) {
+      securityLog("info", "channel.default_changed", {
+        category: "authz-list",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, basis: "first-connect" },
+      });
+    }
 
     emit({
       type: EventType.SlackConnected,

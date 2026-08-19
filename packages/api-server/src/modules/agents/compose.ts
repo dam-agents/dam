@@ -28,7 +28,7 @@ import {
   deleteSlackChannelByAgent,
   deleteChannelsByAgentIds,
   findSlackBindingsByChannelId,
-  claimSlackDefaultIfVacant,
+  claimSlackDefaultIfVacantTx,
   upsertChannelTx,
   listChannelsByAgentTx,
 } from "./infrastructure/channel-bindings-repository.js";
@@ -104,9 +104,9 @@ export function composeAgentsModule(deps: {
         upsertChannel: (tx, agentId, channel) =>
           upsertChannelTx(tx, owner, agentId, channel),
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
+        claimDefaultIfVacant: claimSlackDefaultIfVacantTx,
       },
       findSlackBindings: findSlackBindingsByChannelId(deps.db),
-      claimSlackDefaultIfVacant: claimSlackDefaultIfVacant(deps.db),
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
     }),

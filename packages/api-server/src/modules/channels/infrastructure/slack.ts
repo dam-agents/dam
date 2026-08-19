@@ -759,12 +759,14 @@ export function createSlackWorker(
     sessionId?: string;
     releaseAttendance?: () => void;
     posted?: boolean;
+    messaged?: boolean;
     declined?: boolean;
     forwarded?: boolean;
     handedOff?: boolean;
     text?: string;
     slackUserId?: string;
     hasThread?: boolean;
+    hadAttachments?: boolean;
   };
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
@@ -827,11 +829,13 @@ export function createSlackWorker(
   function resolveTurn(
     instanceName: string,
     kind: "reply" | "react",
+    opts: { liveOnly?: boolean } = {},
   ): { ref: TurnRef } | { ambiguous: true } | { none: true } {
     const candidates = [
       ...(inFlightTurns.get(instanceName) ?? []),
       ...lingeringFor(instanceName),
     ];
+    if (candidates.length === 0 && opts.liveOnly) return { none: true };
     if (candidates.length > 0) {
       const target = (ref: TurnRef) =>
         kind === "reply"
@@ -862,10 +866,12 @@ export function createSlackWorker(
   function noteEngagedTurn(
     instanceName: string,
     match: (ref: TurnRef) => boolean,
+    opts: { messaged?: boolean } = {},
   ) {
     const engaged = findTurnRef(instanceName, match);
     if (!engaged) return;
     engaged.posted = true;
+    if (opts.messaged) engaged.messaged = true;
     lastTurn.set(instanceName, engaged);
   }
 
@@ -1107,6 +1113,7 @@ export function createSlackWorker(
       text: ctx.text,
       slackUserId: ctx.slackUserId,
       hasThread: ctx.hasThread,
+      hadAttachments: ctx.images.length > 0 || ctx.files.length > 0,
     };
 
     const presenter = createTurnPresenter(gw, {
@@ -2061,6 +2068,7 @@ export function createSlackWorker(
     droppedFiles: string[];
     externalActorId: string;
     roster?: RosterEntry[];
+    readers?: RosterEntry[];
     answeredAlready?: string[];
   }): Promise<{ posted: boolean }> {
     if (!gateway) return { posted: false };
@@ -2074,6 +2082,7 @@ export function createSlackWorker(
       text: m.text,
       slackUserId: m.slackUserId ?? args.externalActorId,
       hasThread: args.hasThread,
+      hadAttachments: args.images.length > 0 || args.files.length > 0,
     }));
     const droppedNote = renderWithheldNote(
       args.droppedFiles.map((name) => ({
@@ -2113,7 +2122,7 @@ export function createSlackWorker(
     const guidance = ambientGuidance(
       brand,
       agentName,
-      rosterCopy(args.roster, args.instanceName),
+      rosterCopy(args.readers ?? args.roster, args.instanceName),
       args.answeredAlready ?? [],
     );
 
@@ -2212,7 +2221,7 @@ export function createSlackWorker(
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
     }
-    return { posted: turnRefs.some((ref) => ref.posted === true) };
+    return { posted: turnRefs.some((ref) => ref.messaged === true) };
   }
 
   type AmbientPendingMessage = {
@@ -2322,6 +2331,7 @@ export function createSlackWorker(
             });
             const { posted } = await relayAmbientTurn({
               roster,
+              readers,
               answeredAlready: [...answeredAlready],
               instanceName: reader.instanceName,
               channel: queue.channelId,
@@ -2364,8 +2374,8 @@ export function createSlackWorker(
     const slackUserId = event.user;
     if (!slackUserId) return;
 
-    const roster = await resolveRoster(event.channel);
-    if (!roster.some((entry) => entry.ambient)) return;
+    const bindings = await channelRegistry.resolveSlackBindings(event.channel);
+    if (!bindings.some((binding) => binding.ambient)) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
@@ -2540,7 +2550,9 @@ export function createSlackWorker(
             };
           }
         }
-        noteEngagedTurn(instanceName, (ref) => ref.channel === target.id);
+        noteEngagedTurn(instanceName, (ref) => ref.channel === target.id, {
+          messaged: true,
+        });
         return { ok: true as const };
       } catch (err) {
         return { error: formatError(err) };
@@ -2549,7 +2561,7 @@ export function createSlackWorker(
 
     async handOffTurn(instanceName: string, targetName: string, note?: string) {
       if (!gateway) return { error: "Slack is not connected." };
-      const turn = resolveTurn(instanceName, "reply");
+      const turn = resolveTurn(instanceName, "reply", { liveOnly: true });
       if ("none" in turn)
         return {
           error:
@@ -2613,8 +2625,17 @@ export function createSlackWorker(
       ref.handedOff = true;
       ref.declined = true;
 
-      const handedText = note
-        ? `${ref.text ?? ""}\n\n[${self} handed this to you: ${note}]`
+      const droppedAttachments = ref.hadAttachments === true;
+      const handedNote = [
+        ...(note ? [`${self} handed this to you: ${note}`] : []),
+        ...(droppedAttachments
+          ? [
+              `${self} was sent files or images with this message; they are not carried over, so ask for them if you need them`,
+            ]
+          : []),
+      ];
+      const handedText = handedNote.length
+        ? `${ref.text ?? ""}\n\n[${handedNote.join(". ")}]`
         : (ref.text ?? "");
 
       void relaySharedTurn({
@@ -2725,6 +2746,7 @@ export function createSlackWorker(
         noteEngagedTurn(
           instanceName,
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,
+          { messaged: true },
         );
         return { ok: true as const };
       } catch (err) {

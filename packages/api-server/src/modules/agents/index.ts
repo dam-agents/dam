@@ -49,7 +49,7 @@ export {
   deleteSlackChannelByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
-  claimSlackDefaultIfVacant,
+  claimSlackDefaultIfVacantTx,
   setSlackChannelDefault,
   isSlackDefaultUniqueViolation,
   type SlackBindingRow,
