@@ -8,3 +8,9 @@ export function isExperimentFolder(folder: ArtifactFolder): boolean {
 export function isUserFolder(folder: ArtifactFolder): boolean {
   return !isExperimentFolder(folder);
 }
+
+export function folderDisplayName(folder: ArtifactFolder): string {
+  return isExperimentFolder(folder)
+    ? folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)
+    : folder.name;
+}

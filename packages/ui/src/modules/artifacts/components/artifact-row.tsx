@@ -65,15 +65,18 @@ export function ArtifactRow({
     if (isRenderedKind(artifact.kind)) prefetchPreview(artifact.id);
   };
   const [dragging, setDragging] = useState(false);
-  const startDrag = useCallback(() => {
-    setDragging(true);
-    drag?.onStart();
-  }, [drag]);
+  const startDrag = useCallback(
+    (folderId: string | null) => {
+      setDragging(true);
+      drag?.onStart(folderId);
+    },
+    [drag],
+  );
   const endDrag = useCallback(() => {
     setDragging(false);
     drag?.onEnd();
   }, [drag]);
-  const dragProps = useArtifactRowDrag(artifact.id, {
+  const dragProps = useArtifactRowDrag(artifact.id, artifact.folderId, {
     onStart: startDrag,
     onEnd: endDrag,
   });

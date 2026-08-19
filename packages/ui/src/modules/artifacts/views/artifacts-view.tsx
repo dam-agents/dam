@@ -1,6 +1,6 @@
 import { Search } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -58,6 +58,7 @@ export function ArtifactsView() {
     undefined,
   );
   const [dragInProgress, setDragInProgress] = useState(false);
+  const dragOriginId = useRef<string | null>(null);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -82,12 +83,19 @@ export function ArtifactsView() {
   const moveArtifact = updateArtifact.mutate;
   const dropCallbacks = useMemo<FolderDropCallbacks>(
     () => ({
-      onStart: () => setDragInProgress(true),
+      onStart: (folderId) => {
+        dragOriginId.current = folderId;
+        setDragInProgress(true);
+      },
       onEnd: () => {
+        dragOriginId.current = null;
         setDragInProgress(false);
         setHotFolderId(undefined);
       },
-      onEnter: (folderId) => setHotFolderId(folderId),
+      onEnter: (folderId) =>
+        setHotFolderId(
+          folderId === dragOriginId.current ? undefined : folderId,
+        ),
       onLeave: (folderId) =>
         setHotFolderId((hot) => (hot === folderId ? undefined : hot)),
       onDrop: (folderId, artifactId) => {

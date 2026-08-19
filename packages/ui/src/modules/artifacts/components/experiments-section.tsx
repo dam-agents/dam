@@ -4,7 +4,6 @@ import type {
   Experiment,
   LibraryArtifact,
 } from "api-server-api";
-import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/disclosure";
 
 import { useExperimentsAmbient } from "../../experiments/api/queries.js";
+import { folderDisplayName } from "../lib/folders.js";
 import type { ArtifactRowActions } from "./artifact-row.js";
 import {
   FolderGroup,
@@ -151,7 +151,7 @@ export function ExperimentsSection({
               nested
               defaultCollapsed={!searching}
               folder={folder}
-              displayName={folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)}
+              displayName={folderDisplayName(folder)}
               artifacts={artifacts}
               sections={partition(artifacts, clusters)}
               {...actions}

@@ -8,7 +8,7 @@ interface ArtifactDragSource {
 }
 
 export interface ArtifactDragCallbacks {
-  onStart: () => void;
+  onStart: (folderId: string | null) => void;
   onEnd: () => void;
 }
 
@@ -41,6 +41,7 @@ export function readArtifactMoveSource(
 
 export function useArtifactRowDrag(
   id: string,
+  folderId: string | null,
   { onStart, onEnd }: ArtifactDragCallbacks,
 ) {
   return useMemo(
@@ -49,11 +50,11 @@ export function useArtifactRowDrag(
       onDragStart: (e: ReactDragEvent) => {
         e.dataTransfer.setData(ARTIFACT_MOVE_MIME, JSON.stringify({ id }));
         e.dataTransfer.effectAllowed = "move";
-        onStart();
+        onStart(folderId);
       },
       onDragEnd: () => onEnd(),
     }),
-    [id, onStart, onEnd],
+    [id, folderId, onStart, onEnd],
   );
 }
 

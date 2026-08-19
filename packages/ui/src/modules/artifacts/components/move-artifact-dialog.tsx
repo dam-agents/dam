@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select";
 
 import { useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders } from "../api/queries.js";
-import { isUserFolder } from "../lib/folders.js";
+import { folderDisplayName, isUserFolder } from "../lib/folders.js";
 
 const NO_FOLDER = "";
 
@@ -36,10 +36,14 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
 
   const userFolders = (folders ?? []).filter(isUserFolder);
   const currentFolderId = artifact.folderId ?? NO_FOLDER;
-  const isMoveTarget = userFolders.some(
+  const currentFolder = (folders ?? []).find(
     (folder) => folder.id === currentFolderId,
   );
-  const selected = chosen ?? (isMoveTarget ? currentFolderId : NO_FOLDER);
+  const options =
+    currentFolder && !isUserFolder(currentFolder)
+      ? [currentFolder, ...userFolders]
+      : userFolders;
+  const selected = chosen ?? currentFolderId;
 
   const move = () => {
     if (pending) return;
@@ -68,12 +72,13 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
             aria-label="Folder"
             value={selected}
             autoFocus
+            disabled={folders === undefined}
             onChange={(e) => setChosen(e.target.value)}
           >
             <option value={NO_FOLDER}>No folder</option>
-            {userFolders.map((folder) => (
+            {options.map((folder) => (
               <option key={folder.id} value={folder.id}>
-                {folder.name}
+                {folderDisplayName(folder)}
               </option>
             ))}
           </Select>
