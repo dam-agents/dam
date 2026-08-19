@@ -3,8 +3,8 @@
 -- rather than disappears: a conversation still admits at most one *default*
 -- agent (the one a bare mention reaches), and an agent still cannot connect
 -- itself to the same conversation twice.
--- created_at gives default promotion a deterministic "oldest survivor" rule
--- when the default agent's binding is released.
+-- created_at records when a binding was made, which gives the roster shown in
+-- chat a stable order: the order the agents joined the conversation.
 DROP INDEX "channels_slack_channel_unique_idx";--> statement-breakpoint
 ALTER TABLE "channels" ADD COLUMN "created_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "channels_slack_agent_channel_idx" ON "channels" USING btree ("agent_id",("config"->>'slackChannelId')) WHERE "channels"."type" = 'slack';--> statement-breakpoint

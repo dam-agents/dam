@@ -91,7 +91,7 @@ function harness(opts: {
     async (agentId: string, channelId: string, ambient: boolean) => {
       ambientCalls.push({ agentId, channelId, ambient });
     },
-    async () => null,
+    async () => true,
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",

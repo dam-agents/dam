@@ -53,7 +53,7 @@ function harness(opts: {
     },
     async () => {},
     async () => {},
-    async () => null,
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

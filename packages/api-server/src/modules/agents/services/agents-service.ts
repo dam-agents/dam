@@ -450,15 +450,12 @@ export function createAgentsService(deps: {
   listChannelsByOwner: () => Promise<Map<string, ChannelConfig[]>>;
   listChannelsByAgent: (agentId: string) => Promise<ChannelConfig[]>;
   upsertChannel: (agentId: string, channel: ChannelConfig) => Promise<void>;
-  deleteChannelByType: (
-    agentId: string,
-    type: ChannelType,
-  ) => Promise<string[]>;
+  deleteChannelByType: (agentId: string, type: ChannelType) => Promise<void>;
   deleteSlackChannelByAgent: (
     agentId: string,
     slackChannelId: string,
   ) => Promise<boolean>;
-  deleteChannelsByAgentIds: (agentIds: string[]) => Promise<string[]>;
+  deleteChannelsByAgentIds: (agentIds: string[]) => Promise<void>;
   unitOfWork: UnitOfWork;
   channelsTxRepo: {
     upsertChannel: (
@@ -480,7 +477,6 @@ export function createAgentsService(deps: {
     agentId: string,
     slackChannelId: string,
   ) => Promise<boolean>;
-  promoteSlackDefault: (slackChannelId: string) => Promise<string | null>;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
 }): AgentsService {
@@ -540,7 +536,6 @@ export function createAgentsService(deps: {
           type: ChannelType.Slack,
           slackChannelId,
           ...(requestedAmbient ? { ambient: true } : {}),
-          ...(existing?.isDefault ? { default: true } : {}),
         });
       } catch (e) {
         if (isSlackChannelUniqueViolation(e)) {
@@ -1069,19 +1064,13 @@ export function createAgentsService(deps: {
       if (!infra) return null;
 
       if (slackChannelId === undefined) {
-        const releasedAll = await deps.deleteChannelByType(
-          id,
-          ChannelType.Slack,
-        );
-        for (const channelId of releasedAll)
-          await deps.promoteSlackDefault(channelId);
+        await deps.deleteChannelByType(id, ChannelType.Slack);
         emit({ type: EventType.SlackDisconnected, agentId: id });
         return project(infra);
       }
 
       const released = await deps.deleteSlackChannelByAgent(id, slackChannelId);
       if (released) {
-        await deps.promoteSlackDefault(slackChannelId);
         emit({
           type: EventType.SlackDisconnected,
           agentId: id,

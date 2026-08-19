@@ -7,7 +7,7 @@ export interface RosterEntry {
 }
 
 export interface RoutedMention {
-  target: RosterEntry;
+  target: RosterEntry | null;
   addressedByName: boolean;
   ambiguousName: string | null;
 }
@@ -32,7 +32,7 @@ function startsWithName(body: string, name: string): boolean {
 }
 
 export function defaultOf(roster: RosterEntry[]): RosterEntry | null {
-  return roster.find((entry) => entry.isDefault) ?? roster[0] ?? null;
+  return roster.find((entry) => entry.isDefault) ?? null;
 }
 
 export function orderAmbientReaders(
@@ -63,8 +63,8 @@ export function routeMention(
   text: string,
   roster: RosterEntry[],
 ): RoutedMention | null {
+  if (roster.length === 0) return null;
   const fallback = defaultOf(roster);
-  if (!fallback) return null;
 
   const body = normalize(stripLeadingMentions(text));
   const named = roster.filter((entry) =>

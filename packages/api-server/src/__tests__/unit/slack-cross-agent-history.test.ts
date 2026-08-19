@@ -54,7 +54,7 @@ function harness(boundChannelId = "C1") {
     } as never,
     async () => {},
     async () => {},
-    async () => null,
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

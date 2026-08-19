@@ -79,7 +79,7 @@ function harness(opts: { binding: Binding }) {
     } as never,
     async () => {},
     async () => {},
-    async () => null,
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

@@ -82,7 +82,7 @@ function SlackChannelRow({
       await showConfirm(
         `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.${
           channel.default
-            ? " It is the channel's default agent, so if other agents are connected there, the longest-connected one takes over unnamed mentions."
+            ? " It is the channel's default agent, so mentions there with no agent name will reach no one until another agent's owner claims the default."
             : ""
         }`,
         "Disconnect Slack channel?",

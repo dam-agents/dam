@@ -71,7 +71,7 @@ function harness(opts: {
     } as never,
     async () => {},
     async () => {},
-    async () => null,
+    async () => true,
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",

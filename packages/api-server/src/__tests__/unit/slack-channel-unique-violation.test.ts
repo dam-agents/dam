@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { isSlackChannelUniqueViolation } from "../../modules/agents/infrastructure/channel-bindings-repository.js";
+import {
+  isSlackChannelUniqueViolation,
+  isSlackDefaultUniqueViolation,
+} from "../../modules/agents/infrastructure/channel-bindings-repository.js";
 
 const driverError = {
   code: "23505",
@@ -60,5 +63,35 @@ describe("isSlackChannelUniqueViolation", () => {
     const cyclic: { cause?: unknown } = {};
     cyclic.cause = cyclic;
     expect(isSlackChannelUniqueViolation(cyclic)).toBe(false);
+  });
+});
+
+describe("isSlackDefaultUniqueViolation", () => {
+  const defaultViolation = {
+    code: "23505",
+    constraint_name: "channels_slack_default_agent_idx",
+  };
+
+  /**
+   * TEST_SCENARIO: two callers can race to claim a vacant default — the
+   * NOT EXISTS guard is evaluated once per statement, so the index is what
+   * actually settles it. Losing that race means a default already exists,
+   * which is the outcome the caller wanted, not an error to surface.
+   */
+  it("matches a violation of the one-default-per-conversation index", () => {
+    expect(isSlackDefaultUniqueViolation(defaultViolation)).toBe(true);
+  });
+
+  it("matches it through a wrapped cause chain", () => {
+    expect(
+      isSlackDefaultUniqueViolation(
+        new DrizzleQueryErrorLike(defaultViolation),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not confuse the two channel indexes", () => {
+    expect(isSlackDefaultUniqueViolation(driverError)).toBe(false);
+    expect(isSlackChannelUniqueViolation(defaultViolation)).toBe(false);
   });
 });

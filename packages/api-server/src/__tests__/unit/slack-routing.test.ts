@@ -55,13 +55,12 @@ describe("defaultOf", () => {
   });
 
   /**
-   * TEST_SCENARIO: a conversation should always carry a default, but a row set
-   * that lost it must still route somewhere rather than dropping the turn.
+   * TEST_SCENARIO: no-default is a real state — a conversation whose default
+   * was released has none until an agent's owner claims it. Falling back to an
+   * arbitrary agent would hand it that load without its owner's consent.
    */
-  it("falls back to the first entry when nothing is flagged", () => {
-    expect(defaultOf([entry("Reviewer"), entry("Scribe")])?.name).toBe(
-      "Reviewer",
-    );
+  it("returns null when no entry is flagged, rather than picking one", () => {
+    expect(defaultOf([entry("Reviewer"), entry("Scribe")])).toBeNull();
   });
 
   it("returns null for an empty roster", () => {
@@ -72,24 +71,24 @@ describe("defaultOf", () => {
 describe("routeMention", () => {
   it("routes a bare mention to the default agent", () => {
     const routed = routeMention("<@U123> what is the status?", roster);
-    expect(routed?.target.name).toBe("Scribe");
+    expect(routed?.target?.name).toBe("Scribe");
     expect(routed?.addressedByName).toBe(false);
   });
 
   it("routes to an agent named at the start of the message", () => {
     const routed = routeMention("<@U123> Reviewer please look at this", roster);
-    expect(routed?.target.name).toBe("Reviewer");
+    expect(routed?.target?.name).toBe("Reviewer");
     expect(routed?.addressedByName).toBe(true);
   });
 
   it("matches a name case-insensitively", () => {
-    expect(routeMention("<@U123> reviewer ping", roster)?.target.name).toBe(
+    expect(routeMention("<@U123> reviewer ping", roster)?.target?.name).toBe(
       "Reviewer",
     );
   });
 
   it("matches a name followed by punctuation", () => {
-    expect(routeMention("<@U123> Reviewer: ping", roster)?.target.name).toBe(
+    expect(routeMention("<@U123> Reviewer: ping", roster)?.target?.name).toBe(
       "Reviewer",
     );
   });
@@ -100,7 +99,7 @@ describe("routeMention", () => {
    */
   it("matches a multi-word name", () => {
     expect(
-      routeMention("<@U123> Release Captain, ship it", roster)?.target.name,
+      routeMention("<@U123> Release Captain, ship it", roster)?.target?.name,
     ).toBe("Release Captain");
   });
 
@@ -110,7 +109,7 @@ describe("routeMention", () => {
    */
   it("does not match a name that is only a prefix of the first word", () => {
     const routed = routeMention("<@U123> Reviewers are late", roster);
-    expect(routed?.target.name).toBe("Scribe");
+    expect(routed?.target?.name).toBe("Scribe");
     expect(routed?.addressedByName).toBe(false);
   });
 
@@ -119,7 +118,7 @@ describe("routeMention", () => {
       "<@U123> can someone look at the build",
       roster,
     );
-    expect(routed?.target.name).toBe("Scribe");
+    expect(routed?.target?.name).toBe("Scribe");
   });
 
   /**
@@ -134,7 +133,7 @@ describe("routeMention", () => {
       entry("Reviewer", { instanceName: "agent-b" }),
     ];
     const routed = routeMention("<@U123> Reviewer take a look", ambiguous);
-    expect(routed?.target.name).toBe("Scribe");
+    expect(routed?.target?.name).toBe("Scribe");
     expect(routed?.ambiguousName).toBe("Reviewer");
     expect(routed?.addressedByName).toBe(false);
   });
@@ -146,15 +145,45 @@ describe("routeMention", () => {
       entry("Release Captain"),
     ];
     expect(
-      routeMention("<@U123> Release Captain ship it", overlapping)?.target.name,
+      routeMention("<@U123> Release Captain ship it", overlapping)?.target
+        ?.name,
     ).toBe("Release Captain");
     expect(
-      routeMention("<@U123> Release notes please", overlapping)?.target.name,
+      routeMention("<@U123> Release notes please", overlapping)?.target?.name,
     ).toBe("Release");
   });
 
   it("returns null when no agent is connected", () => {
     expect(routeMention("<@U123> anyone?", [])).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: agents connected but no default — an unnamed mention must
+   * resolve to nobody so the caller can refuse it, rather than conscripting an
+   * agent whose owner never accepted the load.
+   */
+  it("resolves an unnamed mention to no agent when there is no default", () => {
+    const noDefault = [entry("Reviewer"), entry("Scribe")];
+    const routed = routeMention("<@U123> can someone look?", noDefault);
+    expect(routed).not.toBeNull();
+    expect(routed?.target).toBeNull();
+  });
+
+  it("still routes a named mention when there is no default", () => {
+    const noDefault = [entry("Reviewer"), entry("Scribe")];
+    expect(routeMention("<@U123> Scribe please", noDefault)?.target?.name).toBe(
+      "Scribe",
+    );
+  });
+
+  it("resolves an ambiguous name to no agent when there is no default", () => {
+    const noDefault = [
+      entry("Twin", { instanceName: "agent-a" }),
+      entry("Twin", { instanceName: "agent-b" }),
+    ];
+    const routed = routeMention("<@U123> Twin ping", noDefault);
+    expect(routed?.target).toBeNull();
+    expect(routed?.ambiguousName).toBe("Twin");
   });
 });
 

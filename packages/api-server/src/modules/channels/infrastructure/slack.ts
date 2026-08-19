@@ -739,7 +739,10 @@ export function createSlackWorker(
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>,
-  promoteSlackDefault: (slackChannelId: string) => Promise<string | null>,
+  setSlackDefault: (
+    agentId: string,
+    slackChannelId: string,
+  ) => Promise<boolean>,
   brand: { name: string; short: string },
   isTermsAccepted: (sub: string) => Promise<boolean>,
   uiBaseUrl: string,
@@ -1364,8 +1367,13 @@ export function createSlackWorker(
 
   async function handleCommand(command: SlackSlashCommand, ack: SlackAck) {
     const subcommand = command.text.trim().toLowerCase();
-    const [verb = "", ...restWords] = subcommand.split(/\s+/).filter(Boolean);
-    const rest = restWords.join(" ");
+    const [verb = ""] = subcommand.split(/\s+/).filter(Boolean);
+    const rest = command.text
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(1)
+      .join(" ");
 
     await match(verb)
       .with("login", async () => {
@@ -1480,9 +1488,6 @@ export function createSlackWorker(
         }
 
         await unbindSlackChannel(binding.instanceName, command.channelId);
-        const promoted = binding.isDefault
-          ? await promoteSlackDefault(command.channelId)
-          : null;
         securityLog("info", "channel.chat_unbound", {
           category: "authz-list",
           actor: invoker,
@@ -1500,29 +1505,147 @@ export function createSlackWorker(
         const remaining = picked.roster.filter(
           (entry) => entry.instanceName !== binding.instanceName,
         );
-        const promotedName = promoted
-          ? (remaining.find((entry) => entry.instanceName === promoted)?.name ??
-            promoted)
-          : null;
         await ack({
           text:
             remaining.length === 0
               ? `\`${binding.name}\` disconnected. Run \`/${brandShort} bind\` to connect an agent again.`
               : `\`${binding.name}\` disconnected. Still connected here: ${rosterNames(remaining)}.` +
-                (promotedName
-                  ? ` \`${promotedName}\` is now the default agent, so a mention with no name reaches it.`
+                (binding.isDefault
+                  ? ` It was this channel's default agent, so mentions with no name now reach no one until an agent's owner runs \`/${brandShort} default <agent>\`.`
                   : ""),
         });
       })
       .with("ambient", async () => {
         await handleAmbientCommand(rest, command, ack);
       })
+      .with("default", async () => {
+        await handleDefaultCommand(rest, command, ack);
+      })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind\`, or \`/${brandShort} ambient on|off\``,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, or \`/${brandShort} ambient [agent] on|off\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
+  }
+
+  function rosterRoll(roster: RosterEntry[]): string {
+    return roster
+      .map(
+        (entry) =>
+          `• \`${entry.name}\`${entry.isDefault ? " — default" : ""}${
+            entry.ambient ? " (reads along)" : ""
+          }`,
+      )
+      .join("\n");
+  }
+
+  async function handleDefaultCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const roster = await resolveRoster(command.channelId);
+    if (roster.length === 0) {
+      await ack({ text: "This channel isn't connected to an agent." });
+      return;
+    }
+
+    if (!rest) {
+      const current = roster.find((entry) => entry.isDefault);
+      await ack({
+        text:
+          (current
+            ? `\`${current.name}\` is this channel's default agent — a mention with no name reaches it.`
+            : "This channel has no default agent set.") +
+          `\n\nConnected here:\n${rosterRoll(roster)}\n\nRun \`/${brandShort} default <agent>\` to change it; only that agent's owner can.`,
+      });
+      return;
+    }
+
+    const { matches } = matchRosterName(roster, rest);
+    if (matches.length === 0) {
+      await ack({
+        text: `No agent called \`${rest}\` is connected here.\n\nConnected:\n${rosterRoll(roster)}`,
+      });
+      return;
+    }
+    if (matches.length > 1) {
+      await ack({
+        text: `More than one agent connected here is called \`${rest}\`, so I can't tell which you mean.`,
+      });
+      return;
+    }
+    const target = matches[0]!;
+
+    if (target.isDefault) {
+      await ack({
+        text: `\`${target.name}\` is already this channel's default agent.`,
+      });
+      return;
+    }
+
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    if (!invoker) {
+      await ack({
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} default ${target.name}\` again.`,
+      });
+      return;
+    }
+
+    const agentOwner = await getInstanceOwner(target.instanceName);
+    if (invoker !== target.owner && invoker !== agentOwner) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: target.instanceName,
+        decision: "deny",
+        reason: "not-agent-owner",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: `Only \`${target.name}\`'s owner can make it the default agent — being the default sends it every unnamed mention, so the load lands on them.`,
+      });
+      return;
+    }
+
+    const previous = roster.find((entry) => entry.isDefault);
+    const changed = await setSlackDefault(
+      target.instanceName,
+      command.channelId,
+    );
+    if (!changed) {
+      await ack({
+        text: `Couldn't set \`${target.name}\` as the default — it may have just been disconnected.`,
+      });
+      return;
+    }
+
+    securityLog("info", "channel.default_changed", {
+      category: "authz-list",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: target.instanceName,
+      result: "success",
+      detail: {
+        slackUserId: command.userId,
+        channelId: command.channelId,
+        ...(previous ? { previousAgentId: previous.instanceName } : {}),
+      },
+    });
+
+    await ack({
+      text:
+        `\`${target.name}\` is now this channel's default agent — mentions with no name reach it` +
+        (previous ? `, not \`${previous.name}\`` : "") +
+        `. Every agent here stays reachable by name.`,
+    });
   }
 
   async function handleAmbientCommand(
@@ -1531,7 +1654,7 @@ export function createSlackWorker(
     ack: SlackAck,
   ) {
     const words = rest.split(/\s+/).filter(Boolean);
-    const tail = words.at(-1);
+    const tail = words.at(-1)?.toLowerCase();
     const action = tail === "on" || tail === "off" ? tail : null;
     const nameArg = (action ? words.slice(0, -1) : words).join(" ");
     const subcommand = action ? `ambient ${action}` : "ambient";
@@ -1762,6 +1885,20 @@ export function createSlackWorker(
     return "No instance connected to this channel.";
   }
 
+  function noDefaultAgentCopy(
+    roster: RosterEntry[],
+    ambiguousName: string | null,
+  ): string {
+    const names = roster.map((entry) => `\`${entry.name}\``).join(", ");
+    return (
+      (ambiguousName
+        ? `More than one agent here is called \`${ambiguousName}\`, and this channel has no default agent to fall back to. `
+        : "This channel has no default agent, so a mention with no name doesn't reach anyone. ") +
+      `Start your mention with the agent you want: ${names}. ` +
+      `An agent's owner can make it the default with \`/${brandShort} default <agent>\`.`
+    );
+  }
+
   async function handleInbound(
     event: SlackMentionEvent,
     opts: { directMessage: boolean },
@@ -1779,6 +1916,14 @@ export function createSlackWorker(
         channel: event.channel,
         user: slackUserId,
         text: unboundConversationCopy(event, opts.directMessage),
+      });
+      return;
+    }
+    if (!routed.target) {
+      await gateway.postEphemeral({
+        channel: event.channel,
+        user: slackUserId,
+        text: noDefaultAgentCopy(roster, routed.ambiguousName),
       });
       return;
     }

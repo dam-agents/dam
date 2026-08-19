@@ -32,6 +32,7 @@ interface AgentSpec {
   name: string;
   ambient?: boolean;
   isDefault?: boolean;
+  owner?: string;
 }
 
 function harness(
@@ -41,6 +42,8 @@ function harness(
       instanceName: string,
       worker: () => SlackWorker,
     ) => Promise<void> | void;
+    linkedSub?: string | null;
+    bindings?: AgentSpec[];
   } = {},
 ) {
   const gw = createFakeSlackGateway();
@@ -48,6 +51,9 @@ function harness(
 
   const prompts: Array<{ agent: string; text: string }> = [];
   const threadKeys: Array<{ agent: string; key: string }> = [];
+  const defaultCalls: Array<{ agentId: string; channelId: string }> = [];
+  const ownerOf = (instanceName: string) =>
+    agentSpecs.find((a) => a.instanceName === instanceName)?.owner ?? OWNER;
 
   const makeAcp = (instanceName: string): AcpClient => ({
     listSessions: async () => [],
@@ -79,15 +85,18 @@ function harness(
     makeAcp,
     () => gw,
     () => agents,
-    { resolve: async () => OWNER } as never,
+    {
+      resolve: async () =>
+        hooks.linkedSub === undefined ? OWNER : hooks.linkedSub,
+    } as never,
     { authUrl: "http://kc", clientId: "c" } as never,
     createMemoryTtlStore(600_000),
-    async () => OWNER,
+    async (agentId: string) => ownerOf(agentId),
     {
       resolveSlackBindings: async () =>
-        agentSpecs.map((spec) => ({
+        (hooks.bindings ?? agentSpecs).map((spec) => ({
           instanceName: spec.instanceName,
-          owner: OWNER,
+          owner: ownerOf(spec.instanceName),
           ambient: spec.ambient === true,
           isDefault: spec.isDefault === true,
         })),
@@ -95,7 +104,10 @@ function harness(
     } as never,
     async () => {},
     async () => {},
-    async () => null,
+    async (agentId: string, channelId: string) => {
+      defaultCalls.push({ agentId, channelId });
+      return true;
+    },
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
@@ -109,6 +121,11 @@ function harness(
     worker,
     prompts,
     threadKeys,
+    defaultCalls,
+    async command(text: string, userId = "U-HUMAN") {
+      await this.start();
+      return gw.fireCommand({ text, userId, channelId: CHANNEL });
+    },
     promptsFor: (agent: string) =>
       prompts.filter((p) => p.agent === agent).map((p) => p.text),
     async start() {
@@ -366,5 +383,174 @@ describe("handing a turn to another connected agent", () => {
     expect(await h.worker.handOffTurn(SCRIBE, "Reviewer")).toMatchObject({
       error: expect.stringContaining("no Slack turn in flight"),
     });
+  });
+});
+
+describe("choosing the default agent in-chat", () => {
+  const OTHER_OWNER = "kc|owner-2";
+
+  it("reports the current default and the whole roster", async () => {
+    const h = harness(both());
+    const ack = await h.command("default");
+    expect(ack).toContain("`Scribe` is this channel's default agent");
+    expect(ack).toContain("• `Scribe` — default");
+    expect(ack).toContain("• `Reviewer`");
+    expect(h.defaultCalls).toEqual([]);
+  });
+
+  it("marks which connected agents read along", async () => {
+    const h = harness([
+      { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+      { instanceName: REVIEWER, name: "Reviewer", ambient: true },
+    ]);
+    expect(await h.command("default")).toContain("`Reviewer` (reads along)");
+  });
+
+  it("changes the default when the agent's owner asks", async () => {
+    const h = harness(both());
+    const ack = await h.command("default Reviewer");
+    expect(ack).toContain("`Reviewer` is now this channel's default agent");
+    expect(ack).toContain("not `Scribe`");
+    expect(ack).toContain("reachable by name");
+    expect(h.defaultCalls).toEqual([{ agentId: REVIEWER, channelId: CHANNEL }]);
+  });
+
+  /**
+   * TEST_SCENARIO: the default agent takes every unnamed mention, so the load
+   * lands on whoever's credentials run it — only that agent's owner may accept
+   * it. Being non-default costs an agent nothing, so no consent is needed from
+   * the one losing it.
+   */
+  it("refuses someone who does not own the agent they are promoting", async () => {
+    const h = harness(
+      [
+        { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+        { instanceName: REVIEWER, name: "Reviewer", owner: OTHER_OWNER },
+      ],
+      { linkedSub: OWNER },
+    );
+    const ack = await h.command("default Reviewer");
+    expect(ack).toContain("Only `Reviewer`'s owner");
+    expect(h.defaultCalls).toEqual([]);
+  });
+
+  it("asks an unlinked invoker to link first", async () => {
+    const h = harness(both(), { linkedSub: null });
+    const ack = await h.command("default Reviewer");
+    expect(ack).toContain("Link your account first");
+    expect(h.defaultCalls).toEqual([]);
+  });
+
+  it("says so when the named agent is already the default", async () => {
+    const h = harness(both());
+    const ack = await h.command("default Scribe");
+    expect(ack).toContain("already this channel's default");
+    expect(h.defaultCalls).toEqual([]);
+  });
+
+  it("refuses an agent that is not connected here, listing who is", async () => {
+    const h = harness(both());
+    const ack = await h.command("default Nobody");
+    expect(ack).toContain("No agent called `Nobody`");
+    expect(ack).toContain("• `Scribe`");
+    expect(h.defaultCalls).toEqual([]);
+  });
+
+  it("refuses an ambiguous name rather than guessing", async () => {
+    const h = harness([
+      { instanceName: SCRIBE, name: "Twin", isDefault: true },
+      { instanceName: REVIEWER, name: "Twin" },
+    ]);
+    const ack = await h.command("default Twin");
+    expect(ack).toContain("More than one agent");
+    expect(h.defaultCalls).toEqual([]);
+  });
+
+  it("matches a multi-word agent name", async () => {
+    const h = harness([
+      { instanceName: SCRIBE, name: "Scribe", isDefault: true },
+      { instanceName: REVIEWER, name: "Release Captain" },
+    ]);
+    const ack = await h.command("default release captain");
+    expect(ack).toContain("`Release Captain` is now this channel's default");
+    expect(h.defaultCalls).toHaveLength(1);
+  });
+
+  it("says nothing is connected when every agent has been released", async () => {
+    const h = harness(both(), { bindings: [] });
+    expect(await h.command("default")).toContain("isn't connected to an agent");
+  });
+
+  it("lists default alongside the other commands in the usage help", async () => {
+    const h = harness(both());
+    expect(await h.command("")).toContain("/dam default");
+  });
+});
+
+describe("a conversation with no default agent", () => {
+  const noDefault = (): AgentSpec[] => [
+    { instanceName: SCRIBE, name: "Scribe" },
+    { instanceName: REVIEWER, name: "Reviewer" },
+  ];
+
+  /**
+   * TEST_SCENARIO: releasing the default leaves the conversation without one.
+   * An unnamed mention must be refused rather than conscripting an agent whose
+   * owner never accepted the load that being default carries.
+   */
+  it("refuses an unnamed mention instead of picking an agent", async () => {
+    const h = harness(noDefault());
+    await h.mention("<@U-BOT> can someone look at this?");
+    expect(h.promptsFor(SCRIBE)).toHaveLength(0);
+    expect(h.promptsFor(REVIEWER)).toHaveLength(0);
+    const ephemeral = h.gw
+      .readOutbound()
+      .find((r) => r.kind === "ephemeral") as { text: string } | undefined;
+    expect(ephemeral?.text).toContain("no default agent");
+    expect(ephemeral?.text).toContain("`Scribe`");
+    expect(ephemeral?.text).toContain("`Reviewer`");
+    expect(ephemeral?.text).toContain("/dam default");
+  });
+
+  it("still delivers a mention that names an agent", async () => {
+    const h = harness(noDefault());
+    await h.mention("<@U-BOT> Reviewer take a look");
+    expect(h.promptsFor(REVIEWER)).toHaveLength(1);
+    expect(h.gw.readOutbound().filter((r) => r.kind === "ephemeral")).toEqual(
+      [],
+    );
+  });
+
+  it("explains an ambiguous name when there is no default to fall back to", async () => {
+    const h = harness([
+      { instanceName: SCRIBE, name: "Twin" },
+      { instanceName: REVIEWER, name: "Twin" },
+    ]);
+    await h.mention("<@U-BOT> Twin ping");
+    expect(h.promptsFor(SCRIBE)).toHaveLength(0);
+    expect(h.promptsFor(REVIEWER)).toHaveLength(0);
+    const ephemeral = h.gw
+      .readOutbound()
+      .find((r) => r.kind === "ephemeral") as { text: string } | undefined;
+    expect(ephemeral?.text).toContain("More than one agent here is called");
+  });
+
+  it("reports no default set, and still lists the roster", async () => {
+    const h = harness(noDefault());
+    const ack = await h.command("default");
+    expect(ack).toContain("no default agent set");
+    expect(ack).toContain("• `Scribe`");
+  });
+
+  /**
+   * TEST_SCENARIO: unbinding the default is how a channel ends up with none, so
+   * the person who did it is told, and told how to set a new one.
+   */
+  it("says so when unbinding the default leaves the channel without one", async () => {
+    const h = harness(both());
+    const ack = await h.command("unbind Scribe");
+    expect(ack).toContain("disconnected");
+    expect(ack).toContain("reach no one until an agent's owner runs");
+    expect(ack).toContain("/dam default");
   });
 });

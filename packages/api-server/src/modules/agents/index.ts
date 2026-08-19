@@ -50,6 +50,7 @@ export {
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
   claimSlackDefaultIfVacant,
-  promoteSlackDefault,
+  setSlackChannelDefault,
+  isSlackDefaultUniqueViolation,
   type SlackBindingRow,
 } from "./infrastructure/channel-bindings-repository.js";

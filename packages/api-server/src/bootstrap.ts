@@ -19,7 +19,7 @@ import {
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
   claimSlackDefaultIfVacant,
-  promoteSlackDefault,
+  setSlackChannelDefault,
   createAgentSweep,
 } from "./modules/agents/index.js";
 import {
@@ -398,7 +398,6 @@ export async function bootstrap() {
   const channelCleanupSub = startChannelCleanupSaga(
     deleteChannelsByAgent(db),
     deleteConversationsByAgent(db),
-    promoteSlackDefault(db),
   );
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
@@ -552,7 +551,7 @@ export async function bootstrap() {
         channelRegistry,
         deleteSlackChannelBinding(db),
         setSlackChannelAmbient(db),
-        promoteSlackDefault(db),
+        setSlackChannelDefault(db),
         { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         config.uiBaseUrl,
