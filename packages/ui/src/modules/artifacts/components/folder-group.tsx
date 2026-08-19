@@ -89,7 +89,7 @@ export function FolderGroup({
       className={cn(
         "overflow-hidden",
         nested ? "border-t border-border/60" : "anim-in",
-        dropActive && "outline-2 -outline-offset-2 outline-primary",
+        dropActive && "ring-2 ring-inset ring-primary",
       )}
     >
       <div className="group flex select-none items-center pr-3.5 transition-colors hover:bg-muted/60">
