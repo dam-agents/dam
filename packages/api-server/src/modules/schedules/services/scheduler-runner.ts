@@ -48,44 +48,44 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
 
-    let result: string;
-    let outcome: "success" | "failure";
+    const emitFired = async (outcome: "success" | "failure") => {
+      try {
+        const ownerSub = await deps.repo.getOwnerById(scheduleId);
+        if (ownerSub) {
+          emit({
+            type: EventType.ScheduleFired,
+            scheduleId,
+            agentId: sched.agentId,
+            ownerSub,
+            mode: sched.spec.sessionMode ?? "fresh",
+            outcome,
+          });
+        }
+      } catch (err) {
+        log(
+          `fire: schedule ${scheduleId} emit failed: ${(err as Error).message}`,
+        );
+      }
+    };
+
     try {
       await deps.runtimeMutator.bump(sched.agentId, [
         { id: eventId, kind: "trigger", payload, expiresAt },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       await deps.wakeAgent(sched.agentId);
-      result = "success";
-      outcome = "success";
     } catch (err) {
-      result = (err as Error).message ?? String(err);
-      outcome = "failure";
+      const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
+      await deps.repo.recordFire(scheduleId, result, fireAt).catch(() => {});
+      await emitFired("failure");
+      throw err;
     }
 
     const next = nextFireAt(sched.spec, now());
-    await deps.repo.recordFire(scheduleId, result, next);
+    await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
-
-    try {
-      const ownerSub = await deps.repo.getOwnerById(scheduleId);
-      if (ownerSub) {
-        emit({
-          type: EventType.ScheduleFired,
-          scheduleId,
-          agentId: sched.agentId,
-          ownerSub,
-          mode: sched.spec.sessionMode ?? "fresh",
-          outcome,
-        });
-      }
-    } catch (err) {
-      log(
-        `fire: schedule ${scheduleId} emit failed: ${(err as Error).message}`,
-      );
-    }
-    if (outcome === "failure") throw new Error(result);
+    await emitFired("success");
   }
 
   return {

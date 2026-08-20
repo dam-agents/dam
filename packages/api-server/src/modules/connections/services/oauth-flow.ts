@@ -121,10 +121,10 @@ export function createOAuthFlowService(deps: {
           access_token: tokens.accessToken,
           ...sdsFields,
         };
-        if (tokens.refreshToken && pending.ctx.refreshTokenRef) {
+        if (tokens.refreshToken && fresh.auth.refreshTokenRef) {
           fields.refresh_token = tokens.refreshToken;
         }
-        await deps.secretStore.putFields(pending.ctx.accessTokenRef, fields);
+        await deps.secretStore.putFields(fresh.auth.accessTokenRef, fields);
 
         const updatedAuth: ConnectionAuthConfig = {
           ...withoutRefreshFailureMarker(fresh.auth),

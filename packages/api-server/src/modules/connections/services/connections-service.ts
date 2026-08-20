@@ -419,11 +419,11 @@ export function createConnectionsService(deps: {
         case "none":
           break;
       }
-      await deps.repo.delete(id, deps.ownerId);
-
       for (const path of paths) {
         await deps.secretStore.delete({ path });
       }
+
+      await deps.repo.delete(id, deps.ownerId);
 
       if (affectedAgents.length > 0) {
         const ownerConnsAfter = await deps.repo.listByOwner(deps.ownerId);

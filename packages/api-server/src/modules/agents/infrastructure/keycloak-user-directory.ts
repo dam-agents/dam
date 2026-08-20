@@ -67,7 +67,10 @@ export function createKeycloakUserDirectory(
   const emailToSubCache = new Map<string, CachedLookup>();
 
   function cachePut<T>(cache: Map<string, T>, key: string, value: T): void {
-    if (cache.size >= 10_000) cache.clear();
+    if (cache.size >= 10_000) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
     cache.set(key, value);
   }
 

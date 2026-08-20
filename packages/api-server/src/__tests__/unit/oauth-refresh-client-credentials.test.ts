@@ -64,7 +64,19 @@ function makeDeps(opts: { clientSecret: string | null }) {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
       fn({ execute: async () => [] }),
     select: () => ({
-      from: () => ({ where: async () => [{ auth: AUTH }] }),
+      from: () => ({
+        where: async () => [
+          {
+            id: CONN.id,
+            owner: CONN.ownerId,
+            templateId: CONN.templateId,
+            name: CONN.name,
+            inputs: CONN.inputs,
+            auth: AUTH,
+            contributions: CONN.contributions,
+          },
+        ],
+      }),
     }),
     update: () => ({
       set: (row: { auth: ConnectionAuthConfig }) => {

@@ -313,23 +313,23 @@ async function refreshOne(
 ): Promise<void> {
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
   await withLock(connectionRefreshLockKey(conn.id), async () => {
-    const current = await readAuth(deps.db, conn.id);
+    const fresh = await readConnection(deps.db, conn.id);
     if (
-      !current ||
-      current.kind !== "oauth" ||
-      current.expiresAt !== auth.expiresAt
+      !fresh ||
+      fresh.auth.kind !== "oauth" ||
+      fresh.auth.expiresAt !== auth.expiresAt
     ) {
       return;
     }
     const next = await refreshOAuthAccessToken({
-      conn,
-      auth: current,
+      conn: fresh,
+      auth: fresh.auth,
       engine: deps.engine,
       templates: deps.templates,
       secretStore: deps.secretStore,
     });
     await writeAuth(deps.db, conn.id, {
-      ...withoutRefreshFailureMarker(current),
+      ...withoutRefreshFailureMarker(fresh.auth),
       expiresAt: next.expiresAt,
     });
   });
@@ -345,34 +345,37 @@ export async function remintOne(
     connectionLock?: XactLock;
   },
 ): Promise<void> {
-  const clientSecret = await deps.secretStore.getField(auth.clientSecretRef);
-  if (!clientSecret) {
-    throw new Error(`client secret missing at ${auth.clientSecretRef.path}`);
-  }
-
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
   await withLock(connectionRefreshLockKey(conn.id), async () => {
-    const current = await readAuth(deps.db, conn.id);
+    const fresh = await readConnection(deps.db, conn.id);
     if (
-      !current ||
-      current.kind !== "client-credentials" ||
-      current.expiresAt !== auth.expiresAt
+      !fresh ||
+      fresh.auth.kind !== "client-credentials" ||
+      fresh.auth.expiresAt !== auth.expiresAt
     ) {
       return;
+    }
+    const clientSecret = await deps.secretStore.getField(
+      fresh.auth.clientSecretRef,
+    );
+    if (!clientSecret) {
+      throw new Error(
+        `client secret missing at ${fresh.auth.clientSecretRef.path}`,
+      );
     }
 
     const next = await mintClientCredentialsToken(deps.engine, {
       connectionRef: `connection:${conn.id}:${conn.templateId}`,
-      auth: current,
+      auth: fresh.auth,
       clientSecret,
     });
 
-    await deps.secretStore.putFields(current.accessTokenRef, {
+    await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
       access_token: next.accessToken,
-      ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+      ...buildConnectionSdsFields(fresh.contributions, next.accessToken),
     });
     await writeAuth(deps.db, conn.id, {
-      ...withoutRefreshFailureMarker(current),
+      ...withoutRefreshFailureMarker(fresh.auth),
       expiresAt: next.expiresAt,
     });
   });
@@ -399,25 +402,35 @@ export async function remintGitHubAppOne(
     connectionLock?: XactLock;
   },
 ): Promise<void> {
-  const privateKeyPem = await deps.secretStore.getField(auth.privateKeyRef);
-  if (!privateKeyPem) {
-    throw new Error(`private key missing at ${auth.privateKeyRef.path}`);
-  }
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
   await withLock(gitHubAppMintLockKey(conn.id), async () => {
-    const current = await readGitHubAppAuth(deps.db, conn.id);
-    if (!current || current.expiresAt !== auth.expiresAt) return;
+    const fresh = await readConnection(deps.db, conn.id);
+    if (
+      !fresh ||
+      fresh.auth.kind !== "github-app" ||
+      fresh.auth.expiresAt !== auth.expiresAt
+    ) {
+      return;
+    }
+    const privateKeyPem = await deps.secretStore.getField(
+      fresh.auth.privateKeyRef,
+    );
+    if (!privateKeyPem) {
+      throw new Error(
+        `private key missing at ${fresh.auth.privateKeyRef.path}`,
+      );
+    }
 
     const next = await mintGitHubAppToken(deps.githubAppEngine, {
       connectionRef: `connection:${conn.id}:${conn.templateId}`,
-      auth: current,
+      auth: fresh.auth,
       privateKeyPem,
     });
 
-    await deps.secretStore.putFields(current.accessTokenRef, {
+    await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
       access_token: next.accessToken,
-      ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+      ...buildConnectionSdsFields(fresh.contributions, next.accessToken),
     });
 
     await deps.db
@@ -430,22 +443,18 @@ export async function remintGitHubAppOne(
   });
 }
 
-async function readAuth(
-  db: Db,
-  id: string,
-): Promise<ConnectionAuthConfig | null> {
+async function readConnection(db: Db, id: string): Promise<Connection | null> {
   const rows = (await db
     .select()
     .from(connectionsTable)
-    .where(eq(connectionsTable.id, id))) as { auth: unknown }[];
-  const parsed = authConfigSchema.safeParse(rows[0]?.auth);
-  return parsed.success ? parsed.data : null;
-}
-
-async function readGitHubAppAuth(
-  db: Db,
-  id: string,
-): Promise<Extract<ConnectionAuthConfig, { kind: "github-app" }> | null> {
-  const auth = await readAuth(db, id);
-  return auth?.kind === "github-app" ? auth : null;
+    .where(eq(connectionsTable.id, id))) as {
+    id: string;
+    owner: string;
+    templateId: string;
+    name: string;
+    inputs: unknown;
+    auth: unknown;
+    contributions: unknown;
+  }[];
+  return rows[0] ? parseRow(rows[0]) : null;
 }

@@ -123,8 +123,8 @@ describe("scheduler-runner fire", () => {
     );
   });
 
-  // TEST_SCENARIO: a transient bump/wake failure must reach BullMQ so the attempts policy retries the occurrence — after the failure is recorded and the next occurrence re-armed.
-  it("records a failed fire, re-arms, then rethrows so the queue retries", async () => {
+  // TEST_SCENARIO: a failed fire must rethrow before any re-arm bookkeeping — a retry then repeats only the delivery attempt, and nextRun stays on the due occurrence so the reconcile sweep keeps retrying it after the queue's attempts run out.
+  it("records a failed fire against its own occurrence and rethrows without re-arming", async () => {
     const { runner, calls, fires, enqueued } = makeDeps({
       wakeError: new Error("k8s api unreachable"),
     });
@@ -136,6 +136,20 @@ describe("scheduler-runner fire", () => {
     expect(calls).toContain(`bump:${AGENT_ID}`);
     expect(fires).toHaveLength(1);
     expect(fires[0]!.result).toContain("k8s api unreachable");
+    expect(fires[0]!.nextRun?.toISOString()).toBe("2026-06-12T10:30:00.000Z");
+    expect(enqueued).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a successful fire re-arms the next occurrence exactly once.
+  it("re-arms the next occurrence after a successful fire", async () => {
+    const { runner, fires, enqueued } = makeDeps();
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(fires[0]!.result).toBe("success");
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0]!.toISOString()).toBe("2026-06-12T11:00:00.000Z");
   });

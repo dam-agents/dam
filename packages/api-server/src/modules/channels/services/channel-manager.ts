@@ -403,8 +403,26 @@ export function createChannelManager(deps: {
         });
       }
 
-      if (telegramWorker) await telegramWorker.start();
-      if (slackWorker) await slackWorker.connect();
+      const attempts: [string, () => Promise<unknown>][] = [];
+      if (telegramWorker)
+        attempts.push(["telegram", () => telegramWorker.start()]);
+      if (slackWorker) attempts.push(["slack", () => slackWorker.connect()]);
+      const results = await Promise.allSettled(attempts.map(([, go]) => go()));
+      const failed = results.flatMap((r, i) =>
+        r.status === "rejected"
+          ? [{ name: attempts[i]![0], reason: r.reason }]
+          : [],
+      );
+      for (const f of failed) {
+        process.stderr.write(
+          `[channels] ${f.name} worker start failed: ${f.reason instanceof Error ? f.reason.message : f.reason}\n`,
+        );
+      }
+      if (failed.length > 0 && failed.length === attempts.length) {
+        throw new Error(
+          `all channel workers failed to start: ${failed.map((f) => f.name).join(", ")}`,
+        );
+      }
     },
 
     standDown,
