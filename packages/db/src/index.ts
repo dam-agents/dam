@@ -28,6 +28,9 @@ export {
   libraryArtifacts,
   libraryArtifactVersions,
   invocations,
+  hostedSessions,
+  hostedTurns,
+  hostedTurnEvents,
 } from "./schema.js";
 export {
   eq,

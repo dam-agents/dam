@@ -627,3 +627,66 @@ export const invocations = pgTable(
       .where(sql`${table.experimentSpanId} IS NOT NULL`),
   ],
 );
+
+export const hostedSessions = pgTable(
+  "hosted_sessions",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    owner: text("owner").notNull(),
+    title: text("title"),
+    mode: text("mode").notNull().default("chat"),
+    scheduleId: text("schedule_id"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("hosted_sessions_agent_idx").on(table.agentId)],
+);
+
+export const hostedTurns = pgTable(
+  "hosted_turns",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    agentId: text("agent_id").notNull(),
+    status: text("status").notNull().default("running"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("hosted_turns_session_idx").on(table.sessionId),
+    index("hosted_turns_running_idx")
+      .on(table.updatedAt)
+      .where(sql`${table.status} = 'running'`),
+  ],
+);
+
+export const hostedTurnEvents = pgTable(
+  "hosted_turn_events",
+  {
+    id: bigint("id", { mode: "number" })
+      .generatedAlwaysAsIdentity()
+      .primaryKey(),
+    sessionId: text("session_id").notNull(),
+    turnId: text("turn_id").notNull(),
+    seq: integer("seq").notNull(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("hosted_turn_events_fence_idx").on(table.turnId, table.seq),
+    index("hosted_turn_events_session_idx").on(table.sessionId, table.id),
+  ],
+);
