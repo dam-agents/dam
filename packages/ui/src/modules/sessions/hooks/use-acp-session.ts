@@ -145,22 +145,25 @@ export function useAcpSession(
   );
 
   const loadOlderMessages = useCallback(
-    async (before: number) => {
+    async (before: number): Promise<"paged" | "reloaded" | "noop"> => {
       const sid = useStore.getState().sessionId;
-      if (!sid) return;
+      if (!sid) return "noop";
       try {
         const page = await loadSessionHistory(sid, before);
-        if (useStore.getState().sessionId !== sid) return;
+        if (useStore.getState().sessionId !== sid) return "noop";
         const current = useStore.getState().messages;
         setMessages([
           ...page,
           ...current.filter((m) => m.loadOlderBefore !== before),
         ]);
+        return "paged";
       } catch {
         const fresh = await loadSessionHistory(sid).catch(() => null);
         if (fresh && useStore.getState().sessionId === sid) {
           setMessages(fresh);
+          return "reloaded";
         }
+        return "noop";
       }
     },
     [loadSessionHistory, setMessages],

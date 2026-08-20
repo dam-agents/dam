@@ -224,6 +224,14 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
 
+  const scrollToBottom = useCallback(() => {
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, []);
+
   const pendingPrependRef = useRef<{ height: number; top: number } | null>(
     null,
   );
@@ -234,9 +242,11 @@ export function ChatView() {
       pendingPrependRef.current = el
         ? { height: el.scrollHeight, top: el.scrollTop }
         : null;
-      await loadOlderMessages(before);
+      const outcome = await loadOlderMessages(before);
+      pendingPrependRef.current = null;
+      if (outcome === "reloaded") scrollToBottom();
     },
-    [loadOlderMessages],
+    [loadOlderMessages, scrollToBottom],
   );
 
   useLayoutEffect(() => {
@@ -246,14 +256,6 @@ export function ChatView() {
     pendingPrependRef.current = null;
     el.scrollTop = pending.top + (el.scrollHeight - pending.height);
   }, [messages]);
-
-  const scrollToBottom = useCallback(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    stickRef.current = true;
-    setShowJump(false);
-    el.scrollTop = el.scrollHeight;
-  }, []);
 
   useEffect(() => {
     const el = messagesRef.current;
@@ -291,6 +293,15 @@ export function ChatView() {
       setShowJump(false);
     }
   }, [messages.length]);
+
+  useLayoutEffect(() => {
+    if (loadingSession) return;
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, [loadingSession, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
