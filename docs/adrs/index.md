@@ -78,6 +78,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 081 | [Admit a blocked start by hibernating the owner's idle agents early](081-admit-by-hibernation.md) |  | budgets | The per-user budget gate may admit an over-budget start by hibernating that owner's unattended idle agents ahead of their timeout, longest-idle first, instead of refusing until the user frees room by hand. |
 | 082 | [Prompt delivery is measured by the server, not inferred by the client](082-server-authoritative-prompt-delivery.md) |  | agent-lifecycle | The runtime tells the originating channel what happened to each identified prompt via two ephemeral notifications, and the client's delivery indicator is a state machine driven only by those frames. |
 | 083 | [Eventing layers by guarantee — in-process sagas, Redis signals, BullMQ work](083-eventing-layering.md) |  | platform-topology | Domain events stay in-process and non-durable, consumed by sagas that forward cross-replica signals to Redis pub/sub or enqueue durable work as BullMQ jobs; no single distributed bus. |
+| 084 | [Hosted Harness — platform-owned agent loop in the api-server](084-hosted-harness.md) |  | hosted-harness | Agents gain an immutable Harness axis (pod \| hosted); a hosted agent's loop runs in the api-server over an append-only Turn Event Log in Postgres, driving the pod through a new exec surface, with an ACP facade for clients during the transition. |
 
 ## Superseded
 
