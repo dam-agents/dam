@@ -588,6 +588,9 @@ else
   else
     limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
     limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+    # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+    # so without this a stale multi-GiB tar is left behind in the VM.
+    limactl shell "$LIMA_INSTANCE" rm -f "$tar"
   fi
   rm -f "$tar"
 fi
@@ -706,6 +709,9 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
 fi
 rm -f "$tar"
 
@@ -746,6 +752,9 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
 fi
 rm -f "$tar"
 
@@ -783,6 +792,9 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
 fi
 rm -f "$tar"
 
@@ -867,6 +879,9 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
 fi
 rm -f "$tar"
 
@@ -907,6 +922,9 @@ else
   KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
   limactl copy "$tar" "$LIMA_INSTANCE":"$tar"
   limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$tar"
+  # Drop the guest copy too — the `rm -f "$tar"` below runs on the host,
+  # so without this a stale multi-GiB tar is left behind in the VM.
+  limactl shell "$LIMA_INSTANCE" rm -f "$tar"
 fi
 rm -f "$tar"
 
@@ -948,6 +966,72 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   fi
 else
   exec limactl shell platform-k3s "$@"
+fi
+'''
+
+["cluster:prune"]
+description = "Reclaim disk in the docker build VM and in the k3s VM: buildkit cache, dangling images, leftover import tars. Options: --keep=SIZE (buildkit cache to retain, default 10GB)"
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+LIMA_INSTANCE="${LIMA_INSTANCE:-platform-k3s}"
+KEEP="10GB"
+for arg in "$@"; do
+  case "$arg" in
+    --keep=*) KEEP="${arg#--keep=}" ;;
+  esac
+done
+
+# The docker daemon (colima / Docker Desktop) and the k3s VM each have their own
+# fixed-size virtual disk and cannot see the other's. So both sides need
+# pruning: `docker system prune` never frees a byte inside the cluster VM, and
+# pruning the cluster VM never helps a build that is running out of room.
+echo "== docker build daemon: before =="
+docker system df
+
+# Buildkit's default policy holds cache until the disk is nearly full, which on a
+# fixed-size VM disk surfaces as a mid-build "no space left on device" during
+# layer extraction rather than a clean eviction. Cap it explicitly. Newer CLIs
+# renamed --keep-storage to --reserved-space; try both before giving up on the
+# cap, since dropping the whole cache costs a full cold rebuild.
+docker builder prune --force --reserved-space "$KEEP" 2>/dev/null \
+  || docker builder prune --force --keep-storage "$KEEP" 2>/dev/null \
+  || docker builder prune --force
+# Dangling only (no -a): unreferenced <none> layers go, tagged images that the
+# next build reuses as cache stay.
+docker image prune --force
+
+echo
+echo "== docker build daemon: after =="
+docker system df
+
+if [ -z "${IS_SANDBOX:-}" ] && ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
+  echo
+  echo "k3s VM '$LIMA_INSTANCE' does not exist — skipping the cluster-side prune."
+  exit 0
+fi
+
+echo
+echo "== k3s VM =="
+# cluster:install and the cluster:build-* tasks copy a multi-GiB image tar into
+# the guest to import it. They clean up after themselves now, but a run that was
+# interrupted between the copy and the import still leaves one behind.
+RM_TARS='sudo rm -f /tmp/platform-images.tar /tmp/platform-agent-images.tar /tmp/platform-api-server.tar /tmp/platform-controller.tar /tmp/platform-ui.tar /tmp/platform-keycloak.tar'
+# Same dangling-layer prune the load tasks run: old `:latest` SHAs that lost
+# their tag to a freshly imported one. Not `crictl rmi --prune`, which would also
+# wipe loaded-but-unpinned images when no instance pods are running. (issue #244)
+PRUNE_DANGLING='sudo k3s crictl images 2>/dev/null | sed -nE "s/^<none>[[:space:]]+<none>[[:space:]]+([^[:space:]]+).*/\\1/p" | xargs -r sudo k3s crictl rmi >/dev/null 2>&1 || true'
+if [ -n "${IS_SANDBOX:-}" ]; then
+  bash -c "$RM_TARS"
+  bash -c "$PRUNE_DANGLING"
+  df -h /
+else
+  limactl shell "$LIMA_INSTANCE" bash -c "$RM_TARS"
+  limactl shell "$LIMA_INSTANCE" bash -c "$PRUNE_DANGLING"
+  limactl shell "$LIMA_INSTANCE" df -h /
 fi
 '''
 
