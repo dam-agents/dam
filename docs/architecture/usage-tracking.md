@@ -41,6 +41,7 @@ flowchart LR
   postgres[(Postgres)]
 
   inspector[inspector]
+  analytics[analytics consumer]
 
   user-auth --> bus
   user-channel --> bus
@@ -64,6 +65,7 @@ flowchart LR
 
   inspector -->|HTML / JSON / bearer token| routes
   routes -->|SELECT ... FROM usage_*| postgres
+  analytics -->|read-only role, SELECT usage_src_*| postgres
 ```
 
 ## Bounded context
@@ -150,7 +152,7 @@ When the inspector role is not configured at install time, the read endpoints ar
 
 ### Source passthrough views
 
-A second read surface serves an external usage-analytics pipeline, at the SQL layer rather than over HTTP: one `usage_src_*` passthrough view per table the subsystem reads, each enumerating exactly the columns allowed to leave that table. The views are the privacy boundary — columns holding raw Keycloak subs, and application payloads never written for analytics, are omitted; the activity payload flows through as an object (its identity keys are pseudonymized at the write boundary) minus free-form text keys, which are stripped — and the column list is the contract: a column added to a base table stays invisible until the migration adding it recreates the passthrough, so table migrations are never blocked from outside. Aggregations live with the consumer, which reads nightly through a dedicated read-only Postgres role granted per view; the role and its grants are managed operator-side, not by the chart, and are authored against the deployed release rather than main. Recreating a passthrough drops its grants, so after a view migration the consumer fails closed with permission-denied until an operator re-grants — the intended failure mode. The passthroughs are deliberately outside the inspector surface: the `usage_*` aggregate views stay as the backing of the HTML report with no new features, while new metrics are authored consumer-side against the passthroughs.
+A second read surface serves an external usage-analytics pipeline, at the SQL layer rather than over HTTP: one `usage_src_*` passthrough view per table the subsystem reads, each enumerating exactly the columns allowed to leave that table. The views are the privacy boundary — columns holding raw Keycloak subs, and application payloads never written for analytics, are omitted; the activity payload flows through as an object, with each key audited: identity keys are pseudonymized at the write boundary, user-authored identifiers (skill names, source URLs) pass through as the exposed columns already do, and free-form prose (the driver error message) is stripped — and the column list is the contract: a column added to a base table stays invisible until the migration adding it recreates the passthrough, so table migrations are never blocked from outside. Aggregations live with the consumer, which reads nightly through a dedicated read-only Postgres role granted per view; the role and its grants are managed operator-side, not by the chart, and are authored against the deployed release rather than main. Recreating a passthrough drops its grants, so after a view migration the consumer fails closed with permission-denied until an operator re-grants — the intended failure mode. The passthroughs are deliberately outside the inspector surface: the `usage_*` aggregate views stay as the backing of the HTML report with no new features, while new metrics are authored consumer-side against the passthroughs.
 
 ### Opening the report
 
@@ -182,5 +184,6 @@ Every pilot view applies `AND actor_sub NOT IN (SELECT … FROM usage_core_actor
 
 - **Inspector role gates the read API.** Most writes are unauthenticated to *the subsystem* — they originate inside the api-server process from already-authenticated user requests on other routes, and the activity log inherits whatever trust boundary the originating route enforced.
 - **One write route belongs to the subsystem.** `usage.entryPointChosen` is an owner-scoped tRPC mutation: the actor is the session's Keycloak `sub`, never a client-supplied field, and the input carries the choice alone. A caller can therefore only write about itself. Repeats are bounded by a partial unique index — one `entry_point_chosen` row per actor — so a client that replays the call cannot inflate the entry-point views.
+- **Per-view Postgres grants gate the analytics surface.** The external consumer reads the `usage_src_*` passthroughs through a dedicated read-only role granted SELECT view by view — no HTTP path, no table or write grants. Recreating a view drops its grant, so the consumer fails closed until an operator re-grants.
 - **HMAC key gates re-identification.** Holding the key (an in-cluster K8s Secret mounted into the api-server pod) is what lets a reader correlate a pseudonym back to a Keycloak `sub`. Database-only access does not.
 - **Ad-hoc SQL is intentionally not exposed.** Earlier iterations included a `POST /api/usage/query` taking raw SQL. It was removed: an inspector with that endpoint can read other Postgres tables containing credential material (refresh tokens, HITL payloads). Inspectors get views; operators wanting psql go through `kubectl exec`.

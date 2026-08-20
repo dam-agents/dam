@@ -24,14 +24,21 @@
 --   * activity_events.payload passes through as an object, deliberately: the
 --     consumer's metrics key on payload fields, and a new payload key must
 --     reach it without a dam migration. The column contract therefore does
---     not extend inside the object; what holds it instead is the write
---     boundary — identity keys in payloads (externalActorId, ownerSub) are
---     HMAC-pseudonymized before INSERT, and every other key an emit site
---     writes is a bounded token or number, never free-form text. The one
---     existing violation of that invariant, 'message' (a raw driver error
---     string on the contribution events), is stripped here; a new payload
---     key carrying free-form text must either be dropped at its emit site or
---     added to this strip list.
+--     not extend inside the object; instead every key the emit sites write
+--     (persist-activity.ts) has been audited into three classes:
+--       - identity keys (externalActorId, ownerSub) — HMAC-pseudonymized
+--         before INSERT at the repository boundary;
+--       - user-authored identifiers (the skill events' name and source) —
+--         validated only as short non-empty strings, but the same data this
+--         contract already exposes as columns (agent_skills.name/.source,
+--         skill_sources.git_url), and for Local Skills the event is the only
+--         record of the name — so they pass through;
+--       - everything else — bounded tokens or numbers, with one exception:
+--         'message' (a raw driver error string on the contribution events)
+--         is free-form prose and is stripped here.
+--     A new payload key carrying free-form prose must be dropped at its emit
+--     site or added to the strip list; a new user-authored identifier is
+--     acceptable only where its data class is already an exposed column.
 
 CREATE VIEW "usage_src_activity_events" AS
   SELECT id, type, actor_sub, agent_id, surface, outcome,
