@@ -160,7 +160,7 @@ describe("acp-runtime: unanswered requests", () => {
    * TEST_SCENARIO: The agent asks with an empty-string session id. That is
    * not a real session, so it must behave exactly like a question with no
    * session at all: broadcast, wait forever, never expire. Pins the rule
-   * that "" is session-less on every path.
+   * that "" is session-less for Pending Agent Requests.
    */
   it("should treat an empty-string session id as no session", () => {
     vi.useFakeTimers();

@@ -367,7 +367,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (frame && isRequest(frame)) {
       pendingRequests.onAgentRequest(
         frame.id,
-        extractParamsSessionId(frame),
+        extractAgentRequestSessionId(frame),
         line,
       );
       return;
@@ -754,7 +754,12 @@ function extractParamsSessionId(frame: unknown): string | null {
   const params = frame.params;
   if (!isNonNullObject(params)) return null;
   const sid = params.sessionId;
-  return typeof sid === "string" && sid !== "" ? sid : null;
+  return typeof sid === "string" ? sid : null;
+}
+
+function extractAgentRequestSessionId(frame: unknown): string | null {
+  const sid = extractParamsSessionId(frame);
+  return sid === "" ? null : sid;
 }
 
 function extractResultSessionId(frame: unknown): string | null {
