@@ -625,7 +625,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (replayBefore !== null) {
           bootstrap.requestPage(channel, frame.id, paramsSid, replayBefore);
         } else {
-          bootstrap.requestLoad(channel, frame.id, paramsSid);
+          bootstrap.requestLoad(channel, frame.id, paramsSid, {
+            tail: extractTailFlag(frame),
+          });
         }
         return;
       }
@@ -776,6 +778,17 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   if (!isNonNullObject(meta) || !("platform" in meta)) return null;
   const parsed = platformSessionMetaSchema.safeParse(meta.platform);
   return parsed.success ? parsed.data : null;
+}
+
+function extractTailFlag(frame: unknown): boolean {
+  if (!isNonNullObject(frame)) return false;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return false;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return false;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return false;
+  return platform.tail === true;
 }
 
 function extractReplayBefore(frame: unknown): number | null {

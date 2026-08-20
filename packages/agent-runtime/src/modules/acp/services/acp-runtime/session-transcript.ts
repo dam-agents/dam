@@ -19,16 +19,25 @@ export type CachedMetadata =
   | { cached: true; value: unknown; synthetic: boolean }
   | { cached: false };
 
+export interface ReplayClip {
+  clipped: boolean;
+  olderBefore?: number;
+}
+
 export interface SessionTranscript {
   append(sessionId: string, line: string): void;
   appendEcho(sessionId: string, line: string, originator: ClientChannel): void;
   appendReplay(sessionId: string, line: string): void;
-  catchUp(channel: ClientChannel, sessionId: string): void;
+  catchUp(
+    channel: ClientChannel,
+    sessionId: string,
+    opts?: { tail?: boolean },
+  ): ReplayClip;
   replayPage(
     channel: ClientChannel,
     sessionId: string,
     beforeSeq: number,
-  ): void;
+  ): ReplayClip;
   advanceToTail(channel: ClientChannel, sessionId: string): void;
   cacheMetadata(
     sessionId: string,
@@ -51,10 +60,13 @@ export interface SessionTranscriptDeps {
  * UNIT_BOUNDARY_DESCRIPTION: Keeps each session's message history and tracks how
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
- * eviction, and the truncation warning all stay inside. A fresh viewer gets
- * only the newest replayTailEvents entries; the clipped-replay warning then
- * carries the sequence number the skipped history ends at, and replayPage
- * serves the older ranges on demand without moving any cursor.
+ * eviction, and the clip accounting all stay inside. A fresh viewer that opts
+ * into the tail gets only the newest replayTailEvents entries; catchUp and
+ * replayPage report what was cut — and the sequence number the cut ends at,
+ * when the older range is still in the log — so the caller can put that on
+ * the load response. A viewer that does not opt in replays everything the
+ * log holds, clipped only by eviction. replayPage serves older ranges on
+ * demand without moving any cursor.
  */
 export function createSessionTranscript(
   deps: SessionTranscriptDeps,
@@ -109,22 +121,6 @@ export function createSessionTranscript(
     map.set(sessionId, seq);
   }
 
-  function truncationSentinel(sessionId: string, olderBefore?: number): string {
-    return JSON.stringify({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: {
-        sessionId,
-        update: {
-          sessionUpdate: "platform_clipped_replay",
-          ...(olderBefore !== undefined
-            ? { _meta: { platform: { olderBefore } } }
-            : {}),
-        },
-      },
-    });
-  }
-
   function fanOut(
     sessionId: string,
     line: string,
@@ -153,46 +149,43 @@ export function createSessionTranscript(
       fanOut(sessionId, line, () => false);
     },
 
-    catchUp(channel, sessionId) {
+    catchUp(channel, sessionId, opts) {
       const log = sessionLogs.get(sessionId);
-      if (!log) return;
+      if (!log) return { clipped: false };
       const current = cursorFor(channel, sessionId);
       let pending = log.entries.filter((entry) => entry.seq > current);
-      const capped = current === 0 && pending.length > deps.replayTailEvents;
+      const capped =
+        current === 0 &&
+        (opts?.tail ?? false) &&
+        pending.length > deps.replayTailEvents;
       if (capped) pending = pending.slice(-deps.replayTailEvents);
-      if (current === 0 && (capped || log.truncated) && channel.isOpen()) {
-        channel.send(
-          truncationSentinel(sessionId, capped ? pending[0]!.seq : undefined),
-        );
-      }
       let lastSeq = current;
       for (const entry of pending) {
-        if (!channel.isOpen()) return;
+        if (!channel.isOpen()) break;
         channel.send(rewriteAuthError(entry.line));
         lastSeq = entry.seq;
       }
       if (lastSeq !== current) setCursor(channel, sessionId, lastSeq);
+      if (current !== 0) return { clipped: false };
+      if (capped) return { clipped: true, olderBefore: pending[0]!.seq };
+      return { clipped: log.truncated };
     },
 
     replayPage(channel, sessionId, beforeSeq) {
       const log = sessionLogs.get(sessionId);
-      if (!log || !channel.isOpen()) return;
+      if (!log) return { clipped: false };
       const older = log.entries.filter((entry) => entry.seq < beforeSeq);
       const page = older.slice(-deps.replayTailEvents);
       const first = page[0];
-      if (first === undefined) {
-        if (log.truncated) channel.send(truncationSentinel(sessionId));
-        return;
-      }
-      if (older.length > page.length) {
-        channel.send(truncationSentinel(sessionId, first.seq));
-      } else if (log.truncated) {
-        channel.send(truncationSentinel(sessionId));
-      }
+      if (first === undefined) return { clipped: log.truncated };
       for (const entry of page) {
-        if (!channel.isOpen()) return;
+        if (!channel.isOpen()) break;
         channel.send(rewriteAuthError(entry.line));
       }
+      if (older.length > page.length) {
+        return { clipped: true, olderBefore: first.seq };
+      }
+      return { clipped: log.truncated };
     },
 
     advanceToTail(channel, sessionId) {

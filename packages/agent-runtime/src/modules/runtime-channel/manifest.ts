@@ -55,7 +55,12 @@ export const runtimeManifestSchema = z.object({
 
   sessionHistory: z
     .object({
-      command: z.array(z.string().min(1)).nonempty(),
+      module: z.string().min(1).optional(),
+      exportName: z.string().min(1).optional(),
+      command: z.array(z.string().min(1)).nonempty().optional(),
+    })
+    .refine((h) => h.module !== undefined || h.command !== undefined, {
+      message: "sessionHistory needs a module or a command",
     })
     .optional(),
 

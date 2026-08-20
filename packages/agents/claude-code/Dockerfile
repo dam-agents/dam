@@ -37,6 +37,7 @@ COPY report-background-work.mjs /usr/local/lib/report-background-work.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
 COPY harness-history.mjs /usr/local/lib/harness-history.mjs
+COPY harness-history-lib.mjs /usr/local/lib/harness-history-lib.mjs
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
 COPY model-gateway-login.sh /etc/profile.d/model-gateway.sh
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat

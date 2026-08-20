@@ -4,7 +4,7 @@ import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
-import type { SessionTranscript } from "./session-transcript.js";
+import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
 
@@ -12,6 +12,7 @@ interface Waiter {
   kind: WaiterKind;
   channel: ClientChannel;
   originalId: JsonRpcId;
+  tail: boolean;
 }
 
 interface BootstrapState {
@@ -28,6 +29,7 @@ export interface SessionBootstrap {
     channel: ClientChannel,
     originalId: JsonRpcId,
     sessionId: string,
+    opts?: { tail?: boolean },
   ): void;
   requestPage(
     channel: ClientChannel,
@@ -78,11 +80,41 @@ export function createSessionBootstrap(
 ): SessionBootstrap {
   const bootstrapBySession = new Map<string, BootstrapState>();
 
+  function withClipMeta(value: unknown, clip: ReplayClip): unknown {
+    if (!clip.clipped) return value;
+    const base =
+      typeof value === "object" && value !== null
+        ? (value as Record<string, unknown>)
+        : {};
+    const meta =
+      typeof base._meta === "object" && base._meta !== null
+        ? (base._meta as Record<string, unknown>)
+        : {};
+    const platform =
+      typeof meta.platform === "object" && meta.platform !== null
+        ? (meta.platform as Record<string, unknown>)
+        : {};
+    return {
+      ...base,
+      _meta: {
+        ...meta,
+        platform: {
+          ...platform,
+          clipped:
+            clip.olderBefore !== undefined
+              ? { olderBefore: clip.olderBefore }
+              : {},
+        },
+      },
+    };
+  }
+
   function respondFromLog(
     kind: WaiterKind,
     channel: ClientChannel,
     originalId: JsonRpcId,
     sessionId: string,
+    tail: boolean,
   ): void {
     const metadata = deps.transcript.metadataOf(sessionId);
     if (!metadata.cached) {
@@ -90,9 +122,10 @@ export function createSessionBootstrap(
         `bootstrap serve for ${sessionId} without cached metadata`,
       );
     }
+    let clip: ReplayClip = { clipped: false };
     match(kind)
       .with("load", () => {
-        deps.transcript.catchUp(channel, sessionId);
+        clip = deps.transcript.catchUp(channel, sessionId, { tail });
         deps.engage(channel, sessionId);
       })
       .with("resume", () => {
@@ -105,7 +138,7 @@ export function createSessionBootstrap(
     const response = JSON.stringify({
       jsonrpc: "2.0",
       id: originalId,
-      result: metadata.value,
+      result: withClipMeta(metadata.value, clip),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
   }
@@ -134,7 +167,13 @@ export function createSessionBootstrap(
     bootstrapBySession.delete(sessionId);
     for (const waiter of boot.waiters) {
       if (!waiter.channel.isOpen()) continue;
-      respondFromLog(waiter.kind, waiter.channel, waiter.originalId, sessionId);
+      respondFromLog(
+        waiter.kind,
+        waiter.channel,
+        waiter.originalId,
+        sessionId,
+        waiter.tail,
+      );
     }
   }
 
@@ -164,18 +203,19 @@ export function createSessionBootstrap(
     requestResume(channel, originalId, sessionId) {
       deps.engage(channel, sessionId);
       if (deps.transcript.metadataOf(sessionId).cached) {
-        respondFromLog("resume", channel, originalId, sessionId);
+        respondFromLog("resume", channel, originalId, sessionId, false);
         return;
       }
-      park(sessionId, { kind: "resume", channel, originalId });
+      park(sessionId, { kind: "resume", channel, originalId, tail: false });
     },
 
-    requestLoad(channel, originalId, sessionId) {
+    requestLoad(channel, originalId, sessionId, opts) {
+      const tail = opts?.tail ?? false;
       if (deps.transcript.metadataOf(sessionId).cached) {
-        respondFromLog("load", channel, originalId, sessionId);
+        respondFromLog("load", channel, originalId, sessionId, tail);
         return;
       }
-      park(sessionId, { kind: "load", channel, originalId });
+      park(sessionId, { kind: "load", channel, originalId, tail });
     },
 
     requestPage(channel, originalId, sessionId, beforeSeq) {
@@ -192,11 +232,11 @@ export function createSessionBootstrap(
         if (channel.isOpen()) channel.send(error);
         return;
       }
-      deps.transcript.replayPage(channel, sessionId, beforeSeq);
+      const clip = deps.transcript.replayPage(channel, sessionId, beforeSeq);
       const response = JSON.stringify({
         jsonrpc: "2.0",
         id: originalId,
-        result: metadata.value,
+        result: withClipMeta(metadata.value, clip),
       });
       if (channel.isOpen()) channel.send(rewriteAuthError(response));
     },
@@ -221,6 +261,7 @@ export function createSessionBootstrap(
           waiter.channel,
           waiter.originalId,
           sessionId,
+          waiter.tail,
         );
       }
     },

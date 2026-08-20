@@ -4,7 +4,11 @@ import {
   type RuntimeEnvReader,
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
-import { createExecHistoryProvider } from "./infrastructure/history-provider.js";
+import {
+  createExecHistoryProvider,
+  createWorkerHistoryProvider,
+  type HistoryProvider,
+} from "./infrastructure/history-provider.js";
 import {
   createSessionMetadataStore,
   type SessionMetadataStore,
@@ -27,10 +31,36 @@ export interface ComposeAcpOptions {
   workingDir: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
-  sessionHistoryCommand?: string[];
+  sessionHistory?: {
+    module?: string;
+    exportName?: string;
+    command?: string[];
+  };
   isTerminalSessionActive?: (sessionId: string) => boolean;
   backgroundWorkHolds?: boolean;
   log?: (msg: string) => void;
+}
+
+function historyProviderOf(
+  opts: ComposeAcpOptions,
+): HistoryProvider | undefined {
+  const declared = opts.sessionHistory;
+  const log = (msg: string): void => opts.log?.(msg);
+  if (declared?.module !== undefined) {
+    return createWorkerHistoryProvider({
+      modulePath: declared.module,
+      exportName: declared.exportName,
+      log,
+    });
+  }
+  if (declared?.command !== undefined) {
+    return createExecHistoryProvider({
+      command: declared.command,
+      cwd: opts.workingDir,
+      log,
+    });
+  }
+  return undefined;
 }
 
 export function composeAcp(opts: ComposeAcpOptions): {
@@ -55,13 +85,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
-    historyProvider: opts.sessionHistoryCommand
-      ? createExecHistoryProvider({
-          command: opts.sessionHistoryCommand,
-          cwd: opts.workingDir,
-          log: (msg) => opts.log?.(msg),
-        })
-      : undefined,
+    historyProvider: historyProviderOf(opts),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     idleReapDelayMs: 3_000,

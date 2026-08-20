@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -223,20 +224,28 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
 
+  const pendingPrependRef = useRef<{ height: number; top: number } | null>(
+    null,
+  );
+
   const loadOlderKeepingScroll = useCallback(
     async (before: number) => {
       const el = messagesRef.current;
-      const prevHeight = el?.scrollHeight ?? 0;
-      const prevTop = el?.scrollTop ?? 0;
+      pendingPrependRef.current = el
+        ? { height: el.scrollHeight, top: el.scrollTop }
+        : null;
       await loadOlderMessages(before);
-      requestAnimationFrame(() => {
-        const grown = messagesRef.current;
-        if (!grown) return;
-        grown.scrollTop = prevTop + (grown.scrollHeight - prevHeight);
-      });
     },
     [loadOlderMessages],
   );
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = messagesRef.current;
+    if (!pending || !el) return;
+    pendingPrependRef.current = null;
+    el.scrollTop = pending.top + (el.scrollHeight - pending.height);
+  }, [messages]);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -593,7 +602,10 @@ export function ChatView() {
           ) : (
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
-                <div ref={messagesRef} className="flex-1 overflow-y-auto">
+                <div
+                  ref={messagesRef}
+                  className="flex-1 overflow-y-auto [overflow-anchor:none]"
+                >
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">

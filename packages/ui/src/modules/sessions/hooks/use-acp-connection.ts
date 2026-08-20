@@ -1,5 +1,9 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { SessionMode, SessionType } from "api-server-api";
+import {
+  platformClippedReplayMetaSchema,
+  SessionMode,
+  SessionType,
+} from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
@@ -269,20 +273,41 @@ export function useAcpConnection(
       const live = await openConnection();
       const collector = { sid, updates: [] as AcpUpdate[] };
       collectorRef.current = collector;
+      let result: unknown;
       try {
-        await live.connection.loadSession({
+        result = await live.connection.loadSession({
           sessionId: sid,
           cwd: ".",
           mcpServers: [],
-          ...(replayBefore !== undefined
-            ? { _meta: { platform: { replayBefore } } }
-            : {}),
+          _meta: {
+            platform:
+              replayBefore !== undefined ? { replayBefore } : { tail: true },
+          },
         });
       } finally {
         if (collectorRef.current === collector) collectorRef.current = null;
       }
+      const clippedRaw = (
+        result as { _meta?: { platform?: { clipped?: unknown } } } | null
+      )?._meta?.platform?.clipped;
+      const clipped =
+        clippedRaw === undefined
+          ? null
+          : platformClippedReplayMetaSchema.safeParse(clippedRaw);
+      const updates: AcpUpdate[] =
+        clipped?.success === true
+          ? [
+              {
+                sessionUpdate: "platform_clipped_replay",
+                ...(clipped.data.olderBefore !== undefined
+                  ? { olderBefore: clipped.data.olderBefore }
+                  : {}),
+              },
+              ...collector.updates,
+            ]
+          : collector.updates;
       const replayed = finalizeAllStreaming(
-        collector.updates.reduce<Message[]>(
+        updates.reduce<Message[]>(
           (acc, update) => applyUpdate(acc, update),
           [],
         ),

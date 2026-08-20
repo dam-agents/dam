@@ -49,11 +49,26 @@ function replayedTexts(client: Client): (string | undefined)[] {
   });
 }
 
+function loadTail(id: number, sessionId: string): Frame {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/load",
+    params: {
+      sessionId,
+      cwd: ".",
+      mcpServers: [],
+      _meta: { platform: { tail: true } },
+    },
+  };
+}
+
 describe("acp-runtime: session-history provider", () => {
   /**
    * TEST_SCENARIO: A cold load with a working provider must be served entirely
-   * from the provider's output — capped tail, clipped marker with cursor,
-   * synthesized response — and the harness must never be asked to load.
+   * from the provider's output — capped tail for an opted-in viewer, cursor
+   * on the synthesized response — and the harness must never be asked to
+   * load.
    */
   it("should serve a cold load from the provider without a harness load", async () => {
     const calls: string[] = [];
@@ -66,19 +81,18 @@ describe("acp-runtime: session-history provider", () => {
     });
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
+    bob.send(loadTail(1, SESSION));
     await settle();
 
     expect(calls).toEqual([SESSION]);
     expect(world.harness().received("session/load")).toEqual([]);
-    expect(replayedTexts(bob)).toEqual([
-      "platform_clipped_replay",
-      "m4",
-      "m5",
-      "m6",
-    ]);
+    expect(replayedTexts(bob)).toEqual(["m4", "m5", "m6"]);
     expect(bob.reply(1)).toMatchObject({
-      result: { sessionId: SESSION, modes: null },
+      result: {
+        sessionId: SESSION,
+        modes: null,
+        _meta: { platform: { clipped: { olderBefore: 4 } } },
+      },
     });
   });
 

@@ -74,10 +74,8 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     case "platform_prompt_started":
       return setQueuedByPromptId(messages, update.promptId, false);
 
-    case "platform_clipped_replay": {
-      const olderBefore = update._meta?.platform?.olderBefore;
-      return appendClippedMarker(messages, olderBefore);
-    }
+    case "platform_clipped_replay":
+      return appendClippedMarker(messages, update.olderBefore);
 
     case "user_message_chunk":
       return handleUserChunk(messages, update);

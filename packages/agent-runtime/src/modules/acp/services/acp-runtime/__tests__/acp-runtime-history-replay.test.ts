@@ -3,17 +3,18 @@ import { createWorld, frames, type Client, type Frame } from "./acp-world.js";
 
 /**
  * TEST_OVERVIEW: opening a conversation replays its newest tail, not the whole
- * history.
+ * history — but only for clients that ask for it.
  *
- * The Session Transcript caps what a fresh viewer receives to the last
- * replayTailEvents entries, marks the cut with a clipped-replay warning that
- * carries the sequence number the skipped history ends at, and serves the
- * older ranges on demand when a session/load names that cursor in
- * `_meta.platform.replayBefore`. A cold transcript (first attach after a pod
- * restart) is filled by one silent harness load whose replay reaches no
- * channel; every viewer is then served the same capped tail. Cursors are only
- * meaningful within one transcript's lifetime, so a page request against a
- * cold transcript is refused instead of guessed at.
+ * A session/load carrying `_meta.platform.tail` receives the newest
+ * replayTailEvents entries; the load response then carries
+ * `_meta.platform.clipped` with the sequence number the cut ends at, and a
+ * later load naming that cursor in `_meta.platform.replayBefore` is served
+ * the older range, page by page. A load without the tail opt-in replays
+ * everything the log holds — the ACP v1 contract for unknown clients —
+ * clipped only by the log's own eviction, which the response reports as
+ * `clipped` without a cursor. Cursors are only meaningful within one
+ * transcript's lifetime, so a page request against a cold transcript is
+ * refused instead of guessed at.
  */
 
 const SESSION = "sess-history";
@@ -21,17 +22,12 @@ const SESSION = "sess-history";
 interface ReplayedUpdate {
   kind: string;
   text?: string;
-  olderBefore?: number;
 }
 
 function replayedUpdates(client: Client): ReplayedUpdate[] {
   return client.saw("session/update").map((frame) => {
     const params = frame.params as {
-      update?: {
-        sessionUpdate?: string;
-        content?: { text?: string };
-        _meta?: { platform?: { olderBefore?: number } };
-      };
+      update?: { sessionUpdate?: string; content?: { text?: string } };
     };
     const update = params.update ?? {};
     return {
@@ -39,11 +35,29 @@ function replayedUpdates(client: Client): ReplayedUpdate[] {
       ...(update.content?.text !== undefined
         ? { text: update.content.text }
         : {}),
-      ...(update._meta?.platform?.olderBefore !== undefined
-        ? { olderBefore: update._meta.platform.olderBefore }
-        : {}),
     };
   });
+}
+
+function clippedOf(client: Client, id: number): unknown {
+  const reply = client.reply(id) as
+    | { result?: { _meta?: { platform?: { clipped?: unknown } } } }
+    | undefined;
+  return reply?.result?._meta?.platform?.clipped;
+}
+
+function loadTail(id: number, sessionId: string): Frame {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/load",
+    params: {
+      sessionId,
+      cwd: ".",
+      mcpServers: [],
+      _meta: { platform: { tail: true } },
+    },
+  };
 }
 
 function loadPage(id: number, sessionId: string, replayBefore: number): Frame {
@@ -76,77 +90,97 @@ function warmTranscript(
 describe("acp-runtime: history replay", () => {
   /**
    * TEST_SCENARIO: Six messages have accumulated and the tail cap is three.
-   * A fresh viewer must receive exactly the newest three, preceded by a
-   * clipped-replay warning whose cursor names the first replayed entry, so
-   * the viewer knows older history exists and where it ends.
+   * A viewer that opts into the tail must receive exactly the newest three,
+   * and the load response must carry the cursor naming where the skipped
+   * history ends, so the viewer knows older history exists and can page it.
    */
-  it("should replay only the newest tail to a fresh viewer, with a cursor to the rest", () => {
+  it("should replay only the newest tail to an opted-in viewer, with a cursor on the response", () => {
+    const world = createWorld({ replayTailEvents: 3 });
+    warmTranscript(world, ["m1", "m2", "m3", "m4", "m5", "m6"]);
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+
+    expect(replayedUpdates(bob)).toEqual([
+      { kind: "agent_message_chunk", text: "m4" },
+      { kind: "agent_message_chunk", text: "m5" },
+      { kind: "agent_message_chunk", text: "m6" },
+    ]);
+    expect(bob.reply(1)).toMatchObject({ result: { sessionId: SESSION } });
+    expect(clippedOf(bob, 1)).toEqual({ olderBefore: 4 });
+  });
+
+  /**
+   * TEST_SCENARIO: A load without the tail opt-in is an ordinary ACP client.
+   * Per the v1 contract it must receive the entire conversation, however
+   * long, with no clip metadata — the cap must not exist for it.
+   */
+  it("should replay everything to a client that does not opt in", () => {
     const world = createWorld({ replayTailEvents: 3 });
     warmTranscript(world, ["m1", "m2", "m3", "m4", "m5", "m6"]);
 
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
 
-    expect(replayedUpdates(bob)).toEqual([
-      { kind: "platform_clipped_replay", olderBefore: 4 },
-      { kind: "agent_message_chunk", text: "m4" },
-      { kind: "agent_message_chunk", text: "m5" },
-      { kind: "agent_message_chunk", text: "m6" },
+    expect(replayedUpdates(bob).map((u) => u.text)).toEqual([
+      "m1",
+      "m2",
+      "m3",
+      "m4",
+      "m5",
+      "m6",
     ]);
-    expect(bob.reply(1)).toMatchObject({ result: { sessionId: SESSION } });
+    expect(clippedOf(bob, 1)).toBeUndefined();
   });
 
   /**
    * TEST_SCENARIO: A conversation short enough to fit under the cap replays
-   * whole, with no clipped-replay warning — the cap must be invisible until
-   * it actually cuts something.
+   * whole even for an opted-in viewer, with no clip metadata — the cap must
+   * be invisible until it actually cuts something.
    */
-  it("should replay a short conversation in full without a clipped marker", () => {
+  it("should replay a short conversation in full without clip metadata", () => {
     const world = createWorld({ replayTailEvents: 3 });
     warmTranscript(world, ["m1", "m2"]);
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
+    bob.send(loadTail(1, SESSION));
 
-    expect(replayedUpdates(bob)).toEqual([
-      { kind: "agent_message_chunk", text: "m1" },
-      { kind: "agent_message_chunk", text: "m2" },
-    ]);
+    expect(replayedUpdates(bob).map((u) => u.text)).toEqual(["m1", "m2"]);
+    expect(clippedOf(bob, 1)).toBeUndefined();
   });
 
   /**
    * TEST_SCENARIO: The viewer follows the cursor back through an
    * eight-message history with a cap of three. Each page returns the three
-   * entries before the cursor and a new cursor, until the final page reaches
-   * the genuine start of the conversation, which carries no marker — the
-   * viewer can tell "more above" from "this is the beginning".
+   * entries before the cursor and its response carries the next cursor,
+   * until the final page reaches the genuine start of the conversation,
+   * whose response carries no clip metadata — the viewer can tell "more
+   * above" from "this is the beginning".
    */
   it("should page older history back to the start, cursor by cursor", () => {
     const world = createWorld({ replayTailEvents: 3 });
     warmTranscript(world, ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"]);
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
-    expect(replayedUpdates(bob)[0]).toEqual({
-      kind: "platform_clipped_replay",
-      olderBefore: 6,
-    });
+    bob.send(loadTail(1, SESSION));
+    expect(clippedOf(bob, 1)).toEqual({ olderBefore: 6 });
 
     const carol = world.connect();
     carol.send(loadPage(1, SESSION, 6));
-    expect(replayedUpdates(carol)).toEqual([
-      { kind: "platform_clipped_replay", olderBefore: 3 },
-      { kind: "agent_message_chunk", text: "m3" },
-      { kind: "agent_message_chunk", text: "m4" },
-      { kind: "agent_message_chunk", text: "m5" },
+    expect(replayedUpdates(carol).map((u) => u.text)).toEqual([
+      "m3",
+      "m4",
+      "m5",
     ]);
-    expect(carol.reply(1)).toMatchObject({ result: { sessionId: SESSION } });
+    expect(clippedOf(carol, 1)).toEqual({ olderBefore: 3 });
 
     carol.send(loadPage(2, SESSION, 3));
-    expect(replayedUpdates(carol).slice(4)).toEqual([
-      { kind: "agent_message_chunk", text: "m1" },
-      { kind: "agent_message_chunk", text: "m2" },
-    ]);
+    expect(
+      replayedUpdates(carol)
+        .slice(3)
+        .map((u) => u.text),
+    ).toEqual(["m1", "m2"]);
+    expect(clippedOf(carol, 2)).toBeUndefined();
   });
 
   /**
@@ -159,24 +193,29 @@ describe("acp-runtime: history replay", () => {
     warmTranscript(world, ["m1", "m2", "m3", "m4", "m5", "m6"]);
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
+    bob.send(loadTail(1, SESSION));
     bob.send(loadPage(2, SESSION, 4));
 
     world.harness().emit(frames.agentMessage(SESSION, "m7"));
 
-    const texts = replayedUpdates(bob)
-      .filter((u) => u.text !== undefined)
-      .map((u) => u.text);
-    expect(texts).toEqual(["m4", "m5", "m6", "m1", "m2", "m3", "m7"]);
+    expect(replayedUpdates(bob).map((u) => u.text)).toEqual([
+      "m4",
+      "m5",
+      "m6",
+      "m1",
+      "m2",
+      "m3",
+      "m7",
+    ]);
   });
 
   /**
    * TEST_SCENARIO: The transcript evicts oldest entries past its byte cap.
-   * When paging bottoms out at the eviction floor, the last page carries a
-   * clipped-replay warning without a cursor: older history existed but is
-   * gone, and the viewer must not be offered a "load more" that cannot load.
+   * When paging bottoms out at the eviction floor, the last page's response
+   * reports clipped without a cursor: older history existed but is gone, and
+   * the viewer must not be offered a "load more" that cannot load.
    */
-  it("should mark the eviction floor with a cursor-less clipped marker", () => {
+  it("should mark the eviction floor as clipped without a cursor", () => {
     const entryBytes = JSON.stringify(
       frames.agentMessage(SESSION, "m1"),
     ).length;
@@ -187,15 +226,12 @@ describe("acp-runtime: history replay", () => {
     warmTranscript(world, ["m1", "m2", "m3", "m4", "m5", "m6"]);
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
-    const first = replayedUpdates(bob);
-    expect(first[0]?.kind).toBe("platform_clipped_replay");
-    const cursor = first[0]?.olderBefore;
-    expect(cursor).toBeDefined();
+    bob.send(loadTail(1, SESSION));
+    const clipped = clippedOf(bob, 1) as { olderBefore?: number };
+    expect(clipped.olderBefore).toBeDefined();
 
-    bob.send(loadPage(2, SESSION, cursor!));
-    const paged = replayedUpdates(bob).slice(first.length);
-    expect(paged[0]).toEqual({ kind: "platform_clipped_replay" });
+    bob.send(loadPage(2, SESSION, clipped.olderBefore!));
+    expect(clippedOf(bob, 2)).toEqual({});
   });
 
   /**
@@ -219,18 +255,18 @@ describe("acp-runtime: history replay", () => {
   /**
    * TEST_SCENARIO: First open after a pod restart. The runtime asks the
    * harness once, the harness replays the whole conversation, and none of
-   * that replay may reach the viewer live — the viewer gets the capped tail
-   * from the transcript only after the harness finishes, so a long replay
-   * costs the wire only the tail.
+   * that replay may reach the viewer live — every opted-in viewer gets the
+   * capped tail from the transcript only after the harness finishes, so a
+   * long replay costs the wire only the tail.
    */
   it("should fill a cold transcript silently and serve viewers the capped tail", () => {
     const world = createWorld({ replayTailEvents: 2 });
 
     const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
+    bob.send(loadTail(1, SESSION));
 
     const carol = world.connect();
-    carol.send(frames.loadSession(1, SESSION));
+    carol.send(loadTail(1, SESSION));
 
     expect(world.harness().received("session/load")).toHaveLength(1);
     const forwarded = world.harness().received("session/load")[0];
@@ -247,14 +283,11 @@ describe("acp-runtime: history replay", () => {
       .replyTo("session/load", { sessionId: SESSION, modes: null });
 
     for (const viewer of [bob, carol]) {
-      expect(replayedUpdates(viewer)).toEqual([
-        { kind: "platform_clipped_replay", olderBefore: 3 },
-        { kind: "agent_message_chunk", text: "m3" },
-        { kind: "agent_message_chunk", text: "m4" },
-      ]);
+      expect(replayedUpdates(viewer).map((u) => u.text)).toEqual(["m3", "m4"]);
       expect(viewer.reply(1)).toMatchObject({
         result: { sessionId: SESSION },
       });
+      expect(clippedOf(viewer, 1)).toEqual({ olderBefore: 3 });
     }
   });
 });
