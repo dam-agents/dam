@@ -2,13 +2,13 @@ import {
   Book,
   type CarbonIconType,
   Chemistry,
-  Close,
+  ChevronLeft,
+  ChevronRight,
   ContainerSoftware,
   Email,
   Folders,
   Home,
   Settings,
-  SidePanelOpen,
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
@@ -143,11 +143,11 @@ export function IconRail({
               )}
             >
               {expandedNav ? (
-                <Close size={16} />
+                <ChevronLeft size={16} />
               ) : (
                 <>
                   <BrandLogo className="opacity-0 transition-opacity hover-capable:opacity-100 group-hover:opacity-0 group-focus-visible:opacity-0" />
-                  <SidePanelOpen
+                  <ChevronRight
                     size={16}
                     className="absolute transition-opacity hover-capable:opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
                   />
