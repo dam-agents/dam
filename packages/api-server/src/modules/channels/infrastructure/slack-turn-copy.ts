@@ -26,12 +26,26 @@ export interface AmbientPeerReply {
 
 const PEER_REPLY_CHARS = 1500;
 
+function escapeFrameText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeFrameAttribute(value: string): string {
+  return escapeFrameText(value).replace(/"/g, "&quot;");
+}
+
 function quotePeerReply(name: string, text: string): string {
-  const quoted =
+  const capped =
     text.length > PEER_REPLY_CHARS
       ? `${text.slice(0, PEER_REPLY_CHARS)}… (truncated)`
       : text;
-  return `<already-replied agent="${name}">\n${quoted}\n</already-replied>`;
+  return (
+    `<already-replied agent="${escapeFrameAttribute(name)}">\n` +
+    `${escapeFrameText(capped)}\n</already-replied>`
+  );
 }
 
 export function botHistoryLabel(brand: { name: string }): string {
@@ -218,9 +232,10 @@ export function ambientGuidance(
   answeredAlready: AmbientPeerReply[] = [],
 ): string {
   const peers = roster?.peers ?? [];
-  const quotable = answeredAlready.filter(
-    (reply): reply is AmbientPeerReply & { text: string } =>
-      reply.text !== null && reply.text.trim() !== "",
+  const quotable = answeredAlready.flatMap((reply) =>
+    reply.text !== null && reply.text.trim() !== ""
+      ? [{ name: reply.name, text: reply.text }]
+      : [],
   );
   return [
     "<reading-along>",
@@ -240,9 +255,13 @@ export function ambientGuidance(
       ? [
           `${joinNames(answeredAlready.map((reply) => reply.name))} already ` +
             "replied to this in the channel, before you." +
-            (quotable.length > 0
-              ? " What they said is quoted below — read it before deciding: add"
-              : " Add") +
+            (quotable.length === 0
+              ? " Add"
+              : (quotable.length === answeredAlready.length
+                  ? " What they said"
+                  : ` What ${joinNames(quotable.map((reply) => reply.name))} ` +
+                    "said") +
+                " is quoted below — read it before deciding: add") +
             " something only if you have something they did not cover, and " +
             "stay silent rather than repeating or contradicting them for the " +
             "sake of it.",
