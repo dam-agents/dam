@@ -26,6 +26,7 @@ import {
   type HarnessTeardownReason,
 } from "./harness-lease.js";
 import { createPromptScheduler } from "./prompt-scheduler.js";
+import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
@@ -81,16 +82,6 @@ interface PendingAgentRequest {
   frame: string;
 }
 
-type BootstrapWaiter =
-  | { kind: "load"; channel: ClientChannel; originalId: JsonRpcId }
-  | { kind: "resume"; channel: ClientChannel; originalId: JsonRpcId };
-
-interface BootstrapState {
-  initiatorChannel: ClientChannel | null;
-  initiatorOutboundId: number;
-  waiters: BootstrapWaiter[];
-}
-
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const orphanTtlMs = deps.orphanTtlMs ?? DEFAULT_ORPHAN_TTL_MS;
   const logBytesCap = deps.logBytesCap ?? DEFAULT_LOG_BYTES_CAP;
@@ -122,9 +113,34 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
   });
 
-  const bootstrapBySession = new Map<string, BootstrapState>();
-
   let nextOutboundId = 1;
+
+  const bootstrap = createSessionBootstrap({
+    transcript,
+    engage(channel, sessionId) {
+      engage(channel, sessionId);
+    },
+    openLoadRoute(sessionId) {
+      const outboundId = nextOutboundId++;
+      outboundIdToClient.set(outboundId, {
+        channel: null,
+        originalId: null,
+        method: "session/load",
+        promptSessionId: null,
+        attachSessionId: sessionId,
+        platformMeta: null,
+      });
+      return outboundId;
+    },
+    sendToAgent(frame) {
+      lease.send(frame);
+    },
+    workingDir: deps.workingDir,
+    log(msg) {
+      deps.log?.(msg);
+    },
+  });
+
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -144,7 +160,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     engagedSessions.clear();
     transcript.clear();
-    bootstrapBySession.clear();
+    bootstrap.clear();
     for (const t of orphanTimers.values()) clearTimeout(t);
     orphanTimers.clear();
     for (const t of idleReapTimers.values()) clearTimeout(t);
@@ -313,17 +329,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     nonViewerChannels.delete(channel);
     transcript.dropChannel(channel);
     promptScheduler.dropChannel(channel);
-
-    for (const [sid, state] of bootstrapBySession) {
-      if (state.initiatorChannel === channel) {
-        bootstrapBySession.delete(sid);
-        continue;
-      }
-      const keptWaiters = state.waiters.filter((w) => w.channel !== channel);
-      if (keptWaiters.length !== state.waiters.length) {
-        state.waiters = keptWaiters;
-      }
-    }
+    bootstrap.dropChannel(channel);
 
     for (const [outId, m] of outboundIdToClient) {
       if (m.channel === channel && m.promptSessionId === null) {
@@ -364,7 +370,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!sessionCloseSupported) return;
     if (hasEngagedChannel(sessionId)) return;
     if (promptScheduler.hasWork(sessionId)) return;
-    if (bootstrapBySession.has(sessionId)) return;
+    if (bootstrap.has(sessionId)) return;
     for (const req of pendingFromAgent.values()) {
       if (req.sessionId === sessionId) return;
     }
@@ -394,48 +400,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       sessionId,
       setTimeout(() => reapIdleSessionNow(sessionId), idleReapDelayMs),
     );
-  }
-
-  function serveLoadFromLog(
-    channel: ClientChannel,
-    originalId: JsonRpcId,
-    sessionId: string,
-  ): void {
-    const metadata = transcript.metadataOf(sessionId);
-    if (!metadata.cached) {
-      throw new Error(
-        `serveLoadFromLog called for ${sessionId} without cached metadata`,
-      );
-    }
-    transcript.catchUp(channel, sessionId);
-    engage(channel, sessionId);
-    const response = JSON.stringify({
-      jsonrpc: "2.0",
-      id: originalId,
-      result: metadata.value,
-    });
-    sendToChannel(channel, rewriteAuthError(response));
-  }
-
-  function serveResumeFromLog(
-    channel: ClientChannel,
-    originalId: JsonRpcId,
-    sessionId: string,
-  ): void {
-    const metadata = transcript.metadataOf(sessionId);
-    if (!metadata.cached) {
-      throw new Error(
-        `serveResumeFromLog called for ${sessionId} without cached metadata`,
-      );
-    }
-    engage(channel, sessionId);
-    transcript.advanceToTail(channel, sessionId);
-    const response = JSON.stringify({
-      jsonrpc: "2.0",
-      id: originalId,
-      result: metadata.value,
-    });
-    sendToChannel(channel, rewriteAuthError(response));
   }
 
   function handleAgentLine(line: string): void {
@@ -488,28 +452,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
 
         if (mapping.method === "session/load" && mapping.attachSessionId) {
-          const sid = mapping.attachSessionId;
-          const boot = bootstrapBySession.get(sid);
-          if (boot) {
-            bootstrapBySession.delete(sid);
-            const loadFailed = !transcript.metadataOf(sid).cached;
-            for (const waiter of boot.waiters) {
-              if (!waiter.channel.isOpen()) continue;
-              if (loadFailed) {
-                const out = JSON.stringify({
-                  ...(frame as object),
-                  id: waiter.originalId,
-                });
-                waiter.channel.send(rewriteAuthError(out));
-                continue;
-              }
-              if (waiter.kind === "load") {
-                serveLoadFromLog(waiter.channel, waiter.originalId, sid);
-              } else {
-                serveResumeFromLog(waiter.channel, waiter.originalId, sid);
-              }
-            }
-          }
+          bootstrap.onLoadResponse(mapping.attachSessionId, frame);
         }
 
         if (mapping.channel && mapping.originalId !== null) {
@@ -554,9 +497,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
-      const boot = bootstrapBySession.get(sessionId);
-      if (boot) {
-        transcript.appendReplay(sessionId, line, boot.initiatorChannel);
+      if (bootstrap.has(sessionId)) {
+        transcript.appendReplay(
+          sessionId,
+          line,
+          bootstrap.initiatorOf(sessionId),
+        );
       } else {
         transcript.append(sessionId, line);
       }
@@ -603,50 +549,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const current = deps.sessionMetadata.get(paramsSid)?.meta ?? {};
           deps.sessionMetadata.set(paramsSid, { ...current, ...incomingMeta });
         }
-        engage(channel, paramsSid);
-        if (transcript.metadataOf(paramsSid).cached) {
-          serveResumeFromLog(channel, frame.id, paramsSid);
-          return;
-        }
-        const boot = bootstrapBySession.get(paramsSid);
-        if (boot) {
-          boot.waiters.push({ kind: "resume", channel, originalId: frame.id });
-          return;
-        }
-        const outboundId = nextOutboundId++;
-        bootstrapBySession.set(paramsSid, {
-          initiatorChannel: null,
-          initiatorOutboundId: outboundId,
-          waiters: [{ kind: "resume", channel, originalId: frame.id }],
-        });
-        outboundIdToClient.set(outboundId, {
-          channel: null,
-          originalId: null,
-          method: "session/load",
-          promptSessionId: null,
-          attachSessionId: paramsSid,
-          platformMeta: null,
-        });
-        const loadFrame = {
-          jsonrpc: "2.0",
-          id: outboundId,
-          method: "session/load",
-          params: { sessionId: paramsSid, cwd: ".", mcpServers: [] },
-        };
-        lease.send(rewriteCwd(loadFrame, deps.workingDir));
+        bootstrap.requestResume(channel, frame.id, paramsSid);
         return;
       }
 
       if (method === "session/load" && paramsSid) {
-        if (transcript.metadataOf(paramsSid).cached) {
-          serveLoadFromLog(channel, frame.id, paramsSid);
-          return;
-        }
-        const boot = bootstrapBySession.get(paramsSid);
-        if (boot) {
-          boot.waiters.push({ kind: "load", channel, originalId: frame.id });
-          return;
-        }
+        if (bootstrap.requestLoad(channel, frame.id, paramsSid)) return;
       }
 
       const outboundId = nextOutboundId++;
@@ -686,11 +594,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
 
       if (method === "session/load" && attachSessionId) {
-        bootstrapBySession.set(attachSessionId, {
-          initiatorChannel: channel,
-          initiatorOutboundId: outboundId,
-          waiters: [],
-        });
+        bootstrap.trackClientLoad(attachSessionId, channel);
       }
 
       if (promptSessionId !== null) {
