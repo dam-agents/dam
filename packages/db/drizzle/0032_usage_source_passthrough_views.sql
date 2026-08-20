@@ -21,9 +21,21 @@
 --   * pending_approvals.payload and .session_id, agents.harness_config_snapshot
 --     and .skills_snapshot are application data never written for analytics —
 --     omitted until a metric actually needs a column from them.
+--   * activity_events.payload passes through as an object, deliberately: the
+--     consumer's metrics key on payload fields, and a new payload key must
+--     reach it without a dam migration. The column contract therefore does
+--     not extend inside the object; what holds it instead is the write
+--     boundary — identity keys in payloads (externalActorId, ownerSub) are
+--     HMAC-pseudonymized before INSERT, and every other key an emit site
+--     writes is a bounded token or number, never free-form text. The one
+--     existing violation of that invariant, 'message' (a raw driver error
+--     string on the contribution events), is stripped here; a new payload
+--     key carrying free-form text must either be dropped at its emit site or
+--     added to this strip list.
 
 CREATE VIEW "usage_src_activity_events" AS
-  SELECT id, type, actor_sub, agent_id, surface, outcome, payload, occurred_at
+  SELECT id, type, actor_sub, agent_id, surface, outcome,
+         payload - 'message' AS payload, occurred_at
   FROM activity_events;
 --> statement-breakpoint
 CREATE VIEW "usage_src_actor_roles" AS
