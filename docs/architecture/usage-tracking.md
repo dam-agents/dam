@@ -33,7 +33,7 @@ flowchart LR
     psa[persist-activity saga]
     pas[persist-agents saga]
     boot[agent-bootstrap]
-    retain[retention timer]
+    retain[retention job]
     pseudo[HMAC pseudonymizer]
     routes[/api/usage/* routes]
   end
@@ -167,9 +167,9 @@ The function returns a `Promise`, so the console prints `Promise {<pending>}` ne
 
 ## Retention
 
-A weekly in-process timer in the api-server runs a bulk DELETE of rows in `activity_events` older than 180 days. Multi-replica installs race on `pg_try_advisory_lock` — only one api-server runs the DELETE per week, losers no-op. The timer starts 5 minutes after pod start so a rolling restart does not align every replica's tick.
+A weekly retention job runs a bulk DELETE of rows in `activity_events` older than 180 days. It is one of the scheduled per-period jobs described on [platform-topology](platform-topology.md) — Redis-backed, one execution per period across the api-server replicas, each tick idempotent.
 
-Retention is independent of the activity-tracking toggle: if writes are disabled mid-deployment, the retention timer continues to age existing rows out.
+Retention registers only when activity tracking is enabled: an install with writes disabled ages nothing out, keeping whatever history existed when the toggle flipped.
 
 ## Core-team exclusion
 
