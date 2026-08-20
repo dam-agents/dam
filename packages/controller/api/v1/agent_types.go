@@ -95,25 +95,8 @@ type AgentStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// AgentPodRestarts is the highest observed restart count among the agent
-	// pod's containers, for the pod currently backing this Agent. Published
-	// because a restart is otherwise invisible once the pod recovers: the
-	// readiness conditions report AgentPodReady=True again and the
-	// termination cause on that condition is cleared. The api-server's
-	// Invocation liveness sweep reads it to fail a one-shot target that
-	// crashed mid-turn, and it must not read pods to learn this — conditions
-	// and status are the whole of what it sees (see
-	// docs/architecture/platform-topology.md).
-	//
-	// Counts container restarts within one pod, so it resets when the pod
-	// itself is replaced rather than restarted; the vm backend has no
-	// container statuses and never reports here.
 	// +optional
 	AgentPodRestarts int32 `json:"agentPodRestarts,omitempty"`
-	// AgentPodRestartReason is the classified cause behind the most recent of
-	// AgentPodRestarts (e.g. OutOfMemory), taken from the container's last
-	// terminated state. Empty when the pod has never restarted, or when the
-	// cause is one the classifier does not name.
 	// +optional
 	AgentPodRestartReason string `json:"agentPodRestartReason,omitempty"`
 }

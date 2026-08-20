@@ -7,7 +7,7 @@ import type {
 import { createExperimentsService } from "../../modules/experiments/services/experiments-service.js";
 
 /**
- * Every terminal transition must shed the run's still-running Invocations, not
+ * TEST_OVERVIEW: Every terminal transition must shed the run's still-running Invocations, not
  * just Stop. The ledger is closed once an experiment goes terminal, so a target
  * left alive can no longer report into the run — it only holds its pod (and its
  * owner's budget) until the invocation TTL. The Agent Sweep is not a backstop
@@ -101,6 +101,7 @@ describe("experiment terminal transitions reap in-flight targets", () => {
     expect(cancelled[0]?.reason).toBe("experiment failed");
   });
 
+  // TEST_SCENARIO: Reaping is best-effort, like the rest of the terminal
   test("a failing cancel does not block the terminal transition", async () => {
     const row = runningRow();
     const repo = {
@@ -116,8 +117,6 @@ describe("experiment terminal transitions reap in-flight targets", () => {
       },
     } as unknown as Parameters<typeof createExperimentsService>[0]);
 
-    // Best-effort, like the rest of the terminal bookkeeping: the run must
-    // still land terminal even if reaping its targets fails.
     await expect(
       experiments.finish(DRIVER, EXPERIMENT, { status: "completed" }),
     ).resolves.toBeUndefined();

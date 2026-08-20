@@ -13,6 +13,7 @@ import (
 	apiv1 "github.com/kagenti/platform/packages/controller/api/v1"
 )
 
+// TEST_OVERVIEW: The controller publishes the agent pod's restart count on the
 func TestPodRestarts_NilAndCleanPod(t *testing.T) {
 	restarts, reason := podRestarts(nil)
 	assert.Zero(t, restarts)
@@ -23,10 +24,8 @@ func TestPodRestarts_NilAndCleanPod(t *testing.T) {
 	assert.Empty(t, reason)
 }
 
+// TEST_SCENARIO: The reason must come from the container that owns the highest
 func TestPodRestarts_HighestCountWinsWithItsOwnCause(t *testing.T) {
-	// The reason must come from the container that owns the highest count, not
-	// from whichever container the loop happened to see last — the count and
-	// the cause are reported as one fact.
 	pod := readyPod("my-agent-0")
 	pod.Status.ContainerStatuses = []corev1.ContainerStatus{
 		{
@@ -50,10 +49,8 @@ func TestPodRestarts_HighestCountWinsWithItsOwnCause(t *testing.T) {
 	assert.Equal(t, "OutOfMemory", reason)
 }
 
+// TEST_SCENARIO: A restart whose last termination exited 0 (or is missing
 func TestPodRestarts_CountWithoutAClassifiableCause(t *testing.T) {
-	// A restart whose last termination exited 0 (or is missing entirely) is
-	// still a restart: the count must survive even when nothing names it,
-	// because the count is what the liveness sweep keys on.
 	pod := readyPod("my-agent-0")
 	pod.Status.ContainerStatuses = []corev1.ContainerStatus{
 		{Name: "agent", RestartCount: 2},
@@ -64,9 +61,7 @@ func TestPodRestarts_CountWithoutAClassifiableCause(t *testing.T) {
 	assert.Empty(t, reason)
 }
 
-// The point of publishing the count: a container that crashed and came back is
-// Ready again and carries no termination cause on its condition, so the count
-// is the only remaining trace that the process was replaced mid-turn.
+// TEST_SCENARIO: The point of publishing the count. A container that crashed and
 func TestReconcile_PublishesRestartsOnARecoveredPod(t *testing.T) {
 	agent := agentCR()
 	pod := readyPod("my-agent-0")
@@ -101,8 +96,7 @@ func TestReconcile_PublishesZeroRestartsForAHealthyPod(t *testing.T) {
 	assert.Empty(t, reason)
 }
 
-// Hibernation clears the count: the pod it described is gone, and leaving it
-// set would read as a crash to the liveness sweep.
+// TEST_SCENARIO: Hibernation clears the count. The pod it described is gone, and
 func TestHibernateAgentPair_ClearsRestarts(t *testing.T) {
 	agent := agentCR()
 	pod := readyPod("my-agent-0")

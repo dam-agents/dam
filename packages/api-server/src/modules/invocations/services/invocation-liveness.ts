@@ -7,8 +7,6 @@ export interface InvocationLivenessSweep {
 
 const RESULT_RETENTION_MS = 10 * 60 * 1000;
 
-/** The crash signal for one target, as the controller published it on the Agent
- *  status. Null when the Agent is gone (already reaped, or never created). */
 export interface TargetRestartState {
   podRestarts: number;
   podRestartReason?: string;
@@ -17,13 +15,7 @@ export interface TargetRestartState {
 export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
   agentsFor: (owner: string) => AgentsService;
-  /** Reads the target Agent's controller-published restart count, to catch one
-   *  crashed mid-turn. Deliberately the Agent status and not the pod: the
-   *  api-server routes on the Agent's conditions and never inspects pods
-   *  itself (docs/architecture/platform-topology.md), so the controller — which
-   *  already watches pods — is what turns a restart into readable state. */
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
-  /** Cap rows handled per tick; the rest get the next tick. */
   batchSize: number;
   now?: () => Date;
 }

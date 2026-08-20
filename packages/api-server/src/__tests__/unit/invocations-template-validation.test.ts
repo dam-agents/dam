@@ -4,10 +4,7 @@ import { describe, expect, test } from "vitest";
 import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
 import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 
-// A driver naming a template that doesn't exist (#3185): the catalogue is the
-// same list `GET /images` offered, so the spawn is rejected at the edge with the
-// ids that do exist — not passed down to `agents.create`, whose bare NOT_FOUND
-// surfaces as an opaque 500 hours into a run.
+// TEST_OVERVIEW: A driver naming a template that doesn't exist: the catalogue is the
 
 function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
   const spawned: Array<Record<string, unknown>> = [];

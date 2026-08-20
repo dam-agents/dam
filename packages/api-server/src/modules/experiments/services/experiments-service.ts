@@ -84,13 +84,6 @@ export interface ExperimentsServiceDeps {
   runningInvocationsByDriver: () => Promise<Map<string, number>>;
   experimentForInvocation?: (targetAgentId: string) => Promise<string | null>;
   snapshotDashboard?: (experimentId: string, owner: string) => Promise<void>;
-  /** Terminal-transition teeth: fail the experiment's running Invocations and
-   *  reap their targets. Stop uses it so blocked spawn() waiters unblock
-   *  immediately; finish uses it because a run that ends without collecting a
-   *  spawn (it returned early, or the script died mid-poll) would otherwise
-   *  leave the target holding its pod until the invocation TTL — a template
-   *  that never hibernates has no other backstop. `reason` lands on the
-   *  invocation row, so it must name the transition that caused the reap. */
   cancelInvocations?: (
     driverAgentId: string,
     experimentId: string,
@@ -709,12 +702,6 @@ export function createExperimentsService(
         const current = await repo.get(experimentId, owner);
         throw new ExperimentClosedError(current?.status ?? "unknown");
       }
-      // Finishing has the same teeth as Stop. The ledger is closed either way,
-      // so a target still running against this run can no longer report into
-      // it — leaving it alive only burns its owner's budget until the
-      // invocation TTL. This covers `completed` too: a loop that returns
-      // without awaiting a spawn is the same orphan as one that crashed
-      // mid-poll. Best-effort, like the rest of the terminal bookkeeping.
       try {
         await deps.cancelInvocations?.(
           experiment.driverAgentId,

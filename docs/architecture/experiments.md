@@ -187,6 +187,15 @@ the design, and the spawn route rejects an unknown `templateId` with a `400`
 naming the ids that exist — the lenient-skeleton rule is about *stage* drift and
 does not extend to naming an image that isn't there.
 
+**A failed spawn says why.** Polling an invocation returns its status and, once
+the target reports, the schema-validated result. A `failed` row additionally
+carries the platform's own reason — deadline exceeded, target pod restarted
+mid-turn, stopped with the run — because it is the one line of diagnosis the
+platform holds and the loop cannot reconstruct: the target is already gone by
+the time the driver sees the failure. A loop that only ever read a bare
+`failed` would have to guess whether to retry, back off, or shrink its
+workload.
+
 **Span ↔ spawn attach.** A spawn made inside a span carries
 `experimentSpanId` ("experimentId/spanId") on the invocation request; the
 feed joins invocations back to their stage through it. The invocations
