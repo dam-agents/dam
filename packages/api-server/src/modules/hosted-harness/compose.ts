@@ -15,6 +15,7 @@ import {
 } from "./infrastructure/model-resolver.js";
 import { createHostedPodClient } from "./infrastructure/pod-client.js";
 import { createTurnRunner } from "./services/turn-runner.js";
+import type { SpendRecorder } from "./infrastructure/spend-recorder.js";
 import {
   createHostedSessionsService,
   type HostedSessionsService,
@@ -54,6 +55,7 @@ export function composeHostedHarness(deps: {
   modelConfig: HostedModelConfig;
   namespace: string;
   periodicJobs: PeriodicJobs;
+  recordSpend?: SpendRecorder;
   log: (msg: string) => void;
 }): HostedHarnessModule {
   const repo = createTurnLogRepository(deps.db);
@@ -74,6 +76,7 @@ export function composeHostedHarness(deps: {
       return { id: infra.id, name: infra.name, workDir: "~/work" };
     },
     ensurePodReady: (agentId) => deps.agentsRepo.ensureReady(agentId),
+    recordSpend: deps.recordSpend,
     log: deps.log,
   });
 

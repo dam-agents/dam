@@ -137,6 +137,8 @@ import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infra
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { composeHostedHarness } from "./modules/hosted-harness/compose.js";
+import { createSpendRecorder } from "./modules/hosted-harness/infrastructure/spend-recorder.js";
+import { createClickhouseClient } from "./modules/metrics/infrastructure/clickhouse-reader.js";
 import { createConnectionsRepository } from "./modules/connections/infrastructure/connections-repository.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
@@ -395,6 +397,17 @@ export async function bootstrap() {
         },
         namespace: config.namespace,
         periodicJobs,
+        recordSpend: config.clickhouseUrl
+          ? createSpendRecorder(
+              createClickhouseClient({
+                url: config.clickhouseUrl,
+                username: config.clickhouseUser,
+                password: config.clickhousePassword,
+                database: config.clickhouseDatabase,
+              }),
+              (msg) => getLogger().warn(msg),
+            )
+          : undefined,
         log: (msg) => getLogger().info(msg),
       })
     : null;

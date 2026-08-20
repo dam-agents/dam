@@ -19,6 +19,7 @@ import {
 import type { TurnLogRepository } from "./../infrastructure/turn-log-repository.js";
 import type { HostedPodClient } from "../infrastructure/pod-client.js";
 import type { ModelResolver } from "../infrastructure/model-resolver.js";
+import type { SpendRecorder } from "../infrastructure/spend-recorder.js";
 
 const MAX_STEPS = 100;
 const COMPACT_AT_TOKENS = 160_000;
@@ -35,6 +36,7 @@ export interface TurnRunnerDeps {
   podClient(agentId: string): HostedPodClient;
   getAgent(agentId: string): Promise<TurnRunnerAgentInfo | null>;
   ensurePodReady(agentId: string): Promise<void>;
+  recordSpend?: SpendRecorder;
   log: (msg: string) => void;
 }
 
@@ -248,7 +250,27 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
         });
       }
 
-      const { model } = await deps.resolveModel(session.agentId);
+      const { model, modelId } = await deps.resolveModel(session.agentId);
+      const generate: typeof generateText = (async (
+        opts: Parameters<typeof generateText>[0],
+      ) => {
+        const startedAt = Date.now();
+        const result = await generateText(opts);
+        deps.recordSpend?.({
+          agentId: session.agentId,
+          agentName: agent.name,
+          sessionId: session.id,
+          model: modelId,
+          inputTokens: result.usage?.inputTokens ?? 0,
+          outputTokens: result.usage?.outputTokens ?? 0,
+          cacheReadTokens:
+            result.usage?.inputTokenDetails?.cacheReadTokens ?? 0,
+          cacheCreationTokens:
+            result.usage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+          durationMs: Date.now() - startedAt,
+        });
+        return result;
+      }) as typeof generateText;
       const tools: ToolSet = {
         bash: tool({
           description: hostedToolDescriptions.bash,
@@ -289,7 +311,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
       let lastInputTokens = estimateTokens();
 
       const compact = async () => {
-        const summary = await generateText({
+        const summary = await generate({
           model,
           system:
             "You compact a coding-agent conversation. Write a dense summary that preserves: the user's goals, decisions made, current in-flight task state, key file paths, and anything needed to continue the work seamlessly.",
@@ -326,7 +348,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
           const live = await deps.repo.getTurn(turnId);
           if (!live || live.status !== "running") return;
           if (lastInputTokens > COMPACT_AT_TOKENS) await compact();
-          const result = await generateText({
+          const result = await generate({
             model,
             system: hostedSystemPrompt({
               agentName: agent.name,
@@ -383,7 +405,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
                 output: `tool unavailable: ${err.reason}`,
                 isError: true,
               });
-              const closing = await generateText({
+              const closing = await generate({
                 model,
                 system: [
                   hostedSystemPrompt({
