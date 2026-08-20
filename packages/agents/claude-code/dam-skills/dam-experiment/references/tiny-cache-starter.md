@@ -1,5 +1,11 @@
 # The tiny-cache starter
 
+This reference is background **for you** — never recite it. When offering the
+starter, two or three plain sentences and a question beat any paragraph in
+this file; the anti-cheat story is one sentence to the user ("the tests and
+benchmark are locked — a round that edits them scores nothing"), and its
+mechanics belong in the driver script, not the chat.
+
 The bundled example for a user with no optimization target of their own: a
 dependency-free in-memory TTL cache for Node whose implementation is
 **deliberately naive** — `get()` scans an array, every call rebuilds it to

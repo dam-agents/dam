@@ -25,6 +25,23 @@ surface — `x.spawn(...)`, `x.list_images()`, `x.require_image(...)`,
 `x.list_connections()`, and the `x.s(...)` schema shorthand — so one script
 both drives and reports.
 
+## Talking to the user
+
+The design conversation is with someone who wants a result, not a systems
+briefing. Throughout — greeting, starter offer, envelope, run reports:
+
+- **Short paragraphs, and structure over prose**: options go in bulleted
+  lists, the approval envelope in a short list or table of decisions, numbers
+  in tables. If a reply can be scanned instead of read, make it so.
+- **State guarantees, not mechanisms.** Say "the tests and benchmark are
+  locked — a round that edits them scores nothing", not how the driver diffs
+  against a pristine copy. Internal machinery (integrity checks, SDK
+  surfaces, file layouts) stays out of the conversation unless the user asks.
+- **One decision per question.** Don't bundle "want it set up?" with worker
+  choice and stage design in a single closing paragraph — sequence them.
+- Plain words over platform vocabulary wherever the user hasn't used the
+  term first.
+
 ## Choose the worker image FIRST
 
 The worker image decides what the experiment can actually do — it is the
