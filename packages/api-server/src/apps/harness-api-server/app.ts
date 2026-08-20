@@ -117,6 +117,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         surface: "mcp",
         artifactLibrary: artifactLibraryFor(owner),
         pin: experimentPin,
+        agents: agentsServiceFor(owner),
       }).experiments,
     artifactLibraryFor,
     invocationsServiceFor,

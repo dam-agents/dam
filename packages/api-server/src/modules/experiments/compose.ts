@@ -40,7 +40,11 @@ async function cancelExperimentInvocations(deps: {
   for (const invocationId of failed) {
     try {
       await deps.agents?.delete(invocationId);
-    } catch {}
+    } catch (err) {
+      process.stderr.write(
+        `[experiments] target reap ${invocationId} failed: ${err instanceof Error ? err.message : err}\n`,
+      );
+    }
   }
 }
 
@@ -52,7 +56,7 @@ export function composeExperimentsForOwner(opts: {
   pin?: ExperimentPinPort;
   runtimeMutator?: RuntimeMutator;
   wakeAgent?: (agentId: string) => Promise<void>;
-  agents?: AgentsService;
+  agents: AgentsService;
 }): { experiments: ExperimentsService } {
   const invocationsRepo = createInvocationsRepository(opts.db);
   const { agents, runtimeMutator, wakeAgent, owner, surface } = opts;

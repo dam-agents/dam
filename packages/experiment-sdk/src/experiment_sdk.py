@@ -118,24 +118,48 @@ def _config() -> tuple[str, str]:
     return f"{base}/api/agents/{agent_id}", agent_id
 
 
+_TRANSIENT_HTTP = {502, 503, 504}
+_RETRY_ATTEMPTS = 4
+_RETRY_BASE_DELAY_S = 1.0
+
+
 def _request(method: str, path: str, body: Any | None = None) -> Any:
+    """One platform API call. GETs retry transient failures (5xx from a mesh
+    hop, a reset connection) with exponential backoff: a long run polls the
+    API thousands of times, and without the retry a single blip on any poll
+    kills every remaining round. Non-GETs are not blindly retried — the
+    platform treats a repeated finish/report as a conflict, not a dup."""
     root, _ = _config()
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(
-        f"{root}{path}",
-        data=data,
-        method=method,
-        headers={"content-type": "application/json"} if data else {},
-    )
-    try:
-        with urllib.request.urlopen(req) as res:
-            text = res.read().decode("utf-8")
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", errors="replace")
-        if err.code == 409:
-            raise ExperimentClosed(detail) from None
-        raise RuntimeError(f"{method} {path} -> {err.code}: {detail}") from None
-    return json.loads(text) if text else None
+    attempts = _RETRY_ATTEMPTS if method == "GET" else 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
+        req = urllib.request.Request(
+            f"{root}{path}",
+            data=data,
+            method=method,
+            headers={"content-type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(req) as res:
+                text = res.read().decode("utf-8")
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            if err.code == 409:
+                raise ExperimentClosed(detail) from None
+            last_error = RuntimeError(f"{method} {path} -> {err.code}: {detail}")
+            if err.code in _TRANSIENT_HTTP and attempt + 1 < attempts:
+                continue
+            raise last_error from None
+        except urllib.error.URLError as err:
+            last_error = RuntimeError(f"{method} {path} failed: {err.reason}")
+            if attempt + 1 < attempts:
+                continue
+            raise last_error from None
+        return json.loads(text) if text else None
+    raise last_error if last_error else RuntimeError(f"{method} {path} failed")
 
 
 # ---- schema shorthand --------------------------------------------------------
