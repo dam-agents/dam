@@ -57,22 +57,21 @@ export function SandboxGroupCard({
               group.rollup ? "ml-3.5" : "ml-auto",
             )}
           >
-            Open sandbox →
+            Open agent →
           </span>
         )}
       </div>
 
       {deleted && (
         <p className="mb-3 px-1.5 text-xs text-muted-foreground">
-          These sandboxes were deleted; their runs and results still live in the
+          These agents were deleted; their runs and results still live in the
           artifact library.
         </p>
       )}
 
       {count === 0 ? (
         <p className="px-1.5 text-sm text-muted-foreground">
-          No experiments yet — open the sandbox chat and ask the agent to set
-          one up.
+          No experiments yet — open the agent chat and ask it to set one up.
         </p>
       ) : (
         <div className="flex flex-col gap-3">

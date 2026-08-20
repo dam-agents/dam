@@ -35,7 +35,7 @@ function restartsToApply(agent: AgentView): boolean {
 }
 
 function batchSubject(total: number): string {
-  return total === 1 ? "sandbox" : "sandboxes";
+  return total === 1 ? "agent" : "agents";
 }
 
 function byTargetImage(
@@ -51,7 +51,7 @@ function batchApplyNote(restarting: number, total: number): string {
   if (restarting === 0) return "Each applies it the next time it starts.";
   if (restarting === total)
     return "They restart to apply it — in-flight work is interrupted.";
-  return "Running sandboxes restart to apply it — in-flight work is interrupted. Stopped ones apply it the next time they start.";
+  return "Running agents restart to apply it — in-flight work is interrupted. Stopped ones apply it the next time they start.";
 }
 
 export function useUpdateSandbox() {
@@ -66,21 +66,21 @@ export function useUpdateSandbox() {
       if (!update) return;
       const msg = (
         <>
-          Update sandbox{" "}
+          Update agent{" "}
           <strong className="text-foreground">"{agent.name}"</strong> to its
           template's current version? The image moves from{" "}
           <span className="font-mono text-xs">{update.fromImage}</span> to{" "}
           <span className="font-mono text-xs">{update.toImage}</span>.{" "}
           {restartsToApply(agent)
-            ? "The sandbox restarts to apply it — in-flight work is interrupted."
-            : "It applies when the sandbox next starts."}
+            ? "The agent restarts to apply it — in-flight work is interrupted."
+            : "It applies when the agent next starts."}
           <ReleaseNotesLink
             href={releaseNotesUrl(templates, agent.templateId)}
             className="mt-2 flex w-fit"
           />
         </>
       );
-      if (!(await showConfirm(msg, "Update Sandbox"))) return;
+      if (!(await showConfirm(msg, "Update Agent"))) return;
       upgrade.mutate({ id: agent.id, expectedToImage: update.toImage });
     },
     [showConfirm, upgrade, templates],
@@ -110,7 +110,7 @@ export function useUpdateSandbox() {
                 {targets.map(({ image, count }) => (
                   <li key={image} className="text-sm">
                     <span className="font-mono text-xs">{image}</span> — {count}{" "}
-                    {count === 1 ? "sandbox" : "sandboxes"}
+                    {count === 1 ? "agent" : "agents"}
                   </li>
                 ))}
               </ul>
@@ -119,7 +119,7 @@ export function useUpdateSandbox() {
           {batchApplyNote(restarting, pending.length)}
         </>
       );
-      if (!(await showConfirm(msg, "Update Sandboxes"))) return;
+      if (!(await showConfirm(msg, "Update Agents"))) return;
 
       let updated = 0;
       const failures: string[] = [];
@@ -138,13 +138,13 @@ export function useUpdateSandbox() {
       if (failures.length === 0) {
         emitToast({
           kind: "success",
-          message: `Updated ${updated} sandbox${updated === 1 ? "" : "es"}`,
+          message: `Updated ${updated} agent${updated === 1 ? "" : "s"}`,
         });
         return;
       }
       emitToast({
         kind: "error",
-        message: `Updated ${updated} of ${pending.length} sandboxes. ${failures.length} failed — ${failures.join("; ")}`,
+        message: `Updated ${updated} of ${pending.length} agents. ${failures.length} failed — ${failures.join("; ")}`,
       });
     },
     [showConfirm, bulkUpgrade],

@@ -43,7 +43,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
       />
       <DialogBody className="flex flex-col gap-3">
         <span className="text-sm font-medium text-foreground">
-          Attach to the sandbox
+          Attach to the agent
         </span>
         <CopyableCommand command={`dam chat ${agentId}`} size="compact" />
         <CliQuickstartNote />

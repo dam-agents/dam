@@ -461,7 +461,7 @@ function RuleRow({
         <Badge
           size="sm"
           variant="warning"
-          title={`Saving stops request inspection for ${rule.host}, which restarts the network gateway (~5–15s). The sandbox keeps running.`}
+          title={`Saving stops request inspection for ${rule.host}, which restarts the network gateway (~5–15s). The agent keeps running.`}
         >
           restarts gateway
         </Badge>

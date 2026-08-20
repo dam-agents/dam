@@ -28,7 +28,7 @@ export function NameSection({
           autoFocus
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder="my-sandbox"
+          placeholder="my-agent"
         />
       </FormField>
     </section>

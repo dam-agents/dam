@@ -14,7 +14,7 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
     <section className="mb-8">
       <SectionLabel spaced>Channels</SectionLabel>
       <p className="-mt-1 mb-4 text-sm text-muted-foreground">
-        Connect this sandbox to messenger surfaces (Slack channels, Telegram
+        Connect this agent to messenger surfaces (Slack channels, Telegram
         chats).
       </p>
       {!available.slack && !available.telegram ? (

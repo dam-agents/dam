@@ -159,8 +159,8 @@ export function ArtifactsView() {
       {isEmpty && (
         <PageEmptyState
           title="No artifacts yet"
-          message="Artifacts from every sandbox collect here."
-          actionLabel="Go to sandboxes"
+          message="Artifacts from every agent collect here."
+          actionLabel="Go to agents"
           onAction={() => setView("list")}
         />
       )}

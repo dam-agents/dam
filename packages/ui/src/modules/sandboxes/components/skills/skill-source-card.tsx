@@ -170,7 +170,7 @@ export function SkillSourceCard({
               <Badge
                 variant="template"
                 className="shrink-0"
-                title="Only readable through this sandbox's GitHub connection"
+                title="Only readable through this agent's GitHub connection"
               >
                 Private
               </Badge>

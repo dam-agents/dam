@@ -39,7 +39,7 @@ export function SkillsNeverRunPanel({
   const startButton = (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
       {comingUp ? <Spinner size={13} /> : <Play size={14} />}
-      {comingUp ? "Starting…" : "Start sandbox"}
+      {comingUp ? "Starting…" : "Start agent"}
     </Button>
   );
 
@@ -51,9 +51,7 @@ export function SkillsNeverRunPanel({
           className="mt-px shrink-0 text-muted-foreground"
         />
         <p className="min-w-0 flex-1">
-          <span className="font-semibold">
-            This sandbox hasn&rsquo;t run yet
-          </span>{" "}
+          <span className="font-semibold">This agent hasn&rsquo;t run yet</span>{" "}
           <span className="text-muted-foreground">
             — its skills are resolved inside the sandbox, so there&rsquo;s
             nothing recorded to show. Start it once and this page fills in.
@@ -67,7 +65,7 @@ export function SkillsNeverRunPanel({
         <Callout variant="dashed">
           <div className="flex flex-col items-center gap-4 py-10 text-center">
             <p className="text-sm text-muted-foreground">
-              Not known yet — start the sandbox to see and configure its skills.
+              Not known yet — start the agent to see and configure its skills.
             </p>
             <div className="flex items-center gap-2">
               {startButton}

@@ -33,7 +33,7 @@ export function KnowledgeBasesListView() {
         title="Knowledge bases"
         description={
           knowledgeBases.length > 0
-            ? "A knowledge base is a sandbox that builds and maintains a wiki in its workspace. Open one to work with it in chat — ask questions and add to it."
+            ? "A knowledge base is an agent that builds and maintains a wiki in its workspace. Open one to work with it in chat — ask questions and add to it."
             : undefined
         }
         actions={
@@ -48,7 +48,7 @@ export function KnowledgeBasesListView() {
       {initialLoaded && knowledgeBases.length === 0 && (
         <PageEmptyState
           title="No knowledge bases yet"
-          message="A knowledge base is a sandbox that builds and maintains a wiki you can chat with. Point it at a repo or docs, or add knowledge as you go. Create a sandbox with the knowledge base preset to get started."
+          message="A knowledge base is an agent that builds and maintains a wiki you can chat with. Point it at a repo or docs, or add knowledge as you go. Create an agent with the knowledge base preset to get started."
           actionLabel="Create knowledge base"
           onAction={createKnowledgeBase}
         />

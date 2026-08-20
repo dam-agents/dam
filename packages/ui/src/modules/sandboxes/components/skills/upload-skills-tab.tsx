@@ -185,7 +185,7 @@ function StagedSkillRow({
         )}
         {conflict && (
           <p className="mt-1 text-xs text-destructive">
-            A skill with this name already exists in this sandbox.
+            This agent already has a skill with this name.
           </p>
         )}
         {!conflict && unsluggable && (

@@ -43,7 +43,7 @@ export function BudgetMeter() {
   return (
     <Callout
       className="mb-6 flex items-center gap-6"
-      title="Compute your running sandboxes can use, against your budget. Pause or stop a sandbox to free room."
+      title="Compute your running agents can use, against your budget. Pause or stop an agent to free room."
     >
       <Dimension
         label="CPU"

@@ -36,12 +36,12 @@ export function useDisconnectConnection() {
     const ok = await showConfirm(
       <>
         <p>
-          This connection will be deleted. Any sandbox using it may no longer
+          This connection will be deleted. Any agent using it may no longer
           function as expected.
         </p>
         {affected.length > 0 && (
           <Callout tone="muted" className="mt-4">
-            <SectionLabel>Affected sandboxes</SectionLabel>
+            <SectionLabel>Affected agents</SectionLabel>
             <ul className="mt-2 list-disc pl-5 text-sm text-foreground/90">
               {affected.map((n) => (
                 <li key={n}>{n}</li>

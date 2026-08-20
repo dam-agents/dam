@@ -27,7 +27,7 @@ function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
   const clauses: [number, string][] = [
     [
       count("source-not-connected"),
-      "from a source this sandbox isn't connected to",
+      "from a source this agent isn't connected to",
     ],
     [count("source-unreadable"), "from a source that couldn't be read"],
     [count("not-in-source"), "no longer in its source"],
@@ -455,7 +455,7 @@ export function useSkillsSurface(
         return {
           ok: false as const,
           conflictNames: [],
-          message: "No sandbox selected",
+          message: "No agent selected",
         };
       }
       try {

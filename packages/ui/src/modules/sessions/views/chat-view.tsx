@@ -360,11 +360,11 @@ export function ChatView() {
         modelSettings: null,
       }
     : {
-        actionsAria: "Sandbox actions",
-        configure: "Configure sandbox",
-        delete: "Delete Sandbox",
-        modelSubject: "sandbox",
-        modelSettings: "Sandbox Setup",
+        actionsAria: "Agent actions",
+        configure: "Configure agent",
+        delete: "Delete Agent",
+        modelSubject: "agent",
+        modelSettings: "Agent Setup",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -387,8 +387,8 @@ export function ChatView() {
     const ok = isKnowledgeBaseView
       ? await confirmDeleteKnowledgeBase(showConfirm, selectedAgentName ?? "")
       : await showConfirm(
-          "Delete this sandbox? This also deletes all persistent data and cannot be undone.",
-          "Delete Sandbox",
+          "Delete this agent? This also deletes all persistent data and cannot be undone.",
+          "Delete Agent",
           { kind: "destructive" },
         );
     if (!ok) return;

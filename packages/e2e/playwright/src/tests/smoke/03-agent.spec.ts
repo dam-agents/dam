@@ -51,7 +51,7 @@ test("create a mock agent with the connection attached", async ({ page }) => {
   });
 
   await test.step("name the sandbox and connect a provider", async () => {
-    await page.getByPlaceholder("my-sandbox").fill(agentName);
+    await page.getByPlaceholder("my-agent").fill(agentName);
 
     const dialog = page.getByRole("dialog");
     await page.getByTestId("provider-select").click();
@@ -70,7 +70,7 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     await expect(
       page
         .getByTestId(`catalog-connection-${connectionId}`)
-        .getByText("In this sandbox"),
+        .getByText("In this agent"),
     ).toBeVisible();
     await page.getByTestId("catalog-close").click();
     await expect(

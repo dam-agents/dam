@@ -99,8 +99,7 @@ function ConnectedChannel({ slackChannelId }: { slackChannelId: string }) {
       </p>
       <p className="text-sm text-muted-foreground">
         A connected channel can't be swapped for another one. To reach this
-        sandbox from somewhere else, connect that channel and disconnect this
-        one.
+        agent from somewhere else, connect that channel and disconnect this one.
       </p>
     </div>
   );
