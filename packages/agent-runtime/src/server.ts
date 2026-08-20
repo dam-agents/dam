@@ -27,6 +27,7 @@ import {
 import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
+import { createExecService } from "./modules/exec.js";
 import { createFilesService } from "./modules/files.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
@@ -95,6 +96,7 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 
 const envStore = createEnvStateStore(homeDir);
+const execService = createExecService(workDir, envStore);
 
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
@@ -169,6 +171,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 const trpcHandler = createHTTPHandler({
   router: appRouter,
   createContext: (): AgentRuntimeContext => ({
+    exec: execService,
     files: filesService,
     skills: skillsService,
     ssh: sshService,

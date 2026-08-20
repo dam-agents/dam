@@ -3,6 +3,20 @@ export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
 export { ok, err } from "./result.js";
 export type {
+  ExecRunResult,
+  ExecService,
+  ExecStartResult,
+  ExecTailResult,
+} from "./modules/exec/types.js";
+export {
+  EXEC_TIMEOUT_DEFAULT_MS,
+  EXEC_TIMEOUT_MAX_MS,
+  execKillInputSchema,
+  execRunInputSchema,
+  execStartInputSchema,
+  execTailInputSchema,
+} from "./modules/exec/schemas.js";
+export type {
   DirEntry,
   DirListResult,
   FileReadResult,
