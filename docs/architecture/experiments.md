@@ -7,7 +7,8 @@ Last verified: 2026-08-20
 An **Experiment** is one execution of a loop script a **driver Agent** authors
 in Python — a design→build→test→learn loop written as ordinary code over the
 [Invocation](platform-topology.md) primitive — **observed live** by the
-platform. The script declares its **Skeleton** (stages, loops) upfront, then
+platform. The script declares its **Skeleton** (stages, loops, each optionally carrying
+a one-sentence human description the live graph displays) upfront, then
 emits stage-tagged **Spans** (status, an opaque numeric score, Artifact
 references) as it runs; Invocations spawned inside a span attach to it. The
 platform's founding bet survives from the first design: it **never runs the

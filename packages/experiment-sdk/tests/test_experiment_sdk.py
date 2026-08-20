@@ -71,6 +71,29 @@ def test_plan_mode_registers_and_exits(stub, tmp_path):
     assert body["script"]["content"] == raw.decode()
 
 
+def test_plan_carries_stage_and_loop_descriptions(stub, tmp_path):
+    """Descriptions declared on loops/stages ride the skeleton to the plan, so
+    the live graph can show what each node means; nodes without one stay bare."""
+    script = write_script(tmp_path, "loop body never runs\n")
+    stub.routes[("POST", "/experiments/plan")] = (201, {"experimentId": "exp-1"})
+
+    exp = x.Experiment("evolver", script_path=script)
+    loop = exp.loop("rounds", description="one optimization attempt per round")
+    produce = loop.stage("produce", description="a worker rewrites the source")
+    loop.stage("eval", after=produce)
+
+    with pytest.raises(SystemExit):
+        next(exp.iterations(loop))
+
+    _method, _path, body = stub.requests[-1]
+    stages = body["skeleton"]["stages"]
+    assert stages[0]["description"] == "a worker rewrites the source"
+    assert "description" not in stages[1]
+    assert body["skeleton"]["loops"][0]["description"] == (
+        "one optimization attempt per round"
+    )
+
+
 # ---- run mode --------------------------------------------------------------------
 
 

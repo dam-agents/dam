@@ -160,10 +160,12 @@ Declare first, then loop. The declaration is the design a human reviews:
 import experiment_sdk as x
 
 with x.Experiment("prompt-evolver") as exp:
-    loop = exp.loop("generations")
-    produce = loop.stage("produce")
-    evaluate = loop.stage("eval", after=produce)
-    select = loop.stage("select", after=evaluate)
+    loop = exp.loop("generations", description="one candidate prompt per pass")
+    produce = loop.stage("produce", description="a worker proposes a new prompt")
+    evaluate = loop.stage(
+        "eval", after=produce, description="score it against the judge; the chart plots this"
+    )
+    select = loop.stage("select", after=evaluate, description="keep it if it beat the best")
 
     # The image the human chose, checked against the catalog while planning.
     worker = x.require_image("claude-code")
@@ -189,6 +191,10 @@ with x.Experiment("prompt-evolver") as exp:
 
 Rules that matter:
 
+- **Every loop and stage carries a `description`** — one plain sentence on
+  what happens there and what it reports. It shows on the node in the live
+  graph, so the user can read the design off the UI instead of decoding ids
+  like `verify`. Bare ids are for throwaway spikes only.
 - **The worker image comes from the catalog, never from a guess.** Resolve it
   with `x.require_image(<id>)` in the declaration section and pass that value
   as `template=`. Don't hardcode `claude-code` because it is the familiar one.
@@ -330,9 +336,9 @@ Four things this example is really teaching:
    in the UI. (Running the script without a run context does the same
    and exits.)
 3. **Announce the draft as an explanation, not a receipt.** The graph shows
-   bare stage ids ("rounds → propose → verify → measure") that mean nothing
-   the user hasn't been told, so your message carries the meaning — a small
-   table, one row per stage:
+   each node's `description` (write them — see the authoring rules), but your
+   message still carries the design in one place — a small table, one row per
+   stage:
 
    | Stage | What happens there | What it reports |
    |---|---|---|
@@ -418,8 +424,8 @@ is baked in at the end. Shape (TypeScript-ish):
 ```ts
 feed = {
   experiment: { id, name, status,        // draft|running|completed|failed|stopped
-                skeleton: { stages: [{ id, after: string[] }],
-                            loops:  [{ id, stages: string[] }] },
+                skeleton: { stages: [{ id, after: string[], description? }],
+                            loops:  [{ id, stages: string[], description? }] },
                 drift: string[], error: string|null,
                 executedAt, finishedAt, ... },
   stages: [{ id, declared, spansTotal, spansRunning, spansFailed,

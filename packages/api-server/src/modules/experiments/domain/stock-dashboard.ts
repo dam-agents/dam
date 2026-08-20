@@ -81,6 +81,8 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
   }
   .srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .srow .sname { font-weight: 600; font-size: 13px; }
+  .sdesc { margin: 2px 0 0 20px; font-size: 11.5px; line-height: 1.35;
+    color: var(--muted); max-width: 240px; }
   .srow .sdrift { font-size: 11px; color: var(--amber); border: 1px dashed var(--amber);
     border-radius: 6px; padding: 0 5px; }
   .smeta { margin: 1px 0 8px 20px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -152,8 +154,9 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     return wrap;
   }
 
-  function renderStage(s) {
+  function renderStage(s, description) {
     var box = el("div", "stage");
+    if (description) box.title = description;
     var dot = "sdot";
     if (s.spansRunning > 0) dot += " live";
     else if (s.spansFailed > 0) dot += " bad";
@@ -164,6 +167,7 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     title.appendChild(el("span", "sname", s.id));
     if (!s.declared) title.appendChild(el("span", "sdrift", "drift"));
     box.appendChild(title);
+    if (description) box.appendChild(el("div", "sdesc", description));
 
     var meta = el("div", "smeta num");
     meta.appendChild(el("span", null,
@@ -192,8 +196,10 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
   function renderStages(feed) {
     var wrap = el("div", "stages");
     var afterById = {};
+    var descriptionById = {};
     ((feed.experiment.skeleton || {}).stages || []).forEach(function (s) {
       afterById[s.id] = s.after || [];
+      if (s.description) descriptionById[s.id] = s.description;
     });
     var levelById = {};
     function levelOf(id, trail) {
@@ -221,7 +227,9 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
       if (!bucket.length) return;
       if (wrap.children.length) wrap.appendChild(el("div", "lvl-gap"));
       var row = el("div", bucket.length > 1 ? "lvl parallel" : "lvl");
-      bucket.forEach(function (s) { row.appendChild(renderStage(s)); });
+      bucket.forEach(function (s) {
+        row.appendChild(renderStage(s, descriptionById[s.id]));
+      });
       wrap.appendChild(row);
     });
     return wrap;

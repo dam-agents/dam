@@ -348,13 +348,21 @@ class Stage:
 
 
 class Loop:
-    def __init__(self, experiment: "Experiment", loop_id: str):
+    def __init__(
+        self,
+        experiment: "Experiment",
+        loop_id: str,
+        description: str | None = None,
+    ):
         self.id = loop_id
+        self.description = description
         self.experiment = experiment
         self.stage_ids: list[str] = []
 
-    def stage(self, stage_id: str, after: Any = None) -> Stage:
-        stage = self.experiment.stage(stage_id, after=after)
+    def stage(
+        self, stage_id: str, after: Any = None, description: str | None = None
+    ) -> Stage:
+        stage = self.experiment.stage(stage_id, after=after, description=description)
         self.stage_ids.append(stage_id)
         return stage
 
@@ -433,12 +441,17 @@ class Experiment:
 
     # -- declaration ------------------------------------------------------------
 
-    def loop(self, loop_id: str) -> Loop:
-        loop = Loop(self, loop_id)
+    def loop(self, loop_id: str, description: str | None = None) -> Loop:
+        loop = Loop(self, loop_id, description)
         self._loops.append(loop)
         return loop
 
-    def stage(self, stage_id: str, after: Any = None) -> Stage:
+    def stage(
+        self, stage_id: str, after: Any = None, description: str | None = None
+    ) -> Stage:
+        """Declare a stage. ``description`` is one human sentence — what
+        happens in this stage and what it reports — shown on the stage's node
+        in the live graph, so a reviewer can read the design off the UI."""
         if after is None:
             after_ids: list[str] = []
         elif isinstance(after, (list, tuple)):
@@ -447,7 +460,10 @@ class Experiment:
             after_ids = [after.id if isinstance(after, Stage) else str(after)]
         if stage_id not in self._declared:
             self._declared.add(stage_id)
-            self._stages.append({"id": stage_id, "after": after_ids})
+            entry: dict[str, Any] = {"id": stage_id, "after": after_ids}
+            if description:
+                entry["description"] = description
+            self._stages.append(entry)
         return Stage(self, stage_id)
 
     def _skeleton(self) -> dict[str, Any]:
@@ -455,6 +471,7 @@ class Experiment:
             "stages": self._stages,
             "loops": [
                 {"id": loop.id, "stages": loop.stage_ids}
+                | ({"description": loop.description} if loop.description else {})
                 for loop in self._loops
                 if loop.stage_ids
             ],
