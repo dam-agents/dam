@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-08-18
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -180,7 +180,15 @@ designing one rather than something the author must already know: the
 `dam-experiment` skill requires reading `GET /images` (the same catalogue the
 one-shot spawn flow offers) and presenting it to the human before any loop is
 written, and forbids installing a framework inside a worker when a curated
-image already ships it. Two checks keep a wrong id from surfacing as an empty
+image already ships it. The catalogue is read before the human is even greeted
+in a fresh sandbox, so the images offered are the ones this deployment actually
+carries. Approval covers the whole envelope, not just the image: the
+connections each worker is granted, the iteration counts, and the deadline
+derived from them are agreed before the script is authored, because a run
+commits hours of compute and a wrong choice surfaces as an empty result at the
+end rather than an error at review.
+
+Two checks keep a wrong id from surfacing as an empty
 result hours in: `require_image()` resolves the id against the catalogue during
 the declaration section, so plan mode fails while the human is still reviewing
 the design, and the spawn route rejects an unknown `templateId` with a `400`

@@ -49,9 +49,34 @@ spawn that image; targets have no unrestricted egress, so the install
 usually fails outright and burns the iteration when it doesn't. If nothing in
 the catalog fits, say so to the human instead of improvising an install.
 
+When the human names a worker in their own words ("the OpenAI one", "the
+evolutionary one"), map it onto a catalog id and say which id you mapped it to
+— never spawn on a guessed name. If nothing in the catalog matches what the
+goal needs, say that plainly instead of substituting the closest thing.
+
 Pin the choice through `x.require_image(...)` in the declaration section, so a
 wrong id fails at `--plan` while the human is reviewing the design rather
 than at a run's first spawn hours later.
+
+### Get the configuration approved before you author
+
+The image is the first of several choices that are expensive to get wrong: a
+run spends real compute for hours, and a wrong worker or a missing credential
+surfaces as an empty result late, not as an error at review. So propose the
+whole envelope and get an explicit yes before writing the script:
+
+- **The image**, by catalog id, with why that one over the general-purpose
+  worker.
+- **The connections** each worker gets, from `x.list_connections()` — targets
+  start with nothing, and the model-provider connection is usually required.
+- **Iteration counts**: your loop's rounds, plus any the worker runs
+  internally. Total runtime multiplies through them.
+- **The TTL and resource envelope** you derived from those counts, so the
+  human sees the runtime and cost they are agreeing to.
+
+Present it as a short list of decisions, not prose, and let them change any
+line. Silence is not approval: if they have not answered, ask again rather
+than picking a default and proceeding.
 
 ## Authoring a script
 
