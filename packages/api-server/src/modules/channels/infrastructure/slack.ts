@@ -17,6 +17,7 @@ import {
   SessionType,
   type AgentsService,
 } from "api-server-api";
+import type { StoredChannelConfig } from "../stored-channel.js";
 import {
   classifyInboundAttachment,
   type InboundAttachment,
@@ -620,6 +621,8 @@ export interface ChannelRegistry {
 export interface SlackWorker {
   type: ChannelType.Slack;
   connect(): Promise<void>;
+  start(instanceName: string, channel: StoredChannelConfig): Promise<void>;
+  stop(instanceName: string): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(
     instanceName: string,
@@ -2911,6 +2914,22 @@ export function createSlackWorker(
       serving = true;
       if (!(await ensureGateway()))
         throw new Error("Slack gateway failed to connect");
+    },
+
+    async start(instanceName: string, _channel: StoredChannelConfig) {
+      serving = true;
+      const started = await ensureGateway();
+      if (!started) {
+        process.stderr.write(
+          `Slack: skipping ${instanceName} — bot not connected\n`,
+        );
+        return;
+      }
+      process.stderr.write(`Slack: registered ${instanceName}\n`);
+    },
+
+    async stop(instanceName: string) {
+      process.stderr.write(`Slack: unregistered ${instanceName}\n`);
     },
 
     async stopAll() {

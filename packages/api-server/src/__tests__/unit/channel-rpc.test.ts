@@ -29,6 +29,8 @@ function fakeSlackWorker(): SlackWorker {
   return {
     type: ChannelType.Slack,
     connect: vi.fn(async () => {}),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
     stopAll: vi.fn(async () => {}),
     listConversations: vi.fn(async () => []),
     postMessage: vi.fn(async () => ({ ok: true as const })),
@@ -90,7 +92,7 @@ describe("channel attachments across replicas", () => {
       blobs: blobs.handoff,
       isLeader: () => false,
     });
-    await leader.bootstrap();
+    await leader.bootstrap(new Map());
 
     const data = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
     const result = await follower.postMessage(
@@ -132,7 +134,7 @@ describe("channel attachments across replicas", () => {
       blobs: blobs.handoff,
       isLeader: () => false,
     });
-    await leader.bootstrap();
+    await leader.bootstrap(new Map());
 
     const original = blobs.handoff.take;
     blobs.handoff.take = async () => null;
@@ -177,8 +179,8 @@ describe("channel outbound across replicas", () => {
       }),
       isLeader: () => true,
     });
-    await outgoing.bootstrap();
-    await incoming.bootstrap();
+    await outgoing.bootstrap(new Map());
+    await incoming.bootstrap(new Map());
 
     const follower = createChannelManager({
       slackWorker: fakeSlackWorker(),
@@ -224,7 +226,7 @@ describe("channel outbound across replicas", () => {
       isLeader: () => false,
     });
 
-    await leader.bootstrap();
+    await leader.bootstrap(new Map());
 
     const result = await follower.reply("agent-1", ChannelType.Slack, {
       text: "hi",
@@ -259,7 +261,7 @@ describe("channel outbound across replicas", () => {
       }),
       isLeader: () => false,
     });
-    await leader.bootstrap();
+    await leader.bootstrap(new Map());
 
     expect(
       await follower.react("agent-1", ChannelType.Slack, { emoji: "eyes" }),
@@ -311,7 +313,7 @@ describe("channel outbound across replicas", () => {
       isLeader: () => false,
     });
 
-    await leader.bootstrap();
+    await leader.bootstrap(new Map());
     await leader.standDown();
 
     expect(

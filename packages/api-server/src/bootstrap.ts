@@ -677,7 +677,10 @@ export async function bootstrap() {
   const channelLease = createLeaderLease({
     redis: sharedRedis,
     name: "channels",
-    onAcquired: () => channelManager.bootstrap(),
+    onAcquired: async () => {
+      const channelsByInstance = await listChannelsByOwner(db, "")();
+      await channelManager.bootstrap(channelsByInstance);
+    },
     onLost: () => channelManager.standDown(),
   });
 

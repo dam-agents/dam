@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { ChannelType } from "api-server-api";
+import { ChannelType, type ChannelConfig } from "api-server-api";
+import type { Subscription } from "rxjs";
+import {
+  events$,
+  ofType,
+  EventType,
+  type SlackConnected,
+  type SlackDisconnected,
+  type AgentDeleted,
+} from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
 import type { BusRpc } from "../../../core/bus-rpc.js";
@@ -104,7 +113,7 @@ interface Worker {
 export interface ChannelManager {
   availableChannels(): Partial<Record<ChannelType, boolean>>;
   telegramBotUsername(): string | null;
-  bootstrap(): Promise<void>;
+  bootstrap(channelsByInstance: Map<string, ChannelConfig[]>): Promise<void>;
   standDown(): Promise<void>;
   stopAll(): Promise<void>;
   listConversations(
@@ -194,6 +203,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   reply: okOrErrorSchema,
   react: okOrErrorSchema,
   declineTurn: okOrErrorSchema,
+  handOffTurn: z.union([
+    z.object({ ok: z.literal(true), agent: z.string() }),
+    z.object({ error: z.string() }),
+  ]),
   describeUsers: z.union([
     z.object({ users: z.array(channelUserSchema) }),
     z.object({ error: z.string() }),
@@ -230,6 +243,7 @@ export function createChannelManager(deps: {
   const workers: Worker[] = [slackWorker, telegramWorker].filter(
     Boolean,
   ) as Worker[];
+  const subscriptions: Subscription[] = [];
   let stopServing: (() => void) | null = null;
 
   async function standDown() {
@@ -381,6 +395,35 @@ export function createChannelManager(deps: {
     },
   } as const;
 
+  subscriptions.push(
+    events$()
+      .pipe(ofType<SlackConnected>(EventType.SlackConnected))
+      .subscribe((event) => {
+        if (slackWorker && isLeader()) {
+          slackWorker.start(event.agentId, {
+            type: ChannelType.Slack,
+            slackChannelId: event.slackChannelId,
+          });
+        }
+      }),
+  );
+
+  subscriptions.push(
+    events$()
+      .pipe(ofType<SlackDisconnected>(EventType.SlackDisconnected))
+      .subscribe((event) => {
+        if (slackWorker && isLeader()) slackWorker.stop(event.agentId);
+      }),
+  );
+
+  subscriptions.push(
+    events$()
+      .pipe(ofType<AgentDeleted>(EventType.AgentDeleted))
+      .subscribe((event) => {
+        if (slackWorker && isLeader()) slackWorker.stop(event.agentId);
+      }),
+  );
+
   return {
     availableChannels() {
       return Object.fromEntries(workers.map((w) => [w.type, true]));
@@ -390,7 +433,7 @@ export function createChannelManager(deps: {
       return telegramWorker?.botUsername() ?? null;
     },
 
-    async bootstrap() {
+    async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
       if (rpc) {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
@@ -423,11 +466,22 @@ export function createChannelManager(deps: {
           `all channel workers failed to start: ${failed.map((f) => f.name).join(", ")}`,
         );
       }
+
+      for (const [agentId, channels] of channelsByInstance) {
+        for (const channel of channels) {
+          if (channel.type === ChannelType.Slack && slackWorker) {
+            await slackWorker.start(agentId, channel);
+          }
+        }
+      }
     },
 
     standDown,
 
-    stopAll: standDown,
+    async stopAll() {
+      for (const sub of subscriptions) sub.unsubscribe();
+      await standDown();
+    },
 
     listConversations(instanceName, channelType) {
       return dispatch("listConversations", [instanceName, channelType], () =>
