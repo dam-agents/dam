@@ -81,8 +81,14 @@ whole envelope and get an explicit yes before writing the script:
   rather than at the first failed spawn.
 - **Iteration counts**: your loop's rounds, plus any the worker runs
   internally. Total runtime multiplies through them.
-- **The TTL and resource envelope** you derived from those counts, so the
-  human sees the runtime and cost they are agreeing to.
+- **Expected duration, stated in human terms.** "~40 min per campaign
+  iteration, two iterations, one round — about 2.5 h with queue slack" is a
+  deciding factor, not a footnote: the human may cut seeds or rounds to fit
+  the time they have, so give them the per-unit cost that makes that trade
+  legible. The `ttl_ms` you set is derived from this number — never the other
+  way around.
+- **The resource envelope** the worker runs in, when the workload is heavy
+  enough for it to matter (see the Nous section's locked envelope).
 
 Present it as a short list of decisions, not prose, and let them change any
 line. Silence is not approval: if they have not answered, ask again rather
@@ -269,6 +275,30 @@ Four things this example is really teaching:
    or dashboard edits and no re-registration while a run is live. The run
    executes the frozen capture; iterate in the build conversation and the
    changes apply to the next run.
+
+## What a run must surface
+
+The platform charts scores on its own, but a bare score line answers almost
+none of the questions the human brings to a finished run. Whatever the
+mechanism — `span.attrs` per round, `exp.post_data(...)` for run-level facts
+(the stock dashboard renders `feed.custom`), or a bespoke dashboard when
+tables warrant one — make sure the run's presentation carries:
+
+- **The improvement in context** — score against the baseline you measured,
+  not a naked number. Bake the baseline into the run (measure it yourself
+  where you can) so every later reading has its denominator.
+- **The evidence table** — per-iteration / per-seed / per-arm comparison, so
+  the human can see whether the median is carried by every seed or by one.
+- **Time** — when the run started, elapsed, and per-round durations; the
+  human approved a duration estimate, and the run should show how it tracked.
+- **Token / cost consumption**, when the worker reports it (a Nous campaign's
+  meta findings carry cost data — pass it through).
+- **Notes and caveats** — what the result does *not* claim ("3 seeds is a
+  smoke run"), stated on the run itself rather than left in the chat.
+- **Next steps** — what a follow-up run would change: more seeds, a wider
+  search, the PR to open.
+- **The report** — the worker's published report artifact, referenced from
+  the span so the results page links it.
 
 ## Bespoke dashboards (optional)
 
