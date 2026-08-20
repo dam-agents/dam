@@ -14,7 +14,6 @@ interface Waiter {
 }
 
 interface BootstrapState {
-  initiatorChannel: ClientChannel | null;
   waiters: Waiter[];
 }
 
@@ -28,11 +27,15 @@ export interface SessionBootstrap {
     channel: ClientChannel,
     originalId: JsonRpcId,
     sessionId: string,
-  ): boolean;
-  trackClientLoad(sessionId: string, initiator: ClientChannel): void;
+  ): void;
+  requestPage(
+    channel: ClientChannel,
+    originalId: JsonRpcId,
+    sessionId: string,
+    beforeSeq: number,
+  ): void;
   onLoadResponse(sessionId: string, frame: unknown): void;
   has(sessionId: string): boolean;
-  initiatorOf(sessionId: string): ClientChannel | null;
   dropChannel(channel: ClientChannel): void;
   clear(): void;
 }
@@ -51,13 +54,15 @@ export interface SessionBootstrapDeps {
  * Session Transcript when it already holds the session, so the harness is not
  * asked twice for the same history. When the transcript is cold (first attach
  * after a pod restart), at most one session/load per session goes to the
- * harness; every other load or resume for that session parks as a waiter.
- * While the load runs, replayed lines fill the transcript and reach only the
- * channel that initiated a client load — a runtime-initiated load has no
- * initiator and its replay reaches nobody. When the response lands, every
- * parked waiter is served from the transcript, or receives the harness's
- * error if the load failed. session/resume never reaches the harness at all:
- * the runtime answers it here, which hides harnesses that cannot resume.
+ * harness; every load or resume for that session parks as a waiter, and the
+ * replayed lines fill the transcript without reaching any channel. When the
+ * response lands, every parked waiter is served from the transcript — a load
+ * gets the transcript's newest tail, a resume gets no replay — or receives the
+ * harness's error if the load failed. session/resume never reaches the harness
+ * at all: the runtime answers it here, which hides harnesses that cannot
+ * resume. requestPage serves older transcript ranges for a load that carries a
+ * replayBefore cursor; a cursor from before a pod restart names entries this
+ * transcript never held, so a cold page is refused rather than bootstrapped.
  */
 export function createSessionBootstrap(
   deps: SessionBootstrapDeps,
@@ -96,6 +101,23 @@ export function createSessionBootstrap(
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
   }
 
+  function park(sessionId: string, waiter: Waiter): void {
+    const boot = bootstrapBySession.get(sessionId);
+    if (boot) {
+      boot.waiters.push(waiter);
+      return;
+    }
+    bootstrapBySession.set(sessionId, { waiters: [waiter] });
+    const outboundId = deps.openLoadRoute(sessionId);
+    const loadFrame = {
+      jsonrpc: "2.0",
+      id: outboundId,
+      method: "session/load",
+      params: { sessionId, cwd: ".", mcpServers: [] },
+    };
+    deps.sendToAgent(rewriteCwd(loadFrame, deps.workingDir));
+  }
+
   return {
     requestResume(channel, originalId, sessionId) {
       deps.engage(channel, sessionId);
@@ -103,43 +125,38 @@ export function createSessionBootstrap(
         respondFromLog("resume", channel, originalId, sessionId);
         return;
       }
-      const boot = bootstrapBySession.get(sessionId);
-      if (boot) {
-        boot.waiters.push({ kind: "resume", channel, originalId });
-        return;
-      }
-      bootstrapBySession.set(sessionId, {
-        initiatorChannel: null,
-        waiters: [{ kind: "resume", channel, originalId }],
-      });
-      const outboundId = deps.openLoadRoute(sessionId);
-      const loadFrame = {
-        jsonrpc: "2.0",
-        id: outboundId,
-        method: "session/load",
-        params: { sessionId, cwd: ".", mcpServers: [] },
-      };
-      deps.sendToAgent(rewriteCwd(loadFrame, deps.workingDir));
+      park(sessionId, { kind: "resume", channel, originalId });
     },
 
     requestLoad(channel, originalId, sessionId) {
       if (deps.transcript.metadataOf(sessionId).cached) {
         respondFromLog("load", channel, originalId, sessionId);
-        return true;
+        return;
       }
-      const boot = bootstrapBySession.get(sessionId);
-      if (boot) {
-        boot.waiters.push({ kind: "load", channel, originalId });
-        return true;
-      }
-      return false;
+      park(sessionId, { kind: "load", channel, originalId });
     },
 
-    trackClientLoad(sessionId, initiator) {
-      bootstrapBySession.set(sessionId, {
-        initiatorChannel: initiator,
-        waiters: [],
+    requestPage(channel, originalId, sessionId, beforeSeq) {
+      const metadata = deps.transcript.metadataOf(sessionId);
+      if (!metadata.cached) {
+        const error = JSON.stringify({
+          jsonrpc: "2.0",
+          id: originalId,
+          error: {
+            code: -32602,
+            message: "replay window expired; load the session again",
+          },
+        });
+        if (channel.isOpen()) channel.send(error);
+        return;
+      }
+      deps.transcript.replayPage(channel, sessionId, beforeSeq);
+      const response = JSON.stringify({
+        jsonrpc: "2.0",
+        id: originalId,
+        result: metadata.value,
       });
+      if (channel.isOpen()) channel.send(rewriteAuthError(response));
     },
 
     onLoadResponse(sessionId, frame) {
@@ -170,16 +187,8 @@ export function createSessionBootstrap(
       return bootstrapBySession.has(sessionId);
     },
 
-    initiatorOf(sessionId) {
-      return bootstrapBySession.get(sessionId)?.initiatorChannel ?? null;
-    },
-
     dropChannel(channel) {
-      for (const [sessionId, state] of bootstrapBySession) {
-        if (state.initiatorChannel === channel) {
-          bootstrapBySession.delete(sessionId);
-          continue;
-        }
+      for (const state of bootstrapBySession.values()) {
         state.waiters = state.waiters.filter((w) => w.channel !== channel);
       }
     },

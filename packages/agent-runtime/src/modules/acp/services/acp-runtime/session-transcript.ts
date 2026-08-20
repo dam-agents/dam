@@ -22,12 +22,13 @@ export type CachedMetadata =
 export interface SessionTranscript {
   append(sessionId: string, line: string): void;
   appendEcho(sessionId: string, line: string, originator: ClientChannel): void;
-  appendReplay(
-    sessionId: string,
-    line: string,
-    initiator: ClientChannel | null,
-  ): void;
+  appendReplay(sessionId: string, line: string): void;
   catchUp(channel: ClientChannel, sessionId: string): void;
+  replayPage(
+    channel: ClientChannel,
+    sessionId: string,
+    beforeSeq: number,
+  ): void;
   advanceToTail(channel: ClientChannel, sessionId: string): void;
   cacheMetadata(sessionId: string, result: unknown): void;
   metadataOf(sessionId: string): CachedMetadata;
@@ -38,6 +39,7 @@ export interface SessionTranscript {
 
 export interface SessionTranscriptDeps {
   logBytesCap: number;
+  replayTailEvents: number;
   engagedChannelsFor: (sessionId: string) => Iterable<ClientChannel>;
 }
 
@@ -45,7 +47,10 @@ export interface SessionTranscriptDeps {
  * UNIT_BOUNDARY_DESCRIPTION: Keeps each session's message history and tracks how
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
- * eviction, and the truncation warning all stay inside.
+ * eviction, and the truncation warning all stay inside. A fresh viewer gets
+ * only the newest replayTailEvents entries; the clipped-replay warning then
+ * carries the sequence number the skipped history ends at, and replayPage
+ * serves the older ranges on demand without moving any cursor.
  */
 export function createSessionTranscript(
   deps: SessionTranscriptDeps,
@@ -100,13 +105,18 @@ export function createSessionTranscript(
     map.set(sessionId, seq);
   }
 
-  function truncationSentinel(sessionId: string): string {
+  function truncationSentinel(sessionId: string, olderBefore?: number): string {
     return JSON.stringify({
       jsonrpc: "2.0",
       method: "session/update",
       params: {
         sessionId,
-        update: { sessionUpdate: "platform_clipped_replay" },
+        update: {
+          sessionUpdate: "platform_clipped_replay",
+          ...(olderBefore !== undefined
+            ? { _meta: { platform: { olderBefore } } }
+            : {}),
+        },
       },
     });
   }
@@ -135,25 +145,50 @@ export function createSessionTranscript(
       fanOut(sessionId, line, (channel) => channel !== originator);
     },
 
-    appendReplay(sessionId, line, initiator) {
-      fanOut(sessionId, line, (channel) => channel === initiator);
+    appendReplay(sessionId, line) {
+      fanOut(sessionId, line, () => false);
     },
 
     catchUp(channel, sessionId) {
       const log = sessionLogs.get(sessionId);
       if (!log) return;
       const current = cursorFor(channel, sessionId);
-      if (current === 0 && log.truncated && channel.isOpen()) {
-        channel.send(truncationSentinel(sessionId));
+      let pending = log.entries.filter((entry) => entry.seq > current);
+      const capped = current === 0 && pending.length > deps.replayTailEvents;
+      if (capped) pending = pending.slice(-deps.replayTailEvents);
+      if (current === 0 && (capped || log.truncated) && channel.isOpen()) {
+        channel.send(
+          truncationSentinel(sessionId, capped ? pending[0]!.seq : undefined),
+        );
       }
       let lastSeq = current;
-      for (const entry of log.entries) {
-        if (entry.seq <= current) continue;
+      for (const entry of pending) {
         if (!channel.isOpen()) return;
         channel.send(rewriteAuthError(entry.line));
         lastSeq = entry.seq;
       }
       if (lastSeq !== current) setCursor(channel, sessionId, lastSeq);
+    },
+
+    replayPage(channel, sessionId, beforeSeq) {
+      const log = sessionLogs.get(sessionId);
+      if (!log || !channel.isOpen()) return;
+      const older = log.entries.filter((entry) => entry.seq < beforeSeq);
+      const page = older.slice(-deps.replayTailEvents);
+      const first = page[0];
+      if (first === undefined) {
+        if (log.truncated) channel.send(truncationSentinel(sessionId));
+        return;
+      }
+      if (older.length > page.length) {
+        channel.send(truncationSentinel(sessionId, first.seq));
+      } else if (log.truncated) {
+        channel.send(truncationSentinel(sessionId));
+      }
+      for (const entry of page) {
+        if (!channel.isOpen()) return;
+        channel.send(rewriteAuthError(entry.line));
+      }
     },
 
     advanceToTail(channel, sessionId) {

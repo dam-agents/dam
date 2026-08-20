@@ -37,6 +37,8 @@ const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
+const DEFAULT_REPLAY_TAIL_EVENTS = 200;
+
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 export interface AcpRuntimeStatus {
@@ -62,6 +64,7 @@ export interface AcpRuntimeDeps {
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
   logBytesCap?: number;
+  replayTailEvents?: number;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
@@ -104,6 +107,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const transcript = createSessionTranscript({
     logBytesCap,
+    replayTailEvents: deps.replayTailEvents ?? DEFAULT_REPLAY_TAIL_EVENTS,
     engagedChannelsFor(sessionId) {
       const channels: ClientChannel[] = [];
       for (const [channel, sessions] of engagedSessions) {
@@ -498,11 +502,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
       if (bootstrap.has(sessionId)) {
-        transcript.appendReplay(
-          sessionId,
-          line,
-          bootstrap.initiatorOf(sessionId),
-        );
+        transcript.appendReplay(sessionId, line);
       } else {
         transcript.append(sessionId, line);
       }
@@ -554,7 +554,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (method === "session/load" && paramsSid) {
-        if (bootstrap.requestLoad(channel, frame.id, paramsSid)) return;
+        const replayBefore = extractReplayBefore(frame);
+        if (replayBefore !== null) {
+          bootstrap.requestPage(channel, frame.id, paramsSid, replayBefore);
+        } else {
+          bootstrap.requestLoad(channel, frame.id, paramsSid);
+        }
+        return;
       }
 
       const outboundId = nextOutboundId++;
@@ -562,7 +568,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (paramsSid) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
-      const attachSessionId = method === "session/load" ? paramsSid : null;
 
       const platformMeta =
         method === "session/new" ? extractPlatformMeta(frame) : null;
@@ -589,13 +594,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         originalId: frame.id,
         method,
         promptSessionId,
-        attachSessionId,
+        attachSessionId: null,
         platformMeta,
       });
-
-      if (method === "session/load" && attachSessionId) {
-        bootstrap.trackClientLoad(attachSessionId, channel);
-      }
 
       if (promptSessionId !== null) {
         deps.sessionMetadata?.recordActivity(promptSessionId);
@@ -694,6 +695,22 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   if (!isNonNullObject(meta) || !("platform" in meta)) return null;
   const parsed = platformSessionMetaSchema.safeParse(meta.platform);
   return parsed.success ? parsed.data : null;
+}
+
+function extractReplayBefore(frame: unknown): number | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return null;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return null;
+  const replayBefore = platform.replayBefore;
+  return typeof replayBefore === "number" &&
+    Number.isInteger(replayBefore) &&
+    replayBefore > 0
+    ? replayBefore
+    : null;
 }
 
 function extractPromptId(frame: unknown): string | null {

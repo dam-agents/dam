@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-18
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -114,9 +114,11 @@ The schedule↔session link is agent-owned: schedule sessions are typed (`schedu
 
 The harness child process runs for the pod's lifetime, not per-connection. Multiple ACP channels (UI tab WebSockets, the Slack worker, the in-process trigger handler) attach to the same runtime concurrently and engage with sessions implicitly through the `sessionId` they carry on each frame.
 
-Each session is an append-only in-memory log (≤2 MB soft cap, with a truncation sentinel for older history). Every channel keeps a per-session cursor; new events are appended to the log and fanned out to engaged channels at or behind the new sequence number. `session/load` is served from the log on cache hit and falls through to the agent's on-disk store on cold start.
+Each session is an append-only in-memory log (≤2 MB soft cap). Every channel keeps a per-session cursor; new events are appended to the log and fanned out to engaged channels at or behind the new sequence number.
 
-`session/resume` is mediated entirely by the runtime — the frame never reaches the harness. On the hot path (cached metadata) the runtime engages the channel, advances its cursor to the log tail, and returns a synthetic response with no replay. On the cold path (no metadata, e.g. after the pod restarts) the runtime parks the request as a waiter and issues its own `session/load` to rehydrate the harness; replay events populate the log without reaching any client, and on completion every parked resume waiter is served from memory. This shields the UI from per-harness capability differences (some harnesses, like `pi-agent`, don't implement `unstable_resumeSession` at all) and from the cold-subprocess problem on which even resume-capable harnesses would fail.
+`session/load` replays **only the newest tail** of the log, so opening a conversation has a bounded wire cost at any length. A cut opens the replay with a truncation sentinel; a cap cut also carries a cursor (platform metadata), and a load presenting it back is served the older range, page by page, to the eviction floor (sentinel without cursor). Cursors die with the log: a post-restart stale cursor is refused and the client reloads.
+
+Both verbs are runtime-mediated: a hot `session/resume` engages the channel, advances its cursor, and answers synthetically with no replay. A cold request (nothing cached) parks as a waiter while the runtime sends its own `session/load` to rehydrate the harness; replay fills the log without reaching any client, then waiters are served from it: loads the capped tail, resumes no replay. This shields the UI from per-harness capability gaps (`pi-agent` cannot resume) and from the cold-subprocess problem even resume-capable harnesses hit.
 
 #### Prompt delivery
 

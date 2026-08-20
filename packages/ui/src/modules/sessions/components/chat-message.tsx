@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { cn } from "@/lib/utils";
 
 import type { Attachment, Message } from "../../../types.js";
@@ -13,6 +15,32 @@ interface Props {
   hasPendingPermission: boolean;
   onRetry: (text: string, attachments?: Attachment[]) => void;
   onFileClick: (path: string) => void;
+  onLoadOlder?: (before: number) => Promise<void>;
+}
+
+function LoadOlderMarker({
+  before,
+  onLoadOlder,
+}: {
+  before: number;
+  onLoadOlder: (before: number) => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+  return (
+    <div className="flex justify-center anim-in">
+      <button
+        type="button"
+        disabled={loading}
+        onClick={() => {
+          setLoading(true);
+          void onLoadOlder(before).finally(() => setLoading(false));
+        }}
+        className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground disabled:opacity-60"
+      >
+        {loading ? "Loading earlier messages…" : "Load earlier messages"}
+      </button>
+    </div>
+  );
 }
 
 export function ChatMessage({
@@ -21,8 +49,17 @@ export function ChatMessage({
   hasPendingPermission,
   onRetry,
   onFileClick,
+  onLoadOlder,
 }: Props) {
   if (message.notice) {
+    if (message.loadOlderBefore !== undefined && onLoadOlder) {
+      return (
+        <LoadOlderMarker
+          before={message.loadOlderBefore}
+          onLoadOlder={onLoadOlder}
+        />
+      );
+    }
     return (
       <div className="flex justify-center anim-in">
         <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">

@@ -185,6 +185,7 @@ export function ChatView() {
   const {
     resetSession,
     resumeSession,
+    loadOlderMessages,
     sendPrompt,
     stopAgent,
     busy,
@@ -637,6 +638,7 @@ export function ChatView() {
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
+                        onLoadOlder={loadOlderMessages}
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}

@@ -12,6 +12,9 @@ export type AcpUpdate =
       sessionUpdate: "platform_prompt_accepted";
     } & PlatformPromptAcceptedParams)
   | ({ sessionUpdate: "platform_prompt_started" } & PlatformPromptStartedParams)
-  | { sessionUpdate: "platform_clipped_replay" };
+  | {
+      sessionUpdate: "platform_clipped_replay";
+      _meta?: { platform?: { olderBefore?: number } };
+    };
 
 export type UpdateHandler = (update: AcpUpdate, sessionId: string) => void;

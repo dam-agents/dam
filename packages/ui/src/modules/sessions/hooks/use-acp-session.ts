@@ -62,7 +62,7 @@ export function useAcpSession(
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 
-  const { loadHistory } = useAcpHistory(selectedAgent);
+  const { loadHistory, loadOlderHistory } = useAcpHistory(selectedAgent);
 
   const {
     engagedSessionIdRef,
@@ -137,6 +137,28 @@ export function useAcpSession(
     [selectedAgent, loadHistory, resetConnection, setMessages, setSessionId],
   );
 
+  const loadOlderMessages = useCallback(
+    async (before: number) => {
+      const sid = useStore.getState().sessionId;
+      if (!sid) return;
+      try {
+        const page = await loadOlderHistory(sid, before);
+        if (useStore.getState().sessionId !== sid) return;
+        const current = useStore.getState().messages;
+        setMessages([
+          ...page,
+          ...current.filter((m) => m.loadOlderBefore !== before),
+        ]);
+      } catch {
+        const fresh = await loadHistory(sid).catch(() => null);
+        if (fresh && useStore.getState().sessionId === sid) {
+          setMessages(fresh);
+        }
+      }
+    },
+    [loadOlderHistory, loadHistory, setMessages],
+  );
+
   const { sendPrompt, stopAgent } = useAcpPrompt({
     selectedAgent,
     ensureConnection: ensureLive,
@@ -150,6 +172,7 @@ export function useAcpSession(
   return {
     resetSession,
     resumeSession,
+    loadOlderMessages,
     sendPrompt,
     stopAgent,
     busy,

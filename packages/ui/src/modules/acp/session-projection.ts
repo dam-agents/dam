@@ -74,8 +74,10 @@ export function applyUpdate(messages: Message[], update: AcpUpdate): Message[] {
     case "platform_prompt_started":
       return setQueuedByPromptId(messages, update.promptId, false);
 
-    case "platform_clipped_replay":
-      return appendNotice(messages, "Older conversation not loaded");
+    case "platform_clipped_replay": {
+      const olderBefore = update._meta?.platform?.olderBefore;
+      return appendClippedMarker(messages, olderBefore);
+    }
 
     case "user_message_chunk":
       return handleUserChunk(messages, update);
@@ -118,6 +120,26 @@ function appendNotice(messages: Message[], text: string): Message[] {
       parts: [{ kind: "text", text }],
       streaming: false,
       notice: true,
+    },
+  ];
+}
+
+function appendClippedMarker(
+  messages: Message[],
+  olderBefore: number | undefined,
+): Message[] {
+  if (olderBefore === undefined) {
+    return appendNotice(messages, "Older conversation not loaded");
+  }
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [{ kind: "text", text: "Older messages not shown" }],
+      streaming: false,
+      notice: true,
+      loadOlderBefore: olderBefore,
     },
   ];
 }
