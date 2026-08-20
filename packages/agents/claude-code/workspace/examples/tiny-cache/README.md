@@ -2,13 +2,14 @@
 
 A minimal in-memory key/value cache for Node.js. No dependencies.
 
-**This is DAM's bundled experiment starter.** It is deliberately naive —
-`get()` scans an array, every call rebuilds it to purge expired entries, and
-`set()` re-sorts all keys — so an optimization loop has real, measurable
-headroom against a behavioral suite that must stay green. The canonical
-clonable copy lives at <https://github.com/Tomas2D/tiny-cache>; this directory
-is the authoritative source it is mirrored from. Do not "fix" the naive
-implementation here — the slowness is the exercise.
+**This is DAM's bundled experiment starter**, seeded into every sandbox
+workspace at creation. It is deliberately naive — `get()` scans an array,
+every call rebuilds it to purge expired entries, and `set()` re-sorts all
+keys — so an optimization loop has real, measurable headroom against a
+behavioral suite that must stay green. Do not "fix" the naive implementation
+in place — the slowness is the exercise. A clonable mirror lives at
+<https://github.com/Tomas2D/tiny-cache> for workers (e.g. a Nous campaign)
+that fetch their target themselves.
 
 - optional per-entry **TTL** — expired entries are never returned
 - bounded capacity with **FIFO eviction** (oldest insertion goes first)

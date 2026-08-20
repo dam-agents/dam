@@ -98,10 +98,11 @@ than picking a default and proceeding.
 
 A user who wants to see how experiments work but has nothing to optimize gets
 **tiny-cache** — a deliberately slow cache with a behavioral suite and a
-deterministic benchmark, cloned on demand (nothing is pre-seeded). Follow
+deterministic benchmark, already seeded at `examples/tiny-cache/` in the
+workspace. Follow
 [references/tiny-cache-starter.md](references/tiny-cache-starter.md) for the
-clone command, the baseline ritual, and the design at both tiers
-(`claude-code` loop, `nous` campaign).
+baseline ritual and the design at both tiers (`claude-code` loop, `nous`
+campaign).
 
 ## Authoring a script
 

@@ -9,33 +9,24 @@ is the exercise; never offer to fix it outside an experiment.
 
 Canonical repo: `https://github.com/Tomas2D/tiny-cache`
 
-## Showing ≠ setting up ≠ running
+## It is already in the workspace
+
+The starter ships with the sandbox: `examples/tiny-cache/` is seeded into the
+workspace at creation, as ordinary local files (no `.git` — it is working
+material, not a repository; never do git work against it, and never clone
+anything to obtain it). If the directory is genuinely absent, the sandbox
+predates the starter — say so instead of improvising a download.
+
+## Showing ≠ running
 
 Match the action to what the user actually asked:
 
-- **"Show me" / "what is it?"** — describe it. This reference plus the files
-  (onboarding fetches a copy to `examples/tiny-cache/` at sandbox creation;
-  read them from disk if present) is everything a description needs. Do not
-  clone, and above all do not execute anything — nobody asked to run code yet.
-- **"Set it up" / "let's use it"** — make sure the copy exists (below), then
-  say you are about to run its test suite and benchmark to measure the
-  baseline, and do so. Running it is part of setup, but the user hears it
-  from you first — the harness's permission layer may legitimately ask about
-  executing freshly fetched code, and that prompt should never be the user's
-  first hint that you started running things.
-
-## Getting it into the workspace
-
-Onboarding fetches the copy when the sandbox is created, so it is usually
-already at `examples/tiny-cache/`. If it is missing (onboarding was skipped,
-or the fetch failed), clone it and **remove `.git`** — the local copy is
-working material, not a repository, and stripping it prevents accidental git
-work (commits, pushes, PR offers) against it:
-
-```sh
-git clone --depth 1 https://github.com/Tomas2D/tiny-cache examples/tiny-cache \
-  && rm -rf examples/tiny-cache/.git
-```
+- **"Show me" / "what is it?"** — describe it. This reference plus the seeded
+  files is everything a description needs; read them, quote them, and do not
+  execute anything — nobody asked to run code yet.
+- **"Set it up" / "let's use it"** — say you are about to run its test suite
+  and benchmark to measure the baseline, and do so. The user hears it from
+  you before anything executes.
 
 ## Measuring the baseline (setup time, not show time)
 

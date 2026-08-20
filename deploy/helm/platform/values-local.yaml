@@ -131,6 +131,13 @@ agentTemplates:
     image:
       repository: platform-gepa
       tag: latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
 
   # Both presets share the one locally-built skydiscover image.
   adaevolve:
