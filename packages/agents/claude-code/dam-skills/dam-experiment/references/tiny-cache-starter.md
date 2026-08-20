@@ -9,24 +9,30 @@ is the exercise; never offer to fix it outside an experiment.
 
 Canonical repo: `https://github.com/Tomas2D/tiny-cache`
 
-## It is already in the workspace
+## It ships inside this skill
 
-The starter ships with the sandbox: `examples/tiny-cache/` is seeded into the
-workspace at creation, as ordinary local files (no `.git` — it is working
-material, not a repository; never do git work against it, and never clone
-anything to obtain it). If the directory is genuinely absent, the sandbox
-predates the starter — say so instead of improvising a download.
+The starter's code lives in the `examples/tiny-cache/` directory **beside this
+reference file** (under the skill's own directory). It is already on this pod
+— never clone or download anything to obtain it. That copy is read-only
+skill material and stays pristine; the working copy is made on opt-in.
 
-## Showing ≠ running
+## Showing ≠ setting up ≠ running
 
 Match the action to what the user actually asked:
 
-- **"Show me" / "what is it?"** — describe it. This reference plus the seeded
-  files is everything a description needs; read them, quote them, and do not
-  execute anything — nobody asked to run code yet.
-- **"Set it up" / "let's use it"** — say you are about to run its test suite
-  and benchmark to measure the baseline, and do so. The user hears it from
-  you before anything executes.
+- **"Show me" / "what is it?"** — describe it. This reference plus the skill
+  copy's files is everything a description needs; read them, quote them, and
+  do not execute anything — nobody asked to run code yet.
+- **"Set it up" / "let's use it"** — copy the skill copy into the workspace,
+  then say you are about to run its test suite and benchmark to measure the
+  baseline, and do so. The user hears it from you before anything executes.
+
+```sh
+cp -r "$(dirname <this reference>)/../examples/tiny-cache" examples/tiny-cache
+```
+
+(One local `cp` from the skill directory you read this file in — resolve the
+real path from there.)
 
 ## Measuring the baseline (setup time, not show time)
 
@@ -52,10 +58,10 @@ first experiment:
 - **Cheat-resistant, if you lock it** — the behavioral suite pins FIFO
   eviction, sorted `keys()`, the injectable clock, and TTL semantics, so a
   rewrite that drops semantics fails loudly. Lock the rest yourself:
-  `test/` must be provably untouched (empty `git diff` is unavailable without
-  `.git` — compare against a pristine copy or checksums you take up front)
-  and `bench/bench.mjs` is off-limits, or the cheapest path to a good score
-  is editing the ruler.
+  `test/` must be provably untouched and `bench/bench.mjs` is off-limits, or
+  the cheapest path to a good score is editing the ruler. The skill's own
+  copy is the pristine reference — have the driver diff the working copy's
+  `test/` and `bench/` against it every round.
 - **A known, large effect** — a `Map` plus lazy purge collapses `get()` to
   O(1), so the loop's job is to *prove* the win under a pass condition, not
   to discover it. Say that to the user; it shapes how small the design can be.

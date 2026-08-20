@@ -2,8 +2,9 @@
 
 A minimal in-memory key/value cache for Node.js. No dependencies.
 
-**This is DAM's bundled experiment starter**, seeded into every sandbox
-workspace at creation. It is deliberately naive — `get()` scans an array,
+**This is DAM's bundled experiment starter**, shipped inside the
+`dam-experiment` skill; setup copies it into the sandbox workspace, and this
+copy stays pristine as the integrity reference. It is deliberately naive — `get()` scans an array,
 every call rebuilds it to purge expired entries, and `set()` re-sorts all
 keys — so an optimization loop has real, measurable headroom against a
 behavioral suite that must stay green. Do not "fix" the naive implementation

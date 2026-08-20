@@ -54,8 +54,9 @@ a round of correction and teaches them a menu that does not exist.
    broken tests score nothing. The `dam-experiment` skill's
    [tiny-cache starter reference](../dam-experiment/references/tiny-cache-starter.md)
    has the design at both tiers — follow it rather than improvising a starter
-   of your own. The code is already seeded at `examples/tiny-cache/` in this
-   workspace; say so, and never clone or download anything to obtain it.
+   of your own. The code ships inside the `dam-experiment` skill (its
+   `examples/tiny-cache/` directory) and is already on this pod; setup is one
+   local copy into the workspace — never clone or download anything.
 
 5. **Do not write the script yet.** Wait for their answer. Once they have
    described a goal, follow the `dam-experiment` skill: agree the image and the

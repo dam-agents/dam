@@ -98,8 +98,8 @@ than picking a default and proceeding.
 
 A user who wants to see how experiments work but has nothing to optimize gets
 **tiny-cache** — a deliberately slow cache with a behavioral suite and a
-deterministic benchmark, already seeded at `examples/tiny-cache/` in the
-workspace. Follow
+deterministic benchmark, shipped inside this skill at
+[examples/tiny-cache/](examples/tiny-cache/). Follow
 [references/tiny-cache-starter.md](references/tiny-cache-starter.md) for the
 baseline ritual and the design at both tiers (`claude-code` loop, `nous`
 campaign).
