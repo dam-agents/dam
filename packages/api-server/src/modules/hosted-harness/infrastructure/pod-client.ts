@@ -28,6 +28,10 @@ export interface HostedPodClient {
   readFile(path: string): Promise<{ content: string }>;
   writeFile(path: string, content: string): Promise<void>;
   createFile(path: string, content: string): Promise<void>;
+  listSkills(): Promise<{ name: string; description: string }[]>;
+  readSkill(
+    name: string,
+  ): Promise<{ files: { path: string; content: string }[] }>;
 }
 
 export function createHostedPodClient(
@@ -53,6 +57,21 @@ export function createHostedPodClient(
     },
     createFile: async (path, content) => {
       await client.files.create.mutate({ path, content });
+    },
+    listSkills: async () => {
+      const r = await client.skills.listLocal.query({});
+      return r.skills.map((s) => ({
+        name: s.name,
+        description: s.description,
+      }));
+    },
+    readSkill: async (name) => {
+      const r = await client.skills.readLocal.query({ name });
+      return {
+        files: r.files
+          .filter((f) => !f.base64)
+          .map((f) => ({ path: f.relPath, content: f.content })),
+      };
     },
   };
 }

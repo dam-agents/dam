@@ -46,6 +46,12 @@ export const hostedToolSchemas = {
     path: z.string().optional().describe("File or directory to search"),
     glob: z.string().optional().describe("Filter files by glob"),
   }),
+  skill: z.object({
+    name: z
+      .string()
+      .optional()
+      .describe("Skill to load; omit to list available skills"),
+  }),
 } as const;
 
 export type HostedToolName = keyof typeof hostedToolSchemas;
@@ -59,6 +65,8 @@ export const hostedToolDescriptions: Record<HostedToolName, string> = {
   edit: "Replace an exact unique string in a file.",
   glob: "Find files matching a glob pattern.",
   grep: "Search file contents with a regex.",
+  skill:
+    "List installed skills (no arguments) or load one skill's instructions by name. Load a skill whenever its description matches the task at hand.",
 };
 
 export function hostedSystemPrompt(opts: {
@@ -68,6 +76,7 @@ export function hostedSystemPrompt(opts: {
   return [
     `You are a coding agent running in the "${opts.agentName}" sandbox — an isolated Linux environment with a persistent workspace at ${opts.workDir}.`,
     `Use the provided tools to inspect and modify the workspace and to run commands. Prefer glob/grep/read over shell equivalents.`,
+    `Installed skills are available through the skill tool. MCP servers, when configured for this sandbox, are reachable via the \`mcpc\` CLI from bash (\`mcpc --help\`).`,
     `The workspace persists between conversations; the rest of the filesystem may reset.`,
     `Be direct and concise. When a task is done, state what you did.`,
   ].join("\n");

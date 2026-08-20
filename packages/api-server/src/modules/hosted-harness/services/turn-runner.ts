@@ -152,6 +152,25 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
           });
           return { output: r.output || "(no matches)", isError: false };
         }
+        case "skill": {
+          const p = hostedToolSchemas.skill.parse(input);
+          if (!p.name) {
+            const skills = await pod.listSkills();
+            return {
+              output: skills.length
+                ? skills.map((s) => `${s.name}: ${s.description}`).join("\n")
+                : "(no skills installed)",
+              isError: false,
+            };
+          }
+          const r = await pod.readSkill(p.name);
+          return {
+            output: r.files
+              .map((f) => `--- ${f.path} ---\n${f.content}`)
+              .join("\n\n"),
+            isError: false,
+          };
+        }
         case "grep": {
           const p = hostedToolSchemas.grep.parse(input);
           const target = p.path ? shellQuote(p.path) : ".";
@@ -249,6 +268,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
         grep: tool({
           description: hostedToolDescriptions.grep,
           inputSchema: hostedToolSchemas.grep,
+        }),
+        skill: tool({
+          description: hostedToolDescriptions.skill,
+          inputSchema: hostedToolSchemas.skill,
         }),
       };
 

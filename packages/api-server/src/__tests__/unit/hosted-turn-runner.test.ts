@@ -158,6 +158,8 @@ function fakePod(): HostedPodClient & { runs: string[] } {
     readFile: async () => ({ content: "file content" }),
     writeFile: async () => {},
     createFile: async () => {},
+    listSkills: async () => [],
+    readSkill: async () => ({ files: [] }),
   };
 }
 
