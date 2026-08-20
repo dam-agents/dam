@@ -223,6 +223,21 @@ export function ChatView() {
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
 
+  const loadOlderKeepingScroll = useCallback(
+    async (before: number) => {
+      const el = messagesRef.current;
+      const prevHeight = el?.scrollHeight ?? 0;
+      const prevTop = el?.scrollTop ?? 0;
+      await loadOlderMessages(before);
+      requestAnimationFrame(() => {
+        const grown = messagesRef.current;
+        if (!grown) return;
+        grown.scrollTop = prevTop + (grown.scrollHeight - prevHeight);
+      });
+    },
+    [loadOlderMessages],
+  );
+
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
     if (!el) return;
@@ -638,7 +653,7 @@ export function ChatView() {
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
-                        onLoadOlder={loadOlderMessages}
+                        onLoadOlder={loadOlderKeepingScroll}
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}

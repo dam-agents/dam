@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -25,20 +25,27 @@ function LoadOlderMarker({
   before: number;
   onLoadOlder: (before: number) => Promise<void>;
 }) {
-  const [loading, setLoading] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (startedRef.current) return;
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      startedRef.current = true;
+      void onLoadOlder(before);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [before, onLoadOlder]);
+
   return (
-    <div className="flex justify-center anim-in">
-      <button
-        type="button"
-        disabled={loading}
-        onClick={() => {
-          setLoading(true);
-          void onLoadOlder(before).finally(() => setLoading(false));
-        }}
-        className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground disabled:opacity-60"
-      >
-        {loading ? "Loading earlier messages…" : "Load earlier messages"}
-      </button>
+    <div ref={sentinelRef} className="flex justify-center anim-in">
+      <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        Loading earlier messages…
+      </span>
     </div>
   );
 }
