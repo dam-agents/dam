@@ -12,6 +12,10 @@ import {
   hostedToolSchemas,
   type HostedToolName,
 } from "../domain/tools.js";
+import {
+  isAgentStoppedError,
+  isAgentWakeTimeoutError,
+} from "../../agents/index.js";
 import type { TurnLogRepository } from "./../infrastructure/turn-log-repository.js";
 import type { HostedPodClient } from "../infrastructure/pod-client.js";
 import type { ModelResolver } from "../infrastructure/model-resolver.js";
@@ -43,13 +47,31 @@ class FenceConflict extends Error {
   }
 }
 
+class WakeRefused extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
+}
+
 export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
   async function executeTool(
     agentId: string,
     toolName: HostedToolName,
     input: unknown,
   ): Promise<{ output: string; isError: boolean }> {
-    await deps.ensurePodReady(agentId);
+    try {
+      await deps.ensurePodReady(agentId);
+    } catch (err) {
+      if (isAgentStoppedError(err)) {
+        throw new WakeRefused("the user stopped this sandbox");
+      }
+      if (isAgentWakeTimeoutError(err) && err.failure.kind === "over-budget") {
+        throw new WakeRefused(
+          "the sandbox cannot start because the owner's compute budget is exhausted",
+        );
+      }
+      throw err;
+    }
     const pod = deps.podClient(agentId);
     try {
       switch (toolName) {
@@ -267,11 +289,49 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
               tool: call.toolName,
               args: call.input,
             });
-            const { output, isError } = await executeTool(
-              session.agentId,
-              call.toolName as HostedToolName,
-              call.input,
-            );
+            let toolOutcome: { output: string; isError: boolean };
+            try {
+              toolOutcome = await executeTool(
+                session.agentId,
+                call.toolName as HostedToolName,
+                call.input,
+              );
+            } catch (err) {
+              if (!(err instanceof WakeRefused)) throw err;
+              await append("tool-result", {
+                callId: call.toolCallId,
+                output: `tool unavailable: ${err.reason}`,
+                isError: true,
+              });
+              messages.push({
+                role: "tool-result",
+                callId: call.toolCallId,
+                tool: call.toolName,
+                output: `tool unavailable: ${err.reason}`,
+                isError: true,
+              });
+              const closing = await generateText({
+                model,
+                system: [
+                  hostedSystemPrompt({
+                    agentName: agent.name,
+                    workDir: agent.workDir,
+                  }),
+                  `IMPORTANT: You no longer have tool access because ${err.reason}. Write one final message to the user: explain why you had to stop, summarize what you did and what remains to be done. Do not call tools.`,
+                ].join("\n\n"),
+                messages: toModelMessages(messages),
+              });
+              await append("assistant-message", {
+                text: closing.text || `I had to stop: ${err.reason}.`,
+              });
+              await append("turn-end", {
+                status: "interrupted",
+                reason: err.reason,
+              });
+              await deps.repo.endTurn(turnId, "interrupted");
+              return;
+            }
+            const { output, isError } = toolOutcome;
             await append("tool-result", {
               callId: call.toolCallId,
               output,

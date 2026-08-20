@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LanguageModel } from "ai";
 import { createTurnRunner } from "../../modules/hosted-harness/services/turn-runner.js";
+import { AgentStoppedError } from "../../modules/agents/index.js";
 import type {
   HostedSessionRow,
   HostedTurnRow,
@@ -173,6 +174,37 @@ function runnerFor(store: FakeStore, model: LanguageModel) {
 }
 
 describe("hosted turn runner", () => {
+  // TEST_SCENARIO: a Hard Stop mid-turn removes tools and the model writes one closing response before the turn ends interrupted
+  it("closes gracefully when the pod wake is refused", async () => {
+    const store = fakeStore([
+      { kind: "user-message", payload: { text: "build it" }, seq: 0 },
+    ]);
+    const { runner, ensurePodReady } = runnerFor(
+      store,
+      fakeModel([
+        {
+          toolCalls: [
+            { toolCallId: "c1", toolName: "bash", input: { command: "make" } },
+          ],
+        },
+        { text: "I had to stop because the sandbox was stopped." },
+      ]),
+    );
+    ensurePodReady.mockRejectedValue(new AgentStoppedError("agent-1"));
+    await runner.runTurn("t1");
+    expect(store.events.map((e) => e.kind)).toEqual([
+      "user-message",
+      "tool-call",
+      "tool-result",
+      "assistant-message",
+      "turn-end",
+    ]);
+    expect(store.events.at(-1)?.payload).toMatchObject({
+      status: "interrupted",
+    });
+    expect(store.turn.status).toBe("interrupted");
+  });
+
   // TEST_SCENARIO: a text-only reply appends assistant-message + turn-end and never touches the pod (lazy wake)
   it("runs a tool-less turn without waking the pod", async () => {
     const store = fakeStore([
