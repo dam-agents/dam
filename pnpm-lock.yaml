@@ -96,6 +96,9 @@ importers:
       tar:
         specifier: 7.5.21
         version: 7.5.21
+      ts-pattern:
+        specifier: ^5.9.0
+        version: 5.9.0
       ws:
         specifier: 8.21.0
         version: 8.21.0
