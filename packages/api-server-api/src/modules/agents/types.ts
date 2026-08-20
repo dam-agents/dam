@@ -5,6 +5,7 @@ import type {
   agentCreateInputSchema,
   agentKindSchema,
   agentUpdateInputSchema,
+  harnessSchema,
 } from "./schemas.js";
 
 export { ChannelType };
@@ -59,10 +60,12 @@ export interface Agent {
   contributionFailures: { kind: string; message: string }[];
   channels: ChannelConfig[];
   kind?: AgentKind;
+  harness: Harness;
   kbTemplateId?: string;
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;
+export type Harness = z.infer<typeof harnessSchema>;
 export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   kind?: AgentKind;
   kbTemplateId?: string;

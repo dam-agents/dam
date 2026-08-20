@@ -47,6 +47,8 @@ export const agentDisconnectSlackInputSchema = idSchema.extend({
 
 export const agentKindSchema = z.enum(["knowledge-base", "experiment"]);
 
+export const harnessSchema = z.enum(["pod", "hosted"]);
+
 export const agentCreateInputSchema = z
   .object({
     name: z

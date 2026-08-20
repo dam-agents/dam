@@ -5,6 +5,7 @@ import {
   type EgressPreset,
   type AgentUpdateInput,
   type EnvVar,
+  type Harness,
   type TemplateSpec,
   type ChannelConfig,
   type DriverFailure,
@@ -35,6 +36,7 @@ import {
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
+  ANN_HARNESS,
   ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
@@ -640,6 +642,7 @@ export function createAgentsService(deps: {
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
+      let harness: Harness = "pod";
       if (input.templateId) {
         const tmpl = await deps.readTemplateSpec(input.templateId);
         if (!tmpl || tmpl.isOwned) {
@@ -655,6 +658,7 @@ export function createAgentsService(deps: {
           deps.agentDefaultLimits,
         );
         templateId = input.templateId;
+        harness = tmpl.spec.harness ?? "pod";
       } else {
         spec = assembleSpecFromImage(
           input.name,
@@ -720,6 +724,7 @@ export function createAgentsService(deps: {
           createAnnotations[ANN_LIFETIME_MS] = String(input.lifetimeMs);
       }
       if (input.kind) createAnnotations[ANN_AGENT_KIND] = input.kind;
+      if (harness !== "pod") createAnnotations[ANN_HARNESS] = harness;
       if (input.kbTemplateId)
         createAnnotations[ANN_KB_TEMPLATE] = input.kbTemplateId;
 

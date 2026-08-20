@@ -39,6 +39,8 @@ export const ANN_LIFETIME_MS = "agent-platform.ai/lifetime-ms";
 
 export const ANN_AGENT_KIND = "agent-platform.ai/agent-kind";
 
+export const ANN_HARNESS = "agent-platform.ai/harness";
+
 export const ANN_KB_TEMPLATE = "agent-platform.ai/kb-template";
 
 export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";

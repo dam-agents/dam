@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { harnessSchema } from "../agents/schemas.js";
 import { skillSourcePathSchema } from "../skills/schemas.js";
 
 export const templateGetInputSchema = z.object({
@@ -57,6 +58,7 @@ export const templateSpecSchema = z
         vm: z.object({}).passthrough().optional(),
       })
       .optional(),
+    harness: harnessSchema.optional(),
     runtimeClassName: z.string().optional(),
     nodeSelector: z.record(z.string(), z.string()).optional(),
     skillSources: z.array(skillSourceSeedSchema).optional(),

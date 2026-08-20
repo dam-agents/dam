@@ -1,4 +1,5 @@
 import type { EnvVar } from "../shared.js";
+import type { Harness } from "../agents/types.js";
 
 export interface Mount {
   path: string;
@@ -41,6 +42,7 @@ export interface TemplateSpec {
   hibernationTimeout?: string;
   storageSize?: string;
   backend?: { type: "container" | "vm"; vm?: Record<string, unknown> };
+  harness?: Harness;
   runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
   skillSources?: SkillSourceSeed[];

@@ -60,6 +60,7 @@ export {
 export type {
   Agent,
   AgentKind,
+  Harness,
   AgentSpec,
   AgentState,
   AgentsService,
@@ -94,6 +95,7 @@ export {
   agentConnectSlackInputSchema,
   agentCreateInputSchema,
   agentKindSchema,
+  harnessSchema,
   agentDeleteInputSchema,
   agentDisconnectSlackInputSchema,
   agentGetInputSchema,

@@ -15,6 +15,7 @@ function fakeAgent(id: string): Agent {
     overBudget: false,
     contributionFailures: [],
     channels: [],
+    harness: "pod",
     kind: "experiment",
   };
 }

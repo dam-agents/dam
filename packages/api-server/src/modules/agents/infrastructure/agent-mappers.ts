@@ -1,7 +1,8 @@
-import { agentKindSchema } from "api-server-api";
+import { agentKindSchema, harnessSchema } from "api-server-api";
 import type {
   Agent,
   AgentKind,
+  Harness,
   AgentSpec,
   AgentSpecCR,
   AgentState,
@@ -12,6 +13,7 @@ import type {
 import type { KubeObject } from "./k8s.js";
 import {
   ANN_AGENT_KIND,
+  ANN_HARNESS,
   ANN_KB_TEMPLATE,
   ANN_LIFETIME_MS,
   ANN_SWEEPABLE,
@@ -52,6 +54,7 @@ export interface InfraAgent {
   sweepable: boolean;
   lifetimeMs: number;
   kind?: AgentKind;
+  harness: Harness;
   kbTemplateId?: string;
   hibernatedSince?: Date;
   ready: boolean;
@@ -133,6 +136,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const annotations = obj.metadata?.annotations ?? {};
   const lifetimeMs = Number.parseInt(annotations[ANN_LIFETIME_MS] ?? "", 10);
   const kindParse = agentKindSchema.safeParse(annotations[ANN_AGENT_KIND]);
+  const harnessParse = harnessSchema.safeParse(annotations[ANN_HARNESS]);
   const hibernatedSince =
     hibernated && ready?.lastTransitionTime
       ? new Date(ready.lastTransitionTime)
@@ -146,6 +150,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     sweepable: annotations[ANN_SWEEPABLE] === "true",
     lifetimeMs: Number.isFinite(lifetimeMs) && lifetimeMs > 0 ? lifetimeMs : 0,
     ...(kindParse.success ? { kind: kindParse.data } : {}),
+    harness: harnessParse.success ? harnessParse.data : "pod",
     ...(annotations[ANN_KB_TEMPLATE]
       ? { kbTemplateId: annotations[ANN_KB_TEMPLATE] }
       : {}),
@@ -199,6 +204,7 @@ export function assembleAgent(
     contributionFailures,
     channels,
     kind: infra.kind,
+    harness: infra.harness,
     kbTemplateId: infra.kbTemplateId,
   };
 }
