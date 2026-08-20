@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -50,7 +50,7 @@ function LoadOlderMarker({
   );
 }
 
-export function ChatMessage({
+export const ChatMessage = memo(function ChatMessage({
   message,
   isLast,
   hasPendingPermission,
@@ -85,7 +85,8 @@ export function ChatMessage({
       data-testid="chat-message"
       data-role={role}
       className={cn(
-        "flex flex-col gap-1 anim-in",
+        "flex flex-col gap-1",
+        isLast && streaming && "anim-in",
         isAssistant ? "items-start" : "items-end",
       )}
     >
@@ -137,4 +138,4 @@ export function ChatMessage({
       )}
     </div>
   );
-}
+});
