@@ -59,6 +59,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
     agentId: string,
     toolName: HostedToolName,
     input: unknown,
+    shell: { cwd?: string },
   ): Promise<{ output: string; isError: boolean }> {
     try {
       await deps.ensurePodReady(agentId);
@@ -79,7 +80,10 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
         case "bash": {
           const p = hostedToolSchemas.bash.parse(input);
           if (p.runInBackground) {
-            const r = await pod.execStart({ command: p.command });
+            const r = await pod.execStart({
+              command: p.command,
+              cwd: shell.cwd,
+            });
             return {
               output: `Started in background. backgroundId: ${r.backgroundId}`,
               isError: false,
@@ -88,7 +92,9 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
           const r = await pod.execRun({
             command: p.command,
             timeoutMs: p.timeoutMs,
+            cwd: shell.cwd,
           });
+          shell.cwd = r.cwd;
           const status = r.timedOut
             ? "\n[timed out and was killed]"
             : r.exitCode !== 0
@@ -149,6 +155,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
           const p = hostedToolSchemas.glob.parse(input);
           const r = await pod.execRun({
             command: `fd --glob ${shellQuote(p.pattern)} ${p.cwd ? shellQuote(p.cwd) : "."} 2>/dev/null | head -200 || find ${p.cwd ? shellQuote(p.cwd) : "."} -path ${shellQuote(`*${p.pattern.replaceAll("**", "*")}`)} | head -200`,
+            cwd: shell.cwd,
           });
           return { output: r.output || "(no matches)", isError: false };
         }
@@ -177,6 +184,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
           const globArg = p.glob ? ` --glob ${shellQuote(p.glob)}` : "";
           const r = await pod.execRun({
             command: `rg -n${globArg} ${shellQuote(p.pattern)} ${target} 2>/dev/null | head -200 || grep -rn ${shellQuote(p.pattern)} ${target} | head -200`,
+            cwd: shell.cwd,
           });
           return { output: r.output || "(no matches)", isError: false };
         }
@@ -221,6 +229,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
       const allEvents = await deps.repo.listSessionEvents(session.id);
       const ctx = buildTurnContext(allEvents);
       const messages: ContextMessage[] = [...ctx.messages];
+      const shell: { cwd?: string } = {};
 
       for (const dangling of ctx.danglingToolCalls as ToolCallPayload[]) {
         const payload = {
@@ -358,6 +367,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
                 session.agentId,
                 call.toolName as HostedToolName,
                 call.input,
+                shell,
               );
             } catch (err) {
               if (!(err instanceof WakeRefused)) throw err;
