@@ -823,6 +823,12 @@ export async function bootstrap() {
     wakeAgent: async (agentId) => {
       await agentsRepo.wakeIfHibernated(agentId);
     },
+    hosted: hostedHarness
+      ? {
+          agentHarness: (agentId) => hostedHarness.agentHarness(agentId),
+          fire: (input) => hostedHarness.scheduleFire(input),
+        }
+      : null,
   });
   schedulesBoot.runner.restoreAll().catch((err) => {
     process.stderr.write(

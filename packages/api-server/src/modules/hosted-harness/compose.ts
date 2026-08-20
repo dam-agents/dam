@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import type { Connection } from "api-server-api";
 import type { PeriodicJobs } from "../../core/periodic-jobs.js";
@@ -23,10 +24,20 @@ import type { Db } from "db";
 const TURN_STALL_SWEEP_MS = 60_000;
 const TURN_STALL_CUTOFF_MS = 5 * 60_000;
 
+export interface HostedScheduleFireInput {
+  agentId: string;
+  owner: string;
+  scheduleId: string;
+  task: string;
+  sessionMode: "fresh" | "continuous";
+}
+
 export interface HostedHarnessModule {
   forOwner(owner: string): HostedSessionsService;
   startWorker(): RunningTurnWorker;
   enqueueTurn(turnId: string): Promise<void>;
+  scheduleFire(input: HostedScheduleFireInput): Promise<{ sessionId: string }>;
+  agentHarness(agentId: string): Promise<"pod" | "hosted">;
   close(): Promise<void>;
 }
 
@@ -99,6 +110,50 @@ export function composeHostedHarness(deps: {
       });
     },
     enqueueTurn: (turnId) => queue.enqueue(turnId),
+
+    async scheduleFire(input) {
+      let session =
+        input.sessionMode === "continuous"
+          ? (await repo.listSessions(input.agentId))
+              .filter((s) => s.scheduleId === input.scheduleId)
+              .at(-1)
+          : undefined;
+      if (!session) {
+        const id = `hs-${randomUUID()}`;
+        await repo.createSession({
+          id,
+          agentId: input.agentId,
+          owner: input.owner,
+          scheduleId: input.scheduleId,
+        });
+        session = (await repo.getSession(id)) ?? undefined;
+      }
+      if (!session) throw new Error("failed to create schedule session");
+      if (await repo.runningTurnForSession(session.id)) {
+        throw new Error("previous scheduled turn still running");
+      }
+      const turnId = `ht-${randomUUID()}`;
+      await repo.createTurn({
+        id: turnId,
+        sessionId: session.id,
+        agentId: input.agentId,
+      });
+      await repo.appendEvent({
+        sessionId: session.id,
+        turnId,
+        seq: 0,
+        kind: "user-message",
+        payload: { text: input.task, source: "schedule" },
+      });
+      await queue.enqueue(turnId);
+      return { sessionId: session.id };
+    },
+
+    async agentHarness(agentId) {
+      const infra = await deps.agentsRepo.get(agentId);
+      return infra?.harness === "hosted" ? "hosted" : "pod";
+    },
+
     close: () => queue.close(),
   };
 }

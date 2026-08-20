@@ -14,6 +14,7 @@ import {
 import { createSchedulesService } from "./services/schedules-service.js";
 import {
   createSchedulerRunner,
+  type HostedScheduleTarget,
   type SchedulerRunner,
 } from "./services/scheduler-runner.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
@@ -31,6 +32,7 @@ export interface ComposeSchedulesAtBootOpts {
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  hosted?: HostedScheduleTarget | null;
   log?: (msg: string) => void;
 }
 
@@ -45,6 +47,7 @@ export function composeSchedulesAtBoot(
     queue,
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    hosted: opts.hosted,
     log,
   });
   const worker = startScheduleWorker({

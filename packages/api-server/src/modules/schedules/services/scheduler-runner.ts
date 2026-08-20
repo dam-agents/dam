@@ -12,11 +12,23 @@ export interface SchedulerRunner {
   restoreAll(): Promise<void>;
 }
 
+export interface HostedScheduleTarget {
+  agentHarness(agentId: string): Promise<"pod" | "hosted">;
+  fire(input: {
+    agentId: string;
+    owner: string;
+    scheduleId: string;
+    task: string;
+    sessionMode: "fresh" | "continuous";
+  }): Promise<{ sessionId: string }>;
+}
+
 export interface SchedulerRunnerDeps {
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  hosted?: HostedScheduleTarget | null;
   log?: (msg: string) => void;
   now?: () => Date;
   triggerTtlSeconds?: number;
@@ -48,14 +60,30 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
 
+    const ownerSub = await deps.repo.getOwnerById(scheduleId);
+    const harness = deps.hosted
+      ? await deps.hosted.agentHarness(sched.agentId).catch(() => "pod")
+      : "pod";
+
     let result: string;
     let outcome: "success" | "failure";
     try {
-      await deps.runtimeMutator.bump(sched.agentId, [
-        { id: eventId, kind: "trigger", payload, expiresAt },
-      ]);
-      await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
-      await deps.wakeAgent(sched.agentId);
+      if (harness === "hosted" && deps.hosted && ownerSub) {
+        await deps.hosted.fire({
+          agentId: sched.agentId,
+          owner: ownerSub,
+          scheduleId,
+          task: sched.spec.task ?? "",
+          sessionMode:
+            sched.spec.sessionMode === "continuous" ? "continuous" : "fresh",
+        });
+      } else {
+        await deps.runtimeMutator.bump(sched.agentId, [
+          { id: eventId, kind: "trigger", payload, expiresAt },
+        ]);
+        await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
+        await deps.wakeAgent(sched.agentId);
+      }
       result = "success";
       outcome = "success";
     } catch (err) {
@@ -64,7 +92,6 @@ export function createSchedulerRunner(
       log(`fire: schedule ${scheduleId} failed: ${result}`);
     }
 
-    const ownerSub = await deps.repo.getOwnerById(scheduleId);
     if (ownerSub) {
       emit({
         type: EventType.ScheduleFired,
