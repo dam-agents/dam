@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-18
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -8,7 +8,7 @@ A **usage tracking** subsystem captures semantically-meaningful user activity in
 
 Three design choices follow from the operator framing:
 
-- **Read interface is SQL views.** Adding a metric is a new view; consumers don't see the raw event table. The HTML report renders all "pilot" views; the JSON endpoint returns any one of them by name.
+- **Read interface is SQL views.** Adding a report metric is a new view; inspectors don't see the raw event table. The HTML report renders all "pilot" views; the JSON endpoint returns any one of them by name. A separate passthrough surface serves external analytics — see [source passthrough views](#source-passthrough-views).
 - **Storage is pseudonymized.** Every Keycloak `sub` written to Postgres is HMAC-SHA256 hashed with a per-install secret at the repository write boundary. Same input → same output, so cross-table joins and `GROUP BY sub` still work; reverse lookup requires the secret, which lives on the api-server pod. Pseudonymization, not anonymization — see [security-and-credentials](security-and-credentials.md) for the GDPR framing.
 - **Access is a separate role.** The `platform-inspector` realm role gates `/api/usage/*`. It is independent of the platform-access role: "can read aggregates" doesn't imply "can use the platform." The Helm chart auto-creates the role and an `inspectors` group mapped to it; operators grant access by adding Keycloak users to the group.
 
@@ -147,6 +147,10 @@ Three Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. There is no visible UI affordance; the UI exposes a `window.platformUsage.openReport()` function registered at bootstrap that inspectors call from the browser devtools console. The function fetches with the Bearer token, wraps the response in a Blob URL, and opens it in a new tab (a plain `<a href>` cannot send the Bearer token); the Blob is revoked a minute after open.
 
 When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
+
+### Source passthrough views
+
+A second read surface serves an external usage-analytics pipeline, at the SQL layer rather than over HTTP: one `usage_src_*` passthrough view per table the subsystem reads, each enumerating exactly the columns allowed to leave that table. The views are the privacy boundary — columns holding raw Keycloak subs, and application payloads never written for analytics, are omitted — and the column list is the contract: a column added to a base table stays invisible until the migration adding it recreates the passthrough, so table migrations are never blocked from outside. Aggregations live with the consumer, which reads nightly through a dedicated read-only Postgres role granted per view; the role and its grants are managed operator-side, not by the chart, and are authored against the deployed release rather than main. Recreating a passthrough drops its grants, so after a view migration the consumer fails closed with permission-denied until an operator re-grants — the intended failure mode. The passthroughs are deliberately outside the inspector surface: the `usage_*` aggregate views stay as the backing of the HTML report with no new features, while new metrics are authored consumer-side against the passthroughs.
 
 ### Opening the report
 
