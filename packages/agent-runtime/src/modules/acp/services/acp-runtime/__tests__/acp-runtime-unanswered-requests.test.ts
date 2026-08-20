@@ -155,4 +155,26 @@ describe("acp-runtime: unanswered requests", () => {
     expect(world.harness().answersTo(77)).toEqual([]);
     expect(world.runtime.status().idle).toBe(false);
   });
+
+  /**
+   * TEST_SCENARIO: The agent asks with an empty-string session id. That is
+   * not a real session, so it must behave exactly like a question with no
+   * session at all: broadcast, wait forever, never expire. Pins the rule
+   * that "" is session-less on every path.
+   */
+  it("should treat an empty-string session id as no session", () => {
+    vi.useFakeTimers();
+    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.disconnect();
+
+    world.harness().emit(frames.requestPermission(53, ""));
+
+    vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
+    expect(world.harness().answersTo(53)).toEqual([]);
+    expect(world.runtime.status().idle).toBe(false);
+  });
 });

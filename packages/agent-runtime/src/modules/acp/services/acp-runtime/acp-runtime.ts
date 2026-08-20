@@ -754,7 +754,7 @@ function extractParamsSessionId(frame: unknown): string | null {
   const params = frame.params;
   if (!isNonNullObject(params)) return null;
   const sid = params.sessionId;
-  return typeof sid === "string" ? sid : null;
+  return typeof sid === "string" && sid !== "" ? sid : null;
 }
 
 function extractResultSessionId(frame: unknown): string | null {
