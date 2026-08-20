@@ -35,13 +35,22 @@ make it *with* the human. Read the catalog and show it to them:
 python3 -c 'import experiment_sdk as x; [print(i["id"], "-", i.get("description") or i["name"]) for i in x.list_images()]'
 ```
 
-Present the ids with their descriptions and ask which the worker should be.
-`claude-code` is the general-purpose worker, not the default answer: several
-entries are **purpose-built for one kind of loop** and doing that loop on
-`claude-code` means reimplementing the tool from scratch inside the worker.
-For instance `nous` runs hypothesis-driven campaigns (plan → build & test →
-analyze → learn against a target repo) and already ships the `nous` CLI, its
-skill, and a gateway-wired model path.
+Then read [references/images.md](references/images.md): the catalogue gives one
+line per image, which is not enough to choose between them. It says which images
+are supported as experiment workers, what each one is for, and what credentials
+each needs. Present only the supported ones, and ask which the worker should be.
+
+**`claude-code` is the default** — it needs no credential the sandbox does not
+already hold. Two reasons to choose otherwise: the human wants a specific
+provider's agent in the loop (`codex`, `pi-agent`, `bob` — each needs its own
+credential granted first), or the goal matches a purpose-built worker, where
+doing the loop on `claude-code` would mean reimplementing the tool inside the
+worker. `nous` is the one purpose-built worker supported today: it runs
+hypothesis-driven campaigns (plan → build & test → analyze → learn against a
+target repo) and already ships the `nous` CLI, its skill, and a gateway-wired
+model path. The catalogue lists other optimizers; they are **not supported as
+workers yet** — images.md says so per image, and offering one is a dead end for
+the human.
 
 **Never install a framework inside a worker.** No `pip install`, no cloning,
 no building a tool the iteration needs. If a curated image exists for it,
@@ -65,10 +74,11 @@ run spends real compute for hours, and a wrong worker or a missing credential
 surfaces as an empty result late, not as an error at review. So propose the
 whole envelope and get an explicit yes before writing the script:
 
-- **The image**, by catalog id, with why that one over the general-purpose
-  worker.
+- **The image**, by catalog id, with why that one over `claude-code`.
 - **The connections** each worker gets, from `x.list_connections()` — targets
-  start with nothing, and the model-provider connection is usually required.
+  start with nothing, and the model-provider connection is usually required. If
+  the image needs a provider grant this sandbox does not hold, say so here
+  rather than at the first failed spawn.
 - **Iteration counts**: your loop's rounds, plus any the worker runs
   internally. Total runtime multiplies through them.
 - **The TTL and resource envelope** you derived from those counts, so the

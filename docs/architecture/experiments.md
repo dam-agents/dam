@@ -182,7 +182,11 @@ one-shot spawn flow offers) and presenting it to the human before any loop is
 written, and forbids installing a framework inside a worker when a curated
 image already ships it. The catalogue is read before the human is even greeted
 in a fresh sandbox, so the images offered are the ones this deployment actually
-carries. Approval covers the whole envelope, not just the image: the
+carries. Being in the catalogue is necessary but not sufficient: an image also
+has to be validated as an unattended worker, since every purpose-built image is
+a conversational workload whose goal normally arrives in chat, and the skill
+carries that supported subset — the catalogue answers what exists, not what a
+loop should spawn. Approval covers the whole envelope, not just the image: the
 connections each worker is granted, the iteration counts, and the deadline
 derived from them are agreed before the script is authored, because a run
 commits hours of compute and a wrong choice surfaces as an empty result at the

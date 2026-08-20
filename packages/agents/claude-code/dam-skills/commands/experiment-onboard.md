@@ -19,8 +19,11 @@ may be absent or disabled here:
 python3 -c 'import experiment_sdk as x; [print(i["id"], "-", i.get("description") or i["name"]) for i in x.list_images()]'
 ```
 
-Name only ids this returned. Offering an image the catalog does not carry costs
-the user a round of correction and teaches them a menu that does not exist.
+Name only ids this returned, and only ones the `dam-experiment` skill's
+[images reference](../dam-experiment/references/images.md) lists as supported
+workers — the catalogue also carries images that are not validated for
+experiment rounds yet. Offering an image the user cannot actually run costs them
+a round of correction and teaches them a menu that does not exist.
 
 ## What to do
 
@@ -31,19 +34,19 @@ the user a round of correction and teaches them a menu that does not exist.
    the platform never runs the loop and never interprets the score; the loop is
    ordinary code, and the code reports its own shape.
 
-2. **Say where a round runs, and offer the catalog.** Each round runs in a
-   fresh, throwaway agent. Group what you read into the two kinds the user is
-   choosing between: the **general-purpose coding agents** (a round is "an agent
-   with tools, told what to do") and the **purpose-built optimizers**, each of
-   which already implements one search strategy — name the strategy, not just
-   the id, since that is what the user is picking between. Keep it to one line
-   per image at most, and let their goal narrow the list rather than listing
-   everything twice.
+2. **Say where a round runs, and what it can run in.** Each round runs in a
+   fresh, throwaway agent. For most goals that is a **general coding agent** —
+   `claude-code` by default, and mention that `codex`, `pi-agent` or `bob` are
+   the same worker on another provider *if* its credential is set up here. Then
+   name the one purpose-built option: `nous`, for hypothesis-driven optimization
+   of a repo against a metric. Keep it to a line or two — this is orientation,
+   not a catalogue tour.
 
 3. **Ask what they want to optimize.** One question, not a form. Invite them to
    describe their goal in their own words. Do not ask them to pick an image yet
    — the goal decides the image, and step 2 was orientation, not a menu they owe
-   you an answer to.
+   you an answer to. `claude-code` is the default precisely so the first
+   question can be about their goal and not about credentials.
 
 4. **Offer a starter only if they have no target of their own.** Something small
    and self-scoring works best — a tiny key/value cache with tests and a
