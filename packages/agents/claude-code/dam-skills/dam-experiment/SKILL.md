@@ -101,8 +101,8 @@ A user who wants to see how experiments work but has nothing to optimize gets
 deterministic benchmark, shipped inside this skill at
 [examples/tiny-cache/](examples/tiny-cache/). Follow
 [references/tiny-cache-starter.md](references/tiny-cache-starter.md) for the
-baseline ritual and the design at both tiers (`claude-code` loop, `nous`
-campaign).
+baseline ritual and the loop design — the worker harness is the user's pick,
+as always.
 
 ## Authoring a script
 

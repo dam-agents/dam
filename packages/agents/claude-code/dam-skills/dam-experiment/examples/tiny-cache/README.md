@@ -8,9 +8,7 @@ copy stays pristine as the integrity reference. It is deliberately naive — `ge
 every call rebuilds it to purge expired entries, and `set()` re-sorts all
 keys — so an optimization loop has real, measurable headroom against a
 behavioral suite that must stay green. Do not "fix" the naive implementation
-in place — the slowness is the exercise. A clonable mirror lives at
-<https://github.com/Tomas2D/tiny-cache> for workers (e.g. a Nous campaign)
-that fetch their target themselves.
+in place — the slowness is the exercise.
 
 - optional per-entry **TTL** — expired entries are never returned
 - bounded capacity with **FIFO eviction** (oldest insertion goes first)
