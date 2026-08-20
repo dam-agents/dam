@@ -7,7 +7,8 @@ import { createWorld, frames } from "./acp-world.js";
  * The agent asks a question — usually "may I run this tool?" — and nobody
  * is there to answer. The question must wait, follow the user back in if
  * they return, and die cleanly if they don't: the agent gets an error so
- * the tool call aborts instead of hanging forever.
+ * the tool call aborts instead of hanging forever. Resetting the session
+ * ends the question the same way, since the session id lives on.
  */
 
 const ORPHAN_TTL_MS = 60_000;
@@ -127,6 +128,83 @@ describe("acp-runtime: unanswered requests", () => {
       error: { code: -32000 },
     });
     expect(world.harness().killed()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A permission prompt is still open when the user resets the
+   * session. The reset must end it: the agent gets the abort error, and the
+   * runtime reports itself idle again so the idle checker can hibernate the
+   * Agent. One abandoned prompt must not keep a pod running for good.
+   */
+  it("should end an open question when the session is reset", () => {
+    vi.useFakeTimers();
+    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "delete the build folder"));
+    world.harness().emit(frames.requestPermission(60, SESSION));
+    alice.disconnect();
+
+    world.runtime.resetSession(SESSION);
+
+    expect(world.harness().answersTo(60)[0]).toMatchObject({
+      error: {
+        code: -32000,
+        message: "Permission request cancelled: session reset",
+      },
+    });
+    expect(world.runtime.status().idle).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A question was open when the session was reset. The session
+   * id survives a reset and gets used again, so whoever opens it next must
+   * find it clean. A prompt about a tool call from before the reset must not
+   * pop up in the new conversation.
+   */
+  it("should not ask an old question again after a reset", () => {
+    vi.useFakeTimers();
+    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    world.harness().emit(frames.requestPermission(61, SESSION));
+    alice.disconnect();
+
+    world.runtime.resetSession(SESSION);
+
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+
+    expect(bob.saw("session/request_permission")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The TTL clock was already ticking when the session was
+   * reset. It must go with the session. If it still fired, the agent would
+   * get a second, late answer for a question that was already cancelled —
+   * and by then that request id may belong to a different tool call.
+   */
+  it("should stop the clock when the session is reset", () => {
+    vi.useFakeTimers();
+    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    world.harness().emit(frames.requestPermission(62, SESSION));
+    alice.disconnect();
+
+    world.runtime.resetSession(SESSION);
+    vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
+
+    expect(world.harness().answersTo(62)).toHaveLength(1);
+    expect(world.harness().answersTo(62)[0]).toMatchObject({
+      error: { message: "Permission request cancelled: session reset" },
+    });
   });
 
   /**

@@ -15,6 +15,7 @@ export interface PendingAgentRequests {
   hasFor(sessionId: string): boolean;
   any(): boolean;
   size(): number;
+  forget(sessionId: string): void;
   clear(): void;
 }
 
@@ -33,7 +34,9 @@ export interface PendingAgentRequestsDeps {
  * session-scoped request with no engaged channel expires after a TTL,
  * answering the agent with a structured error so the tool call aborts
  * cleanly. A request with no session broadcasts to every channel and never
- * expires.
+ * expires. Forgetting a session drops its requests the same way, because the
+ * session id is reused after a reset: a question left open must not follow
+ * that id into the next conversation, and must not keep the runtime busy.
  */
 export function createPendingAgentRequests(
   deps: PendingAgentRequestsDeps,
@@ -55,38 +58,48 @@ export function createPendingAgentRequests(
     return false;
   }
 
+  function clearExpiryTimer(sessionId: string): void {
+    const existing = expiryTimers.get(sessionId);
+    if (!existing) return;
+    clearTimeout(existing);
+    expiryTimers.delete(sessionId);
+  }
+
   function updateExpiryTimer(sessionId: string): void {
     const shouldRun = hasFor(sessionId) && !hasOpenChannel(sessionId);
-    const existing = expiryTimers.get(sessionId);
-    if (shouldRun && !existing) {
+    if (shouldRun && !expiryTimers.get(sessionId)) {
       expiryTimers.set(
         sessionId,
         setTimeout(() => expire(sessionId), deps.orphanTtlMs),
       );
-    } else if (!shouldRun && existing) {
-      clearTimeout(existing);
-      expiryTimers.delete(sessionId);
+    } else if (!shouldRun) {
+      clearExpiryTimer(sessionId);
     }
+  }
+
+  function abortRequestsOf(sessionId: string, message: string): number {
+    const aborted: JsonRpcId[] = [];
+    for (const [id, req] of pending) {
+      if (req.sessionId === sessionId) aborted.push(id);
+    }
+    for (const id of aborted) {
+      pending.delete(id);
+      deps.sendToAgent({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message },
+      });
+    }
+    return aborted.length;
   }
 
   function expire(sessionId: string): void {
     expiryTimers.delete(sessionId);
-    const toExpire: JsonRpcId[] = [];
-    for (const [id, req] of pending) {
-      if (req.sessionId === sessionId) toExpire.push(id);
-    }
-    for (const id of toExpire) {
-      deps.sendToAgent({
-        jsonrpc: "2.0",
-        id,
-        error: {
-          code: -32000,
-          message: "Permission request expired: no client connected",
-        },
-      });
-      pending.delete(id);
-    }
-    if (toExpire.length > 0) deps.onExpired();
+    const expired = abortRequestsOf(
+      sessionId,
+      "Permission request expired: no client connected",
+    );
+    if (expired > 0) deps.onExpired();
   }
 
   return {
@@ -129,6 +142,11 @@ export function createPendingAgentRequests(
 
     size() {
       return pending.size;
+    },
+
+    forget(sessionId) {
+      clearExpiryTimer(sessionId);
+      abortRequestsOf(sessionId, "Permission request cancelled: session reset");
     },
 
     clear() {

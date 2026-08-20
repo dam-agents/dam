@@ -317,6 +317,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     transcript.forget(sessionId);
     promptScheduler.forget(sessionId);
+    pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
     lease.maybeRecycle();
     const reap = idleReapTimers.get(sessionId);
