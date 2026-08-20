@@ -19,6 +19,21 @@ export interface SlackTurnRoster {
   selfIsDefault: boolean;
 }
 
+export interface AmbientPeerReply {
+  name: string;
+  text: string | null;
+}
+
+const PEER_REPLY_CHARS = 1500;
+
+function quotePeerReply(name: string, text: string): string {
+  const quoted =
+    text.length > PEER_REPLY_CHARS
+      ? `${text.slice(0, PEER_REPLY_CHARS)}… (truncated)`
+      : text;
+  return `<already-replied agent="${name}">\n${quoted}\n</already-replied>`;
+}
+
 export function botHistoryLabel(brand: { name: string }): string {
   return `the ${brand.name} bot (unattributed)`;
 }
@@ -200,9 +215,13 @@ export function ambientGuidance(
   brand: { name: string; short: string },
   agentName: string | null,
   roster?: SlackTurnRoster,
-  answeredAlready: string[] = [],
+  answeredAlready: AmbientPeerReply[] = [],
 ): string {
   const peers = roster?.peers ?? [];
+  const quotable = answeredAlready.filter(
+    (reply): reply is AmbientPeerReply & { text: string } =>
+      reply.text !== null && reply.text.trim() !== "",
+  );
   return [
     "<reading-along>",
     ...(peers.length > 0
@@ -219,11 +238,15 @@ export function ambientGuidance(
       : []),
     ...(answeredAlready.length > 0
       ? [
-          `${joinNames(answeredAlready)} already replied to this in the ` +
-            "channel, before you. Read what they said before deciding: add " +
-            "something only if you have something they did not cover, and " +
+          `${joinNames(answeredAlready.map((reply) => reply.name))} already ` +
+            "replied to this in the channel, before you." +
+            (quotable.length > 0
+              ? " What they said is quoted below — read it before deciding: add"
+              : " Add") +
+            " something only if you have something they did not cover, and " +
             "stay silent rather than repeating or contradicting them for the " +
             "sake of it.",
+          ...quotable.map((reply) => quotePeerReply(reply.name, reply.text)),
         ]
       : [
           ...(peers.length > 0

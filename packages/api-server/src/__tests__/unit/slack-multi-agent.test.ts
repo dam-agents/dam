@@ -294,6 +294,64 @@ describe("ambient read-along with several connected agents", () => {
     expect(second).toContain("already replied");
   });
 
+  /**
+   * TEST_SCENARIO: knowing that a peer replied is not enough. A later agent
+   * cannot read the channel — bot posts never come back inbound, no tool reads
+   * messages, and a resumed session injects no history — so the peer's reply
+   * has to travel with the turn or the agent can never build on it.
+   */
+  it("carries what an earlier agent said into the later agent's prompt", async () => {
+    const h = harness(
+      [
+        {
+          instanceName: SCRIBE,
+          name: "Scribe",
+          isDefault: true,
+          ambient: true,
+        },
+        { instanceName: REVIEWER, name: "Reviewer", ambient: true },
+      ],
+      {
+        onPrompt: async (agent, worker) => {
+          if (agent === SCRIBE)
+            await worker().reply(SCRIBE, { text: "the number is 7" });
+        },
+      },
+    );
+    await h.channelMessage("Scribe, pick a number; Reviewer, repeat it");
+    expect(h.promptsFor(REVIEWER)[0]).toContain(
+      '<already-replied agent="Scribe">\nthe number is 7\n</already-replied>',
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: the quoted reply is untrusted, unbounded channel text, so it
+   * is capped rather than passed through at whatever length it arrived.
+   */
+  it("truncates a long reply rather than quoting it whole", async () => {
+    const h = harness(
+      [
+        {
+          instanceName: SCRIBE,
+          name: "Scribe",
+          isDefault: true,
+          ambient: true,
+        },
+        { instanceName: REVIEWER, name: "Reviewer", ambient: true },
+      ],
+      {
+        onPrompt: async (agent, worker) => {
+          if (agent === SCRIBE)
+            await worker().reply(SCRIBE, { text: "x".repeat(4000) });
+        },
+      },
+    );
+    await h.channelMessage("go on then");
+    const second = h.promptsFor(REVIEWER)[0]!;
+    expect(second).toContain("… (truncated)");
+    expect(second).not.toContain("x".repeat(2000));
+  });
+
   it("tells a later agent when nobody before it replied", async () => {
     const h = harness([
       { instanceName: SCRIBE, name: "Scribe", isDefault: true, ambient: true },

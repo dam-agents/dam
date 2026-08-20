@@ -6,6 +6,7 @@ import {
   ambientGuidance,
   botHistoryLabel,
   slackTurnContract,
+  type AmbientPeerReply,
   type SlackTurnRoster,
 } from "./slack-turn-copy.js";
 import { match, P } from "ts-pattern";
@@ -764,6 +765,7 @@ export function createSlackWorker(
     forwarded?: boolean;
     handedOff?: boolean;
     text?: string;
+    replyText?: string;
     slackUserId?: string;
     hasThread?: boolean;
     hadAttachments?: boolean;
@@ -866,12 +868,17 @@ export function createSlackWorker(
   function noteEngagedTurn(
     instanceName: string,
     match: (ref: TurnRef) => boolean,
-    opts: { messaged?: boolean } = {},
+    opts: { messaged?: boolean; replyText?: string } = {},
   ) {
     const engaged = findTurnRef(instanceName, match);
     if (!engaged) return;
     engaged.posted = true;
     if (opts.messaged) engaged.messaged = true;
+    if (opts.replyText) {
+      engaged.replyText = engaged.replyText
+        ? `${engaged.replyText}\n${opts.replyText}`
+        : opts.replyText;
+    }
     lastTurn.set(instanceName, engaged);
   }
 
@@ -2069,9 +2076,9 @@ export function createSlackWorker(
     externalActorId: string;
     roster?: RosterEntry[];
     readers?: RosterEntry[];
-    answeredAlready?: string[];
-  }): Promise<{ posted: boolean }> {
-    if (!gateway) return { posted: false };
+    answeredAlready?: AmbientPeerReply[];
+  }): Promise<{ posted: boolean; replyText: string | null }> {
+    if (!gateway) return { posted: false, replyText: null };
     const gw = gateway;
 
     const multi = args.messages.length > 1;
@@ -2221,7 +2228,14 @@ export function createSlackWorker(
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
       });
     }
-    return { posted: turnRefs.some((ref) => ref.messaged === true) };
+    const spoken = turnRefs
+      .map((ref) => ref.replyText)
+      .filter((said): said is string => said !== undefined)
+      .join("\n");
+    return {
+      posted: turnRefs.some((ref) => ref.messaged === true),
+      replyText: spoken === "" ? null : spoken,
+    };
   }
 
   type AmbientPendingMessage = {
@@ -2313,7 +2327,7 @@ export function createSlackWorker(
 
           const inThread = queue.threadTs !== null;
           const { kept, dropped } = batchFiles(batch);
-          const answeredAlready: string[] = [];
+          const answeredAlready: AmbientPeerReply[] = [];
           for (const reader of orderAmbientReaders(readers)) {
             securityLog("info", "channel.authz", {
               category: "channel",
@@ -2329,7 +2343,7 @@ export function createSlackWorker(
                 channelId: queue.channelId,
               },
             });
-            const { posted } = await relayAmbientTurn({
+            const { posted, replyText } = await relayAmbientTurn({
               roster,
               readers,
               answeredAlready: [...answeredAlready],
@@ -2352,7 +2366,8 @@ export function createSlackWorker(
               droppedFiles: dropped.map((f) => f.name),
               externalActorId: last.slackUserId,
             });
-            if (posted) answeredAlready.push(reader.name);
+            if (posted)
+              answeredAlready.push({ name: reader.name, text: replyText });
           }
         } finally {
           for (const msg of batch) msg.release();
@@ -2552,6 +2567,7 @@ export function createSlackWorker(
         }
         noteEngagedTurn(instanceName, (ref) => ref.channel === target.id, {
           messaged: true,
+          ...(text ? { replyText: text } : {}),
         });
         return { ok: true as const };
       } catch (err) {
@@ -2746,7 +2762,7 @@ export function createSlackWorker(
         noteEngagedTurn(
           instanceName,
           (ref) => ref.threadTs === threadTs && ref.channel === target.id,
-          { messaged: true },
+          { messaged: true, replyText: args.text },
         );
         return { ok: true as const };
       } catch (err) {
