@@ -53,7 +53,6 @@ import {
 } from "../../agents/hooks/use-restart-agent.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
@@ -737,8 +736,6 @@ export function ChatView() {
           </>
         )}
       </div>
-
-      <EgressApprovalToasts agentId={selectedAgent} />
 
       {}
       {selectedAgent && agentInaccessible ? (
