@@ -51,6 +51,7 @@ import type {
   SurfaceAttribution,
 } from "./admission/index.js";
 import type { SessionPresence } from "./agent-proxies/index.js";
+import type { HostedHarnessModule } from "../../modules/hosted-harness/compose.js";
 
 export interface ApiServerDeps {
   config: Config;
@@ -100,4 +101,5 @@ export interface ApiServerDeps {
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
   sessionPresence: SessionPresence;
+  hostedHarness: HostedHarnessModule | null;
 }

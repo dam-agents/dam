@@ -21,3 +21,5 @@ export {
   type TurnLogRepository,
   type TurnStatus,
 } from "./infrastructure/turn-log-repository.js";
+export { composeHostedHarness, type HostedHarnessModule } from "./compose.js";
+export type { HostedSessionsService } from "./services/hosted-sessions-service.js";

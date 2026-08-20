@@ -136,6 +136,8 @@ import {
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
+import { composeHostedHarness } from "./modules/hosted-harness/compose.js";
+import { createConnectionsRepository } from "./modules/connections/infrastructure/connections-repository.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
@@ -372,6 +374,31 @@ export async function bootstrap() {
       );
       process.exit(1);
     });
+
+  const hostedConnectionsRepo = createConnectionsRepository(db);
+  const hostedHarness = config.hostedLlmBaseUrl
+    ? composeHostedHarness({
+        db,
+        bullConnection,
+        agentsRepo,
+        listConnectionsForAgent: (agentId) =>
+          hostedConnectionsRepo.listConnectionsForAgent(agentId),
+        readSecretField: (ref) =>
+          secretStores.default().getField({
+            storeId: secretStores.default().storeId,
+            ...ref,
+          }),
+        modelConfig: {
+          baseUrl: config.hostedLlmBaseUrl,
+          modelId: config.hostedLlmModel,
+          fallbackApiKey: config.hostedLlmApiKey,
+        },
+        namespace: config.namespace,
+        periodicJobs,
+        log: (msg) => getLogger().info(msg),
+      })
+    : null;
+  const hostedTurnWorker = hostedHarness?.startWorker();
 
   const { service: termsService, isAcceptedPort: isTermsAccepted } =
     composeTermsModule({
@@ -857,6 +884,7 @@ export async function bootstrap() {
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
   const apiServerDeps: ApiServerDeps = {
+    hostedHarness,
     periodicJobs,
     sharedRedis,
     config,
@@ -945,6 +973,8 @@ export async function bootstrap() {
     await channelManager.stopAll();
     await runtimeDelivery.worker.close();
     await runtimeDelivery.queue.close();
+    await hostedTurnWorker?.close();
+    await hostedHarness?.close();
     await schedulesBoot.close();
     await redisBus.close();
     turnAttendance.close();

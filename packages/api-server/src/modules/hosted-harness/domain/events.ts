@@ -74,6 +74,7 @@ export type ContextMessage =
   | {
       role: "tool-result";
       callId: string;
+      tool: string;
       output: string;
       isError: boolean;
     };
@@ -122,10 +123,12 @@ export function buildTurnContext(events: TurnEvent[]): TurnContext {
       }
       case "tool-result": {
         const p = toolResultPayloadSchema.parse(event.payload);
+        const call = openCalls.get(p.callId);
         openCalls.delete(p.callId);
         messages.push({
           role: "tool-result",
           callId: p.callId,
+          tool: call?.tool ?? "unknown",
           output: p.output,
           isError: p.isError ?? false,
         });

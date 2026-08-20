@@ -4,8 +4,7 @@ import {
   type TurnEvent,
 } from "../../modules/hosted-harness/domain/events.js";
 
-// TEST_OVERVIEW: the Turn Event Log context builder — compaction supersession
-// and dangling tool-call detection for turn resume.
+// TEST_OVERVIEW: the Turn Event Log context builder — compaction supersession and dangling tool-call detection for turn resume.
 
 let nextId = 1;
 function event(
@@ -50,8 +49,7 @@ describe("buildTurnContext", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the latest compaction supersedes covered events for the LLM
-  // context while later events survive
+  // TEST_SCENARIO: the latest compaction supersedes covered events for the LLM context while later events survive
   it("applies the latest compaction", () => {
     const early = event("user-message", { text: "old stuff" });
     const compaction = event("compaction", {
@@ -76,7 +74,13 @@ describe("buildTurnContext", () => {
     ]);
     expect(ctx.messages).toEqual([
       { role: "assistant-tool-call", callId: "c1", tool: "bash", args: {} },
-      { role: "tool-result", callId: "c1", output: "ok", isError: false },
+      {
+        role: "tool-result",
+        callId: "c1",
+        tool: "bash",
+        output: "ok",
+        isError: false,
+      },
     ]);
     expect(ctx.danglingToolCalls).toEqual([]);
   });

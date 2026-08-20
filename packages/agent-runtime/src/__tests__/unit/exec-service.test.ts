@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createExecService } from "../../modules/exec.js";
 
-// TEST_OVERVIEW: the exec surface — fresh-shell command runs with cwd reporting,
-// timeouts, output capping, and background job start/tail/kill.
+// TEST_OVERVIEW: the exec surface — fresh-shell command runs with cwd reporting, timeouts, output capping, and background job start/tail/kill.
 
 const envReader = { current: () => ({}), ready: () => true };
 

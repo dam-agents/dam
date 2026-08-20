@@ -8,6 +8,7 @@
   ],
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.17.1",
+    "@ai-sdk/openai-compatible": "^3.0.30",
     "@aws-sdk/client-s3": "^3.1080.0",
     "@aws-sdk/s3-request-presigner": "^3.1080.0",
     "@bufbuild/protobuf": "^2.12.0",
@@ -34,6 +35,7 @@
     "@trpc/client": "^11.16.0",
     "@trpc/server": "^11.16.0",
     "agent-runtime-api": "workspace:*",
+    "ai": "^7.0.64",
     "ajv": "^8.17.1",
     "api-server-api": "workspace:*",
     "argon2": "^0.44.0",
