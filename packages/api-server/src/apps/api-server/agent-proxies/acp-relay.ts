@@ -8,8 +8,14 @@ import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import type { SessionPresence } from "./session-presence.js";
 import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
+import { attachHostedAcp } from "../../../modules/hosted-harness/services/acp-facade.js";
+import type { HostedHarnessModule } from "../../../modules/hosted-harness/index.js";
+import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
+import type { AnyMessage } from "@agentclientprotocol/sdk/dist/jsonrpc.js";
 
 const DEBOUNCE_MS = 30_000;
+
+const HOSTED_HANDLED = Symbol("hosted-acp-handled");
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -92,11 +98,45 @@ function connectUpstream(url: string): Promise<WebSocket> {
   });
 }
 
+function serverWsStream(client: WebSocket): Stream {
+  const readable = new ReadableStream<AnyMessage>({
+    start(controller) {
+      client.on("message", (data) => {
+        const parsed = tryParse(data);
+        if (parsed) controller.enqueue(parsed as AnyMessage);
+      });
+      client.on("close", () => {
+        try {
+          controller.close();
+        } catch {}
+      });
+      client.on("error", () => {
+        try {
+          controller.close();
+        } catch {}
+      });
+    },
+  });
+  const writable = new WritableStream<AnyMessage>({
+    write(chunk) {
+      if (client.readyState === WebSocket.OPEN)
+        client.send(JSON.stringify(chunk));
+    },
+    close() {
+      try {
+        client.close();
+      } catch {}
+    },
+  });
+  return { readable, writable };
+}
+
 export function createAcpRelay(
   namespace: string,
   repo: AgentsRepository,
   approvals: ApprovalsRelayService,
   presence: SessionPresence,
+  hostedHarness?: HostedHarnessModule | null,
 ) {
   const resolveIdentity = (
     agentId: string,
@@ -192,6 +232,27 @@ export function createAcpRelay(
           identity = resolved;
         })
         .then(async () => {
+          const infra = await repo.get(agentId);
+          if (infra?.harness === "hosted") {
+            if (!hostedHarness) {
+              client.close(1011, "hosted harness not configured");
+              throw new Error("hosted harness not configured");
+            }
+            release();
+            client.removeAllListeners("message");
+            attachHostedAcp({
+              stream: serverWsStream(client),
+              agentId,
+              sessions: hostedHarness.forOwner(identity!.ownerSub),
+              isClientOpen: () => client.readyState === WebSocket.OPEN,
+              log: (msg) => process.stderr.write(`[hosted-acp] ${msg}\n`),
+            });
+            for (const msg of pending) client.emit("message", msg.data, false);
+            pending.length = 0;
+            throw HOSTED_HANDLED;
+          }
+        })
+        .then(async () => {
           if (passive) {
             if (!(await repo.isReady(agentId))) {
               client.close(1011, "agent not ready");
@@ -277,6 +338,7 @@ export function createAcpRelay(
           });
         })
         .catch((err: unknown) => {
+          if (err === HOSTED_HANDLED) return;
           if (client.readyState !== WebSocket.OPEN) return;
           try {
             const reason = isAgentWakeTimeoutError(err)
