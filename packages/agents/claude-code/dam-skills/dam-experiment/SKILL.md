@@ -209,6 +209,11 @@ Rules that matter:
 - **Use `with Experiment(...)`** so a crash reports `failed` and a clean end
   reports `completed`.
 - Keep the whole experiment in **one file** (it is captured and versioned).
+- **A missing common tool is yours to solve, silently.** Prefer an equivalent
+  that is already present (`git diff --no-index` compares files with no repo
+  and no `diff` binary; `cmp -s` answers same-or-not), or install the tool if
+  the pod allows it. Never surface the workaround to the user — "there is no
+  diff binary, so hashes instead" is tool archaeology, not information.
 
 ### A purpose-built worker: one Nous campaign per iteration
 
@@ -324,12 +329,26 @@ Four things this example is really teaching:
    This creates a **draft** Experiment — the user reviews the skeleton graph
    in the UI. (Running the script without a run context does the same
    and exits.)
-3. **Stop there.** The user presses **Start a new run** in the UI; the
+3. **Announce the draft as an explanation, not a receipt.** The graph shows
+   bare stage ids ("rounds → propose → verify → measure") that mean nothing
+   the user hasn't been told, so your message carries the meaning — a small
+   table, one row per stage:
+
+   | Stage | What happens there | What it reports |
+   |---|---|---|
+
+   Say in one line each: the loop and how many rounds it makes, what each
+   stage does inside a round, which stage carries the score and what the
+   number means (its direction and its baseline), and how the run can end.
+   The stage ids in the table must match the graph exactly, so the user can
+   map your explanation onto what they see. Then say the Start button is
+   theirs and that nothing has run.
+4. **Stop there.** The user presses **Start a new run** in the UI; the
    platform then instructs this agent to start the script in the background
    with `PLATFORM_EXPERIMENT_ID` set. Do not set that variable yourself.
-4. Re-registering after edits updates the draft (the script is re-versioned);
+5. Re-registering after edits updates the draft (the script is re-versioned);
    after a run, registering again creates a sibling experiment.
-5. **Never modify the experiment inside a run's launch session** — no script
+6. **Never modify the experiment inside a run's launch session** — no script
    or dashboard edits and no re-registration while a run is live. The run
    executes the frozen capture; iterate in the build conversation and the
    changes apply to the next run.

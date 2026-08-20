@@ -64,8 +64,10 @@ first experiment:
   rewrite that drops semantics fails loudly. Lock the rest yourself:
   `test/` must be provably untouched and `bench/bench.mjs` is off-limits, or
   the cheapest path to a good score is editing the ruler. The skill's own
-  copy is the pristine reference — have the driver diff the working copy's
-  `test/` and `bench/` against it every round.
+  copy is the pristine reference — every round, the driver compares the
+  working copy's `test/` and `bench/` against it with
+  `git diff --no-index --quiet` (works with no repo and no `diff` binary; a
+  non-zero exit means tampering and the round scores nothing).
 - **A known, large effect** — a `Map` plus lazy purge collapses `get()` to
   O(1), so the loop's job is to *prove* the win under a pass condition, not
   to discover it. Say that to the user; it shapes how small the design can be.
