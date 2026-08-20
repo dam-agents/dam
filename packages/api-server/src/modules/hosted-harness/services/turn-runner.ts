@@ -21,6 +21,7 @@ import type { HostedPodClient } from "../infrastructure/pod-client.js";
 import type { ModelResolver } from "../infrastructure/model-resolver.js";
 
 const MAX_STEPS = 100;
+const COMPACT_AT_TOKENS = 160_000;
 
 export interface TurnRunnerAgentInfo {
   id: string;
@@ -251,10 +252,48 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
         }),
       };
 
+      const estimateTokens = () =>
+        Math.ceil(JSON.stringify(messages).length / 4);
+      let lastInputTokens = estimateTokens();
+
+      const compact = async () => {
+        const summary = await generateText({
+          model,
+          system:
+            "You compact a coding-agent conversation. Write a dense summary that preserves: the user's goals, decisions made, current in-flight task state, key file paths, and anything needed to continue the work seamlessly.",
+          messages: [
+            ...toModelMessages(messages),
+            {
+              role: "user",
+              content:
+                "Summarize the conversation so far for context compaction. Reply with only the summary.",
+            },
+          ],
+        });
+        if (!summary.text) throw new Error("compaction produced no summary");
+        const coversThroughEventId = await deps.repo.latestSessionEventId(
+          session.id,
+        );
+        await append("compaction", {
+          summary: summary.text,
+          coversThroughEventId,
+        });
+        messages.length = 0;
+        messages.push({
+          role: "user",
+          text: `[Conversation summary — earlier history was compacted]\n${summary.text}`,
+        });
+        lastInputTokens = estimateTokens();
+        deps.log(
+          `[turn ${turnId}] compacted context through event ${coversThroughEventId}`,
+        );
+      };
+
       try {
         for (let step = 0; step < MAX_STEPS; step++) {
           const live = await deps.repo.getTurn(turnId);
           if (!live || live.status !== "running") return;
+          if (lastInputTokens > COMPACT_AT_TOKENS) await compact();
           const result = await generateText({
             model,
             system: hostedSystemPrompt({
@@ -264,6 +303,7 @@ export function createTurnRunner(deps: TurnRunnerDeps): TurnRunner {
             messages: toModelMessages(messages),
             tools,
           });
+          lastInputTokens = result.usage?.inputTokens ?? estimateTokens();
 
           if (result.text) {
             await append("assistant-message", { text: result.text });

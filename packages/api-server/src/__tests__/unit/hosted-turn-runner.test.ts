@@ -80,6 +80,7 @@ function fakeStore(seedEvents: Partial<TurnEvent>[]): FakeStore {
     },
     listSessionEvents: async () => [...events],
     listTurnEvents: async (turnId) => events.filter((e) => e.turnId === turnId),
+    latestSessionEventId: async () => events.at(-1)?.id ?? 0,
   };
   return { repo, events, turn };
 }
@@ -88,6 +89,7 @@ function fakeModel(
   steps: Array<{
     text?: string;
     toolCalls?: Array<{ toolCallId: string; toolName: string; input: object }>;
+    inputTokens?: number;
   }>,
 ): LanguageModel {
   let call = 0;
@@ -114,13 +116,13 @@ function fakeModel(
           : "stop") as "stop",
         usage: {
           inputTokens: {
-            total: 10,
-            noCache: 10,
+            total: step.inputTokens ?? 10,
+            noCache: step.inputTokens ?? 10,
             cacheRead: undefined,
             cacheWrite: undefined,
           },
           outputTokens: { total: 5, text: 5, reasoning: undefined },
-          totalTokens: 15,
+          totalTokens: (step.inputTokens ?? 10) + 5,
         },
         warnings: [],
       };
@@ -278,6 +280,35 @@ describe("hosted turn runner", () => {
       interrupted: true,
       isError: true,
     });
+  });
+
+  // TEST_SCENARIO: reported input tokens past the threshold trigger a compaction event before the next LLM step, and the loop continues on the summary
+  it("compacts context when the window fills", async () => {
+    const store = fakeStore([
+      { kind: "user-message", payload: { text: "long task" }, seq: 0 },
+    ]);
+    const { runner } = runnerFor(
+      store,
+      fakeModel([
+        {
+          toolCalls: [
+            { toolCallId: "c1", toolName: "bash", input: { command: "ls" } },
+          ],
+          inputTokens: 200_000,
+        },
+        { text: "dense summary of everything so far" },
+        { text: "done" },
+      ]),
+    );
+    await runner.runTurn("t1");
+    const kinds = store.events.map((e) => e.kind);
+    expect(kinds).toContain("compaction");
+    expect(kinds.at(-1)).toBe("turn-end");
+    const compaction = store.events.find((e) => e.kind === "compaction");
+    expect(compaction?.payload).toMatchObject({
+      summary: "dense summary of everything so far",
+    });
+    expect(store.turn.status).toBe("done");
   });
 
   // TEST_SCENARIO: an append hitting the (turn_id, seq) fence yields without marking the turn failed — the other replica owns it

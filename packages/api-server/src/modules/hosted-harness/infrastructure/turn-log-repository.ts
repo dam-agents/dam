@@ -1,6 +1,7 @@
 import {
   and,
   asc,
+  desc,
   eq,
   gt,
   lt,
@@ -74,6 +75,7 @@ export interface TurnLogRepository {
     opts?: { afterId?: number; limit?: number },
   ): Promise<TurnEvent[]>;
   listTurnEvents(turnId: string): Promise<TurnEvent[]>;
+  latestSessionEventId(sessionId: string): Promise<number>;
 }
 
 const EVENTS_PAGE_MAX = 2_000;
@@ -235,6 +237,16 @@ export function createTurnLogRepository(db: Db): TurnLogRepository {
         .orderBy(asc(hostedTurnEvents.id))
         .limit(limit);
       return rows.map(toEvent);
+    },
+
+    async latestSessionEventId(sessionId) {
+      const rows = await db
+        .select({ id: hostedTurnEvents.id })
+        .from(hostedTurnEvents)
+        .where(eq(hostedTurnEvents.sessionId, sessionId))
+        .orderBy(desc(hostedTurnEvents.id))
+        .limit(1);
+      return rows[0]?.id ?? 0;
     },
 
     async listTurnEvents(turnId) {
