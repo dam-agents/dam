@@ -9,19 +9,38 @@ is the exercise; never offer to fix it outside an experiment.
 
 Canonical repo: `https://github.com/Tomas2D/tiny-cache`
 
+## Showing ≠ setting up ≠ running
+
+Match the action to what the user actually asked:
+
+- **"Show me" / "what is it?"** — describe it. This reference plus the files
+  (onboarding fetches a copy to `examples/tiny-cache/` at sandbox creation;
+  read them from disk if present) is everything a description needs. Do not
+  clone, and above all do not execute anything — nobody asked to run code yet.
+- **"Set it up" / "let's use it"** — make sure the copy exists (below), then
+  say you are about to run its test suite and benchmark to measure the
+  baseline, and do so. Running it is part of setup, but the user hears it
+  from you first — the harness's permission layer may legitimately ask about
+  executing freshly fetched code, and that prompt should never be the user's
+  first hint that you started running things.
+
 ## Getting it into the workspace
 
-Nothing is pre-seeded. When the user picks the starter, clone it and **remove
-`.git`** — the local copy is working material, not a repository, and stripping
-it prevents accidental git work (commits, pushes, PR offers) against it:
+Onboarding fetches the copy when the sandbox is created, so it is usually
+already at `examples/tiny-cache/`. If it is missing (onboarding was skipped,
+or the fetch failed), clone it and **remove `.git`** — the local copy is
+working material, not a repository, and stripping it prevents accidental git
+work (commits, pushes, PR offers) against it:
 
 ```sh
 git clone --depth 1 https://github.com/Tomas2D/tiny-cache examples/tiny-cache \
   && rm -rf examples/tiny-cache/.git
 ```
 
-Then verify it on this pod before designing anything — the suite must be
-green and the baseline is yours to measure, not to assume:
+## Measuring the baseline (setup time, not show time)
+
+Once the user has opted in, verify on this pod before designing anything —
+the suite must be green and the baseline is yours to measure, not to assume:
 
 ```sh
 cd examples/tiny-cache && node --test          # 11 tests, all green
