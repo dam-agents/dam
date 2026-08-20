@@ -19,12 +19,45 @@ export interface SlackTurnRoster {
   selfIsDefault: boolean;
 }
 
+export interface AmbientPeerReply {
+  name: string;
+  text: string | null;
+}
+
+const PEER_REPLY_CHARS = 1500;
+
+function escapeFrameText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeFrameAttribute(value: string): string {
+  return escapeFrameText(value).replace(/"/g, "&quot;");
+}
+
+function quotePeerReply(name: string, text: string): string {
+  const capped =
+    text.length > PEER_REPLY_CHARS
+      ? `${text.slice(0, PEER_REPLY_CHARS)}… (truncated)`
+      : text;
+  return (
+    `<already-replied agent="${escapeFrameAttribute(name)}">\n` +
+    `${escapeFrameText(capped)}\n</already-replied>`
+  );
+}
+
 export function botHistoryLabel(brand: { name: string }): string {
   return `the ${brand.name} bot (unattributed)`;
 }
 
+function frameName(name: string): string {
+  return `"${escapeFrameText(name)}"`;
+}
+
 function joinNames(names: string[]): string {
-  const quoted = names.map((name) => `"${name}"`);
+  const quoted = names.map(frameName);
   if (quoted.length <= 1) return quoted[0] ?? "";
   return `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
 }
@@ -200,9 +233,14 @@ export function ambientGuidance(
   brand: { name: string; short: string },
   agentName: string | null,
   roster?: SlackTurnRoster,
-  answeredAlready: string[] = [],
+  answeredAlready: AmbientPeerReply[] = [],
 ): string {
   const peers = roster?.peers ?? [];
+  const quotable = answeredAlready.flatMap((reply) =>
+    reply.text !== null && reply.text.trim() !== ""
+      ? [{ name: reply.name, text: reply.text }]
+      : [],
+  );
   return [
     "<reading-along>",
     ...(peers.length > 0
@@ -219,11 +257,19 @@ export function ambientGuidance(
       : []),
     ...(answeredAlready.length > 0
       ? [
-          `${joinNames(answeredAlready)} already replied to this in the ` +
-            "channel, before you. Read what they said before deciding: add " +
-            "something only if you have something they did not cover, and " +
+          `${joinNames(answeredAlready.map((reply) => reply.name))} already ` +
+            "replied to this in the channel, before you." +
+            (quotable.length === 0
+              ? " Add"
+              : (quotable.length === answeredAlready.length
+                  ? " What they said"
+                  : ` What ${joinNames(quotable.map((reply) => reply.name))} ` +
+                    "said") +
+                " is quoted below — read it before deciding: add") +
+            " something only if you have something they did not cover, and " +
             "stay silent rather than repeating or contradicting them for the " +
             "sake of it.",
+          ...quotable.map((reply) => quotePeerReply(reply.name, reply.text)),
         ]
       : [
           ...(peers.length > 0
