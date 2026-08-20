@@ -53,6 +53,12 @@ export const runtimeManifestSchema = z.object({
 
   drivers: z.record(z.string(), driverEntry).default({}),
 
+  sessionHistory: z
+    .object({
+      command: z.array(z.string().min(1)).nonempty(),
+    })
+    .optional(),
+
   extensions: z
     .object({
       impls: z.array(extensionImpl).default([]),

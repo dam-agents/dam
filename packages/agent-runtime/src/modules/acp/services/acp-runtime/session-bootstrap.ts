@@ -3,6 +3,7 @@ import { match } from "ts-pattern";
 import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
+import type { HistoryProvider } from "../../infrastructure/history-provider.js";
 import type { SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
@@ -47,6 +48,8 @@ export interface SessionBootstrapDeps {
   sendToAgent(frame: unknown): void;
   workingDir: string;
   log(msg: string): void;
+  historyProvider?: HistoryProvider;
+  onProviderServed(sessionId: string): void;
 }
 
 /**
@@ -63,6 +66,12 @@ export interface SessionBootstrapDeps {
  * resume. requestPage serves older transcript ranges for a load that carries a
  * replayBefore cursor; a cursor from before a pod restart names entries this
  * transcript never held, so a cold page is refused rather than bootstrapped.
+ * When the harness image declares a session-history provider, a cold fill
+ * prefers it: the provider's replay lines fill the transcript with no harness
+ * process at all, the response is synthesized with placeholder metadata, and
+ * the session is reported provider-served so the runtime knows the harness
+ * itself has not loaded it yet. Any provider failure falls back to the
+ * harness load.
  */
 export function createSessionBootstrap(
   deps: SessionBootstrapDeps,
@@ -101,13 +110,7 @@ export function createSessionBootstrap(
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
   }
 
-  function park(sessionId: string, waiter: Waiter): void {
-    const boot = bootstrapBySession.get(sessionId);
-    if (boot) {
-      boot.waiters.push(waiter);
-      return;
-    }
-    bootstrapBySession.set(sessionId, { waiters: [waiter] });
+  function startHarnessLoad(sessionId: string): void {
     const outboundId = deps.openLoadRoute(sessionId);
     const loadFrame = {
       jsonrpc: "2.0",
@@ -116,6 +119,45 @@ export function createSessionBootstrap(
       params: { sessionId, cwd: ".", mcpServers: [] },
     };
     deps.sendToAgent(rewriteCwd(loadFrame, deps.workingDir));
+  }
+
+  function serveFromProvider(sessionId: string, lines: string[]): void {
+    const boot = bootstrapBySession.get(sessionId);
+    if (!boot) return;
+    for (const line of lines) deps.transcript.appendReplay(sessionId, line);
+    deps.transcript.cacheMetadata(
+      sessionId,
+      { sessionId, modes: null, configOptions: null },
+      { synthetic: true },
+    );
+    deps.onProviderServed(sessionId);
+    bootstrapBySession.delete(sessionId);
+    for (const waiter of boot.waiters) {
+      if (!waiter.channel.isOpen()) continue;
+      respondFromLog(waiter.kind, waiter.channel, waiter.originalId, sessionId);
+    }
+  }
+
+  function park(sessionId: string, waiter: Waiter): void {
+    const boot = bootstrapBySession.get(sessionId);
+    if (boot) {
+      boot.waiters.push(waiter);
+      return;
+    }
+    bootstrapBySession.set(sessionId, { waiters: [waiter] });
+    const provider = deps.historyProvider;
+    if (!provider) {
+      startHarnessLoad(sessionId);
+      return;
+    }
+    void provider.fetch(sessionId).then((lines) => {
+      if (!bootstrapBySession.has(sessionId)) return;
+      if (lines === null) {
+        startHarnessLoad(sessionId);
+        return;
+      }
+      serveFromProvider(sessionId, lines);
+    });
   }
 
   return {

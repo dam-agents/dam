@@ -11,6 +11,7 @@ import {
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
+import type { HistoryProvider } from "../../infrastructure/history-provider.js";
 import {
   platformSessionMetaSchema,
   type PlatformSessionMeta,
@@ -65,6 +66,7 @@ export interface AcpRuntimeDeps {
   warmStartTimeoutMs?: number;
   logBytesCap?: number;
   replayTailEvents?: number;
+  historyProvider?: HistoryProvider;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
@@ -78,6 +80,7 @@ interface OutboundMapping {
   promptSessionId: string | null;
   attachSessionId: string | null;
   platformMeta: PlatformSessionMeta | null;
+  rehydrate?: boolean;
 }
 
 interface PendingAgentRequest {
@@ -143,10 +146,56 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     log(msg) {
       deps.log?.(msg);
     },
+    historyProvider: deps.historyProvider,
+    onProviderServed(sessionId) {
+      harnessColdSessions.add(sessionId);
+    },
   });
 
   const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const harnessColdSessions = new Set<string>();
+  const rehydratingSessions = new Set<string>();
+  const heldPrompts = new Map<
+    string,
+    { channel: ClientChannel; data: string }[]
+  >();
+
+  function startHarnessRehydrate(sessionId: string): void {
+    rehydratingSessions.add(sessionId);
+    const outboundId = nextOutboundId++;
+    outboundIdToClient.set(outboundId, {
+      channel: null,
+      originalId: null,
+      method: "session/load",
+      promptSessionId: null,
+      attachSessionId: sessionId,
+      platformMeta: null,
+      rehydrate: true,
+    });
+    lease.send(
+      rewriteCwd(
+        {
+          jsonrpc: "2.0",
+          id: outboundId,
+          method: "session/load",
+          params: { sessionId, cwd: ".", mcpServers: [] },
+        },
+        deps.workingDir,
+      ),
+    );
+  }
+
+  function finishHarnessRehydrate(sessionId: string): void {
+    rehydratingSessions.delete(sessionId);
+    harnessColdSessions.delete(sessionId);
+    const held = heldPrompts.get(sessionId) ?? [];
+    heldPrompts.delete(sessionId);
+    for (const prompt of held) {
+      if (prompt.channel.isOpen())
+        handleClientMessage(prompt.channel, prompt.data);
+    }
+  }
 
   const teardownCloseByReason: Record<
     HarnessTeardownReason,
@@ -171,6 +220,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     idleReapTimers.clear();
     pendingFromAgent.clear();
     promptScheduler.clear();
+    harnessColdSessions.clear();
+    rehydratingSessions.clear();
+    heldPrompts.clear();
     deps.backgroundWork?.clear();
   }
 
@@ -334,6 +386,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript.dropChannel(channel);
     promptScheduler.dropChannel(channel);
     bootstrap.dropChannel(channel);
+    for (const [sid, held] of heldPrompts) {
+      const remaining = held.filter((p) => p.channel !== channel);
+      if (remaining.length === 0) heldPrompts.delete(sid);
+      else heldPrompts.set(sid, remaining);
+    }
 
     for (const [outId, m] of outboundIdToClient) {
       if (m.channel === channel && m.promptSessionId === null) {
@@ -350,7 +407,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   function tearDownSession(sessionId: string): void {
-    if (sessionCloseSupported) {
+    if (sessionCloseSupported && !harnessColdSessions.has(sessionId)) {
       lease.send({
         jsonrpc: "2.0",
         id: nextOutboundId++,
@@ -358,6 +415,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         params: { sessionId },
       });
     }
+    harnessColdSessions.delete(sessionId);
+    rehydratingSessions.delete(sessionId);
+    heldPrompts.delete(sessionId);
     transcript.forget(sessionId);
     promptScheduler.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
@@ -456,7 +516,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
 
         if (mapping.method === "session/load" && mapping.attachSessionId) {
-          bootstrap.onLoadResponse(mapping.attachSessionId, frame);
+          if (mapping.rehydrate) {
+            finishHarnessRehydrate(mapping.attachSessionId);
+          } else {
+            bootstrap.onLoadResponse(mapping.attachSessionId, frame);
+          }
         }
 
         if (mapping.channel && mapping.originalId !== null) {
@@ -501,6 +565,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
+      if (rehydratingSessions.has(sessionId)) {
+        return;
+      }
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
       } else {
@@ -559,6 +626,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           bootstrap.requestPage(channel, frame.id, paramsSid, replayBefore);
         } else {
           bootstrap.requestLoad(channel, frame.id, paramsSid);
+        }
+        return;
+      }
+
+      if (
+        method === "session/prompt" &&
+        paramsSid &&
+        harnessColdSessions.has(paramsSid)
+      ) {
+        const held = heldPrompts.get(paramsSid) ?? [];
+        held.push({ channel, data });
+        heldPrompts.set(paramsSid, held);
+        if (!rehydratingSessions.has(paramsSid)) {
+          startHarnessRehydrate(paramsSid);
         }
         return;
       }

@@ -4,6 +4,7 @@ import {
   type RuntimeEnvReader,
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
+import { createExecHistoryProvider } from "./infrastructure/history-provider.js";
 import {
   createSessionMetadataStore,
   type SessionMetadataStore,
@@ -26,6 +27,7 @@ export interface ComposeAcpOptions {
   workingDir: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
+  sessionHistoryCommand?: string[];
   isTerminalSessionActive?: (sessionId: string) => boolean;
   backgroundWorkHolds?: boolean;
   log?: (msg: string) => void;
@@ -53,6 +55,13 @@ export function composeAcp(opts: ComposeAcpOptions): {
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
+    historyProvider: opts.sessionHistoryCommand
+      ? createExecHistoryProvider({
+          command: opts.sessionHistoryCommand,
+          cwd: opts.workingDir,
+          log: (msg) => opts.log?.(msg),
+        })
+      : undefined,
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     idleReapDelayMs: 3_000,

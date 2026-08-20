@@ -16,7 +16,7 @@ interface SessionLog {
 }
 
 export type CachedMetadata =
-  | { cached: true; value: unknown }
+  | { cached: true; value: unknown; synthetic: boolean }
   | { cached: false };
 
 export interface SessionTranscript {
@@ -30,7 +30,11 @@ export interface SessionTranscript {
     beforeSeq: number,
   ): void;
   advanceToTail(channel: ClientChannel, sessionId: string): void;
-  cacheMetadata(sessionId: string, result: unknown): void;
+  cacheMetadata(
+    sessionId: string,
+    result: unknown,
+    opts?: { synthetic?: boolean },
+  ): void;
   metadataOf(sessionId: string): CachedMetadata;
   forget(sessionId: string): void;
   dropChannel(channel: ClientChannel): void;
@@ -197,9 +201,13 @@ export function createSessionTranscript(
       setCursor(channel, sessionId, lastSeq);
     },
 
-    cacheMetadata(sessionId, result) {
+    cacheMetadata(sessionId, result, opts) {
       const log = getOrCreateLog(sessionId);
-      if (!log.metadata.cached) log.metadata = { cached: true, value: result };
+      const synthetic = opts?.synthetic ?? false;
+      const replaceable = !log.metadata.cached || log.metadata.synthetic;
+      if (replaceable && !(log.metadata.cached && synthetic)) {
+        log.metadata = { cached: true, value: result, synthetic };
+      }
     },
 
     metadataOf(sessionId) {

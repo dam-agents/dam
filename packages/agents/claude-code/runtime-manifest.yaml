@@ -4,6 +4,12 @@
 # never Claude's `default` alias — that resolves to a model the account can't reach.
 manifestVersion: 1
 
+# Cold session/load fills the runtime's transcript from Claude Code's on-disk
+# session store without spawning the claude subprocess; the harness itself is
+# loaded lazily on the first prompt.
+sessionHistory:
+  command: ["node", "/usr/local/lib/harness-history.mjs"]
+
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
