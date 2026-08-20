@@ -63,26 +63,29 @@ async function withConnection<T>(
   }
 }
 
+export async function listSessionsOn(
+  agentId: string,
+  conn: ClientSideConnection,
+): Promise<SessionView[]> {
+  const r = await conn.listSessions({ cwd: "." });
+  return (r.sessions ?? [])
+    .map((s) => toSessionView(agentId, s as unknown as ListedSession))
+    .sort((a, b) => {
+      const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
+        a.updatedAt ?? a.createdAt,
+      );
+      return byActivity !== 0
+        ? byActivity
+        : a.sessionId.localeCompare(b.sessionId);
+    });
+}
+
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
-  return withConnection(
-    agentId,
-    async (conn) => {
-      const r = await conn.listSessions({ cwd: "." });
-      return (r.sessions ?? [])
-        .map((s) => toSessionView(agentId, s as unknown as ListedSession))
-        .sort((a, b) => {
-          const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
-            a.updatedAt ?? a.createdAt,
-          );
-          return byActivity !== 0
-            ? byActivity
-            : a.sessionId.localeCompare(b.sessionId);
-        });
-    },
-    { passive: true },
-  );
+  return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {
+    passive: true,
+  });
 }
 
 export async function deleteAgentSession(
