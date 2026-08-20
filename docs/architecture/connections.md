@@ -1,6 +1,6 @@
 # Connections, Contributions, and the Runtime Channel
 
-Last verified: 2026-08-14
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -77,7 +77,7 @@ Beyond the auth credential, a template may declare optional **config inputs** th
 
 #### Internal-only templates
 
-Some templates (Spotify, YouTube, Google services, and the machine-to-machine auth shapes) are hidden from regular users client-side, affecting only what's offered (wherever the catalog is browsed), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
+Some templates are hidden from regular users client-side, affecting only what's offered, not Connections already created; the *advanced connections* per-user feature flag reveals the full catalog — see [features](features.md).
 
 ### Connection
 
@@ -99,7 +99,7 @@ A typed unit a Connection emits when granted to an Agent — a discriminated uni
 - **`egress-allow`** — permission to reach a host (optionally path-scoped, optionally port-scoped for endpoints not on 443).
 - **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), and carry the upstream's private CA for gateway-side TLS validation (mechanics in [security and credentials](security-and-credentials.md)).
 - **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](#built-in-contribution-impls)).
-- **`mcp-entry`** — an MCP server to expose to the harness.
+- **`mcp-entry`** — an MCP server to expose to the harness. A [Hosted Harness](hosted-harness.md) agent reaches it in-pod via the `mcpc` CLI, keeping the gateway and egress rules.
 - **`skill-ref`** — a skill source to install at a pinned version.
 
 Kinds are added by extending the union and gating on agent capabilities (see [Versioning](#versioning)). Exact per-kind fields live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).

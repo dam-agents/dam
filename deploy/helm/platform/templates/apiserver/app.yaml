@@ -159,6 +159,24 @@ spec:
                   name: clickstack-secret
                   key: CLICKHOUSE_PASSWORD
             {{- end }}
+            {{- with .Values.hostedHarness }}
+            {{- if .enabled }}
+            # Hosted Harness: the platform-owned agent loop. Setting
+            # HOSTED_LLM_BASE_URL is what turns the subsystem on. See
+            # docs/architecture/hosted-harness.md.
+            - name: HOSTED_LLM_BASE_URL
+              value: {{ .llm.baseUrl | quote }}
+            - name: HOSTED_LLM_MODEL
+              value: {{ .llm.model | quote }}
+            {{- if .llm.apiKeySecretRef }}
+            - name: HOSTED_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .llm.apiKeySecretRef.name | quote }}
+                  key: {{ .llm.apiKeySecretRef.key | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: NAMESPACE
               value: {{ .Values.agentNamespace | quote }}
             # api-server parses agent ID out of the per-agent

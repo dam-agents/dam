@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-12
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -79,6 +79,8 @@ Because a Template is captured at create time, a helm upgrade that advances a te
 
 Every caller that sends work to a pod — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server. The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this pod?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler scales up any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the pod warm. The one deliberate opt-out is a **passive** relay connection (`passive=1`): the sessions-list status poll declares itself a read — it checks the same `Ready` condition without waking anything, fails closed when the pod isn't up, and never bumps activity, so status polling can neither wake a hibernated Agent nor keep a running one warm.
 Contributions are applied out-of-band by a single background worker (a pod's `hello` is presence-only — it just signals the worker to dispatch). The worker dispatches **only to a Ready agent** — the same readiness gate the relay's `ensureReady` uses (the controller's `Ready` condition) — so an apply never targets a pod that is down or rolling; when the agent isn't Ready the outbox row stays unsettled and the periodic sweep re-dispatches once it is. Each apply runs every contribution to termination and records which drivers failed; a degraded agent (failed installs retrying in the background, capped) surfaces via its `contributionFailures` badge and never wedges. Readiness itself does **not** wait on contributions — configuration applies in the background.
+
+This page describes Pod Harness agents — the default. A [Hosted Harness](hosted-harness.md) agent shares the whole lifecycle but inverts the wake trigger: its loop runs server-side, the pod wakes lazily on a turn's first tool call, chat connections take no session pin, and schedule fires bypass the runtime channel. That page owns the differences.
 
 Three paths trigger a wake:
 
@@ -227,6 +229,4 @@ Schedules are independent Postgres rows and survive Agent deletion as orphans un
 
 ## `dam-run` — local exec shim
 
-The remote Run-executor machinery (a separate executor pod per `dam-run` invocation, backed by a `Run` CR and a WebSocket relay) was removed. Its model was a second pod writing into the calling agent's live workspace — exactly the shared-writable access that ReadWriteOnce workspace volumes no longer provide — and it had been disabled since the RWO cutover.
-
-The in-pod `dam-run` CLI remains as a compatibility shim: `dam-run <cmd>` now simply runs the command as a regular local process in the same pod, inheriting stdio, cwd, and environment. Scripts and harness prompts that call it keep working unchanged; there is no remote hop, no `Run` resource, and no relay.
+The remote Run-executor machinery was removed with the ReadWriteOnce cutover (its model needed shared-writable workspaces). The in-pod `dam-run` CLI remains as a compatibility shim that runs the command as a regular local process in the same pod — no remote hop, no `Run` resource, no relay.

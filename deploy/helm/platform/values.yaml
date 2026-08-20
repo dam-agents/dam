@@ -1216,6 +1216,21 @@ controller:
 #     # ...
 #     imagePullSecretRef: "icr-pull-secret"
 #
+# Hosted Harness — the platform-owned agent loop running inside the
+# api-server (docs/architecture/hosted-harness.md). Disabled by default;
+# enabling requires an OpenAI-compatible LLM endpoint (e.g. LiteLLM).
+# Per-agent credentials still come from granted connections injecting into
+# the endpoint's host; apiKeySecretRef is the install-wide fallback key.
+hostedHarness:
+  enabled: false
+  llm:
+    baseUrl: ""
+    model: "claude-opus-5"
+    apiKeySecretRef: null
+    # apiKeySecretRef:
+    #   name: my-litellm-key
+    #   key: apiKey
+
 agentTemplates:
   claude-code:
     enabled: true
@@ -1244,6 +1259,22 @@ agentTemplates:
       type: vm
     image:
       repository: quay.io/dam-agents/claude-code-vm
+      tag: ""
+    storageSize: "5Gi"
+
+  # Hosted Harness sandbox: the agentic loop runs in the api-server; the pod
+  # is a plain executor. Requires `hostedHarness.enabled` (the api-server
+  # refuses hosted sessions otherwise). Reuses the claude-code image for its
+  # toolchain — the in-image harness scripts are simply unused.
+  hosted:
+    enabled: true
+    displayName: "Platform Agent"
+    description: "Platform-hosted coding agent — the loop runs on the server, the sandbox executes"
+    experimental: true
+    harness: hosted
+    tags: ["Hosted"]
+    image:
+      repository: quay.io/dam-agents/claude-code
       tag: ""
     storageSize: "5Gi"
 

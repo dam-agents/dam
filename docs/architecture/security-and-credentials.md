@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-14
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -170,34 +170,20 @@ escalate.
 
 ## Keycloak event logging
 
-Keycloak is also an audit event source. It emits login and admin events
-to pod stdout via its built-in `jboss-logging` event listener, so they
-ride the same cluster log pipeline as every other pod log out to the
-external log service. The listener's level is set through Keycloak's
-per-listener SPI knobs rather than a broad `org.keycloak` log-category
-override: successes surface at `info`, errors at `warn`. Production pods
-emit structured JSON; local dev overrides the console format to plain
-text for a readable `cluster:logs`.
+Keycloak is also an audit event source: its built-in event listener emits
+login and admin events to pod stdout (successes at info, errors at warn),
+so they ride the same cluster log pipeline as every other pod log out to
+the external log service — which is the source of truth for the
+authentication audit trail.
 
-Persistence is split by event class:
-
-- **Login events** (LOGIN, LOGOUT, LOGIN_ERROR, token refresh, account
-  changes, …) are *not* written to the Keycloak database. The listener
-  fires independently of DB-store gating, so the events still reach
-  stdout; the external log service is the source of truth for the
-  authentication audit trail, and Postgres is spared the high-volume
-  write.
-- **Admin events** (any change made through the admin REST API or
-  console) fire on the same listener, so their metadata — who acted, on
-  which resource, from where — reaches stdout and the external log
-  service alongside login events. That metadata is also recorded to
-  Postgres (low volume), but the full request body is *not*
-  (`adminEventsDetailsEnabled` is off): stored bodies would otherwise
-  capture sensitive payloads — plaintext credentials on user-create /
-  user-update flows — and Keycloak retains admin events indefinitely with
-  no built-in expiration. The log line never carries the request body, so
-  the external log pipeline, not the Keycloak database, is the audit
-  source of truth.
+Persistence is split by event class: **login events** (logins, logouts,
+failures, token refreshes, account changes) are deliberately not written
+to the Keycloak database — the listener fires regardless, and Postgres is
+spared the high-volume write. **Admin events** (changes via the admin API
+or console) additionally record their metadata — who acted, on which
+resource, from where — to Postgres, but never the request body: stored
+bodies would capture sensitive payloads (plaintext credentials on
+user-create/update) and Keycloak retains admin events indefinitely.
 
 The event knobs, log format, and realm import live in the Keycloak Helm
 values under [`deploy/helm/platform/`](../../deploy/helm/platform/).
@@ -217,6 +203,8 @@ owner leakage is structurally prevented by the label selector — a missing
 `agent-platform.ai/owner` label is treated as no owner and never mounted.
 
 ## Credential storage
+
+One exception to gateway-only injection: for a [Hosted Harness](hosted-harness.md) agent the api-server itself reads the LLM credential during a turn — the loop's LLM calls originate server-side. That page carries the trust trade-off; agent-driven egress is unaffected.
 
 Each connected service produces one K8s Secret per `(owner, connection)`:
 

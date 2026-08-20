@@ -72,6 +72,9 @@ data:
     backend:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+    {{- with $tmpl.harness }}
+    harness: {{ . | quote }}
+    {{- end }}
     {{- with $tmpl.runtimeClassName }}
     runtimeClassName: {{ . | quote }}
     {{- end }}

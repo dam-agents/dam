@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-08-11
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -60,3 +60,4 @@ Attribution is trustworthy; the numbers are self-reported. The two guarantees ar
 - **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry. An agent runs untrusted code and can misreport its own numbers — inflate a token count, understate a cost. The read path does not attempt to independently verify them; it reports what was exported.
 - **Attribution is gateway-stamped and unforgeable.** The owner attribution attribute every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any owner attribution that did not arrive through that gateway. So an agent can only ever pollute *its own* spend — never make its telemetry appear under another user, and never read another user's. The guarantee is **attribution, not content integrity**: whose spend is bounded exactly; how much is self-declared.
 - **Display identity is not attribution.** The agent's user-facing name travels in a separate, agent-exported attribute that exists only for finding an instance in the exploration UI. It is display-only and never used for scoping or ownership — the gateway-stamped id is the sole authority for whose data this is.
+- **Hosted Harness rows are first-party.** A [Hosted Harness](hosted-harness.md) agent's LLM calls run in the api-server, which writes their token records into the store directly — platform-stamped attribution *and* platform-measured counters, the one case where the numbers are not self-reported. Per-call cost is currently recorded as zero (token counters are exact; pricing is pending).
