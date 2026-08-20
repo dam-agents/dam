@@ -94,6 +94,15 @@ Present it as a short list of decisions, not prose, and let them change any
 line. Silence is not approval: if they have not answered, ask again rather
 than picking a default and proceeding.
 
+## No target? The bundled starter
+
+A user who wants to see how experiments work but has nothing to optimize gets
+**tiny-cache** — a deliberately slow cache with a behavioral suite and a
+deterministic benchmark, cloned on demand (nothing is pre-seeded). Follow
+[references/tiny-cache-starter.md](references/tiny-cache-starter.md) for the
+clone command, the baseline ritual, and the design at both tiers
+(`claude-code` loop, `nous` campaign).
+
 ## Authoring a script
 
 Declare first, then loop. The declaration is the design a human reviews:

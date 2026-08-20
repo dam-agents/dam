@@ -48,11 +48,13 @@ a round of correction and teaches them a menu that does not exist.
    you an answer to. `claude-code` is the default precisely so the first
    question can be about their goal and not about credentials.
 
-4. **Offer a starter only if they have no target of their own.** Something small
-   and self-scoring works best — a tiny key/value cache with tests and a
-   benchmark, where each round rewrites it, latency across fixed seeds is the
-   score, and broken tests score nothing. Offer it as something you will write
-   for them, because that is what it is: there is no built-in example to load.
+4. **Offer the bundled starter only if they have no target of their own:**
+   tiny-cache, a deliberately slow key/value cache with tests and a benchmark,
+   where each round rewrites it, latency across fixed seeds is the score, and
+   broken tests score nothing. The `dam-experiment` skill's
+   [tiny-cache starter reference](../dam-experiment/references/tiny-cache-starter.md)
+   has the clone command and the design at both tiers — follow it rather than
+   improvising a starter of your own.
 
 5. **Do not write the script yet.** Wait for their answer. Once they have
    described a goal, follow the `dam-experiment` skill: agree the image and the
