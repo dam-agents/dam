@@ -44,9 +44,11 @@ export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export {
   deleteChannelsByAgent,
   listChannelsByOwner,
-  findBySlackChannelId,
+  findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
   deleteSlackChannelByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelDefault,
+  type SlackBindingRow,
 } from "./infrastructure/channel-bindings-repository.js";

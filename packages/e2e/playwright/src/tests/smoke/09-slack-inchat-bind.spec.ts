@@ -31,13 +31,14 @@ test("in-chat bind/unbind slash-command behavior", async () => {
     expect(ack).toContain("Connect an agent");
   });
 
-  await test.step("/bind on the bound channel is refused (no override)", async () => {
+  await test.step("/bind on the connected channel offers to add another agent", async () => {
     const { ack } = await api.e2e.slackFireCommand.mutate({
       text: "bind",
       userId: strangerSlackUserId,
       channelId: inchatChannelId,
     });
-    expect(ack).toContain("already connected");
+    expect(ack).toContain("Connect an agent");
+    expect(ack).toContain("Already connected here");
   });
 
   await test.step("an unlinked user cannot /unbind, and the binding survives", async () => {
@@ -53,7 +54,7 @@ test("in-chat bind/unbind slash-command behavior", async () => {
       userId: strangerSlackUserId,
       channelId: inchatChannelId,
     });
-    expect(rebind.ack).toContain("already connected");
+    expect(rebind.ack).toContain("Already connected here");
   });
 
   await test.step("owner disconnects via the platform (leaves no residue)", async () => {

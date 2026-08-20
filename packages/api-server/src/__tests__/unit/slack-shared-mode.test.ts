@@ -56,9 +56,22 @@ function harness(opts: {
     { authUrl: "http://kc", clientId: "c" } as never,
     createMemoryTtlStore(600_000),
     async () => OWNER,
-    { resolveSlackBinding: async () => opts.binding } as never,
+    {
+      resolveSlackBindings: async () =>
+        opts.binding
+          ? [
+              {
+                instanceName: opts.binding.instanceName,
+                owner: opts.binding.owner,
+                ambient: false,
+                isDefault: true,
+              },
+            ]
+          : [],
+    } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",

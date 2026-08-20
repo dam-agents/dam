@@ -54,11 +54,24 @@ function harness(opts: {
     },
     pending,
     async () => opts.agentOwner ?? OWNER,
-    { resolveSlackBinding: async () => opts.binding } as never,
-    async (ch) => {
+    {
+      resolveSlackBindings: async () =>
+        opts.binding
+          ? [
+              {
+                instanceName: opts.binding.instanceName,
+                owner: opts.binding.owner,
+                ambient: false,
+                isDefault: true,
+              },
+            ]
+          : [],
+    } as never,
+    async (_agentId: string, ch: string) => {
       unbindCalls.push(ch);
     },
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
@@ -99,11 +112,17 @@ describe("slack /bind command", () => {
     });
   });
 
-  it("on an already-bound channel refuses and creates no pending flow", async () => {
+  /**
+   * TEST_SCENARIO: a channel already serving an agent still offers a connect
+   * link — a second agent joins it rather than replacing the first.
+   */
+  it("on an already-connected channel still acks a link, naming who is there", async () => {
     const h = harness({ binding: bound });
     const ack = await h.command("bind");
-    expect(ack).toContain("already connected");
-    expect(h.pendingMap.size).toBe(0);
+    expect(ack).toContain("Connect an agent");
+    expect(ack).toContain("Already connected here");
+    expect(ack).toContain("joins them rather than replacing them");
+    expect(h.pendingMap.size).toBe(1);
   });
 });
 

@@ -92,14 +92,18 @@ function harness() {
     pending,
     async () => OWNER,
     {
-      resolveSlackBinding: async () => ({
-        instanceName: "agent-1",
-        owner: OWNER,
-        mode: "shared" as const,
-      }),
+      resolveSlackBindings: async () => [
+        {
+          instanceName: "agent-1",
+          owner: OWNER,
+          ambient: false,
+          isDefault: true,
+        },
+      ],
     } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

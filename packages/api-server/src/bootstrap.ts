@@ -14,10 +14,11 @@ import {
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
-  findBySlackChannelId,
+  findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelDefault,
   createAgentSweep,
 } from "./modules/agents/index.js";
 import {
@@ -495,14 +496,14 @@ export async function bootstrap() {
     : undefined;
 
   const channelRegistry: ChannelRegistry = {
-    resolveSlackBinding: async (slackChannelId) => {
-      const row = await findBySlackChannelId(db)(slackChannelId);
-      if (!row) return null;
-      return {
+    resolveSlackBindings: async (slackChannelId) => {
+      const rows = await findSlackBindingsByChannelId(db)(slackChannelId);
+      return rows.map((row) => ({
         instanceName: row.agentId,
         owner: row.owner,
-        ...(row.ambient ? { ambient: true } : {}),
-      };
+        ambient: row.ambient,
+        isDefault: row.isDefault,
+      }));
     },
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
@@ -549,6 +550,7 @@ export async function bootstrap() {
         channelRegistry,
         deleteSlackChannelBinding(db),
         setSlackChannelAmbient(db),
+        setSlackChannelDefault(db),
         { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         config.uiBaseUrl,

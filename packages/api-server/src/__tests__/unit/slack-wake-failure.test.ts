@@ -45,13 +45,18 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: async () => ({
-        instanceName: "agent-1",
-        owner: OWNER,
-      }),
+      resolveSlackBindings: async () => [
+        {
+          instanceName: "agent-1",
+          owner: OWNER,
+          ambient: false,
+          isDefault: true,
+        },
+      ],
     } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

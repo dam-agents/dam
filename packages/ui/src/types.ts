@@ -132,6 +132,7 @@ export interface AgentView {
         type: "slack";
         slackChannelId: string;
         ambient?: boolean;
+        default?: boolean;
       }
     | { type: "telegram" }
   )[];

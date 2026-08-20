@@ -450,6 +450,50 @@ export function createMcpSession(
   );
 
   server.tool(
+    "hand_off_to_agent",
+    "Hand the Slack message you are answering to another agent connected to the same conversation, when it is better placed to answer than you are. Name the agent as it appears in the conversation. It picks the message up as its own turn and replies in the thread itself, so you post nothing and your turn ends here — do not also reply. Only works while you are answering a Slack message, and only for an agent connected to that same conversation. A message handed to you cannot be handed on again.",
+    {
+      agent: z
+        .string()
+        .describe(
+          "Name of the agent to hand this to, as it appears in this conversation.",
+        ),
+      note: z
+        .string()
+        .optional()
+        .describe(
+          "Short note to the receiving agent on why you are handing it over. Shown to that agent, not posted in the channel.",
+        ),
+    },
+    async ({ agent, note }) => {
+      const result = await deps.channelManager.handOffTurn(
+        agentId,
+        ChannelType.Slack,
+        agent,
+        note,
+      );
+      const failed = "error" in result;
+      securityLog(failed ? "warn" : "info", "channel.outbound", {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: ChannelType.Slack,
+        agentId,
+        result: failed ? "failure" : "success",
+        detail: {
+          action: "hand_off_to_agent",
+          requested: agent,
+          ...(failed ? {} : { handedTo: result.agent }),
+        },
+      });
+      if ("error" in result) return errorResult(result.error);
+      return textResult(
+        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
+      );
+    },
+  );
+
+  server.tool(
     "no_reply_needed",
     "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
     {

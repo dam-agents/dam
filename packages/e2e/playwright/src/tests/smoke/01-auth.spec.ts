@@ -107,7 +107,7 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
     name: /I accept the Terms of Use/,
   });
   const picker = page.getByRole("heading", {
-    name: /connect this channel to an agent/i,
+    name: /connect an agent to this channel/i,
   });
 
   await expect(termsButton.or(picker)).toBeVisible();

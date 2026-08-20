@@ -64,9 +64,22 @@ function harness(opts: { binding: Binding }) {
     } as never,
     pending,
     async () => OWNER,
-    { resolveSlackBinding: async () => opts.binding } as never,
+    {
+      resolveSlackBindings: async () =>
+        opts.binding
+          ? [
+              {
+                instanceName: opts.binding.instanceName,
+                owner: opts.binding.owner,
+                ambient: false,
+                isDefault: true,
+              },
+            ]
+          : [],
+    } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",

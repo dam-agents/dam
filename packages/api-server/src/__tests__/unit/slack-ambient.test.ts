@@ -43,7 +43,22 @@ function harness(opts: {
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
   const sendOpts: SendPromptOpts[] = [];
-  const ambientCalls: Array<{ channelId: string; ambient: boolean }> = [];
+  const ambientCalls: Array<{
+    agentId: string;
+    channelId: string;
+    ambient: boolean;
+  }> = [];
+  const toRoster = (b: Binding) =>
+    b
+      ? [
+          {
+            instanceName: b.instanceName,
+            owner: b.owner,
+            ambient: b.ambient === true,
+            isDefault: true,
+          },
+        ]
+      : [];
   const acp: AcpClient = {
     listSessions: async () => [],
     sendPrompt: async (prompt, o) => {
@@ -66,13 +81,17 @@ function harness(opts: {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: opts.resolveBinding ?? (async () => opts.binding),
+      resolveSlackBindings: async () =>
+        toRoster(
+          opts.resolveBinding ? await opts.resolveBinding() : opts.binding,
+        ),
       resolveSlackChannelsByInstance: async () => ["C1"],
     } as never,
     async () => {},
-    async (channelId, ambient) => {
-      ambientCalls.push({ channelId, ambient });
+    async (agentId: string, channelId: string, ambient: boolean) => {
+      ambientCalls.push({ agentId, channelId, ambient });
     },
+    async () => true,
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
@@ -673,8 +692,10 @@ describe("slack ambient command", () => {
 
     expect(ack).toContain("turned on");
     expect(ack).toContain("reads along");
-    expect(ack).toContain("/dam ambient off");
-    expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: true }]);
+    expect(ack).toContain("/dam ambient agent-1 off");
+    expect(h.ambientCalls).toEqual([
+      { agentId: "agent-1", channelId: "C1", ambient: true },
+    ]);
     expect(h.messages()).toHaveLength(0);
 
     const toggles = h
@@ -690,7 +711,9 @@ describe("slack ambient command", () => {
 
     expect(ack).toContain("turned off");
     expect(ack).toContain("only responds when mentioned");
-    expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: false }]);
+    expect(h.ambientCalls).toEqual([
+      { agentId: "agent-1", channelId: "C1", ambient: false },
+    ]);
     expect(h.messages()).toHaveLength(0);
   });
 
