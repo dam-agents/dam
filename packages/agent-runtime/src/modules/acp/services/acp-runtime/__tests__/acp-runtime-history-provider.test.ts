@@ -193,6 +193,43 @@ describe("acp-runtime: session-history provider", () => {
   });
 
   /**
+   * TEST_SCENARIO: The harness refuses the rehydrate load. The held prompt
+   * must fail with the harness's error instead of being forwarded to a
+   * harness that never loaded the session — and the session must stay cold,
+   * so a later prompt retries the rehydrate and can succeed.
+   */
+  it("should fail held prompts on a rehydrate error and retry on the next prompt", async () => {
+    const world = createWorld({
+      historyProvider: providerOf(["m1"].map(updateLine)),
+    });
+
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+    await settle();
+
+    bob.send(frames.prompt(2, SESSION, "first try"));
+    const loadId = world.harness().received("session/load")[0]!.id;
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: loadId,
+      error: { code: -32000, message: "store unreadable" },
+    });
+
+    expect(world.harness().received("session/prompt")).toEqual([]);
+    expect(bob.reply(2)).toMatchObject({
+      error: { code: -32000, message: "store unreadable" },
+    });
+
+    bob.send(frames.prompt(3, SESSION, "second try"));
+    expect(world.harness().received("session/load")).toHaveLength(2);
+    const retryId = world.harness().received("session/load")[1]!.id;
+    world
+      .harness()
+      .emit({ jsonrpc: "2.0", id: retryId, result: { sessionId: SESSION } });
+    expect(world.harness().received("session/prompt")).toHaveLength(1);
+  });
+
+  /**
    * TEST_SCENARIO: Idle reaping frees the harness's per-session subprocess —
    * but a provider-served session has none. Reaping it must not send
    * session/close for a session the harness never loaded.

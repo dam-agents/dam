@@ -186,14 +186,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
-  function finishHarnessRehydrate(sessionId: string): void {
+  function finishHarnessRehydrate(sessionId: string, frame: unknown): void {
     rehydratingSessions.delete(sessionId);
-    harnessColdSessions.delete(sessionId);
     const held = heldPrompts.get(sessionId) ?? [];
     heldPrompts.delete(sessionId);
+    const error = (frame as { error?: unknown }).error;
+    if (error === undefined) {
+      harnessColdSessions.delete(sessionId);
+      for (const prompt of held) {
+        if (prompt.channel.isOpen())
+          handleClientMessage(prompt.channel, prompt.data);
+      }
+      return;
+    }
     for (const prompt of held) {
-      if (prompt.channel.isOpen())
-        handleClientMessage(prompt.channel, prompt.data);
+      if (!prompt.channel.isOpen()) continue;
+      const parsed = parseFrame(prompt.data);
+      if (!parsed || !isRequest(parsed)) continue;
+      prompt.channel.send(
+        rewriteAuthError(
+          JSON.stringify({ jsonrpc: "2.0", id: parsed.id, error }),
+        ),
+      );
     }
   }
 
@@ -517,7 +531,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.method === "session/load" && mapping.attachSessionId) {
           if (mapping.rehydrate) {
-            finishHarnessRehydrate(mapping.attachSessionId);
+            finishHarnessRehydrate(mapping.attachSessionId, frame);
           } else {
             bootstrap.onLoadResponse(mapping.attachSessionId, frame);
           }
