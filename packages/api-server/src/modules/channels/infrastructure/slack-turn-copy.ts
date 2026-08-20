@@ -52,8 +52,12 @@ export function botHistoryLabel(brand: { name: string }): string {
   return `the ${brand.name} bot (unattributed)`;
 }
 
+function frameName(name: string): string {
+  return `"${escapeFrameText(name)}"`;
+}
+
 function joinNames(names: string[]): string {
-  const quoted = names.map((name) => `"${name}"`);
+  const quoted = names.map(frameName);
   if (quoted.length <= 1) return quoted[0] ?? "";
   return `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
 }
