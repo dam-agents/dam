@@ -33,6 +33,7 @@ type AgentReconciler struct {
 	budgetMu    sync.Mutex
 	ownerLocks  map[string]*sync.Mutex
 	deniedWakes map[string]string
+	parkedRetry map[string]struct{}
 	busyProbe   func(ctx context.Context, agentName string) bool
 }
 
@@ -170,6 +171,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
 			}
 		}
+	}
+
+	if parked && autoRetry {
+		r.recordParkedRetry(name)
+	} else {
+		r.clearParkedRetry(name)
 	}
 
 	rollRev := agent.Annotations[annRollRev]
@@ -386,6 +393,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	r.deletePVCs(ctx, name)
 
 	r.clearDeniedWake(name)
+	r.clearParkedRetry(name)
 }
 
 func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) {
