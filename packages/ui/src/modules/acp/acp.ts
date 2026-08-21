@@ -8,16 +8,11 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import type { Stream } from "@agentclientprotocol/sdk/dist/stream.js";
-import {
-  platformPromptAcceptedParamsSchema,
-  platformPromptStartedParamsSchema,
-  platformTurnEndedParamsSchema,
-} from "api-server-api";
-import type { z } from "zod";
 
 import { getAccessToken } from "../../auth.js";
 import { type PermissionOutcome, useStore } from "../../store.js";
 import { withCloseRace } from "./close-race.js";
+import { replayForOf, routeExtNotification } from "./ext-notifications.js";
 import type { UpdateHandler } from "./types.js";
 
 const WS_CONNECT_TIMEOUT_MS = 120_000;
@@ -118,19 +113,6 @@ export async function openInitializedConnection(
   return { connection, ws };
 }
 
-function parseExtParams<T>(
-  method: string,
-  schema: z.ZodType<T>,
-  params: Record<string, unknown>,
-): T | null {
-  const parsed = schema.safeParse(params);
-  if (!parsed.success) {
-    console.warn(`[acp] ${method} schema mismatch:`, parsed.error.issues);
-    return null;
-  }
-  return parsed.data;
-}
-
 export async function openConnection(
   agentId: string,
   onUpdate: UpdateHandler,
@@ -145,7 +127,7 @@ export async function openConnection(
         return awaitPermission(params);
       },
       async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update, params.sessionId);
+        onUpdate(params.update, params.sessionId, replayForOf(params._meta));
       },
       async writeTextFile() {
         return {};
@@ -154,47 +136,8 @@ export async function openConnection(
         return { content: "" };
       },
       async extNotification(method: string, params: Record<string, unknown>) {
-        switch (method) {
-          case "platform/turnEnded": {
-            const p = parseExtParams(
-              method,
-              platformTurnEndedParamsSchema,
-              params,
-            );
-            if (p)
-              onUpdate(
-                { sessionUpdate: "platform_turn_ended", ...p },
-                p.sessionId,
-              );
-            return;
-          }
-          case "platform/promptAccepted": {
-            const p = parseExtParams(
-              method,
-              platformPromptAcceptedParamsSchema,
-              params,
-            );
-            if (p)
-              onUpdate(
-                { sessionUpdate: "platform_prompt_accepted", ...p },
-                p.sessionId,
-              );
-            return;
-          }
-          case "platform/promptStarted": {
-            const p = parseExtParams(
-              method,
-              platformPromptStartedParamsSchema,
-              params,
-            );
-            if (p)
-              onUpdate(
-                { sessionUpdate: "platform_prompt_started", ...p },
-                p.sessionId,
-              );
-            return;
-          }
-        }
+        const routed = routeExtNotification(method, params);
+        if (routed) onUpdate(routed.update, routed.sessionId, routed.replayFor);
       },
     }),
     stream,

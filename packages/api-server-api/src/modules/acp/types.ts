@@ -30,6 +30,13 @@ export function buildPlatformTurnEndedNotification(
   });
 }
 
+export const platformClippedReplayMetaSchema = z.object({
+  older: z.string().min(1).optional(),
+});
+export type PlatformClippedReplayMeta = z.infer<
+  typeof platformClippedReplayMetaSchema
+>;
+
 export const platformPromptAcceptedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),

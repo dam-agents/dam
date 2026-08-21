@@ -5,6 +5,11 @@ import {
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import {
+  createExecHistoryProvider,
+  createWorkerHistoryProvider,
+  type HistoryProvider,
+} from "./infrastructure/history-provider.js";
+import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
@@ -26,9 +31,36 @@ export interface ComposeAcpOptions {
   workingDir: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
+  sessionHistory?: {
+    module?: string;
+    exportName?: string;
+    command?: string[];
+  };
   isTerminalSessionActive?: (sessionId: string) => boolean;
   backgroundWorkHolds?: boolean;
   log?: (msg: string) => void;
+}
+
+function historyProviderOf(
+  opts: ComposeAcpOptions,
+): HistoryProvider | undefined {
+  const declared = opts.sessionHistory;
+  const log = (msg: string): void => opts.log?.(msg);
+  if (declared?.module !== undefined) {
+    return createWorkerHistoryProvider({
+      modulePath: declared.module,
+      exportName: declared.exportName,
+      log,
+    });
+  }
+  if (declared?.command !== undefined) {
+    return createExecHistoryProvider({
+      command: declared.command,
+      cwd: opts.workingDir,
+      log,
+    });
+  }
+  return undefined;
 }
 
 export function composeAcp(opts: ComposeAcpOptions): {
@@ -53,6 +85,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
+    historyProvider: historyProviderOf(opts),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     idleReapDelayMs: 3_000,

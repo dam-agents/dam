@@ -1,12 +1,17 @@
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 
-export type HarnessTeardownReason = "agent-exited" | "env-recycle" | "shutdown";
+export type HarnessTeardownReason =
+  | "agent-exited"
+  | "env-recycle"
+  | "harness-unresponsive"
+  | "shutdown";
 
 export interface HarnessLease {
   ensure(): boolean;
   send(frame: unknown): boolean;
   whenReady(cb: () => void): () => void;
   refreshEnv(opts: { force: boolean }): void;
+  requestRecycle(): void;
   maybeRecycle(): void;
   shutdown(): void;
 }
@@ -27,11 +32,12 @@ export interface HarnessLeaseDeps {
  * UNIT_BOUNDARY_DESCRIPTION: Holds the harness child process on loan. Spawns
  * it when the first client needs it, holds early callers back until the env
  * is ready at boot (bounded by a timeout), and takes the process back when
- * the env changes: right away when idle, after work drains when busy, or
- * after a grace period when forced. Every way the process goes down runs the
- * same cleanup and reports one reason — agent-exited, env-recycle, or
- * shutdown — so the cleanup steps cannot drift apart between the paths.
- * A crash is final for the pod; only an env recycle respawns.
+ * the env changes or when a caller reports the process unresponsive: right
+ * away when idle, after work drains when busy, or after a grace period when
+ * forced. Every way the process goes down runs the same cleanup and reports
+ * one reason — agent-exited, env-recycle, harness-unresponsive, or shutdown —
+ * so the cleanup steps cannot drift apart between the paths. A crash is final
+ * for the pod; a recycle respawns on the next attach.
  */
 export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let agent: AgentProcess | null = null;
@@ -39,8 +45,8 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let envReady = deps.envReadyAtBoot;
   const readyWaiters = new Set<() => void>();
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
-  let envRefreshPending = false;
-  let envForceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingRecycle: "env-recycle" | "harness-unresponsive" | null = null;
+  let forceTimer: ReturnType<typeof setTimeout> | null = null;
 
   function markEnvReady(): void {
     if (envReady) return;
@@ -55,11 +61,11 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
   if (!envReady) warmTimer = setTimeout(markEnvReady, deps.warmStartTimeoutMs);
 
-  function resetEnvRefresh(): void {
-    envRefreshPending = false;
-    if (envForceTimer) {
-      clearTimeout(envForceTimer);
-      envForceTimer = null;
+  function resetPendingRecycle(): void {
+    pendingRecycle = null;
+    if (forceTimer) {
+      clearTimeout(forceTimer);
+      forceTimer = null;
     }
   }
 
@@ -72,18 +78,23 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   }
 
   function teardown(reason: HarnessTeardownReason): void {
-    resetEnvRefresh();
+    resetPendingRecycle();
     clearWarmGate();
     deps.onTeardown(reason);
   }
 
   function recycle(): void {
-    resetEnvRefresh();
+    const reason = pendingRecycle ?? "env-recycle";
+    resetPendingRecycle();
     const old = agent;
     if (!old) return;
-    deps.log("recycling harness to apply env change");
+    deps.log(
+      reason === "env-recycle"
+        ? "recycling harness to apply env change"
+        : "recycling unresponsive harness",
+    );
     agent = null;
-    teardown("env-recycle");
+    teardown(reason);
     old.kill();
   }
 
@@ -124,7 +135,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         return;
       }
       if (!agent) return;
-      envRefreshPending = true;
+      pendingRecycle ??= "env-recycle";
       if (!deps.busy()) {
         recycle();
         return;
@@ -133,12 +144,26 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         `env recycle deferred: ${deps.describeBusy()}` +
           (opts.force ? ` — forcing in ${deps.envForceRecycleMs}ms` : ""),
       );
-      if (opts.force && !envForceTimer)
-        envForceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+      if (opts.force && !forceTimer)
+        forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+    },
+
+    requestRecycle() {
+      if (!agent) return;
+      pendingRecycle = "harness-unresponsive";
+      if (!deps.busy()) {
+        recycle();
+        return;
+      }
+      deps.log(
+        `harness recycle deferred: ${deps.describeBusy()} — forcing in ` +
+          `${deps.envForceRecycleMs}ms`,
+      );
+      if (!forceTimer) forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
     },
 
     maybeRecycle() {
-      if (envRefreshPending && !deps.busy()) recycle();
+      if (pendingRecycle !== null && !deps.busy()) recycle();
     },
 
     shutdown() {
