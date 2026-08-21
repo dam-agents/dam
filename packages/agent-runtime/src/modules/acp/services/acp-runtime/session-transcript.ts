@@ -56,6 +56,7 @@ export interface SessionTranscript {
     opts?: { synthetic?: boolean },
   ): void;
   metadataOf(sessionId: string): CachedMetadata;
+  bytesOf(sessionId: string): number;
   forget(sessionId: string): void;
   dropChannel(channel: ClientChannel): void;
   clear(): void;
@@ -287,6 +288,10 @@ export function createSessionTranscript(
 
     metadataOf(sessionId) {
       return sessionLogs.get(sessionId)?.metadata ?? { cached: false };
+    },
+
+    bytesOf(sessionId) {
+      return sessionLogs.get(sessionId)?.totalBytes ?? 0;
     },
 
     forget(sessionId) {
