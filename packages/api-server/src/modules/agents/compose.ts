@@ -1,4 +1,5 @@
 import type * as k8s from "@kubernetes/client-node";
+import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
@@ -21,6 +22,7 @@ import {
   type SlackBindingPort,
 } from "./services/agents-service.js";
 import {
+  hasAnyBinding,
   listChannelsByOwner,
   listChannelsByAgent,
   upsertChannel,
@@ -32,6 +34,23 @@ import {
   upsertChannelTx,
   listChannelsByAgentTx,
 } from "./infrastructure/channel-bindings-repository.js";
+import {
+  getProfile,
+  upsertProfile,
+  markProfileDeleted,
+  listProfileIdsForReconcile,
+} from "./infrastructure/public-agent-profile-repository.js";
+import {
+  createPublicAgentPageService,
+  type PublicAgentIdentity,
+  type PublicAgentPageService,
+} from "./services/public-agent-page-service.js";
+import {
+  reconcilePublicAgentProfiles,
+  type PublicAgentProfileReconcileResult,
+} from "./services/public-agent-profile-reconcile.js";
+import { startPersistPublicAgentProfileSaga } from "./sagas/persist-public-agent-profile.js";
+import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -114,5 +133,52 @@ export function composeAgentsModule(deps: {
     repo,
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
+  };
+}
+
+export function composePublicAgentPage(deps: {
+  db: Db;
+  repo: AgentsRepository;
+  userDirectory: KeycloakUserDirectory;
+  log: (message: string) => void;
+}): {
+  service: PublicAgentPageService;
+  startSaga: () => Subscription;
+  reconcile: () => Promise<PublicAgentProfileReconcileResult>;
+} {
+  const readAgent = async (
+    agentId: string,
+  ): Promise<PublicAgentIdentity | null> => {
+    const agent = await deps.repo.get(agentId);
+    if (!agent?.owner) return null;
+    return { name: agent.name, ownerSub: agent.owner };
+  };
+  const upsert = upsertProfile(deps.db);
+  const markDeleted = markProfileDeleted(deps.db);
+
+  return {
+    service: createPublicAgentPageService({
+      hasAnyBinding: hasAnyBinding(deps.db),
+      getProfile: getProfile(deps.db),
+      upsertProfile: upsert,
+      markProfileDeleted: markDeleted,
+      readAgent,
+      resolveOwnerEmail: (ownerSub) =>
+        deps.userDirectory.resolveBySub(ownerSub),
+    }),
+    startSaga: () =>
+      startPersistPublicAgentProfileSaga({
+        readAgent,
+        upsertProfile: upsert,
+        markProfileDeleted: markDeleted,
+      }),
+    reconcile: () =>
+      reconcilePublicAgentProfiles({
+        listProfileIds: listProfileIdsForReconcile(deps.db),
+        readAgent,
+        upsertProfile: upsert,
+        markProfileDeleted: markDeleted,
+        log: deps.log,
+      }),
   };
 }

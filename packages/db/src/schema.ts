@@ -270,6 +270,16 @@ export const agentEnv = pgTable(
   ],
 );
 
+export const agentPublicProfiles = pgTable("agent_public_profiles", {
+  agentId: text("agent_id").primaryKey(),
+  name: text("name").notNull(),
+  ownerSub: text("owner_sub").notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const termsAcceptances = pgTable(
   "terms_acceptances",
   {

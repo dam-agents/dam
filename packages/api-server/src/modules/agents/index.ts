@@ -1,4 +1,4 @@
-export { composeAgentsModule } from "./compose.js";
+export { composeAgentsModule, composePublicAgentPage } from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,
@@ -41,6 +41,10 @@ export {
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export {
+  type PublicAgentPageService,
+  type PublicAgentView,
+} from "./services/public-agent-page-service.js";
 export {
   deleteChannelsByAgent,
   listChannelsByOwner,

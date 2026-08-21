@@ -27,16 +27,12 @@ const SUBSCRIBE_FN = "ofType";
 
 const KNOWN_UNCONSUMED = [
   [
-    "AgentUpdated",
-    "Emitted on agent edit. The live-update switch must name it to stay exhaustive, but its arm returns null and nothing else subscribes.",
-  ],
-  [
     "AgentRestarted",
-    "Emitted on restart. Same as AgentUpdated — named for exhaustiveness, acted on nowhere.",
+    "Emitted on restart. The live-update switch must name it to stay exhaustive, but its arm returns null and nothing else subscribes.",
   ],
   [
     "AgentWoken",
-    "Emitted on wake. Same as AgentUpdated — named for exhaustiveness, acted on nowhere.",
+    "Emitted on wake. Same as AgentRestarted — named for exhaustiveness, acted on nowhere.",
   ],
 ];
 
