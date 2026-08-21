@@ -25,6 +25,7 @@ import {
   createHarnessLease,
   type HarnessTeardownReason,
 } from "./harness-lease.js";
+import { createPendingAgentRequests } from "./pending-agent-requests.js";
 import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
@@ -77,11 +78,6 @@ interface OutboundMapping {
   platformMeta: PlatformSessionMeta | null;
 }
 
-interface PendingAgentRequest {
-  sessionId: string | null;
-  frame: string;
-}
-
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const orphanTtlMs = deps.orphanTtlMs ?? DEFAULT_ORPHAN_TTL_MS;
   const logBytesCap = deps.logBytesCap ?? DEFAULT_LOG_BYTES_CAP;
@@ -95,8 +91,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let sessionCloseSupported = true;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
-  const pendingFromAgent = new Map<JsonRpcId, PendingAgentRequest>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
+
+  function engagedChannelsFor(sessionId: string): ClientChannel[] {
+    const channels: ClientChannel[] = [];
+    for (const [channel, sessions] of engagedSessions) {
+      if (sessions.has(sessionId)) channels.push(channel);
+    }
+    return channels;
+  }
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
@@ -104,12 +107,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const transcript = createSessionTranscript({
     logBytesCap,
-    engagedChannelsFor(sessionId) {
-      const channels: ClientChannel[] = [];
-      for (const [channel, sessions] of engagedSessions) {
-        if (sessions.has(sessionId)) channels.push(channel);
-      }
-      return channels;
+    engagedChannelsFor,
+  });
+
+  const pendingRequests = createPendingAgentRequests({
+    orphanTtlMs,
+    channelsFor(sessionId) {
+      return sessionId === null
+        ? [...engagedSessions.keys()]
+        : engagedChannelsFor(sessionId);
+    },
+    sendToAgent(frame) {
+      lease.send(frame);
+    },
+    onExpired() {
+      lease.maybeRecycle();
     },
   });
 
@@ -141,7 +153,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
   });
 
-  const orphanTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const teardownCloseByReason: Record<
@@ -161,11 +172,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     engagedSessions.clear();
     transcript.clear();
     bootstrap.clear();
-    for (const t of orphanTimers.values()) clearTimeout(t);
-    orphanTimers.clear();
+    pendingRequests.clear();
     for (const t of idleReapTimers.values()) clearTimeout(t);
     idleReapTimers.clear();
-    pendingFromAgent.clear();
     promptScheduler.clear();
     deps.backgroundWork?.clear();
   }
@@ -173,7 +182,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function describeBusy(): string {
     return (
       `${promptScheduler.activeTurnCount()} turn(s), ` +
-      `${pendingFromAgent.size} pending request(s), ` +
+      `${pendingRequests.size()} pending request(s), ` +
       `${deps.backgroundWork?.held().length ?? 0} background hold(s)`
     );
   }
@@ -212,13 +221,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (!nonViewerChannels.has(channel))
       deps.sessionMetadata?.recordSeen(sessionId);
 
-    for (const req of pendingFromAgent.values()) {
-      if (req.sessionId === sessionId && channel.isOpen()) {
-        channel.send(rewriteAuthError(req.frame));
-      }
-    }
-
-    updateOrphanTimerForSession(sessionId);
+    pendingRequests.onEngaged(channel, sessionId);
   }
 
   function hasEngagedChannel(sessionId: string): boolean {
@@ -274,50 +277,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (c.isOpen()) c.send(line);
   }
 
-  function updateOrphanTimerForSession(sessionId: string): void {
-    const engaged = hasEngagedChannel(sessionId);
-    let hasPending = false;
-    for (const req of pendingFromAgent.values()) {
-      if (req.sessionId === sessionId) {
-        hasPending = true;
-        break;
-      }
-    }
-    const existing = orphanTimers.get(sessionId);
-    const shouldRun = hasPending && !engaged;
-    if (shouldRun && !existing) {
-      orphanTimers.set(
-        sessionId,
-        setTimeout(() => expireSession(sessionId), orphanTtlMs),
-      );
-    } else if (!shouldRun && existing) {
-      clearTimeout(existing);
-      orphanTimers.delete(sessionId);
-    }
-  }
-
-  function expireSession(sessionId: string): void {
-    orphanTimers.delete(sessionId);
-    const toExpire: JsonRpcId[] = [];
-    for (const [id, req] of pendingFromAgent) {
-      if (req.sessionId === sessionId) toExpire.push(id);
-    }
-    for (const id of toExpire) {
-      lease.send({
-        jsonrpc: "2.0",
-        id,
-        error: {
-          code: -32000,
-          message: "Permission request expired: no client connected",
-        },
-      });
-      pendingFromAgent.delete(id);
-    }
-    if (toExpire.length > 0) lease.maybeRecycle();
-  }
-
   function runtimeBusy(): boolean {
-    if (promptScheduler.anyWork() || pendingFromAgent.size > 0) return true;
+    if (promptScheduler.anyWork() || pendingRequests.any()) return true;
     return (deps.backgroundWork?.held().length ?? 0) > 0;
   }
 
@@ -339,7 +300,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     if (sessions) {
       for (const sid of sessions) {
-        updateOrphanTimerForSession(sid);
+        pendingRequests.reassess(sid);
         maybeCloseIdleSession(sid);
       }
     }
@@ -371,9 +332,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (hasEngagedChannel(sessionId)) return;
     if (promptScheduler.hasWork(sessionId)) return;
     if (bootstrap.has(sessionId)) return;
-    for (const req of pendingFromAgent.values()) {
-      if (req.sessionId === sessionId) return;
-    }
+    if (pendingRequests.hasFor(sessionId)) return;
     if (deps.backgroundWork?.hasWork(sessionId)) {
       idleReapTimers.set(
         sessionId,
@@ -406,17 +365,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const frame = parseFrame(line);
 
     if (frame && isRequest(frame)) {
-      const sessionId = extractParamsSessionId(frame);
-      pendingFromAgent.set(frame.id, { sessionId, frame: line });
-      if (sessionId) {
-        const out = rewriteAuthError(line);
-        for (const [channel, sessions] of engagedSessions) {
-          if (sessions.has(sessionId) && channel.isOpen()) channel.send(out);
-        }
-        updateOrphanTimerForSession(sessionId);
-      } else {
-        broadcastToAll(line);
-      }
+      pendingRequests.onAgentRequest(
+        frame.id,
+        extractAgentRequestSessionId(frame),
+        line,
+      );
       return;
     }
 
@@ -519,11 +472,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isResponse(frame)) {
-      const pending = pendingFromAgent.get(frame.id);
-      if (!pending) return;
-      pendingFromAgent.delete(frame.id);
-      if (pending.sessionId) updateOrphanTimerForSession(pending.sessionId);
-      lease.send(frame);
+      pendingRequests.answer(frame);
       return;
     }
 
@@ -806,6 +755,11 @@ function extractParamsSessionId(frame: unknown): string | null {
   if (!isNonNullObject(params)) return null;
   const sid = params.sessionId;
   return typeof sid === "string" ? sid : null;
+}
+
+function extractAgentRequestSessionId(frame: unknown): string | null {
+  const sid = extractParamsSessionId(frame);
+  return sid === "" ? null : sid;
 }
 
 function extractResultSessionId(frame: unknown): string | null {

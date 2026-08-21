@@ -157,6 +157,23 @@ describe("acp-runtime: prompt delivery", () => {
   });
 
   /**
+   * TEST_SCENARIO: A client sends session/prompt with an empty-string session
+   * id. The Prompt Scheduler must still take the turn, so the runtime counts
+   * it as busy and cannot recycle the harness while it runs. Only Pending
+   * Agent Requests treat an empty session id as no session; the prompt path
+   * keeps the raw id it always had.
+   */
+  it("should schedule a prompt with an empty-string session id", () => {
+    const world = createWorld();
+
+    const alice = world.connect();
+    alice.send(frames.prompt(1, "", "prompt with no session"));
+
+    expect(world.harness().received("session/prompt")).toHaveLength(1);
+    expect(world.runtime.status().idle).toBe(false);
+  });
+
+  /**
    * TEST_SCENARIO: One prompt is running and 32 are queued — the queue is
    * full. The next prompt must be rejected with an error response whose
    * data.code is PROMPT_QUEUE_FULL, so the client can tell a full queue
