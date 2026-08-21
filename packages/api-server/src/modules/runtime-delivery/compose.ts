@@ -104,7 +104,12 @@ export function composeRuntimeDelivery(
     log,
   });
 
-  const sweep = createCronSweep({ outboxRepo, queue, log });
+  const sweep = createCronSweep({
+    outboxRepo,
+    queue,
+    agentRunningPort: opts.agentRunningPort,
+    log,
+  });
 
   const hello = createHelloHandler({
     outboxRepo,
