@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-20
+Last verified: 2026-08-21
 
 ## Overview
 
@@ -54,7 +54,7 @@ sequenceDiagram
 
 ### Create
 
-Creation is per-purpose: each kind of thing a user can create has its own setup form, asking only what that kind needs. Experiment sandboxes and knowledge bases are **Agent Kinds** — the flow stamps a marker and pins a harness image the user never sees — so their forms dispatch to the owning module's create rather than the plain agent create, which is what guarantees a marked agent gets its Install Command. Any other sandbox picks an image and takes the plain path. A new sandbox takes its template's size and the trusted egress preset, both editable on the sandbox afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
+Creation is per-purpose: each kind of thing a user can create has its own setup form, asking only what that kind needs. Experiment agents and knowledge bases are **Agent Kinds** — the flow stamps a marker and pins a harness image the user never sees — so their forms dispatch to the owning module's create rather than the plain agent create, which is what guarantees a marked agent gets its Install Command. Any other agent picks an image and takes the plain path. A new agent takes its template's size and the trusted egress preset, both editable on the agent afterwards. See [knowledge-bases](knowledge-bases.md) and [experiments](experiments.md) for what each Kind's create adds on top of what follows.
 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs. There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity. The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its paired gateway), two headless Services (the agent's ACP and the gateway's `<agent>-gateway` proxy DNS), an agent-egress NetworkPolicy, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
 
@@ -147,14 +147,14 @@ rather than start/stop edges, and while that set is non-empty the runtime will n
 close the session and reports itself busy, so the [idle checker](#hibernate)
 cannot hibernate the pod underneath the work. An empty report ends both. Reporting
 is optional: a harness that never reports behaves exactly as it did before the
-contract. What is held is published on the runtime's status surface, so a sandbox
+contract. What is held is published on the runtime's status surface, so an agent
 that stays awake can be explained by the work holding it.
 
 Only work a harness *supervises* reaches its report, which bounds what the
 contract promises. A job the agent detached from the harness is invisible to it,
 and what is reported can be adjacent to the real work — a detached loop whose
 progress a supervised log tail watches holds the session for the tail. Nothing
-times a hold out, so a sandbox with reported work does not scale to zero until
+times a hold out, so an agent with reported work does not scale to zero until
 that work ends; a [hard stop or pause](#hibernate) reclaims it regardless, and an
 install can refuse holds outright.
 
@@ -207,7 +207,7 @@ None of this depends on *who* opened the session: the UI, a connected channel, a
 
 That remainder is deliberate. The platform *can* see that processes are running in the pod — what it cannot do is tell what they *are*: a working batch job looks no different from an always-on model gateway, a language server, or an orphan a dead session left behind. Keying on mere existence inherits that ambiguity, pinning the pod open forever on idle infrastructure or letting one leaked process defeat hibernation outright. Reported work escapes the ambiguity because something that knows declared it; unreported work offers nothing to stand on. The session reap is no threat to it either — work its harness doesn't supervise survives `session/close` precisely because nothing kills it there — so hibernation is its only killer.
 
-**The per-agent hibernation timeout.** Since the platform can't *detect* that work, it lets an operator *budget* for it. Each Agent carries an optional timeout override: unset inherits the cluster-wide default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never scales down. A Template can seed this override, so every Agent created from it starts with a chosen default rather than the cluster-wide one — a workload image whose real work runs off-session (e.g. a Nous experimentation campaign) ships a *never-hibernate* default so the idle checker can't reclaim its pod mid-run; a user's explicit choice at create time still wins. The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down. The sandbox settings expose it as a minutes field showing that *effective* value, so an Agent with no override displays the inherited default, not a blank.
+**The per-agent hibernation timeout.** Since the platform can't *detect* that work, it lets an operator *budget* for it. Each Agent carries an optional timeout override: unset inherits the cluster-wide default, a positive value sets a per-agent idle window in minutes, and **`0` disables hibernation** so the Agent never scales down. A Template can seed this override, so every Agent created from it starts with a chosen default rather than the cluster-wide one — a workload image whose real work runs off-session (e.g. a Nous experimentation campaign) ships a *never-hibernate* default so the idle checker can't reclaim its pod mid-run; a user's explicit choice at create time still wins. The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down. The agent settings expose it as a minutes field showing that *effective* value, so an Agent with no override displays the inherited default, not a blank.
 
 It's a blunt instrument, not a fix for the blind spot: a longer window (or `0`) on an Agent with known no-session work keeps it alive to finish, but doesn't make that work visible. The cost is real — there's no auto-reclaim, so a long or disabled timeout holds CPU, memory, and the harness open until lowered by hand; on an interactive Agent it just forfeits scale-to-zero for nothing.
 

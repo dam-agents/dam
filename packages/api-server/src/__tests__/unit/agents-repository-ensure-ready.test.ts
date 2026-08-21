@@ -88,7 +88,7 @@ const OVER_BUDGET: Condition[] = [
     type: "Ready",
     status: "False",
     reason: "OverBudget",
-    message: "4.5/4 CPU — stop a running sandbox to free room",
+    message: "4.5/4 CPU — stop a running agent to free room",
   },
 ];
 

@@ -53,8 +53,8 @@ export function SkillsNeverRunPanel({
         <p className="min-w-0 flex-1">
           <span className="font-semibold">This agent hasn&rsquo;t run yet</span>{" "}
           <span className="text-muted-foreground">
-            — its skills are resolved inside the sandbox, so there&rsquo;s
-            nothing recorded to show. Start it once and this page fills in.
+            — its skills are resolved when it starts, so there&rsquo;s nothing
+            recorded to show. Start it once and this page fills in.
           </span>
         </p>
         <span className="shrink-0">{startButton}</span>

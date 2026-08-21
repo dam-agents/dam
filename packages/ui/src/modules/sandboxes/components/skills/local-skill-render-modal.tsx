@@ -46,7 +46,7 @@ export function LocalSkillRenderModal({
         <>
           <SkillChip>{builtIn ? "Built-in" : "Standalone"}</SkillChip>
           <SkillChip>
-            {builtIn ? "sandbox image" : "created in this sandbox"}
+            {builtIn ? "sandbox image" : "created in this agent"}
           </SkillChip>
           <SkillChip className="font-mono">
             {builtIn ? "image" : "local"}

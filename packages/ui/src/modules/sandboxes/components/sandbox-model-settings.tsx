@@ -31,9 +31,9 @@ export function SandboxModelSettings({
   if (!operable && !hasRun) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        This agent hasn&rsquo;t run yet — its model settings are resolved inside
-        the sandbox, so there&rsquo;s nothing recorded to show. Start it once
-        and this page fills in.
+        This agent hasn&rsquo;t run yet — its model settings are resolved when
+        it starts, so there&rsquo;s nothing recorded to show. Start it once and
+        this page fills in.
       </Fallback>
     );
   }

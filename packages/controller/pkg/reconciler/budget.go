@@ -57,7 +57,7 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
 		return budgetVerdict{
 			message: fmt.Sprintf(
-				"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — stop a running sandbox to free room",
+				"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — stop a running agent to free room",
 				totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()),
 		}, nil
 	}
@@ -126,7 +126,7 @@ func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, 
 	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
 		return budgetVerdict{
 			message: fmt.Sprintf(
-				"this size takes your running agents to %s/%s CPU and %s/%s memory — shrink it, or stop another sandbox to free room",
+				"this size takes your running agents to %s/%s CPU and %s/%s memory — shrink it, or stop another agent to free room",
 				totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()),
 		}, true, nil
 	}
