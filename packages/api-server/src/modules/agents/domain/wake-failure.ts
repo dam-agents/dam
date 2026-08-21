@@ -103,7 +103,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "over-budget":
       return (
         c.message ||
-        "starting this agent would exceed your compute budget — stop a running sandbox to free room"
+        "starting this agent would exceed your compute budget — stop a running agent to free room"
       );
     case "hibernated-not-scaled":
       return "scale-up was never started";

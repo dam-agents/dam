@@ -58,8 +58,8 @@ export function stagedGatewayRestart(input: {
   };
 }
 
-const SANDBOX_KEEPS_RUNNING =
-  "The sandbox keeps running — its outbound requests are briefly interrupted.";
+const AGENT_KEEPS_RUNNING =
+  "The agent keeps running — its outbound requests are briefly interrupted.";
 
 export function describeGatewayRestart(impact: StagedGatewayRestart): string {
   const clauses = [
@@ -77,9 +77,9 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
   const timing =
     rolls > 1 ? "restarts more than once (~5–15s each)" : "restarts (~5–15s)";
   if (clauses.length === 0) {
-    return `The network gateway ${timing}. ${SANDBOX_KEEPS_RUNNING}`;
+    return `The network gateway ${timing}. ${AGENT_KEEPS_RUNNING}`;
   }
-  return `The network gateway ${timing} to ${joinClauses(clauses)}. ${SANDBOX_KEEPS_RUNNING}`;
+  return `The network gateway ${timing} to ${joinClauses(clauses)}. ${AGENT_KEEPS_RUNNING}`;
 }
 
 async function confirmGatewayRestart(

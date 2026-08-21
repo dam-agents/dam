@@ -39,8 +39,8 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   over_budget: {
     Icon: Warning,
     description:
-      "Starting this sandbox would exceed your compute budget. Pause or stop " +
-      "a running sandbox to free room, then start this one again.",
+      "Starting this agent would exceed your compute budget. Pause or stop " +
+      "a running agent to free room, then start this one again.",
   },
 };
 

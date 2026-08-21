@@ -140,7 +140,7 @@ export function usePauseAgent() {
     ...trpc.agents.pause.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to pause sandbox",
+      errorToast: "Failed to pause agent",
     },
   });
 }
@@ -150,7 +150,7 @@ export function useStopAgent() {
     ...trpc.agents.stop.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to stop sandbox",
+      errorToast: "Failed to stop agent",
     },
   });
 }
@@ -172,7 +172,7 @@ export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
       ...invalidatesAgentsAndBudget,
       ...(opts?.silent
         ? { suppressErrorToast: true }
-        : { errorToast: "Failed to update sandbox" }),
+        : { errorToast: "Failed to update agent" }),
     },
   });
 }

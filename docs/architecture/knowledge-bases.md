@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-08-19
+Last verified: 2026-08-21
 
 ## Overview
 
@@ -8,7 +8,7 @@ A **Knowledge Base** is an Agent that builds and maintains a body of knowledge t
 
 Two pieces make an Agent a Knowledge Base:
 
-- **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view. The Sandboxes list shows every agent badged with its Kind; the Knowledge Bases destination is a filtered view onto the same agents, not an exclusive home — a knowledge base *is* a sandbox, and hiding it would remove it from the owner's inventory of what they are paying to run. Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent. The marker is shared machinery: [experiments](experiments.md) uses the same one, and both ride a shared kinded-create rail owned by the agents module.
+- **The Agent Kind marker.** A create-time annotation on the Agent (`knowledge-base`), immutable afterwards, surfaced on the Agent view. The Agents list shows every agent badged with its Kind; the Knowledge Bases destination is a filtered view onto the same agents, not an exclusive home — a knowledge base *is* an agent, and hiding it would remove it from the owner's inventory of what they are paying to run. Everything else about the agent — lifecycle, sessions, connections, schedules, budgets — is a plain Agent. The marker is shared machinery: [experiments](experiments.md) uses the same one, and both ride a shared kinded-create rail owned by the agents module.
 - **The Install Command.** A one-shot shell command run in the Agent's workspace at create, which bootstraps the agent's knowledge tooling from an external installer. No agent turn is involved — it is a workspace mutation, not a conversation. The command is chosen by the **KB template** the user picks at create (the researcher-facing "Template" — the installation procedure, distinct from the pinned harness image). Two exist today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline); the server maps the template id to its command, and a new procedure is a new id plus a new mapping. Each template's bootstrap installs a `/wiki-onboard` command, so the greeting (below) stays template-agnostic. The platform ships the pointer, never the tooling. The picked template id rides the same create-time annotation stamp as the Kind marker and is surfaced on the Agent view (opaque to the agents module — the knowledge-bases surface owns the id set), so the KB list can display which procedure a knowledge base came from; it is absent on knowledge bases created before it was recorded.
 
 ## Create flow
@@ -23,7 +23,7 @@ The module has no persistence of its own: a Knowledge Base is exactly the owner'
 
 ## UI
 
-Knowledge Bases is a feature-gated destination ([features](features.md)) with a list and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Sandboxes. Creation **is** its own form: a single page asking for a name, a KB Template, a provider and connections, with the harness image pinned and never shown and the toolkit template preselected. Both the KB list's create button and the Home entry card land on it directly, and submitting dispatches to this module's create — see [agent-lifecycle](agent-lifecycle.md#create).
+Knowledge Bases is a feature-gated destination ([features](features.md)) with a list and a **standalone per-KB page** — the chat surface under the knowledge base's own route, so the rail keeps the Knowledge Bases context and leaving returns to the KB list, never to Agents. Creation **is** its own form: a single page asking for a name, a KB Template, a provider and connections, with the harness image pinned and never shown and the toolkit template preselected. Both the KB list's create button and the Home entry card land on it directly, and submitting dispatches to this module's create — see [agent-lifecycle](agent-lifecycle.md#create).
 
 Opening a KB that has no sessions yet **greets the user**: the UI runs `/wiki-onboard` as a hidden first turn (reaches the agent, renders no user bubble, surfaces no error — a greeting that breaks before it says anything leaves no trace, while one interrupted mid-stream keeps what it already said), so a fresh KB opens with the agent introducing itself rather than an empty chat. This is why every template's bootstrap installs that command. The greeting mechanism is shared with experiments.
 

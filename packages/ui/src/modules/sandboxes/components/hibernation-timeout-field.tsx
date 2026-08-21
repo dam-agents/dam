@@ -34,9 +34,9 @@ export function HibernationTimeoutField({
         </span>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Idle minutes before the sandbox hibernates to free resources (it wakes
-        on the next message). <strong>0</strong> = never — for background work
-        that runs with no open session.
+        Idle minutes before the agent hibernates to free resources (it wakes on
+        the next message). <strong>0</strong> = never — for background work that
+        runs with no open session.
       </p>
       <FormError message={error} />
     </div>

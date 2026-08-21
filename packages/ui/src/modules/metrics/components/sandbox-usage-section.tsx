@@ -64,7 +64,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
         )}
       </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        LLM spend for this sandbox, including work it delegated to other agents.
+        LLM spend for this agent, including work it delegated to other agents.
       </p>
 
       {}

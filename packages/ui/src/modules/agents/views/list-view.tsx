@@ -34,7 +34,7 @@ export function ListView() {
       {initialLoaded && agents.length > 0 && (
         <>
           <BudgetMeter />
-          <SectionLabel spaced>Sandboxes</SectionLabel>
+          <SectionLabel spaced>Agents</SectionLabel>
         </>
       )}
 
@@ -52,7 +52,7 @@ export function ListView() {
             <Renew size={16} className="shrink-0 text-accent" />
             <span>
               <strong className="font-medium text-foreground">
-                {outdated.length} sandboxes
+                {outdated.length} agents
               </strong>{" "}
               out of date — newer images available upstream.
             </span>

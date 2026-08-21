@@ -36,7 +36,7 @@ export function ExperimentsListView() {
         title="Experiments"
         description={
           groups.length > 0
-            ? "Experiments are grouped by the sandbox running them. Open a sandbox to work with it in chat, where the experiment graph docks beside the conversation."
+            ? "Experiments are grouped by the agent running them. Open an agent to work with it in chat, where the experiment graph docks beside the conversation."
             : undefined
         }
         actions={
@@ -51,7 +51,7 @@ export function ExperimentsListView() {
       {initialLoaded && groups.length === 0 && (
         <PageEmptyState
           title="No experiments yet"
-          message="An experiment runs one goal across several variants at once and charts each result live, so you can compare them. Create an experiment sandbox and its agent will help you design the first one."
+          message="An experiment runs one goal across several variants at once and charts each result live, so you can compare them. Create an experiment agent and it will help you design the first one."
           actionLabel="Create experiment"
           onAction={createExperimentSandbox}
         />
@@ -71,7 +71,7 @@ export function ExperimentsListView() {
 
       {initialLoaded && groups.length > 0 && (
         <p className="mt-6 text-sm text-muted-foreground">
-          Deleting a sandbox doesn&apos;t delete its experiments — the runs and
+          Deleting an agent doesn&apos;t delete its experiments — the runs and
           their published results stay in the{" "}
           <Button
             variant="link"

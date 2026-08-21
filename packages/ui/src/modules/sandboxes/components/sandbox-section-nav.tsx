@@ -8,7 +8,7 @@ interface SectionEntry {
 }
 
 const SECTIONS: SectionEntry[] = [
-  { section: "setup", title: "Sandbox Setup" },
+  { section: "setup", title: "Agent Setup" },
   { section: "connections", title: "Connections" },
   { section: "channels", title: "Channels" },
   { section: "skills", title: "Skills" },
@@ -32,7 +32,7 @@ export function SandboxSectionNav({
 }: Props) {
   return (
     <nav
-      aria-label="Sandbox sections"
+      aria-label="Agent sections"
       className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
     >
       {SECTIONS.map((entry) => (

@@ -69,7 +69,7 @@ export function ConnectionRowActions({
               className="h-8 shrink-0 gap-1.5 px-3 text-sm text-foreground"
             >
               <Checkmark size={16} className="text-success" />
-              In this sandbox
+              In this agent
             </Badge>
           ) : (
             <Button
@@ -79,7 +79,7 @@ export function ConnectionRowActions({
               data-testid={`catalog-add-${connection.id}`}
             >
               <Add size={16} />
-              Add to sandbox
+              Add to agent
             </Button>
           ))}
       </div>
@@ -122,7 +122,7 @@ export function ConnectionRowActions({
           )}
           {grant?.granted && (
             <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
-              Remove from this sandbox
+              Remove from this agent
             </DropdownMenuItem>
           )}
           {onManage && (

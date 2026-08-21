@@ -63,8 +63,8 @@ export function SandboxSizeSection({
     <section className="mb-8">
       <SectionLabel>Size</SectionLabel>
       <p className="mb-3 text-sm text-muted-foreground">
-        How much compute this sandbox can use while running. It counts against
-        your budget only while the sandbox is up.
+        How much compute this agent can use while running. It counts against
+        your budget only while the agent is up.
       </p>
       <div className="flex flex-col gap-4">
         <SizeSlider
@@ -97,7 +97,7 @@ export function SandboxSizeSection({
         <p className="mt-3 text-sm text-warning">
           This size is larger than the room currently free on your budget (
           {formatCores(Math.max(freeCpu, 0))} cores /{" "}
-          {formatMiAsMemory(Math.max(freeMemoryMi ?? 0, 0))}). The sandbox will
+          {formatMiAsMemory(Math.max(freeMemoryMi ?? 0, 0))}). The agent will
           wait parked — pause or stop another one, then start it.
         </p>
       )}

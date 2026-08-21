@@ -29,10 +29,10 @@ export function SandboxHomeView() {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "no-agent" && (
-          <p className="text-sm text-muted-foreground">No sandbox selected.</p>
+          <p className="text-sm text-muted-foreground">No agent selected.</p>
         )}
         {f.status === "not-found" && (
-          <p className="text-sm text-muted-foreground">Sandbox not found.</p>
+          <p className="text-sm text-muted-foreground">Agent not found.</p>
         )}
       </div>
     );

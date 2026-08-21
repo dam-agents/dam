@@ -2,6 +2,36 @@
 
 Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate vocabulary below.
 
+Two registers live in this file. The **domain vocabulary** (from [Substrate](#substrate) down) is the language code and docs use. [User-Facing Terminology](#user-facing-terminology) is the language the GUI uses. They are deliberately not the same list: a domain term is not automatically a word users read, and several domain terms are never shown.
+
+## User-Facing Terminology
+
+The words the GUI puts in front of users, decided in #3216. Copy follows this table; code keeps its own names from the domain sections below.
+
+Two rules govern the whole set:
+
+1. **Agent is the default word.** Use it unless it makes the sentence technically wrong.
+2. **Harness only buys specificity.** Use it where "agent" would be inaccurate — harness model selection is the clear case — and keep it in subtext rather than headers, so only users digging into the technical side meet it.
+
+### Words users read
+
+| Word | What it means to a user | Domain term behind it | Where it is correct — and where it is not |
+|------|------------------------|-----------------------|-------------------------------------------|
+| agent / agents | The thing you create, run, chat with, connect, schedule, and pay for | Agent ([Agents](#agents-bounded-context)) | The default everywhere: destinations, headers, buttons, confirm dialogs, toasts, empty states, tooltips, accessible names. Not for the harness process or its model settings, where it would be inaccurate |
+| temporary agent | A short-lived agent the platform starts for one piece of work and discards afterwards | Sweepable Agent ([Agents](#agents-bounded-context)), typically an [Invocation](#invocations-bounded-context--proposed-in-flight-pr-2816) target | Wherever spawned short-lived agents surface — the agents list groups them behind their driver. Never offered as something a user creates |
+| harness | The coding-agent program running inside the agent (Claude Code, Codex, Gemini CLI) | Harness Lease and Session ([Agents](#agents-bounded-context)) | Only where "agent" would be wrong: harness model selection, harness config. Subtext and advanced surfaces, never a top-level header |
+| sandbox | The isolated container an agent runs in | Sandbox ([Agents](#agents-bounded-context)) | Only when the copy is *about* the container — "runs in its own isolated sandbox", "inside the sandbox", "sandbox image", "VM sandboxes". Never as the name of the thing a user owns; that is an agent |
+
+### Retired words — say this, not that
+
+| Do not say | Say instead | Why |
+|-----------|-------------|-----|
+| sandbox / sandboxes, for the thing a user owns and runs | agent / agents | Users own agents; the container is something they only ever act on through the agent. "Sandbox" survives for the container sense above and nowhere else — reversing the #892 rename |
+| image | agent — or harness, where the choice really is which harness program runs | The create flow asked users to pick an "image" when what they were choosing was which agent to run. The image is how the platform delivers it, not a distinction users act on |
+| shell | agent | A terminal in the agent is not an SSH login shell, and users never have to make that distinction |
+
+The retirement list is what stops a struck word from creeping back: a surface that wants one of the left-hand words needs a decision on this table first, not a local exception.
+
 ## Substrate
 
 Persistence vocabulary shared by every bounded context. See [`docs/architecture/persistence.md`](architecture/persistence.md) for the substrate split.
@@ -23,10 +53,10 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Term | Definition |
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
-| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
-| Sandbox | The user-facing name for an Agent across the redesigned UI (#892); "Agent" remains the domain/code term |
-| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain sandboxes. The Sandboxes list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
-| Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment sandbox copies in its authoring skill from a path staged in the image |
+| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. The primary user-facing word too — see [User-Facing Terminology](#user-facing-terminology). A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
+| Sandbox | The isolated container an Agent runs in. In user-facing copy "sandbox" appears only where the copy describes that container — isolation, images, inside/outside boundaries; everywhere else the word is **agent**. See [User-Facing Terminology](#user-facing-terminology) for the rule and the retirement it reverses (#3216, reversing the #892 rename) |
+| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain agents. The Home agents list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
+| Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment agent copies in its authoring skill from a path staged in the image |
 | workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
 | Backend | *(proposed, VM-sandbox proposal)* The isolation substrate an Agent's workload runs on, selected per-template as `spec.backend` — a discriminated union (`type: container \| vm`, default `container`, variant props in a sub-block named after the variant). `container` reconciles the agent StatefulSet (optionally Kata via `runtimeClassName`); `vm` reconciles a KubeVirt VirtualMachine. Not "Sandbox" (retired domain term) and distinct from `runtimeClassName`, which selects among *container* runtimes and is rejected on the `vm` backend |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
@@ -40,7 +70,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Wake | Transitioning an Agent from hibernated to running |
 | Hard Stop | User-initiated scale-to-zero of a running Agent (the `stop-requested` annotation), freeing its Reserved compute. Sticky against background activity — background polls cannot resurrect it — and cleared only by an explicit Wake or a Schedule fire (the UI warns at stop time when schedules exist) |
 | Pause | User-initiated immediate hibernation: a Hard Stop whose stamp the api-server clears once the Agent settles Hibernated. Sticky only during the scale-down window (which is what prevents poll-resurrection mid-descent); afterwards the Agent wakes on any deliberate touch, back through the budget gate |
-| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Set on ephemeral agents (Invocation targets now; the intended home for inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
+| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Surfaced to users as a **temporary agent** — see [User-Facing Terminology](#user-facing-terminology). Set on ephemeral agents (Invocation targets now; the intended home for inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
 | Agent Lifetime | *(proposed, PR #2816)* Optional grace period a Sweepable Agent may stay hibernated before the Agent Sweep deletes it. Default zero — deleted as soon as it hibernates. The knob that later lets an inherited channel agent linger warm (Radek's "2 days") while an Invocation target dies on hibernate. Distinct from the per-Invocation Liveness Deadline, which bounds one result, not the agent |
 | Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
@@ -152,7 +182,7 @@ An Experiment is *one execution of a driver Agent's loop script* — a design→
 | Term | Definition |
 |------|-----------|
 | Experiment | Building and running are separate lifecycles sharing one table. The **draft** (plan registered) is source: it persists, re-registrations update it. A **run** is an immutable capture started from the draft: its own row (`running` → `completed`/`failed`/`stopped`) with the draft's declaration and its own cloned artifacts. A draft never becomes a run; a run never reopens |
-| Driver Agent | The Agent an Experiment runs on. Usually one created as an experiment sandbox (the `experiment` Agent Kind), which is what installs the authoring skill — but the marker is intent, not a gate: Plan Registration is keyed only on the calling agent's identity, so any Agent that registers a plan is a Driver Agent too. The Experiments destination therefore lists both — marked sandboxes (even with no experiments yet) and unmarked agents that registered one |
+| Driver Agent | The Agent an Experiment runs on. Usually one created as an experiment agent (the `experiment` Agent Kind), which is what installs the authoring skill — but the marker is intent, not a gate: Plan Registration is keyed only on the calling agent's identity, so any Agent that registers a plan is a Driver Agent too. The Experiments destination therefore lists both — marked agents (even with no experiments yet) and unmarked agents that registered one |
 | Skeleton | The stage/loop/fork structure the script declares upfront, registered before execution. Lenient: a span naming an undeclared stage grows the graph and is marked as drift, never an error |
 | Stage / Span | Stage = one declared skeleton node (produce, eval, select, …). Span = one execution of a stage, iteration-keyed, carrying status, timings, an optional numeric Score (captured, plotted, never normalized — the old bet survives), Artifact references, and an opaque `attrs` JSON bag |
 | Trace | The append-only stream of spans plus attached Invocations for one Experiment, held by the platform (SDK reports over the per-agent HTTP surface; the browser being closed never pauses a run) |

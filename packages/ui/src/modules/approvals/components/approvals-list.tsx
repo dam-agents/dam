@@ -205,7 +205,7 @@ function ApprovalRow({
               size="xs"
               disabled={inflight}
               onClick={() => navigateToSandboxHome(row.agentId)}
-              tooltip="Open this sandbox's settings (connections, network access, environment)"
+              tooltip="Open this agent's settings (connections, network access, environment)"
             >
               <SettingsAdjust size={11} /> Customize…
             </Button>
