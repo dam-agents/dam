@@ -496,6 +496,7 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformClippedReplayMetaSchema,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
@@ -506,6 +507,7 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  PlatformClippedReplayMeta,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

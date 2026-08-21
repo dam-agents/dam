@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -184,6 +185,7 @@ export function ChatView() {
   const {
     resetSession,
     resumeSession,
+    loadOlderMessages,
     sendPrompt,
     stopAgent,
     busy,
@@ -229,6 +231,44 @@ export function ChatView() {
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  const pendingPrependRef = useRef<{
+    height: number;
+    top: number;
+    before: string;
+  } | null>(null);
+
+  const loadOlderKeepingScroll = useCallback(
+    async (before: string): Promise<"paged" | "reloaded" | "noop"> => {
+      const el = messagesRef.current;
+      if (el) {
+        pendingPrependRef.current = {
+          height: el.scrollHeight,
+          top: el.scrollTop,
+          before,
+        };
+        el.style.overflowAnchor = "none";
+      }
+      const outcome = await loadOlderMessages(before);
+      if (outcome !== "paged") {
+        pendingPrependRef.current = null;
+        if (el) el.style.overflowAnchor = "";
+        if (outcome === "reloaded") scrollToBottom();
+      }
+      return outcome;
+    },
+    [loadOlderMessages, scrollToBottom],
+  );
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = messagesRef.current;
+    if (!pending || !el) return;
+    if (messages.some((m) => m.loadOlderBefore === pending.before)) return;
+    pendingPrependRef.current = null;
+    el.scrollTop = pending.top + (el.scrollHeight - pending.height);
+    el.style.overflowAnchor = "";
+  }, [messages]);
+
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
@@ -265,6 +305,15 @@ export function ChatView() {
       setShowJump(false);
     }
   }, [messages.length]);
+
+  useLayoutEffect(() => {
+    if (loadingSession) return;
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, [loadingSession, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -636,6 +685,7 @@ export function ChatView() {
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
+                        onLoadOlder={loadOlderKeepingScroll}
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}

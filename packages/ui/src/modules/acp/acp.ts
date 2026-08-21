@@ -118,6 +118,14 @@ export async function openInitializedConnection(
   return { connection, ws };
 }
 
+function replayForOf(meta: unknown): string | undefined {
+  if (typeof meta !== "object" || meta === null) return undefined;
+  const platform = (meta as Record<string, unknown>).platform;
+  if (typeof platform !== "object" || platform === null) return undefined;
+  const replayFor = (platform as Record<string, unknown>).replayFor;
+  return typeof replayFor === "string" ? replayFor : undefined;
+}
+
 function parseExtParams<T>(
   method: string,
   schema: z.ZodType<T>,
@@ -145,7 +153,7 @@ export async function openConnection(
         return awaitPermission(params);
       },
       async sessionUpdate(params: SessionNotification) {
-        onUpdate(params.update, params.sessionId);
+        onUpdate(params.update, params.sessionId, replayForOf(params._meta));
       },
       async writeTextFile() {
         return {};
