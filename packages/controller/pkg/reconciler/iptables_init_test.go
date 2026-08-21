@@ -89,9 +89,8 @@ func TestBuildAgentStatefulSet_IptablesInitRunsFirst(t *testing.T) {
 	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
 
 	ics := ss.Spec.Template.Spec.InitContainers
-	require.Len(t, ics, 2, "egress-lockdown + user init")
-	assert.Equal(t, "egress-lockdown", ics[0].Name, "lockdown must run before the user init")
-	assert.Equal(t, "init", ics[1].Name)
+	require.Len(t, ics, 1, "egress-lockdown is the only init container")
+	assert.Equal(t, "egress-lockdown", ics[0].Name)
 
 	agent := ss.Spec.Template.Spec.Containers[0]
 	require.NotNil(t, agent.SecurityContext)

@@ -114,10 +114,6 @@ data:
     skillSources:
       {{- toYaml . | nindent 6 }}
     {{- end }}
-    {{- with $tmpl.init }}
-    init: |
-      {{- . | nindent 6 }}
-    {{- end }}
   {{- end }}
   {{- end }}
   {{- end }}

@@ -1,6 +1,6 @@
 import http from "node:http";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
@@ -57,6 +57,14 @@ const homeDir = config.PLATFORM_DEV
 const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : config.WORK_DIR;
+
+try {
+  mkdirSync(workDir, { recursive: true });
+} catch (err) {
+  process.stderr.write(
+    `[server] could not create workDir ${workDir}: ${(err as Error).message}\n`,
+  );
+}
 
 function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
   const binding = resolveDrivers(manifest)["skill-ref"] as

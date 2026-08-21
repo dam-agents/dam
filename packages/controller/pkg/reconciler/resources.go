@@ -206,26 +206,12 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		resourceReqs.Requests = nil
 	}
 
-	initScript := agentSpec.Init
-	if initScript == "" {
-		initScript = defaults.Init
-	}
 	var initContainers []corev1.Container
 	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
 	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
-	}
-	if initScript != "" {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init",
-			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
-			Command:         []string{"sh", "-c", initScript},
-			Env:             []corev1.EnvVar{{Name: "HOME", Value: agentHome}},
-			VolumeMounts:    volumeMounts,
-		})
 	}
 
 	var pullSecrets []corev1.LocalObjectReference
