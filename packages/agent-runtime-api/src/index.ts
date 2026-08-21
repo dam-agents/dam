@@ -63,6 +63,7 @@ export {
   STAGED_SKILLS_DIR,
   dedupeByName,
 } from "./modules/skills/source-roots.js";
+export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
 export type { SshDomainError, SshService } from "./modules/ssh/types.js";
 export type {

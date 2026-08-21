@@ -838,8 +838,7 @@ controller:
   #                           can override (template wins when set).
   #   3. agentTemplates.*   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths; the chart substitutes
-  # it at render time with the template's `agentHome` if set, else
-  # `templateDefaults.agentHome`.
+  # it at render time with the fixed agent home (/home/agent).
   agent:
     base:
       # Cluster details (immutable per-agent)
@@ -934,13 +933,8 @@ controller:
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:
-      # HOME inside agent containers — set as the `HOME` env var and used at
-      # chart render time to substitute any literal `$HOME` in mount paths.
-      # Per-template `agentTemplates[i].agentHome` overrides
-      # this for that template's agents. Must match the image's user
-      # HOME or pod-files materialization breaks silently. Also plumbed to
-      # api-server for pod-files producers (currently one global value).
-      agentHome: /home/agent
+      # (agentHome is retired: the agent home is fixed at /home/agent; a value
+      # still set here is ignored with a startup warning.)
 
       # Left unset so Kubernetes applies its native, tag-based pull policy:
       # `Always` for a mutable `:latest` (so a repushed tag is actually

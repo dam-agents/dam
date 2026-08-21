@@ -67,10 +67,7 @@ const vmAgentUID = 65532
 
 func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP, caCrt string) (*corev1.Secret, error) {
 	defaults := cfg.AgentTemplateDefaults
-	agentHome := agentSpec.AgentHome
-	if agentHome == "" {
-		agentHome = defaults.AgentHome
-	}
+	agentHome := agentHomeDir
 
 	envFile := ""
 	for _, e := range agentPlatformEnv(name, cfg, agentHome, agentProxyAddr(cfg, gatewayClusterIP)) {

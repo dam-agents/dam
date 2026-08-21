@@ -22,7 +22,6 @@ export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
-  agentHome: string;
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
@@ -39,7 +38,6 @@ export function createHarnessRouter(deps: {
     channelManager: deps.channelManager,
     k8s: deps.k8s,
     composeSkills: deps.composeSkills,
-    agentHome: deps.agentHome,
     schedulesServiceFor: deps.schedulesServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
     invocationsServiceFor: deps.invocationsServiceFor,

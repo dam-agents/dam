@@ -6,8 +6,6 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true"),
-  HOME_DIR: z.string().default("/home/agent"),
-  WORK_DIR: z.string().default("/home/agent/work"),
   IMAGE_WORKSPACE_DIR: z.string().default("/app/working-dir"),
   API_SERVER_URL: z.string().default(""),
   BACKGROUND_WORK_HOLDS: z

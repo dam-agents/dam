@@ -63,7 +63,6 @@ async function mcpHarness() {
     channelManager: {},
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
-    agentHome: "/home/agent",
     schedules,
   } as unknown as McpSessionDeps);
 

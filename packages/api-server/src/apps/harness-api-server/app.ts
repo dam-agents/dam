@@ -116,7 +116,6 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
-    agentHome: config.agentHome,
     runtimeHello,
     composeSkills: (owner) =>
       composeSkillsModule({

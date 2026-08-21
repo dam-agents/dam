@@ -35,7 +35,6 @@ func migrationConfig() *config.Config {
 			},
 		},
 		AgentTemplateDefaults: config.AgentTemplateDefaults{
-			AgentHome:   "/home/agent",
 			StorageSize: "10Gi",
 		},
 		StorageMigration: config.StorageMigration{

@@ -31,7 +31,6 @@ var testConfig = &config.Config{
 		},
 	},
 	AgentTemplateDefaults: config.AgentTemplateDefaults{
-		AgentHome:       "/home/agent",
 		ImagePullPolicy: "IfNotPresent",
 		StorageSize:     "10Gi",
 	},

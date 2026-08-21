@@ -225,6 +225,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.AgentTemplateDefaults.Init != "" {
 		slog.Warn("controller.agent.templateDefaults.init is deprecated and ignored — first-boot home seeding moved into the agent image's boot (#3242); remove it from your values")
 	}
+	if cfg.AgentTemplateDefaults.AgentHome != "" {
+		slog.Warn("controller.agent.templateDefaults.agentHome is deprecated and ignored — the agent home is fixed at /home/agent; remove it from your values")
+	}
 	if v := os.Getenv("STORAGE_MIGRATION"); v != "" {
 		dec := json.NewDecoder(strings.NewReader(v))
 		dec.DisallowUnknownFields()
@@ -254,9 +257,6 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	if cfg.AgentTemplateDefaults.AgentHome == "" {
-		cfg.AgentTemplateDefaults.AgentHome = envOrDefault("AGENT_HOME", "/home/agent")
-	}
 	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

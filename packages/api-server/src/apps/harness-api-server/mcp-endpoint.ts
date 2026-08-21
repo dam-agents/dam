@@ -3,7 +3,11 @@ import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
-import type { AppRouter } from "agent-runtime-api";
+import {
+  AGENT_HOME_DIR,
+  AGENT_WORK_DIR,
+  type AppRouter,
+} from "agent-runtime-api";
 import type { ExperimentsService } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -27,8 +31,9 @@ import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
-function resolveWorkspacePath(input: string, agentHome: string): string {
-  const workDir = `${agentHome}/work`;
+function resolveWorkspacePath(input: string): string {
+  const agentHome = AGENT_HOME_DIR;
+  const workDir = AGENT_WORK_DIR;
   if (input.startsWith("/")) {
     return input.startsWith(`${agentHome}/`)
       ? input.slice(agentHome.length + 1)
@@ -104,7 +109,6 @@ export interface McpSessionDeps {
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
-  agentHome: string;
   supportsUserLookup: boolean;
   supportsMessageReactions: boolean;
 }
@@ -113,7 +117,8 @@ export function createMcpSession(
   agentId: string,
   deps: McpSessionDeps,
 ): McpSession {
-  const { agentHome, schedules } = deps;
+  const { schedules } = deps;
+  const agentHome = AGENT_HOME_DIR;
   const server = new McpServer({
     name: `platform-${agentId}`,
     version: "1.0.0",
@@ -178,7 +183,7 @@ export function createMcpSession(
       let resolved: ChannelAttachment | undefined;
       let attachmentAudit: Record<string, unknown> | undefined;
       if (attachment) {
-        const resolvedPath = resolveWorkspacePath(attachment.path, agentHome);
+        const resolvedPath = resolveWorkspacePath(attachment.path);
         let file: { content: string; binary: boolean; mimeType?: string };
         try {
           file = await runtimeClient.files.read.query({ path: resolvedPath });
@@ -830,7 +835,6 @@ export interface MountMcpDeps {
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
-  agentHome: string;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -892,7 +896,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       artifactLibrary,
       invocations,
       experiments,
-      agentHome: deps.agentHome,
       supportsUserLookup,
       supportsMessageReactions,
     });

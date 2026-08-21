@@ -10,9 +10,9 @@ through at reconcile time to `controller.agent.templateDefaults.*` (chart
 fallback) or `controller.agent.base.*` (chart-only policy).
 
 The literal string `$HOME` in mount paths is substituted
-HERE (chart render time) using the template's `agentHome` if set, else
-`controller.agent.templateDefaults.agentHome`. The rendered spec ships
-absolute paths — the controller and agent-runtime never see `$HOME`.
+HERE (chart render time) with the fixed agent home (/home/agent). The
+rendered spec ships absolute paths — the controller and agent-runtime
+never see `$HOME`.
 */}}
 apiVersion: v1
 kind: ConfigMap
@@ -29,12 +29,11 @@ data:
          template entry (`agentTemplates.foo: null`) has no fields. */}}
   {{- $isVM := and $tmpl.backend (eq ($tmpl.backend.type | default "") "vm") }}
   {{- if or (not $isVM) $.Values.virtualization.enabled }}
-  {{- $home := $tmpl.agentHome | default $.Values.controller.agent.templateDefaults.agentHome }}
+  {{- $home := "/home/agent" }}
   {{ $name }}.yaml: |
     version: agent-platform.ai/v1
     image: "{{ $tmpl.image.repository }}:{{ $tmpl.image.tag | default $.Chart.AppVersion }}"
     description: {{ $tmpl.description | quote }}
-    agentHome: {{ $home | quote }}
     {{- with $tmpl.displayName }}
     name: {{ . | quote }}
     {{- end }}
