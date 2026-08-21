@@ -1,10 +1,5 @@
+import type { PublicAgentView } from "api-server-api";
 import type { PublicAgentProfileRow } from "../infrastructure/public-agent-profile-repository.js";
-
-export interface PublicAgentView {
-  agentId: string;
-  name: string;
-  ownerEmail: string | null;
-}
 
 export interface PublicAgentPageService {
   get(agentId: string): Promise<PublicAgentView | null>;

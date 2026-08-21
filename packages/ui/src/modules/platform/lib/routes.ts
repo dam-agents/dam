@@ -43,6 +43,13 @@ export type Route =
 
 export type View = Route["view"];
 
+const publicAgentRe = /^\/a\/([^/]+)\/?$/;
+
+export function parsePublicAgentPath(pathname: string): string | null {
+  const match = pathname.match(publicAgentRe);
+  return match ? decodeURIComponent(match[1]!) : null;
+}
+
 export const RETIRED_PATHS = new Set([
   "/sandboxes",
   "/sandboxes/",

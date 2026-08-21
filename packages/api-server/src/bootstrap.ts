@@ -406,6 +406,7 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
   });
   const publicAgentProfileSub = publicAgentPage.startSaga();
+  const publicAgentPageService = publicAgentPage.service;
   await periodicJobs.register(
     "public-agent-profile-reconcile",
     60 * 60_000,
@@ -931,6 +932,7 @@ export async function bootstrap() {
     surfaceAttribution,
     slackOauthCallbackUrl,
     shareHostGate,
+    publicAgentPageService,
     sessionPresence,
   };
   const harnessDeps = {

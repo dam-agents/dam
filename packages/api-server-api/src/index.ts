@@ -511,6 +511,15 @@ export type {
 export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
 
+export {
+  publicAgentViewSchema,
+  publicAgentResponseSchema,
+} from "./modules/agents/public-agent.js";
+export type {
+  PublicAgentView,
+  PublicAgentResponse,
+} from "./modules/agents/public-agent.js";
+
 export type {
   TermsCurrent,
   TermsDocument,

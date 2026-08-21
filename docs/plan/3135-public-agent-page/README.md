@@ -17,17 +17,35 @@ surface, not an error page.
 
 ## Approach
 
-A new page at `/a/<agentId>` on the app host, server-rendered by the api-server and reachable with
-no login.
+A new route at `/a/<agentId>` on the app host, rendered by the SPA and reachable with no login. It
+reads an unauthenticated `GET /api/public/agents/<agentId>`.
 
 **Why the app host and not the share host.** The share host exists for one reason: user-generated
 content must never execute on the app origin ([artifact-library](../../architecture/artifact-library.md)).
 This page is platform chrome, so none of that rationale applies, and putting a conversion surface on
 a deliberately-untrusted subdomain is a bad URL to hand people.
 
-**Why server-rendered and not a route in the SPA.** Slack unfurls links. A server-rendered page with
-OG tags shows an agent card in the channel before anyone clicks, and a stranger does not download the
-whole app bundle to read four paragraphs.
+**Why a route in the SPA and not server-rendered.** This reverses the original decision. That decision
+rested on two claims, and building it showed both were wrong:
+
+- *"Slack unfurls links, so the page needs server-rendered OG tags."* The footer link lives only
+  inside a Block Kit `context` block ([slack-turn-presenter.ts](../../../packages/api-server/src/modules/channels/infrastructure/slack-turn-presenter.ts)),
+  never in the message `text`. Slack unfurls URLs in `text`, not inside blocks, so OG tags buy nothing
+  on the path this issue is about. They would only pay off for a link a human pastes by hand.
+- *"A stranger should not download the whole app bundle."* The UI is code-split into a 654KB entry
+  chunk and a 1.9MB lazily-loaded app chunk. The public route returns before the app chunk is
+  imported, so a stranger pulls the entry chunk only, and nginx was serving it uncompressed. With
+  gzip enabled that is ~209KB for a one-time visit.
+
+Against that, server-rendering cost a duplicated design system (a third copy of the app's colour
+tokens, after [artifact-library's viewer](../../../packages/api-server/src/modules/artifact-library/viewer/renderer.ts)),
+an ingress prefix, and a service-worker carve-out. The SPA route needs none of them and inherits the
+real components.
+
+**What the SPA route costs instead.** A carve-out in [main.tsx](../../../packages/ui/src/main.tsx):
+`initAuth` ends in an unconditional `signinRedirect`, so the public path has to be recognised and
+returned from before auth runs. That is a security boundary in client bootstrap. It is covered by
+specs that pin every authenticated path the matcher must refuse.
 
 **Nobody is identified.** Tokens live in `sessionStorage` ([auth.ts](../../../packages/ui/src/auth.ts)),
 so the api-server sees no credential on a plain navigation and there is no app-origin cookie. The page
@@ -86,7 +104,7 @@ the page omits the owner line rather than failing.
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 | Public agent projection and read service | Table, migration, repository, saga, reconcile, lazy fill, the pinned service | — |
-| 02 | Public agent page HTTP surface | Renderer, Hono app, route mounting, ingress path, brand, CTAs, OG tags | 01 |
+| 02 | Public agent page | Public read endpoint, SPA route, bootstrap carve-out, page components, CTAs | 01 |
 | 03 | Decouple the Slack agent footer from attribution | Parse the id not the label; new URL and label | 02 |
 | 04 | Chat route falls back to the public page | SPA redirect on a forbidden or missing agent read | 02 |
 | 05 | Architecture documentation | New page plus `channels.md` and `persistence.md` edits | 01–04 |

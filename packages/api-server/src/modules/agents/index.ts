@@ -41,10 +41,11 @@ export {
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
 export {
-  type PublicAgentPageService,
-  type PublicAgentView,
-} from "./services/public-agent-page-service.js";
+  createPublicAgentRoutes,
+  type PublicAgentRoutesDeps,
+} from "./infrastructure/public-agent-routes.js";
 export {
   deleteChannelsByAgent,
   listChannelsByOwner,

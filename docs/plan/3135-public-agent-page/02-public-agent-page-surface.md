@@ -1,140 +1,135 @@
-# 02 — Public agent page HTTP surface
+# 02 — Public agent page
 
 **Depends on:** 01-public-agent-projection
 **Part of:** Public Agent Page — see [README](./README.md)
 
+> **This slice was re-planned during implementation.** It originally specified a server-rendered page
+> built from HTML template strings in the api-server, modelled on the share viewer. Both arguments for
+> that shape turned out to be false (see *Why a route in the SPA* in the [README](./README.md)), and it
+> cost a third copy of the app's design tokens. The slice now puts the page in the SPA.
+
 ## Context
 
-With the projection and read service in place, this slice puts the page on the wire: a server-rendered
-HTML page at `/a/<agentId>` that anyone can open with no login. It mirrors the existing share viewer,
-which is the only other public surface the api-server serves.
+Slice 01 built the projection and the read service. This slice puts the page in front of a stranger:
+a route at `/a/<agentId>` that renders with no login, reading one unauthenticated endpoint.
 
-Apply the **`/typescript-engineering`** skill.
+Apply **`/typescript-engineering`** to the api-server work and **`/react-ui-engineering`** to the UI work.
 
 ## Implementation plan
 
-### 1. Ingress — the page is unreachable without this
+### 1. The shared response contract
 
-On the app host, [`_helpers.tpl:128`](../../../deploy/helm/platform/templates/_helpers.tpl) routes
-`/api` to the api-server and `/` to the UI nginx. A request for `/a/<agentId>` currently reaches the
-**UI**, not the api-server.
+`publicAgentViewSchema` and `publicAgentResponseSchema` in
+[api-server-api](../../../packages/api-server-api/src/modules/agents/public-agent.ts), following
+`brandSchema`: one definition, validated on the server as a `satisfies` type and on the client with
+`safeParse`. The api-server service drops its local `PublicAgentView` and imports this one.
 
-Add `/a` as a third prefix in `platform.ingress.appPaths`, before the `/` catch-all:
+### 2. Public read endpoint
 
-```yaml
-- path: /a
-  pathType: Prefix
-  backend:
-    service:
-      name: {{ .apiSvc }}
-      port:
-        name: http
-```
+`createPublicAgentRoutes` in
+[public-agent-routes.ts](../../../packages/api-server/src/modules/agents/infrastructure/public-agent-routes.ts),
+mounted at `/api/public` in [routes/index.ts](../../../packages/api-server/src/apps/api-server/routes/index.ts).
 
-The helper is used by the uiHost rule, the catch-all app rule, and the convention-domain rules in
-[`ingress.yaml`](../../../deploy/helm/platform/templates/ingress.yaml), so one edit covers all three.
+- `GET /api/public/agents/:agentId` always answers **200**. An unknown id, an unbound agent and a
+  deleted agent all return `{ agent: null }`. A 404 would be an oracle for which agent ids exist.
+- `Cache-Control: no-store`. The answer names a person and an agent can be renamed or deleted at any
+  moment.
+- Add `/api/public/*` to `PUBLIC_PATHS` in [app.ts](../../../packages/api-server/src/apps/api-server/app.ts).
+  A dedicated public namespace keeps the auth carve-out to one prefix, rather than a hole inside
+  `/api/agents/*` where every neighbouring route is owner-gated.
+- The terms gate needs no change. It is `/api/*`-scoped, but it short-circuits on `if (!user)`, and
+  the auth middleware never sets a user on a public path. Verified, not assumed.
 
-`pathType: Prefix` matches on path **elements**, so `/a` matches `/a` and `/a/...` but not `/artifacts`
-or `/agents`. Verify this on the dev cluster's ingress controller rather than trusting the spec, since a
-mismatch here would silently swallow two existing SPA routes.
+### 3. SPA route and the bootstrap carve-out
 
-### 2. Renderer
+`parsePublicAgentPath` in [routes.ts](../../../packages/ui/src/modules/platform/lib/routes.ts) returns
+the agent id for `/a/<agentId>` and `null` for everything else.
 
-New file `packages/api-server/src/modules/agents/viewer/renderer.ts`, modelled on
-[`artifact-library/viewer/renderer.ts`](../../../packages/api-server/src/modules/artifact-library/viewer/renderer.ts)
-(plain template functions returning HTML strings, no template engine).
-
-Two exported renderers, matching the page's two states:
-
-- `renderNamedAgentPage({ agent, brand })` — the agent's name, the owner's email (omitted when
-  `ownerEmail` is `null`), the pitch, both CTAs.
-- `renderGenericPage({ brand })` — the pitch and both CTAs, no agent-specific content.
-
-Copy rules:
-
-- Say **agent**, never **sandbox** (#3216, applied across the GUI in #3397). The copy agreed in the
-  issue thread predates that decision and still says "sandbox"; use "agent" and flag it in the PR so
-  product re-approves the wording.
-- The pitch is fixed copy, but it must interpolate `brand.name` so no literal brand string appears in
-  source. CLAUDE.md forbids hardcoding the brand.
-- CTAs are exactly two. **Create your own agent** → `/` (the list view, where creation actually starts;
-  `/sandboxes/new` is in `RETIRED_PATHS` and the three concrete create flows would each be a guess at
-  a stranger's intent). **Open in DAM** → `/chat/<agentId>/<sessionId>` when `s` is present, else
-  `/chat/<agentId>`. That second button serves both the owner returning to their session and an existing
-  user logging in.
-
-Use `brand.theme` accent colours and `/api/brand/icon.svg` so the page looks like the product. Emit OG
-tags (`og:title`, `og:description`, `og:url`) so the Slack unfurl shows an agent card. Escape every
-interpolated value; the agent name is user-controlled.
-
-### 3. Hono app
-
-New file `packages/api-server/src/modules/agents/viewer/public-agent-page-app.ts`, modelled on
-[`viewer-app.ts`](../../../packages/api-server/src/modules/artifact-library/viewer/viewer-app.ts):
+The page deliberately does **not** join the `Route` union or the route store.
+[main.tsx](../../../packages/ui/src/main.tsx) checks the pathname first and returns before `initAuth`:
 
 ```ts
-export interface PublicAgentPageAppDeps {
-  service: PublicAgentPageService;
-  brand: Brand;
+const publicAgentId = parsePublicAgentPath(window.location.pathname);
+if (publicAgentId !== null) {
+  await loadBrand().then(applyBrand);
+  const { renderPublicAgentPage } = await import("./public-agent-page.js");
+  await renderPublicAgentPage(publicAgentId);
+  return;
 }
-export function createPublicAgentPageApp(deps: PublicAgentPageAppDeps): Hono;
 ```
 
-- `GET /a/:agentId` — call `service.get`, render named or generic. Always **HTTP 200**, including the
-  generic page. A 404 would be an oracle for which agent ids exist and would also make the Slack unfurl
-  give up on a stale link.
-- Set the same conservative headers the share viewer sets: `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy: no-referrer`, and a CSP with `frame-ancestors 'self'; form-action 'self'`.
-- Pass `config.brand` whole, not just the name, so the renderer can use the theme and icon. Note the
-  share viewer takes only `brandName`; do not copy that narrowing.
+Two reasons for the early return rather than a view inside `App`:
 
-### 4. Mounting
+- `initAuth` ends in an unconditional `signinRedirect()` when there is no valid session. Anything that
+  reaches it bounces to Keycloak.
+- Returning before auth means no code path exists from this page into an authenticated tree. The
+  alternative, a public view inside `App`, would rely on every future view and query respecting a flag.
 
-The api-server does not serve the SPA, and the auth middleware in
-[`app.ts`](../../../packages/api-server/src/apps/api-server/app.ts) is scoped to `/api/*`. So this route
-is unauthenticated by construction: mount it in `mountRoutes`
-([`routes/index.ts`](../../../packages/api-server/src/apps/api-server/routes/index.ts)) and nothing gates
-it. Do **not** add a bespoke path gate; there is nothing to bypass. Construct the app in
-[`bootstrap.ts`](../../../packages/api-server/src/bootstrap.ts) next to `createShareViewerApp` and thread
-it through `ApiServerDeps`.
+The page is therefore the same for everyone, owner or stranger, which is what the README's *nobody is
+identified* rule already required.
 
-Confirm the route lands **before** any fallthrough that would claim it, and confirm the terms gate does
-not apply (it is `/api/*`-scoped too, but check, because a terms redirect on a public page would be a
-silent regression).
+The dynamic import also keeps the page in its own chunk, so a visitor never pulls the 1.9MB app chunk.
+
+### 4. The page
+
+[public-agent-view.tsx](../../../packages/ui/src/modules/agents/views/public-agent-view.tsx), built
+from the real `Button` and the app's Tailwind tokens. Two states, matching the read service:
+
+- **named** — agent name, owner byline (omitted when `ownerEmail` is `null`), the Slack hint, the pitch, both CTAs
+- **generic** — the pitch and both CTAs, no agent-specific content
+
+Layout follows the design prototype attached to the issue thread. Copy rules:
+
+- Say **agent**, never **sandbox** (#3216, applied across the GUI in #3397). The copy agreed in the
+  issue thread predates that decision and still says "sandbox".
+- Interpolate `brand.name`; CLAUDE.md forbids hardcoding the brand. The agreed pitch called the product
+  "an IBM Research platform", which would hardcode an organisation in a white-labelled product, so that
+  clause is dropped. **Flag for product re-approval.**
+- CTAs are exactly two. **Create your own agent** → `/`. **Open in \<brand\>** → `/chat/<agentId>/<sessionId>`
+  when `?s=` is present, else `/chat/<agentId>`. The prototype's primary CTA reads "Join the waitlist";
+  **flag for product** whether that waitlist is real.
+
+Data arrives as a prop, fetched once in the entry before first paint. This deviates from the
+"server state lives in TanStack Query" default on purpose: it is one-shot bootstrap data with no
+refetch, no mutation and no second reader, fetched exactly the way `loadBrand()` already is, and the
+query client is wired to the authenticated tRPC client this page must not touch.
+
+### 5. gzip
+
+nginx was serving the bundle uncompressed. [default.conf](../../../packages/ui/default.conf) enables
+gzip. This is not strictly part of the feature, but the page is the one surface where a stranger on a
+phone pays the bundle cost, and it takes the entry chunk from 654KB to 194KB.
 
 ## Acceptance criteria
 
-- [ ] `/a/<agentId>` is served by the api-server on the app host, in a browser with no session and no login prompt
-- [ ] A bound agent renders its name, its owner's email, the pitch, and exactly two CTAs
-- [ ] An unknown id, an unbound agent, and a deleted agent render the **identical** generic page, all HTTP 200
-- [ ] No literal brand string appears in the new source; the pitch interpolates `brand.name`
+- [ ] `/a/<agentId>` renders in a browser with no session and no login prompt
+- [ ] A bound agent renders its name, its owner's email, the Slack hint and exactly two CTAs
+- [ ] An unknown id, an unbound agent and a deleted agent render the **identical** generic page
+- [ ] `GET /api/public/agents/<id>` answers 200 for every id, `no-store`, and needs no token
+- [ ] The matcher refuses every authenticated path (`/`, `/chat/...`, `/artifacts`, `/agents`, `/auth/callback`)
+- [ ] No literal brand string in the new source; copy interpolates `brand.name`
 - [ ] The page says "agent" and never "sandbox"
-- [ ] The agent name is HTML-escaped
-- [ ] OG tags are present and carry the agent name for a named page
-- [ ] `pathType: Prefix` on `/a` does not capture `/artifacts` or `/agents`, verified on the cluster
+- [ ] The page uses the app's own components and tokens; no new copy of the palette
 - [ ] Page views perform no K8s read once the projection row exists
 - [ ] `mise run check` and `mise run test` pass
 
 ## Smoke test
 
 ```sh
-mise run api-server:check
-mise run api-server:test
-mise run cluster:build-apiserver
-mise run cluster:helm
+mise run api-server:check && mise run api-server:test
+mise run ui:check && mise run ui:test
+mise run cluster:build-apiserver && mise run cluster:build-ui
 ```
 
 Then, with a Slack-bound agent from slice 01:
 
 ```sh
-curl -sI  https://<app-host>/a/<agentId>            # 200, no redirect to Keycloak
-curl -s   https://<app-host>/a/<agentId> | grep -i "og:title\|<h1"
-curl -s   https://<app-host>/a/agent-0000000000000000 | grep -ci "<agent name>"   # 0
-curl -sI  https://<app-host>/artifacts               # still reaches the UI, not the api-server
+curl -s   http://<app-host>/api/public/agents/<agentId>            # 200, {"agent":{...}}
+curl -s   http://<app-host>/api/public/agents/agent-000000000000   # 200, {"agent":null}
+curl -sI  http://<app-host>/artifacts                              # still the UI
 ```
 
-Open `/a/<agentId>` in a private browser window and confirm no login prompt, correct branding, and two
-working CTAs.
-
-The implementing agent runs this itself, then prints a short manual smoke-test guide so the user can
-confirm it by hand.
+The endpoint checks are curl-able. **The page is not**: it renders client-side, so `curl` sees only the
+SPA shell. It must be checked in a real browser, in a private window, which is also the only way to
+confirm there is no login bounce. A previous round of this slice passed every curl check while being
+broken in every browser that had loaded the app before.
