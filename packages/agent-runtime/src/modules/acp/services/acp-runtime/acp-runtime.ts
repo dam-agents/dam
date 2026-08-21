@@ -43,6 +43,10 @@ const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 
 const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
 
+const DEFAULT_TRANSCRIPT_RETAIN_MS = 60 * 60 * 1000;
+
+const DEFAULT_TRANSCRIPT_RETAIN_BYTES_CAP = 64 * 1024 * 1024;
+
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 export interface AcpRuntimeStatus {
@@ -70,6 +74,8 @@ export interface AcpRuntimeDeps {
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
+  transcriptRetainMs?: number;
+  transcriptRetainBytesCap?: number;
   historyProvider?: HistoryProvider;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
@@ -207,7 +213,45 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return true;
   }
 
+  const transcriptRetainMs =
+    deps.transcriptRetainMs ?? DEFAULT_TRANSCRIPT_RETAIN_MS;
+  const transcriptRetainBytesCap =
+    deps.transcriptRetainBytesCap ?? DEFAULT_TRANSCRIPT_RETAIN_BYTES_CAP;
+  const retainedTranscripts = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function dropRetention(sessionId: string): void {
+    const timer = retainedTranscripts.get(sessionId);
+    if (timer) clearTimeout(timer);
+    retainedTranscripts.delete(sessionId);
+  }
+
+  function forgetRetained(sessionId: string): void {
+    dropRetention(sessionId);
+    harnessColdSessions.delete(sessionId);
+    transcript.forget(sessionId);
+  }
+
+  function retainTranscript(sessionId: string): void {
+    dropRetention(sessionId);
+    retainedTranscripts.set(
+      sessionId,
+      setTimeout(() => forgetRetained(sessionId), transcriptRetainMs),
+    );
+    let retainedBytes = 0;
+    for (const sid of retainedTranscripts.keys()) {
+      retainedBytes += transcript.bytesOf(sid);
+    }
+    for (const sid of retainedTranscripts.keys()) {
+      if (retainedBytes <= transcriptRetainBytesCap) break;
+      if (sid === sessionId) continue;
+      retainedBytes -= transcript.bytesOf(sid);
+      forgetRetained(sid);
+      deps.log?.(`evicted retained transcript of ${sid} over memory budget`);
+    }
+  }
+
   function startHarnessRehydrate(sessionId: string): void {
+    dropRetention(sessionId);
     rehydratingSessions.add(sessionId);
     rehydrateTimers.set(
       sessionId,
@@ -305,6 +349,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
+    for (const t of retainedTranscripts.values()) clearTimeout(t);
+    retainedTranscripts.clear();
     promptScheduler.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
@@ -349,6 +395,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function engage(channel: ClientChannel, sessionId: string): void {
     const sessions = engagedSessions.get(channel);
     if (!sessions) return;
+    dropRetention(sessionId);
     if (sessions.has(sessionId)) return;
     sessions.add(sessionId);
     if (!nonViewerChannels.has(channel))
@@ -453,6 +500,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         params: { sessionId },
       });
     }
+    dropRetention(sessionId);
     harnessColdSessions.delete(sessionId);
     rehydratingSessions.delete(sessionId);
     const rehydrateTimer = rehydrateTimers.get(sessionId);
@@ -490,8 +538,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return;
     }
 
-    tearDownSession(sessionId);
-    deps.log?.(`closing idle session ${sessionId}`);
+    if (transcriptRetainMs <= 0 || !transcript.metadataOf(sessionId).cached) {
+      tearDownSession(sessionId);
+      deps.log?.(`closing idle session ${sessionId}`);
+      return;
+    }
+    if (!harnessColdSessions.has(sessionId)) {
+      lease.send({
+        jsonrpc: "2.0",
+        id: nextOutboundId++,
+        method: "session/close",
+        params: { sessionId },
+      });
+    }
+    harnessColdSessions.add(sessionId);
+    retainTranscript(sessionId);
+    lease.maybeRecycle();
+    deps.log?.(`closed idle session ${sessionId}, transcript retained`);
   }
 
   function maybeCloseIdleSession(sessionId: string): void {
