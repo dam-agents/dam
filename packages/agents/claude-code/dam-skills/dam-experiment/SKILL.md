@@ -22,8 +22,8 @@ import experiment_sdk as x
 
 It self-configures from the pod environment. It also carries the full driver
 surface — `x.spawn(...)`, `x.list_images()`, `x.require_image(...)`,
-`x.list_connections()`, and the `x.s(...)` schema shorthand — so one script
-both drives and reports.
+`x.list_connections()`, `x.budget()`, and the `x.s(...)` schema shorthand —
+so one script both drives and reports.
 
 ## Talking to the user
 
@@ -134,9 +134,25 @@ whole envelope and get an explicit yes before writing the script:
   deciding factor, not a footnote: the human may cut seeds or rounds to fit
   the time they have, so give them the per-unit cost that makes that trade
   legible. The `ttl_ms` you set is derived from this number — never the other
-  way around.
+  way around — and it is a **kill deadline, not pacing**: the platform reaps
+  the target the moment it lapses, even mid-work. Size it at the worst
+  plausible round plus generous slack (cold start alone is minutes; double
+  your estimate, at minimum). Wanting a faster run means fewer rounds and
+  tighter prompts, never a tighter TTL — a killed working pod wastes the
+  whole round.
 - **The resource envelope** the worker runs in, when the workload is heavy
   enough for it to matter (see the Nous section's locked envelope).
+- **Concurrency, from the budget.** Read `x.budget()` and the chosen worker's
+  `size` from the catalog, and do the arithmetic before the human approves:
+  `(ceiling − reserved) ÷ worker size`, floored over CPU and memory, is how
+  many workers run *at once* — this driver's own size is part of `reserved`.
+  Say the number plainly ("your budget runs 2 of these workers in parallel").
+  Spawns beyond it are not errors: they queue and start as room frees, so a
+  wider fan-out runs slower, not dead — but the wait burns each invocation's
+  TTL, so either bound the loop's parallelism to the number or stretch
+  `ttl_ms` to cover the queue time. A single worker sized past the ceiling
+  is refused at `spawn` — resize it or have the human raise the budget
+  before the run, never mid-loop.
 
 Present it as a short list of decisions, not prose, and let them change any
 line. Silence is not approval: if they have not answered, ask again rather

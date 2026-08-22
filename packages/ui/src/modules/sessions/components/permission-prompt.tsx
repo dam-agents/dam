@@ -1,7 +1,9 @@
-import { Checkmark, Close } from "@carbon/icons-react";
+import { Checkmark, Close, Copy, Warning } from "@carbon/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import type { PermissionOption } from "../../../store.js";
@@ -67,17 +69,58 @@ export function PermissionStatusLine() {
 }
 
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
+  const [expanded, setExpanded] = useState(false);
+  const { copy, copied, state: copyState } = useCopy();
+
   return (
-    <div className="flex w-full items-center gap-2 rounded-lg bg-muted px-4 min-h-11 text-sm anim-in">
-      {verdict.allowed ? (
-        <Checkmark size={16} className="text-success shrink-0" />
-      ) : (
-        <Close size={16} className="text-destructive shrink-0" />
-      )}
-      <span className="text-muted-foreground shrink-0">{verdict.label} —</span>
-      <span className="font-semibold text-foreground truncate">
-        {verdict.subject}
-      </span>
+    <div
+      className="group flex w-full items-start justify-between gap-2 rounded-lg bg-muted px-4 py-3 min-h-11 text-sm anim-in cursor-pointer"
+      onClick={() => setExpanded((e) => !e)}
+    >
+      <div className="flex items-start gap-2 min-w-0 flex-1">
+        {verdict.allowed ? (
+          <Checkmark size={16} className="text-success shrink-0 mt-0.5" />
+        ) : (
+          <Close size={16} className="text-destructive shrink-0 mt-0.5" />
+        )}
+        <span className="text-muted-foreground shrink-0">
+          {verdict.label} —
+        </span>
+        <span
+          className={cn(
+            "font-semibold text-foreground min-w-0 select-text",
+            expanded ? "whitespace-pre-wrap break-words" : "truncate",
+          )}
+          title={verdict.subject}
+        >
+          {verdict.subject}
+        </span>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={copied ? "Copied" : "Copy"}
+        tooltip={copied ? "Copied" : "Copy"}
+        onClick={(e) => {
+          e.stopPropagation();
+          void copy(`${verdict.label} — ${verdict.subject}`);
+        }}
+        className={cn(
+          "text-muted-foreground hover:text-foreground shrink-0",
+          HOVER_ACTION,
+          copied && "text-success hover:text-success opacity-100",
+          copyState === "failed" && "text-danger hover:text-danger opacity-100",
+        )}
+      >
+        {copied ? (
+          <Checkmark size={12} />
+        ) : copyState === "failed" ? (
+          <Warning size={12} />
+        ) : (
+          <Copy size={12} />
+        )}
+      </Button>
     </div>
   );
 }

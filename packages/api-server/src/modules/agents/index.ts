@@ -42,6 +42,10 @@ export {
 } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export {
+  concreteResources,
+  type DefaultResourceLimits,
+} from "./domain/spec-assembly.js";
+export {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,

@@ -50,14 +50,45 @@ export function createResizeGate(deps: BudgetsServiceDeps): ResizeGate {
       const ceilCpu = parseCpuMilli(ceiling.cpu);
       const ceilMemory = parseMemoryBytes(ceiling.memory);
       if (totalCpu > ceilCpu || totalMemory > ceilMemory) {
-        const cores = (n: number) => `${(n / 1000).toFixed(1)} CPU`;
-        const gi = (n: number) => `${(n / 1024 ** 3).toFixed(1)}Gi`;
         throw new TRPCError({
           code: "FORBIDDEN",
           message:
             `This size would take your running sandboxes to ${cores(totalCpu)}/${cores(ceilCpu)} ` +
             `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — pause, stop, or shrink another sandbox first.`,
         });
+      }
+    },
+  };
+}
+
+export class SizeNeverFitsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SizeNeverFitsError";
+  }
+}
+
+export interface SpawnSizeGate {
+  assertCanEverFit(limits: { cpu?: string; memory?: string }): Promise<void>;
+}
+
+export function createSpawnSizeGate(
+  deps: Pick<BudgetsServiceDeps, "readCeilingOverride" | "defaultCeiling">,
+): SpawnSizeGate {
+  return {
+    async assertCanEverFit(limits) {
+      const override = await deps.readCeilingOverride();
+      const ceiling = override ?? deps.defaultCeiling;
+      const cpuMilli = parseCpuMilli(limits.cpu);
+      const memoryBytes = parseMemoryBytes(limits.memory);
+      const ceilCpu = parseCpuMilli(ceiling.cpu);
+      const ceilMemory = parseMemoryBytes(ceiling.memory);
+      if (cpuMilli > ceilCpu || memoryBytes > ceilMemory) {
+        throw new SizeNeverFitsError(
+          `worker size ${cores(cpuMilli)} / ${gi(memoryBytes)} exceeds your budget ceiling ` +
+            `${cores(ceilCpu)} / ${gi(ceilMemory)} — it could never start; ` +
+            `use a smaller size or ask an operator to raise your budget`,
+        );
       }
     },
   };
@@ -91,6 +122,9 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
     },
   };
 }
+
+const cores = (n: number) => `${(n / 1000).toFixed(1)} CPU`;
+const gi = (n: number) => `${(n / 1024 ** 3).toFixed(1)}Gi`;
 
 function parseCpuMilli(q: string | undefined): number {
   if (!q) return 0;

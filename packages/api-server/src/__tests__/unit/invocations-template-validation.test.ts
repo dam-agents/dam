@@ -41,6 +41,14 @@ function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
       ],
       get: async () => null,
     } as never,
+    budgetsFor: () =>
+      ({
+        reserved: async () => ({
+          cpu: { reservedMilli: 0, ceilingMilli: 6000 },
+          memory: { reservedBytes: 0, ceilingBytes: 14 * 1024 ** 3 },
+        }),
+      }) as never,
+    defaultLimits: { cpu: "1", memory: "1Gi" },
   });
   return { app, spawned };
 }

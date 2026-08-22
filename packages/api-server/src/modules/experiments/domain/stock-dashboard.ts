@@ -137,6 +137,23 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     if (a !== 0 && (a >= 10000 || a < 0.001)) return n.toExponential(2);
     return String(parseFloat(n.toPrecision(4)));
   }
+  function fmtDur(ms) {
+    if (ms === null || ms === undefined || !isFinite(ms) || ms < 0) return "–";
+    if (ms < 1000) return Math.round(ms) + "ms";
+    var s = ms / 1000;
+    if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m " + String(Math.round(s % 60)).padStart(2, "0") + "s";
+    var h = Math.floor(m / 60);
+    return h + "h " + String(m % 60).padStart(2, "0") + "m";
+  }
+  function runDurationMs(experiment) {
+    if (!experiment.executedAt) return null;
+    var start = Date.parse(experiment.executedAt);
+    var end = experiment.finishedAt ? Date.parse(experiment.finishedAt) : Date.now();
+    if (!isFinite(start) || !isFinite(end) || end < start) return null;
+    return end - start;
+  }
 
   function renderHead(feed) {
     var head = el("div", "head");
@@ -145,6 +162,13 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     pill.appendChild(el("span", "pdot"));
     pill.appendChild(el("span", null, feed.experiment.status));
     head.appendChild(pill);
+    var durMs = runDurationMs(feed.experiment);
+    if (durMs !== null) {
+      var dur = el("span", "pill num");
+      dur.appendChild(el("span", null,
+        (feed.experiment.finishedAt ? "" : "elapsed ") + fmtDur(durMs)));
+      head.appendChild(dur);
+    }
     var wrap = el("div");
     wrap.appendChild(head);
     if (feed.experiment.drift.length) {
@@ -185,6 +209,18 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
       last.appendChild(el("span", "muted", "last"));
       last.appendChild(el("b", null, fmt(s.lastScore)));
       meta.appendChild(last);
+    }
+    if (s.avgDurationMs !== null && s.avgDurationMs !== undefined) {
+      var avg = el("span", "chip num");
+      avg.appendChild(el("span", "muted", "avg"));
+      avg.appendChild(el("b", null, fmtDur(s.avgDurationMs)));
+      meta.appendChild(avg);
+      if (s.spansTotal > 1) {
+        var tot = el("span", "chip num");
+        tot.appendChild(el("span", "muted", "total"));
+        tot.appendChild(el("b", null, fmtDur(s.totalDurationMs)));
+        meta.appendChild(tot);
+      }
     }
     box.appendChild(meta);
     return box;

@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-08-20
+Last verified: 2026-08-21
 
 ## Overview
 
@@ -191,14 +191,25 @@ loop should spawn. Approval covers the whole envelope, not just the image: the
 connections each worker is granted, the iteration counts, and the deadline
 derived from them are agreed before the script is authored, because a run
 commits hours of compute and a wrong choice surfaces as an empty result at the
-end rather than an error at review.
+end rather than an error at review. Concurrency is part of that envelope: the
+driver reads the owner's [budget](budgets.md) — ceiling and current
+reservation — over the same per-agent surface, and the catalogue names each
+worker's cost (its effective Size), so the design states how many workers run
+at once before the human approves. Fan-out past that number queues rather than
+fails, but the wait burns each invocation's deadline, so the deadline is sized
+with the queue in mind.
 
 Two checks keep a wrong id from surfacing as an empty
 result hours in: `require_image()` resolves the id against the catalogue during
 the declaration section, so plan mode fails while the human is still reviewing
 the design, and the spawn route rejects an unknown `templateId` with a `400`
 naming the ids that exist — the lenient-skeleton rule is about *stage* drift and
-does not extend to naming an image that isn't there.
+does not extend to naming an image that isn't there. The route applies the same
+fail-fast to a worker sized past the owner's budget Ceiling: such a target could
+never be admitted and would otherwise park until its deadline, so the first
+spawn fails with the figures instead. A worker that fits the Ceiling but not the
+room currently free is not an error — it queues and starts when room frees
+([budgets](budgets.md)), so a loop wider than the Ceiling runs slower, not dead.
 
 **A failed spawn says why.** Polling an invocation returns its status and, once
 the target reports, the schema-validated result. A `failed` row additionally

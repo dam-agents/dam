@@ -72,7 +72,7 @@ first experiment:
   O(1), so the loop's job is to *prove* the win under a pass condition, not
   to discover it. Say that to the user; it shapes how small the design can be.
 
-## The loop — with the worker the user picks
+## The loop — small and fast, by design
 
 The loop shape is the same whichever harness does the rewriting: each round
 spawns a worker whose prompt carries the current `src/tiny-cache.js` and asks
@@ -82,16 +82,34 @@ across fixed seeds, and scores median speedup against the measured baseline.
 Everything stays local to the driver — the worker only ever transforms the
 source it is handed.
 
-**The worker is the user's choice, always.** Any supported general coding
-agent can play the round (see the skill's
-[images reference](images.md)); present the options and ask, don't pre-pick.
-`claude-code` is the natural suggestion to lead with only because it needs no
-credential this sandbox does not already hold — the others need their
-provider's connection granted first, and you should check for the grant
-before offering them as ready to use. This is an example project: its point
-is to show the loop, so running it on whichever harness the user wants to
-watch is a legitimate reason all by itself.
+**This starter is a demo, so speed of feedback beats thoroughness.** The
+effect is known and large (a `Map` plus lazy purge lands in round one), so
+the loop's job is to show the machinery, not to search. Speed comes from
+**fewer rounds, a scoped prompt, and stopping on the win — never from a
+short TTL**:
 
-As with any run, present the expected duration and the rest of the approval
-envelope before authoring — a handful of rounds at a few minutes per spawn is
-typically well under an hour, but say the number you actually derived.
+- **Two rounds at most, and stop early.** Round one lands the win; a second
+  round exists only to show the chart iterate. Gate it in the script: once a
+  round verifies green and beats the baseline by a large factor (say ≥10×),
+  `finish` instead of spawning again — a worker asked to improve
+  already-optimal code just burns its whole deadline searching for nothing.
+- **`claude-code` is the default worker — pre-pick it.** It needs no
+  credential this sandbox does not already hold. Say the design assumes it
+  and move on; switch only if the user names another harness (check that
+  provider's connection is granted before agreeing). The open worker
+  interview the skill teaches is for real experiments — this one exists to
+  show a loop quickly.
+- **Scope the prompt, not the clock.** Tell the worker: one focused change
+  to `src/tiny-cache.js`, no exploration, no second pass. That is what makes
+  a round fast.
+- **TTL is a kill deadline — size it generously.** The platform reaps the
+  target the moment `ttl_ms` lapses, even mid-work, and a real claude-code
+  round on a dev cluster takes ~10–15 minutes (pod cold start alone is
+  minutes, then model latency). Never set `ttl_ms` under 30 minutes for a
+  code-writing worker; a generous TTL costs nothing when rounds finish
+  early, while a tight one kills a working pod and wastes the whole round.
+
+As with any run, present the envelope before authoring — here that is one
+short list: up to 2 rounds on `claude-code`, ~10–15 min per round with an
+early finish on the win, 30-min TTL as the safety net. Say the numbers you
+actually derived, then start on their yes.

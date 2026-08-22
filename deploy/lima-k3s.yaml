@@ -10,7 +10,15 @@ images:
 # ClickStack (`clickstack.enabled`) adds ~2.1 CPU of pod requests — mongodb
 # alone asks for 1 CPU. On 4 cores that left 40m free and agent pods sat
 # Pending forever with FailedScheduling: Insufficient cpu.
-cpus: 8
+#
+# 10 is the host's full logical-CPU count (vz time-shares vCPUs, so the host
+# stays responsive). At 8, an experiment fanning out workers within the old
+# 8-CPU budget ceiling drove the VM's load average past 20: kubelet probes
+# timed out, the node flapped NotReady, and Keycloak crash-looped on liveness
+# kills until the UI lost auth entirely. The per-user budget ceiling in
+# values-local.yaml must stay below this count so the platform stack always
+# keeps headroom.
+cpus: 10
 # Istio ambient (istiod + istio-cni + ztunnel + waypoint Deployment) adds
 # ~1 GiB of pod requests on top of the existing platform stack. On 4 GiB the
 # k3s scheduler hit FailedScheduling: Insufficient memory for new agent pods.

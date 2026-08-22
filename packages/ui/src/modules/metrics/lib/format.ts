@@ -1,3 +1,7 @@
+import { formatDurationMs } from "@/lib/format-time";
+
+export { formatDurationMs };
+
 const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -24,15 +28,6 @@ export function formatUsdCell(usd: number): string {
 export function formatAxisUsd(value: number, step: number): string {
   const decimals = step >= 1 ? 0 : step >= 0.01 ? 2 : 4;
   return `$${value.toFixed(decimals)}`;
-}
-
-export function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 export function durationSegments(

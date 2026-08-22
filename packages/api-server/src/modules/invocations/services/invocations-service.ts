@@ -12,6 +12,7 @@ import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.j
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import { invocationTargetName } from "../domain/target-name.js";
 import type { DriverResolution } from "./driver-resolution.js";
+import type { TargetAdmission } from "./target-admission.js";
 import type {
   InvocationsRepository,
   InvocationStatus,
@@ -101,6 +102,7 @@ export function createInvocationsService(deps: {
     experimentId: string,
     driverAgentId: string,
   ) => Promise<boolean>;
+  targetAdmission?: TargetAdmission;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
@@ -132,6 +134,13 @@ export function createInvocationsService(deps: {
       if (offending.length > 0) throw new AttenuationError(offending);
 
       compileSchema(input.schema);
+
+      if (deps.targetAdmission) {
+        await deps.targetAdmission.assertCanEverFit({
+          ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(input.size ? { size: input.size } : {}),
+        });
+      }
 
       if (input.experimentSpanId && deps.isExperimentRunning) {
         const experimentId = input.experimentSpanId.split("/", 1)[0]!;

@@ -255,6 +255,27 @@ def list_connections() -> list[dict[str, Any]]:
     return _request("GET", "/connections")["connections"]
 
 
+def budget() -> dict[str, Any]:
+    """The owner's compute budget, read live::
+
+        {
+          "cpu":    {"reservedMilli": 3000, "ceilingMilli": 6000},
+          "memory": {"reservedBytes": ..., "ceilingBytes": ...},
+          "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
+        }
+
+    The ceiling caps the summed sizes of the owner's *running* agents —
+    this driver included. Each catalog entry from ``list_images()`` carries
+    its worker's ``size``; a raw ``image=`` spawn costs ``defaultWorkerSize``
+    unless ``cpu=``/``memory=`` say otherwise. Use it while designing:
+    ``(ceiling - reserved) / worker size``, floored over both dimensions,
+    is how many workers run at once — further spawns queue for freed room
+    (their wait burns the invocation TTL), and a single worker sized past
+    the ceiling is rejected at ``spawn`` because it could never start.
+    """
+    return _request("GET", "/budget")
+
+
 def spawn(
     prompt: str,
     schema: Any,
@@ -282,7 +303,13 @@ def spawn(
     When the owner's resource budget is full, the target queues and starts
     automatically as room frees (e.g. earlier invocations completing) —
     the wait counts against the invocation's TTL, so over-budget fan-out
-    degrades to sequential execution rather than failing."""
+    degrades to sequential execution rather than failing.
+
+    ``ttl_ms`` is a kill deadline, not pacing: the platform reaps the
+    target the moment it lapses, even if the target is mid-work. Size it
+    at the worst plausible round plus generous slack (target pod cold
+    start alone takes minutes) — a generous TTL costs nothing when the
+    round finishes early, a tight one destroys a working round."""
     if (template is None) == (image is None):
         raise ValueError("pass exactly one of template= or image=")
     name = label or template or image or "invocation"

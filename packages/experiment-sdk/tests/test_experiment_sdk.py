@@ -329,3 +329,23 @@ def test_require_image_rejects_an_unknown_id_and_names_the_real_ones(stub):
     assert caught.value.template_id == "nous-agent"
     assert caught.value.available == ["claude-code", "nous"]
     assert "claude-code, nous" in str(caught.value)
+
+
+def test_budget_reads_the_owner_figures(stub):
+    stub.routes[("GET", "/budget")] = (
+        200,
+        {
+            "cpu": {"reservedMilli": 3000, "ceilingMilli": 6000},
+            "memory": {
+                "reservedBytes": 4 * 1024**3,
+                "ceilingBytes": 14 * 1024**3,
+            },
+            "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
+        },
+    )
+
+    figures = x.budget()
+
+    assert figures["cpu"]["ceilingMilli"] == 6000
+    assert figures["memory"]["reservedBytes"] == 4 * 1024**3
+    assert figures["defaultWorkerSize"] == {"cpu": "1", "memory": "1Gi"}

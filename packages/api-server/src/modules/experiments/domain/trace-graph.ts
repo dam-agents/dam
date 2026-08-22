@@ -61,6 +61,9 @@ export function projectFeed(input: {
     let bestScore: number | null = null;
     let running = 0;
     let failed = 0;
+    let ended = 0;
+    let totalDurationMs = 0;
+    let lastDurationMs: number | null = null;
     for (const span of stageSpans) {
       if (span.status === "running") running++;
       if (span.status === "error") failed++;
@@ -68,6 +71,15 @@ export function projectFeed(input: {
         lastScore = span.score;
         bestScore =
           bestScore === null ? span.score : Math.max(bestScore, span.score);
+      }
+      if (span.endedAt !== null) {
+        const durationMs =
+          Date.parse(span.endedAt) - Date.parse(span.startedAt);
+        if (Number.isFinite(durationMs) && durationMs >= 0) {
+          ended++;
+          totalDurationMs += durationMs;
+          lastDurationMs = durationMs;
+        }
       }
     }
     return {
@@ -78,6 +90,9 @@ export function projectFeed(input: {
       spansFailed: failed,
       lastScore,
       bestScore,
+      totalDurationMs: ended > 0 ? totalDurationMs : null,
+      avgDurationMs: ended > 0 ? totalDurationMs / ended : null,
+      lastDurationMs,
     };
   };
 

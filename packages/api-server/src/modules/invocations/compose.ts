@@ -16,6 +16,7 @@ import {
   type DriverResolution,
 } from "./services/driver-resolution.js";
 import { createDriverCascade } from "./services/driver-cascade.js";
+import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export function composeInvocationsForOwner(opts: {
@@ -24,6 +25,7 @@ export function composeInvocationsForOwner(opts: {
   agents: AgentsService;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  targetAdmission?: TargetAdmission;
 }): InvocationsService {
   const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
@@ -34,6 +36,7 @@ export function composeInvocationsForOwner(opts: {
     driverResolution: createDriverResolution({ repo }),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     isExperimentRunning: async (experimentId, driverAgentId) => {
       const row = await experimentsRepo.get(experimentId, opts.owner);
       return row?.status === "running" && row.driverAgentId === driverAgentId;

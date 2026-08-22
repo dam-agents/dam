@@ -16,7 +16,14 @@ import {
 } from "../../modules/schedules/index.js";
 import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
-import { composeInvocationsForOwner } from "../../modules/invocations/index.js";
+import {
+  composeInvocationsForOwner,
+  createTargetAdmission,
+} from "../../modules/invocations/index.js";
+import {
+  composeBudgetsModule,
+  composeSpawnSizeGate,
+} from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
@@ -71,6 +78,22 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       agents: agentsServiceFor(owner),
       runtimeMutator,
       wakeAgent,
+      targetAdmission: createTargetAdmission({
+        readTemplateResources: async (templateId) =>
+          (await templatesRepo.readSpec(templateId))?.spec.resources,
+        defaultLimits: {
+          cpu: config.agentDefaultCpuLimit,
+          memory: config.agentDefaultMemoryLimit,
+        },
+        gate: composeSpawnSizeGate({
+          k8s: k8sClient,
+          owner,
+          defaultCeiling: {
+            cpu: config.defaultUserCpuBudget,
+            memory: config.defaultUserMemoryBudget,
+          },
+        }),
+      }),
     });
 
   const artifactLibraryFor = (owner: string) =>
@@ -123,6 +146,20 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     invocationsServiceFor,
     connectionsServiceFor,
     templates,
+    budgetsFor: (owner) =>
+      composeBudgetsModule({
+        k8s: k8sClient,
+        owner,
+        listAgents: () => harnessAgentsRepo.list(owner),
+        defaultCeiling: {
+          cpu: config.defaultUserCpuBudget,
+          memory: config.defaultUserMemoryBudget,
+        },
+      }).budgets,
+    defaultLimits: {
+      cpu: config.agentDefaultCpuLimit,
+      memory: config.agentDefaultMemoryLimit,
+    },
   });
 
   const server = serve(
