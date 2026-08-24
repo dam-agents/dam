@@ -17,6 +17,10 @@ brand:
   # per-environment variant here (e.g. "IBM Research DAM - Staging"). Empty
   # string falls back to `name`.
   title: "IBM Research DAM"
+  # Organisation that runs this install. The Public Agent Page uses it to tell
+  # a visitor arriving from Slack that the platform is open to them. Empty
+  # string drops that sentence.
+  vendor: "IBM Research"
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:

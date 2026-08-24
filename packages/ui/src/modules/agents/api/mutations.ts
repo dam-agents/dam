@@ -105,6 +105,9 @@ export function useCreateAgent() {
 export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
+    onMutate: (variables): undefined => {
+      useStore.getState().markAgentDeleted(variables.id);
+    },
     onSuccess: (_data, variables) => {
       useStore.getState().clearAgentDrafts(variables.id);
     },

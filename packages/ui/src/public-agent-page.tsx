@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 
 import { getBrand } from "./brand.js";
 import { fetchPublicAgent } from "./modules/agents/api/public-agent.js";
-import { PublicAgentView } from "./modules/agents/views/public-agent-view.js";
+import {
+  type PublicAgentPageState,
+  PublicAgentView,
+} from "./modules/agents/views/public-agent-view.js";
 
 function chatPath(agentId: string, sessionId: string | null): string {
   const base = `/chat/${encodeURIComponent(agentId)}`;
@@ -25,22 +28,30 @@ function applySystemTheme(): void {
  * user or redirected to Keycloak. Nothing here touches auth, the terms gate, the
  * tRPC client, or the route store, so an anonymous visitor cannot fall into an
  * authenticated tree.
+ *
+ * It paints before it reads. The document arrives empty, so the first render
+ * happens with no agent yet and the public read updates it — a slow read leaves
+ * the visitor on the masthead, never on a blank page.
  */
 export async function renderPublicAgentPage(agentId: string): Promise<void> {
   applySystemTheme();
-  const agent = await fetchPublicAgent(agentId);
   const brand = getBrand();
   const sessionId = new URLSearchParams(window.location.search).get("s");
+  const root = createRoot(document.getElementById("root")!);
 
+  const paint = (state: PublicAgentPageState, openPath: string) =>
+    root.render(
+      <StrictMode>
+        <PublicAgentView state={state} brand={brand} openPath={openPath} />
+      </StrictMode>,
+    );
+
+  paint({ status: "loading" }, "/");
+
+  const agent = await fetchPublicAgent(agentId);
   document.title = agent ? `${agent.name} · ${brand.name}` : brand.name;
-
-  createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <PublicAgentView
-        agent={agent}
-        brand={brand}
-        openPath={agent ? chatPath(agent.agentId, sessionId) : "/"}
-      />
-    </StrictMode>,
+  paint(
+    { status: "ready", agent },
+    agent ? chatPath(agent.agentId, sessionId) : "/",
   );
 }

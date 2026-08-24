@@ -4,6 +4,7 @@ const FALLBACK: Brand = {
   name: "Platform",
   short: "platform",
   title: "",
+  vendor: "",
   theme: {
     light: {
       accent: "#0F62FE",

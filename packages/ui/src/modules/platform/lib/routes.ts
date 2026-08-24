@@ -45,9 +45,17 @@ export type View = Route["view"];
 
 const publicAgentRe = /^\/a\/([^/]+)\/?$/;
 
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 export function parsePublicAgentPath(pathname: string): string | null {
   const match = pathname.match(publicAgentRe);
-  return match ? decodeURIComponent(match[1]!) : null;
+  return match ? decodeSegment(match[1]!) : null;
 }
 
 export function publicAgentPath(agentId: string): string {
@@ -70,8 +78,8 @@ export function parseRoute(path: string): Route {
   if (chatMatch) {
     return {
       view: "chat",
-      agent: decodeURIComponent(chatMatch[1]!),
-      ...(chatMatch[2] ? { session: decodeURIComponent(chatMatch[2]) } : {}),
+      agent: decodeSegment(chatMatch[1]!),
+      ...(chatMatch[2] ? { session: decodeSegment(chatMatch[2]) } : {}),
     };
   }
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
@@ -94,7 +102,7 @@ export function parseRoute(path: string): Route {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
     return {
       view: "sandbox-home",
-      agentId: decodeURIComponent(sandboxHomeMatch[1]!),
+      agentId: decodeSegment(sandboxHomeMatch[1]!),
       sandboxSection: section.success ? section.data : "setup",
     };
   }
@@ -110,13 +118,13 @@ export function parseRoute(path: string): Route {
   if (knowledgeBaseConfigMatch)
     return {
       view: "knowledge-base-config",
-      agentId: decodeURIComponent(knowledgeBaseConfigMatch[1]!),
+      agentId: decodeSegment(knowledgeBaseConfigMatch[1]!),
     };
   const knowledgeBaseChatMatch = path.match(/^\/knowledge-bases\/([^/]+)$/);
   if (knowledgeBaseChatMatch)
     return {
       view: "knowledge-base-chat",
-      agent: decodeURIComponent(knowledgeBaseChatMatch[1]!),
+      agent: decodeSegment(knowledgeBaseChatMatch[1]!),
     };
   return { view: "list" };
 }

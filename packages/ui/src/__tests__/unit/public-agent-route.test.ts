@@ -62,6 +62,19 @@ describe("public agent path", () => {
   });
 
   /**
+   * TEST_SCENARIO: Anyone can type a broken percent escape into the address bar,
+   * and this runs in main.tsx before anything catches. A throw there rejects the
+   * bootstrap promise and leaves the visitor on an empty document, so a
+   * pathname that cannot be decoded comes back raw and renders the generic page.
+   */
+  it("keeps a malformed escape rather than throwing", () => {
+    for (const path of ["/a/%", "/a/100%", "/a/agent-%zz"]) {
+      expect(() => parsePublicAgentPath(path)).not.toThrow();
+    }
+    expect(parsePublicAgentPath("/a/agent-%zz")).toBe("agent-%zz");
+  });
+
+  /**
    * TEST_SCENARIO: The chat and agent-home routes build this path to redirect a
    * visitor who cannot read the agent. If the builder and the matcher disagreed
    * on encoding, that redirect would land on a path main.tsx refuses and the

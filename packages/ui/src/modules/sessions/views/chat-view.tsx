@@ -42,6 +42,7 @@ import {
   useIsAgentInaccessible,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
@@ -94,7 +95,10 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
-  usePublicAgentFallback(selectedAgent, agentInaccessible);
+  const leavingForPublicPage = usePublicAgentFallback(
+    selectedAgent,
+    agentInaccessible,
+  );
 
   useSessionUrlSync(selectedAgent);
 
@@ -738,7 +742,9 @@ export function ChatView() {
         )}
       </div>
 
-      {selectedAgent && !agentInaccessible && !agentOperable ? (
+      {leavingForPublicPage ? (
+        <AgentInaccessibleOverlay onLeave={goBack} />
+      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

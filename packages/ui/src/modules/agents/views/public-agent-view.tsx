@@ -4,8 +4,12 @@ import { Button } from "@/components/ui/button";
 
 import { ownerInitials } from "../lib/owner-initials.js";
 
+export type PublicAgentPageState =
+  | { status: "loading" }
+  | { status: "ready"; agent: PublicAgent | null };
+
 export interface PublicAgentViewProps {
-  agent: PublicAgent | null;
+  state: PublicAgentPageState;
   brand: Brand;
   openPath: string;
 }
@@ -73,7 +77,7 @@ function SlackMessage({
 }
 
 function SlackHint({ brand }: { brand: Brand }) {
-  const botMention = `@${brand.name}`;
+  const botMention = `@${brand.short}`;
   return (
     <>
       <p className="mt-5 text-sm text-muted-foreground">
@@ -108,7 +112,13 @@ function pitch(brand: Brand, subject: "this-agent" | "platform"): string {
     subject === "this-agent"
       ? `This agent was created with ${brand.name}, a platform`
       : `${brand.name} is a platform`;
-  return `${lead} for running agents securely in the cloud, running experiments, and creating knowledge bases.`;
+  const entitlement = brand.vendor
+    ? ` Everyone at ${brand.vendor} already has access.`
+    : "";
+  return (
+    `${lead} for running agents securely in the cloud, running experiments, ` +
+    `and creating knowledge bases.${entitlement}`
+  );
 }
 
 function CallsToAction({
@@ -124,57 +134,88 @@ function CallsToAction({
         <a href="/">Create your own agent</a>
       </Button>
       <span className="ml-1 text-sm">
-        Already have an account? <a href={openPath}>Open in {brand.name}</a>
+        Already have an account?{" "}
+        <a href={openPath} className="font-medium text-accent hover:underline">
+          Open in {brand.name}
+        </a>
       </span>
     </div>
   );
 }
 
-export function PublicAgentView({
+function NamedAgent({
   agent,
+  brand,
+  openPath,
+}: {
+  agent: PublicAgent;
+  brand: Brand;
+  openPath: string;
+}) {
+  return (
+    <>
+      <div className="flex-1 px-6 pt-24">
+        <div className="mx-auto w-full max-w-[640px]">
+          <h1 className="text-2xl leading-tight font-semibold text-balance break-words">
+            {agent.name}
+          </h1>
+          {agent.ownerName === null ? null : (
+            <OwnerByline name={agent.ownerName} />
+          )}
+          <SlackHint brand={brand} />
+        </div>
+      </div>
+      <div className="mt-14 border-t border-border-ui bg-secondary px-6 pt-10 pb-12">
+        <div className="mx-auto w-full max-w-[640px]">
+          <h2 className="text-lg leading-snug font-semibold text-balance">
+            Create your own agents with {brand.name}.
+          </h2>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {pitch(brand, "this-agent")}
+          </p>
+          <CallsToAction brand={brand} openPath={openPath} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function GenericPitch({ brand, openPath }: { brand: Brand; openPath: string }) {
+  return (
+    <div className="flex-1 px-6 pt-24">
+      <div className="mx-auto w-full max-w-[640px]">
+        <h1 className="text-2xl leading-tight font-semibold text-balance">
+          Create your own agents with {brand.name}.
+        </h1>
+        <p className="mt-5 text-sm text-muted-foreground">
+          {pitch(brand, "platform")}
+        </p>
+        <CallsToAction brand={brand} openPath={openPath} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The whole page a visitor with no login sees. It
+ * renders from a state rather than from an agent, because the masthead has to
+ * paint before the public read resolves: the reader arrives from a Slack link
+ * on an empty document, and waiting for the fetch would show them a white page.
+ * The loading state carries no pitch, so a named agent never flashes the
+ * generic copy first.
+ */
+export function PublicAgentView({
+  state,
   brand,
   openPath,
 }: PublicAgentViewProps) {
   return (
     <main className="flex min-h-dvh flex-col bg-background text-foreground">
       <Masthead brand={brand} />
-      {agent ? (
-        <>
-          <div className="flex-1 px-6 pt-24">
-            <div className="mx-auto w-full max-w-[640px]">
-              <h1 className="text-2xl leading-tight font-semibold text-balance break-words">
-                {agent.name}
-              </h1>
-              {agent.ownerName === null ? null : (
-                <OwnerByline name={agent.ownerName} />
-              )}
-              <SlackHint brand={brand} />
-            </div>
-          </div>
-          <div className="mt-14 border-t border-border-ui bg-secondary px-6 pt-10 pb-12">
-            <div className="mx-auto w-full max-w-[640px]">
-              <h2 className="text-lg leading-snug font-semibold text-balance">
-                Create your own agents with {brand.name}.
-              </h2>
-              <p className="mt-3 text-sm text-muted-foreground">
-                {pitch(brand, "this-agent")}
-              </p>
-              <CallsToAction brand={brand} openPath={openPath} />
-            </div>
-          </div>
-        </>
+      {state.status === "loading" ? null : state.agent ? (
+        <NamedAgent agent={state.agent} brand={brand} openPath={openPath} />
       ) : (
-        <div className="flex-1 px-6 pt-24">
-          <div className="mx-auto w-full max-w-[640px]">
-            <h1 className="text-2xl leading-tight font-semibold text-balance">
-              Create your own agents with {brand.name}.
-            </h1>
-            <p className="mt-5 text-sm text-muted-foreground">
-              {pitch(brand, "platform")}
-            </p>
-            <CallsToAction brand={brand} openPath={openPath} />
-          </div>
-        </div>
+        <GenericPitch brand={brand} openPath={openPath} />
       )}
     </main>
   );

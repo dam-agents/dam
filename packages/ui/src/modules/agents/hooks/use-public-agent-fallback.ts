@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { useStore } from "../../../store.js";
 import { publicAgentPath } from "../../platform/lib/routes.js";
 
 /**
@@ -11,14 +12,30 @@ import { publicAgentPath } from "../../platform/lib/routes.js";
  * tree and never show the page. The navigation replaces the current entry
  * instead of adding one, or Back would land on the unreadable URL and redirect
  * forward again.
+ *
+ * An agent this tab just deleted reads as unreadable too — `agents.get` answers
+ * NOT_FOUND for a deleted agent and for someone else's alike — so a delete the
+ * user started is remembered and never redirects. Otherwise deleting your own
+ * agent would throw you out of the app onto its public page.
+ *
+ * It reports whether it is leaving, so the caller can cover its own surface for
+ * as long as the navigation takes.
  */
 export function usePublicAgentFallback(
   agentId: string | null,
   inaccessible: boolean,
-): void {
+): boolean {
+  const deleted = useStore((s) =>
+    agentId ? s.deletedAgents.has(agentId) : false,
+  );
+  const target =
+    agentId !== null && inaccessible && !deleted
+      ? publicAgentPath(agentId)
+      : null;
+
   useEffect(() => {
-    if (agentId !== null && inaccessible) {
-      window.location.replace(publicAgentPath(agentId));
-    }
-  }, [agentId, inaccessible]);
+    if (target !== null) window.location.replace(target);
+  }, [target]);
+
+  return target !== null;
 }
