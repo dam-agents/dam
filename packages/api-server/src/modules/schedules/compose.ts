@@ -67,7 +67,7 @@ export function composeSchedulesAtBoot(
 export interface ComposeSchedulesForOwnerOpts {
   boot: SchedulesBoot;
   owner: string;
-  agentBinding?: readonly string[] | "*";
+  agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
 }
 
@@ -81,7 +81,7 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
       repo: boot.repo,
       runner: boot.runner,
       owner,
-      ...(opts.agentBinding ? { agentBinding: opts.agentBinding } : {}),
+      agentBinding: opts.agentBinding,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),
     isOwnedSchedule: async (scheduleId) =>

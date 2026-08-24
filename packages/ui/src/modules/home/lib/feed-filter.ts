@@ -83,8 +83,22 @@ export interface FeedEmpty {
 
 export function emptyStateFor(
   status: FeedStatus,
-  options: { allSourcesExcluded: boolean; noRunningAgents: boolean },
+  options: {
+    allSourcesExcluded: boolean;
+    noRunningAgents: boolean;
+    unreadableAgents?: number;
+  },
 ): FeedEmpty {
+  if (options.unreadableAgents) {
+    const one = options.unreadableAgents === 1;
+    return {
+      title: one ? "One agent did not answer" : "Some agents did not answer",
+      message: one
+        ? "An agent could not be read, so its sessions are missing here."
+        : `${options.unreadableAgents} agents could not be read, so their sessions are missing here.`,
+      tone: "filtered",
+    };
+  }
   if (options.allSourcesExcluded) {
     return {
       title: "Nothing included",

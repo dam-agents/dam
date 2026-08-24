@@ -24,7 +24,6 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
   | { view: "home" }
-  | { view: "list" }
   | { view: "chat"; agent: string; session?: string }
   | { view: "settings"; settingsTab: SettingsTab }
   | { view: "terms" }
@@ -44,6 +43,7 @@ export type Route =
 export type View = Route["view"];
 
 export const RETIRED_PATHS = new Set([
+  "/sandboxes",
   "/sandboxes/",
   "/sandboxes/new",
   "/inbox",
@@ -75,7 +75,6 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (path === "/sandboxes") return { view: "list" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
@@ -114,8 +113,6 @@ export function routeToPath(route: Route): string {
   switch (route.view) {
     case "home":
       return "/";
-    case "list":
-      return "/sandboxes";
     case "chat": {
       const base = `/chat/${encodeURIComponent(route.agent)}`;
       return route.session

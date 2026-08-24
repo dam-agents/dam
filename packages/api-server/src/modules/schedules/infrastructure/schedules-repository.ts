@@ -1,11 +1,29 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, type Db, schedules as schedulesTable } from "db";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  type Db,
+  schedules as schedulesTable,
+} from "db";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { scheduleSpecSchema } from "api-server-api";
 
+const DEFAULT_LIMIT = 200;
+const MAX_LIMIT = 500;
+
+function clampLimit(limit: number | undefined): number {
+  if (limit === undefined) return DEFAULT_LIMIT;
+  return Math.min(Math.max(1, Math.trunc(limit)), MAX_LIMIT);
+}
+
 export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
-  listForOwner(owner: string, limit?: number): Promise<Schedule[]>;
+  listForOwner(
+    owner: string,
+    opts?: { limit?: number; agentIds?: readonly string[] },
+  ): Promise<Schedule[]>;
   get(id: string, owner: string): Promise<Schedule | null>;
   getById(id: string): Promise<Schedule | null>;
   getOwnerById(id: string): Promise<string | null>;
@@ -59,15 +77,22 @@ function rowToSchedule(row: InternalRow): Schedule {
 
 export function createSchedulesRepository(db: Db): SchedulesRepository {
   return {
-    async listForOwner(owner, limit): Promise<Schedule[]> {
-      const query = db
+    async listForOwner(owner, opts): Promise<Schedule[]> {
+      const agentIds = opts?.agentIds;
+      if (agentIds && agentIds.length === 0) return [];
+      const rows = (await db
         .select()
         .from(schedulesTable)
-        .where(eq(schedulesTable.owner, owner))
-        .orderBy(asc(schedulesTable.nextRun), asc(schedulesTable.createdAt));
-      const rows = (await (limit === undefined
-        ? query
-        : query.limit(limit))) as InternalRow[];
+        .where(
+          agentIds
+            ? and(
+                eq(schedulesTable.owner, owner),
+                inArray(schedulesTable.agentId, [...agentIds]),
+              )
+            : eq(schedulesTable.owner, owner),
+        )
+        .orderBy(asc(schedulesTable.nextRun), asc(schedulesTable.createdAt))
+        .limit(clampLimit(opts?.limit))) as InternalRow[];
       return rows.map(rowToSchedule);
     },
 

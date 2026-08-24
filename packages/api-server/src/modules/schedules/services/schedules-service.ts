@@ -29,21 +29,14 @@ function asBadRequest(fn: () => void): void {
   }
 }
 
-function matchesBinding(
-  binding: readonly string[] | "*",
-  agentId: string,
-): boolean {
-  return binding === "*" || binding.includes(agentId);
-}
-
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
   runner: SchedulerRunner;
   owner: string;
-  agentBinding?: readonly string[] | "*";
+  agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
 }): SchedulesService {
-  const binding = deps.agentBinding ?? "*";
+  const binding = deps.agentBinding;
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
     const ok = await deps.agentExists(agentId);
@@ -52,10 +45,11 @@ export function createSchedulesService(deps: {
 
   return {
     list: (agentId) => deps.repo.list(agentId, deps.owner),
-    async listForOwner(limit) {
-      const rows = await deps.repo.listForOwner(deps.owner, limit);
-      return rows.filter((row) => matchesBinding(binding, row.agentId));
-    },
+    listForOwner: (limit) =>
+      deps.repo.listForOwner(deps.owner, {
+        ...(limit === undefined ? {} : { limit }),
+        ...(binding === "*" ? {} : { agentIds: binding }),
+      }),
     get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {

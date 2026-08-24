@@ -13,7 +13,6 @@ import {
 
 type ParameterlessView =
   | "home"
-  | "list"
   | "terms"
   | "artifacts"
   | "coding-agents"

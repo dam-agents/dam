@@ -30,6 +30,7 @@ export function HomeView() {
     hasAgents,
     loadingAgents,
     loadingFeed,
+    unreadableAgents,
   } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss } = useDismissals();
@@ -129,6 +130,7 @@ export function HomeView() {
               {...emptyStateFor(status, {
                 allSourcesExcluded: included.size === 0,
                 noRunningAgents: runningAgents.length === 0,
+                unreadableAgents,
               })}
             />
           ) : (

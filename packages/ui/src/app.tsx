@@ -10,7 +10,6 @@ import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
-import { ListView } from "./modules/agents/views/list-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
@@ -119,9 +118,7 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "list" || view === "home"
-                  ? "max-w-[1200px]"
-                  : "max-w-[960px]",
+                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
               )}
             >
               {view === "home" ? (
@@ -143,7 +140,7 @@ function MainApp() {
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (
-                <ListView />
+                <HomeView />
               )}
             </div>
           )}

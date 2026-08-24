@@ -161,7 +161,7 @@ export function ArtifactsView() {
           title="No artifacts yet"
           message="Artifacts from every agent collect here."
           actionLabel="Go to agents"
-          onAction={() => setView("list")}
+          onAction={() => setView("coding-agents")}
         />
       )}
 

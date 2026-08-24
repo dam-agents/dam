@@ -23,6 +23,7 @@ export interface Feed {
   hasAgents: boolean;
   loadingAgents: boolean;
   loadingFeed: boolean;
+  unreadableAgents: number;
 }
 
 export function useFeed(): Feed {
@@ -46,6 +47,7 @@ export function useFeed(): Feed {
     combine: (results) => ({
       byAgent: results.map((result) => result.data ?? []),
       pending: results.some((result) => result.isPending),
+      failed: results.filter((result) => result.isError).length,
     }),
   });
 
@@ -64,5 +66,6 @@ export function useFeed(): Feed {
     hasAgents: agents.length > 0,
     loadingAgents: agentsQuery.isPending,
     loadingFeed: approvals.isPending || sessions.pending,
+    unreadableAgents: sessions.failed,
   };
 }

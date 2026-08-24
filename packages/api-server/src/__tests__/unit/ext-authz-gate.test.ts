@@ -37,7 +37,6 @@ function makeFakeRepo(): FakeRepo {
       });
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
-    findPendingAcpNativeByRpcId: async () => [],
     findActivePendingExtAuthz: async ({ agentId, host, method, path }) => {
       return (
         rows.find(

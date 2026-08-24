@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-08-17
+Last verified: 2026-08-24
 
 ## Overview
 
@@ -72,7 +72,7 @@ A per-agent Envoy pod paired with the agent-runtime pod. Mounts the owner's cred
 
 ### ui
 
-A React + Vite single-page app served by the api-server. It uses tRPC over a single authenticated WebSocket for resource management, permission flows, and live updates — server-pushed invalidation hints replace list polling, with pod-sourced reads (session status, in-pod file listings, runtime metrics) and an agent-reachability probe the remaining polls — and ACP WebSockets for bidirectional agent communication. A tab holds several ACP channels per Agent at once: the live channel for the session on screen, short-lived ones for history replay and one-shot reads such as the session list, and — while a brand-new session's first prompt is on its way — a channel of its own, which either becomes the live one or carries that turn to completion after the user has moved on. Permission prompts, tool calls, and streaming output all flow over the live ACP connection. See [`packages/ui/`](../../packages/ui/).
+A React + Vite single-page app served by the api-server. It uses tRPC over a single authenticated WebSocket for resource management, permission flows, and live updates — server-pushed invalidation hints replace list polling, with pod-sourced reads (session status, in-pod file listings, runtime metrics), an agent-reachability probe, and Home's approval and session-list reads the remaining polls — and ACP WebSockets for bidirectional agent communication. A tab holds several ACP channels per Agent at once: the live channel for the session on screen, short-lived ones for history replay and one-shot reads such as the session list, and — while a brand-new session's first prompt is on its way — a channel of its own, which either becomes the live one or carries that turn to completion after the user has moved on. Permission prompts, tool calls, and streaming output all flow over the live ACP connection. See [`packages/ui/`](../../packages/ui/).
 
 The URL addresses what the user is looking at — an Agent's chat, and the session open inside it — so a session is linkable from outside the UI and re-opens itself on a reload or a back step. A channel reply carries such a link back to the conversation it answered ([channels](channels.md)). Following one is owner-scoped like every other read: a Session belongs to its Agent's owner, and an Agent that isn't the viewer's simply isn't there — indistinguishable from one that never existed. Since the follower is usually *not* the owner (anyone in the conversation may click), that refusal is presented as its own screen naming the reason, not as an empty or perpetually-loading chat. There is no shared-session concept; the messenger conversation remains the shared surface.
 

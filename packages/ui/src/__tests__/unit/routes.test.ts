@@ -4,7 +4,6 @@ import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 
 const canonicalPaths = [
   "/",
-  "/sandboxes",
   "/chat/agent-1",
   "/chat/agent-1/sess-1",
   "/settings",
@@ -30,7 +29,7 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it.each(["/sandboxes/", "/sandboxes/new", "/inbox"])(
+  it.each(["/sandboxes", "/sandboxes/", "/sandboxes/new", "/inbox"])(
     "sends the retired %s to Home",
     (path) => {
       expect(parseRoute(path).view).toBe("home");

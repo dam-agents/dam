@@ -109,7 +109,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         runtimeProgress,
       }),
     schedulesServiceFor: (owner) =>
-      composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
+      composeSchedulesForOwner({
+        boot: schedulesBoot,
+        owner,
+        agentBinding: "*",
+      }).schedules,
     experimentsServiceFor: (owner) =>
       composeExperimentsForOwner({
         db,
