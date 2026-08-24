@@ -30,20 +30,21 @@ export type ProcessFailure =
 export type RunOnceResult = Result<ProcessOutput, ProcessFailure>;
 
 export function describeFailure(
-  command: readonly string[],
+  subject: string,
   failure: ProcessFailure,
 ): string {
-  const name = command.join(" ");
   switch (failure.kind) {
     case "not-spawnable":
-      return `${name} failed to start: ${failure.message}`;
+      return `${subject} failed to start: ${failure.message}`;
     case "timed-out":
-      return `${name} timed out after ${failure.timeoutMs}ms`;
+      return `${subject} timed out after ${failure.timeoutMs}ms`;
     case "output-capped":
-      return `${name} produced more than ${failure.maxOutputBytes} bytes of output`;
+      return `${subject} produced more than ${failure.maxOutputBytes} bytes of output`;
     case "exited": {
       const trimmed = failure.stderr.trim().slice(0, MAX_DESCRIBED_STDERR);
-      return `${name} exited ${failure.code}` + (trimmed ? `: ${trimmed}` : "");
+      return (
+        `${subject} exited ${failure.code}` + (trimmed ? `: ${trimmed}` : "")
+      );
     }
   }
 }

@@ -80,6 +80,6 @@ async function runCommand(
     onLine: (line) => log(`[workspace-command] ${line}`),
   });
   if (!result.ok) {
-    throw new Error(describeFailure(["workspace command"], result.error));
+    throw new Error(describeFailure("workspace command", result.error));
   }
 }

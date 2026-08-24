@@ -17,6 +17,6 @@ export function configureGitCredentialHelper(
     timeoutMs: SETUP_TIMEOUT_MS,
     env,
   }).then((result) => {
-    if (!result.ok) log(describeFailure(SETUP_COMMAND, result.error));
+    if (!result.ok) log(describeFailure(SETUP_COMMAND.join(" "), result.error));
   });
 }

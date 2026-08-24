@@ -619,6 +619,7 @@ function hasNullBytes(buf: Buffer): boolean {
 async function runProc(cmd: string, args: string[]): Promise<string> {
   const command = [cmd, ...args];
   const result = await runOnce({ command, timeoutMs: COMMAND_TIMEOUT_MS });
-  if (!result.ok) throw new Error(describeFailure(command, result.error));
+  if (!result.ok)
+    throw new Error(describeFailure(command.join(" "), result.error));
   return result.value.stdout;
 }

@@ -57,6 +57,10 @@ export function createExecHistoryProvider(
   const maxOutputBytes = deps.maxOutputBytes ?? MAX_EXEC_OUTPUT_BYTES;
   return {
     async fetch(sessionId) {
+      if (deps.command.length === 0) {
+        deps.log(`history provider for ${sessionId}: no command declared`);
+        return null;
+      }
       const command = [...deps.command, sessionId];
       const result = await runOnce({
         command,
@@ -66,7 +70,7 @@ export function createExecHistoryProvider(
       });
       if (!result.ok) {
         deps.log(
-          `history provider for ${sessionId}: ${describeFailure(command, result.error)}`,
+          `history provider for ${sessionId}: ${describeFailure(command.join(" "), result.error)}`,
         );
         return null;
       }
