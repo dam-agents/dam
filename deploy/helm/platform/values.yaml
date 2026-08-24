@@ -979,16 +979,6 @@ controller:
       # set unconditionally by the controller.
       env: []
       skillSources: []
-      # Shell-expanded at runtime — HOME is set on the init container.
-      # Templates that need extras (e.g. pip install) REPLACE this entirely.
-      init: |
-        #!/bin/bash
-        # Seed home from image on first boot
-        if [ ! -f $HOME/.initialized ]; then
-          cp -rn /app/working-dir/. $HOME/ 2>/dev/null || true
-          touch $HOME/.initialized
-        fi
-        mkdir -p $HOME/work
 
     # -- Size the controller materializes into any Agent spec that lacks a
     # limits dimension (#1900): fill-if-absent on reconcile, never touching

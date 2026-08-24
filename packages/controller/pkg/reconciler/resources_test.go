@@ -205,19 +205,8 @@ func TestBuildAgentStatefulSet_DefaultsToRunningReplicas(t *testing.T) {
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 }
 
-func TestBuildAgentStatefulSet_InitContainer(t *testing.T) {
+func TestBuildAgentStatefulSet_IgnoresSpecInit(t *testing.T) {
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
-	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1, "only the user-defined init runs")
-	ic := ss.Spec.Template.Spec.InitContainers[0]
-	assert.Equal(t, "init", ic.Name)
-	assert.Equal(t, "ghcr.io/myorg/agent:latest", ic.Image)
-	assert.Equal(t, []string{"sh", "-c", testAgent.Init}, ic.Command)
-}
-
-func TestBuildAgentStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
-	agent := *testAgent
-	agent.Init = ""
-	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "")
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 

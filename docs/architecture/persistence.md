@@ -104,6 +104,8 @@ Two domain resources are deliberately not CRDs:
 
 Each `agent` reconciles into a StatefulSet whose `volumeClaimTemplates` are derived from the Agent's declared mounts. A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `emptyDir` that dies with the pod. PVCs are `ReadWriteOnce` on ordinary single-writer storage — the agent pod is the volume's only writer, so no install needs a shared filesystem class. (Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.)
 
+A home volume mounts empty and shadows whatever the image bakes at that path, so the image's boot seeds it on the volume's first boot from the staged workspace: a no-clobber copy behind a sentinel file, run once per volume, so image content lands exactly once and files the user later edits are never overwritten by a restarted or upgraded image. The seed lives in the image's own boot sequence — the container entrypoint, replayed by the VM boot — with no separate init container, and the Agent CR's `spec.init` field (and a Template's `init`) is retained but no longer read.
+
 The default Claude Code template persists the workspace and `$HOME`. Together these hold:
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.

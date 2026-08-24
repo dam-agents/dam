@@ -25,7 +25,7 @@ func vmAgentCR() *apiv1.Agent {
 		{Path: "/home/agent", Persist: true, Size: "10Gi"},
 		{Path: "/scratchpad", Persist: false},
 	}
-	a.Spec.Init = "touch $HOME/.initialized"
+	a.Spec.Init = "echo custom-init-ignored"
 	return a
 }
 
@@ -143,8 +143,8 @@ func TestVMBackendReconcilesVirtualMachine(t *testing.T) {
 		"mount -t virtiofs 'scratchpad'",
 		"ephemeral mounts have no virtiofs device to mount",
 	)
-	assert.Contains(t, userdata, "HOME=/home/agent")
-	assert.Contains(t, userdata, ".initialized")
+	assert.NotContains(t, userdata, "custom-init-ignored", "spec.init is retained but no longer read")
+	assert.Contains(t, userdata, ".initialized", "the static first-boot seed rides userdata")
 	assert.Contains(t, userdata, "ln -sfn /tmp/agent-cache")
 }
 

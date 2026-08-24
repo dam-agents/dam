@@ -46,6 +46,14 @@ if [ -s "$mitm_ca" ]; then
 	fi
 fi
 
+home="${HOME:-/home/agent}"
+if [ ! -f "$home/.initialized" ]; then
+	cp -rn /app/working-dir/. "$home/" 2>/dev/null || true
+	touch "$home/.initialized"
+	echo "agent-entrypoint: seeded home from image workspace"
+fi
+mkdir -p "$home/work"
+
 # $HOME is a shared RWX network volume; cache traffic (mise, uv, npm, ...)
 # would hammer it, so ~/.cache points at pod-local disk (/tmp is an emptyDir)
 # instead. Caches are disposable, so a pre-existing real directory (older
@@ -53,7 +61,6 @@ fi
 # swap idempotent when the owner pod and a fork pod boot the volume together.
 # The symlink persists on the volume but /tmp is fresh every pod, so the
 # target is (re)created each boot to keep the link from dangling.
-home="${HOME:-/home/agent}"
 mkdir -p /tmp/agent-cache
 # On the VM backend $HOME is unprivileged virtiofs, where a non-root caller
 # cannot create symlinks (virtiofsd lacks CAP_CHOWN, the guest kernel returns

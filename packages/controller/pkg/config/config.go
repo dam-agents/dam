@@ -222,6 +222,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.AgentBase.AccessMode != "" {
 		slog.Warn("controller.agent.base.accessMode is deprecated and ignored — workspace volumes are always ReadWriteOnce (#2988); remove it from your values")
 	}
+	if cfg.AgentTemplateDefaults.Init != "" {
+		slog.Warn("controller.agent.templateDefaults.init is deprecated and ignored — first-boot home seeding moved into the agent image's boot (#3242); remove it from your values")
+	}
 	if v := os.Getenv("STORAGE_MIGRATION"); v != "" {
 		dec := json.NewDecoder(strings.NewReader(v))
 		dec.DisallowUnknownFields()
