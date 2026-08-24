@@ -11,6 +11,7 @@ import {
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
+import type { HistoryProvider } from "../../infrastructure/history-provider.js";
 import {
   platformSessionMetaSchema,
   type PlatformSessionMeta,
@@ -38,6 +39,10 @@ const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
+const DEFAULT_REPLAY_TAIL_EVENTS = 200;
+
+const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
+
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 export interface AcpRuntimeStatus {
@@ -63,6 +68,9 @@ export interface AcpRuntimeDeps {
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
   logBytesCap?: number;
+  replayTailEvents?: number;
+  harnessLoadTimeoutMs?: number;
+  historyProvider?: HistoryProvider;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
@@ -76,6 +84,7 @@ interface OutboundMapping {
   promptSessionId: string | null;
   attachSessionId: string | null;
   platformMeta: PlatformSessionMeta | null;
+  rehydrate?: boolean;
 }
 
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
@@ -88,6 +97,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.backgroundWorkRecheckMs ?? DEFAULT_BACKGROUND_WORK_RECHECK_MS;
   const warmStartTimeoutMs =
     deps.warmStartTimeoutMs ?? DEFAULT_WARM_START_TIMEOUT_MS;
+  const harnessLoadTimeoutMs =
+    deps.harnessLoadTimeoutMs ?? DEFAULT_HARNESS_LOAD_TIMEOUT_MS;
   let sessionCloseSupported = true;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
@@ -107,6 +118,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const transcript = createSessionTranscript({
     logBytesCap,
+    replayTailEvents: deps.replayTailEvents ?? DEFAULT_REPLAY_TAIL_EVENTS,
     engagedChannelsFor,
   });
 
@@ -148,12 +160,122 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       lease.send(frame);
     },
     workingDir: deps.workingDir,
+    loadTimeoutMs: harnessLoadTimeoutMs,
     log(msg) {
       deps.log?.(msg);
+    },
+    historyProvider: deps.historyProvider,
+    onProviderServed(sessionId) {
+      harnessColdSessions.add(sessionId);
+    },
+    harnessLoadOrphaned(sessionId) {
+      return orphanedHarnessLoads.has(sessionId);
+    },
+    onLoadOrphaned(sessionId, outboundId) {
+      orphanLoad(sessionId, outboundId);
     },
   });
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const harnessColdSessions = new Set<string>();
+  const rehydratingSessions = new Set<string>();
+  const rehydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const rehydrateLoadIds = new Map<string, number>();
+  const orphanedHarnessLoads = new Map<string, number>();
+  const heldPrompts = new Map<
+    string,
+    { channel: ClientChannel; data: string }[]
+  >();
+
+  function orphanLoad(sessionId: string, outboundId: number): void {
+    orphanedHarnessLoads.set(sessionId, outboundId);
+    deps.log?.(
+      `harness left session/load for ${sessionId} unanswered; ` +
+        `suppressing its frames and recycling the harness`,
+    );
+    lease.requestRecycle();
+  }
+
+  function settleOrphanedLoad(
+    sessionId: string | null,
+    outboundId: number,
+  ): boolean {
+    if (sessionId === null) return false;
+    if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
+    orphanedHarnessLoads.delete(sessionId);
+    deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
+    return true;
+  }
+
+  function startHarnessRehydrate(sessionId: string): void {
+    rehydratingSessions.add(sessionId);
+    rehydrateTimers.set(
+      sessionId,
+      setTimeout(() => {
+        if (!rehydratingSessions.has(sessionId)) return;
+        deps.log?.(`rehydrate of ${sessionId} timed out`);
+        const pendingLoadId = rehydrateLoadIds.get(sessionId);
+        finishHarnessRehydrate(sessionId, {
+          error: {
+            code: -32000,
+            message: "the harness did not answer the session load in time",
+          },
+        });
+        if (pendingLoadId !== undefined) orphanLoad(sessionId, pendingLoadId);
+      }, harnessLoadTimeoutMs),
+    );
+    const outboundId = nextOutboundId++;
+    rehydrateLoadIds.set(sessionId, outboundId);
+    outboundIdToClient.set(outboundId, {
+      channel: null,
+      originalId: null,
+      method: "session/load",
+      promptSessionId: null,
+      attachSessionId: sessionId,
+      platformMeta: null,
+      rehydrate: true,
+    });
+    lease.send(
+      rewriteCwd(
+        {
+          jsonrpc: "2.0",
+          id: outboundId,
+          method: "session/load",
+          params: { sessionId, cwd: ".", mcpServers: [] },
+        },
+        deps.workingDir,
+      ),
+    );
+  }
+
+  function finishHarnessRehydrate(sessionId: string, frame: unknown): void {
+    const timer = rehydrateTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    rehydrateTimers.delete(sessionId);
+    rehydrateLoadIds.delete(sessionId);
+    rehydratingSessions.delete(sessionId);
+    const held = heldPrompts.get(sessionId) ?? [];
+    heldPrompts.delete(sessionId);
+    const error = (frame as { error?: unknown }).error;
+    if (error === undefined) {
+      harnessColdSessions.delete(sessionId);
+      for (const prompt of held) {
+        if (prompt.channel.isOpen())
+          handleClientMessage(prompt.channel, prompt.data);
+      }
+      return;
+    }
+    for (const prompt of held) {
+      if (!prompt.channel.isOpen()) continue;
+      const parsed = parseFrame(prompt.data);
+      if (!parsed || !isRequest(parsed)) continue;
+      prompt.channel.send(
+        rewriteAuthError(
+          JSON.stringify({ jsonrpc: "2.0", id: parsed.id, error }),
+        ),
+      );
+    }
+  }
 
   const teardownCloseByReason: Record<
     HarnessTeardownReason,
@@ -161,6 +283,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   > = {
     "agent-exited": { code: 1011, message: "agent exited" },
     "env-recycle": { code: 1011, message: "agent recycled for env change" },
+    "harness-unresponsive": {
+      code: 1011,
+      message: "agent restarted after it stopped answering",
+    },
     shutdown: { code: 1000, message: "shutdown" },
   };
 
@@ -175,7 +301,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     pendingRequests.clear();
     for (const t of idleReapTimers.values()) clearTimeout(t);
     idleReapTimers.clear();
+    for (const t of rehydrateTimers.values()) clearTimeout(t);
+    rehydrateTimers.clear();
+    rehydrateLoadIds.clear();
+    orphanedHarnessLoads.clear();
     promptScheduler.clear();
+    harnessColdSessions.clear();
+    rehydratingSessions.clear();
+    heldPrompts.clear();
     deps.backgroundWork?.clear();
   }
 
@@ -291,6 +424,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript.dropChannel(channel);
     promptScheduler.dropChannel(channel);
     bootstrap.dropChannel(channel);
+    for (const [sid, held] of heldPrompts) {
+      const remaining = held.filter((p) => p.channel !== channel);
+      if (remaining.length === 0) heldPrompts.delete(sid);
+      else heldPrompts.set(sid, remaining);
+    }
 
     for (const [outId, m] of outboundIdToClient) {
       if (m.channel === channel && m.promptSessionId === null) {
@@ -307,7 +445,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   function tearDownSession(sessionId: string): void {
-    if (sessionCloseSupported) {
+    if (sessionCloseSupported && !harnessColdSessions.has(sessionId)) {
       lease.send({
         jsonrpc: "2.0",
         id: nextOutboundId++,
@@ -315,6 +453,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         params: { sessionId },
       });
     }
+    harnessColdSessions.delete(sessionId);
+    rehydratingSessions.delete(sessionId);
+    const rehydrateTimer = rehydrateTimers.get(sessionId);
+    if (rehydrateTimer) clearTimeout(rehydrateTimer);
+    rehydrateTimers.delete(sessionId);
+    rehydrateLoadIds.delete(sessionId);
+    heldPrompts.delete(sessionId);
     transcript.forget(sessionId);
     promptScheduler.forget(sessionId);
     pendingRequests.forget(sessionId);
@@ -380,6 +525,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (mapping) {
         outboundIdToClient.delete(outboundId);
 
+        if (settleOrphanedLoad(mapping.attachSessionId, outboundId)) return;
+
         if (mapping.method === "initialize") {
           sessionCloseSupported = extractSessionCloseSupported(frame);
         }
@@ -406,7 +553,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
 
         if (mapping.method === "session/load" && mapping.attachSessionId) {
-          bootstrap.onLoadResponse(mapping.attachSessionId, frame);
+          if (mapping.rehydrate) {
+            finishHarnessRehydrate(mapping.attachSessionId, frame);
+          } else {
+            bootstrap.onLoadResponse(mapping.attachSessionId, frame);
+          }
         }
 
         if (mapping.channel && mapping.originalId !== null) {
@@ -451,12 +602,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
+      if (
+        orphanedHarnessLoads.has(sessionId) ||
+        rehydratingSessions.has(sessionId)
+      ) {
+        return;
+      }
       if (bootstrap.has(sessionId)) {
-        transcript.appendReplay(
-          sessionId,
-          line,
-          bootstrap.initiatorOf(sessionId),
-        );
+        transcript.appendReplay(sessionId, line);
       } else {
         transcript.append(sessionId, line);
       }
@@ -504,7 +657,50 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (method === "session/load" && paramsSid) {
-        if (bootstrap.requestLoad(channel, frame.id, paramsSid)) return;
+        const replayBefore = extractReplayBefore(frame);
+        const loadToken = extractLoadToken(frame) ?? undefined;
+        if (replayBefore !== null) {
+          bootstrap.requestPage(channel, frame.id, paramsSid, replayBefore, {
+            loadToken,
+          });
+        } else {
+          bootstrap.requestLoad(channel, frame.id, paramsSid, {
+            tail: extractTailFlag(frame),
+            loadToken,
+          });
+        }
+        return;
+      }
+
+      if (
+        method === "session/prompt" &&
+        paramsSid &&
+        harnessColdSessions.has(paramsSid)
+      ) {
+        if (orphanedHarnessLoads.has(paramsSid)) {
+          sendToChannel(
+            channel,
+            rewriteAuthError(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: frame.id,
+                error: {
+                  code: -32000,
+                  message:
+                    "the harness is not answering; it is being restarted — try again",
+                },
+              }),
+            ),
+          );
+          return;
+        }
+        const held = heldPrompts.get(paramsSid) ?? [];
+        held.push({ channel, data });
+        heldPrompts.set(paramsSid, held);
+        if (!rehydratingSessions.has(paramsSid)) {
+          startHarnessRehydrate(paramsSid);
+        }
+        return;
       }
 
       const outboundId = nextOutboundId++;
@@ -512,7 +708,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (paramsSid) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
-      const attachSessionId = method === "session/load" ? paramsSid : null;
 
       const platformMeta =
         method === "session/new" ? extractPlatformMeta(frame) : null;
@@ -539,13 +734,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         originalId: frame.id,
         method,
         promptSessionId,
-        attachSessionId,
+        attachSessionId: null,
         platformMeta,
       });
-
-      if (method === "session/load" && attachSessionId) {
-        bootstrap.trackClientLoad(attachSessionId, channel);
-      }
 
       if (promptSessionId !== null) {
         deps.sessionMetadata?.recordActivity(promptSessionId);
@@ -644,6 +835,45 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   if (!isNonNullObject(meta) || !("platform" in meta)) return null;
   const parsed = platformSessionMetaSchema.safeParse(meta.platform);
   return parsed.success ? parsed.data : null;
+}
+
+function extractTailFlag(frame: unknown): boolean {
+  if (!isNonNullObject(frame)) return false;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return false;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return false;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return false;
+  return platform.tail === true;
+}
+
+function extractReplayBefore(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return null;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return null;
+  const replayBefore = platform.replayBefore;
+  return typeof replayBefore === "string" && replayBefore.length > 0
+    ? replayBefore
+    : null;
+}
+
+function extractLoadToken(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const meta = params._meta;
+  if (!isNonNullObject(meta)) return null;
+  const platform = meta.platform;
+  if (!isNonNullObject(platform)) return null;
+  const loadToken = platform.loadToken;
+  return typeof loadToken === "string" && loadToken.length > 0
+    ? loadToken
+    : null;
 }
 
 function extractPromptId(frame: unknown): string | null {

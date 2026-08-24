@@ -36,6 +36,7 @@ COPY model-gateway.mjs /usr/local/lib/model-gateway.mjs
 COPY report-background-work.mjs /usr/local/lib/report-background-work.mjs
 COPY model-gateway.sh /usr/local/lib/model-gateway.sh
 COPY sync-otel-settings.mjs /usr/local/lib/sync-otel-settings.mjs
+COPY harness-history-lib.mjs /usr/local/lib/harness-history-lib.mjs
 COPY --chmod=0755 pod-service.sh /usr/local/bin/pod-service
 COPY model-gateway-login.sh /etc/profile.d/model-gateway.sh
 COPY --chmod=0755 harness-chat.sh /usr/local/bin/harness-chat
@@ -47,6 +48,9 @@ COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 # backends serve them natively, and a LiteLLM-fronted proxy keys on the tool
 # declaration to run the search itself (proxy-side limitations: #3092). The old
 # cc-websearch DDG fallback is intentionally gone, not pending (#1087 revert).
+# harness-history-lib.mjs imports the adapter's own replay conversion; the
+# symlink pins the resolution to whatever version mise installed above
+RUN ln -s "$(mise where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp" /usr/local/lib/claude-agent-acp
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
     mkdir -p /etc/claude-code &&\
     ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md

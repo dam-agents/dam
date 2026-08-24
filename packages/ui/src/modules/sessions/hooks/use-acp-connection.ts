@@ -1,15 +1,21 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import { SessionMode, SessionType } from "api-server-api";
+import {
+  platformClippedReplayMetaSchema,
+  SessionMode,
+  SessionType,
+} from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
 import {
+  applyUpdate,
   failQueuedOnDisconnect,
+  finalizeAllStreaming,
   mergeLocalFailures,
 } from "../../acp/session-projection.js";
-import type { UpdateHandler } from "../../acp/types.js";
+import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "./use-prompt-delivery.js";
@@ -31,7 +37,6 @@ interface UseAcpConnectionOptions {
   engage: (conn: ClientSideConnection) => Promise<string | null>;
   bindEngagement: (sessionId: string) => void;
   clearEngagement: () => void;
-  loadHistory: (sid: string) => Promise<Message[]>;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   delivery: PromptDelivery;
 }
@@ -54,6 +59,10 @@ export interface UseAcpConnectionResult {
   state: ConnectionState;
   ensureLive: () => Promise<LiveSession | null>;
   beginSession: () => Promise<StartedSession>;
+  loadSessionHistory: (
+    sid: string,
+    replayBefore?: string,
+  ) => Promise<Message[]>;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
   reset: () => void;
 }
@@ -71,7 +80,6 @@ export function useAcpConnection(
     engage,
     bindEngagement,
     clearEngagement,
-    loadHistory,
     setMessages,
     delivery,
   } = opts;
@@ -168,8 +176,8 @@ export function useAcpConnection(
       const handler = makeUpdateHandler();
       const { connection, ws } = await openInitializedConnection(
         selectedAgent,
-        (update, updateSessionId) => {
-          if (listening) handler(update, updateSessionId);
+        (update, updateSessionId, replayFor) => {
+          if (listening) handler(update, updateSessionId, replayFor);
         },
       );
       ws.addEventListener("close", () => releaseStartSlot(holders));
@@ -234,46 +242,130 @@ export function useAcpConnection(
     return promise;
   }, [startSession, releaseStartSlot]);
 
+  const collectorRef = useRef<{
+    sid: string;
+    token: string;
+    updates: AcpUpdate[];
+  } | null>(null);
+
+  const openConnection = useCallback(async (): Promise<LiveConnection> => {
+    const existing = connectionRef.current;
+    if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
+    if (!selectedAgent) throw new Error("No agent selected");
+    const handler = makeUpdateHandler();
+    const { connection, ws } = await openInitializedConnection(
+      selectedAgent,
+      (update, updateSessionId, replayFor) => {
+        const collector = collectorRef.current;
+        if (
+          collector &&
+          updateSessionId === collector.sid &&
+          replayFor === collector.token
+        ) {
+          collector.updates.push(update);
+          return;
+        }
+        handler(update, updateSessionId);
+      },
+    );
+    attachCloseHandler(ws);
+    connectionRef.current = { connection, ws };
+    return connectionRef.current;
+  }, [selectedAgent, makeUpdateHandler, attachCloseHandler]);
+
+  const loadChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const runSessionLoad = useCallback(
+    async (sid: string, replayBefore?: string): Promise<Message[]> => {
+      const generation = generationRef.current;
+      const live = await openConnection();
+      const loadToken = crypto.randomUUID();
+      const collector = { sid, token: loadToken, updates: [] as AcpUpdate[] };
+      collectorRef.current = collector;
+      let result: unknown;
+      try {
+        result = await live.connection.loadSession({
+          sessionId: sid,
+          cwd: ".",
+          mcpServers: [],
+          _meta: {
+            platform:
+              replayBefore !== undefined
+                ? { replayBefore, loadToken }
+                : { tail: true, loadToken },
+          },
+        });
+      } finally {
+        if (collectorRef.current === collector) collectorRef.current = null;
+      }
+      const clippedRaw = (
+        result as { _meta?: { platform?: { clipped?: unknown } } } | null
+      )?._meta?.platform?.clipped;
+      const clipped =
+        clippedRaw === undefined
+          ? null
+          : platformClippedReplayMetaSchema.safeParse(clippedRaw);
+      const updates: AcpUpdate[] =
+        clipped?.success === true
+          ? [
+              {
+                sessionUpdate: "platform_clipped_replay",
+                ...(clipped.data.older !== undefined
+                  ? { older: clipped.data.older }
+                  : {}),
+              },
+              ...collector.updates,
+            ]
+          : collector.updates;
+      const replayed = finalizeAllStreaming(
+        updates.reduce<Message[]>(
+          (acc, update) => applyUpdate(acc, update),
+          [],
+        ),
+      );
+      if (replayBefore === undefined && generation === generationRef.current) {
+        bindEngagement(sid);
+        pendingReloadRef.current = false;
+        setState("live");
+      }
+      return replayed;
+    },
+    [openConnection, bindEngagement],
+  );
+
+  const loadSessionHistory = useCallback(
+    (sid: string, replayBefore?: string): Promise<Message[]> => {
+      const run = (): Promise<Message[]> => runSessionLoad(sid, replayBefore);
+      const chained = loadChainRef.current.then(run, run);
+      loadChainRef.current = chained.catch(() => {});
+      return chained;
+    },
+    [runSessionLoad],
+  );
+
   const ensureInner = useCallback(async (): Promise<LiveSession | null> => {
     if (!selectedAgent) return null;
     const generation = generationRef.current;
 
-    if (pendingReloadRef.current) {
-      const sid = useStore.getState().sessionId;
-      pendingReloadRef.current = false;
-      if (sid) {
-        setState("reloading");
-        try {
-          const fresh = await loadHistory(sid);
+    const reloadSid = pendingReloadRef.current
+      ? useStore.getState().sessionId
+      : null;
 
-          if (useStore.getState().sessionId !== sid) return null;
-          setMessages((prev) => mergeLocalFailures(fresh, prev));
-        } catch (e) {
-          pendingReloadRef.current = true;
-          throw e;
-        }
-      }
+    const live = await openConnection();
+    if (generation !== generationRef.current) {
+      try {
+        live.ws.close();
+      } catch {}
+      return null;
     }
 
-    if (
-      !connectionRef.current ||
-      connectionRef.current.ws.readyState !== WebSocket.OPEN
-    ) {
-      const { connection, ws } = await openInitializedConnection(
-        selectedAgent,
-        makeUpdateHandler(),
-      );
-      if (generation !== generationRef.current) {
-        try {
-          ws.close();
-        } catch {}
-        return null;
-      }
-      attachCloseHandler(ws);
-      connectionRef.current = { connection, ws };
+    if (reloadSid) {
+      setState("reloading");
+      const fresh = await loadSessionHistory(reloadSid);
+      if (useStore.getState().sessionId !== reloadSid) return null;
+      setMessages((prev) => mergeLocalFailures(fresh, prev));
     }
 
-    const live = connectionRef.current;
     const engagedSessionId = await engage(live.connection);
     if (!engagedSessionId || generation !== generationRef.current) return null;
     setState("live");
@@ -282,14 +374,7 @@ export function useAcpConnection(
       sessionId: engagedSessionId,
       isOpen: () => live.ws.readyState === WebSocket.OPEN,
     };
-  }, [
-    selectedAgent,
-    makeUpdateHandler,
-    attachCloseHandler,
-    engage,
-    loadHistory,
-    setMessages,
-  ]);
+  }, [selectedAgent, openConnection, loadSessionHistory, engage, setMessages]);
 
   const ensureLive = useCallback((): Promise<LiveSession | null> => {
     if (!ensureInFlightRef.current) {
@@ -376,5 +461,12 @@ export function useAcpConnection(
     reset();
   }, [sessionId, sessionMode, reset]);
 
-  return { state, ensureLive, beginSession, connectionRef, reset };
+  return {
+    state,
+    ensureLive,
+    beginSession,
+    loadSessionHistory,
+    connectionRef,
+    reset,
+  };
 }
