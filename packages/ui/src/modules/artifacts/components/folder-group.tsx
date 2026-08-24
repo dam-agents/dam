@@ -24,6 +24,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
+import { toastCopyOutcome } from "../lib/share-link.js";
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";
 
 export interface FolderGroupActions {
@@ -109,11 +110,11 @@ export function FolderGroup({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  disabled={sharedCount === 0}
+                  disabled={sharedCount === 0 || !onCopyFolderLink}
                   onSelect={() =>
                     void copy(
                       () => onCopyFolderLink?.(folder) ?? Promise.resolve(null),
-                    )
+                    ).then(toastCopyOutcome)
                   }
                 >
                   <Link size={14} />
