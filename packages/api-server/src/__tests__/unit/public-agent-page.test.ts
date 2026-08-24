@@ -5,7 +5,7 @@ import {
   createPublicAgentPageService,
   type PublicAgentIdentity,
 } from "../../modules/agents/services/public-agent-page-service.js";
-import { reconcilePublicAgentProfiles } from "../../modules/agents/services/public-agent-profile-reconcile.js";
+import { createPublicAgentProfileReconcileService } from "../../modules/agents/services/public-agent-profile-reconcile-service.js";
 import { startPersistPublicAgentProfileSaga } from "../../modules/agents/sagas/persist-public-agent-profile.js";
 
 /**
@@ -72,16 +72,15 @@ function harness(options: {
   });
 
   const logs: string[] = [];
-  const reconcile = () =>
-    reconcilePublicAgentProfiles({
-      ...repo,
-      readAgent,
-      log: (m) => logs.push(m),
-    });
+  const reconcileService = createPublicAgentProfileReconcileService({
+    ...repo,
+    readAgent,
+    log: (m) => logs.push(m),
+  });
 
   return {
     service,
-    reconcile,
+    reconcile: () => reconcileService.reconcile(),
     repo,
     readAgent,
     logs,

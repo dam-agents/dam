@@ -411,7 +411,8 @@ export async function bootstrap() {
     "public-agent-profile-reconcile",
     60 * 60_000,
     async () => {
-      const { deleted, failed } = await publicAgentPage.reconcile();
+      const { deleted, failed } =
+        await publicAgentPage.reconcileService.reconcile();
       if (deleted > 0 || failed > 0)
         getLogger().info(
           `[public-agent-profile] marked ${deleted} profile(s) deleted, ${failed} failed`,

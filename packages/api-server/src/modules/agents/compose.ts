@@ -46,9 +46,9 @@ import {
   type PublicAgentPageService,
 } from "./services/public-agent-page-service.js";
 import {
-  reconcilePublicAgentProfiles,
-  type PublicAgentProfileReconcileResult,
-} from "./services/public-agent-profile-reconcile.js";
+  createPublicAgentProfileReconcileService,
+  type PublicAgentProfileReconcileService,
+} from "./services/public-agent-profile-reconcile-service.js";
 import { startPersistPublicAgentProfileSaga } from "./sagas/persist-public-agent-profile.js";
 import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
@@ -144,7 +144,7 @@ export function composePublicAgentPage(deps: {
 }): {
   service: PublicAgentPageService;
   startSaga: () => Subscription;
-  reconcile: () => Promise<PublicAgentProfileReconcileResult>;
+  reconcileService: PublicAgentProfileReconcileService;
 } {
   const readAgent = async (
     agentId: string,
@@ -172,13 +172,12 @@ export function composePublicAgentPage(deps: {
         upsertProfile: upsert,
         markProfileDeleted: markDeleted,
       }),
-    reconcile: () =>
-      reconcilePublicAgentProfiles({
-        listProfileIds: listProfileIdsForReconcile(deps.db),
-        readAgent,
-        upsertProfile: upsert,
-        markProfileDeleted: markDeleted,
-        log: deps.log,
-      }),
+    reconcileService: createPublicAgentProfileReconcileService({
+      listProfileIds: listProfileIdsForReconcile(deps.db),
+      readAgent,
+      upsertProfile: upsert,
+      markProfileDeleted: markDeleted,
+      log: deps.log,
+    }),
   };
 }
