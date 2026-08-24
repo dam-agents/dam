@@ -68,9 +68,7 @@ export function SchedulesWidget() {
   if (isPending || agentsPending) return <WidgetSkeleton rows={3} />;
 
   const live = new Set(agents.map((a) => a.id));
-  const schedules = agentsPending
-    ? []
-    : (data ?? []).filter((s) => live.has(s.agentId));
+  const schedules = (data ?? []).filter((s) => live.has(s.agentId));
   const nameOf = (agentId: string) =>
     agents.find((a) => a.id === agentId)?.name ?? agentId;
 
