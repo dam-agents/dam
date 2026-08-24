@@ -1,14 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import type {
-  AgentConnections,
-  Connection,
-  ConnectionCreateInput,
-  ConnectionsService,
-  ConnectionTemplateView,
-  ConnectionView,
-  Contribution,
-  SecretRef,
+import {
+  parseKbShareString,
+  SHARED_KB_TEMPLATE_ID,
+  type AgentConnections,
+  type Connection,
+  type ConnectionCreateInput,
+  type ConnectionsService,
+  type ConnectionTemplateView,
+  type ConnectionView,
+  type Contribution,
+  type SecretRef,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -50,6 +52,8 @@ import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 
+const MAX_SHARED_KB_CONNECTIONS_PER_OWNER = 20;
+
 export function createConnectionsService(deps: {
   ownerId: string;
   templates: ConnectionTemplateRegistry;
@@ -62,7 +66,15 @@ export function createConnectionsService(deps: {
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
+  verifyKbShare?: (shareString: string) => Promise<boolean>;
+  resolveKbShare?: (
+    shareId: string,
+    presentedSecret: string | null,
+  ) => Promise<{ name: string | null; reachable: boolean } | null>;
+  maxSharedKbConnections?: number;
 }): ConnectionsService {
+  const maxSharedKbConnections =
+    deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
     const hosts = conn.contributions
@@ -342,7 +354,27 @@ export function createConnectionsService(deps: {
 
     async listConnections(): Promise<ConnectionView[]> {
       const conns = await deps.repo.listByOwner(deps.ownerId);
-      return conns.map(toView);
+      const views = conns.map(toView);
+      const resolve = deps.resolveKbShare;
+      if (resolve) {
+        await Promise.all(
+          views.map(async (view, i) => {
+            const conn = conns[i]!;
+            if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
+            if (conn.auth.kind !== "header") return;
+            const shareId = conn.auth.headerName.replace(/^x-kb-token-/, "");
+            const presented = await deps.secretStore.getField(
+              conn.auth.valueRef,
+            );
+            const share = await resolve(shareId, presented);
+            if (!share || !share.reachable) {
+              view.status = "expired";
+            }
+            if (share?.name) view.name = share.name;
+          }),
+        );
+      }
+      return views;
     },
 
     async getConnection(id: string): Promise<ConnectionView | null> {
@@ -560,6 +592,39 @@ export function createConnectionsService(deps: {
       const template = deps.templates.get(input.templateId);
       if (!template) {
         throw new Error(`unknown template ${input.templateId}`);
+      }
+      if (
+        template.id === SHARED_KB_TEMPLATE_ID &&
+        input.authKind === "header"
+      ) {
+        if (deps.verifyKbShare) {
+          const valid = await deps.verifyKbShare(input.value);
+          if (!valid) {
+            throw new Error(
+              "unknown or revoked share link — ask the knowledge base owner for a current one",
+            );
+          }
+        }
+        const parsed = parseKbShareString(input.value);
+        const sharedKb = (await deps.repo.listByOwner(deps.ownerId)).filter(
+          (c) => c.templateId === SHARED_KB_TEMPLATE_ID,
+        );
+        const existing = parsed
+          ? sharedKb.find(
+              (c) =>
+                c.auth.kind === "header" &&
+                c.auth.headerName === `x-kb-token-${parsed.shareId}`,
+            )
+          : undefined;
+        if (existing && existing.auth.kind === "header" && parsed) {
+          await rotateHeaderValue(existing, existing.auth, parsed.secret);
+          return existing.id;
+        }
+        if (sharedKb.length >= maxSharedKbConnections) {
+          throw new Error(
+            `Maximum ${maxSharedKbConnections} shared knowledge bases per account — remove one first.`,
+          );
+        }
       }
       const effectiveInput = await applyFamilyCreds(template, input);
       const built = await buildConnection(

@@ -29,6 +29,13 @@ import {
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
+import {
+  composeKbShareServing,
+  createKbShareAgentCleanup,
+  createShareHostApp,
+  startKbShareAutoRefresh,
+  startKbSharesCleanupSaga,
+} from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
@@ -281,10 +288,18 @@ export async function bootstrap() {
   };
   const shareHostGate = createShareHostGate(
     config.shareBaseUrl,
-    createShareViewerApp({
-      viewer: composeShareViewer({ db, artifacts }),
-      brandName: config.brand.name,
-      uiBaseUrl: config.uiBaseUrl,
+    createShareHostApp({
+      viewer: createShareViewerApp({
+        viewer: composeShareViewer({ db, artifacts }),
+        brandName: config.brand.name,
+        uiBaseUrl: config.uiBaseUrl,
+      }),
+      kbMcp: composeKbShareServing({
+        db,
+        store: artifacts,
+        k8s: k8sClient,
+        grepDeadlineMs: config.kbShareGrepDeadlineMs,
+      }),
     }),
   );
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
@@ -340,6 +355,7 @@ export async function bootstrap() {
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
+    shareBaseUrl: config.shareBaseUrl,
     secretStore: secretStores.default(),
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
@@ -451,6 +467,28 @@ export async function bootstrap() {
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
   );
+  const kbSharesCleanupSub = startKbSharesCleanupSaga(
+    createKbShareAgentCleanup({
+      db,
+      namespace: config.namespace,
+      store: artifacts,
+    }),
+  );
+  const kbShareAutoRefresh = startKbShareAutoRefresh({
+    db,
+    namespace: config.namespace,
+    store: artifacts,
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    workspace: {
+      agentHome: config.agentHome,
+      agentWorkDir: config.agentWorkDir,
+    },
+    publishLimits: {
+      perFileMaxBytes: config.kbSharePerFileMaxBytes,
+      totalMaxBytes: config.kbShareTotalMaxBytes,
+      maxFiles: config.kbShareMaxFiles,
+    },
+  });
   const turnMetricsSub = startTurnMetricsSaga(
     createTurnMetrics(metrics.getMeter("platform-apiserver")),
   );
@@ -1032,6 +1070,8 @@ export async function bootstrap() {
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
+    kbSharesCleanupSub.unsubscribe();
+    kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();

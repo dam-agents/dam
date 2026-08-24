@@ -6,6 +6,8 @@ export function useAppConnections(options?: { enabled?: boolean }) {
   return useQuery({
     ...trpc.connections.list.queryOptions(),
     enabled: options?.enabled ?? true,
+    staleTime: 0,
+    refetchOnMount: "always",
     meta: { errorToast: "Couldn't load connections" },
   });
 }

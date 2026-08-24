@@ -1,7 +1,14 @@
-import type { Contribution } from "api-server-api";
+import { SHARED_KB_TEMPLATE_ID, type Contribution } from "api-server-api";
+
+export const KB_AGGREGATE_MCP_ENTRY_NAME = "knowledge-bases";
+export { SHARED_KB_TEMPLATE_ID };
+
+export interface BuiltinContributionOpts {
+  sharedKnowledgeBases: boolean;
+}
 
 export interface BuiltinContributions {
-  for(agentId: string): Contribution[];
+  for(agentId: string, opts: BuiltinContributionOpts): Contribution[];
 }
 
 export interface BuiltinContributionsOpts {
@@ -13,13 +20,23 @@ export function createBuiltinContributions(
 ): BuiltinContributions {
   const base = opts.harnessServerUrl.replace(/\/+$/, "");
   return {
-    for(agentId: string): Contribution[] {
+    for(agentId, contributionOpts): Contribution[] {
+      const agentPath = `${base}/api/agents/${encodeURIComponent(agentId)}`;
       return [
         {
           kind: "mcp-entry",
           name: "platform-outbound",
-          url: `${base}/api/agents/${encodeURIComponent(agentId)}/mcp`,
+          url: `${agentPath}/mcp`,
         },
+        ...(contributionOpts.sharedKnowledgeBases
+          ? [
+              {
+                kind: "mcp-entry",
+                name: KB_AGGREGATE_MCP_ENTRY_NAME,
+                url: `${agentPath}/kb`,
+              } satisfies Contribution,
+            ]
+          : []),
       ];
     },
   };

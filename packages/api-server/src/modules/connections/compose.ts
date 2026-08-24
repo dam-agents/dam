@@ -1,6 +1,10 @@
 import type { Db } from "db";
 import type { ConnectionsService } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
+import {
+  createKbShareResolver,
+  createShareStringVerifier,
+} from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import {
   createOAuthEngine,
@@ -41,13 +45,16 @@ export interface ComposeConnectionsAtBootOpts {
   secretStore: SecretStore;
   pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
+  shareBaseUrl?: string;
 }
 
 export function composeConnectionsAtBoot(
   opts: ComposeConnectionsAtBootOpts,
 ): ConnectionsBootCompose {
   const templates = createConnectionTemplateRegistry(
-    buildCatalog(opts.operatorCredentials),
+    buildCatalog(opts.operatorCredentials, {
+      ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
+    }),
   );
 
   const oauthEngine = createOAuthEngine({
@@ -89,6 +96,7 @@ export function composeConnectionsForOwner(opts: {
   connectionRulesSync: ConnectionRulesSync;
   oauthCallbackUrl: string;
   brandName: string;
+  maxSharedKbConnections?: number;
 }): ConnectionsService {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -132,5 +140,10 @@ export function composeConnectionsForOwner(opts: {
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,
+    verifyKbShare: createShareStringVerifier(opts.db),
+    resolveKbShare: createKbShareResolver(opts.db),
+    ...(opts.maxSharedKbConnections !== undefined
+      ? { maxSharedKbConnections: opts.maxSharedKbConnections }
+      : {}),
   });
 }

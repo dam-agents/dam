@@ -88,6 +88,8 @@ sequenceDiagram
   WK->>PG: record the outcome, stamp the settled events
 ```
 
+The computed state slice merges user-typed env, connection-granted contributions, skill refs, and the platform's **built-in contributions** — the per-agent platform MCP entry always, plus the aggregate shared-knowledge-base MCP entry while the agent holds at least one such grant ([connections](connections.md#built-in-contributions)).
+
 ### `applyState` — state and events delivery (server → agent)
 
 The server sends a per-agent monotonic `version` cursor, the **full desired state** (the post-capability-filter Contribution snapshot plus a deterministic hash that short-circuits no-op pushes), and the **currently pending events** in order. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.

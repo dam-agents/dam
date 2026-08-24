@@ -116,6 +116,22 @@ carrying the server URL. OAuth adds a placeholder Authorization header on the
 `mcp-entry`; a static-header credential instead adds an `egress-inject` (as
 Custom Header does), keeping the secret gateway-side.
 
+### Shared knowledge base
+
+A hidden managed template behind the [knowledge-base sharing](knowledge-bases.md#sharing)
+consumer flow — never offered in the generic catalog; its connections surface
+only in an agent's **Knowledge** settings. The pasted share string is verified
+against a live share at create time and its secret lands in the per-Connection
+Secret under a **per-share header name** (`x-kb-token-<shareId>`) — distinct
+names are what let several shared knowledge bases coexist. Deliberately **no**
+`mcp-entry` per connection: one built-in aggregate entry serves all of a
+sandbox's shares (below). Reads are served **in-cluster over the harness**, not
+by the agent dialing the platform's share host — the platform reads an agent's
+granted shares and replays their per-share secrets into the aggregate serving
+app server-side (see [knowledge bases](knowledge-bases.md#sharing)), so the
+consumer path needs no egress. Connections of this template are capped per
+owner.
+
 ### App preset: Kubernetes / OpenShift
 
 The external-cluster connection (#2314). The user supplies the cluster API
@@ -170,6 +186,15 @@ gateway-side upstream validation only.
   ]
 }
 ```
+
+## Built-in contributions
+
+Not every contribution comes from a grant: the runtime state builder also
+merges **built-ins** the platform itself contributes. Every agent gets the
+platform MCP entry; a sandbox holding at least one shared-knowledge-base grant
+additionally gets the aggregate `knowledge-bases` MCP entry pointing at the
+in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP
+entry), appearing and disappearing with its first and last such grant.
 
 ## Contribution fan-out
 

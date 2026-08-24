@@ -26,6 +26,12 @@ import {
   composeSpawnSizeGate,
 } from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
+import {
+  composeKbShareAgentOps,
+  composeKbShareServing,
+} from "../../modules/kb-shares/index.js";
+import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
+import { createKubernetesSecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
@@ -111,12 +117,40 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8sClient,
     deps.agentStateCache,
   );
+  const kbShareOpsFor = (owner: string) =>
+    composeKbShareAgentOps({
+      owner,
+      db,
+      agents: agentsServiceFor(owner),
+      namespace: config.namespace,
+      store: artifacts,
+      ensureReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      workspace: {
+        agentHome: config.agentHome,
+        agentWorkDir: config.agentWorkDir,
+      },
+      objectStoreConfigured: Boolean(config.objectStorageEndpoint),
+      publishLimits: {
+        perFileMaxBytes: config.kbSharePerFileMaxBytes,
+        totalMaxBytes: config.kbShareTotalMaxBytes,
+        maxFiles: config.kbShareMaxFiles,
+      },
+    });
   const experimentPin = {
     set: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
     clear: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
   };
+
+  const connectionsRepo = createConnectionsRepository(db);
+  const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
+  const kbMcp = composeKbShareServing({
+    db,
+    store: artifacts,
+    k8s: k8sClient,
+    grepDeadlineMs: config.kbShareGrepDeadlineMs,
+  });
 
   const app = createHarnessRouter({
     channelManager,
@@ -154,6 +188,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     artifactLibraryFor,
     invocationsServiceFor,
     connectionsServiceFor,
+    kbShareOpsFor,
+    agentHome: config.agentHome,
+    agentKb: {
+      k8s: k8sClient,
+      kbMcp,
+      connections: connectionsRepo,
+      secretStore,
+    },
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({

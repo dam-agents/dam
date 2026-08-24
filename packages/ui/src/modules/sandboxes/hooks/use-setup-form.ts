@@ -21,6 +21,7 @@ export type SetupForm = z.infer<typeof setupFormSchema>;
 export interface SetupFormState {
   form: SetupForm;
   update: (patch: Partial<SetupForm>) => void;
+  toggleConnection: (id: string, granted: boolean) => void;
   reset: () => void;
 }
 
@@ -78,6 +79,22 @@ export function useSetupForm(
     [flow],
   );
 
+  const toggleConnection = useCallback(
+    (id: string, granted: boolean) => {
+      setForm((prev) => {
+        const next = {
+          ...prev,
+          connectionIds: granted
+            ? [...new Set([...prev.connectionIds, id])]
+            : prev.connectionIds.filter((x) => x !== id),
+        };
+        save(flow, next);
+        return next;
+      });
+    },
+    [flow],
+  );
+
   const setName = useCallback((name: string) => update({ name }), [update]);
   usePrefilledSandboxName(flow, form.name, setName);
 
@@ -114,5 +131,5 @@ export function useSetupForm(
     });
   }, [flow, returnPath]);
 
-  return { form, update, reset };
+  return { form, update, toggleConnection, reset };
 }

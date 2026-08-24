@@ -9,16 +9,28 @@ import { AgentRow } from "../../agents/components/agent-row.js";
 import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
+import { useKbShareList } from "../api/kb-share-queries.js";
 import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
+
+function shareSubtitleNote(
+  subtitle: string,
+  publishState: string | undefined,
+): string {
+  if (publishState === undefined) return subtitle;
+  const note = publishState === "failed" ? "Share update failed" : "Shared";
+  return subtitle ? `${subtitle} · ${note}` : note;
+}
 
 export function KnowledgeBasesListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
   const knowledgeBases = (agentsData?.list ?? []).filter(isKnowledgeBase);
+  const shares = useKbShareList(knowledgeBases.length > 0);
+  const shareByAgent = new Map(
+    (shares.data ?? []).map((s) => [s.agentId, s.publishState]),
+  );
 
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
-  const navigateToKnowledgeBaseConfig = useStore(
-    (s) => s.navigateToKnowledgeBaseConfig,
-  );
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
   const createKnowledgeBase = () => setView("knowledge-base-new");
   const showConfirm = useStore((s) => s.showConfirm);
@@ -65,13 +77,22 @@ export function KnowledgeBasesListView() {
       <div className="flex flex-col gap-3">
         {initialLoaded &&
           knowledgeBases.map((agent) => {
+            const props = rowProps(agent);
             return (
               <AgentRow
                 key={agent.id}
-                {...rowProps(agent)}
+                {...props}
+                subtitle={shareSubtitleNote(
+                  props.subtitle,
+                  shareByAgent.get(agent.id),
+                )}
                 onSelect={() => openKnowledgeBase(agent.id)}
-                onConfigure={() => navigateToKnowledgeBaseConfig(agent.id)}
+                onConfigure={() => navigateToSandboxHome(agent.id)}
                 configureLabel="Configure knowledge base"
+                onShare={() =>
+                  navigateToSandboxHome(agent.id, "setup", "knowledge")
+                }
+                shareLabel="Share knowledge base"
                 onDelete={() => void deleteKnowledgeBase(agent)}
               />
             );

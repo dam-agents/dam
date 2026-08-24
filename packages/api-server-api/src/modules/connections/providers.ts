@@ -219,6 +219,8 @@ export const PROVIDER_TEMPLATE_IDS: ReadonlySet<string> = new Set(
   TEMPLATE_TO_PROVIDER.keys(),
 );
 
+export const SHARED_KB_TEMPLATE_ID = "shared-knowledge-base";
+
 export function providerTypeForTemplateId(
   templateId: string,
 ): ProviderPresetType | null {

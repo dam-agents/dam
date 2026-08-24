@@ -55,6 +55,8 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `FeatureFlagChanged` | `feature_flag_changed` | features |
 | `ApiKeyChanged` | `api_key_<action>` | api-keys |
 | `EntryPointChosen` | `entry_point_chosen` | usage |
+| `KbSharePublished` | _elsewhere_ | kb-shares |
+| `KbSharePublishFailed` | _elsewhere_ | kb-shares |
 
 ## Deliberately not recorded
 
