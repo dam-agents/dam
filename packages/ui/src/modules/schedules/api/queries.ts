@@ -31,7 +31,7 @@ export function useOwnerSchedules(limit?: number) {
       limit === undefined ? undefined : { limit },
     ),
     staleTime: 5000,
-    meta: { errorToast: "Couldn't refresh schedules" },
+    retry: false,
   });
 }
 

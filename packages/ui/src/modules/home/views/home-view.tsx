@@ -9,6 +9,7 @@ import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
 import { FeedList } from "../components/feed-list.js";
 import { HomeGreeting } from "../components/home-greeting.js";
+import { SchedulesWidget } from "../components/schedules-widget.js";
 import { SpendWidget } from "../components/spend-widget.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import {
@@ -138,6 +139,7 @@ export function HomeView() {
             workingAgentIds={workingAgentIds}
           />
           <SpendWidget />
+          <SchedulesWidget />
         </aside>
       </div>
     </div>
