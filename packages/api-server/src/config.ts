@@ -65,7 +65,6 @@ const configSchema = z.object({
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
   keycloakInspectorRole: z.string().optional(),
-  agentHome: z.string().default("/home/agent"),
   agentIdleTimeoutMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
@@ -174,7 +173,6 @@ export function loadConfig(): Config {
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
-    agentHome: process.env.AGENT_HOME,
     agentIdleTimeoutMinutes: durationToMinutesStrict(
       process.env.AGENT_IDLE_TIMEOUT ?? "1h",
     ),

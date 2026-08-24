@@ -36,7 +36,7 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "platform-agents", cfg.Namespace)
 	assert.Equal(t, "default", cfg.ReleaseNamespace)
 	assert.Equal(t, "platform-controller", cfg.LeaseName)
-	assert.Equal(t, "/home/agent", cfg.AgentTemplateDefaults.AgentHome)
+	assert.Empty(t, cfg.AgentTemplateDefaults.AgentHome)
 	assert.Equal(t, "platform-extauthz-inst-1.default.svc.cluster.local", cfg.ExtAuthzHostFor("inst-1"))
 }
 

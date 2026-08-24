@@ -57,10 +57,10 @@ spec:
             - name: AGENT_BASE
               value: {{ .Values.controller.agent.base | toJson | quote }}
             # `$HOME` literals in mount paths are substituted at
-            # chart render time using templateDefaults.agentHome, so the
+            # chart render time with the fixed agent home, so the
             # controller and api-server only ever see absolute paths.
             - name: AGENT_TEMPLATE_DEFAULTS
-              value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" .Values.controller.agent.templateDefaults.agentHome | quote }}
+              value: {{ .Values.controller.agent.templateDefaults | toJson | replace "$HOME" "/home/agent" | quote }}
             # Warm PVC pool (#692): pre-provisioned spare workspace volumes a new
             # agent claims instantly. Disabled by default; see controller.warmPool.
             - name: WARM_POOL
@@ -150,8 +150,6 @@ spec:
               value: {{ .Values.controller.envoyImage | default "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2" | quote }}
             - name: ENVOY_PORT
               value: {{ .Values.controller.envoyPort | default 10000 | quote }}
-            - name: AGENT_HOME
-              value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
             # ext-authz uses per-agent Services rendered by the
             # controller (one Service per agent, AuthorizationPolicy-gated
             # to the agent's own SA principal). The host is computed at

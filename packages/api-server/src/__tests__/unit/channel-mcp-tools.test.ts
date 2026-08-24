@@ -56,7 +56,6 @@ async function mcpHarness(opts?: {
     channelManager,
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
-    agentHome: "/home/agent",
     supportsMessageReactions: opts?.supportsMessageReactions ?? true,
   } as unknown as McpSessionDeps);
 

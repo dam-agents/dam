@@ -12,6 +12,8 @@ import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { appRouter } from "agent-runtime-api/router";
 import {
+  AGENT_HOME_DIR,
+  AGENT_WORK_DIR,
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   type AgentRuntimeContext,
@@ -53,10 +55,10 @@ import {
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
-  : config.HOME_DIR;
+  : AGENT_HOME_DIR;
 const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
-  : config.WORK_DIR;
+  : AGENT_WORK_DIR;
 
 try {
   mkdirSync(workDir, { recursive: true });

@@ -18,6 +18,8 @@ import (
 
 const AgentContainerName = "agent"
 
+const agentHomeDir = "/home/agent"
+
 func portInt32(p int) int32 {
 	if p < 0 || p > 65535 {
 		panic(fmt.Sprintf("port out of range: %d (must be 0..65535)", p))
@@ -85,10 +87,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	if pullPolicy == "" {
 		pullPolicy = defaults.ImagePullPolicy
 	}
-	agentHome := agentSpec.AgentHome
-	if agentHome == "" {
-		agentHome = defaults.AgentHome
-	}
+	agentHome := agentHomeDir
 	specMounts := resolveSpecMounts(agentSpec, defaults)
 	specEnv := configEnvToTypes(defaults.Env)
 

@@ -253,8 +253,6 @@ spec:
               value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
-            - name: AGENT_HOME
-              value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
