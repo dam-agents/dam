@@ -28,6 +28,7 @@ import {
   type FolderDropCallbacks,
   useFolderDropTarget,
 } from "../hooks/use-artifact-row-drag.js";
+import { toastCopyOutcome } from "../lib/share-link.js";
 import { ArtifactRow, type ArtifactRowActions } from "./artifact-row.js";
 
 const INERT_DROP: FolderDropCallbacks = {
@@ -131,11 +132,11 @@ export function FolderGroup({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  disabled={sharedCount === 0}
+                  disabled={sharedCount === 0 || !onCopyFolderLink}
                   onSelect={() =>
                     void copy(
                       () => onCopyFolderLink?.(folder) ?? Promise.resolve(null),
-                    )
+                    ).then(toastCopyOutcome)
                   }
                 >
                   <Link size={14} />

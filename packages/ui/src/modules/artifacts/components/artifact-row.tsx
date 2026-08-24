@@ -1,7 +1,9 @@
 import {
   Box,
+  Checkmark,
   Link,
   OverflowMenuVertical,
+  Share,
   Time,
   View,
 } from "@carbon/icons-react";
@@ -31,6 +33,7 @@ import {
 } from "../hooks/use-artifact-row-drag.js";
 import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
+import { toastCopyOutcome } from "../lib/share-link.js";
 import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { VersionBadge } from "./version-badge.js";
@@ -193,13 +196,27 @@ function ShareLinkButton({
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={url ? "Copy share link" : "Sharing settings"}
+      aria-label={
+        copied
+          ? "Share link copied"
+          : url
+            ? "Copy share link"
+            : "Sharing settings"
+      }
       tooltip={
         copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
       }
-      onClick={() => (url ? void copy(url) : onShare(artifact))}
+      onClick={() =>
+        url ? void copy(url).then(toastCopyOutcome) : onShare(artifact)
+      }
     >
-      <Link size={16} className={cn(copied && "text-success")} />
+      {copied ? (
+        <Checkmark size={16} className="text-success" />
+      ) : url ? (
+        <Link size={16} />
+      ) : (
+        <Share size={16} />
+      )}
     </Button>
   );
 }
