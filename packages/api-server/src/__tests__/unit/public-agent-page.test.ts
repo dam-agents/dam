@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { emit, EventType } from "../../events.js";
-import type { PublicAgentProfileRow } from "../../modules/agents/infrastructure/public-agent-profile-repository.js";
+import type {
+  PublicAgentProfileLookup,
+  PublicAgentProfileRow,
+} from "../../modules/agents/infrastructure/public-agent-profile-repository.js";
 import {
   createPublicAgentPageService,
   type PublicAgentIdentity,
@@ -38,11 +41,12 @@ function harness(options: {
 
   const repo = {
     hasAnyBinding: async (agentId: string) => bound.has(agentId),
-    getProfile: async (agentId: string) => {
+    getProfile: async (agentId: string): Promise<PublicAgentProfileLookup> => {
       const row = profiles.get(agentId);
-      if (!row || row.deleted) return null;
+      if (!row) return { status: "missing" };
+      if (row.deleted) return { status: "deleted" };
       const { deleted: _deleted, ...profile } = row;
-      return profile;
+      return { status: "live", row: profile };
     },
     upsertProfile: async (row: PublicAgentProfileRow) => {
       profiles.set(row.agentId, { ...row, deleted: false });
@@ -50,6 +54,13 @@ function harness(options: {
     markProfileDeleted: async (agentId: string) => {
       const row = profiles.get(agentId);
       if (row) row.deleted = true;
+      else
+        profiles.set(agentId, {
+          agentId,
+          name: "",
+          ownerSub: "",
+          deleted: true,
+        });
     },
     listProfileIds: async () =>
       [...profiles.values()].filter((r) => !r.deleted).map((r) => r.agentId),
@@ -150,11 +161,28 @@ describe("public agent page service", () => {
   });
 
   /**
-   * TEST_SCENARIO: The row outlives the agent when a replica dies between the
-   * K8s delete and the Postgres write. A view then finds the agent gone, marks
-   * the row deleted, and reports the same null as an unknown id.
+   * TEST_SCENARIO: A binding can outlive the agent it points at — channel
+   * cleanup swallows its own delete failure, so the channels row stays after the
+   * agent is gone. The first view finds no agent and writes a tombstone, so this
+   * endpoint spends one K8s read on that id, not one read per view.
    */
-  it("marks the row deleted and answers null when K8s says the agent is gone", async () => {
+  it("tombstones a bound agent K8s no longer has and reads K8s only once", async () => {
+    const h = harness({ boundAgentIds: ["agent-1"] });
+
+    expect(await h.service.get("agent-1")).toBeNull();
+    expect(h.storedProfile("agent-1")).toMatchObject({ deleted: true });
+
+    expect(await h.service.get("agent-1")).toBeNull();
+    expect(await h.service.get("agent-1")).toBeNull();
+    expect(h.k8sReads()).toBe(1);
+  });
+
+  /**
+   * TEST_SCENARIO: The saga and the reconcile retire rows behind the page's
+   * back. A view of a retired row answers the same null as an unknown id and
+   * never falls back to K8s, which would name the agent again.
+   */
+  it("answers null for a tombstoned row without reading K8s", async () => {
     const h = harness({
       boundAgentIds: ["agent-1"],
       profiles: [{ agentId: "agent-1", name: "Scout", ownerSub: "sub-1" }],
@@ -162,7 +190,7 @@ describe("public agent page service", () => {
     await h.repo.markProfileDeleted("agent-1");
 
     expect(await h.service.get("agent-1")).toBeNull();
-    expect(h.storedProfile("agent-1")).toMatchObject({ deleted: true });
+    expect(h.k8sReads()).toBe(0);
   });
 
   /**
@@ -255,6 +283,28 @@ describe("public agent profile saga", () => {
     sub.unsubscribe();
 
     expect(h.storedProfile("agent-1")).toMatchObject({ deleted: true });
+    expect(h.k8sReads()).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: An agent nobody ever viewed has no row, so the delete has
+   * nothing to update. It still has to leave a tombstone: without one, a later
+   * view of a leftover binding falls through to K8s on every request.
+   */
+  it("writes a tombstone on AgentDeleted even with no row to update", async () => {
+    const h = harness({ boundAgentIds: ["agent-1"] });
+    const sub = startPersistPublicAgentProfileSaga({
+      readAgent: h.readAgent,
+      upsertProfile: h.repo.upsertProfile,
+      markProfileDeleted: h.repo.markProfileDeleted,
+    });
+
+    emit({ type: EventType.AgentDeleted, agentId: "agent-1" });
+    await flushMicrotasks();
+    sub.unsubscribe();
+
+    expect(h.storedProfile("agent-1")).toMatchObject({ deleted: true });
+    expect(await h.service.get("agent-1")).toBeNull();
     expect(h.k8sReads()).toBe(0);
   });
 });

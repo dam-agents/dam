@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import { agentPublicProfiles, and, eq, isNull, sql } from "db";
+import { agentPublicProfiles, eq, isNull, sql } from "db";
 
 export interface PublicAgentProfileRow {
   agentId: string;
@@ -7,24 +7,37 @@ export interface PublicAgentProfileRow {
   ownerSub: string;
 }
 
-const live = (agentId: string) =>
-  and(
-    eq(agentPublicProfiles.agentId, agentId),
-    isNull(agentPublicProfiles.deletedAt),
-  );
+export type PublicAgentProfileLookup =
+  | { status: "live"; row: PublicAgentProfileRow }
+  | { status: "deleted" }
+  | { status: "missing" };
+
+const tombstone = (agentId: string) => ({
+  agentId,
+  name: "",
+  ownerSub: "",
+  deletedAt: sql`NOW()`,
+});
 
 export function getProfile(db: Db) {
-  return async (agentId: string): Promise<PublicAgentProfileRow | null> => {
+  return async (agentId: string): Promise<PublicAgentProfileLookup> => {
     const rows = await db
       .select({
         agentId: agentPublicProfiles.agentId,
         name: agentPublicProfiles.name,
         ownerSub: agentPublicProfiles.ownerSub,
+        deletedAt: agentPublicProfiles.deletedAt,
       })
       .from(agentPublicProfiles)
-      .where(live(agentId))
+      .where(eq(agentPublicProfiles.agentId, agentId))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return { status: "missing" };
+    if (row.deletedAt) return { status: "deleted" };
+    return {
+      status: "live",
+      row: { agentId: row.agentId, name: row.name, ownerSub: row.ownerSub },
+    };
   };
 }
 
@@ -48,9 +61,12 @@ export function upsertProfile(db: Db) {
 export function markProfileDeleted(db: Db) {
   return async (agentId: string): Promise<void> => {
     await db
-      .update(agentPublicProfiles)
-      .set({ deletedAt: sql`NOW()` })
-      .where(live(agentId));
+      .insert(agentPublicProfiles)
+      .values(tombstone(agentId))
+      .onConflictDoUpdate({
+        target: agentPublicProfiles.agentId,
+        set: { deletedAt: sql`NOW()` },
+      });
   };
 }
 

@@ -1,5 +1,9 @@
 import type { PublicAgentView } from "api-server-api";
-import type { PublicAgentProfileRow } from "../infrastructure/public-agent-profile-repository.js";
+import { match } from "ts-pattern";
+import type {
+  PublicAgentProfileLookup,
+  PublicAgentProfileRow,
+} from "../infrastructure/public-agent-profile-repository.js";
 
 export interface PublicAgentPageService {
   get(agentId: string): Promise<PublicAgentView | null>;
@@ -12,7 +16,7 @@ export interface PublicAgentIdentity {
 
 export interface PublicAgentPageDeps {
   hasAnyBinding: (agentId: string) => Promise<boolean>;
-  getProfile: (agentId: string) => Promise<PublicAgentProfileRow | null>;
+  getProfile: (agentId: string) => Promise<PublicAgentProfileLookup>;
   upsertProfile: (row: PublicAgentProfileRow) => Promise<void>;
   markProfileDeleted: (agentId: string) => Promise<void>;
   readAgent: (agentId: string) => Promise<PublicAgentIdentity | null>;
@@ -46,8 +50,11 @@ export function createPublicAgentPageService(
   return {
     async get(agentId) {
       if (!(await deps.hasAnyBinding(agentId))) return null;
-      const row =
-        (await deps.getProfile(agentId)) ?? (await fillProfile(agentId));
+      const row = await match(await deps.getProfile(agentId))
+        .with({ status: "live" }, async (lookup) => lookup.row)
+        .with({ status: "missing" }, () => fillProfile(agentId))
+        .with({ status: "deleted" }, async () => null)
+        .exhaustive();
       if (!row) return null;
       return {
         agentId: row.agentId,
