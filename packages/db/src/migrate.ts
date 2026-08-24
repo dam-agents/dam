@@ -2,7 +2,6 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { buildDbSsl, type DbTlsOptions } from "./client.js";
-import { grantUsageViews } from "./usage-view-grants.js";
 
 export async function runMigrations(
   url: string,
@@ -14,7 +13,6 @@ export async function runMigrations(
   const db = drizzle(sql);
   try {
     await migrate(db, { migrationsFolder });
-    await grantUsageViews(sql);
   } finally {
     await sql.end();
   }

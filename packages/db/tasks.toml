@@ -19,6 +19,14 @@ depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --check 'src/**/*.ts'"
 sources = ["src/**/*.ts", "../../.prettierrc"]
 
+# Gate: a migration that creates or recreates a usage_src_* passthrough must
+# re-grant it to usage_readers in the same file. Privileges attach to the object,
+# so DROP+CREATE VIEW discards them and the analytics consumer silently loses
+# access. Pure file scan, no database, so it runs in `mise run check`.
+["db:check:usage-src-grants"]
+run = "node {{config_root}}/scripts/check-usage-src-grants.mjs"
+sources = ["{{config_root}}/packages/db/drizzle/*.sql", "{{config_root}}/scripts/check-usage-src-grants.mjs"]
+
 ["db:fix"]
 depends = ["db:fix:*"]
 

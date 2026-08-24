@@ -24,10 +24,11 @@ Plus one role that is not a connection identity at all:
   membership in to let a read-only login read the `usage_src_*` source
   passthrough views. It holds `CONNECT` on `platform` and `SELECT` on those
   views, nothing else, and grants nobody anything until a member is added.
-  The api-server re-grants the views to it after every migration run, so a
-  view-recreating migration cannot silently revoke a consumer's access;
-  creating the role stays outside the application, because an api-server that
-  could mint database logins could mint itself a better one.
+  Every migration that creates or recreates a passthrough re-grants it, so a
+  view-recreating migration cannot silently revoke a consumer's access; a
+  build gate fails any migration that forgets. Creating the role stays
+  outside the application, because an api-server that could mint database
+  logins could mint itself a better one.
 
 The whole layout is one idempotent script, `01-roles.sql` (the
 `platform-postgres-init` ConfigMap). It is applied two ways from the same file:
@@ -112,12 +113,13 @@ admin role:
   each owning its own database; `REVOKE CONNECT ON DATABASE … FROM PUBLIC` and
   grant it back only to the owner. This is portable SQL.
 - Create `usage_readers` as `NOLOGIN` (no password), and `GRANT CONNECT ON
-  DATABASE platform` to it. Nothing else is needed: the api-server grants it
-  `SELECT` on the source passthrough views on every boot, as the owner of
-  those views. Then `GRANT usage_readers TO <read-only login>` for whichever
-  login should read the metrics — that membership is what survives future view
-  migrations. Skip both if the install has no analytics consumer; the
-  api-server's re-grant is a no-op when the role is absent.
+  DATABASE platform` to it. Then `GRANT usage_readers TO <read-only login>`
+  for whichever login should read the metrics — that membership is what
+  survives future view migrations. Create the role **before** the release
+  whose migrations grant to it: the grants are guarded on the role existing,
+  so a migration that runs first skips them and the views stay ungranted
+  until an operator grants them by hand. Skip both steps entirely if the
+  install has no analytics consumer.
 - There is no dedicated admin SUPERUSER to create — managed services withhold
   tenant superuser (on IBM Cloud Databases the only superuser is IBM's internal
   `ibm` account), so the provider's admin role *is* the top role.
