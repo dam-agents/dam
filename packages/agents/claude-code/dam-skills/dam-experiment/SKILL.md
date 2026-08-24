@@ -131,8 +131,8 @@ whole envelope and get an explicit yes before writing the script:
   rather than at the first failed spawn.
 - **Iteration counts**: your loop's rounds, plus any the worker runs
   internally. Total runtime multiplies through them.
-- **Expected duration, stated in human terms.** "~40 min per campaign
-  iteration, two iterations, one round — about 2.5 h with queue slack" is a
+- **Expected duration, stated in human terms.** "~25 min per campaign
+  iteration, two iterations, one round — about 1 h with queue slack" is a
   deciding factor, not a footnote: the human may cut seeds or rounds to fit
   the time they have, so give them the per-unit cost that makes that trade
   legible. The `ttl_ms` you set is derived from this number — never the other
@@ -142,6 +142,14 @@ whole envelope and get an explicit yes before writing the script:
   your estimate, at minimum). Wanting a faster run means fewer rounds and
   tighter prompts, never a tighter TTL — a killed working pod wastes the
   whole round.
+- **How long the run will look frozen.** A stage that wraps one long spawn
+  reports nothing until the spawn returns: no score points, no progress, one
+  node sitting at *running* for as long as the worker takes. That is normal
+  and it is also indistinguishable from a hang, so say the number out loud
+  before the run — "the campaign stage will show no progress for roughly two
+  hours, then everything lands at once" — and name what the human can check
+  in the meantime (the run stays live; its last-activity clock keeps moving).
+  A human who was not told this reasonably concludes the run is dead.
 - **The resource envelope** the worker runs in, when the workload is heavy
   enough for it to matter (see the Nous section's locked envelope).
 - **Concurrency, from the budget.** Read `x.budget()` and the chosen worker's
@@ -277,6 +285,19 @@ The failure modes below are all real ones, and they are decided at design time
   measurement** — total wall time for N operations, reported as ops/sec or
   ns/op — over a per-operation percentile, and say in the run's caveats where
   the instrument's floor sits.
+- **A fast measurement measures the machine's mood.** The other half of the
+  same problem: once the optimized side is quick, the timed window gets short
+  enough that anything else running on the pod shows up as signal. A worker
+  pod with 2 CPUs, measuring a 4–80 ms loop while the harness ran its own
+  concurrent agent processes, produced 437,992–1,436,541 ops/sec for the
+  *identical* variant — a 3.3× spread with no code change, sitting
+  underneath a real per-seed distribution and inflating it. Two defences,
+  both cheap: make each measurement long enough to swamp the noise (or take
+  at least 3 reps per seed and report their median), and require the measurement
+  to run quiet — nothing else of the harness's own work executing at the same
+  time. Then say in the caveats how much of the observed spread you could
+  attribute to contention; a spread you have not bounded is not evidence
+  about the code.
 - **Sweep the parameter the effect depends on.** When the win is a function of
   size, load, or input scale, a single fixed point plus a yes/no bar throws
   away the finding. The same tiny-cache change was 1.7× at n=1 and 525× at
@@ -316,9 +337,9 @@ only decides what to try next and records the score.
 enough that a run chains one or two of them, so a per-round score is a chart
 with one or two dots — while the campaign itself measured the metric on every
 seed of its confirming iteration, which is exactly the distribution the human
-wants to read (does the median hold in 9/10 seeds, or is one seed carrying
-it?). So make the worker report its **per-seed measurements** and score one
-span per seed. The round's median rides along as an attribute.
+wants to read (does the metric hold on every seed, or is one seed carrying
+the median?). So make the worker report its **per-seed measurements** and
+score one span per seed. The round's median rides along as an attribute.
 
 **Interview the human before authoring a Nous experiment.** A Nous campaign
 pre-registers its own science, and a guessed parameter fails hours in, not at
@@ -327,19 +348,45 @@ pre-registers its own science, and a guessed parameter fails hours in, not at
 - **Target repo and research question / hypothesis** — what to optimize, in
   the human's words.
 - **Primary metric, direction, and pass condition** (e.g. "median
-  speedup ≥ 1.30 in ≥ 8/10 seeds") — the campaign's `ground_truth`; Nous
+  speedup ≥ 1.30 in ≥ 2/3 seeds") — the campaign's `ground_truth`; Nous
   commits to it before running. Sanity-check the bar against what the change
   plausibly does: one set at 10× and cleared at 500× discriminated nothing.
   Also check the metric survives the win — a latency percentile that lands on
   the timer's floor once optimized measures the clock, not the code (see
   *Designing a score that means something*).
-- **Campaign iterations** (`max_iterations` *inside* the worker: rehearsal +
-  confirm is 2–3; a real search is more) and **seeds** for the confirming
-  iteration — the seed count is also how many points the score chart gets, so
-  a run on 3 seeds is a smoke test in chart form as much as in science.
+- **Campaign iterations** (`max_iterations` *inside* the worker) and **seeds**
+  for the confirming iteration — the seed count is also how many points the
+  score chart gets, and the pass condition scales with it (3 seeds means a
+  bar like "≥ 2/3", not "≥ 8/10").
 - **Experiment rounds** (your loop's `max_iterations` — how many campaigns to
   chain) — total runtime multiplies through, so compute the TTL from these
   answers rather than assuming one.
+
+**Default to about an hour, end to end.** Left to its natural size a campaign
+runs all afternoon, and that size is almost never what the question needed:
+the run that motivated this rule spent 2 h 07 m on two iterations, ten seeds
+at five reps each and eight hypothesis arms — to confirm an effect that was
+known in advance. Three seeds and one confirming iteration would have
+produced the same verdict inside an hour. Overkill is the default failure
+here, not under-measurement, so propose the small shape:
+
+- **1 round** — one campaign per run unless they want a chain.
+- **1–2 campaign iterations** — a short rehearsal plus one confirming pass.
+- **≥ 3 seeds**, at ≥ 3 reps each — three of each is the floor and the
+  default; enough to bound contention (see *Designing a score that means
+  something*) without spending the hour on it. Go above the floor when the
+  human asks, or when the metric is noisy enough that three seeds cannot
+  separate the effect from the spread — and say which it is.
+- **One primary metric and one hypothesis.** Every extra arm is extra minutes.
+
+This is the *default*, not a cap: the human can ask for ten seeds, a real
+multi-iteration search, or a chain of campaigns whenever the question earns
+it, and then the estimate simply grows with their choice. What you must not do
+is quietly pick the big shape for them. State the estimate with the proposal,
+and when it breaks the hour, **cut scope, never the TTL** — fewer seeds, fewer
+iterations, a narrower question. The TTL still gets generous slack over
+whatever the estimate ends up being (a killed working pod wastes everything);
+the hour budgets the *work*, not the deadline.
 
 Bake the answers into the campaign prompt so the worker doesn't re-decide
 them. How the worker's results are laid out on disk — the stable verdict
@@ -365,6 +412,13 @@ at a time), tear each target-system instance down before starting the next,
 and never hold more than one instance of the target system's daemons alive
 at once. Serial arms are also better science: concurrent instances contend
 for CPU and pollute latency numbers.
+Locked parameter — quiet measurement: this pod has few CPUs, so anything
+running during a timed window becomes part of the number. While measuring,
+run nothing else of your own — no concurrent agents, no parallel builds, no
+background analysis. Take at least 3 reps per seed and report the median of
+reps, and size each timed window long enough that a scheduling hiccup cannot
+dominate it. If you cannot keep the machine quiet, say so in your report
+instead of reporting the number as clean.
 Then report the objective score from best_found.json, the h-main arm status
 from the last iteration's findings.json, and a summary from
 meta_findings.json.
@@ -431,11 +485,19 @@ str(e)` (the message carries the platform's reason — OOM, deadline, crash),
 mark the span failed, and continue to the next round. An uncaught failure
 kills the script and every remaining round with it.
 
-Five things this example is really teaching:
+Six things this example is really teaching:
+
+- **The round is silent until it ends.** One campaign per round means one span
+  running for hours with nothing to show — no points, no progress, and the
+  measurement phase is the quietest part of all. Tell the human the expected
+  silence before they press Start, and when you narrate a live run, say "still
+  inside the campaign, N minutes in" rather than going quiet yourself. A
+  monitoring check-in scheduled on optimistic timing is worse than none: it
+  fires after the run has already finished and reports nothing.
 
 - **The seeds are the score series.** One or two campaigns per run means the
   round is the wrong scoring unit; the per-seed spans are what make the chart
-  readable and what answer the pass condition ("≥ 8/10 seeds"). Ask the worker
+  readable and what answer the pass condition ("≥ 2/3 seeds"). Ask the worker
   for the raw per-seed numbers in its typed result — the metric keys and file
   names are campaign-specific and the pod is gone by the time you'd want to
   go looking (see [references/nous-evaluator.md](references/nous-evaluator.md)
@@ -448,22 +510,27 @@ Five things this example is really teaching:
   flow. Say plainly that no human will reply and that it must run to
   completion, or it stalls waiting for an answer nobody sends.
 - **Match the TTL to the real runtime — and know the clock starts at spawn.**
-  `nous`-class work runs for hours; the default liveness deadline is not a
-  promise your loop should lean on. Budget ~30–45 min per campaign iteration,
-  multiply by the iteration count, and add slack: a spawn that queues for
-  compute room spends its deadline waiting. A heavy worker also holds real
-  CPU/memory/disk per target, so keep the fan-out to a handful of arms, not
-  dozens.
+  `nous`-class work will run for hours if you let it, and the default liveness
+  deadline is not a promise your loop should lean on. Scope the campaign to
+  about an hour of work (see the interview above), estimate ~20–30 min per
+  campaign iteration at that size, and set the TTL at roughly double the
+  estimate: a spawn that queues for compute room spends its deadline waiting,
+  and a deadline that lands mid-measurement wastes the whole round. A heavy
+  worker also holds real CPU/memory/disk per target, so keep the fan-out to a
+  handful of arms, not dozens.
 - **Everything on the worker dies with it.** The worker is reaped right after
   it reports; make the prompt name what to report and which files to publish
   as artifacts (`report.md`, `meta_findings.json` — see the reference) or the
   evidence is unrecoverable.
-- **Bound the campaign's own parallelism.** The worker's memory limit is a
-  hard ceiling for everything the campaign starts — benchmark daemons
-  included — and blowing it OOM-kills the whole container mid-iteration (a
-  pm2 benchmark holding three ~1 GiB daemons at once died exactly this way).
-  Lock a resource envelope in the prompt: serial measurement arms, one
-  target-system instance at a time.
+- **Bound the campaign's own parallelism — for survival *and* for the
+  numbers.** The worker's memory limit is a hard ceiling for everything the
+  campaign starts — benchmark daemons included — and blowing it OOM-kills the
+  whole container mid-iteration (a pm2 benchmark holding three ~1 GiB daemons
+  at once died exactly this way). The same envelope protects the measurement:
+  on a 2-CPU pod, the harness's own concurrent agents moved identical-code
+  throughput by 3.3×. Lock both in the prompt: serial measurement arms, one
+  target-system instance at a time, and nothing else of the worker's own work
+  running while a timed window is open.
 
 ## Plan, then run — never run the loop yourself
 
@@ -481,15 +548,20 @@ Five things this example is really teaching:
    message still carries the design in one place — a small table, one row per
    stage:
 
-   | Stage | What happens there | What it reports |
-   |---|---|---|
+   | Stage | What happens there | What it reports | When it reports |
+   |---|---|---|---|
 
    Say in one line each: the loop and how many rounds it makes, what each
    stage does inside a round, which stage carries the score and what the
    number means (its direction and its baseline), and how the run can end.
    The stage ids in the table must match the graph exactly, so the user can
-   map your explanation onto what they see. Then say the Start button is
-   theirs and that nothing has run.
+   map your explanation onto what they see.
+
+   **The last column is not decoration.** A stage that wraps one long spawn
+   shows nothing until it returns, so write the wait into the row ("nothing
+   for ~45 min, then all 3 seed points at once") rather than leaving the user
+   to discover a long silence and read it as a dead run. Then say the Start
+   button is theirs and that nothing has run.
 4. **Stop there.** The user presses **Start a new run** in the UI; the
    platform then instructs this agent to start the script in the background
    with `PLATFORM_EXPERIMENT_ID` set. Do not set that variable yourself.

@@ -100,6 +100,13 @@ seconds — the expensive part is the worker, and the worker is untouched.
   still carries the bench's own per-op instrumentation inside the total, so
   the fast side remains instrument-bound — say that in the run's caveats
   rather than letting the ratio imply more precision than exists.
+- **Measure quiet, and take reps.** The bench runs in the driver's own pod,
+  which also hosts this agent session, and an optimized `get()` makes the
+  timed window short enough for that to matter: on a 2-CPU pod, identical code
+  has measured a 3.3× throughput spread purely from contention. Run at least
+  3 reps per seed and score the median of reps, and run nothing else while a
+  bench is timing — no parallel builds, no other benches. Otherwise the
+  per-seed spread you plot is partly this pod's mood, not the candidate's.
 - **Sweep `n`, and score one span per (n, seed) point.** The win is Θ(n) —
   the same change measured 1.7× at `--n 1` and 525× at `--n 20000`. A single
   fixed `n` plus a yes/no bar throws that away; sweeping

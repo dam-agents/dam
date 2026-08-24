@@ -15,7 +15,7 @@ finishing.
 **Always demand the per-seed numbers.** The experiment's score chart plots
 one point per seed, not per campaign (a run chains one or two campaigns —
 per-round scoring draws a single dot), and the pass condition is itself
-per-seed ("≥ 8/10 seeds"). The driver cannot fetch them later: the raw files
+per-seed ("≥ 2/3 seeds"). The driver cannot fetch them later: the raw files
 in §1b are the only exact source, their metric keys and filenames are
 campaign-specific, and the pod holding them is gone. So make the prompt ask
 for a normalized array — `{seed, baseline, treatment}` per seed of the
@@ -207,5 +207,6 @@ nous lineage <run_id>            # per-iteration derivation chain + cumulative.p
   numbers reflect loopback, not WAN. Effect *direction/ratio* is the
   transferable result. Frontiers files flag where this was and wasn't tested.
 - **Seeds & thresholds.** `pass_condition` usually requires the effect in
-  ≥8/10 seeds AND a bounded regression on a guard metric — evaluate both,
+  most seeds (≥2/3, ≥8/10 — read it off `ground_truth`, don't assume the
+  denominator) AND a bounded regression on a guard metric — evaluate both,
   not just the median.

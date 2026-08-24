@@ -66,9 +66,13 @@ repo, the hypothesis, the metric and direction, the pass condition, the
 campaign's internal iteration count, seeds, and how many rounds your loop
 chains.
 
-**Cost shape** — hours per campaign. Budget ~30–45 min per campaign iteration,
-multiply by the count, add slack, and set `ttl_ms` from that. This is the image
-most likely to be killed by a deadline that was left at its default.
+**Cost shape** — as long as you let it, so don't. **Default to a one-hour
+campaign**: one round, 1–2 internal iterations, 3 seeds, one hypothesis;
+~20–30 min per iteration at that size. A bigger run is the human's call to
+make, never yours to assume: propose the hour, and when an estimate breaks it,
+cut seeds and iterations rather than the deadline. Set `ttl_ms` at roughly
+double the estimate — this is the image most likely to be killed by a deadline
+left at its default, and a killed pod wastes the entire round.
 
 **Spawn notes** — it never hibernates (`hibernationTimeout: "0s"`), so a
 terminal transition or the liveness deadline is what ends it; nothing else will
