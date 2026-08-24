@@ -17,7 +17,8 @@ export type PersistPublicAgentProfileDeps = {
   hasAnyBinding: (agentId: string) => Promise<boolean>;
   readAgent: (agentId: string) => Promise<PublicAgentIdentity | null>;
   upsertProfile: (row: PublicAgentProfileRow) => Promise<void>;
-  markProfileDeleted: (agentId: string) => Promise<void>;
+  tombstoneProfile: (agentId: string) => Promise<void>;
+  retireProfile: (agentId: string) => Promise<void>;
   log: (message: string) => void;
 };
 
@@ -29,7 +30,11 @@ const STREAM_CONCURRENCY = 8;
  * page never names an unbound one, and every row costs the hourly reconcile one
  * control-plane read, so writing a row per Agent in the install would turn that
  * reconcile into a fleet-wide walk. A bind is the one event that writes without
- * asking, because the binding it announces is the reason the row is wanted.
+ * asking, because the binding it announces is the reason the row is wanted. A
+ * delete only retires a row that exists, and never inserts one: nothing deletes
+ * a row here, so an inserted tombstone would outlive the Agent forever, and the
+ * one case it would save a read in - a channels row left behind by a failed
+ * cleanup - is already bounded by the tombstone the page writes on first view.
  */
 export function startPersistPublicAgentProfileSaga(
   deps: PersistPublicAgentProfileDeps,
@@ -44,7 +49,7 @@ export function startPersistPublicAgentProfileSaga(
       if (opts.requireBinding && !(await deps.hasAnyBinding(agentId))) return;
       const agent = await deps.readAgent(agentId);
       if (!agent) {
-        await deps.markProfileDeleted(agentId);
+        await deps.tombstoneProfile(agentId);
         return;
       }
       await deps.upsertProfile({
@@ -81,9 +86,9 @@ export function startPersistPublicAgentProfileSaga(
   );
   onEvent<AgentDeleted>(EventType.AgentDeleted, async (agentId) => {
     try {
-      await deps.markProfileDeleted(agentId);
+      await deps.retireProfile(agentId);
     } catch (err) {
-      deps.log(`mark deleted failed for ${agentId}: ${String(err)}`);
+      deps.log(`retiring the profile of ${agentId} failed: ${String(err)}`);
     }
   });
 

@@ -37,7 +37,8 @@ import {
 import {
   getProfile,
   upsertProfile,
-  markProfileDeleted,
+  tombstoneProfile,
+  retireProfile,
   listProfileIdsForReconcile,
 } from "./infrastructure/public-agent-profile-repository.js";
 import {
@@ -154,7 +155,8 @@ export function composePublicAgentPage(deps: {
     return { name: agent.name, ownerSub: agent.owner };
   };
   const upsert = upsertProfile(deps.db);
-  const markDeleted = markProfileDeleted(deps.db);
+  const tombstone = tombstoneProfile(deps.db);
+  const retire = retireProfile(deps.db);
   const bound = hasAnyBinding(deps.db);
 
   return {
@@ -162,7 +164,7 @@ export function composePublicAgentPage(deps: {
       hasAnyBinding: bound,
       getProfile: getProfile(deps.db),
       upsertProfile: upsert,
-      markProfileDeleted: markDeleted,
+      tombstoneProfile: tombstone,
       readAgent,
       resolveOwnerName: (ownerSub) =>
         deps.userDirectory.resolveDisplayNameBySub(ownerSub),
@@ -173,14 +175,15 @@ export function composePublicAgentPage(deps: {
         hasAnyBinding: bound,
         readAgent,
         upsertProfile: upsert,
-        markProfileDeleted: markDeleted,
+        tombstoneProfile: tombstone,
+        retireProfile: retire,
         log: deps.log,
       }),
     reconcileService: createPublicAgentProfileReconcileService({
       listProfileIds: listProfileIdsForReconcile(deps.db),
       readAgent,
       upsertProfile: upsert,
-      markProfileDeleted: markDeleted,
+      retireProfile: retire,
       log: deps.log,
     }),
   };

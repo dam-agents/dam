@@ -58,7 +58,7 @@ export function upsertProfile(db: Db) {
   };
 }
 
-export function markProfileDeleted(db: Db) {
+export function tombstoneProfile(db: Db) {
   return async (agentId: string): Promise<void> => {
     await db
       .insert(agentPublicProfiles)
@@ -67,6 +67,15 @@ export function markProfileDeleted(db: Db) {
         target: agentPublicProfiles.agentId,
         set: { deletedAt: sql`NOW()` },
       });
+  };
+}
+
+export function retireProfile(db: Db) {
+  return async (agentId: string): Promise<void> => {
+    await db
+      .update(agentPublicProfiles)
+      .set({ deletedAt: sql`NOW()` })
+      .where(eq(agentPublicProfiles.agentId, agentId));
   };
 }
 

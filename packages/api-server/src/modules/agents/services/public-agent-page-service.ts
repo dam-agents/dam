@@ -18,7 +18,7 @@ export interface PublicAgentPageDeps {
   hasAnyBinding: (agentId: string) => Promise<boolean>;
   getProfile: (agentId: string) => Promise<PublicAgentProfileLookup>;
   upsertProfile: (row: PublicAgentProfileRow) => Promise<void>;
-  markProfileDeleted: (agentId: string) => Promise<void>;
+  tombstoneProfile: (agentId: string) => Promise<void>;
   readAgent: (agentId: string) => Promise<PublicAgentIdentity | null>;
   resolveOwnerName: (ownerSub: string) => Promise<string | null>;
   log: (message: string) => void;
@@ -41,7 +41,7 @@ export function createPublicAgentPageService(
     try {
       const agent = await deps.readAgent(agentId);
       if (!agent) {
-        await deps.markProfileDeleted(agentId);
+        await deps.tombstoneProfile(agentId);
         return null;
       }
       const row = { agentId, name: agent.name, ownerSub: agent.ownerSub };

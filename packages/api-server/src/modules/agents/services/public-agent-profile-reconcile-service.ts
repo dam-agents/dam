@@ -16,7 +16,7 @@ export interface PublicAgentProfileReconcileDeps {
   listProfileIds: () => Promise<string[]>;
   readAgent: (agentId: string) => Promise<PublicAgentIdentity | null>;
   upsertProfile: (row: PublicAgentProfileRow) => Promise<void>;
-  markProfileDeleted: (agentId: string) => Promise<void>;
+  retireProfile: (agentId: string) => Promise<void>;
   log: (message: string) => void;
 }
 
@@ -49,7 +49,7 @@ export function createPublicAgentProfileReconcileService(
             });
             refreshed++;
           } else {
-            await deps.markProfileDeleted(agentId);
+            await deps.retireProfile(agentId);
             deleted++;
           }
         } catch (err) {
