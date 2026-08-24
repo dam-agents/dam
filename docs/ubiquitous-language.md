@@ -75,7 +75,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
 | Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
-| Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
+| Keycloak User Directory | Infrastructure port resolving a Keycloak `sub` to a user's display name or email, and an email back to a `sub`; backed by the Keycloak admin API |
 | Public Agent Page | The unauthenticated page a non-owner reaches from an Agent's Agent Footer. Names the Agent and its owner and pitches the install; follows the User-Facing Terminology rule, so it says *agent* throughout. Exists only for an Agent holding at least one Channel Binding; every other id — unknown, unbound, or deleted — renders the same agent-less generic page, so the URL confirms nothing about which Agents exist. Served from a Postgres projection owned by the Agents context, never a read-through to the K8s API |
 
 ## Channels (bounded context)

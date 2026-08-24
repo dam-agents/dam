@@ -13,7 +13,7 @@ import { startPersistPublicAgentProfileSaga } from "../../modules/agents/sagas/p
  * visitor with no login. The projection in Postgres is what it reads, so the
  * specs pin three things: the page tells a stranger nothing about which agents
  * exist (unknown, unbound and deleted all answer the same), public traffic
- * reaches the K8s API at most once per agent, and the owner's email is a
+ * reaches the K8s API at most once per agent, and the owner's name is a
  * display detail that never fails the page.
  */
 
@@ -23,7 +23,7 @@ function harness(options: {
   boundAgentIds?: string[];
   k8sAgents?: Record<string, PublicAgentIdentity>;
   profiles?: PublicAgentProfileRow[];
-  ownerEmails?: Record<string, string>;
+  ownerNames?: Record<string, string>;
   directoryThrows?: boolean;
 }) {
   const bound = new Set(options.boundAgentIds ?? []);
@@ -60,15 +60,15 @@ function harness(options: {
     return k8sAgents[agentId] ?? null;
   };
 
-  const resolveOwnerEmail = async (ownerSub: string) => {
+  const resolveOwnerName = async (ownerSub: string) => {
     if (options.directoryThrows) throw new Error("keycloak down");
-    return options.ownerEmails?.[ownerSub] ?? null;
+    return options.ownerNames?.[ownerSub] ?? null;
   };
 
   const service = createPublicAgentPageService({
     ...repo,
     readAgent,
-    resolveOwnerEmail,
+    resolveOwnerName,
   });
 
   const logs: string[] = [];
@@ -131,13 +131,13 @@ describe("public agent page service", () => {
     const h = harness({
       boundAgentIds: ["agent-1"],
       k8sAgents: { "agent-1": { name: "Scout", ownerSub: "sub-1" } },
-      ownerEmails: { "sub-1": "owner@example.com" },
+      ownerNames: { "sub-1": "Radek Jezek" },
     });
 
     expect(await h.service.get("agent-1")).toEqual({
       agentId: "agent-1",
       name: "Scout",
-      ownerEmail: "owner@example.com",
+      ownerName: "Radek Jezek",
     });
     expect(h.storedProfile("agent-1")).toMatchObject({
       name: "Scout",
@@ -166,7 +166,7 @@ describe("public agent page service", () => {
   });
 
   /**
-   * TEST_SCENARIO: The owner's email is a display line, not the page. When the
+   * TEST_SCENARIO: The owner's name is a display line, not the page. When the
    * directory is unreachable the page still names the agent.
    */
   it("keeps the agent name when the directory throws", async () => {
@@ -179,21 +179,22 @@ describe("public agent page service", () => {
     expect(await h.service.get("agent-1")).toEqual({
       agentId: "agent-1",
       name: "Scout",
-      ownerEmail: null,
+      ownerName: null,
     });
   });
 
   /**
-   * TEST_SCENARIO: A sub with no email on the directory record is not an error
-   * either — the page omits the owner line.
+   * TEST_SCENARIO: A directory record can carry no first or last name at all,
+   * and that is not an error either — the page omits the owner line rather than
+   * falling back to the owner's email, which is a real mailbox.
    */
-  it("answers with a null owner email when the sub resolves to nothing", async () => {
+  it("answers with a null owner name when the sub resolves to nothing", async () => {
     const h = harness({
       boundAgentIds: ["agent-1"],
       profiles: [{ agentId: "agent-1", name: "Scout", ownerSub: "sub-1" }],
     });
 
-    expect(await h.service.get("agent-1")).toMatchObject({ ownerEmail: null });
+    expect(await h.service.get("agent-1")).toMatchObject({ ownerName: null });
   });
 });
 

@@ -163,8 +163,8 @@ export function composePublicAgentPage(deps: {
       upsertProfile: upsert,
       markProfileDeleted: markDeleted,
       readAgent,
-      resolveOwnerEmail: (ownerSub) =>
-        deps.userDirectory.resolveBySub(ownerSub),
+      resolveOwnerName: (ownerSub) =>
+        deps.userDirectory.resolveDisplayNameBySub(ownerSub),
     }),
     startSaga: () =>
       startPersistPublicAgentProfileSaga({

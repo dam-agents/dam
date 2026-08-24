@@ -80,28 +80,28 @@ describe("public agent path", () => {
 
 describe("owner initials", () => {
   /**
-   * TEST_SCENARIO: The byline avatar is built from the owner's email because the
-   * directory gives us no display name. Real subs produce dotted local parts.
+   * TEST_SCENARIO: The byline avatar is built from the owner's display name,
+   * which Keycloak gives us as a first and a last name joined by a space.
    */
-  it("takes one letter from the first and last word of the local part", () => {
-    expect(ownerInitials("radek.jezek@example.com")).toBe("RJ");
-    expect(ownerInitials("tomas.weiss2@example.com")).toBe("TW");
-    expect(ownerInitials("first.middle.last@example.com")).toBe("FL");
+  it("takes one letter from the first and last word of the name", () => {
+    expect(ownerInitials("Radek Jezek")).toBe("RJ");
+    expect(ownerInitials("Tomas Weiss")).toBe("TW");
+    expect(ownerInitials("Ana Maria Silva Costa")).toBe("AC");
   });
 
   /**
-   * TEST_SCENARIO: A mononym local part has no last word, and an empty result
-   * would leave a blank circle on the page.
+   * TEST_SCENARIO: A one-word name has no last word, and an empty result would
+   * leave a blank circle on the page.
    */
-  it("falls back to one letter for a single-word local part", () => {
-    expect(ownerInitials("admin@example.com")).toBe("A");
+  it("falls back to one letter for a single-word name", () => {
+    expect(ownerInitials("Admin")).toBe("A");
   });
 
   /**
-   * TEST_SCENARIO: Owner emails are not ASCII-only. Indexing bytes rather than
+   * TEST_SCENARIO: Owner names are not ASCII-only. Indexing bytes rather than
    * code points would cut a multi-byte letter in half.
    */
   it("keeps accented letters whole", () => {
-    expect(ownerInitials("žofie.černá@example.com")).toBe("ŽČ");
+    expect(ownerInitials("Žofie Černá")).toBe("ŽČ");
   });
 });

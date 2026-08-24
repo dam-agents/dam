@@ -19,19 +19,19 @@ function Masthead({ brand }: { brand: Brand }) {
   );
 }
 
-function OwnerByline({ email }: { email: string }) {
+function OwnerByline({ name }: { name: string }) {
   return (
     <div className="mt-2.5 flex items-center gap-2.5 text-sm text-muted-foreground">
       <span
         aria-hidden="true"
         className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground"
       >
-        {ownerInitials(email)}
+        {ownerInitials(name)}
       </span>
       <span>
         Created by{" "}
         <span className="font-semibold break-words text-foreground">
-          {email}
+          {name}
         </span>
       </span>
     </div>
@@ -145,8 +145,8 @@ export function PublicAgentView({
               <h1 className="text-2xl leading-tight font-semibold text-balance break-words">
                 {agent.name}
               </h1>
-              {agent.ownerEmail === null ? null : (
-                <OwnerByline email={agent.ownerEmail} />
+              {agent.ownerName === null ? null : (
+                <OwnerByline name={agent.ownerName} />
               )}
               <SlackHint brand={brand} />
             </div>

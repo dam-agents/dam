@@ -16,7 +16,7 @@ export interface PublicAgentPageDeps {
   upsertProfile: (row: PublicAgentProfileRow) => Promise<void>;
   markProfileDeleted: (agentId: string) => Promise<void>;
   readAgent: (agentId: string) => Promise<PublicAgentIdentity | null>;
-  resolveOwnerEmail: (ownerSub: string) => Promise<string | null>;
+  resolveOwnerName: (ownerSub: string) => Promise<string | null>;
 }
 
 export function createPublicAgentPageService(
@@ -35,9 +35,9 @@ export function createPublicAgentPageService(
     return row;
   }
 
-  async function ownerEmail(ownerSub: string): Promise<string | null> {
+  async function ownerName(ownerSub: string): Promise<string | null> {
     try {
-      return await deps.resolveOwnerEmail(ownerSub);
+      return await deps.resolveOwnerName(ownerSub);
     } catch {
       return null;
     }
@@ -52,7 +52,7 @@ export function createPublicAgentPageService(
       return {
         agentId: row.agentId,
         name: row.name,
-        ownerEmail: await ownerEmail(row.ownerSub),
+        ownerName: await ownerName(row.ownerSub),
       };
     },
   };

@@ -22,7 +22,7 @@ const ROUTES = routesWith({
   "agent-1": {
     agentId: "agent-1",
     name: "release-notes-bot",
-    ownerEmail: "radek.jezek@example.com",
+    ownerName: "Radek Jezek",
   },
 });
 
@@ -39,7 +39,7 @@ describe("public agent routes", () => {
       agent: {
         agentId: "agent-1",
         name: "release-notes-bot",
-        ownerEmail: "radek.jezek@example.com",
+        ownerName: "Radek Jezek",
       },
     });
   });
