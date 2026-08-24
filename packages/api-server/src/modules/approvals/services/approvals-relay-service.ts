@@ -1,5 +1,6 @@
 import type { AcpPermissionOption } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
+import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { acpNativeRowId } from "../domain/ids.js";
 import {
@@ -27,6 +28,7 @@ export interface ApprovalsRelayService {
   resolveAcpNativeFromInSession(
     agentId: string,
     rpcId: number | string,
+    rowId?: string,
   ): Promise<void>;
   subscribeFrameInjects(
     agentId: string,
@@ -37,6 +39,15 @@ export interface ApprovalsRelayService {
 export interface CreateApprovalsRelayServiceDeps {
   repo: ApprovalsRepository;
   bus: RedisBus;
+}
+
+async function onlyPendingMatch(
+  deps: CreateApprovalsRelayServiceDeps,
+  agentId: string,
+  rpcId: number | string,
+): Promise<PendingApprovalRow | null> {
+  const rows = await deps.repo.findPendingAcpNativeByRpcId(agentId, rpcId);
+  return rows.length === 1 ? rows[0] : null;
 }
 
 export function createApprovalsRelayService(
@@ -73,9 +84,11 @@ export function createApprovalsRelayService(
       return rowId;
     },
 
-    async resolveAcpNativeFromInSession(agentId, rpcId) {
-      const row = await deps.repo.findPendingAcpNativeByRpcId(agentId, rpcId);
-      if (!row) return;
+    async resolveAcpNativeFromInSession(agentId, rpcId, rowId) {
+      const row = rowId
+        ? await deps.repo.getPending(rowId)
+        : await onlyPendingMatch(deps, agentId, rpcId);
+      if (!row || row.status !== "pending") return;
       const casWon = await deps.repo.resolvePending(
         row.id,
         "allow_once",

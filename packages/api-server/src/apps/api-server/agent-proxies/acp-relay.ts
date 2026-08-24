@@ -143,6 +143,9 @@ export function createAcpRelay(
         if (client.readyState === WebSocket.OPEN) client.send(frame);
       });
       client.once("close", () => unsubInjects());
+      client.once("close", () => mirroredRows.clear());
+
+      const mirroredRows = new Map<string, string>();
 
       function mirrorPermissionRequest(msg: JsonRpcRequest): void {
         const sessionId = msg.params?.sessionId;
@@ -168,6 +171,9 @@ export function createAcpRelay(
             args: tc.rawInput,
             options,
           })
+          .then((rowId) => {
+            if (rowId) mirroredRows.set(String(msg.id), rowId);
+          })
           .catch(() => {});
       }
 
@@ -188,8 +194,9 @@ export function createAcpRelay(
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
         if (!identity || !isPermissionResponse(msg)) return;
+        const rowId = mirroredRows.get(String(msg.id));
         approvals
-          .resolveAcpNativeFromInSession(identity.agentId, msg.id)
+          .resolveAcpNativeFromInSession(identity.agentId, msg.id, rowId)
           .catch(() => {});
       }
 

@@ -24,7 +24,7 @@ export interface ApprovalsRepository {
   findPendingAcpNativeByRpcId(
     agentId: string,
     rpcId: number | string,
-  ): Promise<PendingApprovalRow | null>;
+  ): Promise<PendingApprovalRow[]>;
   listPendingForOwner(
     ownerSub: string,
     opts?: ListApprovalsRepoOpts,
@@ -127,7 +127,24 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           payload: row.payload,
           expiresAt: row.expiresAt,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: pendingApprovals.id,
+          set: {
+            type: row.type,
+            agentId: row.agentId,
+            ownerSub: row.ownerSub,
+            sessionId: row.sessionId,
+            payload: row.payload,
+            expiresAt: row.expiresAt,
+            createdAt: new Date(),
+            status: "pending",
+            resolvedAt: null,
+            verdict: null,
+            decidedBy: null,
+            deliveredAt: null,
+          },
+          setWhere: sql`${pendingApprovals.status} <> 'pending'`,
+        });
     },
 
     async getPending(id) {
@@ -172,10 +189,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           AND type = 'acp_native'
           AND payload->>'rpcId' = ${String(rpcId)}
         ORDER BY created_at DESC
-        LIMIT 1
+        LIMIT 2
       `);
-      const list = rows as unknown as RawPending[];
-      return list.length ? toPendingRow(list[0]) : null;
+      return (rows as unknown as RawPending[]).map(toPendingRow);
     },
 
     async listPendingForOwner(ownerSub, opts) {
