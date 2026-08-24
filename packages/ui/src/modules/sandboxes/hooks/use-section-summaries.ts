@@ -47,7 +47,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   warnings: SectionWarnings;
 } {
   const { data: templates = [] } = useTemplates();
-  const { data: apps = [], isPending: appsPending } = useAppConnections();
+  const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
@@ -74,11 +74,11 @@ export function useSectionSummaries(agent: AgentView | null): {
   );
 
   const missingProvider = useMemo(() => {
-    if (appsPending || !connectionsQuery.data) return false;
+    if (!appsLoaded || !connectionsQuery.data) return false;
     return !connectionsQuery.data.connections.some((c) =>
       providerAppIds.has(c.connectionId),
     );
-  }, [appsPending, connectionsQuery.data, providerAppIds]);
+  }, [appsLoaded, connectionsQuery.data, providerAppIds]);
 
   const staleModel = useStaleModel(agent?.id ?? null);
   const sourceCount = useSkillSourceCount(agent?.id ?? null);
