@@ -13,10 +13,11 @@ import { type ProviderRef, providerRef } from "./provider-item.js";
 
 interface Props {
   selected: ProviderRef | null;
-  onSelect: (ref: ProviderRef) => void;
+  onSelect: (ref: ProviderRef | null) => void;
   confirmSwitch?: () => Promise<boolean>;
   autoSelectFirst?: boolean;
   disabled?: boolean;
+  required?: boolean;
   allow?: readonly ProviderPresetType[];
   recommended?: ProviderPresetType;
 }
@@ -27,6 +28,7 @@ export function ProviderSelect({
   confirmSwitch,
   autoSelectFirst = false,
   disabled = false,
+  required = false,
   allow,
   recommended,
 }: Props) {
@@ -46,11 +48,26 @@ export function ProviderSelect({
       (connected?.id === selected.id ? connected.type : null))
     : null;
 
+  const firstConnected = useMemo(
+    () => rows.map((r) => itemByType.get(r.type)).find(Boolean),
+    [rows, itemByType],
+  );
+
   useEffect(() => {
-    if (!autoSelectFirst || selected) return;
-    const first = rows.map((r) => itemByType.get(r.type)).find(Boolean);
-    if (first) onSelect(providerRef(first));
-  }, [autoSelectFirst, selected, itemByType, rows, onSelect]);
+    if (isPending || selectedType) return;
+    if (autoSelectFirst && firstConnected) {
+      onSelect(providerRef(firstConnected));
+    } else if (selected) {
+      onSelect(null);
+    }
+  }, [
+    isPending,
+    selectedType,
+    autoSelectFirst,
+    firstConnected,
+    selected,
+    onSelect,
+  ]);
 
   const pick = async (type: ProviderPresetType) => {
     if (type === selectedType) return;
@@ -93,6 +110,9 @@ export function ProviderSelect({
         placeholder="Select a provider"
         ariaLabel="Provider"
         disabled={disabled}
+        invalid={
+          required && !selectedType && !(autoSelectFirst && firstConnected)
+        }
         testId="provider-select"
       />
       {connecting && (

@@ -41,7 +41,7 @@ export function ProviderSection({
   policy,
 }: {
   selected: ProviderRef | null;
-  onSelect: (ref: ProviderRef) => void;
+  onSelect: (ref: ProviderRef | null) => void;
   policy: ReturnType<typeof setupProviderPolicy>;
 }) {
   return (
@@ -52,6 +52,7 @@ export function ProviderSection({
           selected={selected}
           onSelect={onSelect}
           autoSelectFirst
+          required
           allow={policy.allow}
           recommended={policy.recommended}
         />
