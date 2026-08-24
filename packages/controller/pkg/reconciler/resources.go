@@ -236,7 +236,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 			PeriodSeconds:    10,
 			TimeoutSeconds:   5,
-			FailureThreshold: 3,
+			FailureThreshold: 12,
 		}
 	}
 

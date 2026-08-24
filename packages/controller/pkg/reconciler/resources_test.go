@@ -120,6 +120,12 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, int32(1), c.StartupProbe.PeriodSeconds)
 	assert.Equal(t, int32(120), c.StartupProbe.FailureThreshold)
 
+	assert.Equal(t, "/healthz", c.LivenessProbe.HTTPGet.Path)
+	assert.Equal(t, int32(10), c.LivenessProbe.PeriodSeconds)
+	assert.Equal(t, int32(5), c.LivenessProbe.TimeoutSeconds)
+	assert.Equal(t, int32(12), c.LivenessProbe.FailureThreshold,
+		"liveness must tolerate ~2 min of stall: a 30s kill window destroyed an in-container experiment run when the dev host starved the VM's vCPUs; truly dead agents are still reaped by invocation deadlines and the experiment inactivity sweep")
+
 	envMap := envToMap(c.Env)
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"])
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTP_PROXY"])
