@@ -2,7 +2,7 @@ import type { EgressRuleSource, EgressRuleView } from "./types.js";
 
 export function formatEgressRuleSource(source: EgressRuleSource): string {
   if (source === "manual") return "manual";
-  if (source === "inbox") return "from inbox";
+  if (source === "inbox") return "from an approval";
   if (source === "preset:trusted") return "preset: trusted";
   if (source === "preset:all") return "preset: all";
   if (source.startsWith("connection:")) {

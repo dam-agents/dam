@@ -67,14 +67,14 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
     void api.e2e.performFetch
       .mutate({ agentId, url: uncoveredUrl })
       .catch(() => {});
-    await page.goto("/inbox");
-    const row = page
-      .locator("li")
-      .filter({ hasText: `GET ${host}` })
-      .first();
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expect(row.getByText("/get", { exact: true })).toBeVisible();
-    await row.getByRole("button", { name: "Allow permanently" }).click();
+    await page.goto("/");
+    const detail = page.getByText(`GET ${host}/get`, { exact: true });
+    await expect(detail).toBeVisible({ timeout: 30_000 });
+    await page
+      .getByRole("button", { name: "More approval actions" })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: "Allow permanently" }).click();
   });
 
   await test.step("the approval unlocks exactly the approved path", async () => {

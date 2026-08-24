@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ContainerSoftware,
-  Email,
   Folders,
   Home,
   Settings,
@@ -17,10 +16,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
-import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
 import { useStore } from "../store.js";
-
-const EMPTY: never[] = [];
 
 interface Destination {
   label: string;
@@ -42,9 +38,6 @@ export function IconRail({
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToExperiments = useStore((s) => s.navigateToExperiments);
   const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
-
-  const { data: approvals = EMPTY } = useApprovalsForOwner();
-  const pendingCount = approvals.filter((r) => r.status === "pending").length;
 
   const sandboxes: Destination = {
     label: "Home",
@@ -83,13 +76,6 @@ export function IconRail({
     active: view === "artifacts",
     badge: 0,
     navigate: () => setView("artifacts"),
-  };
-  const inbox: Destination = {
-    label: "Inbox",
-    icon: Email,
-    active: view === "inbox",
-    badge: pendingCount,
-    navigate: () => setView("inbox"),
   };
   const settings: Destination = {
     label: "Settings",
@@ -164,7 +150,6 @@ export function IconRail({
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
-          <RailItem {...inbox} expanded={expandedNav} />
           <RailItem {...artifacts} expanded={expandedNav} />
           <RailItem {...settings} expanded={expandedNav} />
         </div>
@@ -177,7 +162,6 @@ export function IconRail({
             codingAgents,
             experiments,
             knowledgeBases,
-            inbox,
             artifacts,
             settings,
           ].map((destination) => (

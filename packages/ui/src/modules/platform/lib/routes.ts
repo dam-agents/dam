@@ -27,7 +27,6 @@ export type Route =
   | { view: "list" }
   | { view: "chat"; agent: string; session?: string }
   | { view: "settings"; settingsTab: SettingsTab }
-  | { view: "inbox" }
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
@@ -44,7 +43,11 @@ export type Route =
 
 export type View = Route["view"];
 
-export const RETIRED_PATHS = new Set(["/sandboxes/", "/sandboxes/new"]);
+export const RETIRED_PATHS = new Set([
+  "/sandboxes/",
+  "/sandboxes/new",
+  "/inbox",
+]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
 const sandboxHomeRe = new RegExp(
@@ -69,7 +72,6 @@ export function parseRoute(path: string): Route {
       settingsTab: tab.success ? tab.data : "account",
     };
   }
-  if (path === "/inbox") return { view: "inbox" };
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
@@ -124,8 +126,6 @@ export function routeToPath(route: Route): string {
       return route.settingsTab === "account"
         ? "/settings"
         : `/settings/${route.settingsTab}`;
-    case "inbox":
-      return "/inbox";
     case "terms":
       return "/terms";
     case "telegram-bind":

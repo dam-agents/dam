@@ -9,7 +9,6 @@ const canonicalPaths = [
   "/chat/agent-1/sess-1",
   "/settings",
   "/settings/connections",
-  "/inbox",
   "/terms",
   "/telegram/bind",
   "/slack/bind",
@@ -31,7 +30,7 @@ describe("route round-trip", () => {
     expect(routeToPath(parseRoute(path))).toBe(path);
   });
 
-  it.each(["/sandboxes/", "/sandboxes/new"])(
+  it.each(["/sandboxes/", "/sandboxes/new", "/inbox"])(
     "sends the retired %s to Home",
     (path) => {
       expect(parseRoute(path).view).toBe("home");

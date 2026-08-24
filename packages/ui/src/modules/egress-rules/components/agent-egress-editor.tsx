@@ -217,7 +217,7 @@ export function AgentEgressEditor({
         Rules decide which outbound HTTP requests this agent can make. The
         most-specific rule wins; <code>*</code> in <em>method</em> or
         <em>path</em> matches any value. Without a matching rule, the request
-        goes to the inbox for your approval.
+        needs your approval on Home.
       </p>
 
       <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
@@ -337,7 +337,7 @@ export function AgentEgressEditor({
           stagedAddCount === 0 &&
           previewRows.length === 0 ? (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            No rules yet. Every outbound request will surface in the inbox.
+            No rules yet. Every outbound request will need your approval.
           </p>
         ) : (
           <ul className="flex flex-col">
