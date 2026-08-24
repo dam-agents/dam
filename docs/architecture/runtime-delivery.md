@@ -73,7 +73,7 @@ sequenceDiagram
 
   BQ->>WK: dispatch job
   WK->>PG: read outbox row, check agent state
-  Note over WK: exit clean if Agent A not running; hello re-enqueues on wake
+  Note over WK: exit clean if Agent A not running; caught up once it is back
   WK->>PG: compute state slice and pending events for A
   WK->>RT: runtime.v1.applyState (version, state, events)
   RT->>RT: reconcile contributions per kind
@@ -183,7 +183,7 @@ Every state-affecting handler commits the domain mutation, bumps the agent's ver
 
 A schedule firing follows the same shape, inserting a `runtime_events` row in place of the grant before the outbox upsert.
 
-The user-facing response does not depend on agent reachability. If BullMQ's enqueue fails or Redis drops the pending job, the cron sweep re-enqueues the row.
+The user-facing response does not depend on agent reachability. If BullMQ's enqueue fails or Redis drops the pending job, the row is recovered once the agent is running — by the next sweep tick, or by the agent's `hello` if its cursor is behind.
 
 ### Worker
 
@@ -196,7 +196,7 @@ flowchart TD
   exists{row exists?}
   noop[exit clean, return]
   check{agent running?}
-  defer[exit clean, hello re-enqueues on wake]
+  defer[exit clean, caught up once the agent is back]
   retry[throw, fast-retry on backoff]
   compute[compute state slice + non-dispatched events]
   dispatch[POST runtime.v1.applyState]
@@ -214,7 +214,7 @@ flowchart TD
   dispatch -->|error| fail
 ```
 
-BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick. A plain dispatch to an agent that isn't running exits clean and the row simply stays behind: while the agent is down the sweep does not re-attempt delivery to it, and the agent's `hello` on boot or wake is what brings the payload back.
+BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick. A plain dispatch to an agent that isn't running exits clean and the row simply stays behind: while the agent is down the sweep does not re-attempt delivery to it. The row is picked up once the agent is back — by its `hello` when its cursor is behind, and otherwise by the next sweep tick, which is what covers a row left unsettled by driver failures the agent has already answered for.
 
 ### Cron sweep
 
@@ -310,7 +310,7 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 | Postgres `runtime_state_outbox` | One row per agent — the desired version and the two cursors behind it | Compared against the applied hash by the sweep. |
 | Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id. |
 | Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The agent-side dedupe state for event redelivery. |
-| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path. |
+| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running. |
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
 | `agents` table | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
@@ -319,8 +319,8 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 ## Invariants
 
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
-- **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path.
-- **State snapshots are idempotent, and a contribution change always bumps the version.** Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. Only the sweep and `hello` enqueue without a bump, and both fire only for a row the agent is behind — so a caught-up row cannot start a dispatch under a reader.
+- **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path for a running agent and `hello` for one that wakes.
+- **State snapshots are idempotent, and a contribution change always bumps the version.** Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. Only the sweep and `hello` enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and version.** The agent's local state store (applied cursor plus per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello`.
