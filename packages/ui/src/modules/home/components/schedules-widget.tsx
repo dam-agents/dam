@@ -13,6 +13,7 @@ import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
 import { useScheduleEditGuard } from "../../schedules/hooks/use-schedule-edit-guard.js";
 import { scheduleCadenceText } from "../../schedules/lib/schedule-format.js";
+import { WidgetSkeleton } from "./home-skeletons.js";
 
 const TOP_SCHEDULES = 5;
 
@@ -55,7 +56,7 @@ function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
 }
 
 export function SchedulesWidget() {
-  const { data, isError } = useOwnerSchedules();
+  const { data, isError, isPending } = useOwnerSchedules();
   const agents = useAgentsList();
   const { isPending: agentsPending } = useAgents();
   const guardEdit = useScheduleEditGuard();
@@ -64,6 +65,7 @@ export function SchedulesWidget() {
   const [creating, setCreating] = useState(false);
 
   if (isError) return null;
+  if (isPending || agentsPending) return <WidgetSkeleton rows={3} />;
 
   const live = new Set(agents.map((a) => a.id));
   const schedules = agentsPending

@@ -24,6 +24,7 @@ export interface Feed {
   loadingAgents: boolean;
   loadingFeed: boolean;
   unreadableAgents: number;
+  approvalsUnreadable: boolean;
 }
 
 export function useFeed(): Feed {
@@ -67,5 +68,6 @@ export function useFeed(): Feed {
     loadingAgents: agentsQuery.isPending,
     loadingFeed: approvals.isPending || sessions.pending,
     unreadableAgents: sessions.failed,
+    approvalsUnreadable: approvals.isError,
   };
 }

@@ -87,22 +87,30 @@ export function emptyStateFor(
     allSourcesExcluded: boolean;
     noRunningAgents: boolean;
     unreadableAgents?: number;
+    approvalsUnreadable?: boolean;
   },
 ): FeedEmpty {
-  if (options.unreadableAgents) {
+  if (options.allSourcesExcluded) {
+    return {
+      title: "Nothing included",
+      message: "Every source is filtered out.",
+      tone: "filtered",
+    };
+  }
+  if (options.approvalsUnreadable && status !== "in-progress") {
+    return {
+      title: "Approvals could not be read",
+      message: "Anything waiting on you is missing here until this recovers.",
+      tone: "filtered",
+    };
+  }
+  if (options.unreadableAgents && status !== "attention") {
     const one = options.unreadableAgents === 1;
     return {
       title: one ? "One agent did not answer" : "Some agents did not answer",
       message: one
         ? "An agent could not be read, so its sessions are missing here."
         : `${options.unreadableAgents} agents could not be read, so their sessions are missing here.`,
-      tone: "filtered",
-    };
-  }
-  if (options.allSourcesExcluded) {
-    return {
-      title: "Nothing included",
-      message: "Every source is filtered out.",
       tone: "filtered",
     };
   }

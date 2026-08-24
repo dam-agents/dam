@@ -13,7 +13,7 @@ export interface ListApprovalsRepoOpts {
 }
 
 export interface ApprovalsRepository {
-  insertPending(row: NewPendingApproval): Promise<void>;
+  insertPending(row: NewPendingApproval): Promise<boolean>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
   findActivePendingExtAuthz(input: {
     agentId: string;
@@ -112,7 +112,7 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
 export function createApprovalsRepository(db: Db): ApprovalsRepository {
   return {
     async insertPending(row) {
-      await db
+      const written = await db
         .insert(pendingApprovals)
         .values({
           id: row.id,
@@ -140,7 +140,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             deliveredAt: null,
           },
           setWhere: sql`${pendingApprovals.status} = 'expired' OR (${pendingApprovals.status} = 'resolved' AND ${pendingApprovals.deliveredAt} IS NOT NULL)`,
-        });
+        })
+        .returning({ id: pendingApprovals.id });
+      return written.length > 0;
     },
 
     async getPending(id) {

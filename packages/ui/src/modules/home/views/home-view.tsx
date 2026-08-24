@@ -9,6 +9,10 @@ import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
 import { FeedList } from "../components/feed-list.js";
 import { HomeGreeting } from "../components/home-greeting.js";
+import {
+  FeedFilterSkeleton,
+  WidgetSkeleton,
+} from "../components/home-skeletons.js";
 import { SchedulesWidget } from "../components/schedules-widget.js";
 import { SpendWidget } from "../components/spend-widget.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
@@ -31,6 +35,7 @@ export function HomeView() {
     loadingAgents,
     loadingFeed,
     unreadableAgents,
+    approvalsUnreadable,
   } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss } = useDismissals();
@@ -46,8 +51,17 @@ export function HomeView() {
       <div>
         <HomeGreeting title="Activity" />
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <FeedCardSkeleton rows={3} />
-          <aside />
+          <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
+            <FeedFilterSkeleton />
+          </div>
+          <div className="space-y-3 lg:col-start-1 lg:row-start-2">
+            <FeedCardSkeleton rows={3} />
+          </div>
+          <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
+            <WidgetSkeleton rows={2} />
+            <WidgetSkeleton rows={3} />
+            <WidgetSkeleton rows={3} />
+          </aside>
         </div>
       </div>
     );
@@ -131,6 +145,7 @@ export function HomeView() {
                 allSourcesExcluded: included.size === 0,
                 noRunningAgents: runningAgents.length === 0,
                 unreadableAgents,
+                approvalsUnreadable,
               })}
             />
           ) : (
@@ -144,7 +159,8 @@ export function HomeView() {
                   sticky.drop(item.id);
                   dismiss([item]);
                 }}
-                onResolved={(item) => sticky.keep(item)}
+                onResolved={(item, label) => sticky.keep(item, label)}
+                resolvedLabelFor={sticky.labelFor}
               />
             </>
           )}

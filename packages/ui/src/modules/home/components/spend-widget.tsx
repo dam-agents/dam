@@ -9,6 +9,7 @@ import {
   type SpendPeriod,
   spendRange,
 } from "../lib/spend-period.js";
+import { WidgetSkeleton } from "./home-skeletons.js";
 
 const TOP_SPENDERS = 3;
 const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
@@ -20,9 +21,14 @@ export function SpendWidget() {
     [],
   );
   const { from, to } = useMemo(() => spendRange(period, new Date()), [period]);
-  const { data, isUnavailable } = useSpendBreakdown(from, to, timeZone);
+  const { data, isUnavailable, isPending } = useSpendBreakdown(
+    from,
+    to,
+    timeZone,
+  );
 
   if (isUnavailable) return null;
+  if (isPending) return <WidgetSkeleton rows={3} />;
 
   const total = data ? totalCostUsd(data.byModel) : 0;
   const spenders = (data?.byAgent ?? [])

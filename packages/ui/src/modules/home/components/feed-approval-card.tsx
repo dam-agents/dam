@@ -20,7 +20,8 @@ interface Props {
   agentName: string;
   meta: string;
   onDismiss: () => void;
-  onResolved?: () => void;
+  resolvedLabel?: string | null;
+  onResolved?: (label: string) => void;
 }
 
 export function FeedApprovalCard({
@@ -28,19 +29,21 @@ export function FeedApprovalCard({
   agentName,
   meta,
   onDismiss,
+  resolvedLabel = null,
   onResolved,
 }: Props) {
   const { actions, inflight, hostLabel, expiredNote, openSettings } =
     useApprovalActions(approval);
-  const [resolved, setResolved] = useState<string | null>(null);
+  const [ownResolved, setOwnResolved] = useState<string | null>(null);
+  const resolved = resolvedLabel ?? ownResolved;
 
   const allowOnce = actions.find((a) => a.id === "allow-once");
   const rest = actions.filter((a) => a.id !== "allow-once");
 
-  const act = async (run: () => Promise<boolean>, resolvedLabel: string) => {
+  const act = async (run: () => Promise<boolean>, label: string) => {
     if (!(await run())) return;
-    setResolved(resolvedLabel);
-    onResolved?.();
+    setOwnResolved(label);
+    onResolved?.(label);
   };
 
   return (

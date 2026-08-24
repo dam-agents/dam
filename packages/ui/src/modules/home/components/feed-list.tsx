@@ -17,7 +17,8 @@ interface Props {
   agents: readonly AgentView[];
   onOpenSession: (agentId: string, sessionId: string) => void;
   onDismiss: (item: FeedItem) => void;
-  onResolved: (item: FeedItem) => void;
+  onResolved: (item: FeedItem, label: string) => void;
+  resolvedLabelFor: (id: string) => string | null;
 }
 
 function sessionIcon(
@@ -43,6 +44,7 @@ export function FeedList({
   onOpenSession,
   onDismiss,
   onResolved,
+  resolvedLabelFor,
 }: Props) {
   const tick = tickFor(items, Date.now());
   const now = useNow(tick);
@@ -62,7 +64,8 @@ export function FeedList({
               agentName={nameOf(item.agentId)}
               meta={meta}
               onDismiss={() => onDismiss(item)}
-              onResolved={() => onResolved(item)}
+              resolvedLabel={resolvedLabelFor(item.id)}
+              onResolved={(label) => onResolved(item, label)}
             />
           );
         }

@@ -135,10 +135,44 @@ describe("emptyStateFor", () => {
   });
 
   // TEST_SCENARIO: with nothing running, unread is unknowable but approvals are still answerable.
-  it("explains a stopped sandbox except when the user asked about approvals", () => {
+  it("explains a stopped agent except when the user asked about approvals", () => {
     const noAgents = { allSourcesExcluded: false, noRunningAgents: true };
 
     expect(emptyStateFor("unread", noAgents).title).toBe("Nothing running");
     expect(emptyStateFor("attention", noAgents).title).toBe("All clear");
+  });
+
+  // TEST_SCENARIO: a read that failed must never be reported as nothing to do, and must not
+  // TEST_SCENARIO: answer for a filter whose source it does not feed.
+  it("reports a failed read only on the filters it affects", () => {
+    const base = { allSourcesExcluded: false, noRunningAgents: false };
+
+    expect(
+      emptyStateFor("attention", { ...base, approvalsUnreadable: true }).title,
+    ).toBe("Approvals could not be read");
+    expect(
+      emptyStateFor("in-progress", { ...base, approvalsUnreadable: true })
+        .title,
+    ).not.toBe("Approvals could not be read");
+
+    expect(
+      emptyStateFor("unread", { ...base, unreadableAgents: 2 }).title,
+    ).toBe("Some agents did not answer");
+    expect(
+      emptyStateFor("attention", { ...base, unreadableAgents: 2 }).title,
+    ).toBe("All clear");
+  });
+
+  // TEST_SCENARIO: the user's own filter outranks a degradation, or the page blames itself for
+  // TEST_SCENARIO: a state the user created.
+  it("blames the filter before a failed read", () => {
+    const state = emptyStateFor("all", {
+      allSourcesExcluded: true,
+      noRunningAgents: false,
+      unreadableAgents: 3,
+      approvalsUnreadable: true,
+    });
+
+    expect(state.title).toBe("Nothing included");
   });
 });

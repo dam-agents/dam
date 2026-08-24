@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { useDeleteExperiment } from "../api/mutations.js";
 import { useDriverSummaries } from "../api/queries.js";
@@ -25,6 +26,9 @@ export function ExperimentsListView() {
   const groups = toSandboxGroups(
     summaries ?? [],
     agentsData?.list ?? [],
+    isExperimentSandbox,
+  );
+  const experimentSandboxes = (agentsData?.list ?? []).filter(
     isExperimentSandbox,
   );
   const initialLoaded = summaries !== undefined && agentsData !== undefined;
@@ -47,6 +51,10 @@ export function ExperimentsListView() {
       />
 
       {!initialLoaded && <ListSkeleton rows={3} rowHeight={72} />}
+
+      {initialLoaded && (
+        <OutdatedTemplatesBanner agents={experimentSandboxes} />
+      )}
 
       {initialLoaded && groups.length === 0 && (
         <PageEmptyState

@@ -6,6 +6,7 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { AgentRow } from "../../agents/components/agent-row.js";
+import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
@@ -44,6 +45,13 @@ export function KnowledgeBasesListView() {
       />
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
+
+      {initialLoaded && (
+        <OutdatedTemplatesBanner
+          agents={knowledgeBases}
+          noun="knowledge bases"
+        />
+      )}
 
       {initialLoaded && knowledgeBases.length === 0 && (
         <PageEmptyState

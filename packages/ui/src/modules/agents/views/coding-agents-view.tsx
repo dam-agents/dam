@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
+import { OutdatedTemplatesBanner } from "../components/outdated-templates-banner.js";
 import { SandboxList } from "../components/sandbox-list.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../hooks/use-sandbox-row-actions.js";
@@ -42,6 +43,8 @@ export function CodingAgentsView() {
       />
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
+
+      {initialLoaded && <OutdatedTemplatesBanner agents={codingAgents} />}
 
       {initialLoaded && codingAgents.length === 0 && (
         <PageEmptyState

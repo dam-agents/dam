@@ -56,6 +56,11 @@ function isPrompt(msg: unknown): msg is JsonRpcRequest {
   return isRequest(msg) && msg.method === "session/prompt";
 }
 
+function hasPermissionOutcome(msg: JsonRpcResponse): boolean {
+  const result = msg.result as { outcome?: { outcome?: unknown } } | undefined;
+  return typeof result?.outcome?.outcome === "string";
+}
+
 function isResponse(msg: unknown): msg is JsonRpcResponse {
   if (typeof msg !== "object" || msg === null) return false;
   const m = msg as Partial<JsonRpcResponse> & Partial<JsonRpcRequest>;
@@ -198,9 +203,11 @@ export function createAcpRelay(
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
         const key = String(msg.id);
         const rowId = mirroredRows.get(key);
-        if (!rowId) return;
-        mirroredRows.delete(key);
-        approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
+        if (!rowId || !hasPermissionOutcome(msg)) return;
+        approvals
+          .resolveAcpNativeFromInSession(rowId)
+          .then(() => mirroredRows.delete(key))
+          .catch(() => {});
       }
 
       const release = passive ? () => {} : presence.acquire(agentId);
