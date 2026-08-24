@@ -12,6 +12,7 @@ import { HomeGreeting } from "../components/home-greeting.js";
 import { SchedulesWidget } from "../components/schedules-widget.js";
 import { SpendWidget } from "../components/spend-widget.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
+import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import {
   emptyStateFor,
   FEED_SOURCES,
@@ -32,6 +33,7 @@ export function HomeView() {
   } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss } = useDismissals();
+  const sticky = useStickyResolved();
 
   const [status, setStatus] = useState<FeedStatus>("all");
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
@@ -59,9 +61,9 @@ export function HomeView() {
     );
   }
 
-  const live = items.filter((item) => !isDismissed(item));
+  const live = sticky.merge(items).filter((item) => !isDismissed(item));
   const visible = filterFeed(live, status, included);
-  const stats = feedStats(visible);
+  const stats = feedStats(visible.filter((item) => !sticky.has(item.id)));
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
   const workingAgentIds = new Set(
     live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
@@ -103,7 +105,10 @@ export function HomeView() {
                 {dismissible.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => dismiss(dismissible)}
+                    onClick={() => {
+                      for (const item of dismissible) sticky.drop(item.id);
+                      dismiss(dismissible);
+                    }}
                     title="Hides these from Home. Nothing is resolved or marked read; running work stays."
                     className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
@@ -122,7 +127,11 @@ export function HomeView() {
               items={visible}
               agents={agents}
               onOpenSession={openAgentSession}
-              onDismiss={(item) => dismiss([item])}
+              onDismiss={(item) => {
+                sticky.drop(item.id);
+                dismiss([item]);
+              }}
+              onResolved={(item) => sticky.keep(item)}
             />
           ) : (
             <FeedEmptyState
