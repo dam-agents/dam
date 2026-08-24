@@ -1,8 +1,9 @@
-import { spawn } from "node:child_process";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import { describeFailure, runOnce } from "../core/run-once.js";
 
 const GH_TOKEN_ENV = "GH_TOKEN";
 const SETUP_TIMEOUT_MS = 10_000;
+const SETUP_COMMAND = ["gh", "auth", "setup-git"];
 
 export function configureGitCredentialHelper(
   envReader: RuntimeEnvReader,
@@ -11,25 +12,11 @@ export function configureGitCredentialHelper(
   const env = mergedSpawnEnv(envReader);
   if (!env[GH_TOKEN_ENV]) return;
 
-  const proc = spawn("gh", ["auth", "setup-git"], {
-    stdio: ["ignore", "ignore", "pipe"],
+  void runOnce({
+    command: SETUP_COMMAND,
+    timeoutMs: SETUP_TIMEOUT_MS,
     env,
-  });
-  const stderr: Buffer[] = [];
-  const timer = setTimeout(() => {
-    proc.kill("SIGKILL");
-    log(`gh auth setup-git timed out after ${SETUP_TIMEOUT_MS}ms`);
-  }, SETUP_TIMEOUT_MS);
-  proc.stderr?.on("data", (c: Buffer) => stderr.push(c));
-  proc.on("error", (e) => {
-    clearTimeout(timer);
-    log(`gh auth setup-git failed: ${e.message}`);
-  });
-  proc.on("close", (code) => {
-    clearTimeout(timer);
-    if (code !== 0)
-      log(
-        `gh auth setup-git exited ${code}: ${Buffer.concat(stderr).toString().trim()}`,
-      );
+  }).then((result) => {
+    if (!result.ok) log(describeFailure(SETUP_COMMAND, result.error));
   });
 }
