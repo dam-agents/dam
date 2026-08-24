@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
-import { useAgentsList } from "../../agents/api/queries.js";
+import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useToggleSchedule } from "../../schedules/api/mutations.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
@@ -56,13 +56,17 @@ function ScheduleRow({ schedule, agentName, onEdit, dense }: RowProps) {
 export function SchedulesWidget() {
   const { data, isError } = useOwnerSchedules();
   const agents = useAgentsList();
+  const { isPending: agentsPending } = useAgents();
   const [listOpen, setListOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [creating, setCreating] = useState(false);
 
   if (isError) return null;
 
-  const schedules = data ?? [];
+  const live = new Set(agents.map((a) => a.id));
+  const schedules = agentsPending
+    ? []
+    : (data ?? []).filter((s) => live.has(s.agentId));
   const nameOf = (agentId: string) =>
     agents.find((a) => a.id === agentId)?.name ?? agentId;
 
@@ -92,7 +96,7 @@ export function SchedulesWidget() {
           </p>
           <Button
             variant="outline"
-            size="xs"
+            size="sm"
             disabled={agents.length === 0}
             onClick={() => setCreating(true)}
           >

@@ -154,6 +154,7 @@ export function DialogFooter({ children, className }: DialogRegionProps) {
 }
 
 interface DialogActionsProps {
+  leading?: ReactNode;
   onCancel: () => void;
   cancelLabel?: string;
   label: string;
@@ -168,6 +169,7 @@ interface DialogActionsProps {
 }
 
 export function DialogActions({
+  leading,
   onCancel,
   cancelLabel = "Cancel",
   label,
@@ -182,6 +184,7 @@ export function DialogActions({
 }: DialogActionsProps) {
   return (
     <DialogFooter className={className}>
+      {leading && <div className="mr-auto">{leading}</div>}
       <Button
         type="button"
         variant="outline"

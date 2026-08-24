@@ -9,6 +9,7 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -18,8 +19,14 @@ import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
+import { emitToast } from "../../../lib/toast.js";
+import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
-import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
+import {
+  useCreateSchedule,
+  useDeleteSchedule,
+  useUpdateSchedule,
+} from "../api/mutations.js";
 import {
   formatTime12,
   RUN_OPTIONS,
@@ -62,7 +69,21 @@ export function ScheduleFormModal({
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const deleteSchedule = useDeleteSchedule();
+  const showConfirm = useStore((state) => state.showConfirm);
   const mutation = existing ? updateSchedule : createSchedule;
+
+  const handleDelete = async () => {
+    if (!existing) return;
+    const confirmed = await showConfirm(
+      "Are you sure you want to delete this schedule?",
+      `Delete ${existing.name}?`,
+      { kind: "destructive", confirmLabel: "Delete Schedule" },
+    );
+    if (!confirmed) return;
+    deleteSchedule.mutate({ id: existing.id });
+    onClose();
+  };
 
   const { control, register, handleSubmit, watch, formState } =
     useForm<ScheduleFormValues>({
@@ -94,6 +115,12 @@ export function ScheduleFormModal({
       sessionMode: v.sessionMode,
     };
     const onSuccess = () => {
+      emitToast({
+        kind: "success",
+        message: existing
+          ? `Schedule "${v.name}" saved`
+          : `Schedule "${v.name}" added`,
+      });
       onSaved();
       onClose();
     };
@@ -296,6 +323,20 @@ export function ScheduleFormModal({
         </DialogBody>
 
         <DialogActions
+          leading={
+            existing ? (
+              <Button
+                type="button"
+                variant="ghost"
+                tone="danger"
+                className="text-danger"
+                disabled={deleteSchedule.isPending}
+                onClick={() => void handleDelete()}
+              >
+                Delete
+              </Button>
+            ) : undefined
+          }
           onCancel={onClose}
           label={existing ? "Save" : "Create"}
           pendingLabel={existing ? "Saving…" : "Creating…"}
