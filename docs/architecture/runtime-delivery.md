@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-08-17
+Last verified: 2026-08-24
 
 ## Overview
 
@@ -73,7 +73,7 @@ sequenceDiagram
 
   BQ->>WK: dispatch job
   WK->>PG: read outbox row, check agent state
-  Note over WK: exit clean if Agent A not running, sweep retries later
+  Note over WK: exit clean if Agent A not running; hello re-enqueues on wake
   WK->>PG: compute state slice and pending events for A
   WK->>RT: runtime.v1.applyState (version, state, events)
   RT->>RT: reconcile contributions per kind
@@ -196,7 +196,7 @@ flowchart TD
   exists{row exists?}
   noop[exit clean, return]
   check{agent running?}
-  defer[exit clean, sweep re-enqueues later]
+  defer[exit clean, hello re-enqueues on wake]
   retry[throw, fast-retry on backoff]
   compute[compute state slice + non-dispatched events]
   dispatch[POST runtime.v1.applyState]
@@ -214,22 +214,26 @@ flowchart TD
   dispatch -->|error| fail
 ```
 
-BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick. A plain dispatch to an agent that isn't running exits clean — the cron sweep re-enqueues on its next tick, and `hello` picks up the payload when the agent eventually wakes.
+BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick. A plain dispatch to an agent that isn't running exits clean and the row simply stays behind: while the agent is down the sweep does not re-attempt delivery to it, and the agent's `hello` on boot or wake is what brings the payload back.
 
 ### Cron sweep
 
 A scheduled job runs every minute and does two things:
 
-1. **Outbox staleness check.** Scan rows where `last_enqueued_at > last_applied_at AND last_enqueued_at < now() - sweepInterval`. For each, re-enqueue with the row's stable id. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth.
-2. **Expired-event drop.** Delete `runtime_events` rows where `expires_at <= now() AND dispatched_at IS NULL`; emit `dropped-expired` count.
+1. **Outbox staleness check.** Scan for the rows an agent is behind on — the desired version is not settled yet, or an earlier apply left driver failures still under their attempt budget — least-attempted first and capped at a batch size. Re-enqueue a dispatch for each one whose agent is currently running. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth.
 
-### Agent-state cache
+   **A row whose agent is not running is left where it is.** A stopped agent has nothing to apply the state, so re-attempting delivery buys nothing and never terminates — the row stays behind for as long as the agent stays down, which makes an unconditional re-enqueue a fixed-cadence livelock with no ceiling. Catch-up is already covered from the other side: `hello` re-enqueues on boot or wake, and once the agent is running again the next tick picks the row up regardless.
 
-The worker handler reads agent running-state from an in-memory cache fed by the existing ConfigMap watch in the agents service — never from a direct K8s API call.
+   Running-state is a live read (below) and can fail. A definite *not running* suppresses the row; a read that errors or times out is treated as **unknown** and the row is re-enqueued anyway. The worker applies the same gate one step later and exits clean, so an unknown that was really a stopped agent costs one job and never mis-delivers — whereas reading it as *not running* would silently disable the recovery path for as long as the failures lasted.
+2. **Expired-event drop.** Delete the event rows that expired without ever being dispatched; emit a `dropped-expired` count. This does not depend on the running check, so it still runs on a tick where every row was skipped.
+
+### Reading agent running-state
+
+Both readers — the delivery worker before it dispatches, and the cron sweep before it re-enqueues — ask the agents subsystem whether the Agent is Ready, and that answer is a live read of the Agent resource rather than a cached one. So each read can fail or hang on its own: the sweep bounds how many it has in flight at once, puts a deadline on each, and distinguishes a failed read from a negative one.
 
 ### Redis-down behavior
 
-Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: any outbox row whose enqueue was lost gets re-enqueued on the next sweep tick. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox + events tables are in Postgres.
+Redis is the signal path; BullMQ stores job state in Redis with relaxed durability. A Redis outage may drop pending jobs; in-flight handlers see Redis errors and fail. The cron sweep is the recovery path: an outbox row whose enqueue was lost is re-enqueued on the next sweep tick if its agent is running, and on the agent's next `hello` if it is not. Delivery latency degrades from sub-second to ≤ sweep-interval; no events are lost because the outbox + events tables are in Postgres.
 
 ## Agent-side: drivers, manifest, event handlers
 
