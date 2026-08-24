@@ -42,6 +42,22 @@ data:
     \gexec
     ALTER ROLE :"kc_user" WITH LOGIN NOSUPERUSER PASSWORD :'kc_pwd';
 
+    -- Optional read-only consumer of the usage_src_* source passthrough
+    -- views. NOLOGIN and password-less: the role is a group, it holds no
+    -- credential and grants nobody anything by itself. An operator grants
+    -- membership to whichever login should read the metrics (`GRANT
+    -- usage_readers TO <login>`), and membership is attached to the two
+    -- roles rather than to any view, so no view migration can revoke it. The
+    -- api-server re-grants SELECT on the passthroughs to this role after
+    -- every migration run, which is why the name is fixed rather than
+    -- configurable. Creating roles stays out of the
+    -- application deliberately — an api-server that could mint database
+    -- logins could mint itself a better one — so it is created here, as the
+    -- bootstrap superuser.
+    SELECT 'CREATE ROLE usage_readers NOLOGIN'
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'usage_readers')
+    \gexec
+
     -- One database per service, each owned by its app role so each runs its
     -- own migrations (Drizzle on platform, Liquibase on keycloak) and reaches
     -- nowhere else. CREATE only when absent; the ALTER ... OWNER is what makes
@@ -63,6 +79,11 @@ data:
     REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC;
     GRANT  CONNECT ON DATABASE platform TO :"api_user";
     GRANT  CONNECT ON DATABASE keycloak TO :"kc_user";
+    -- The usage-view group needs CONNECT too, or a member login would be
+    -- refused at the door and its view grants would be unreachable. It
+    -- carries no table privileges, so reaching the database buys a member
+    -- nothing beyond the usage_* views granted to the group.
+    GRANT  CONNECT ON DATABASE platform TO usage_readers;
 
     -- DBA sessions are statement-logged by default. The global log_statement
     -- stays at ddl (set on the server command line), so routine app traffic
