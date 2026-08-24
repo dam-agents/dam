@@ -1,10 +1,10 @@
 import { useState } from "react";
 
-import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useFeed } from "../api/queries.js";
 import { ComputeWidget } from "../components/compute-widget.js";
+import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
 import { FeedList } from "../components/feed-list.js";
@@ -29,7 +29,7 @@ export function HomeView() {
     runningAgents,
     hasAgents,
     loadingAgents,
-    loadingApprovals,
+    loadingFeed,
   } = useFeed();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss } = useDismissals();
@@ -45,7 +45,7 @@ export function HomeView() {
       <div>
         <HomeGreeting title="Activity" />
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <ListSkeleton rows={3} rowHeight={126} />
+          <FeedCardSkeleton rows={3} />
           <aside />
         </div>
       </div>
@@ -120,26 +120,29 @@ export function HomeView() {
           </div>
         </div>
         <div className="space-y-3 lg:col-start-1 lg:row-start-2">
-          {loadingApprovals && items.length === 0 ? (
-            <ListSkeleton rows={3} rowHeight={116} />
-          ) : visible.length > 0 ? (
-            <FeedList
-              items={visible}
-              agents={agents}
-              onOpenSession={openAgentSession}
-              onDismiss={(item) => {
-                sticky.drop(item.id);
-                dismiss([item]);
-              }}
-              onResolved={(item) => sticky.keep(item)}
-            />
-          ) : (
+          {loadingFeed && visible.length === 0 ? (
+            <FeedCardSkeleton rows={3} />
+          ) : visible.length === 0 ? (
             <FeedEmptyState
               {...emptyStateFor(status, {
                 allSourcesExcluded: included.size === 0,
                 noRunningAgents: runningAgents.length === 0,
               })}
             />
+          ) : (
+            <>
+              {loadingFeed && <FeedCardSkeleton />}
+              <FeedList
+                items={visible}
+                agents={agents}
+                onOpenSession={openAgentSession}
+                onDismiss={(item) => {
+                  sticky.drop(item.id);
+                  dismiss([item]);
+                }}
+                onResolved={(item) => sticky.keep(item)}
+              />
+            </>
           )}
         </div>
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">

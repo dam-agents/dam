@@ -22,7 +22,7 @@ export interface Feed {
   runningAgents: readonly AgentView[];
   hasAgents: boolean;
   loadingAgents: boolean;
-  loadingApprovals: boolean;
+  loadingFeed: boolean;
 }
 
 export function useFeed(): Feed {
@@ -43,14 +43,17 @@ export function useFeed(): Feed {
       staleTime: SESSIONS_STALE_MS,
       retry: false,
     })),
-    combine: (results) => results.map((result) => result.data ?? []),
+    combine: (results) => ({
+      byAgent: results.map((result) => result.data ?? []),
+      pending: results.some((result) => result.isPending),
+    }),
   });
 
   const items = toFeedItems({
     approvals: (approvals.data ?? []).filter((a) => a.status === "pending"),
     byAgent: runningAgents.map((agent, index) => ({
       agentId: agent.id,
-      sessions: sessions[index] ?? [],
+      sessions: sessions.byAgent[index] ?? [],
     })),
   });
 
@@ -60,6 +63,6 @@ export function useFeed(): Feed {
     runningAgents,
     hasAgents: agents.length > 0,
     loadingAgents: agentsQuery.isPending,
-    loadingApprovals: approvals.isPending,
+    loadingFeed: approvals.isPending || sessions.pending,
   };
 }
