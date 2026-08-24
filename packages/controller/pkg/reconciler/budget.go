@@ -307,6 +307,31 @@ func (r *AgentReconciler) recordDeniedWake(name, lastActivity string) {
 	r.deniedWakes[name] = lastActivity
 }
 
+func (r *AgentReconciler) recordParkedRetry(name string) {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	if r.parkedRetry == nil {
+		r.parkedRetry = make(map[string]struct{})
+	}
+	r.parkedRetry[name] = struct{}{}
+}
+
+func (r *AgentReconciler) clearParkedRetry(name string) {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	delete(r.parkedRetry, name)
+}
+
+func (r *AgentReconciler) ParkedForRetry() []string {
+	r.budgetMu.Lock()
+	defer r.budgetMu.Unlock()
+	names := make([]string, 0, len(r.parkedRetry))
+	for name := range r.parkedRetry {
+		names = append(names, name)
+	}
+	return names
+}
+
 func (r *AgentReconciler) clearDeniedWake(name string) {
 	r.budgetMu.Lock()
 	defer r.budgetMu.Unlock()
