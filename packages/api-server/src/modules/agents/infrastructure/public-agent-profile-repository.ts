@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import { agentPublicProfiles, eq, isNull, sql } from "db";
+import { agentPublicProfiles, channels, eq, isNull, sql } from "db";
 
 export interface PublicAgentProfileRow {
   agentId: string;
@@ -73,8 +73,9 @@ export function markProfileDeleted(db: Db) {
 export function listProfileIdsForReconcile(db: Db) {
   return async (): Promise<string[]> => {
     const rows = await db
-      .select({ agentId: agentPublicProfiles.agentId })
+      .selectDistinct({ agentId: agentPublicProfiles.agentId })
       .from(agentPublicProfiles)
+      .innerJoin(channels, eq(channels.agentId, agentPublicProfiles.agentId))
       .where(isNull(agentPublicProfiles.deletedAt))
       .orderBy(agentPublicProfiles.agentId);
     return rows.map((r) => r.agentId);

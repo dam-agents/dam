@@ -155,10 +155,11 @@ export function composePublicAgentPage(deps: {
   };
   const upsert = upsertProfile(deps.db);
   const markDeleted = markProfileDeleted(deps.db);
+  const bound = hasAnyBinding(deps.db);
 
   return {
     service: createPublicAgentPageService({
-      hasAnyBinding: hasAnyBinding(deps.db),
+      hasAnyBinding: bound,
       getProfile: getProfile(deps.db),
       upsertProfile: upsert,
       markProfileDeleted: markDeleted,
@@ -169,9 +170,11 @@ export function composePublicAgentPage(deps: {
     }),
     startSaga: () =>
       startPersistPublicAgentProfileSaga({
+        hasAnyBinding: bound,
         readAgent,
         upsertProfile: upsert,
         markProfileDeleted: markDeleted,
+        log: deps.log,
       }),
     reconcileService: createPublicAgentProfileReconcileService({
       listProfileIds: listProfileIdsForReconcile(deps.db),

@@ -13,10 +13,10 @@ export interface PublicAgentRoutesDeps {
  * Slack link with no session.
  *
  * `GET /:agentId` always answers 200. An unknown id, an agent with no channel
- * binding, and a deleted agent all return `{ agent: null }`, so the response
- * never confirms which agents exist. Mounted under `/api/public` so the
- * unauthenticated carve-out in the app's PUBLIC_PATHS is one prefix rather than
- * a hole inside `/api/agents/*`.
+ * binding, a deleted agent, and a read that failed all return `{ agent: null }`,
+ * so neither the body nor the status confirms which agents exist. Mounted under
+ * `/api/public` so the unauthenticated carve-out in the app's PUBLIC_PATHS is
+ * one prefix rather than a hole inside `/api/agents/*`.
  */
 export function createPublicAgentRoutes(deps: PublicAgentRoutesDeps): Hono {
   const routes = new Hono();

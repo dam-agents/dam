@@ -14,10 +14,11 @@ import { startPersistPublicAgentProfileSaga } from "../../modules/agents/sagas/p
 /**
  * TEST_OVERVIEW: The Public Agent Page reads an agent's name and owner for a
  * visitor with no login. The projection in Postgres is what it reads, so the
- * specs pin three things: the page tells a stranger nothing about which agents
- * exist (unknown, unbound and deleted all answer the same), public traffic
- * reaches the K8s API at most once per agent, and the owner's name is a
- * display detail that never fails the page.
+ * specs pin four things: the page tells a stranger nothing about which agents
+ * exist (unknown, unbound, deleted and failed all answer the same), public
+ * traffic reaches the K8s API at most once per agent, only a bound agent ever
+ * gets a row, and the owner's name is a display detail that never fails the
+ * page.
  */
 
 type ProfileStore = Map<string, PublicAgentProfileRow & { deleted: boolean }>;
@@ -64,7 +65,9 @@ function harness(options: {
         });
     },
     listProfileIds: async () =>
-      [...profiles.values()].filter((r) => !r.deleted).map((r) => r.agentId),
+      [...profiles.values()]
+        .filter((r) => !r.deleted && bound.has(r.agentId))
+        .map((r) => r.agentId),
   };
 
   const readAgent = async (agentId: string) => {
@@ -79,22 +82,34 @@ function harness(options: {
   };
 
   const logs: string[] = [];
+  const log = (m: string) => logs.push(m);
+
   const service = createPublicAgentPageService({
     ...repo,
     readAgent,
     resolveOwnerName,
-    log: (m) => logs.push(m),
+    log,
   });
 
   const reconcileService = createPublicAgentProfileReconcileService({
     ...repo,
     readAgent,
-    log: (m) => logs.push(m),
+    log,
   });
+
+  const startSaga = () =>
+    startPersistPublicAgentProfileSaga({
+      hasAnyBinding: repo.hasAnyBinding,
+      readAgent,
+      upsertProfile: repo.upsertProfile,
+      markProfileDeleted: repo.markProfileDeleted,
+      log,
+    });
 
   return {
     service,
     reconcile: () => reconcileService.reconcile(),
+    startSaga,
     repo,
     readAgent,
     logs,
@@ -262,7 +277,7 @@ describe("public agent profile saga", () => {
    * reachable. All three therefore read the agent back and write the row, so
    * the first click after a bind is already warm.
    */
-  it("writes the row on create, update and slack connect", async () => {
+  it("writes the row for a bound agent on create, update and slack connect", async () => {
     for (const event of [
       { type: EventType.AgentCreated, agentId: "agent-1", ownerSub: "sub-1" },
       { type: EventType.AgentUpdated, agentId: "agent-1" },
@@ -273,13 +288,10 @@ describe("public agent profile saga", () => {
       },
     ] as const) {
       const h = harness({
+        boundAgentIds: ["agent-1"],
         k8sAgents: { "agent-1": { name: "Scout", ownerSub: "sub-1" } },
       });
-      const sub = startPersistPublicAgentProfileSaga({
-        readAgent: h.readAgent,
-        upsertProfile: h.repo.upsertProfile,
-        markProfileDeleted: h.repo.markProfileDeleted,
-      });
+      const sub = h.startSaga();
 
       emit(event);
       await flushMicrotasks();
@@ -294,6 +306,53 @@ describe("public agent profile saga", () => {
   });
 
   /**
+   * TEST_SCENARIO: Most agents in an install are never connected to a channel,
+   * and the page never names one of those. A row for each of them would still
+   * cost the hourly reconcile one control-plane read, so create and update skip
+   * an agent with no binding.
+   */
+  it("writes no row for an agent with no channel binding", async () => {
+    const h = harness({
+      k8sAgents: { "agent-1": { name: "Scout", ownerSub: "sub-1" } },
+    });
+    const sub = h.startSaga();
+
+    emit({
+      type: EventType.AgentCreated,
+      agentId: "agent-1",
+      ownerSub: "sub-1",
+    });
+    emit({ type: EventType.AgentUpdated, agentId: "agent-1" });
+    await flushMicrotasks();
+    sub.unsubscribe();
+
+    expect(h.profileIds()).toEqual([]);
+    expect(h.k8sReads()).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: A bind is the moment an agent becomes publicly reachable, so
+   * it warms the row without asking whether a binding exists — the event is the
+   * binding, and the channels row it comes from may not be visible yet.
+   */
+  it("writes the row on slack connect without a binding lookup", async () => {
+    const h = harness({
+      k8sAgents: { "agent-1": { name: "Scout", ownerSub: "sub-1" } },
+    });
+    const sub = h.startSaga();
+
+    emit({
+      type: EventType.SlackConnected,
+      agentId: "agent-1",
+      slackChannelId: "C1",
+    });
+    await flushMicrotasks();
+    sub.unsubscribe();
+
+    expect(h.storedProfile("agent-1")).toMatchObject({ name: "Scout" });
+  });
+
+  /**
    * TEST_SCENARIO: A deleted agent must stop being named, and a stale link to
    * it has to keep landing on the generic page rather than a 404.
    */
@@ -301,11 +360,7 @@ describe("public agent profile saga", () => {
     const h = harness({
       profiles: [{ agentId: "agent-1", name: "Scout", ownerSub: "sub-1" }],
     });
-    const sub = startPersistPublicAgentProfileSaga({
-      readAgent: h.readAgent,
-      upsertProfile: h.repo.upsertProfile,
-      markProfileDeleted: h.repo.markProfileDeleted,
-    });
+    const sub = h.startSaga();
 
     emit({ type: EventType.AgentDeleted, agentId: "agent-1" });
     await flushMicrotasks();
@@ -322,11 +377,7 @@ describe("public agent profile saga", () => {
    */
   it("writes a tombstone on AgentDeleted even with no row to update", async () => {
     const h = harness({ boundAgentIds: ["agent-1"] });
-    const sub = startPersistPublicAgentProfileSaga({
-      readAgent: h.readAgent,
-      upsertProfile: h.repo.upsertProfile,
-      markProfileDeleted: h.repo.markProfileDeleted,
-    });
+    const sub = h.startSaga();
 
     emit({ type: EventType.AgentDeleted, agentId: "agent-1" });
     await flushMicrotasks();
@@ -346,6 +397,7 @@ describe("public agent profile reconcile", () => {
    */
   it("refreshes renamed agents and retires vanished ones", async () => {
     const h = harness({
+      boundAgentIds: ["agent-1", "agent-2"],
       profiles: [
         { agentId: "agent-1", name: "old name", ownerSub: "sub-1" },
         { agentId: "agent-2", name: "Gone", ownerSub: "sub-2" },
@@ -361,6 +413,21 @@ describe("public agent profile reconcile", () => {
     });
     expect(h.storedProfile("agent-1")).toMatchObject({ name: "new name" });
     expect(h.storedProfile("agent-2")).toMatchObject({ deleted: true });
+  });
+
+  /**
+   * TEST_SCENARIO: Releasing a binding leaves the row behind, and the page stops
+   * naming that agent anyway. Refreshing it would spend a control-plane read an
+   * hour on an agent nobody can reach, so the walk stays inside bound agents.
+   */
+  it("skips a row whose channel binding is gone", async () => {
+    const h = harness({
+      profiles: [{ agentId: "agent-1", name: "Scout", ownerSub: "sub-1" }],
+      k8sAgents: { "agent-1": { name: "Scout", ownerSub: "sub-1" } },
+    });
+
+    expect(await h.reconcile()).toMatchObject({ scanned: 0 });
+    expect(h.k8sReads()).toBe(0);
   });
 
   /**
