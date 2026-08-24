@@ -12,6 +12,17 @@ the stable fields it must report, and the artifacts it must publish
 (`report.md`, `meta_findings.json`, per-iteration `findings.json`) before
 finishing.
 
+**Always demand the per-seed numbers.** The experiment's score chart plots
+one point per seed, not per campaign (a run chains one or two campaigns —
+per-round scoring draws a single dot), and the pass condition is itself
+per-seed ("≥ 8/10 seeds"). The driver cannot fetch them later: the raw files
+in §1b are the only exact source, their metric keys and filenames are
+campaign-specific, and the pod holding them is gone. So make the prompt ask
+for a normalized array — `{seed, baseline, treatment}` per seed of the
+confirming iteration, in the metric's own unit — read from those raw files
+and **not** from `report.md`'s prose or summary table, which are free text
+and have been observed to disagree with the raw numbers.
+
 There is **no central stats database**. Results are file-based in two tiers:
 
 1. **Per-campaign artifacts** — raw, complete, campaign-specific schema.

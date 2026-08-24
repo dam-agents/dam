@@ -63,7 +63,9 @@ do next:
   score honest: it is measured (a benchmark, a test count, an evaluator),
   compared against a baseline measured up front, and guarded so it cannot be
   gamed (broken tests score nothing; the things being measured are locked).
-  The pass condition — what counts as success — is agreed before the run.
+  The pass condition — what counts as success — is agreed before the run, and
+  set where a candidate could genuinely fail it: a bar nothing can miss tells
+  you nothing.
 - **"What types of experiments can I run?"** → anything a script can measure.
   Offer the common shapes as a short list: optimize code against a benchmark,
   evolve a prompt or any text against a scorer, sweep configurations or
@@ -221,6 +223,9 @@ Rules that matter:
   teaches) — usually at least the model-provider connection.
 - **Scores are plain numbers, higher is better.** Set `span.score` on the
   stage that evaluates; the platform charts them but never interprets them.
+- **Score the finest honest measurement, not the round** — one scored span per
+  seed / sweep point / arm. See *Designing a score that means something* below;
+  it is the difference between a chart and a single dot.
 - **Candidates go to the Artifact Library.** Publish files with your artifact
   tools (`create_artifact`), then reference them: `span.artifact(artifact_id)`.
 - **Spawns inside a span attach automatically** — the live view shows each
@@ -237,11 +242,83 @@ Rules that matter:
   the pod allows it. Never surface the workaround to the user — "there is no
   diff binary, so hashes instead" is tool archaeology, not information.
 
+### Designing a score that means something
+
+A run's score line is the only quantitative thing most readers will look at,
+and it is easy to produce one that is technically correct and answers nothing.
+The failure modes below are all real ones, and they are decided at design time
+— before the human approves the envelope, not after the numbers land.
+
+- **Score per measurement, not per round.** The chart draws one series per
+  stage, plotting each scored span in arrival order, so a stage that scores
+  once per round on a one- or two-round run is a single dot with padded axis
+  bounds. Emit a scored span per seed, per sweep point, or per arm instead:
+
+  ```python
+  with per_seed.run(iteration=seed) as span:
+      span.score = speedup_for(seed)
+  ```
+
+  Round-level aggregates (the median, the best so far) are facts *about* the
+  round, not a second series: put them in `span.attrs` or `exp.post_data(...)`.
+  `iteration` must be a non-negative integer; it rides in the feed for labels
+  and bespoke dashboards, and does not set the x position — so emit points in
+  the order you want them read.
+- **More rounds are not more confidence.** Repeating a *deterministic* change
+  measures the harness's noise, not the effect's uncertainty. Two or three
+  rounds give a confidence interval on the measurement; beyond that you are
+  paying campaign prices for nothing. Spend the budget on seeds and sweep
+  points, which vary something real.
+- **Check the measurement is not measuring your instrument.** If the optimized
+  side lands near the resolution of the thing doing the timing, the ratio is
+  baseline ÷ one clock tick — a big, meaningless, wildly unstable number. The
+  tell is per-seed spread with no code change between seeds (424× → 651× on
+  identical code was exactly this). On the fast side, prefer a **batch
+  measurement** — total wall time for N operations, reported as ops/sec or
+  ns/op — over a per-operation percentile, and say in the run's caveats where
+  the instrument's floor sits.
+- **Sweep the parameter the effect depends on.** When the win is a function of
+  size, load, or input scale, a single fixed point plus a yes/no bar throws
+  away the finding. The same tiny-cache change was 1.7× at n=1 and 525× at
+  n=20 000: sweeping n and scoring each point charts the mechanism (Θ(n)), and
+  shows the crossover where the change starts to be worth making. A curve
+  answers "when does this matter"; a dot answers "did the known win happen".
+- **Put the ablations in the data layer.** If the campaign measured the
+  decomposition — this change alone, that change alone, both together — score
+  each arm rather than only the winner. Mechanism that lives only in a
+  markdown report is mechanism that dies with the reader's patience.
+- **Carry absolute numbers next to every ratio.** A speedup hides both ends: a
+  reader cannot tell 174 µs → 0.33 µs from 17 ms → 33 µs, nor see that the
+  fast end is instrument-bound. Put baseline and treatment, in their own unit,
+  in `span.attrs`. And note that the stock chart's y axis is linear between the
+  series' own min and max: across orders of magnitude the small points collapse
+  onto the floor of the chart, so score the log or build a bespoke dashboard
+  when the spread is that wide.
+- **Set a pass bar that could fail.** A 10× bar cleared at 500× discriminates
+  nothing — every plausible candidate passes, and the pre-registration becomes
+  decoration. Put the bar where the answer is genuinely in doubt: near the
+  theoretical floor ("how close to O(1) did we get?"), or drop the binary bar
+  for a continuous objective against that floor.
+- **The driver owns the headline number.** Compute it in the script from the
+  structured result you demanded, never from the worker's prose. A worker's
+  own `report.md` has shipped with a wrong baseline median and a false claim
+  that its per-seed files did not exist; the driver had the right numbers in
+  hand the whole time. Publish the worker's narrative as commentary, clearly
+  labelled, and make the run's own summary the one derived from data.
+
 ### A purpose-built worker: one Nous campaign per iteration
 
 The same shape with a curated image instead of `claude-code`. The worker
 already *is* the loop's machinery, so the stage is one spawn and your script
 only decides what to try next and records the score.
+
+**A Nous run's score axis is seeds, not rounds.** A campaign is expensive
+enough that a run chains one or two of them, so a per-round score is a chart
+with one or two dots — while the campaign itself measured the metric on every
+seed of its confirming iteration, which is exactly the distribution the human
+wants to read (does the median hold in 9/10 seeds, or is one seed carrying
+it?). So make the worker report its **per-seed measurements** and score one
+span per seed. The round's median rides along as an attribute.
 
 **Interview the human before authoring a Nous experiment.** A Nous campaign
 pre-registers its own science, and a guessed parameter fails hours in, not at
@@ -251,10 +328,15 @@ pre-registers its own science, and a guessed parameter fails hours in, not at
   the human's words.
 - **Primary metric, direction, and pass condition** (e.g. "median
   speedup ≥ 1.30 in ≥ 8/10 seeds") — the campaign's `ground_truth`; Nous
-  commits to it before running.
+  commits to it before running. Sanity-check the bar against what the change
+  plausibly does: one set at 10× and cleared at 500× discriminated nothing.
+  Also check the metric survives the win — a latency percentile that lands on
+  the timer's floor once optimized measures the clock, not the code (see
+  *Designing a score that means something*).
 - **Campaign iterations** (`max_iterations` *inside* the worker: rehearsal +
   confirm is 2–3; a real search is more) and **seeds** for the confirming
-  iteration.
+  iteration — the seed count is also how many points the score chart gets, so
+  a run on 3 seeds is a smoke test in chart form as much as in science.
 - **Experiment rounds** (your loop's `max_iterations` — how many campaigns to
   chain) — total runtime multiplies through, so compute the TTL from these
   answers rather than assuming one.
@@ -266,6 +348,8 @@ files, per-seed measurements, and what to have it report — is documented in
 writing the spawn prompt or judging a finished campaign.
 
 ```python
+import statistics
+
 import experiment_sdk as x
 
 CAMPAIGN = """Run a Nous campaign, unattended and to completion — no human
@@ -283,11 +367,22 @@ at once. Serial arms are also better science: concurrent instances contend
 for CPU and pollute latency numbers.
 Then report the objective score from best_found.json, the h-main arm status
 from the last iteration's findings.json, and a summary from
-meta_findings.json."""
+meta_findings.json.
+Report per_seed as well: for EVERY seed of the confirming iteration, read the
+raw measurement files under runs/iter-<N>/results/<arm>/ and report its seed,
+baseline and treatment values for the primary metric, in the metric's own
+unit. Read those numbers from the raw files, never from report.md's prose or
+tables. Report per_arm too — arm_type, status and effect for every arm you
+measured, ablations included; the decomposition is the mechanism, and prose is
+not where it survives."""
 
 with x.Experiment("nous-campaigns") as exp:
-    loop = exp.loop("rounds")
-    campaign = loop.stage("campaign")
+    loop = exp.loop("rounds", description="one Nous campaign per pass")
+    campaign = loop.stage("campaign", description="the worker runs a whole campaign")
+    seed_score = loop.stage(
+        "seed-score", after=campaign,
+        description="one point per measured seed; the chart plots these",
+    )
 
     worker = x.require_image("nous")
     connections = [c["id"] for c in x.list_connections()]
@@ -299,14 +394,34 @@ with x.Experiment("nous-campaigns") as exp:
                 CAMPAIGN.format(repo=REPO, hypothesis=hypothesis, metric=METRIC,
                                 pass_condition=PASS_CONDITION,
                                 campaign_iters=CAMPAIGN_ITERS, seeds=SEEDS),
-                x.s({"score": "number", "status": "string", "summary": "string",
+                x.s({"status": "string", "summary": "string",
+                     "per_seed": [{"seed": "integer", "baseline": "number",
+                                   "treatment": "number"}],
+                     "per_arm": [{"arm_type": "string", "status": "string",
+                                  "effect": "number"}],
                      "pr_url": "string?"}),
                 template=worker,
                 connections=connections,
                 ttl_ms=TTL_MS,  # computed from the interview, not assumed
             )
-            span.score = result["score"]
             span.attrs["summary"] = result["summary"]
+            span.attrs["status"] = result["status"]
+        # One scored span per seed: a single campaign still draws a readable
+        # distribution, and the spread is the scientific content.
+        speedups = []
+        for m in sorted(result["per_seed"], key=lambda m: m["seed"]):
+            with seed_score.run(iteration=m["seed"]) as seed_span:
+                seed_span.score = m["baseline"] / m["treatment"]  # your metric's direction
+                # The ratio alone hides both ends — keep the absolutes.
+                seed_span.attrs.update(seed=m["seed"], baseline=m["baseline"],
+                                       treatment=m["treatment"], unit=METRIC_UNIT)
+                speedups.append(seed_span.score)
+        exp.post_data({f"round-{round_}": {
+            "median": statistics.median(speedups),
+            "seeds_passing": sum(1 for s in speedups if s >= PASS_BAR),
+            "arms": result["per_arm"],  # or a stage of their own, one span per arm
+            "status": result["status"],
+        }})
         hypothesis = next_hypothesis(result)  # your own choice of what to try
 ```
 
@@ -316,8 +431,18 @@ str(e)` (the message carries the platform's reason — OOM, deadline, crash),
 mark the span failed, and continue to the next round. An uncaught failure
 kills the script and every remaining round with it.
 
-Four things this example is really teaching:
+Five things this example is really teaching:
 
+- **The seeds are the score series.** One or two campaigns per run means the
+  round is the wrong scoring unit; the per-seed spans are what make the chart
+  readable and what answer the pass condition ("≥ 8/10 seeds"). Ask the worker
+  for the raw per-seed numbers in its typed result — the metric keys and file
+  names are campaign-specific and the pod is gone by the time you'd want to
+  go looking (see [references/nous-evaluator.md](references/nous-evaluator.md)
+  §1b), so a normalized `per_seed` array is the only durable form. Demand the
+  numbers from the raw files, not from `report.md` — a campaign's own report
+  has quoted a baseline median that its raw files contradict, and the driver's
+  summary should be computed from the structured result either way.
 - **Give a purpose-built worker an autonomous prompt.** Its own instructions
   (the image's `AGENTS.md`) may default to a conversational, ask-the-human
   flow. Say plainly that no human will reply and that it must run to
@@ -388,6 +513,9 @@ tables warrant one — make sure the run's presentation carries:
   where you can) so every later reading has its denominator.
 - **The evidence table** — per-iteration / per-seed / per-arm comparison, so
   the human can see whether the median is carried by every seed or by one.
+  This is the same distribution the score chart should already be plotting;
+  score per measurement (see the authoring rules) and the table and the chart
+  agree instead of the chart showing one dot next to a table of ten rows.
 - **Time** — when the run started, elapsed, and per-round durations; the
   human approved a duration estimate, and the run should show how it tracked.
 - **Token / cost consumption**, when the worker reports it (a Nous campaign's

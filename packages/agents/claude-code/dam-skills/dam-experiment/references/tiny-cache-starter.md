@@ -51,11 +51,13 @@ node bench/bench.mjs --scenario read-heavy --n 20000 --ops 5000 --seed 1
 The bench is deterministic per seed and prints one JSON line (`p50_us`,
 `p95_us`, `mean_us`, `ops_per_sec`). Expect a read-heavy p50 in the low
 hundreds of µs at `--n 20000`. Bake your measured numbers into the run so
-every score has its denominator.
+every score has its denominator — and measure the baseline at **every point
+of the sweep the loop will score** (see below), not just at `--n 20000`, or
+the small-`n` points have no denominator.
 
 ## The exercise
 
-Optimize `get()` latency on the read-heavy scenario. What makes it a good
+Optimize `get()` throughput on the read-heavy scenario. What makes it a good
 first experiment:
 
 - **Self-scoring** — the bench is the scorer; no dataset or judge to author.
@@ -78,9 +80,38 @@ The loop shape is the same whichever harness does the rewriting: each round
 spawns a worker whose prompt carries the current `src/tiny-cache.js` and asks
 for a faster rewrite under the locked semantics; the driver writes the
 candidate back, runs `node --test` (broken tests score nothing) and the bench
-across fixed seeds, and scores median speedup against the measured baseline.
+across fixed seeds, and scores speedup against the measured baseline.
 Everything stays local to the driver — the worker only ever transforms the
 source it is handed.
+
+### Scoring it — the part that is easy to get wrong
+
+A run of this starter has already produced a technically-passing result that
+answered almost nothing: one score point, a headline ratio pinned to the
+timer's resolution, and a 10× bar cleared at 525×. Three rules follow, and
+they cost the loop nothing because every bench run is local and takes
+seconds — the expensive part is the worker, and the worker is untouched.
+
+- **Score `ops_per_sec`, not `p50_us`.** The optimized `get()` lands at
+  ~0.3 µs per call, which *is* the floor of the bench's per-op
+  `process.hrtime` sampling, so a p50 ratio is baseline ÷ one clock tick: it
+  swung 424× → 651× across seeds with identical code. `ops_per_sec` is a
+  batch measurement over the whole run and does not quantize that way. It
+  still carries the bench's own per-op instrumentation inside the total, so
+  the fast side remains instrument-bound — say that in the run's caveats
+  rather than letting the ratio imply more precision than exists.
+- **Sweep `n`, and score one span per (n, seed) point.** The win is Θ(n) —
+  the same change measured 1.7× at `--n 1` and 525× at `--n 20000`. A single
+  fixed `n` plus a yes/no bar throws that away; sweeping
+  `n = 1, 10, 100, 1000, 10000, 20000` across the fixed seeds charts speedup
+  against `n`, which shows both the mechanism and the crossover where the
+  rewrite starts to be worth making (~n ≥ 200). Open a scored span per point
+  (`with sweep.run(iteration=n) as span`) and the chart is a curve instead of
+  a dot. Keep the round's median in `span.attrs` / `exp.post_data(...)` — the
+  early-finish gate below still reads it, it just isn't what gets plotted.
+- **Set a bar that can fail.** "≥ 10× at n=20000" is cleared by any correct
+  rewrite. Score against the asymptote instead — how close to the O(1) floor
+  the candidate got — or make the crossover `n` the thing being reported.
 
 **This starter is a demo, so speed of feedback beats thoroughness.** The
 effect is known and large (a `Map` plus lazy purge lands in round one), so
@@ -90,9 +121,12 @@ short TTL**:
 
 - **Two rounds at most, and stop early.** Round one lands the win; a second
   round exists only to show the chart iterate. Gate it in the script: once a
-  round verifies green and beats the baseline by a large factor (say ≥10×),
-  `finish` instead of spawning again — a worker asked to improve
-  already-optimal code just burns its whole deadline searching for nothing.
+  round verifies green and beats the baseline by a large factor at the top of
+  the sweep (say ≥10× at `--n 20000`), `finish` instead of spawning again — a
+  worker asked to improve already-optimal code just burns its whole deadline
+  searching for nothing. This is a *stopping* rule, not the pass condition —
+  it exists to save a round, and the bar the run is judged against is the
+  discriminating one above.
 - **`claude-code` is the default worker — pre-pick it.** It needs no
   credential this sandbox does not already hold. Say the design assumes it
   and move on; switch only if the user names another harness (check that
