@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
+import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
@@ -10,7 +11,6 @@ import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toas
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ListView } from "./modules/agents/views/list-view.js";
-import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
@@ -101,6 +101,7 @@ function MainApp() {
         </div>
         <DialogOverlay />
         <ConnectionBanner />
+        <FloatingApprovalsPill />
         <DocsLauncher />
       </>
     );
@@ -129,8 +130,6 @@ function MainApp() {
                 <CodingAgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "inbox" ? (
-                <InboxView />
               ) : view === "coding-agents" ? (
                 <CodingAgentsView />
               ) : view === "experiments" ? (
@@ -152,6 +151,7 @@ function MainApp() {
       </div>
       <DialogOverlay />
       <ConnectionBanner />
+      <FloatingApprovalsPill />
       <DocsLauncher />
     </div>
   );
