@@ -44,7 +44,10 @@ export function FeedApprovalCard({
   };
 
   return (
-    <div className="group w-full rounded-2xl border border-border bg-card/80 p-5 text-left">
+    <div
+      data-testid="feed-approval-card"
+      className="group w-full rounded-2xl border border-border bg-card/80 p-5 text-left"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-1.5 text-sm text-muted-foreground">

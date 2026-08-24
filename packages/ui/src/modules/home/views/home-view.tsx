@@ -63,7 +63,7 @@ export function HomeView() {
 
   const live = sticky.merge(items).filter((item) => !isDismissed(item));
   const visible = filterFeed(live, status, included);
-  const stats = feedStats(visible.filter((item) => !sticky.has(item.id)));
+  const stats = feedStats(visible);
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
   const workingAgentIds = new Set(
     live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
@@ -89,19 +89,21 @@ export function HomeView() {
               included={included}
               onToggleSource={toggleSource}
             />
-            {stats.running + stats.toReview > 0 && (
+            {(stats.running + stats.toReview > 0 || dismissible.length > 0) && (
               <div className="flex items-center gap-4">
-                <p className="text-sm text-muted-foreground tabular-nums">
-                  <span className="font-medium text-foreground">
-                    {stats.running}
-                  </span>{" "}
-                  running
-                  <span className="mx-1.5 text-border">·</span>
-                  <span className="font-medium text-foreground">
-                    {stats.toReview}
-                  </span>{" "}
-                  to review
-                </p>
+                {stats.running + stats.toReview > 0 && (
+                  <p className="text-sm text-muted-foreground tabular-nums">
+                    <span className="font-medium text-foreground">
+                      {stats.running}
+                    </span>{" "}
+                    running
+                    <span className="mx-1.5 text-border">·</span>
+                    <span className="font-medium text-foreground">
+                      {stats.toReview}
+                    </span>{" "}
+                    to review
+                  </p>
+                )}
                 {dismissible.length > 0 && (
                   <button
                     type="button"

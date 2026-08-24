@@ -138,7 +138,7 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 |------|-----------|
 | Approval | A user-pending decision that gates either a credentialed egress request (ext_authz) or a harness tool call (acp_native); persisted in the `pending_approvals` table |
 | Pending Approval | An approval whose verdict has not yet been decided; surfaces on Home |
-| Home | The landing page and the user-facing surface for pending approvals — an activity feed, a count badge on the rail, a floating pill on every other page, and the per-Agent session tray |
+| Home | The landing page and the user-facing surface for pending approvals — an activity feed, a floating pill on every other page, and the per-Agent session tray |
 | Verdict | The user's decision on a pending approval: `allow_once`, `allow`, `deny_once`, or `deny`. The `*_once` verdicts resolve only the held call (no rule written); `allow` / `deny` also write a permanent egress rule for ext_authz |
 | Action Outcome | What an approval mutation reports back to the caller: `applied` (pending row settled), `rule_written_expired` (ext_authz hold already expired but the durable rule was written for future retries), or `not_actionable` (unknown, foreign, or already-settled id — deliberately indistinguishable), plus the egress `rule` that was written (`{host, method, pathPattern, verdict}`, or `null` when none) |
 | Synth Frame | A synthetic ACP `session/request_permission` frame the relay injects into an attached client WS for an ext_authz approval; the synthetic session id has the `_egress:` prefix so the UI dispatches it to Home rather than the in-session permission queue |
