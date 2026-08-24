@@ -1,4 +1,4 @@
-import { Checkmark, ChevronDown } from "@carbon/icons-react";
+import { Checkmark, ChevronDown, WarningFilled } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -29,6 +29,7 @@ interface Props<T extends string> {
   placeholder: string;
   ariaLabel?: string;
   disabled?: boolean;
+  invalid?: boolean;
   testId?: string;
 }
 
@@ -39,6 +40,7 @@ export function RichSelect<T extends string>({
   placeholder,
   ariaLabel,
   disabled = false,
+  invalid = false,
   testId,
 }: Props<T>) {
   const selected = options.find((o) => o.value === value);
@@ -48,10 +50,13 @@ export function RichSelect<T extends string>({
         <button
           type="button"
           disabled={disabled}
+          aria-invalid={invalid || undefined}
           data-testid={testId}
           className={cn(
             CARD_SURFACE,
             "group flex min-h-[76px] w-full items-center gap-3.5 p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground",
+            invalid &&
+              "border-destructive hover:border-destructive data-[state=open]:border-destructive",
           )}
         >
           {ariaLabel && <span className="sr-only">{ariaLabel}</span>}
@@ -76,6 +81,9 @@ export function RichSelect<T extends string>({
             <p className="flex-1 text-[15px] text-muted-foreground">
               {placeholder}
             </p>
+          )}
+          {invalid && (
+            <WarningFilled size={18} className="shrink-0 text-destructive" />
           )}
           <ChevronDown
             size={18}

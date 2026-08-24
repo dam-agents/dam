@@ -154,7 +154,8 @@ export function useSandboxSettingsForm() {
   });
 
   const dirty = isDirty || net.dirty || harnessDraft.dirty;
-  const isSubmitDisabled = saving || !formReady || !dirty;
+  const isSubmitDisabled =
+    saving || !formReady || !dirty || selectedProvider === null;
 
   useUnsavedGuard(dirty);
 
@@ -194,6 +195,7 @@ export function useSandboxSettingsForm() {
     control,
     errors,
     saving,
+    formReady,
     selectedProvider,
     selectProvider,
     currentPreset,

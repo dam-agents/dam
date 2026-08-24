@@ -100,9 +100,9 @@ export const createNavigationSlice: StateCreator<
     history.pushState(
       null,
       "",
-      routeToPath({ view: "knowledge-base-config", agentId }),
+      routeToPath({ view: "sandbox-home", agentId, sandboxSection: "setup" }),
     );
-    set({ view: "knowledge-base-config", agentId });
+    set({ view: "sandbox-home", agentId, sandboxSection: "setup" });
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

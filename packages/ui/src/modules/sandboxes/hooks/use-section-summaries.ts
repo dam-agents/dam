@@ -30,6 +30,8 @@ type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
 
 const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
+const NO_PROVIDER_WARNING =
+  "No provider connected — the agent cannot reach a model";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -45,7 +47,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   warnings: SectionWarnings;
 } {
   const { data: templates = [] } = useTemplates();
-  const { data: apps = [] } = useAppConnections();
+  const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
@@ -70,6 +72,13 @@ export function useSectionSummaries(agent: AgentView | null): {
       ),
     [apps],
   );
+
+  const missingProvider = useMemo(() => {
+    if (!appsLoaded || !connectionsQuery.data) return false;
+    return !connectionsQuery.data.connections.some((c) =>
+      providerAppIds.has(c.connectionId),
+    );
+  }, [appsLoaded, connectionsQuery.data, providerAppIds]);
 
   const staleModel = useStaleModel(agent?.id ?? null);
   const sourceCount = useSkillSourceCount(agent?.id ?? null);
@@ -163,6 +172,10 @@ export function useSectionSummaries(agent: AgentView | null): {
       artifacts: artifactsSummary,
       usage: usageSummary,
     },
-    warnings: staleModel.stale ? { setup: STALE_MODEL_WARNING } : {},
+    warnings: missingProvider
+      ? { setup: NO_PROVIDER_WARNING }
+      : staleModel.stale
+        ? { setup: STALE_MODEL_WARNING }
+        : {},
   };
 }

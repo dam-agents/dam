@@ -86,6 +86,7 @@ export function SandboxSetupSection({ f }: Props) {
             onSelect={f.selectProvider}
             confirmSwitch={confirmSwitch}
             disabled={f.saving}
+            required={f.formReady}
           />
         </Inset>
         <p className="mt-3 text-xs text-muted-foreground">

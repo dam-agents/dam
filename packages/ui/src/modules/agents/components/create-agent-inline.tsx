@@ -83,6 +83,7 @@ export function CreateAgentInline({ onCreated }: Props) {
           selected={providerRef}
           onSelect={setProviderRef}
           autoSelectFirst
+          required
         />
       </div>
 
