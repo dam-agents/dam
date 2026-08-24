@@ -11,8 +11,14 @@ e2e:
 nfsProvisioner:
   enabled: false
 
-# Only the mock image is built for the e2e cluster — disable claude-code,
-# the one other template values-local.yaml leaves enabled.
+# Only the mock image is built for the e2e cluster — disable the agent
+# templates values-local.yaml leaves enabled (claude-code and nous). Any
+# enabled template is rendered, and cluster:install then tries to
+# `docker save platform-<name>:latest` it; in CI that image is neither pulled
+# (only controller/api-server/ui/keycloak/mock are) nor built (SKIP_IMAGE_BUILD=1),
+# so a stray enabled template fails the load with "reference does not exist".
 agentTemplates:
   claude-code:
+    enabled: false
+  nous:
     enabled: false
