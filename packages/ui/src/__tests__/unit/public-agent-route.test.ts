@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { ownerInitials } from "../../modules/agents/lib/owner-initials.js";
-import { parsePublicAgentPath } from "../../modules/platform/lib/routes.js";
+import {
+  parsePublicAgentPath,
+  publicAgentPath,
+} from "../../modules/platform/lib/routes.js";
 
 /**
  * TEST_OVERVIEW: The public agent page is the one route that renders without a
@@ -56,6 +59,22 @@ describe("public agent path", () => {
    */
   it("decodes the agent id", () => {
     expect(parsePublicAgentPath("/a/agent%2D1")).toBe("agent-1");
+  });
+
+  /**
+   * TEST_SCENARIO: The chat and agent-home routes build this path to redirect a
+   * visitor who cannot read the agent. If the builder and the matcher disagreed
+   * on encoding, that redirect would land on a path main.tsx refuses and the
+   * visitor would be sent to Keycloak instead of the page.
+   */
+  it("builds a path the matcher claims and reads back as the same id", () => {
+    for (const agentId of [
+      "agent-1148bc3d6914e918",
+      "agent with spaces",
+      "agent/../escape",
+    ]) {
+      expect(parsePublicAgentPath(publicAgentPath(agentId))).toBe(agentId);
+    }
   });
 });
 

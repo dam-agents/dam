@@ -50,6 +50,10 @@ export function parsePublicAgentPath(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]!) : null;
 }
 
+export function publicAgentPath(agentId: string): string {
+  return `/a/${encodeURIComponent(agentId)}`;
+}
+
 export const RETIRED_PATHS = new Set([
   "/sandboxes",
   "/sandboxes/",
