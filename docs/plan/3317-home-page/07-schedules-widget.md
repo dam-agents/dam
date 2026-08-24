@@ -70,7 +70,7 @@ No schedules at all: say what a schedule is for and offer to create one. Do not 
 - [ ] `mise run --force ui:check`, `--force ui:test` and `--force common:check:comment-types` pass.
 - [ ] The widget lists up to five schedules across all the user's sandboxes, each naming its sandbox.
 - [ ] Enable/disable persists across a refetch and a reload.
-- [ ] A locked schedule shows the lock notice instead of a failing toggle.
+- [ ] Opening a locked schedule shows its lock notice instead of the form. The toggle is not lock-gated — the per-agent card does not gate it either, and matching the app beats matching this plan.
 - [ ] "See all" opens the full list with its actions available.
 - [ ] Create from Home requires a target sandbox and round-trips; edit round-trips.
 - [ ] Cadence and next-run text come from `lib/schedule-format.ts`.

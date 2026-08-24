@@ -1,5 +1,6 @@
 import { Information } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -55,7 +56,8 @@ const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
 interface Props {
-  agentId: string;
+  agentId?: string;
+  agentChoices?: readonly { id: string; name: string }[];
   existing?: Schedule;
   onClose: () => void;
   onSaved: () => void;
@@ -63,10 +65,13 @@ interface Props {
 
 export function ScheduleFormModal({
   agentId,
+  agentChoices,
   existing,
   onClose,
   onSaved,
 }: Props) {
+  const [chosenAgent, setChosenAgent] = useState(agentId ?? "");
+  const targetAgentId = existing?.agentId ?? agentId ?? chosenAgent;
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
   const deleteSchedule = useDeleteSchedule();
@@ -127,7 +132,10 @@ export function ScheduleFormModal({
     if (existing) {
       updateSchedule.mutate({ id: existing.id, ...common }, { onSuccess });
     } else {
-      createSchedule.mutate({ agentId, ...common }, { onSuccess });
+      createSchedule.mutate(
+        { agentId: targetAgentId, ...common },
+        { onSuccess },
+      );
     }
   });
 
@@ -140,6 +148,24 @@ export function ScheduleFormModal({
         />
 
         <DialogBody className="flex flex-col gap-4">
+          {!existing && agentChoices && (
+            <FormField label="Agent" disableInset>
+              <Select
+                className="h-10"
+                value={chosenAgent}
+                onChange={(event) => setChosenAgent(event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose an agent
+                </option>
+                {agentChoices.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
           <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
               className="h-10"
@@ -341,6 +367,7 @@ export function ScheduleFormModal({
           label={existing ? "Save" : "Create"}
           pendingLabel={existing ? "Saving…" : "Creating…"}
           pending={mutation.isPending}
+          disabled={!targetAgentId}
         />
       </form>
     </Modal>

@@ -11,6 +11,7 @@ import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useToggleSchedule } from "../../schedules/api/mutations.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
+import { useScheduleEditGuard } from "../../schedules/hooks/use-schedule-edit-guard.js";
 import { scheduleCadenceText } from "../../schedules/lib/schedule-format.js";
 
 const TOP_SCHEDULES = 5;
@@ -57,6 +58,7 @@ export function SchedulesWidget() {
   const { data, isError } = useOwnerSchedules();
   const agents = useAgentsList();
   const { isPending: agentsPending } = useAgents();
+  const guardEdit = useScheduleEditGuard();
   const [listOpen, setListOpen] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [creating, setCreating] = useState(false);
@@ -78,8 +80,10 @@ export function SchedulesWidget() {
         agentName={nameOf(schedule.agentId)}
         dense={dense}
         onEdit={() => {
-          setListOpen(false);
-          setEditing(schedule);
+          void guardEdit(schedule, nameOf(schedule.agentId), () => {
+            setListOpen(false);
+            setEditing(schedule);
+          });
         }}
       />
     ));
@@ -148,9 +152,9 @@ export function SchedulesWidget() {
         />
       )}
 
-      {creating && agents[0] && (
+      {creating && (
         <ScheduleFormModal
-          agentId={agents[0].id}
+          agentChoices={agents.map((a) => ({ id: a.id, name: a.name }))}
           onClose={() => setCreating(false)}
           onSaved={() => setCreating(false)}
         />
