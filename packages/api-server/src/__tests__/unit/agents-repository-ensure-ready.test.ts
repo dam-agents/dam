@@ -26,6 +26,9 @@ function fakeK8s(initial: KubeObject[] = []) {
     watchCustomObjects() {
       return () => {};
     },
+    watchCustomObject() {
+      return () => {};
+    },
     async getCustomObject(_plural, name) {
       return store.get(name) ?? null;
     },

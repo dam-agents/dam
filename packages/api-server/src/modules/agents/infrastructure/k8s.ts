@@ -30,6 +30,12 @@ export interface K8sClient {
     onEvent: (phase: string, obj: KubeObject) => void,
     onEnd: (err?: unknown) => void,
   ): () => void;
+  watchCustomObject(
+    plural: string,
+    name: string,
+    onEvent: (phase: string, obj: KubeObject) => void,
+    onEnd: (err?: unknown) => void,
+  ): () => void;
 }
 
 export interface KubeObject {
@@ -179,32 +185,49 @@ export function createK8sClient(
     },
 
     watchCustomObjects(plural, onEvent, onEnd) {
-      let stopped = false;
-      let connection: AbortController | null = null;
-      watcher
-        .watch(
-          `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${plural}`,
-          {},
-          (phase, obj) => {
-            if (!stopped) onEvent(phase, obj as KubeObject);
-          },
-          (err) => {
-            if (!stopped) onEnd(err ?? undefined);
-          },
-        )
-        .then((c) => {
-          if (stopped) c.abort();
-          else connection = c;
-        })
-        .catch((err) => {
-          if (!stopped) onEnd(err);
-        });
-      return () => {
-        stopped = true;
-        connection?.abort();
-      };
+      return watchPath(`${plural}`, {}, onEvent, onEnd);
+    },
+    watchCustomObject(plural, name, onEvent, onEnd) {
+      return watchPath(
+        `${plural}`,
+        { fieldSelector: `metadata.name=${name}` },
+        onEvent,
+        onEnd,
+      );
     },
   };
+
+  function watchPath(
+    plural: string,
+    queryParams: Record<string, string>,
+    onEvent: (phase: string, obj: KubeObject) => void,
+    onEnd: (err?: unknown) => void,
+  ): () => void {
+    let stopped = false;
+    let connection: AbortController | null = null;
+    watcher
+      .watch(
+        `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${plural}`,
+        queryParams,
+        (phase, obj) => {
+          if (!stopped) onEvent(phase, obj as KubeObject);
+        },
+        (err) => {
+          if (!stopped) onEnd(err ?? undefined);
+        },
+      )
+      .then((c) => {
+        if (stopped) c.abort();
+        else connection = c;
+      })
+      .catch((err) => {
+        if (!stopped) onEnd(err);
+      });
+    return () => {
+      stopped = true;
+      connection?.abort();
+    };
+  }
 }
 
 export function podBaseUrl(agentId: string, namespace: string): string {

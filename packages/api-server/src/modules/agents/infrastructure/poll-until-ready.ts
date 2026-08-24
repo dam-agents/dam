@@ -1,15 +1,18 @@
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 export async function pollUntilReady(
   isReady: () => Promise<boolean>,
   initialMs: number,
   maxMs: number,
   timeoutMs: number,
+  wait: (ms: number) => Promise<void> = sleep,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let interval = initialMs;
   while (Date.now() < deadline) {
     if (await isReady()) return true;
     const jittered = interval * (0.8 + 0.4 * Math.random());
-    await new Promise((r) => setTimeout(r, jittered));
+    await wait(jittered);
     interval = Math.min(Math.floor(interval * 1.5), maxMs);
   }
   return false;

@@ -24,6 +24,7 @@ import {
   WAKE_POLL_MAX_MS,
   WAKE_TIMEOUT_MS,
 } from "./poll-until-ready.js";
+import { createReadyNudge } from "./readiness-nudge.js";
 import {
   AgentWakeTimeoutError,
   classifyWakeFailure,
@@ -287,7 +288,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
           throw new AgentStoppedError(id);
         }
         if (await repo.isReady(id)) {
-          await bumpLastActivity(id);
+          void bumpLastActivity(id).catch(() => {});
           return;
         }
         opts?.onWaking?.();
@@ -307,6 +308,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
           throw e;
         }
         let sawNotOverBudget = false;
+        const nudge = createReadyNudge(k8s, AGENTS_PLURAL, id);
         const ready = await pollUntilReady(
           async () => {
             const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
@@ -338,7 +340,8 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
           WAKE_POLL_INITIAL_MS,
           WAKE_POLL_MAX_MS,
           WAKE_TIMEOUT_MS,
-        );
+          (ms) => nudge.wait(ms),
+        ).finally(() => nudge.stop());
         const durationMs = Date.now() - startedAt;
         if (!ready) {
           const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
@@ -348,7 +351,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
               { agentId: id, durationMs, lateReady: true },
               "agent.wake.ready",
             );
-            await bumpLastActivity(id);
+            void bumpLastActivity(id).catch(() => {});
             return;
           }
           const failure = classifyWakeFailure(infra);
@@ -374,7 +377,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
           });
         }
         getLogger().info({ agentId: id, durationMs }, "agent.wake.ready");
-        await bumpLastActivity(id);
+        void bumpLastActivity(id).catch(() => {});
       })().finally(() => {
         inflight.delete(id);
       });
