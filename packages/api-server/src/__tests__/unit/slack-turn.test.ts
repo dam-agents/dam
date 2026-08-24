@@ -907,7 +907,8 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).not.toContain('by typing "dam" with no tag');
     expect(prompt).toContain("only a tag reaches you");
     expect(prompt).toContain(
-      "a post from it is yours only if its footer names you",
+      "a post from it is yours only if the conversation history marks that " +
+        'line "you (this agent)"',
     );
     expect(prompt).toContain("<addressed-to-you>");
     expect(prompt).toContain("You were @-mentioned");
@@ -937,7 +938,9 @@ describe("slack turn — network-access framing and attendance", () => {
       'by the name your posts here are signed with, "Buginator"',
     );
     expect(prompt).toContain("any other name you know yourself by");
-    expect(prompt).toContain('yours only if its footer reads "Buginator"');
+    expect(prompt).toContain(
+      'yours only if the conversation history marks that line "you (this agent)"',
+    );
     expect(prompt).not.toContain("agent-1");
   });
 
@@ -955,7 +958,9 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain(
       "the name your posts are signed with, the one you know yourself by",
     );
-    expect(prompt).toContain("its footer names you");
+    expect(prompt).toContain(
+      'the conversation history marks that line "you (this agent)"',
+    );
     expect(prompt).not.toContain("agent-1");
   });
 

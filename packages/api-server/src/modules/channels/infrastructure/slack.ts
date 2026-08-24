@@ -980,11 +980,18 @@ export function createSlackWorker(
     );
   }
 
-  function agentFooter(instanceName: string, sessionId?: string): AgentFooter {
+  async function agentFooter(
+    instanceName: string,
+    sessionId?: string,
+  ): Promise<AgentFooter> {
+    const resolved = await resolveAgentName(instanceName);
     return {
       uiBaseUrl,
       agentId: instanceName,
-      label: agentFooterLabel(brand),
+      label: agentFooterLabel(
+        brand,
+        resolved === instanceName ? undefined : resolved,
+      ),
       ...(sessionId ? { sessionId } : {}),
     };
   }
@@ -2552,7 +2559,7 @@ export function createSlackWorker(
         return target;
       }
 
-      const footer = agentFooter(instanceName);
+      const footer = await agentFooter(instanceName);
       const contextBlock = agentContextBlock(footer);
 
       try {
@@ -2765,7 +2772,7 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      const footer = agentFooter(instanceName, turn?.sessionId);
+      const footer = await agentFooter(instanceName, turn?.sessionId);
       try {
         await gw.postMessage({
           channel: target.id,

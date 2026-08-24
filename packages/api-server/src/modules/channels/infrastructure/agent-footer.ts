@@ -23,8 +23,13 @@ function escapeLinkLabel(name: string): string {
     .trim();
 }
 
-export function agentFooterLabel(brand: { name: string }): string {
-  return `Powered by ${brand.name}`;
+export function agentFooterLabel(
+  brand: { name: string },
+  agentName?: string,
+): string {
+  const poweredBy = `Powered by ${brand.name}`;
+  const name = agentName?.trim();
+  return name ? `${name} - ${poweredBy}` : poweredBy;
 }
 
 export function agentFooterMrkdwn(footer: AgentFooter): string {

@@ -221,7 +221,8 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain(
       `U999 [${formatSlackTs("0.1")}]: just humans here`,
     );
-    expect(prompt).not.toContain("(this agent)");
+    expect(prompt).not.toContain("In the conversation history below");
+    expect(prompt).not.toContain("(this agent):");
     expect(prompt).not.toContain("(another agent)");
   });
 

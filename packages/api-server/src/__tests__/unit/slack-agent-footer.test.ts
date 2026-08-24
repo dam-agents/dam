@@ -35,8 +35,25 @@ function contextText(text: string): SlackMessage {
 }
 
 describe("agent footer", () => {
-  it("takes its label from the brand", () => {
+  /**
+   * TEST_SCENARIO: One install-wide Slack bot posts for every agent, with the
+   * same avatar and the same name, so the footer is the only thing in a post
+   * that says which agent wrote it. It names the agent and the brand together.
+   */
+  it("names the agent and the brand", () => {
+    expect(agentFooterLabel({ name: "DAM" }, "Buginator")).toBe(
+      "Buginator - Powered by DAM",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: The agent's display name can be missing — a deleted agent, or
+   * a K8s read that failed. The label then carries the brand alone rather than
+   * the raw agent id, which means nothing to a reader.
+   */
+  it("falls back to the brand alone when the agent has no name", () => {
     expect(agentFooterLabel({ name: "DAM" })).toBe("Powered by DAM");
+    expect(agentFooterLabel({ name: "DAM" }, "  ")).toBe("Powered by DAM");
   });
 
   it("links the label at the agent's public page", () => {
