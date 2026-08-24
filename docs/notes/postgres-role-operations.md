@@ -1,12 +1,12 @@
 # Postgres role separation — operations
 
-Last verified: 2026-06-22
+Last verified: 2026-08-24
 
 Operational runbook for the three-role Postgres split decided in
 [ADR-071](../adrs/071-postgres-role-separation.md). The ADR carries the *why*;
 this note carries the *how* — the parts that move when the chart changes.
 
-The bundled Postgres ends up with three roles:
+The bundled Postgres ends up with three login roles:
 
 - `platform` — `SUPERUSER`, `LOGIN`. The image's bootstrap superuser
   (`POSTGRES_USER`, set from `postgres.adminUser`, default `platform`); humans
@@ -17,6 +17,17 @@ The bundled Postgres ends up with three roles:
   connection identity. `LOGIN`, `NOSUPERUSER`.
 - `platform_keycloak` — owns the `keycloak` database; Keycloak's connection
   identity. `LOGIN`, `NOSUPERUSER`.
+
+Plus one role that is not a connection identity at all:
+
+- `usage_readers` — `NOLOGIN`, no password. The group an operator grants
+  membership in to let a read-only login read the `usage_src_*` source
+  passthrough views. It holds `CONNECT` on `platform` and `SELECT` on those
+  views, nothing else, and grants nobody anything until a member is added.
+  The api-server re-grants the views to it after every migration run, so a
+  view-recreating migration cannot silently revoke a consumer's access;
+  creating the role stays outside the application, because an api-server that
+  could mint database logins could mint itself a better one.
 
 The whole layout is one idempotent script, `01-roles.sql` (the
 `platform-postgres-init` ConfigMap). It is applied two ways from the same file:
@@ -29,7 +40,8 @@ the script from the environment via `\getenv`, so both callers share it.
 
 The image creates `platform` as the bootstrap superuser, then runs `01-roles.sql`
 on first PGDATA init to create the two NOSUPERUSER app roles, their databases,
-the CONNECT isolation, and the admin statement-log default. Passwords are
+the CONNECT isolation, the `usage_readers` group, and the admin statement-log
+default. Passwords are
 auto-generated and stored in the `platform-postgres-secrets` Secret under
 `POSTGRES_APISERVER_PASSWORD`, `POSTGRES_KEYCLOAK_PASSWORD`, and
 `POSTGRES_ADMIN_PASSWORD`. Retrieve the admin credential with:
@@ -99,6 +111,13 @@ admin role:
 - Create `platform_apiserver` and `platform_keycloak` as `LOGIN NOSUPERUSER`,
   each owning its own database; `REVOKE CONNECT ON DATABASE … FROM PUBLIC` and
   grant it back only to the owner. This is portable SQL.
+- Create `usage_readers` as `NOLOGIN` (no password), and `GRANT CONNECT ON
+  DATABASE platform` to it. Nothing else is needed: the api-server grants it
+  `SELECT` on the source passthrough views on every boot, as the owner of
+  those views. Then `GRANT usage_readers TO <read-only login>` for whichever
+  login should read the metrics — that membership is what survives future view
+  migrations. Skip both if the install has no analytics consumer; the
+  api-server's re-grant is a no-op when the role is absent.
 - There is no dedicated admin SUPERUSER to create — managed services withhold
   tenant superuser (on IBM Cloud Databases the only superuser is IBM's internal
   `ibm` account), so the provider's admin role *is* the top role.

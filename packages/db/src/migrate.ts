@@ -12,7 +12,10 @@ export async function runMigrations(
   const ssl = buildDbSsl(tls);
   const sql = postgres(url, ssl ? { max: 1, ssl } : { max: 1 });
   const db = drizzle(sql);
-  await migrate(db, { migrationsFolder });
-  await grantUsageViews(sql);
-  await sql.end();
+  try {
+    await migrate(db, { migrationsFolder });
+    await grantUsageViews(sql);
+  } finally {
+    await sql.end();
+  }
 }
