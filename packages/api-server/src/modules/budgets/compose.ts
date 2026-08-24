@@ -4,8 +4,10 @@ import { createUserBudgetsReader } from "./infrastructure/user-budgets.js";
 import {
   createBudgetsService,
   createResizeGate,
+  createSpawnSizeGate,
   type BudgetedAgent,
   type ResizeGate,
+  type SpawnSizeGate,
 } from "./services/budgets-service.js";
 
 export function composeBudgetsModule(deps: {
@@ -24,4 +26,16 @@ export function composeBudgetsModule(deps: {
     budgets: createBudgetsService(serviceDeps),
     resizeGate: createResizeGate(serviceDeps),
   };
+}
+
+export function composeSpawnSizeGate(deps: {
+  k8s: K8sClient;
+  owner: string;
+  defaultCeiling: { cpu: string; memory: string };
+}): SpawnSizeGate {
+  const userBudgets = createUserBudgetsReader(deps.k8s);
+  return createSpawnSizeGate({
+    readCeilingOverride: () => userBudgets.ceiling(deps.owner),
+    defaultCeiling: deps.defaultCeiling,
+  });
 }

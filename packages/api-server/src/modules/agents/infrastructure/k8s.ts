@@ -3,10 +3,6 @@ import * as k8s from "@kubernetes/client-node";
 export interface K8sClient {
   readonly namespace: string;
 
-  readAgentPodRestart(
-    agentId: string,
-  ): Promise<{ restarts: number; reason: string | null } | null>;
-
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
   getSecret(name: string): Promise<k8s.V1Secret | null>;
   createSecret(body: k8s.V1Secret): Promise<k8s.V1Secret>;
@@ -75,27 +71,6 @@ export function createK8sClient(
 
   return {
     namespace,
-
-    async readAgentPodRestart(agentId) {
-      const res = await api.listNamespacedPod({
-        namespace,
-        labelSelector: `agent-platform.ai/pair=${agentId},agent-platform.ai/role=agent`,
-      });
-      const pods = res.items ?? [];
-      if (pods.length === 0) return null;
-      let restarts = 0;
-      let reason: string | null = null;
-      for (const pod of pods) {
-        for (const cs of pod.status?.containerStatuses ?? []) {
-          const count = cs.restartCount ?? 0;
-          if (count > restarts) {
-            restarts = count;
-            reason = cs.lastState?.terminated?.reason ?? null;
-          }
-        }
-      }
-      return { restarts, reason };
-    },
 
     async listSecrets(labelSelector) {
       const res = await api.listNamespacedSecret({ namespace, labelSelector });

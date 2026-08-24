@@ -1,5 +1,4 @@
 import type { AgentsService } from "api-server-api";
-import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 
 export interface InvocationLivenessSweep {
@@ -8,10 +7,15 @@ export interface InvocationLivenessSweep {
 
 const RESULT_RETENTION_MS = 10 * 60 * 1000;
 
+export interface TargetRestartState {
+  podRestarts: number;
+  podRestartReason?: string;
+}
+
 export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
   agentsFor: (owner: string) => AgentsService;
-  k8s: Pick<K8sClient, "readAgentPodRestart">;
+  readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   batchSize: number;
   now?: () => Date;
 }
@@ -54,11 +58,11 @@ export function createInvocationLivenessSweep(
       const stillRunning = await deps.repo.listRunning(deps.batchSize);
       for (const row of stillRunning) {
         try {
-          const restart = await deps.k8s.readAgentPodRestart(row.id);
-          if (restart && restart.restarts > 0) {
+          const restart = await deps.readTargetRestart(row.id);
+          if (restart && restart.podRestarts > 0) {
             await failAndReap(
               row,
-              `target pod restarted${restart.reason ? ` (${restart.reason})` : ""}; one-shot turn cannot resume`,
+              `target pod restarted${restart.podRestartReason ? ` (${restart.podRestartReason})` : ""}; one-shot turn cannot resume`,
             );
           }
         } catch (err) {

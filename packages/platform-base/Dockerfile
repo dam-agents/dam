@@ -52,12 +52,21 @@ RUN dnf install \
     --setopt=install_weak_deps=0 \
     catatonit \
     curl \
+    diffutils \
+    file \
+    gawk \
     git \
     gzip \
+    hostname \
     openssh-server \
+    openssl \
+    patch \
+    procps-ng \
     tar \
+    unzip \
     which \
     xz-libs \
+    zip \
     &&\
     rm -rf /sysroot/var/lib/dnf /sysroot/var/cache /sysroot/var/log
 

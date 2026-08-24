@@ -81,6 +81,8 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
   }
   .srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .srow .sname { font-weight: 600; font-size: 13px; }
+  .sdesc { margin: 2px 0 0 20px; font-size: 11.5px; line-height: 1.35;
+    color: var(--muted); max-width: 240px; }
   .srow .sdrift { font-size: 11px; color: var(--amber); border: 1px dashed var(--amber);
     border-radius: 6px; padding: 0 5px; }
   .smeta { margin: 1px 0 8px 20px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -135,6 +137,23 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     if (a !== 0 && (a >= 10000 || a < 0.001)) return n.toExponential(2);
     return String(parseFloat(n.toPrecision(4)));
   }
+  function fmtDur(ms) {
+    if (ms === null || ms === undefined || !isFinite(ms) || ms < 0) return "–";
+    if (ms < 1000) return Math.round(ms) + "ms";
+    var s = ms / 1000;
+    if (s < 60) return (s < 10 ? s.toFixed(1) : Math.round(s)) + "s";
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + "m " + String(Math.round(s % 60)).padStart(2, "0") + "s";
+    var h = Math.floor(m / 60);
+    return h + "h " + String(m % 60).padStart(2, "0") + "m";
+  }
+  function runDurationMs(experiment) {
+    if (!experiment.executedAt) return null;
+    var start = Date.parse(experiment.executedAt);
+    var end = experiment.finishedAt ? Date.parse(experiment.finishedAt) : Date.now();
+    if (!isFinite(start) || !isFinite(end) || end < start) return null;
+    return end - start;
+  }
 
   function renderHead(feed) {
     var head = el("div", "head");
@@ -143,6 +162,13 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     pill.appendChild(el("span", "pdot"));
     pill.appendChild(el("span", null, feed.experiment.status));
     head.appendChild(pill);
+    var durMs = runDurationMs(feed.experiment);
+    if (durMs !== null) {
+      var dur = el("span", "pill num");
+      dur.appendChild(el("span", null,
+        (feed.experiment.finishedAt ? "" : "elapsed ") + fmtDur(durMs)));
+      head.appendChild(dur);
+    }
     var wrap = el("div");
     wrap.appendChild(head);
     if (feed.experiment.drift.length) {
@@ -152,8 +178,9 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     return wrap;
   }
 
-  function renderStage(s) {
+  function renderStage(s, description) {
     var box = el("div", "stage");
+    if (description) box.title = description;
     var dot = "sdot";
     if (s.spansRunning > 0) dot += " live";
     else if (s.spansFailed > 0) dot += " bad";
@@ -164,6 +191,7 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
     title.appendChild(el("span", "sname", s.id));
     if (!s.declared) title.appendChild(el("span", "sdrift", "drift"));
     box.appendChild(title);
+    if (description) box.appendChild(el("div", "sdesc", description));
 
     var meta = el("div", "smeta num");
     meta.appendChild(el("span", null,
@@ -182,6 +210,18 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
       last.appendChild(el("b", null, fmt(s.lastScore)));
       meta.appendChild(last);
     }
+    if (s.avgDurationMs !== null && s.avgDurationMs !== undefined) {
+      var avg = el("span", "chip num");
+      avg.appendChild(el("span", "muted", "avg"));
+      avg.appendChild(el("b", null, fmtDur(s.avgDurationMs)));
+      meta.appendChild(avg);
+      if (s.spansTotal > 1) {
+        var tot = el("span", "chip num");
+        tot.appendChild(el("span", "muted", "total"));
+        tot.appendChild(el("b", null, fmtDur(s.totalDurationMs)));
+        meta.appendChild(tot);
+      }
+    }
     box.appendChild(meta);
     return box;
   }
@@ -192,8 +232,10 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
   function renderStages(feed) {
     var wrap = el("div", "stages");
     var afterById = {};
+    var descriptionById = {};
     ((feed.experiment.skeleton || {}).stages || []).forEach(function (s) {
       afterById[s.id] = s.after || [];
+      if (s.description) descriptionById[s.id] = s.description;
     });
     var levelById = {};
     function levelOf(id, trail) {
@@ -221,7 +263,9 @@ export const STOCK_DASHBOARD_HTML = `<!doctype html>
       if (!bucket.length) return;
       if (wrap.children.length) wrap.appendChild(el("div", "lvl-gap"));
       var row = el("div", bucket.length > 1 ? "lvl parallel" : "lvl");
-      bucket.forEach(function (s) { row.appendChild(renderStage(s)); });
+      bucket.forEach(function (s) {
+        row.appendChild(renderStage(s, descriptionById[s.id]));
+      });
       wrap.appendChild(row);
     });
     return wrap;

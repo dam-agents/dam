@@ -41,6 +41,8 @@ interface AgentStatusObject {
     message?: string;
     lastTransitionTime?: string;
   }>;
+  agentPodRestarts?: number;
+  agentPodRestartReason?: string;
 }
 
 export interface InfraAgent {
@@ -62,6 +64,8 @@ export interface InfraAgent {
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
+  podRestarts: number;
+  podRestartReason?: string;
   agentPodNotReadyReason?: string;
   agentPodReady?: boolean;
   gatewayPodReady?: boolean;
@@ -100,6 +104,21 @@ function agentPodTerminationMessage(obj: KubeObject): string | undefined {
   const status = (obj.status ?? {}) as AgentStatusObject;
   const c = status.conditions?.find((c) => c.type === "AgentPodReady");
   return c?.status === "False" && c.message ? c.message : undefined;
+}
+
+function agentPodRestarts(obj: KubeObject): number {
+  const status = (obj.status ?? {}) as AgentStatusObject;
+  const restarts = status.agentPodRestarts;
+  return typeof restarts === "number" &&
+    Number.isFinite(restarts) &&
+    restarts > 0
+    ? restarts
+    : 0;
+}
+
+function agentPodRestartReason(obj: KubeObject): string | undefined {
+  const status = (obj.status ?? {}) as AgentStatusObject;
+  return status.agentPodRestartReason || undefined;
 }
 
 export function agentOwner(obj: KubeObject): string | undefined {
@@ -163,6 +182,8 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
     podTerminationReason: agentPodTerminationMessage(obj),
+    podRestarts: agentPodRestarts(obj),
+    podRestartReason: agentPodRestartReason(obj),
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,
     agentPodReady: agentPod ? agentPod.status === "True" : undefined,

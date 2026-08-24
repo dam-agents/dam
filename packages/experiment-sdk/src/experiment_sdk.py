@@ -3,9 +3,9 @@
 The full driver surface for experiment scripts, stdlib-only by design (it is
 baked into every agent image; a dependency would have to be baked too):
 
-- ``spawn`` / ``list_images`` / ``list_connections`` — the Invocation
-  primitive, ported from the JS driver-sdk. Works standalone, no Experiment
-  required.
+- ``spawn`` / ``list_images`` / ``list_connections`` / ``require_image`` — the
+  Invocation primitive, ported from the JS driver-sdk. Works standalone, no
+  Experiment required.
 - ``Experiment`` / ``Stage`` / ``Span`` — declare a skeleton, run the loop,
   report stage-tagged spans (status, score, artifact refs). A ``spawn`` made
   inside a span is attached to it automatically (contextvars).
@@ -47,8 +47,10 @@ __all__ = [
     "Loop",
     "Span",
     "Stage",
+    "UnknownImage",
     "list_connections",
     "list_images",
+    "require_image",
     "s",
     "spawn",
 ]
@@ -67,13 +69,30 @@ class ExperimentClosed(Exception):
     (stopped, finished, or reaped). The loop should exit promptly."""
 
 
+class UnknownImage(Exception):
+    """``require_image`` was given a template id the catalog doesn't have.
+    Raised at declaration time so ``--plan`` fails while the human is still
+    reviewing the design, not hours into a run's first spawn."""
+
+    def __init__(self, template_id: str, available: list[str]):
+        super().__init__(
+            f'unknown image "{template_id}" — available: {", ".join(sorted(available))}'
+        )
+        self.template_id = template_id
+        self.available = available
+
+
 class InvocationFailed(Exception):
     """A spawned invocation reported ``failed`` (silent exit past its
-    liveness deadline, or an internal error)."""
+    liveness deadline, a target pod crash, or an internal error). ``reason``
+    carries the platform's explanation when it has one — surface it: it is
+    the only diagnosis that survives the target being reaped."""
 
-    def __init__(self, invocation_id: str, label: str):
-        super().__init__(f"invocation {label} ({invocation_id}) failed")
+    def __init__(self, invocation_id: str, label: str, reason: str | None = None):
+        detail = f": {reason}" if reason else ""
+        super().__init__(f"invocation {label} ({invocation_id}) failed{detail}")
         self.invocation_id = invocation_id
+        self.reason = reason
 
 
 def _log(msg: str) -> None:
@@ -99,24 +118,48 @@ def _config() -> tuple[str, str]:
     return f"{base}/api/agents/{agent_id}", agent_id
 
 
+_TRANSIENT_HTTP = {502, 503, 504}
+_RETRY_ATTEMPTS = 4
+_RETRY_BASE_DELAY_S = 1.0
+
+
 def _request(method: str, path: str, body: Any | None = None) -> Any:
+    """One platform API call. GETs retry transient failures (5xx from a mesh
+    hop, a reset connection) with exponential backoff: a long run polls the
+    API thousands of times, and without the retry a single blip on any poll
+    kills every remaining round. Non-GETs are not blindly retried — the
+    platform treats a repeated finish/report as a conflict, not a dup."""
     root, _ = _config()
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(
-        f"{root}{path}",
-        data=data,
-        method=method,
-        headers={"content-type": "application/json"} if data else {},
-    )
-    try:
-        with urllib.request.urlopen(req) as res:
-            text = res.read().decode("utf-8")
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", errors="replace")
-        if err.code == 409:
-            raise ExperimentClosed(detail) from None
-        raise RuntimeError(f"{method} {path} -> {err.code}: {detail}") from None
-    return json.loads(text) if text else None
+    attempts = _RETRY_ATTEMPTS if method == "GET" else 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
+        req = urllib.request.Request(
+            f"{root}{path}",
+            data=data,
+            method=method,
+            headers={"content-type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(req) as res:
+                text = res.read().decode("utf-8")
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            if err.code == 409:
+                raise ExperimentClosed(detail) from None
+            last_error = RuntimeError(f"{method} {path} -> {err.code}: {detail}")
+            if err.code in _TRANSIENT_HTTP and attempt + 1 < attempts:
+                continue
+            raise last_error from None
+        except urllib.error.URLError as err:
+            last_error = RuntimeError(f"{method} {path} failed: {err.reason}")
+            if attempt + 1 < attempts:
+                continue
+            raise last_error from None
+        return json.loads(text) if text else None
+    raise last_error if last_error else RuntimeError(f"{method} {path} failed")
 
 
 # ---- schema shorthand --------------------------------------------------------
@@ -189,9 +232,48 @@ def list_images() -> list[dict[str, Any]]:
     return _request("GET", "/images")["images"]
 
 
+def require_image(template_id: str) -> str:
+    """Assert the catalog offers ``template_id`` and return it, for use as
+    ``spawn(template=...)``.
+
+    Call this in the declaration section, next to ``list_connections()``: the
+    worker image is the loop's most consequential choice, and in plan mode the
+    loop body never runs, so an id that doesn't exist would otherwise go
+    unnoticed until a run's first spawn. Raises ``UnknownImage`` naming the ids
+    that do exist.
+
+        template = x.require_image("nous")
+    """
+    available = [str(i["id"]) for i in list_images()]
+    if template_id not in available:
+        raise UnknownImage(template_id, available)
+    return template_id
+
+
 def list_connections() -> list[dict[str, Any]]:
     """This driver's own connection grants — the spawnable subset."""
     return _request("GET", "/connections")["connections"]
+
+
+def budget() -> dict[str, Any]:
+    """The owner's compute budget, read live::
+
+        {
+          "cpu":    {"reservedMilli": 3000, "ceilingMilli": 6000},
+          "memory": {"reservedBytes": ..., "ceilingBytes": ...},
+          "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
+        }
+
+    The ceiling caps the summed sizes of the owner's *running* agents —
+    this driver included. Each catalog entry from ``list_images()`` carries
+    its worker's ``size``; a raw ``image=`` spawn costs ``defaultWorkerSize``
+    unless ``cpu=``/``memory=`` say otherwise. Use it while designing:
+    ``(ceiling - reserved) / worker size``, floored over both dimensions,
+    is how many workers run at once — further spawns queue for freed room
+    (their wait burns the invocation TTL), and a single worker sized past
+    the ceiling is rejected at ``spawn`` because it could never start.
+    """
+    return _request("GET", "/budget")
 
 
 def spawn(
@@ -221,7 +303,13 @@ def spawn(
     When the owner's resource budget is full, the target queues and starts
     automatically as room frees (e.g. earlier invocations completing) —
     the wait counts against the invocation's TTL, so over-budget fan-out
-    degrades to sequential execution rather than failing."""
+    degrades to sequential execution rather than failing.
+
+    ``ttl_ms`` is a kill deadline, not pacing: the platform reaps the
+    target the moment it lapses, even if the target is mid-work. Size it
+    at the worst plausible round plus generous slack (target pod cold
+    start alone takes minutes) — a generous TTL costs nothing when the
+    round finishes early, a tight one destroys a working round."""
     if (template is None) == (image is None):
         raise ValueError("pass exactly one of template= or image=")
     name = label or template or image or "invocation"
@@ -259,7 +347,7 @@ def spawn(
             _log(f"{name} ({invocation_id}) done")
             return view.get("result")
         if status == "failed":
-            raise InvocationFailed(invocation_id, name)
+            raise InvocationFailed(invocation_id, name, view.get("errorReason"))
         if time.monotonic() > deadline:
             raise InvocationFailed(invocation_id, f"{name} (client timeout)")
         time.sleep(poll_seconds)
@@ -287,13 +375,21 @@ class Stage:
 
 
 class Loop:
-    def __init__(self, experiment: "Experiment", loop_id: str):
+    def __init__(
+        self,
+        experiment: "Experiment",
+        loop_id: str,
+        description: str | None = None,
+    ):
         self.id = loop_id
+        self.description = description
         self.experiment = experiment
         self.stage_ids: list[str] = []
 
-    def stage(self, stage_id: str, after: Any = None) -> Stage:
-        stage = self.experiment.stage(stage_id, after=after)
+    def stage(
+        self, stage_id: str, after: Any = None, description: str | None = None
+    ) -> Stage:
+        stage = self.experiment.stage(stage_id, after=after, description=description)
         self.stage_ids.append(stage_id)
         return stage
 
@@ -372,12 +468,17 @@ class Experiment:
 
     # -- declaration ------------------------------------------------------------
 
-    def loop(self, loop_id: str) -> Loop:
-        loop = Loop(self, loop_id)
+    def loop(self, loop_id: str, description: str | None = None) -> Loop:
+        loop = Loop(self, loop_id, description)
         self._loops.append(loop)
         return loop
 
-    def stage(self, stage_id: str, after: Any = None) -> Stage:
+    def stage(
+        self, stage_id: str, after: Any = None, description: str | None = None
+    ) -> Stage:
+        """Declare a stage. ``description`` is one human sentence — what
+        happens in this stage and what it reports — shown on the stage's node
+        in the live graph, so a reviewer can read the design off the UI."""
         if after is None:
             after_ids: list[str] = []
         elif isinstance(after, (list, tuple)):
@@ -386,7 +487,10 @@ class Experiment:
             after_ids = [after.id if isinstance(after, Stage) else str(after)]
         if stage_id not in self._declared:
             self._declared.add(stage_id)
-            self._stages.append({"id": stage_id, "after": after_ids})
+            entry: dict[str, Any] = {"id": stage_id, "after": after_ids}
+            if description:
+                entry["description"] = description
+            self._stages.append(entry)
         return Stage(self, stage_id)
 
     def _skeleton(self) -> dict[str, Any]:
@@ -394,6 +498,7 @@ class Experiment:
             "stages": self._stages,
             "loops": [
                 {"id": loop.id, "stages": loop.stage_ids}
+                | ({"description": loop.description} if loop.description else {})
                 for loop in self._loops
                 if loop.stage_ids
             ],

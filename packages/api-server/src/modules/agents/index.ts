@@ -47,6 +47,10 @@ export {
   type PublicAgentRoutesDeps,
 } from "./infrastructure/public-agent-routes.js";
 export {
+  concreteResources,
+  type DefaultResourceLimits,
+} from "./domain/spec-assembly.js";
+export {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,

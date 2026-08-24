@@ -2,7 +2,7 @@ import type { Experiment } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/format-time";
+import { formatDateTime, formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
@@ -87,6 +87,10 @@ function RunRow({
 }) {
   const { data: feed } = useExperimentFeed(run.id);
   const startedAt = run.executedAt ?? run.createdAt;
+  const runDurationMs =
+    run.executedAt && run.finishedAt
+      ? Date.parse(run.finishedAt) - Date.parse(run.executedAt)
+      : null;
   const resultsArtifactId =
     run.status !== "running" &&
     run.dashboardArtifactId !== null &&
@@ -120,6 +124,11 @@ function RunRow({
             minute: "2-digit",
           })}
         </span>
+        {runDurationMs !== null && runDurationMs >= 0 && (
+          <span className="w-17.5 shrink-0 text-[12.5px] tabular-nums text-muted-foreground">
+            {formatDurationMs(runDurationMs)}
+          </span>
+        )}
         <InvocationDots invocations={feed?.invocations} />
         <span className="min-w-0 flex-1" />
         {resultsArtifactId && (

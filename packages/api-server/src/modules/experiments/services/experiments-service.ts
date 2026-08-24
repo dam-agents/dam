@@ -87,6 +87,7 @@ export interface ExperimentsServiceDeps {
   cancelInvocations?: (
     driverAgentId: string,
     experimentId: string,
+    reason: string,
   ) => Promise<void>;
   pin?: {
     set(driverAgentId: string): Promise<void>;
@@ -391,7 +392,11 @@ export function createExperimentsService(
         });
       }
       try {
-        await deps.cancelInvocations?.(row.driverAgentId, id);
+        await deps.cancelInvocations?.(
+          row.driverAgentId,
+          id,
+          "experiment stopped",
+        );
       } catch (err) {
         process.stderr.write(
           `[experiments] invocation cancel for ${id} failed: ${err instanceof Error ? err.message : err}\n`,
@@ -696,6 +701,17 @@ export function createExperimentsService(
       if (!flipped) {
         const current = await repo.get(experimentId, owner);
         throw new ExperimentClosedError(current?.status ?? "unknown");
+      }
+      try {
+        await deps.cancelInvocations?.(
+          experiment.driverAgentId,
+          experimentId,
+          `experiment ${input.status}`,
+        );
+      } catch (err) {
+        process.stderr.write(
+          `[experiments] invocation cancel for ${experimentId} failed: ${err instanceof Error ? err.message : err}\n`,
+        );
       }
       emitChanged(experimentId, experiment.driverAgentId);
       await releasePin(experiment.driverAgentId);

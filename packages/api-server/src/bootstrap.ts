@@ -770,6 +770,7 @@ export async function bootstrap() {
         surface: "system",
         shareBaseUrl: config.shareBaseUrl,
       }).artifactLibrary,
+    agentsFor: (owner) => harnessAgentsServiceFor(owner),
   });
   await periodicJobs.register(
     "experiment-inactivity-sweep",
@@ -873,7 +874,15 @@ export async function bootstrap() {
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
     agentsFor: harnessAgentsServiceFor,
-    k8s: k8sClient,
+    readTargetRestart: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent
+        ? {
+            podRestarts: agent.podRestarts,
+            podRestartReason: agent.podRestartReason,
+          }
+        : null;
+    },
     batchSize: 200,
   });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>

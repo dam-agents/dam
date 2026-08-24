@@ -38,4 +38,5 @@ export const spawnInvocationResponseSchema = z.object({
 export const invocationViewSchema = z.object({
   status: z.enum(["running", "done", "failed"]),
   result: z.unknown(),
+  errorReason: z.string().optional(),
 });

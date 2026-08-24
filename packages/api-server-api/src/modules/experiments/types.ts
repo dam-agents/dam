@@ -69,6 +69,9 @@ export interface TraceFeedStage {
   spansFailed: number;
   lastScore: number | null;
   bestScore: number | null;
+  totalDurationMs: number | null;
+  avgDurationMs: number | null;
+  lastDurationMs: number | null;
 }
 
 export interface ScoreSeriesPoint {

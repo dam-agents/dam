@@ -25,6 +25,29 @@ export interface ExperimentPinPort {
 
 const FEED_INVOCATIONS_MAX = 500;
 
+async function cancelExperimentInvocations(deps: {
+  invocationsRepo: ReturnType<typeof createInvocationsRepository>;
+  agents: AgentsService | undefined;
+  driverAgentId: string;
+  experimentId: string;
+  reason: string;
+}): Promise<void> {
+  const failed = await deps.invocationsRepo.failAllRunningByExperiment(
+    deps.driverAgentId,
+    deps.experimentId,
+    deps.reason,
+  );
+  for (const invocationId of failed) {
+    try {
+      await deps.agents?.delete(invocationId);
+    } catch (err) {
+      process.stderr.write(
+        `[experiments] target reap ${invocationId} failed: ${err instanceof Error ? err.message : err}\n`,
+      );
+    }
+  }
+}
+
 export function composeExperimentsForOwner(opts: {
   db: Db;
   owner: string;
@@ -33,7 +56,7 @@ export function composeExperimentsForOwner(opts: {
   pin?: ExperimentPinPort;
   runtimeMutator?: RuntimeMutator;
   wakeAgent?: (agentId: string) => Promise<void>;
-  agents?: AgentsService;
+  agents: AgentsService;
 }): { experiments: ExperimentsService } {
   const invocationsRepo = createInvocationsRepository(opts.db);
   const { agents, runtimeMutator, wakeAgent, owner, surface } = opts;
@@ -90,18 +113,14 @@ export function composeExperimentsForOwner(opts: {
       if (!spanRef) return null;
       return spanRef.slice(0, spanRef.indexOf("/"));
     },
-    cancelInvocations: async (driverAgentId, experimentId) => {
-      const failed = await invocationsRepo.failAllRunningByExperiment(
+    cancelInvocations: (driverAgentId, experimentId, reason) =>
+      cancelExperimentInvocations({
+        invocationsRepo,
+        agents: opts.agents,
         driverAgentId,
         experimentId,
-        "experiment stopped",
-      );
-      for (const invocationId of failed) {
-        try {
-          await opts.agents?.delete(invocationId);
-        } catch {}
-      }
-    },
+        reason,
+      }),
   });
   return { experiments };
 }
@@ -112,8 +131,10 @@ export function composeExperimentInactivitySweep(opts: {
   batchSize: number;
   pin?: ExperimentPinPort;
   artifactLibraryFor?: (owner: string) => ArtifactLibraryServiceImpl;
+  agentsFor?: (owner: string) => AgentsService;
 }): ExperimentInactivitySweep {
   const repo = createExperimentsRepository(opts.db);
+  const invocationsRepo = createInvocationsRepository(opts.db);
   const snapshot = opts.artifactLibraryFor
     ? createDashboardSnapshotter({
         db: opts.db,
@@ -134,6 +155,19 @@ export function composeExperimentInactivitySweep(opts: {
       owner: string;
       driverAgentId: string;
     }) => {
+      try {
+        await cancelExperimentInvocations({
+          invocationsRepo,
+          agents: opts.agentsFor?.(owner),
+          driverAgentId,
+          experimentId: id,
+          reason: "experiment reaped for inactivity",
+        });
+      } catch (err) {
+        process.stderr.write(
+          `[experiment-inactivity] invocation cancel ${id} failed: ${err instanceof Error ? err.message : err}\n`,
+        );
+      }
       if (opts.pin && !(await repo.hasRunningForDriver(driverAgentId))) {
         await opts.pin.clear(driverAgentId);
       }

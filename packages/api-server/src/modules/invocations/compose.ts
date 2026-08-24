@@ -1,6 +1,5 @@
 import type { Db } from "db";
 import type { AgentsService, InvocationsQueryService } from "api-server-api";
-import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import { createExperimentsRepository } from "../experiments/infrastructure/experiments-repository.js";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import {
@@ -10,12 +9,14 @@ import {
 import {
   createInvocationLivenessSweep,
   type InvocationLivenessSweep,
+  type TargetRestartState,
 } from "./services/invocation-liveness.js";
 import {
   createDriverResolution,
   type DriverResolution,
 } from "./services/driver-resolution.js";
 import { createDriverCascade } from "./services/driver-cascade.js";
+import type { TargetAdmission } from "./services/target-admission.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export function composeInvocationsForOwner(opts: {
@@ -24,6 +25,7 @@ export function composeInvocationsForOwner(opts: {
   agents: AgentsService;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
+  targetAdmission?: TargetAdmission;
 }): InvocationsService {
   const experimentsRepo = createExperimentsRepository(opts.db);
   const repo = createInvocationsRepository(opts.db);
@@ -34,6 +36,7 @@ export function composeInvocationsForOwner(opts: {
     driverResolution: createDriverResolution({ repo }),
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
     isExperimentRunning: async (experimentId, driverAgentId) => {
       const row = await experimentsRepo.get(experimentId, opts.owner);
       return row?.status === "running" && row.driverAgentId === driverAgentId;
@@ -54,13 +57,13 @@ export function composeInvocationsQueryForOwner(opts: {
 export function composeInvocationLivenessSweep(opts: {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
-  k8s: Pick<K8sClient, "readAgentPodRestart">;
+  readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
   batchSize: number;
 }): InvocationLivenessSweep {
   return createInvocationLivenessSweep({
     repo: createInvocationsRepository(opts.db),
     agentsFor: opts.agentsFor,
-    k8s: opts.k8s,
+    readTargetRestart: opts.readTargetRestart,
     batchSize: opts.batchSize,
   });
 }

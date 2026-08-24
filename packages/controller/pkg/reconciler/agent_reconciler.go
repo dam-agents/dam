@@ -264,12 +264,19 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
 	ready := agentReady && gatewayReady
 
+	var agentPod *corev1.Pod
+	if !agent.Spec.IsVM() {
+		agentPod = r.getPod(ctx, name)
+	}
+
 	agentFailReason, agentFailMsg := "PodNotReady", ""
-	if !agentReady && !agent.Spec.IsVM() {
-		if reason, msg, ok := terminationReason(r.getPod(ctx, name)); ok {
+	if !agentReady {
+		if reason, msg, ok := terminationReason(agentPod); ok {
 			agentFailReason, agentFailMsg = reason, msg
 		}
 	}
+
+	agentRestarts, agentRestartReason := podRestarts(agentPod)
 
 	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
 	if !gatewayReady {
@@ -281,6 +288,8 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", gatewayFailReason, gatewayFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
+		s.AgentPodRestarts = agentRestarts
+		s.AgentPodRestartReason = agentRestartReason
 		s.ObservedGeneration = gen
 	})
 }

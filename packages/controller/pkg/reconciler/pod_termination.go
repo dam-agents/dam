@@ -39,6 +39,25 @@ func terminationReason(pod *corev1.Pod) (reason, message string, ok bool) {
 	return "", "", false
 }
 
+func podRestarts(pod *corev1.Pod) (restarts int32, reason string) {
+	if pod == nil {
+		return 0, ""
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.RestartCount <= restarts {
+			continue
+		}
+		restarts = cs.RestartCount
+		reason = ""
+		if t := cs.LastTerminationState.Terminated; t != nil {
+			if r, _, ok := classifyTermination(t); ok {
+				reason = r
+			}
+		}
+	}
+	return restarts, reason
+}
+
 func classifyTermination(t *corev1.ContainerStateTerminated) (reason, message string, ok bool) {
 	if t.Reason == "OOMKilled" {
 		return "OutOfMemory", "out of memory (OOMKilled)", true

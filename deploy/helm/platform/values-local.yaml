@@ -12,6 +12,19 @@ apiServer:
     repository: platform-api-server
     tag: latest
     pullPolicy: Never
+  # The catalogue default (500m) is a chat-workload sizing. On this VM every
+  # agent, driver and experiment status poll funnels through this one pod while
+  # a nous campaign drives the node's load average past its core count — at
+  # half a core the event loop misses its health probe, the kubelet restarts
+  # the container, and every driver polling through the waypoint takes a 503
+  # it cannot retry. The control plane must outrank the workloads it serves.
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "1Gi"
 
 controller:
   image:
@@ -22,6 +35,24 @@ controller:
   agent:
     templateDefaults:
       imagePullPolicy: IfNotPresent
+  # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
+  # (2 CPU / 8Gi) with headroom for a second sandbox. The stock 4 CPU / 8Gi
+  # ceiling parked the nous target in OverBudget for hours (the deadline clock
+  # kept running) and later couldn't have admitted the resized worker at all.
+  #
+  # Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml) with
+  # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
+  # admitted workers drove the load average past 20 — kubelet probes timed
+  # out, the node flapped NotReady, Keycloak crash-looped on liveness kills
+  # and the UI lost auth. 6 of the VM's 10 CPUs caps agent burst so k3s,
+  # Istio, Keycloak and the api-server always keep ~4; 14Gi + the ~5Gi
+  # platform stack stays inside the VM's 20Gi. Spawns that fit this ceiling
+  # but not the currently-free room queue (sweepable targets auto-start when
+  # room frees); a worker sized past the ceiling is rejected at the spawn
+  # route instead of parking until its deadline.
+  userBudgets:
+    defaultCpu: "6"
+    defaultMemory: "14Gi"
 
 # Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
 # upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
@@ -69,10 +100,29 @@ agentTemplates:
       tag: latest
 
   nous:
-    enabled: false
+    enabled: true
     image:
       repository: platform-nous
       tag: latest
+    # A campaign's measurement phase can run several target-system daemons at
+    # once (a pm2 benchmark held three ~1 GiB daemons simultaneously) — the
+    # catalog's 4Gi limit OOM-killed the container mid-iteration. Sized so one
+    # heavy campaign fits; the campaign prompt should still bound its own
+    # parallelism (serial arms) so memory pressure doesn't skew latency numbers.
+    #
+    # The CPU ceiling is deliberately half the memory-driven sizing: at 4 the
+    # worker's boot burst (a ~13 MB upstream fetch plus a dozen concurrent
+    # egress dials) could take half the 8-core VM and starve ztunnel, which
+    # terminated the driver's in-flight status poll through the waypoint and
+    # killed the run with a synthesized 503. Memory is the resource nous
+    # actually runs out of; CPU only needs to be enough not to crowd the mesh.
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
 
   openevolve:
     enabled: false
@@ -91,6 +141,13 @@ agentTemplates:
     image:
       repository: platform-gepa
       tag: latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
 
   # Both presets share the one locally-built skydiscover image.
   adaevolve:

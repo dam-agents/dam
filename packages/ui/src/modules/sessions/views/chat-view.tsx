@@ -59,6 +59,7 @@ import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-pa
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
+import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
@@ -707,6 +708,13 @@ export function ChatView() {
               </div>
 
               <div className="pb-4">
+                {agentView && isExperimentSandbox(agentView) && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
+                    </ChatColumn>
+                  </div>
+                )}
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}

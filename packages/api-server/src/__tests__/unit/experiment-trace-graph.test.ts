@@ -130,6 +130,35 @@ describe("projectFeed", () => {
     expect(evalStage.bestScore).toBe(0.9);
   });
 
+  it("aggregates per-stage durations over ended spans only", () => {
+    const feed = projectFeed({
+      experiment: experiment(),
+      spans: [
+        span({
+          stage: "eval",
+          startedAt: "2026-07-23T10:10:00Z",
+          endedAt: "2026-07-23T10:10:30Z",
+        }),
+        span({
+          stage: "eval",
+          startedAt: "2026-07-23T10:11:00Z",
+          endedAt: "2026-07-23T10:12:30Z",
+        }),
+        span({ stage: "eval", status: "running", endedAt: null }),
+        span({ stage: "produce", endedAt: null }),
+      ],
+      invocations: [],
+    });
+    const evalStage = feed.stages.find((s) => s.id === "eval")!;
+    expect(evalStage.totalDurationMs).toBe(120_000);
+    expect(evalStage.avgDurationMs).toBe(60_000);
+    expect(evalStage.lastDurationMs).toBe(90_000);
+    const produceStage = feed.stages.find((s) => s.id === "produce")!;
+    expect(produceStage.totalDurationMs).toBeNull();
+    expect(produceStage.avgDurationMs).toBeNull();
+    expect(produceStage.lastDurationMs).toBeNull();
+  });
+
   it("emits score series only for stages that scored, capped", () => {
     const many = Array.from(
       { length: SCORE_POINTS_MAX_PER_STAGE + 500 },

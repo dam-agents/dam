@@ -28,6 +28,7 @@ export const skeletonSchema = z.object({
       z.object({
         id: stageIdSchema,
         after: z.array(stageIdSchema).max(20).default([]),
+        description: z.string().trim().min(1).max(300).optional(),
       }),
     )
     .max(50)
@@ -37,6 +38,7 @@ export const skeletonSchema = z.object({
       z.object({
         id: stageIdSchema,
         stages: z.array(stageIdSchema).min(1).max(50),
+        description: z.string().trim().min(1).max(300).optional(),
       }),
     )
     .max(10)

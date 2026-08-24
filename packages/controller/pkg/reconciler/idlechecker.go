@@ -162,6 +162,8 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
+		s.AgentPodRestarts = 0
+		s.AgentPodRestartReason = ""
 	})
 }
 

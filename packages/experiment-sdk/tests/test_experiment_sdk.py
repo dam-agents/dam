@@ -71,6 +71,29 @@ def test_plan_mode_registers_and_exits(stub, tmp_path):
     assert body["script"]["content"] == raw.decode()
 
 
+def test_plan_carries_stage_and_loop_descriptions(stub, tmp_path):
+    """Descriptions declared on loops/stages ride the skeleton to the plan, so
+    the live graph can show what each node means; nodes without one stay bare."""
+    script = write_script(tmp_path, "loop body never runs\n")
+    stub.routes[("POST", "/experiments/plan")] = (201, {"experimentId": "exp-1"})
+
+    exp = x.Experiment("evolver", script_path=script)
+    loop = exp.loop("rounds", description="one optimization attempt per round")
+    produce = loop.stage("produce", description="a worker rewrites the source")
+    loop.stage("eval", after=produce)
+
+    with pytest.raises(SystemExit):
+        next(exp.iterations(loop))
+
+    _method, _path, body = stub.requests[-1]
+    stages = body["skeleton"]["stages"]
+    assert stages[0]["description"] == "a worker rewrites the source"
+    assert "description" not in stages[1]
+    assert body["skeleton"]["loops"][0]["description"] == (
+        "one optimization attempt per round"
+    )
+
+
 # ---- run mode --------------------------------------------------------------------
 
 
@@ -243,3 +266,86 @@ def test_spawn_without_span_or_experiment(stub):
     body = stub.requests[0][2]
     assert "experimentSpanId" not in body
     assert body["image"] == "some/image:1"
+
+
+def test_spawn_failure_surfaces_the_platform_reason(stub):
+    # The platform's errorReason (deadline, pod crash, stop) is the only
+    # diagnosis that survives the target being reaped — it must reach the
+    # exception text, not just the row.
+    stub.routes[("POST", "/invocations")] = (201, {"id": "inv-3"})
+    stub.routes[("GET", "/invocations/inv-3")] = (
+        200,
+        {
+            "status": "failed",
+            "errorReason": "target pod restarted (OutOfMemory); one-shot turn cannot resume",
+        },
+    )
+
+    with pytest.raises(x.InvocationFailed) as exc:
+        x.spawn("do it", "integer", image="some/image:1", poll_seconds=0.01)
+
+    assert "OutOfMemory" in str(exc.value)
+    assert exc.value.reason is not None
+
+
+def test_spawn_failure_without_a_reason_stays_bare(stub):
+    # An older api-server (no errorReason on the view) must not render
+    # "failed: None".
+    stub.routes[("POST", "/invocations")] = (201, {"id": "inv-4"})
+    stub.routes[("GET", "/invocations/inv-4")] = (200, {"status": "failed"})
+
+    with pytest.raises(x.InvocationFailed) as exc:
+        x.spawn("do it", "integer", image="some/image:1", poll_seconds=0.01)
+
+    assert str(exc.value).endswith("failed")
+    assert exc.value.reason is None
+
+
+# ---- image choice ----------------------------------------------------------------
+
+CATALOG = (
+    200,
+    {
+        "images": [
+            {"id": "claude-code", "name": "Claude Code", "description": "general"},
+            {"id": "nous", "name": "NOUS", "description": "campaigns"},
+        ]
+    },
+)
+
+
+def test_require_image_returns_the_id_when_the_catalog_has_it(stub):
+    stub.routes[("GET", "/images")] = CATALOG
+
+    assert x.require_image("nous") == "nous"
+
+
+def test_require_image_rejects_an_unknown_id_and_names_the_real_ones(stub):
+    stub.routes[("GET", "/images")] = CATALOG
+
+    with pytest.raises(x.UnknownImage) as caught:
+        x.require_image("nous-agent")
+
+    assert caught.value.template_id == "nous-agent"
+    assert caught.value.available == ["claude-code", "nous"]
+    assert "claude-code, nous" in str(caught.value)
+
+
+def test_budget_reads_the_owner_figures(stub):
+    stub.routes[("GET", "/budget")] = (
+        200,
+        {
+            "cpu": {"reservedMilli": 3000, "ceilingMilli": 6000},
+            "memory": {
+                "reservedBytes": 4 * 1024**3,
+                "ceilingBytes": 14 * 1024**3,
+            },
+            "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
+        },
+    )
+
+    figures = x.budget()
+
+    assert figures["cpu"]["ceilingMilli"] == 6000
+    assert figures["memory"]["reservedBytes"] == 4 * 1024**3
+    assert figures["defaultWorkerSize"] == {"cpu": "1", "memory": "1Gi"}

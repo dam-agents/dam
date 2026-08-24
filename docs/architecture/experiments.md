@@ -7,7 +7,8 @@ Last verified: 2026-08-21
 An **Experiment** is one execution of a loop script a **driver Agent** authors
 in Python — a design→build→test→learn loop written as ordinary code over the
 [Invocation](platform-topology.md) primitive — **observed live** by the
-platform. The script declares its **Skeleton** (stages, loops) upfront, then
+platform. The script declares its **Skeleton** (stages, loops, each optionally carrying
+a one-sentence human description the live graph displays) upfront, then
 emits stage-tagged **Spans** (status, an opaque numeric score, Artifact
 references) as it runs; Invocations spawned inside a span attach to it. The
 platform's founding bet survives from the first design: it **never runs the
@@ -155,14 +156,72 @@ missing experiment reads as unknown. Events append only while the experiment
 is `running` — Stop closes the trace, so a stopped loop dies on its next
 call. Every accepted batch bumps the liveness clock.
 
-**Stop has teeth.** Closing the trace alone would let a loop parked inside a
-`spawn()` poll run to the invocation deadline, so Stop also fails the
-experiment's running Invocations (eagerly reaping their targets) — which
-unblocks waiting `spawn()` calls at once — and new spawns stamped with a
-non-running experiment's span are rejected, so a loop that catches the
-failure and retries dies too. A loop doing pure local compute exits at its
-next report; the released pin lets the idle checker reclaim a truly silent
-one.
+**Every terminal transition has teeth.** Closing the trace alone would let a
+loop parked inside a `spawn()` poll run to the invocation deadline, so going
+terminal also fails the experiment's running Invocations (eagerly reaping
+their targets) — which unblocks waiting `spawn()` calls at once — and new
+spawns stamped with a non-running experiment's span are rejected, so a loop
+that catches the failure and retries dies too. A loop doing pure local compute
+exits at its next report; the released pin lets the idle checker reclaim a
+truly silent one.
+
+This applies to **all three** terminal paths — Stop, the script's own `finish`
+(`completed` *and* `failed`), and the inactivity sweep — not Stop alone. The
+ledger is closed in every case, so a surviving target can no longer report into
+the run; leaving it alive only holds its pod and its owner's budget until the
+invocation TTL, which is hours for a long campaign. `completed` is included
+deliberately: a loop that returns without awaiting a spawn orphans its target
+exactly like one that died mid-poll. The Agent Sweep is not a backstop here —
+it reclaims a Sweepable target only once that target hibernates, and a template
+may disable hibernation outright (the `nous` catalogue entry pins
+`hibernationTimeout: "0s"` so a detached campaign is not killed mid-run),
+leaving the invocation liveness deadline as the sole remaining bound. The reap
+is best-effort on every path: a failed cancel never blocks the transition.
+
+**The worker image is a design-time choice.** Which image a loop spawns decides
+what the experiment can do, so the platform makes the catalogue part of
+designing one rather than something the author must already know: the
+`dam-experiment` skill requires reading `GET /images` (the same catalogue the
+one-shot spawn flow offers) and presenting it to the human before any loop is
+written, and forbids installing a framework inside a worker when a curated
+image already ships it. The catalogue is read before the human is even greeted
+in a fresh sandbox, so the images offered are the ones this deployment actually
+carries. Being in the catalogue is necessary but not sufficient: an image also
+has to be validated as an unattended worker, since every purpose-built image is
+a conversational workload whose goal normally arrives in chat, and the skill
+carries that supported subset — the catalogue answers what exists, not what a
+loop should spawn. Approval covers the whole envelope, not just the image: the
+connections each worker is granted, the iteration counts, and the deadline
+derived from them are agreed before the script is authored, because a run
+commits hours of compute and a wrong choice surfaces as an empty result at the
+end rather than an error at review. Concurrency is part of that envelope: the
+driver reads the owner's [budget](budgets.md) — ceiling and current
+reservation — over the same per-agent surface, and the catalogue names each
+worker's cost (its effective Size), so the design states how many workers run
+at once before the human approves. Fan-out past that number queues rather than
+fails, but the wait burns each invocation's deadline, so the deadline is sized
+with the queue in mind.
+
+Two checks keep a wrong id from surfacing as an empty
+result hours in: `require_image()` resolves the id against the catalogue during
+the declaration section, so plan mode fails while the human is still reviewing
+the design, and the spawn route rejects an unknown `templateId` with a `400`
+naming the ids that exist — the lenient-skeleton rule is about *stage* drift and
+does not extend to naming an image that isn't there. The route applies the same
+fail-fast to a worker sized past the owner's budget Ceiling: such a target could
+never be admitted and would otherwise park until its deadline, so the first
+spawn fails with the figures instead. A worker that fits the Ceiling but not the
+room currently free is not an error — it queues and starts when room frees
+([budgets](budgets.md)), so a loop wider than the Ceiling runs slower, not dead.
+
+**A failed spawn says why.** Polling an invocation returns its status and, once
+the target reports, the schema-validated result. A `failed` row additionally
+carries the platform's own reason — deadline exceeded, target pod restarted
+mid-turn, stopped with the run — because it is the one line of diagnosis the
+platform holds and the loop cannot reconstruct: the target is already gone by
+the time the driver sees the failure. A loop that only ever read a bare
+`failed` would have to guess whether to retry, back off, or shrink its
+workload.
 
 **Span ↔ spawn attach.** A spawn made inside a span carries
 `experimentSpanId` ("experimentId/spanId") on the invocation request; the
