@@ -21,6 +21,7 @@ export interface PublicAgentPageDeps {
   markProfileDeleted: (agentId: string) => Promise<void>;
   readAgent: (agentId: string) => Promise<PublicAgentIdentity | null>;
   resolveOwnerName: (ownerSub: string) => Promise<string | null>;
+  log: (message: string) => void;
 }
 
 export function createPublicAgentPageService(
@@ -29,20 +30,30 @@ export function createPublicAgentPageService(
   async function fillProfile(
     agentId: string,
   ): Promise<PublicAgentProfileRow | null> {
-    const agent = await deps.readAgent(agentId);
-    if (!agent) {
-      await deps.markProfileDeleted(agentId);
+    try {
+      const agent = await deps.readAgent(agentId);
+      if (!agent) {
+        await deps.markProfileDeleted(agentId);
+        return null;
+      }
+      const row = { agentId, name: agent.name, ownerSub: agent.ownerSub };
+      await deps.upsertProfile(row);
+      return row;
+    } catch (err) {
+      deps.log(
+        `filling the profile for agent ${agentId} failed, answering the generic page: ${String(err)}`,
+      );
       return null;
     }
-    const row = { agentId, name: agent.name, ownerSub: agent.ownerSub };
-    await deps.upsertProfile(row);
-    return row;
   }
 
   async function ownerName(ownerSub: string): Promise<string | null> {
     try {
       return await deps.resolveOwnerName(ownerSub);
-    } catch {
+    } catch (err) {
+      deps.log(
+        `resolving the owner name failed, omitting the owner line: ${String(err)}`,
+      );
       return null;
     }
   }

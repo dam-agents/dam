@@ -28,6 +28,7 @@ function harness(options: {
   profiles?: PublicAgentProfileRow[];
   ownerNames?: Record<string, string>;
   directoryThrows?: boolean;
+  k8sThrows?: boolean;
 }) {
   const bound = new Set(options.boundAgentIds ?? []);
   const k8sAgents = options.k8sAgents ?? {};
@@ -68,6 +69,7 @@ function harness(options: {
 
   const readAgent = async (agentId: string) => {
     k8sReads++;
+    if (options.k8sThrows) throw new Error("k8s api unreachable");
     return k8sAgents[agentId] ?? null;
   };
 
@@ -76,13 +78,14 @@ function harness(options: {
     return options.ownerNames?.[ownerSub] ?? null;
   };
 
+  const logs: string[] = [];
   const service = createPublicAgentPageService({
     ...repo,
     readAgent,
     resolveOwnerName,
+    log: (m) => logs.push(m),
   });
 
-  const logs: string[] = [];
   const reconcileService = createPublicAgentProfileReconcileService({
     ...repo,
     readAgent,
@@ -191,6 +194,32 @@ describe("public agent page service", () => {
 
     expect(await h.service.get("agent-1")).toBeNull();
     expect(h.k8sReads()).toBe(0);
+  });
+
+  /**
+   * TEST_SCENARIO: The K8s API can fail on its own while Postgres is healthy,
+   * and only a bound agent with no row ever reaches it. If that failure escaped
+   * the route it would answer 500 for those ids and 200 for every other id,
+   * which tells a prober which ids are real.
+   */
+  it("answers the generic page when the K8s read fails", async () => {
+    const h = harness({ boundAgentIds: ["agent-1"], k8sThrows: true });
+
+    expect(await h.service.get("agent-1")).toBeNull();
+    expect(h.logs.some((m) => m.includes("agent-1"))).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A failed read says nothing about whether the agent exists.
+   * A tombstone written on it would blank a live agent's page for good, so the
+   * next view has to reach K8s again instead.
+   */
+  it("does not tombstone an agent whose K8s read failed", async () => {
+    const h = harness({ boundAgentIds: ["agent-1"], k8sThrows: true });
+
+    await h.service.get("agent-1");
+
+    expect(h.storedProfile("agent-1")).toBeNull();
   });
 
   /**

@@ -165,6 +165,7 @@ export function composePublicAgentPage(deps: {
       readAgent,
       resolveOwnerName: (ownerSub) =>
         deps.userDirectory.resolveDisplayNameBySub(ownerSub),
+      log: deps.log,
     }),
     startSaga: () =>
       startPersistPublicAgentProfileSaga({
