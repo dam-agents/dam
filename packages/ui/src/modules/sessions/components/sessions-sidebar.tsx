@@ -19,6 +19,7 @@ import type { SessionView } from "../../../types.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { setSessionSeen, useAcpSessions } from "../api/queries.js";
@@ -139,13 +140,7 @@ export function SessionsSidebar({
     const needsApproval =
       approvalSessions.has(s.sessionId) ||
       pendingPermissions.some((p) => p.sessionId === s.sessionId);
-    const unread = Boolean(
-      !isOpen &&
-      s.mode !== SessionMode.Terminal &&
-      s.seenAt &&
-      s.updatedAt &&
-      Date.parse(s.updatedAt) > Date.parse(s.seenAt),
-    );
+    const unread = isUnreadSession(s, { open: isOpen });
     const draft =
       s.mode !== SessionMode.Terminal &&
       !!selectedAgent &&

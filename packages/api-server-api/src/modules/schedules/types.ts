@@ -60,6 +60,7 @@ export type ScheduleUpdateRRuleInput = z.infer<
 
 export interface SchedulesService {
   list: (agentId: string) => Promise<Schedule[]>;
+  listForOwner: (limit?: number) => Promise<Schedule[]>;
   get: (id: string) => Promise<Schedule | null>;
   createCron: (
     input: ScheduleCreateCronInput,

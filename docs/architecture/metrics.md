@@ -1,10 +1,10 @@
 # Metrics (spend read path)
 
-Last verified: 2026-08-21
+Last verified: 2026-08-24
 
 ## Overview
 
-The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user. It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills. Its per-session rollup serves a different consumer — the chat sessions sidebar's cost-per-session line — not either Usage surface. It is entirely a query surface: it owns no storage of its own, mutates nothing, and emits no events. The telemetry it reads is written by the agent **export** path and stamped with trusted attribution; this page picks up where that page's *user-facing read path is a separate concern* leaves off.
+The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user. It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills. Home's spend widget reads the same unnarrowed breakdown over a period the user picks. Its per-session rollup serves a different consumer — the chat sessions sidebar's cost-per-session line — not either Usage surface. It is entirely a query surface: it owns no storage of its own, mutates nothing, and emits no events. The telemetry it reads is written by the agent **export** path and stamped with trusted attribution; this page picks up where that page's *user-facing read path is a separate concern* leaves off.
 
 The subsystem is the **api-server's** responsibility end-to-end. It is a thin owner-scoped reader in front of the telemetry store — the controller and agent-runtime do not participate.
 
@@ -51,7 +51,7 @@ It reads the per-LLM-call log records Claude Code exports — one record per API
 
 ## Disabled backend
 
-The telemetry store is optional (it ships with [observability](observability.md), disabled by default). When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results. Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero. Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window. Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-agent nav summary degrades to its neutral placeholder.
+The telemetry store is optional (it ships with [observability](observability.md), disabled by default). When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results. Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero. Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window. Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-agent nav summary degrades to its neutral placeholder, and Home's spend widget leaves the page rather than occupy it with an error the user cannot act on.
 
 ## Trust story
 

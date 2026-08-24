@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-17
+Last verified: 2026-08-24
 
 ## Overview
 
@@ -538,9 +538,9 @@ ALLOWs only the matching SA principal, so by the time a Check arrives
 the calling Agent is already proven cryptographically. The handler
 parses the Agent ID from the gRPC `:authority`, looks up the matching
 egress rule, and either allows the request, denies it, or holds it open
-while the user makes a verdict in the inbox.
+while the user makes a verdict on Home.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets
-403, no inbox prompt. The pod-IP resolver and the `x-platform-agent`
+403, no approval prompt. The pod-IP resolver and the `x-platform-agent`
 header are gone.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network
@@ -554,7 +554,7 @@ owner — so a hold raised by such a turn would occupy the entire window
 and deny anyway, with the turn silent throughout. So when the gate sees
 a channel turn open on the agent and no interactive session attached to
 answer for it, it records the request and denies at once. The record is
-the point: it stays actionable in the inbox, a permanent verdict there
+the point: it stays actionable on Home, a permanent verdict there
 writes the rule the agent's next attempt consumes, and retries reuse
 that one row instead of filing a copy each time. No in-session prompt
 is published on this path — the only consumers are the relay clients

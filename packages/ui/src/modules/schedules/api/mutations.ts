@@ -4,7 +4,7 @@ import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
 
 const invalidatesScheduleList = {
-  invalidates: [trpc.schedules.list.queryKey()],
+  invalidates: [trpc.schedules.pathKey()],
 };
 
 export interface CreateScheduleInput {

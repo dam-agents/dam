@@ -19,10 +19,10 @@ export function largestUnit(ms: number): string {
   return "moments";
 }
 
-export function timeAgo(value: DateInput): string {
+export function timeAgo(value: DateInput, now: Date = new Date()): string {
   const d = toDate(value);
   if (!d) return "—";
-  const delta = Date.now() - d.getTime();
+  const delta = now.getTime() - d.getTime();
   if (delta < 60_000) return "just now";
   return `${largestUnit(delta)} ago`;
 }

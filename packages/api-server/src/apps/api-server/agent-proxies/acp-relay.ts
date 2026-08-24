@@ -6,9 +6,9 @@ import type { AgentsRepository } from "../../../modules/agents/infrastructure/ag
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
+import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RelayActor } from "./upgrade.js";
-import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
 import { emit, EventType } from "../../../events.js";
 
 const DEBOUNCE_MS = 30_000;
@@ -54,6 +54,11 @@ function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
 
 function isPrompt(msg: unknown): msg is JsonRpcRequest {
   return isRequest(msg) && msg.method === "session/prompt";
+}
+
+function hasPermissionOutcome(msg: JsonRpcResponse): boolean {
+  const result = msg.result as { outcome?: { outcome?: unknown } } | undefined;
+  return typeof result?.outcome?.outcome === "string";
 }
 
 function isResponse(msg: unknown): msg is JsonRpcResponse {
@@ -135,10 +140,15 @@ export function createAcpRelay(
 
       let identity: { ownerSub: string; agentId: string } | null = null;
 
+      const mirroredRows = new Map<string, string>();
+
       const unsubInjects = approvals.subscribeFrameInjects(agentId, (frame) => {
         if (client.readyState === WebSocket.OPEN) client.send(frame);
       });
-      client.once("close", () => unsubInjects());
+      client.once("close", () => {
+        unsubInjects();
+        mirroredRows.clear();
+      });
 
       function mirrorPermissionRequest(msg: JsonRpcRequest): void {
         const sessionId = msg.params?.sessionId;
@@ -154,6 +164,11 @@ export function createAcpRelay(
             | "reject_always"
             | undefined,
         }));
+        const key = String(msg.id);
+        mirroredRows.set(
+          key,
+          acpNativeRowId(identity.agentId, sessionId, msg.id),
+        );
         approvals
           .recordAcpNativePending({
             agentId: identity.agentId,
@@ -164,7 +179,10 @@ export function createAcpRelay(
             args: tc.rawInput,
             options,
           })
-          .catch(() => {});
+          .then((recorded) => {
+            if (!recorded) mirroredRows.delete(key);
+          })
+          .catch(() => mirroredRows.delete(key));
       }
 
       function trackIfPrompt(parsed: unknown): void {
@@ -183,8 +201,13 @@ export function createAcpRelay(
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
-        const rowId = acpNativeRowId(agentId, msg.id);
-        approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
+        const key = String(msg.id);
+        const rowId = mirroredRows.get(key);
+        if (!rowId || !hasPermissionOutcome(msg)) return;
+        approvals
+          .resolveAcpNativeFromInSession(rowId)
+          .then(() => mirroredRows.delete(key))
+          .catch(() => {});
       }
 
       const release = passive ? () => {} : presence.acquire(agentId);

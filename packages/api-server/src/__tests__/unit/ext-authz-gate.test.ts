@@ -35,6 +35,7 @@ function makeFakeRepo(): FakeRepo {
         status: "pending",
         deliveredAt: null,
       });
+      return true;
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async ({ agentId, host, method, path }) => {

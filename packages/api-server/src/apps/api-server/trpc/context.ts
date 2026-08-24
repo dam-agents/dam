@@ -149,6 +149,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
       owner: user.sub,
+      agentBinding: user.agentIds,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
     const invocationsQuery = composeInvocationsQueryForOwner({

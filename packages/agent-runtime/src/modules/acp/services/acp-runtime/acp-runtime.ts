@@ -646,6 +646,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === "platform/markSeen" && paramsSid) {
+        deps.sessionMetadata?.recordSeen(paramsSid);
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
+        );
+        return;
+      }
+
       if (method === "session/resume" && paramsSid) {
         const incomingMeta = extractPlatformMeta(frame);
         if (incomingMeta && deps.sessionMetadata) {

@@ -12,8 +12,7 @@ import {
 } from "../lib/routes.js";
 
 type ParameterlessView =
-  | "list"
-  | "inbox"
+  | "home"
   | "terms"
   | "artifacts"
   | "coding-agents"

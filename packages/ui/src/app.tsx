@@ -3,17 +3,17 @@ import { useEffect } from "react";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
+import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
-import { ListView } from "./modules/agents/views/list-view.js";
-import { InboxView } from "./modules/approvals/views/inbox-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
+import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
@@ -100,6 +100,7 @@ function MainApp() {
         </div>
         <DialogOverlay />
         <ConnectionBanner />
+        <FloatingApprovalsPill />
         <DocsLauncher />
       </>
     );
@@ -117,15 +118,15 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "list" ? "max-w-[1200px]" : "max-w-[960px]",
+                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
               )}
             >
-              {view === "coding-agent-new" ? (
+              {view === "home" ? (
+                <HomeView />
+              ) : view === "coding-agent-new" ? (
                 <CodingAgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "inbox" ? (
-                <InboxView />
               ) : view === "coding-agents" ? (
                 <CodingAgentsView />
               ) : view === "experiments" ? (
@@ -139,7 +140,7 @@ function MainApp() {
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (
-                <ListView />
+                <HomeView />
               )}
             </div>
           )}
@@ -147,6 +148,7 @@ function MainApp() {
       </div>
       <DialogOverlay />
       <ConnectionBanner />
+      <FloatingApprovalsPill />
       <DocsLauncher />
     </div>
   );

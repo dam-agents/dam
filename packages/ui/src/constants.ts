@@ -11,3 +11,6 @@ export const CLI_REFERENCE_URL =
 
 export const MCP_DOCS_URL =
   "https://pages.github.ibm.com/dam-agents/docs/core-concepts/connections/#mcp-servers";
+
+export const COMPUTE_REQUEST_URL =
+  "https://slack.com/app_redirect?channel=DAMBUDGET";

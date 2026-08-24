@@ -9,10 +9,13 @@ export const approvalsKeys = {
     [...approvalsKeys.all, "agent", agentId] as const,
 };
 
+const OWNER_APPROVALS_POLL_MS = 30_000;
+
 export function useApprovalsForOwner() {
   return useQuery({
     queryKey: approvalsKeys.forOwner(),
     queryFn: () => api.approvals.listForOwner.query(),
+    refetchInterval: OWNER_APPROVALS_POLL_MS,
     meta: { errorToast: "Couldn't load approvals" },
   });
 }

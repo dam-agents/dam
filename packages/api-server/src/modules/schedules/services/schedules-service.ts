@@ -33,8 +33,10 @@ export function createSchedulesService(deps: {
   repo: SchedulesRepository;
   runner: SchedulerRunner;
   owner: string;
+  agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
 }): SchedulesService {
+  const binding = deps.agentBinding;
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
     const ok = await deps.agentExists(agentId);
@@ -43,6 +45,11 @@ export function createSchedulesService(deps: {
 
   return {
     list: (agentId) => deps.repo.list(agentId, deps.owner),
+    listForOwner: (limit) =>
+      deps.repo.listForOwner(deps.owner, {
+        ...(limit === undefined ? {} : { limit }),
+        ...(binding === "*" ? {} : { agentIds: binding }),
+      }),
     get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {

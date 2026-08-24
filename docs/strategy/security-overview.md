@@ -110,7 +110,7 @@ flowchart LR
   end
 
   api[api-server]
-  owner[owner inbox]
+  owner[owner approvals]
   ext[external services]
 
   agent -->|HTTPS_PROXY| gw
@@ -139,7 +139,7 @@ and answers one of three things:
   for the destination host, stamp it on just before it leaves.
 - **Deny** — refuse. The agent gets a 403.
 - **Hold-open** — pause the Check while the owner approves or denies
-  it from the inbox in the UI. If the verdict is deny, or no answer
+  it from Home in the UI. If the verdict is deny, or no answer
   arrives, the Check fails closed and the agent still gets a 403.
 
 ## Threats and mitigations

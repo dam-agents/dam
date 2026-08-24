@@ -13,7 +13,7 @@ export interface ListApprovalsRepoOpts {
 }
 
 export interface ApprovalsRepository {
-  insertPending(row: NewPendingApproval): Promise<void>;
+  insertPending(row: NewPendingApproval): Promise<boolean>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
   findActivePendingExtAuthz(input: {
     agentId: string;
@@ -112,7 +112,7 @@ function toPendingRow(r: RawPending): PendingApprovalRow {
 export function createApprovalsRepository(db: Db): ApprovalsRepository {
   return {
     async insertPending(row) {
-      await db
+      const written = await db
         .insert(pendingApprovals)
         .values({
           id: row.id,
@@ -123,7 +123,26 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           payload: row.payload,
           expiresAt: row.expiresAt,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: pendingApprovals.id,
+          set: {
+            type: row.type,
+            agentId: row.agentId,
+            ownerSub: row.ownerSub,
+            sessionId: row.sessionId,
+            payload: row.payload,
+            expiresAt: row.expiresAt,
+            createdAt: new Date(),
+            status: "pending",
+            resolvedAt: null,
+            verdict: null,
+            decidedBy: null,
+            deliveredAt: null,
+          },
+          setWhere: sql`${pendingApprovals.status} = 'expired' OR (${pendingApprovals.status} = 'resolved' AND ${pendingApprovals.deliveredAt} IS NOT NULL)`,
+        })
+        .returning({ id: pendingApprovals.id });
+      return written.length > 0;
     },
 
     async getPending(id) {

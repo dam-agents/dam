@@ -43,7 +43,7 @@ test("experiment: plan, execute, watch it run to completion", async ({
     await setMockReplyWithFiles(api, agentId, "script written", [
       { path: scriptPath, content: experimentScript },
     ]);
-    await page.goto(baseUrl);
+    await page.goto(`${baseUrl}/coding-agents`);
     await gotoAgentChat(page, agentName, agentId);
     await sendMessageToAgent(page, `__PYRUN__ ${scriptPath}`);
     await expect(page.getByText(/\[pyrun exit 0\]/)).toBeVisible({
