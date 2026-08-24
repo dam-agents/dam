@@ -18,6 +18,15 @@ images:
 # kills until the UI lost auth entirely. The per-user budget ceiling in
 # values-local.yaml must stay below this count so the platform stack always
 # keeps headroom.
+#
+# The same starvation runs in reverse from the HOST: with the VM sized to
+# every host core, a sustained CPU hog on the host (a forgotten dev server,
+# a runaway build) stalls the guest's vCPUs long enough to blow 3-second
+# liveness probes — postgres/redis get SIGTERMed while "Completed", the
+# api-server 500s, and a running experiment dies with it, all while the VM's
+# own load average looks innocent. When probes time out cluster-wide but
+# `free`/`df` inside the VM look fine, check `uptime` and top CPU consumers
+# on the host first, not the cluster.
 cpus: 10
 # Istio ambient (istiod + istio-cni + ztunnel + waypoint Deployment) adds
 # ~1 GiB of pod requests on top of the existing platform stack. On 4 GiB the

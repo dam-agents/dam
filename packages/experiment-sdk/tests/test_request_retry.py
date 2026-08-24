@@ -109,3 +109,32 @@ def test_409_still_raises_experiment_closed(platform) -> None:
     platform.setattr(urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(x.ExperimentClosed):
         x._request("GET", "/x")
+
+
+def test_transient_500_is_retried(platform) -> None:
+    calls = []
+
+    def fake_urlopen(req):
+        calls.append(1)
+        if len(calls) == 1:
+            raise _http_error(500)
+        return _Resp('{"ok": true}')
+
+    platform.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert x._request("GET", "/invocations/i-1") == {"ok": True}
+    assert len(calls) == 2
+
+
+def test_opt_in_post_retries_transient(platform) -> None:
+    calls = []
+
+    def fake_urlopen(req):
+        calls.append(1)
+        if len(calls) < 3:
+            raise _http_error(503)
+        return _Resp('{"ok": true}')
+
+    platform.setattr(urllib.request, "urlopen", fake_urlopen)
+    result = x._request("POST", "/experiments/e/events", {"events": []}, retry=True)
+    assert result == {"ok": True}
+    assert len(calls) == 3

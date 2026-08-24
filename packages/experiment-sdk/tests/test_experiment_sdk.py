@@ -349,3 +349,79 @@ def test_budget_reads_the_owner_figures(stub):
     assert figures["cpu"]["ceilingMilli"] == 6000
     assert figures["memory"]["reservedBytes"] == 4 * 1024**3
     assert figures["defaultWorkerSize"] == {"cpu": "1", "memory": "1Gi"}
+
+
+def test_event_report_outage_is_survived_and_events_redeliver(
+    stub, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/finish")] = (200, {"ok": True})
+    outage = {"on": False}
+
+    def events_route(body):
+        if outage["on"]:
+            return (500, {"error": "db restarting"})
+        return (200, {"accepted": len(body["events"])})
+
+    stub.routes[("POST", "/events")] = events_route
+
+    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
+        stage = exp.stage("eval")
+        exp.ready()
+        outage["on"] = True
+        with stage.run() as span:
+            span.score = 1.0
+        outage["on"] = False
+        with stage.run() as span:
+            span.score = 2.0
+
+    batches = [
+        body["events"]
+        for method, path, body in stub.requests
+        if method == "POST"
+        and path.endswith("/events")
+        and any(e["type"] != "heartbeat" for e in body["events"])
+    ]
+    redelivery = [
+        b
+        for b in batches
+        if [e["type"] for e in b] == ["span-start", "span-end", "span-start"]
+    ]
+    assert len(redelivery) == 1
+    assert redelivery[0][1]["score"] == 1.0
+    _method, path, body = stub.requests[-1]
+    assert path.endswith("/finish") and body == {"status": "completed"}
+
+
+def test_finish_retries_a_transient_failure(stub, tmp_path, monkeypatch):
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/events")] = (200, {"accepted": 1})
+    finish_calls = []
+
+    def finish_route(body):
+        finish_calls.append(body)
+        if len(finish_calls) == 1:
+            return (503, {"error": "blip"})
+        return (200, {"ok": True})
+
+    stub.routes[("POST", "/finish")] = finish_route
+
+    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
+        exp.ready()
+
+    assert len(finish_calls) == 2
+    assert finish_calls[-1] == {"status": "completed"}
+
+
+def test_finish_treats_409_as_already_closed(stub, tmp_path, monkeypatch):
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    stub.routes[("POST", "/events")] = (200, {"accepted": 1})
+    stub.routes[("POST", "/finish")] = (409, {"error": "stopped"})
+
+    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
+        exp.ready()
+
+    finishes = [r for r in stub.requests if r[1].endswith("/finish")]
+    assert len(finishes) == 1

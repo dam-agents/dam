@@ -48,15 +48,25 @@ a round of correction and teaches them a menu that does not exist.
    you an answer to. `claude-code` is the default precisely so the first
    question can be about their goal and not about credentials.
 
-4. **Offer the bundled starter only if they have no target of their own:**
-   tiny-cache, a deliberately slow key/value cache with tests and a benchmark,
-   where each round rewrites it, latency across fixed seeds is the score, and
-   broken tests score nothing. The `dam-experiment` skill's
-   [tiny-cache starter reference](../dam-experiment/references/tiny-cache-starter.md)
-   has the design at both tiers — follow it rather than improvising a starter
-   of your own. The code ships inside the `dam-experiment` skill (its
-   `examples/tiny-cache/` directory) and is already on this pod; setup is one
-   local copy into the workspace — never clone or download anything.
+4. **Offer a bundled starter only if they have no target of their own.** Two
+   ship inside the `dam-experiment` skill, and they are already on this pod —
+   offer them as one line each and let the user pick:
+
+   - **tiny-cache** — a deliberately slow key/value cache; each round rewrites
+     it and throughput across fixed seeds is the score. This is the quick one:
+     a general coding agent per round, minutes each.
+   - **tiny-search** — a deliberately slow full-text search index with a
+     write-path guard metric; a `nous` campaign forms a hypothesis, commits to
+     a pass bar, and reports whether the mechanism held. This is the one that
+     shows hypothesis-driven optimization, about an hour.
+
+   Follow the skill's
+   [tiny-cache](../dam-experiment/references/tiny-cache-starter.md) or
+   [tiny-search](../dam-experiment/references/tiny-search-starter.md) reference
+   rather than improvising a starter of your own — each says which worker it is
+   shaped for and why the other one fits it badly. Both are local copies — the
+   code ships in the image, on this pod and on the worker's — so never clone or
+   download anything for either one.
 
 5. **Do not write the script yet.** Wait for their answer. Once they have
    described a goal, follow the `dam-experiment` skill: agree the image and the

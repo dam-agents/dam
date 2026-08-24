@@ -118,20 +118,31 @@ def _config() -> tuple[str, str]:
     return f"{base}/api/agents/{agent_id}", agent_id
 
 
-_TRANSIENT_HTTP = {502, 503, 504}
+# 500 is transient here too: the api-server returns it while its own
+# dependencies (postgres, redis) restart under it, which is exactly the
+# outage the retry exists to ride out.
+_TRANSIENT_HTTP = {500, 502, 503, 504}
 _RETRY_ATTEMPTS = 4
 _RETRY_BASE_DELAY_S = 1.0
 
 
-def _request(method: str, path: str, body: Any | None = None) -> Any:
+def _request(
+    method: str, path: str, body: Any | None = None, *, retry: bool | None = None
+) -> Any:
     """One platform API call. GETs retry transient failures (5xx from a mesh
-    hop, a reset connection) with exponential backoff: a long run polls the
-    API thousands of times, and without the retry a single blip on any poll
-    kills every remaining round. Non-GETs are not blindly retried — the
-    platform treats a repeated finish/report as a conflict, not a dup."""
+    hop or a mid-restart api-server, a reset connection) with exponential
+    backoff: a long run polls the API thousands of times, and without the
+    retry a single blip on any poll kills every remaining round. Non-GETs
+    default to a single attempt and opt in per call site (``retry=True``):
+    event reports, finish, and plan registration are idempotent on the
+    server (spans upsert by id, a repeated finish answers 409), so they
+    retry; ``spawn`` never does — a duplicated POST /invocations is a
+    second worker, not a dup."""
     root, _ = _config()
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    attempts = _RETRY_ATTEMPTS if method == "GET" else 1
+    if retry is None:
+        retry = method == "GET"
+    attempts = _RETRY_ATTEMPTS if retry else 1
     last_error: Exception | None = None
     for attempt in range(attempts):
         if attempt:
@@ -556,7 +567,7 @@ class Experiment:
                     f"{DASHBOARD_CONTENT_MAX_BYTES // 1024} KiB capture cap"
                 )
             plan["dashboard"] = {"content": raw.decode("utf-8", errors="replace")}
-        response = _request("POST", "/experiments/plan", plan)
+        response = _request("POST", "/experiments/plan", plan, retry=True)
         _log(
             f'plan registered for "{self.name}" ({response["experimentId"]}) — press "Start a new run" in the UI to run it'
         )
@@ -656,11 +667,19 @@ class Experiment:
         self._finished = True
         if self._heartbeat_stop is not None:
             self._heartbeat_stop.set()
-        self._flush(force=True)
         body: dict[str, Any] = {"status": status}
         if error:
             body["error"] = error[:2000]
-        _request("POST", f"/experiments/{self._experiment_id}/finish", body)
+        try:
+            self._flush(force=True)
+            _request(
+                "POST", f"/experiments/{self._experiment_id}/finish", body, retry=True
+            )
+        except ExperimentClosed:
+            # Already terminal on the platform (stopped by the user, or a
+            # retried finish whose first attempt landed) — nothing to report.
+            _log(f'experiment "{self.name}" was already closed on the platform')
+            return
         _log(f'experiment "{self.name}" finished: {status}')
 
     def __enter__(self) -> "Experiment":
@@ -686,14 +705,28 @@ class Experiment:
             self._flush(force=True)
 
     def _flush(self, force: bool = False) -> None:
+        """Report buffered events; the buffer is drained only once the POST
+        lands. Reports are observability, so a transient outage costs
+        latency, never the run: on failure the events stay buffered (the next
+        emit retries them) and the caller — often ``Span.__exit__`` — is not
+        killed. ``ExperimentClosed`` still propagates: the run was stopped on
+        the platform and the loop should exit promptly."""
         if not self._buffer or self._experiment_id is None:
             return
         if not force and len(self._buffer) < _EVENT_FLUSH_MAX:
             return
-        events, self._buffer = self._buffer, []
-        _request(
-            "POST",
-            f"/experiments/{self._experiment_id}/events",
-            {"events": events},
-        )
+        events = list(self._buffer)
+        try:
+            _request(
+                "POST",
+                f"/experiments/{self._experiment_id}/events",
+                {"events": events},
+                retry=True,
+            )
+        except ExperimentClosed:
+            raise
+        except Exception as err:  # noqa: BLE001 — kept buffered; next emit retries
+            _log(f"event report failed, {len(events)} event(s) kept for retry: {err}")
+            return
+        self._buffer = self._buffer[len(events) :]
         self._last_flush = time.monotonic()

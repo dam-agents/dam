@@ -48,10 +48,14 @@ The chat shows these as one-click chips on a fresh session, so answer them
 well — scannable, per Talking to the user above, ending on what the user can
 do next:
 
-- **"Show me an example to optimize"** → the tiny-cache starter
-  ([references/tiny-cache-starter.md](references/tiny-cache-starter.md)):
-  describe it in two or three sentences and offer to set it up. Show, don't
-  run.
+- **"Show me an example to optimize"** → the two bundled starters, one line
+  each: **tiny-cache** (a slow cache, rewritten by a coding agent each round —
+  minutes) and **tiny-search** (a slow search index optimized by a `nous`
+  campaign against a pre-registered bar and a write-path guard — about an
+  hour). Describe, ask which, and offer to set it up. Show, don't run; the
+  references are
+  [tiny-cache](references/tiny-cache-starter.md) and
+  [tiny-search](references/tiny-search-starter.md).
 - **"How do experiments work?"** → the loop in plain words: you describe a
   goal, we agree the design, I write it as a Python loop; each round proposes
   a candidate, builds it, measures it, and reports a score; the platform
@@ -168,15 +172,24 @@ Present it as a short list of decisions, not prose, and let them change any
 line. Silence is not approval: if they have not answered, ask again rather
 than picking a default and proceeding.
 
-## No target? The bundled starter
+## No target? Two bundled starters
 
-A user who wants to see how experiments work but has nothing to optimize gets
-**tiny-cache** — a deliberately slow cache with a behavioral suite and a
-deterministic benchmark, shipped inside this skill at
-[examples/tiny-cache/](examples/tiny-cache/). Follow
-[references/tiny-cache-starter.md](references/tiny-cache-starter.md) for the
-baseline ritual and the loop design — the worker harness is the user's pick,
-as always.
+A user who wants to see how experiments work but has nothing of their own to
+optimize gets one of two deliberately-slow Node packages shipped inside this
+skill. Both are dependency-free, single-process, and measurable in seconds;
+they differ in which worker they are shaped for, so pick by what the user
+wants to see:
+
+| Starter | Worker | Shows |
+|---|---|---|
+| [tiny-cache](references/tiny-cache-starter.md) ([code](examples/tiny-cache/)) | `claude-code` loop | your driver owning the ruler: it runs the locked bench, sweeps n, and scores each point |
+| [tiny-search](references/tiny-search-starter.md) ([code](examples/tiny-search/)) | `nous` campaign | a worker forming a hypothesis, pre-registering a bar, and reporting whether the mechanism held — with a guard metric it can fail |
+
+Follow the reference for whichever they choose; each carries its baseline
+ritual, its scoring design, and the size that fits the hour. **Don't cross
+them over.** tiny-cache on `nous` loses the pristine ruler and lands its
+optimized side on the timer floor; tiny-search in a hand-driven loop throws
+away the campaign machinery that is the only reason to look at it.
 
 ## Authoring a script
 
@@ -387,6 +400,42 @@ and when it breaks the hour, **cut scope, never the TTL** — fewer seeds, fewer
 iterations, a narrower question. The TTL still gets generous slack over
 whatever the estimate ends up being (a killed working pod wastes everything);
 the hour budgets the *work*, not the deadline.
+
+### You do not write the campaign's arms — but you do pin its design
+
+The worker authors its own hypothesis bundle: the arms (`h-main`,
+`h-ablation`, `h-super-additivity`, `h-control-negative`, `h-robustness`, and
+campaign-specific ones like `h-dose-response`) come out of its DESIGN phase,
+not out of your prompt. That is the point of the image, and it is why a Nous
+round is one spawn instead of a loop you drive.
+
+**It does not follow that you have no control.** `campaign.yaml` carries four
+fields that steer the design hard, and an agent that only writes prose leaves
+them on the table — then wrongly concludes it "can't force" a design it wants:
+
+- **`research_question`** — phrase it as the shape of the answer you want. "Is
+  X faster?" invites a yes/no; "does X's cost become independent of n?" invites
+  a curve, and the designer reaches for a dose-response arm on its own.
+- **`target_system.controllable_knobs`** — names the knobs the designer may
+  vary. Put the sweep variable here or it may never be swept.
+- **`ground_truth.direction_claim`** / `pass_condition` / `primary_metric` /
+  `seeds` — pre-registered and rendered into the agent's prompt, so it cannot
+  move the goalposts. A direction claim stated as a trend ("baseline cost grows
+  ~linearly in n while the treatment stays flat") commits the campaign to
+  measuring the trend.
+- **`locked_parameters`** — hard-pinned values that MUST reappear identically
+  in the bundle's `verified_parameters`; a mismatch fails validation **even
+  under `--auto-approve`**. This is the actual enforcement mechanism: put the
+  n grid, the rep count, and the seed list here and the campaign cannot
+  quietly measure something else.
+
+`target_system.description` is substituted verbatim into the model's prompts —
+it is where baselines, exact CLI invocations, metric definitions and
+statistical guardrails belong. `plot_specs` runs figure scripts after each
+`findings.json`, and `pre_work_script` runs a deterministic exploration before
+iteration 1 (a good place to measure the baseline). Full field list:
+`nous schema campaign`, mirrored in the image's own
+`.agents/skills/nous/reference/campaign-schema.md`.
 
 Bake the answers into the campaign prompt so the worker doesn't re-decide
 them. How the worker's results are laid out on disk — the stable verdict
