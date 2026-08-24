@@ -36,6 +36,7 @@ function makeService(seed: PendingApprovalRow) {
   const repo: ApprovalsRepository = {
     insertPending: async () => {},
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
+    findPendingAcpNativeByRpcId: async () => null,
     findActivePendingExtAuthz: async () => null,
     listPendingForOwner: async () => rows,
     listPendingForInstance: async () => rows,

@@ -21,6 +21,10 @@ export interface ApprovalsRepository {
     method: string;
     path: string;
   }): Promise<PendingApprovalRow | null>;
+  findPendingAcpNativeByRpcId(
+    agentId: string,
+    rpcId: number | string,
+  ): Promise<PendingApprovalRow | null>;
   listPendingForOwner(
     ownerSub: string,
     opts?: ListApprovalsRepoOpts,
@@ -148,6 +152,25 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           AND payload->>'host' = ${host}
           AND payload->>'method' = ${method}
           AND payload->>'path' = ${path}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      const list = rows as unknown as RawPending[];
+      return list.length ? toPendingRow(list[0]) : null;
+    },
+
+    async findPendingAcpNativeByRpcId(agentId, rpcId) {
+      const rows = await db.execute(sql`
+        SELECT id, type, agent_id AS "agentId",
+               owner_sub AS "ownerSub", session_id AS "sessionId", payload,
+               created_at AS "createdAt", expires_at AS "expiresAt",
+               resolved_at AS "resolvedAt", verdict, decided_by AS "decidedBy",
+               status, delivered_at AS "deliveredAt"
+        FROM ${pendingApprovals}
+        WHERE agent_id = ${agentId}
+          AND status = 'pending'
+          AND type = 'acp_native'
+          AND payload->>'rpcId' = ${String(rpcId)}
         ORDER BY created_at DESC
         LIMIT 1
       `);

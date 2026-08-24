@@ -24,7 +24,10 @@ export interface ApprovalsRelayService {
   recordAcpNativePending(
     input: RecordAcpNativePendingInput,
   ): Promise<string | null>;
-  resolveAcpNativeFromInSession(rowId: string): Promise<void>;
+  resolveAcpNativeFromInSession(
+    agentId: string,
+    rpcId: number | string,
+  ): Promise<void>;
   subscribeFrameInjects(
     agentId: string,
     listener: (frame: string) => void,
@@ -42,7 +45,7 @@ export function createApprovalsRelayService(
   return {
     async recordAcpNativePending(input) {
       if (input.sessionId.startsWith(SYNTHETIC_SESSION_PREFIX)) return null;
-      const rowId = acpNativeRowId(input.agentId, input.rpcId);
+      const rowId = acpNativeRowId(input.agentId, input.sessionId, input.rpcId);
       await deps.repo.insertPending({
         id: rowId,
         type: "acp_native",
@@ -70,23 +73,22 @@ export function createApprovalsRelayService(
       return rowId;
     },
 
-    async resolveAcpNativeFromInSession(rowId) {
+    async resolveAcpNativeFromInSession(agentId, rpcId) {
+      const row = await deps.repo.findPendingAcpNativeByRpcId(agentId, rpcId);
+      if (!row) return;
       const casWon = await deps.repo.resolvePending(
-        rowId,
+        row.id,
         "allow_once",
         "in-session",
         { markDelivered: true },
       );
       if (casWon) {
-        const row = await deps.repo.getPending(rowId);
-        if (row) {
-          emit({
-            type: EventType.ApprovalResolved,
-            approvalId: row.id,
-            agentId: row.agentId,
-            ownerSub: row.ownerSub,
-          });
-        }
+        emit({
+          type: EventType.ApprovalResolved,
+          approvalId: row.id,
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+        });
       }
     },
 

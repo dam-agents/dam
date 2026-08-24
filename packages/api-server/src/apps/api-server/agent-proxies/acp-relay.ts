@@ -8,7 +8,6 @@ import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RelayActor } from "./upgrade.js";
-import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
 import { emit, EventType } from "../../../events.js";
 
 const DEBOUNCE_MS = 30_000;
@@ -54,6 +53,11 @@ function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
 
 function isPrompt(msg: unknown): msg is JsonRpcRequest {
   return isRequest(msg) && msg.method === "session/prompt";
+}
+
+function isPermissionResponse(msg: JsonRpcResponse): boolean {
+  const result = msg.result as { outcome?: { outcome?: unknown } } | undefined;
+  return typeof result?.outcome?.outcome === "string";
 }
 
 function isResponse(msg: unknown): msg is JsonRpcResponse {
@@ -183,8 +187,10 @@ export function createAcpRelay(
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
-        const rowId = acpNativeRowId(agentId, msg.id);
-        approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
+        if (!identity || !isPermissionResponse(msg)) return;
+        approvals
+          .resolveAcpNativeFromInSession(identity.agentId, msg.id)
+          .catch(() => {});
       }
 
       const release = passive ? () => {} : presence.acquire(agentId);
