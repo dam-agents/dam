@@ -6,7 +6,7 @@ import { useAppConnections } from "../../connections/api/queries.js";
 import type { ProviderItem } from "../components/provider-item.js";
 
 export function useProviderItems() {
-  const { data: connections = [], isPending } = useAppConnections();
+  const { data: connections = [], isPending, isSuccess } = useAppConnections();
 
   const { itemByType, typeByConnectionId } = useMemo(() => {
     const itemByType = new Map<ProviderPresetType, ProviderItem>();
@@ -21,5 +21,5 @@ export function useProviderItems() {
     return { itemByType, typeByConnectionId };
   }, [connections]);
 
-  return { itemByType, typeByConnectionId, isPending };
+  return { itemByType, typeByConnectionId, isPending, isSuccess };
 }

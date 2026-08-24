@@ -33,7 +33,7 @@ export function GrantedConnectionsPanel({
       <>
         <SectionLabel spaced>My connections</SectionLabel>
         <EmptyStateCard
-          message="You have not added any Connections to this Sandbox yet"
+          message="You have not added any Connections to this Agent yet"
           actionLabel="Add Connection"
           onAction={onOpenCatalog}
           actionTestId="open-connection-catalog"

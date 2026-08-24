@@ -36,7 +36,7 @@ export function SandboxSetupSection({ f }: Props) {
         working and can interrupt tasks in progress. The switch applies when you
         save.
       </p>,
-      "Switch this sandbox's provider?",
+      "Switch this agent's provider?",
       { confirmLabel: "Switch provider" },
     );
 
@@ -56,8 +56,8 @@ export function SandboxSetupSection({ f }: Props) {
         currentSize={f.sizeRestartsAgent ? agent.size : undefined}
         restartNote={
           f.sizeRestartsAgent
-            ? "Changing the size restarts the sandbox on save."
-            : "The new size applies when the sandbox next starts."
+            ? "Changing the size restarts the agent on save."
+            : "The new size applies when the agent next starts."
         }
       />
 
@@ -86,10 +86,11 @@ export function SandboxSetupSection({ f }: Props) {
             onSelect={f.selectProvider}
             confirmSwitch={confirmSwitch}
             disabled={f.saving}
+            required={f.formReady}
           />
         </Inset>
         <p className="mt-3 text-xs text-muted-foreground">
-          Changing the provider swaps this sandbox's model credential. A
+          Changing the provider swaps this agent's model credential. A
           cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
           break the agent and may need a restart.
         </p>

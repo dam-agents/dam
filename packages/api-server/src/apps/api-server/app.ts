@@ -45,6 +45,7 @@ const PUBLIC_PATHS = [
   "/api/auth/config",
   "/api/brand",
   "/api/brand/*",
+  "/api/public/*",
   "/api/oauth/callback",
   "/api/slack/oauth/callback",
   "/api/telegram/oauth/callback",

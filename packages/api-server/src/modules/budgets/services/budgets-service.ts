@@ -53,8 +53,8 @@ export function createResizeGate(deps: BudgetsServiceDeps): ResizeGate {
         throw new TRPCError({
           code: "FORBIDDEN",
           message:
-            `This size would take your running sandboxes to ${cores(totalCpu)}/${cores(ceilCpu)} ` +
-            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — pause, stop, or shrink another sandbox first.`,
+            `This size would take your running agents to ${cores(totalCpu)}/${cores(ceilCpu)} ` +
+            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — pause, stop, or shrink another agent first.`,
         });
       }
     },

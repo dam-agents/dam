@@ -31,12 +31,12 @@ export function useProviderStaging({
     return connId ? { id: connId } : null;
   }, [assignedAppIds, providerAppIds]);
 
-  const selectProvider = (ref: ProviderRef) =>
+  const selectProvider = (ref: ProviderRef | null) =>
     setAssignedAppIds(
       [
         ...new Set([
           ...getAssignedAppIds().filter((id) => !providerAppIds.has(id)),
-          ref.id,
+          ...(ref ? [ref.id] : []),
         ]),
       ].sort(),
     );

@@ -94,7 +94,7 @@ describe("toSandboxGroups", () => {
     expect(groups[0]).toMatchObject({
       agentId: "__deleted__",
       agent: null,
-      name: "Deleted sandboxes",
+      name: "Deleted agents",
     });
     expect(groups[0]?.lineages).toHaveLength(2);
   });

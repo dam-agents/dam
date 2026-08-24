@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-18
+Last verified: 2026-08-20
 
 ## Overview
 
@@ -8,7 +8,7 @@ A **usage tracking** subsystem captures semantically-meaningful user activity in
 
 Three design choices follow from the operator framing:
 
-- **Read interface is SQL views.** Adding a metric is a new view; consumers don't see the raw event table. The HTML report renders all "pilot" views; the JSON endpoint returns any one of them by name.
+- **Read interface is SQL views.** Adding a report metric is a new view; inspectors don't see the raw event table. The HTML report renders all "pilot" views; the JSON endpoint returns any one of them by name. A separate passthrough surface serves external analytics — see [source passthrough views](#source-passthrough-views).
 - **Storage is pseudonymized.** Every Keycloak `sub` written to Postgres is HMAC-SHA256 hashed with a per-install secret at the repository write boundary. Same input → same output, so cross-table joins and `GROUP BY sub` still work; reverse lookup requires the secret, which lives on the api-server pod. Pseudonymization, not anonymization — see [security-and-credentials](security-and-credentials.md) for the GDPR framing.
 - **Access is a separate role.** The `platform-inspector` realm role gates `/api/usage/*`. It is independent of the platform-access role: "can read aggregates" doesn't imply "can use the platform." The Helm chart auto-creates the role and an `inspectors` group mapped to it; operators grant access by adding Keycloak users to the group.
 
@@ -41,6 +41,7 @@ flowchart LR
   postgres[(Postgres)]
 
   inspector[inspector]
+  analytics[analytics consumer]
 
   user-auth --> bus
   user-channel --> bus
@@ -64,6 +65,7 @@ flowchart LR
 
   inspector -->|HTML / JSON / bearer token| routes
   routes -->|SELECT ... FROM usage_*| postgres
+  analytics -->|read-only role, SELECT usage_src_*| postgres
 ```
 
 ## Bounded context
@@ -73,11 +75,11 @@ The subsystem owns:
 - **`activity_events`** — append-only event log. One row per recorded interaction. Columns: `type`, `actor_sub` (HMACed), `agent_id`, `surface`, `outcome` (`success | failure` enum), `payload` (JSONB), `occurred_at`.
 - **`actor_roles`** — role flags per pseudonymized sub. Records whether the user carried the configured "core" realm role at auth time. Read by the `usage_core_actor_subs` helper view to power the optional core-team exclusion filter.
 - **`agents`** — Postgres mirror of agent ConfigMaps. Columns: `id`, `owner_sub` (HMACed), `created_at`, `deleted_at`. Lets SQL views resolve agent ownership without a K8s API round-trip.
-- **`usage_*` SQL views** — the read API. View names form the public surface; the underlying tables are internal.
+- **`usage_*` SQL views** — the read API, in two surfaces: aggregate views backing the inspector report, and `usage_src_*` passthroughs forming the external-analytics surface (see [source passthrough views](#source-passthrough-views)). View names form the public surface; the underlying tables are internal.
 
 The subsystem reads from but does not own:
 
-- **Other Postgres tables** (`pending_approvals`, `agent_skills`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables. (Session-derived views were retired when sessions became agent-owned.)
+- **Other Postgres tables** (`pending_approvals`, `agent_skills`, `skill_sources`, `egress_rules`) — selected views project read-only summaries over them. Schema changes there can require view rewrites; view rewrites never require changes to the source tables. (Session-derived views were retired when sessions became agent-owned.)
 
 The subsystem is otherwise a sink for the event bus and a reader for SQL. It owns exactly one domain operation — a user reporting which way in they chose, which it turns into an event on that same bus — and everything else it stores arrives as another module's event.
 
@@ -148,6 +150,10 @@ The HTML report is rendered server-side as a single static page — no JavaScrip
 
 When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
 
+### Source passthrough views
+
+A second read surface serves an external usage-analytics pipeline, at the SQL layer rather than over HTTP: one `usage_src_*` passthrough view per table the subsystem reads, each enumerating exactly the columns allowed to leave that table. The views are the privacy boundary — columns holding raw Keycloak subs, and application payloads never written for analytics, are omitted; the activity payload flows through as an object, with each key audited: identity keys are pseudonymized at the write boundary, user-authored identifiers (skill names, source URLs) pass through as the exposed columns already do, and free-form prose (the driver error message) is stripped — and the column list is the contract: a column added to a base table stays invisible until the migration adding it recreates the passthrough, so table migrations are never blocked from outside. Aggregations live with the consumer, which reads nightly through a dedicated read-only Postgres role granted per view; the role and its grants are managed operator-side, not by the chart, and are authored against the deployed release rather than main. Recreating a passthrough drops its grants, so after a view migration the consumer fails closed with permission-denied until an operator re-grants — the intended failure mode. The passthroughs are deliberately outside the inspector surface: the `usage_*` aggregate views stay as the backing of the HTML report with no new features, while new metrics are authored consumer-side against the passthroughs.
+
 ### Opening the report
 
 For inspectors who have been granted the role:
@@ -178,5 +184,6 @@ Every pilot view applies `AND actor_sub NOT IN (SELECT … FROM usage_core_actor
 
 - **Inspector role gates the read API.** Most writes are unauthenticated to *the subsystem* — they originate inside the api-server process from already-authenticated user requests on other routes, and the activity log inherits whatever trust boundary the originating route enforced.
 - **One write route belongs to the subsystem.** `usage.entryPointChosen` is an owner-scoped tRPC mutation: the actor is the session's Keycloak `sub`, never a client-supplied field, and the input carries the choice alone. A caller can therefore only write about itself. Repeats are bounded by a partial unique index — one `entry_point_chosen` row per actor — so a client that replays the call cannot inflate the entry-point views.
+- **Per-view Postgres grants gate the analytics surface.** The external consumer reads the `usage_src_*` passthroughs through a dedicated read-only role granted SELECT view by view — no HTTP path, no table or write grants. Recreating a view drops its grant, so the consumer fails closed until an operator re-grants.
 - **HMAC key gates re-identification.** Holding the key (an in-cluster K8s Secret mounted into the api-server pod) is what lets a reader correlate a pseudonym back to a Keycloak `sub`. Database-only access does not.
 - **Ad-hoc SQL is intentionally not exposed.** Earlier iterations included a `POST /api/usage/query` taking raw SQL. It was removed: an inspector with that endpoint can read other Postgres tables containing credential material (refresh tokens, HITL payloads). Inspectors get views; operators wanting psql go through `kubectl exec`.

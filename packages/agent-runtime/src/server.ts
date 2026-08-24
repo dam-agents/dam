@@ -123,6 +123,7 @@ const {
   workingDir: workDir,
   stateBackend,
   envReader: envStore,
+  sessionHistory: runtimeManifest.sessionHistory,
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),

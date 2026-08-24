@@ -92,8 +92,8 @@ export function useSandboxSettingsSave({
       agent &&
       !(agent.state === "hibernated" || agent.overBudget) &&
       !(await showConfirm(
-        "Saving will restart the sandbox to apply its new size — in-flight work is interrupted.",
-        "Restart sandbox?",
+        "Saving will restart the agent to apply its new size — in-flight work is interrupted.",
+        "Restart agent?",
         { confirmLabel: "Save & restart" },
       ))
     ) {

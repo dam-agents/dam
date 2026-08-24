@@ -35,17 +35,17 @@ straitjacket: a span naming an undeclared stage grows the graph and is flagged
 as **drift**, never an error. Agent-authored scripts must not fail hours into
 a run over a declaration mismatch; drift is signal for the human, not a fault.
 
-## The experiment sandbox
+## The experiment agent
 
 Nothing about an Experiment requires a special Agent — Plan Registration is keyed
 only on the calling agent's waypoint identity, so any Agent with the SDK can
 register one. But an agent has to *know how*, and until it does the Experiments
 destination has nothing to show and the user has nothing to click.
 
-So creating one is a first-class flow: an **experiment sandbox** is an Agent
+So creating one is a first-class flow: an **experiment agent** is an Agent
 carrying the `experiment` [Agent Kind](knowledge-bases.md) whose Install Command
 copies the `dam-experiment` authoring skill and an `/experiment-onboard` command
-out of a path staged in the image, and appends a sandbox-purpose note to the
+out of a path staged in the image, and appends a purpose note to the
 pod's user-level AGENTS.md so every session — not only the greeted first one —
 opens knowing that "experiment" means a platform Experiment. AGENTS.md is the
 source of truth and a symlink makes Claude Code read it, mirroring the image's
@@ -55,20 +55,20 @@ replayed install or a later writer composes instead of duplicating or
 clobbering. It rides the same kinded-create rail as a
 Knowledge Base, differing only in the marker and the command; nothing is fetched
 over the network, because the kit ships with the image. The skill used to be baked
-into every Claude Code sandbox's seeded workspace — moving it behind the marker is
-what makes the two things distinguishable. Sandboxes seeded before the move keep
+into every Claude Code agent's seeded workspace — moving it behind the marker is
+what makes the two things distinguishable. Agents seeded before the move keep
 their copy: the marker is not retroactive, and nothing is migrated.
 
-**The marker is declared intent, not a capability gate.** It records that a
-sandbox was made to run loops; it does not stop any other agent from registering a
+**The marker is declared intent, not a capability gate.** It records that an
+agent was made to run loops; it does not stop any other agent from registering a
 plan. Both populations therefore belong on the destination, which lists **marked
-sandboxes ∪ agents with at least one Experiment row** — a marked sandbox with
-nothing in it yet is an empty container, and an unmarked agent that registered a
-plan earns a container too. There is no backfill and nothing disappears.
+agents ∪ agents with at least one Experiment row** — a marked agent with
+nothing in it yet is an empty group, and an unmarked agent that registered a
+plan earns a group too. There is no backfill and nothing disappears.
 
-Opening a fresh experiment sandbox **greets the user**: the UI hidden-sends
+Opening a fresh experiment agent **greets the user**: the UI hidden-sends
 `/experiment-onboard` so the agent opens by asking what to optimize. It waits until the
-sandbox reports that skill among its installed skills, so it never runs a command
+agent reports that skill among its installed skills, so it never runs a command
 the Install Command has not delivered yet — the skill is copied last precisely so
 its presence implies the command and the purpose note both landed.
 
@@ -90,11 +90,14 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
   normalized or ranked), Artifact Library references, and an opaque attrs bag.
 - **Script Artifact** — the script source, versioned in the Artifact Library.
   Everything platform-managed for a lineage — draft script + dashboard,
-  every run's script clone and results page — lives in the lineage's folder
-  (`Experiments / <name>`), keeping the library root free of stock
-  artifacts. Postgres never stores source; every run records the exact
-  version it executed, and a `run-start` announcing a changed sha publishes
-  the next version — divergence is visible history.
+  every run's script clone and results page — is published into the lineage's
+  folder (`Experiments / <name>`), keeping the library root free of stock
+  artifacts. That folder is a filing convenience, not the record: the
+  experiment names the artifacts it owns, so an owner may move one out or file
+  an unrelated one in without changing what a run consists of. Postgres never
+  stores source; every run records the exact version it executed, and a
+  `run-start` announcing a changed sha publishes the next version — divergence
+  is visible history.
 - **Dashboard Artifact** — the HTML renderer of the Trace Feed: a
   platform-shipped stock dashboard auto-published at plan registration, or a
   bespoke one the agent generated. Rendered in the sealed in-app iframe; data
@@ -107,8 +110,8 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
   plus a baked replay of the final feed over the same message contract — so
   the finished result is self-contained and shareable without any bridge.
   The Experiments destination groups lineages (status, runs, live invocations,
-  per-run artifacts) under the sandbox running them and routes into that chat —
-  the sandbox is the container because one holds many lineages, so there is no
+  per-run artifacts) under the agent running them and routes into that chat —
+  the agent is the grouping because one holds many lineages, so there is no
   per-experiment page to route to.
 - **Trace Feed** — the bounded JSON projection (per-stage aggregates,
   downsampled score series, recent spans, attached invocations) served over

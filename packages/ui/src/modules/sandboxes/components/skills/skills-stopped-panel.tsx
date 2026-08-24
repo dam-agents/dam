@@ -94,9 +94,9 @@ export function SkillsStoppedPanel({
           className="mt-px shrink-0 text-muted-foreground"
         />
         <p className="min-w-0 flex-1">
-          <span className="font-semibold">This sandbox is stopped</span>{" "}
+          <span className="font-semibold">This agent is stopped</span>{" "}
           <span className="text-muted-foreground">
-            — its skills are read-only until it runs again. Start the sandbox to
+            — its skills are read-only until it runs again. Start the agent to
             change them.
           </span>
         </p>
@@ -107,7 +107,7 @@ export function SkillsStoppedPanel({
           className="shrink-0"
         >
           {comingUp ? <Spinner size={13} /> : <Play size={14} />}
-          {comingUp ? "Starting…" : "Start sandbox"}
+          {comingUp ? "Starting…" : "Start agent"}
         </Button>
       </div>
 
@@ -142,7 +142,7 @@ export function SkillsStoppedPanel({
           ))}
         </Card>
         <p className="mt-2.5 text-sm text-muted-foreground">
-          Search, bulk actions and per-skill toggles need the sandbox running —
+          Search, bulk actions and per-skill toggles need the agent running —
           they&rsquo;re left out here rather than shown greyed out.
         </p>
       </section>
@@ -165,7 +165,7 @@ export function SkillsStoppedPanel({
         />
         <p className="mt-2.5 text-sm text-muted-foreground">
           Sources stay editable while stopped. Reading what a private one
-          contains needs the sandbox running.
+          contains needs the agent running.
         </p>
       </section>
     </div>

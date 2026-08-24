@@ -31,9 +31,9 @@ export function SandboxModelSettings({
   if (!operable && !hasRun) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        This sandbox hasn&rsquo;t run yet — its model settings are resolved
-        inside the sandbox, so there&rsquo;s nothing recorded to show. Start it
-        once and this page fills in.
+        This agent hasn&rsquo;t run yet — its model settings are resolved when
+        it starts, so there&rsquo;s nothing recorded to show. Start it once and
+        this page fills in.
       </Fallback>
     );
   }
@@ -41,7 +41,7 @@ export function SandboxModelSettings({
   if (!operable && !hasCatalog) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        Start the sandbox to load and edit its model settings.
+        Start the agent to load and edit its model settings.
       </Fallback>
     );
   }
@@ -51,7 +51,7 @@ export function SandboxModelSettings({
       <Section agentId={agentId} comingUp={comingUp}>
         {status?.catalog?.options.map((group) => (
           <OptionField key={group.id} title={group.name}>
-            <ReadOnlyOptionFace label="Unknown" hint="Start sandbox to view" />
+            <ReadOnlyOptionFace label="Unknown" hint="Start agent to view" />
           </OptionField>
         ))}
       </Section>
@@ -61,7 +61,7 @@ export function SandboxModelSettings({
   if (operable && !hasCatalog && status?.supported === true) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        Waiting for the sandbox to report which model settings it offers.
+        Waiting for the agent to report which model settings it offers.
       </Fallback>
     );
   }

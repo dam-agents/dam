@@ -10,10 +10,9 @@ import {
 } from "../../acp/errors.js";
 import { hasStreamingAssistant } from "../../acp/session-projection.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { listAgentSessions } from "../api/acp-session-ops.js";
+import { listAgentSessions, listSessionsOn } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { useAcpConnection } from "./use-acp-connection.js";
-import { useAcpHistory } from "./use-acp-history.js";
 import { useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
@@ -62,8 +61,6 @@ export function useAcpSession(
 
   const agentOperable = useIsAgentOperable(selectedAgent);
 
-  const { loadHistory } = useAcpHistory(selectedAgent);
-
   const {
     engagedSessionIdRef,
     engage,
@@ -78,6 +75,7 @@ export function useAcpSession(
   const {
     ensureLive,
     beginSession,
+    loadSessionHistory,
     connectionRef,
     state: connectionState,
     reset: resetConnection,
@@ -91,7 +89,6 @@ export function useAcpSession(
     engage,
     bindEngagement,
     clearEngagement,
-    loadHistory,
     setMessages,
     delivery,
   });
@@ -114,12 +111,15 @@ export function useAcpSession(
       setSessionId(sid);
 
       try {
-        const fresh = await loadHistory(sid);
+        const fresh = await loadSessionHistory(sid);
         if (useStore.getState().sessionId !== sid) return;
         setMessages(fresh);
 
         try {
-          const sessions = await listAgentSessions(selectedAgent);
+          const conn = connectionRef.current?.connection;
+          const sessions = conn
+            ? await listSessionsOn(selectedAgent, conn)
+            : await listAgentSessions(selectedAgent);
           const match = sessions.find((s) => s.sessionId === sid);
           if (match?.mode && match.mode !== useStore.getState().sessionMode) {
             useStore.getState().setSessionMode(match.mode);
@@ -134,7 +134,39 @@ export function useAcpSession(
         if (useStore.getState().sessionId === sid) setLoadingSession(false);
       }
     },
-    [selectedAgent, loadHistory, resetConnection, setMessages, setSessionId],
+    [
+      selectedAgent,
+      loadSessionHistory,
+      connectionRef,
+      resetConnection,
+      setMessages,
+      setSessionId,
+    ],
+  );
+
+  const loadOlderMessages = useCallback(
+    async (before: string): Promise<"paged" | "reloaded" | "noop"> => {
+      const sid = useStore.getState().sessionId;
+      if (!sid) return "noop";
+      try {
+        const page = await loadSessionHistory(sid, before);
+        if (useStore.getState().sessionId !== sid) return "noop";
+        const current = useStore.getState().messages;
+        setMessages([
+          ...page,
+          ...current.filter((m) => m.loadOlderBefore !== before),
+        ]);
+        return "paged";
+      } catch {
+        const fresh = await loadSessionHistory(sid).catch(() => null);
+        if (fresh && useStore.getState().sessionId === sid) {
+          setMessages(fresh);
+          return "reloaded";
+        }
+        return "noop";
+      }
+    },
+    [loadSessionHistory, setMessages],
   );
 
   const { sendPrompt, stopAgent } = useAcpPrompt({
@@ -150,6 +182,7 @@ export function useAcpSession(
   return {
     resetSession,
     resumeSession,
+    loadOlderMessages,
     sendPrompt,
     stopAgent,
     busy,

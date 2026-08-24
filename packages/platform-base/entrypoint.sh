@@ -14,12 +14,36 @@ set -eu
 
 mitm_ca=/etc/platform/ca/ca.crt
 anchor=/etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt
+extracted=/etc/pki/ca-trust/extracted
+
+extract_trust_store() (
+	export P11_KIT_NO_USER_CONFIG=1
+	trust extract --format=openssl-bundle --filter=certificates --overwrite --comment "$extracted/openssl/ca-bundle.trust.crt" &&
+		trust extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose server-auth "$extracted/pem/tls-ca-bundle.pem" &&
+		trust extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose email "$extracted/pem/email-ca-bundle.pem" &&
+		trust extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose code-signing "$extracted/pem/objsign-ca-bundle.pem" &&
+		trust extract --format=java-cacerts --filter=ca-anchors --overwrite --purpose server-auth "$extracted/java/cacerts" &&
+		trust extract --format=edk2-cacerts --filter=ca-anchors --overwrite --purpose=server-auth "$extracted/edk2/cacerts.bin" &&
+		trust extract --format=pem-directory-hash --filter=ca-anchors --overwrite --purpose server-auth "$extracted/pem/directory-hash" ||
+		exit 1
+	for link in "$extracted"/pem/directory-hash/*.0; do
+		[ -h "$link" ] || continue
+		name=${link##*/}
+		[ -e "/etc/pki/tls/certs/$name" ] ||
+			ln -sf "$(readlink -f "$link")" "/etc/pki/tls/certs/$name" ||
+			exit 1
+	done
+)
 
 # No CA file mounted means the gateway never intercepts this agent's traffic, so
 # every host returns its real public certificate, which the public CAs cover.
 if [ -s "$mitm_ca" ]; then
-	cp "$mitm_ca" "$anchor" && /usr/sbin/update-ca-trust extract \
-		|| echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	trust_t0=$(date +%s)
+	if cp "$mitm_ca" "$anchor" && { extract_trust_store || /usr/sbin/update-ca-trust extract; }; then
+		echo "agent-entrypoint: platform CA trusted in $(($(date +%s) - trust_t0))s"
+	else
+		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	fi
 fi
 
 # $HOME is a shared RWX network volume; cache traffic (mise, uv, npm, ...)

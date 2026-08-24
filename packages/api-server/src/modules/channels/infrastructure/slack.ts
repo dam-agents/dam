@@ -92,6 +92,7 @@ import {
 } from "./slack-turn-presenter.js";
 import {
   agentContextBlock,
+  agentFooterLabel,
   agentFooterMrkdwn,
   formatSlackTs,
   historyLegend,
@@ -502,6 +503,7 @@ async function getContextMessages(
   readingAgentId: string,
   threadTs: string | undefined,
   bot: { userId: string | null; label: string },
+  resolveAgentName: (agentId: string) => Promise<string>,
 ): Promise<{
   lines: string[];
   hasAgentAuthored: boolean;
@@ -513,17 +515,37 @@ async function getContextMessages(
         .slice()
         .reverse();
 
-  let hasAgentAuthored = false;
-  let hasUnattributedBot = false;
-  const lines = raw
+  const entries = raw
     .filter((m) => m.ts !== ts)
-    .map((m) => {
-      const footer = parseAgentFooter(m);
-      if (footer) hasAgentAuthored = true;
-      else if (bot.userId && m.user === bot.userId) hasUnattributedBot = true;
-      return labelHistoryMessage(m, footer, readingAgentId, bot);
-    });
-  return { lines, hasAgentAuthored, hasUnattributedBot };
+    .map((message) => ({ message, footer: parseAgentFooter(message) }));
+
+  const authorIds = [
+    ...new Set(entries.flatMap((e) => (e.footer ? [e.footer.agentId] : []))),
+  ];
+  const names = new Map(
+    await Promise.all(
+      authorIds.map(async (id) => [id, await resolveAgentName(id)] as const),
+    ),
+  );
+
+  const lines = entries.map((e) =>
+    labelHistoryMessage(
+      e.message,
+      e.footer && {
+        agentId: e.footer.agentId,
+        name: names.get(e.footer.agentId) ?? e.footer.agentId,
+      },
+      readingAgentId,
+      bot,
+    ),
+  );
+  return {
+    lines,
+    hasAgentAuthored: entries.some((e) => e.footer !== null),
+    hasUnattributedBot: entries.some(
+      (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
+    ),
+  };
 }
 
 export interface SlackBindingInfo {
@@ -958,19 +980,18 @@ export function createSlackWorker(
     );
   }
 
-  async function resolveAgentFooter(
+  async function agentFooter(
     instanceName: string,
     sessionId?: string,
   ): Promise<AgentFooter> {
-    let agentName = instanceName;
-    try {
-      const agent = await agents().get(instanceName);
-      if (agent?.name) agentName = agent.name;
-    } catch {}
+    const resolved = await resolveAgentName(instanceName);
     return {
       uiBaseUrl,
       agentId: instanceName,
-      agentName,
+      label: agentFooterLabel(
+        brand,
+        resolved === instanceName ? undefined : resolved,
+      ),
       ...(sessionId ? { sessionId } : {}),
     };
   }
@@ -1331,6 +1352,7 @@ export function createSlackWorker(
         ctx.instanceName,
         ctx.hasThread ? ctx.threadTs : undefined,
         bot,
+        resolveAgentName,
       );
     const legend =
       hasAgentAuthored || hasUnattributedBot
@@ -2537,7 +2559,7 @@ export function createSlackWorker(
         return target;
       }
 
-      const footer = await resolveAgentFooter(instanceName);
+      const footer = await agentFooter(instanceName);
       const contextBlock = agentContextBlock(footer);
 
       try {
@@ -2750,7 +2772,7 @@ export function createSlackWorker(
       );
       if ("error" in target) return target;
 
-      const footer = await resolveAgentFooter(instanceName, turn?.sessionId);
+      const footer = await agentFooter(instanceName, turn?.sessionId);
       try {
         await gw.postMessage({
           channel: target.id,

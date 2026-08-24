@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-08-17
+Last verified: 2026-08-24
 
 ## System context
 
@@ -62,8 +62,9 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-Agent PVC) and what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
+- [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated app-origin surface, reached from the Slack Agent Footer: names a channel-bound Agent and its owner off a Postgres projection, one generic page for everything else.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
-- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, reusable named selections a user carries between sandboxes, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
+- [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, reusable named selections a user carries between agents, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
 - [experiments](architecture/experiments.md) — driver-authored Python loop scripts observed live: declared skeleton + trace of scored spans, versioned script artifacts, prepare→Execute workflow, dashboard-artifact live view.
@@ -71,7 +72,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [artifact-library](architecture/artifact-library.md) — agents and users publish artifacts (HTML/JSX/markdown/code/files) into an owner-scoped library and share them by link on a dedicated share host, with folders, a retention date, and versions.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
-- [metrics](architecture/metrics.md) — the user-facing spend read path: owner-scoped tRPC reads over the telemetry store backing the global and per-sandbox Usage surfaces, failing closed when the backend is disabled.
+- [metrics](architecture/metrics.md) — the user-facing spend read path: owner-scoped tRPC reads over the telemetry store backing the global and per-agent Usage surfaces, failing closed when the backend is disabled.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, gated by the mesh rather than ingestion tokens.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.

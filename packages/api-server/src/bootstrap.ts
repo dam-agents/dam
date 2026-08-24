@@ -7,6 +7,7 @@ import {
 } from "./modules/agents/infrastructure/labels.js";
 import {
   composeAgentsModule,
+  composePublicAgentPage,
   createAgentsRepository,
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
@@ -397,6 +398,26 @@ export async function bootstrap() {
   const channelCleanupSub = startChannelCleanupSaga(
     deleteChannelsByAgent(db),
     deleteConversationsByAgent(db),
+  );
+  const publicAgentPage = composePublicAgentPage({
+    db,
+    repo: agentsRepo,
+    userDirectory,
+    log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
+  });
+  const publicAgentProfileSub = publicAgentPage.startSaga();
+  const publicAgentPageService = publicAgentPage.service;
+  await periodicJobs.register(
+    "public-agent-profile-reconcile",
+    60 * 60_000,
+    async () => {
+      const { deleted, failed } =
+        await publicAgentPage.reconcileService.reconcile();
+      if (deleted > 0 || failed > 0)
+        getLogger().info(
+          `[public-agent-profile] marked ${deleted} profile(s) deleted, ${failed} failed`,
+        );
+    },
   );
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
@@ -921,6 +942,7 @@ export async function bootstrap() {
     surfaceAttribution,
     slackOauthCallbackUrl,
     shareHostGate,
+    publicAgentPageService,
     sessionPresence,
   };
   const harnessDeps = {
@@ -951,6 +973,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
+    publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
     approvalsWakeSaga.unsubscribe();

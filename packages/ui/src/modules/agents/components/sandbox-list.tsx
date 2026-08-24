@@ -37,7 +37,7 @@ export function SandboxList({
               : selectAgent(agent.id)
           }
           onConfigure={() => navigateToSandboxHome(agent.id)}
-          configureLabel="Configure sandbox"
+          configureLabel="Configure agent"
           onStop={() => onStop(agent)}
           onDelete={() => onDelete(agent)}
         />

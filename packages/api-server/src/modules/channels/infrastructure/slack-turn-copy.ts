@@ -114,9 +114,7 @@ function identitySentences(
     `). People address you ${forms.length === 3 ? "three" : "two"} ways, all ` +
     `equivalent: ${list}.${reachNote} Authorship runs the other way: every ` +
     "agent here posts through this one bot, so a post from it is yours only " +
-    (agentName
-      ? `if its footer reads "${agentName}".`
-      : "if its footer names you.") +
+    'if the conversation history marks that line "you (this agent)".' +
     (roster && roster.peers.length > 0
       ? ` ${rosterSentences(roster, agentName)}`
       : "")

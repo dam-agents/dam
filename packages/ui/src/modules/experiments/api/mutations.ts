@@ -19,7 +19,7 @@ export function useCreateExperimentSandbox() {
         trpc.budgets.reserved.queryKey(),
         trpc.experiments.driverSummaries.queryKey(),
       ],
-      errorToast: "Failed to create experiment sandbox",
+      errorToast: "Failed to create experiment agent",
     },
   });
 }

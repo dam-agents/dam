@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { useIsAgentInaccessible } from "../../agents/api/queries.js";
+import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
@@ -18,8 +20,12 @@ import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const f = useSandboxSettingsForm();
+  const agentId = useStore((s) => s.agentId);
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+
+  const agentInaccessible = useIsAgentInaccessible(agentId);
+  usePublicAgentFallback(agentId, agentInaccessible);
 
   const display = useResolvedAgentDisplay(f.agent);
 
@@ -29,10 +35,10 @@ export function SandboxHomeView() {
     return (
       <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
         {f.status === "no-agent" && (
-          <p className="text-sm text-muted-foreground">No sandbox selected.</p>
+          <p className="text-sm text-muted-foreground">No agent selected.</p>
         )}
         {f.status === "not-found" && (
-          <p className="text-sm text-muted-foreground">Sandbox not found.</p>
+          <p className="text-sm text-muted-foreground">Agent not found.</p>
         )}
       </div>
     );

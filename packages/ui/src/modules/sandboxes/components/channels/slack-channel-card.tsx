@@ -42,7 +42,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         ) : (
           <p className="text-sm text-muted-foreground">
             No channels connected yet. Mentions of the bot in a connected
-            channel drive this sandbox.
+            channel drive this agent.
           </p>
         )}
         <Button
@@ -86,7 +86,7 @@ function SlackChannelRow({
       await showConfirm(
         <p>
           Mentions in <strong>{channel.slackChannelId}</strong> will stop
-          reaching this sandbox.
+          reaching this agent.
           {channel.default ? (
             <>
               {" "}

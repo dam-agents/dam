@@ -1,5 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
+import type { LibraryArtifact } from "api-server-api";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
 const invalidatesLibrary = [
@@ -27,13 +29,48 @@ export function useCreateArtifact() {
 }
 
 export function useUpdateArtifact() {
-  return useMutation({
-    ...trpc.artifactLibrary.update.mutationOptions(),
-    meta: {
-      invalidates: invalidatesLibraryAndContent,
-      errorToast: "Failed to update artifact",
-    },
-  });
+  const listKey = trpc.artifactLibrary.list.queryKey();
+  return useMutation(
+    trpc.artifactLibrary.update.mutationOptions({
+      onMutate: async (input) => {
+        await queryClient.cancelQueries({ queryKey: listKey });
+        const snapshots = queryClient.getQueriesData<LibraryArtifact[]>({
+          queryKey: listKey,
+        });
+        queryClient.setQueriesData<LibraryArtifact[]>(
+          { queryKey: listKey },
+          (rows) =>
+            rows?.map((row) =>
+              row.id === input.id
+                ? {
+                    ...row,
+                    ...(input.title !== undefined
+                      ? { title: input.title }
+                      : {}),
+                    ...(input.fileName !== undefined
+                      ? { fileName: input.fileName }
+                      : {}),
+                    ...("folderId" in input
+                      ? { folderId: input.folderId ?? null }
+                      : {}),
+                  }
+                : row,
+            ),
+        );
+        return { snapshots };
+      },
+      onSettled: (_data, error, _input, context) => {
+        if (!error || !context) return;
+        for (const [key, rows] of context.snapshots) {
+          queryClient.setQueryData(key, rows);
+        }
+      },
+      meta: {
+        invalidates: invalidatesLibraryAndContent,
+        errorToast: "Failed to update artifact",
+      },
+    }),
+  );
 }
 
 export function useSetArtifactSharing() {

@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -47,13 +48,13 @@ import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailab
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
 import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
+import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
@@ -96,6 +97,10 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
+  const leavingForPublicPage = usePublicAgentFallback(
+    selectedAgent,
+    agentInaccessible,
+  );
 
   useSessionUrlSync(selectedAgent);
 
@@ -186,6 +191,7 @@ export function ChatView() {
   const {
     resetSession,
     resumeSession,
+    loadOlderMessages,
     sendPrompt,
     stopAgent,
     busy,
@@ -231,6 +237,42 @@ export function ChatView() {
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  const pendingPrependRef = useRef<{
+    height: number;
+    before: string;
+  } | null>(null);
+
+  const loadOlderKeepingScroll = useCallback(
+    async (before: string): Promise<"paged" | "reloaded" | "noop"> => {
+      const el = messagesRef.current;
+      if (el) {
+        pendingPrependRef.current = { height: el.scrollHeight, before };
+        el.style.overflowAnchor = "none";
+      }
+      const outcome = await loadOlderMessages(before);
+      if (outcome !== "paged") {
+        pendingPrependRef.current = null;
+        if (el) el.style.overflowAnchor = "";
+        if (outcome === "reloaded") scrollToBottom();
+      }
+      return outcome;
+    },
+    [loadOlderMessages, scrollToBottom],
+  );
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = messagesRef.current;
+    if (!pending || !el) return;
+    if (messages.some((m) => m.loadOlderBefore === pending.before)) {
+      pending.height = el.scrollHeight;
+      return;
+    }
+    pendingPrependRef.current = null;
+    el.scrollTop += el.scrollHeight - pending.height;
+    el.style.overflowAnchor = "";
+  }, [messages]);
+
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
@@ -267,6 +309,15 @@ export function ChatView() {
       setShowJump(false);
     }
   }, [messages.length]);
+
+  useLayoutEffect(() => {
+    if (loadingSession) return;
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, [loadingSession, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -362,11 +413,11 @@ export function ChatView() {
         modelSettings: null,
       }
     : {
-        actionsAria: "Sandbox actions",
-        configure: "Configure sandbox",
-        delete: "Delete Sandbox",
-        modelSubject: "sandbox",
-        modelSettings: "Sandbox Setup",
+        actionsAria: "Agent actions",
+        configure: "Configure agent",
+        delete: "Delete Agent",
+        modelSubject: "agent",
+        modelSettings: "Agent Setup",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -389,8 +440,8 @@ export function ChatView() {
     const ok = isKnowledgeBaseView
       ? await confirmDeleteKnowledgeBase(showConfirm, selectedAgentName ?? "")
       : await showConfirm(
-          "Delete this sandbox? This also deletes all persistent data and cannot be undone.",
-          "Delete Sandbox",
+          "Delete this agent? This also deletes all persistent data and cannot be undone.",
+          "Delete Agent",
           { kind: "destructive" },
         );
     if (!ok) return;
@@ -638,6 +689,7 @@ export function ChatView() {
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
+                        onLoadOlder={loadOlderKeepingScroll}
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}
@@ -746,12 +798,9 @@ export function ChatView() {
         )}
       </div>
 
-      <EgressApprovalToasts agentId={selectedAgent} />
-
-      {}
-      {selectedAgent && agentInaccessible ? (
+      {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentOperable ? (
+      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

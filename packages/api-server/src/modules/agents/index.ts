@@ -1,4 +1,4 @@
-export { composeAgentsModule } from "./compose.js";
+export { composeAgentsModule, composePublicAgentPage } from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,
@@ -41,6 +41,11 @@ export {
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
+export {
+  createPublicAgentRoutes,
+  type PublicAgentRoutesDeps,
+} from "./infrastructure/public-agent-routes.js";
 export {
   concreteResources,
   type DefaultResourceLimits,
