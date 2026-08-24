@@ -1,5 +1,7 @@
 import type { SlackBlock, SlackMessage } from "./slack-gateway.js";
 
+const PUBLIC_AGENT_PATH = "/a/";
+
 const CHAT_PATH = "/chat/";
 
 const LEGACY_AGENT_PATH = "/sandboxes/";
@@ -7,7 +9,7 @@ const LEGACY_AGENT_PATH = "/sandboxes/";
 export interface AgentFooter {
   uiBaseUrl: string;
   agentId: string;
-  agentName: string;
+  label: string;
   sessionId?: string;
 }
 
@@ -21,20 +23,16 @@ function escapeLinkLabel(name: string): string {
     .trim();
 }
 
-function unescapeLinkLabel(label: string): string {
-  return label
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .trim();
+export function agentFooterLabel(brand: { name: string }): string {
+  return `Powered by ${brand.name}`;
 }
 
 export function agentFooterMrkdwn(footer: AgentFooter): string {
-  const label = escapeLinkLabel(footer.agentName || footer.agentId);
+  const label = escapeLinkLabel(footer.label);
   const session = footer.sessionId
-    ? `/${encodeURIComponent(footer.sessionId)}`
+    ? `?s=${encodeURIComponent(footer.sessionId)}`
     : "";
-  return `<${footer.uiBaseUrl}${CHAT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
+  return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
 }
 
 export function agentContextBlock(footer: AgentFooter): SlackBlock {
@@ -45,12 +43,12 @@ export function agentContextBlock(footer: AgentFooter): SlackBlock {
 }
 
 const FOOTER_RE = new RegExp(
-  `<[^>|]*(?:${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:/[^>|]*)?\\|([^>]*)>`,
+  `<[^>|]*(?:${PUBLIC_AGENT_PATH}|${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:[/?][^>|]*)?\\|[^>]*>`,
 );
 
 export function parseAgentFooter(
   message: SlackMessage,
-): { agentId: string; agentName: string } | null {
+): { agentId: string } | null {
   for (const block of message.blocks ?? []) {
     if ((block as { type?: unknown }).type !== "context") continue;
     const elements = (block as { elements?: Array<{ text?: unknown }> })
@@ -60,7 +58,7 @@ export function parseAgentFooter(
       if (typeof text !== "string") continue;
       const match = text.match(FOOTER_RE);
       if (match) {
-        return { agentId: match[1], agentName: unescapeLinkLabel(match[2]) };
+        return { agentId: match[1] };
       }
     }
   }
@@ -100,14 +98,14 @@ export function formatSlackTs(ts: string): string {
 
 export function labelHistoryMessage(
   message: SlackMessage,
-  footer: { agentId: string; agentName: string } | null,
+  author: { agentId: string; name: string } | null,
   readingAgentId: string,
   bot: { userId: string | null; label: string },
 ): string {
-  const label = footer
-    ? footer.agentId === readingAgentId
+  const label = author
+    ? author.agentId === readingAgentId
       ? "you (this agent)"
-      : `${footer.agentName || footer.agentId} (another agent)`
+      : `${author.name || author.agentId} (another agent)`
     : bot.userId && message.user === bot.userId
       ? bot.label
       : (message.user ?? "unknown");

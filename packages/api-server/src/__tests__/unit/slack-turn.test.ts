@@ -280,7 +280,10 @@ describe("slack reply / react tools", () => {
     expect(posts.mock.calls[0]![0].blocks).toContainEqual({
       type: "context",
       elements: [
-        { type: "mrkdwn", text: "<http://ui/chat/agent-1/sess-42|agent-1>" },
+        {
+          type: "mrkdwn",
+          text: "<http://ui/a/agent-1?s=sess-42|Powered by DAM>",
+        },
       ],
     });
   });
@@ -295,7 +298,9 @@ describe("slack reply / react tools", () => {
 
     expect(posts.mock.calls[0]![0].blocks).toContainEqual({
       type: "context",
-      elements: [{ type: "mrkdwn", text: "<http://ui/chat/agent-1|agent-1>" }],
+      elements: [
+        { type: "mrkdwn", text: "<http://ui/a/agent-1|Powered by DAM>" },
+      ],
     });
   });
 
