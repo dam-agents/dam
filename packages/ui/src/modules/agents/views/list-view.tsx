@@ -29,7 +29,7 @@ export function ListView() {
 
   return (
     <div>
-      <PageHeader title="Sandboxes" />
+      <PageHeader title="Agents" />
 
       {initialLoaded && agents.length > 0 && (
         <>

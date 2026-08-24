@@ -54,7 +54,7 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
         <span className="flex items-center gap-1.5">
           <p className="text-sm text-muted-foreground">Compute allocated</p>
           <Tooltip
-            content="What your running sandboxes reserve, not what they are using. Stop or pause a sandbox to free it."
+            content="What your running agents reserve, not what they are using. Stop or pause an agent to free it."
             side="bottom"
           >
             <Help size={16} className="cursor-help text-muted-foreground/50" />
@@ -113,7 +113,7 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
               {STATE_LABEL[group.state]}
             </span>
             <span className="tabular-nums">
-              {group.agents} {group.agents === 1 ? "sandbox" : "sandboxes"} ·{" "}
+              {group.agents} {group.agents === 1 ? "agent" : "agents"} ·{" "}
               {formatCores(group.cpuMilli)} CPU ·{" "}
               {formatGi(group.memoryMi * BYTES_PER_MI)} Gi
             </span>
@@ -121,7 +121,7 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
         ))}
         {view.groups.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No sandbox is holding compute.
+            No agent is holding compute.
           </p>
         )}
       </div>

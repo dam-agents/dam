@@ -102,7 +102,7 @@ export function SchedulesWidget() {
 
         {schedules.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Nothing scheduled. A schedule wakes a sandbox and gives it a task on
+            Nothing scheduled. A schedule wakes an agent and gives it a task on
             a cadence you set.
           </p>
         ) : (

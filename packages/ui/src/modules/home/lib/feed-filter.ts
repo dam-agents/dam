@@ -96,7 +96,7 @@ export function emptyStateFor(
     return {
       title: "Nothing running",
       message:
-        "Unread and in-progress work show up here while a sandbox is running.",
+        "Unread and in-progress work show up here while an agent is running.",
       tone: "clear",
     };
   }
@@ -110,7 +110,7 @@ export function emptyStateFor(
     case "in-progress":
       return {
         title: "Nothing running",
-        message: "No sandbox is working right now.",
+        message: "No agent is working right now.",
         tone: "clear",
       };
     case "unread":
