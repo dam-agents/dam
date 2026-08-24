@@ -32,7 +32,8 @@ export function ProviderSelect({
   allow,
   recommended,
 }: Props) {
-  const { itemByType, typeByConnectionId, isPending } = useProviderItems();
+  const { itemByType, typeByConnectionId, isPending, isSuccess } =
+    useProviderItems();
   const [connecting, setConnecting] = useState<ProviderPresetType | null>(null);
   const [connected, setConnected] = useState<{
     id: string;
@@ -43,31 +44,31 @@ export function ProviderSelect({
     [allow, recommended],
   );
 
-  const selectedType = selected
+  const resolvedType = selected
     ? (typeByConnectionId.get(selected.id) ??
       (connected?.id === selected.id ? connected.type : null))
     : null;
+  const selectedType =
+    resolvedType && rows.some((row) => row.type === resolvedType)
+      ? resolvedType
+      : null;
 
-  const firstConnected = useMemo(
-    () => rows.map((r) => itemByType.get(r.type)).find(Boolean),
-    [rows, itemByType],
+  const autoSelectTarget = useMemo(
+    () =>
+      autoSelectFirst
+        ? rows.map((r) => itemByType.get(r.type)).find(Boolean)
+        : undefined,
+    [autoSelectFirst, rows, itemByType],
   );
 
   useEffect(() => {
-    if (isPending || selectedType) return;
-    if (autoSelectFirst && firstConnected) {
-      onSelect(providerRef(firstConnected));
+    if (!isSuccess || selectedType) return;
+    if (autoSelectTarget) {
+      onSelect(providerRef(autoSelectTarget));
     } else if (selected) {
       onSelect(null);
     }
-  }, [
-    isPending,
-    selectedType,
-    autoSelectFirst,
-    firstConnected,
-    selected,
-    onSelect,
-  ]);
+  }, [isSuccess, selectedType, autoSelectTarget, selected, onSelect]);
 
   const pick = async (type: ProviderPresetType) => {
     if (type === selectedType) return;
@@ -110,9 +111,7 @@ export function ProviderSelect({
         placeholder="Select a provider"
         ariaLabel="Provider"
         disabled={disabled}
-        invalid={
-          required && !selectedType && !(autoSelectFirst && firstConnected)
-        }
+        invalid={required && isSuccess && !selectedType && !autoSelectTarget}
         testId="provider-select"
       />
       {connecting && (
