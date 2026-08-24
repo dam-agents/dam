@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-08-21
+Last verified: 2026-08-24
 
 ## System context
 
@@ -62,6 +62,7 @@ Each page is the authoritative, self-contained description of its subsystem — 
 - [persistence](architecture/persistence.md) — the three substrates (Postgres, ConfigMap spec/status, per-Agent PVC) and what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — Keycloak identity, Envoy sidecar credential gateway, K8s-Secret credential storage, ext_authz HITL, network boundary.
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, inbound relay, outbound MCP tool, identity linking.
+- [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated app-origin surface, reached from the Slack Agent Footer: names a channel-bound Agent and its owner off a Postgres projection, one generic page for everything else.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [skills](architecture/skills.md) — connectable git-based skill sources, install onto the per-Agent PVC, reusable named selections a user carries between agents, REST-only publish back as a PR, Envoy sidecar credential injection for GitHub.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.

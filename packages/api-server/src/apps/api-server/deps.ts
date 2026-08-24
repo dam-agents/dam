@@ -18,6 +18,7 @@ import type {
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type {
   AgentCleanupHook,
   PresetSeeder,
@@ -100,5 +101,6 @@ export interface ApiServerDeps {
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
+  publicAgentPageService: PublicAgentPageService;
   sessionPresence: SessionPresence;
 }

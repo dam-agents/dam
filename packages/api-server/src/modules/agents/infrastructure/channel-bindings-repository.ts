@@ -36,6 +36,17 @@ export function listChannelsByAgent(db: Db, owner: string) {
   };
 }
 
+export function hasAnyBinding(db: Db) {
+  return async (agentId: string): Promise<boolean> => {
+    const rows = await db
+      .select({ agentId: channels.agentId })
+      .from(channels)
+      .where(eq(channels.agentId, agentId))
+      .limit(1);
+    return rows.length > 0;
+  };
+}
+
 async function upsertSlackChannel(
   runner: Db | Tx,
   owner: string,

@@ -18,6 +18,8 @@ configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
 
+const FOOTER_LABEL = "Powered by DAM";
+
 function harness(boundChannelId = "C1") {
   const gw = createFakeSlackGateway();
   const prompts: Array<string | ContentBlock[]> = [];
@@ -29,8 +31,14 @@ function harness(boundChannelId = "C1") {
     },
     triggerSession: () => Promise.reject(new Error("unused")),
   };
+  const AGENT_NAMES: Record<string, string> = {
+    "agent-1": "Helper",
+    "agent-99": "Ops",
+  };
   const agents = {
     ensureReady: async () => {},
+    get: async (id: string) =>
+      AGENT_NAMES[id] ? { id, name: AGENT_NAMES[id] } : null,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -78,7 +86,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            agentName: "Helper",
+            label: FOOTER_LABEL,
           }),
         ],
       },
@@ -90,7 +98,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-99",
-            agentName: "Ops",
+            label: FOOTER_LABEL,
           }),
         ],
       },
@@ -118,6 +126,48 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain("another agent");
     expect(prompt).not.toContain("agent-1");
     expect(prompt).not.toContain("agent-99");
+  });
+
+  /**
+   * TEST_SCENARIO: Every post made before the footer moved to /a/ still sits in
+   * channel history, carrying a /chat/ or /sandboxes/ URL. Attribution reaches
+   * back through all of it, and a legacy footer that stops parsing fails
+   * silently — the line just reattributes to the bare bot id. So each retired
+   * form has to attribute by name from injected history, not only from a parse.
+   */
+  it.each([
+    ["chat", "http://ui/chat/agent-99"],
+    ["chat with a session path", "http://ui/chat/agent-99/sess-42"],
+    ["sandboxes", "http://ui/sandboxes/agent-99"],
+  ])("names an agent behind a legacy %s footer", async (_form, url) => {
+    const h = harness();
+    h.gw.setHistory([
+      {
+        ts: "0.1",
+        user: "U-BOT",
+        text: "I ran the deploy",
+        blocks: [
+          {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: `<${url}|Ops>` }],
+          },
+        ],
+      },
+    ]);
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(
+      `Ops (another agent) [${formatSlackTs("0.1")}]: I ran the deploy`,
+    );
+    expect(prompt).not.toContain("U-BOT [");
   });
 
   /**
@@ -171,7 +221,8 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain(
       `U999 [${formatSlackTs("0.1")}]: just humans here`,
     );
-    expect(prompt).not.toContain("(this agent)");
+    expect(prompt).not.toContain("In the conversation history below");
+    expect(prompt).not.toContain("(this agent):");
     expect(prompt).not.toContain("(another agent)");
   });
 
@@ -186,7 +237,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            agentName: "Helper",
+            label: FOOTER_LABEL,
           }),
         ],
       },
@@ -221,7 +272,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            agentName: "Helper",
+            label: FOOTER_LABEL,
           }),
         ],
       },

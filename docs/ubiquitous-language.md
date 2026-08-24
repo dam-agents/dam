@@ -75,7 +75,8 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
 | Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
-| Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
+| Keycloak User Directory | Infrastructure port resolving a Keycloak `sub` to a user's display name or email, and an email back to a `sub`; backed by the Keycloak admin API |
+| Public Agent Page | The unauthenticated page a non-owner reaches from an Agent's Agent Footer. Names the Agent and its owner and pitches the install; follows the User-Facing Terminology rule, so it says *agent* throughout. Exists only for an Agent holding at least one Channel Binding; every other id — unknown, unbound, deleted, or one whose read failed — renders the same agent-less generic page, so neither the body nor the status confirms which Agents exist. Served from a Postgres projection owned by the Agents context, never a read-through to the K8s API |
 
 ## Channels (bounded context)
 
@@ -86,6 +87,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Channel Worker | A long-running process that bridges an external service to an Agent |
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Agent |
 | Shared Access | The one access model (per-person access modes are retired): the binding is the authorization — the Agent owner consents to a conversation surface, and anyone the messenger admits there may drive the Agent under the Agent's own credentials. No identity link; turns attributed by messenger-native sender id |
+| Agent Footer | The context block appended to every Agent post in a Slack conversation, linking to that Agent's Public Agent Page. Two separable parts: the **Agent id in the URL** is the wire format — parsed back out of channel history to attribute each line to the Agent that wrote it — and the **link label** is presentation, free for product to reword. Attribution never reads the label; a display name is resolved from the id at label time |
 
 ## Invocations (bounded context) — proposed, in-flight (PR #2816)
 

@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-08-21
+Last verified: 2026-08-24
 
 ## Overview
 
@@ -64,6 +64,9 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **skills catalog** — connected sources, per-Agent install records, publish history, and the per-user named skill selections a user carries between agents. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
 - **schedules** — RRULE, quiet hours, task payload, session mode, and firing bookkeeping (`schedules`). The api-server's schedule loop fires them; the controller plays no part. Owned by [agent-lifecycle](agent-lifecycle.md).
+- **public agent profiles** — a projection of each channel-bound Agent's name and owner (`agent_public_profiles`), serving the one unauthenticated read surface. It satisfies the rule above on every count: the controller does not reconcile it, only the api-server reads and writes it, and it must answer with no agent pod running. What is unusual is _why_ it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads. Owned by [public-agent-page](public-agent-page.md).
+
+Two of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile stores the real sub, as channel bindings already do. The difference is the requirement, not an oversight — a public page names its Agent's owner, and a hash cannot be resolved back to a person. Neither table can stand in for the other, and the pseudonymized one must not be extended to serve the page.
 
 The api-server is the sole writer for all of it. The controller does not touch Postgres — its bookkeeping lives on the `status` subresource of the custom resources it owns. The authoritative schema and migrations live in [`packages/db/`](../../packages/db/): migrations run automatically on api-server startup — table/index/enum changes generated from the schema, the reporting views hand-written — with the original history squashed to a baseline that fresh installs run and existing deployments skip, and a no-database guard asserting every schema change was generated (workflow in [`packages/db/README.md`](../../packages/db/README.md)).
 

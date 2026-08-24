@@ -60,6 +60,19 @@ data:
             proxy_send_timeout 86400s;
         }
 
+        # The app ships as one 654KB entry chunk plus a 1.9MB lazily-loaded
+        # chunk. The public agent page is the one surface where a stranger on a
+        # phone pays that cost, arriving from a Slack link.
+        # nginx 1.21+ serves .js as text/javascript, not application/javascript;
+        # listing only the latter silently compresses nothing.
+        gzip              on;
+        gzip_comp_level   6;
+        gzip_min_length   1024;
+        gzip_vary         on;
+        gzip_types        text/plain text/css text/javascript
+                          application/javascript application/json
+                          application/manifest+json image/svg+xml;
+
         location / {
             try_files $uri $uri/ /index.html;
         }

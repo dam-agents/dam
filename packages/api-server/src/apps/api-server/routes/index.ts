@@ -9,6 +9,7 @@ import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastruct
 import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
 import { createBrandRoutes } from "./brand.js";
+import { createPublicAgentRoutes } from "../../../modules/agents/index.js";
 
 type App = Hono<{ Variables: ApiVariables }>;
 
@@ -40,6 +41,10 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   );
   app.get("/api/terms", (c) => c.json(terms.document()));
   app.route("/api/brand", createBrandRoutes(config.brand));
+  app.route(
+    "/api/public",
+    createPublicAgentRoutes({ service: boot.publicAgentPageService }),
+  );
 
   app.route(
     "/api/oauth",

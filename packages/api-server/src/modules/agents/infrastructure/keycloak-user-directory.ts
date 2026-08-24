@@ -1,6 +1,7 @@
 export interface KeycloakUserDirectory {
   resolveByEmail(email: string): Promise<string | null>;
   resolveBySub(sub: string): Promise<string | null>;
+  resolveDisplayNameBySub(sub: string): Promise<string | null>;
   resolveManyBySub(subs: string[]): Promise<Map<string, string>>;
   isActive(sub: string): Promise<boolean>;
 }
@@ -17,9 +18,42 @@ interface CachedToken {
   expiresAt: number;
 }
 
+export interface DirectoryUser {
+  email: string | null;
+  displayName: string | null;
+}
+
+interface CachedUser {
+  user: DirectoryUser | null;
+  expiresAt: number;
+}
+
 interface CachedLookup {
   email: string | null;
   expiresAt: number;
+}
+
+export interface KeycloakUserRecord {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Keycloak keeps the given and family name in
+ * separate fields and either can be missing, so the display name is whatever
+ * parts exist joined by a space. A record with neither has no display name at
+ * all — callers must render nothing rather than fall back to the email, which
+ * is a real mailbox and would leak on the unauthenticated Public Agent Page.
+ */
+export function toDirectoryUser(record: KeycloakUserRecord): DirectoryUser {
+  const parts = [record.firstName, record.lastName]
+    .map((part) => part?.trim())
+    .filter((part): part is string => !!part);
+  return {
+    email: record.email ?? null,
+    displayName: parts.length > 0 ? parts.join(" ") : null,
+  };
 }
 
 const TOKEN_MARGIN_SECONDS = 30;
@@ -29,7 +63,7 @@ export function createKeycloakUserDirectory(
   config: KeycloakUserDirectoryConfig,
 ): KeycloakUserDirectory {
   let tokenCache: CachedToken | null = null;
-  const subToEmailCache = new Map<string, CachedLookup>();
+  const subCache = new Map<string, CachedUser>();
   const emailToSubCache = new Map<string, CachedLookup>();
 
   async function getAdminToken(): Promise<string> {
@@ -75,6 +109,31 @@ export function createKeycloakUserDirectory(
     );
   }
 
+  async function fetchUser(sub: string): Promise<DirectoryUser | null> {
+    const now = Date.now();
+    const cached = subCache.get(sub);
+    if (cached && cached.expiresAt > now) return cached.user;
+
+    try {
+      const res = await adminFetch(`/users/${encodeURIComponent(sub)}`);
+      if (!res.ok) {
+        process.stderr.write(
+          `[keycloak-user-directory] user lookup ${sub} failed: ${res.status}\n`,
+        );
+        subCache.set(sub, { user: null, expiresAt: now + LOOKUP_TTL_MS });
+        return null;
+      }
+      const user = toDirectoryUser((await res.json()) as KeycloakUserRecord);
+      subCache.set(sub, { user, expiresAt: now + LOOKUP_TTL_MS });
+      return user;
+    } catch (err) {
+      process.stderr.write(
+        `[keycloak-user-directory] user lookup ${sub} errored: ${err}\n`,
+      );
+      return null;
+    }
+  }
+
   return {
     async resolveByEmail(email) {
       const now = Date.now();
@@ -89,7 +148,9 @@ export function createKeycloakUserDirectory(
           `Keycloak user lookup by email failed: ${res.status} ${body}`,
         );
       }
-      const users = (await res.json()) as Array<{ id: string; email?: string }>;
+      const users = (await res.json()) as Array<
+        { id: string } & KeycloakUserRecord
+      >;
       const sub =
         users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ??
         null;
@@ -99,9 +160,9 @@ export function createKeycloakUserDirectory(
       });
       if (sub) {
         const lookedUp = users.find((u) => u.id === sub);
-        if (lookedUp?.email) {
-          subToEmailCache.set(sub, {
-            email: lookedUp.email,
+        if (lookedUp) {
+          subCache.set(sub, {
+            user: toDirectoryUser(lookedUp),
             expiresAt: now + LOOKUP_TTL_MS,
           });
         }
@@ -110,32 +171,11 @@ export function createKeycloakUserDirectory(
     },
 
     async resolveBySub(sub) {
-      const now = Date.now();
-      const cached = subToEmailCache.get(sub);
-      if (cached && cached.expiresAt > now) return cached.email;
+      return (await fetchUser(sub))?.email ?? null;
+    },
 
-      try {
-        const res = await adminFetch(`/users/${encodeURIComponent(sub)}`);
-        if (!res.ok) {
-          process.stderr.write(
-            `[keycloak-user-directory] resolveBySub ${sub} failed: ${res.status}\n`,
-          );
-          subToEmailCache.set(sub, {
-            email: null,
-            expiresAt: now + LOOKUP_TTL_MS,
-          });
-          return null;
-        }
-        const user = (await res.json()) as { id: string; email?: string };
-        const email = user.email ?? null;
-        subToEmailCache.set(sub, { email, expiresAt: now + LOOKUP_TTL_MS });
-        return email;
-      } catch (err) {
-        process.stderr.write(
-          `[keycloak-user-directory] resolveBySub ${sub} errored: ${err}\n`,
-        );
-        return null;
-      }
+    async resolveDisplayNameBySub(sub) {
+      return (await fetchUser(sub))?.displayName ?? null;
     },
 
     async isActive(sub) {
@@ -153,19 +193,9 @@ export function createKeycloakUserDirectory(
 
     async resolveManyBySub(subs) {
       const result = new Map<string, string>();
-      const missing: string[] = [];
-      const now = Date.now();
-      for (const sub of subs) {
-        const cached = subToEmailCache.get(sub);
-        if (cached && cached.expiresAt > now) {
-          if (cached.email) result.set(sub, cached.email);
-          continue;
-        }
-        missing.push(sub);
-      }
       await Promise.all(
-        missing.map(async (sub) => {
-          const email = await this.resolveBySub(sub);
+        subs.map(async (sub) => {
+          const email = (await fetchUser(sub))?.email;
           if (email) result.set(sub, email);
         }),
       );
