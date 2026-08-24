@@ -89,11 +89,14 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
   normalized or ranked), Artifact Library references, and an opaque attrs bag.
 - **Script Artifact** — the script source, versioned in the Artifact Library.
   Everything platform-managed for a lineage — draft script + dashboard,
-  every run's script clone and results page — lives in the lineage's folder
-  (`Experiments / <name>`), keeping the library root free of stock
-  artifacts. Postgres never stores source; every run records the exact
-  version it executed, and a `run-start` announcing a changed sha publishes
-  the next version — divergence is visible history.
+  every run's script clone and results page — is published into the lineage's
+  folder (`Experiments / <name>`), keeping the library root free of stock
+  artifacts. That folder is a filing convenience, not the record: the
+  experiment names the artifacts it owns, so an owner may move one out or file
+  an unrelated one in without changing what a run consists of. Postgres never
+  stores source; every run records the exact version it executed, and a
+  `run-start` announcing a changed sha publishes the next version — divergence
+  is visible history.
 - **Dashboard Artifact** — the HTML renderer of the Trace Feed: a
   platform-shipped stock dashboard auto-published at plan registration, or a
   bespoke one the agent generated. Rendered in the sealed in-app iframe; data
