@@ -46,7 +46,7 @@ The new per-agent relay is the third activity policy on this surface, and every 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 ✅ | Pod tRPC over WebSocket, and the agent relay | Pod serves its existing router over WS; api-server adds the fourth relay with the policy above. No UI change. | — |
-| 02 | Per-agent UI client moves to WebSocket | `createAgentTrpc` becomes a WS client; unreachability from connection state; reachability probe retires. | 01 |
+| 02 ✅ | Per-agent UI client moves to WebSocket | `createAgentTrpc` becomes a WS client; unreachability from connection state; reachability probe retires. | 01 |
 | 03 | `sessions.list` on the pod router | agent-runtime composes the list (harness ∪ own store, closing the ADR-055 gap); UI reads it over the per-agent client. Poll stays. | 02 |
 | 04 | Session Watch | `sessions.watch`, terminal falling-edge timer, widened PTY window; UI drops the 5s poll. | 03 |
 | 05 | Workspace tree Watch | Pod-side watch machinery + tree topic; UI drops the 2s tree poll. | 02 |

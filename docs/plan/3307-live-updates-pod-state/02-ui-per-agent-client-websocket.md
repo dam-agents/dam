@@ -15,10 +15,10 @@ This slice is also where the readiness churn dies. `ensureReady` runs on *every*
 
 Apply `/react-ui-engineering`.
 
-1. **`packages/ui/src/modules/agents/agent-trpc.ts`** — rebuild `createAgentTrpc` as `createWSClient` + `wsLink`, mirroring `packages/ui/src/api.ts`. Point the URL at `/api/agents/${agentId}/trpc-ws`, pass the token through `connectionParams` the way `api.ts` does rather than as a header (headers are not available on a WS upgrade from the browser), and keep `lazy` and `keepAlive` consistent with `api.ts`.
+1. **`packages/ui/src/modules/agents/agent-trpc.ts`** — rebuild `createAgentTrpc` as `createWSClient` + `wsLink`, mirroring `packages/ui/src/api.ts`. Point the URL at `/api/agents/${agentId}/trpc-ws` and put the token **in the query string**, not in `connectionParams` and not as a header. `api.ts` can use `connectionParams` because `/api/trpc-ws` is routed through `selfAuthenticated(trpcWs)` and authenticates on the first frame; the per-agent relay goes through `relayRoute`, and `createRelayAdmission` reads `url.searchParams.get("token")`. So this client follows the ACP client instead (`modules/acp/acp.ts`). `url` accepts a callback, so mint a fresh token per connection — that also covers credential rotation across reconnects.
 2. **Unreachability moves to connection state.** Today the client's `fetch` wrapper scrapes HTTP 502 to call `markAgentUnreachable` / `clearAgentUnreachable`. A WebSocket has no per-call status, so drive those from `createWSClient`'s `onOpen` / `onClose` / `onError` — the same pattern `api.ts` uses to feed the api-health tracker. This is strictly better than the status-scraping it replaces, which treated any 502 from any procedure as agent-level unreachability.
 3. **Client cache.** Three call sites each memoize their own client (`files/api/queries.ts` has a module-level `Map`, `harness-config.ts` has `agentTrpcFor`, the probe memoizes per render). A WebSocket per client instance makes duplication expensive where it previously was not — consolidate to one shared per-agent client cache and have all three use it. Make sure the cache disposes the socket when an agent is no longer in use, or a session of agent-hopping leaks sockets.
-4. **Retire the reachability probe.** `packages/ui/src/modules/agents/hooks/use-agent-reachability-probe.ts` polls `files.listDirs({paths:[""]})` every 3s while an agent is marked unreachable. Connection state now carries that signal, so delete the hook and its call site rather than leaving a vestigial poller.
+4. **Retire the reachability *poll*, but keep the hook's other job.** `use-agent-reachability-probe.ts` does two things: it polls `files.listDirs({paths:[""]})` every 3s while an agent is marked unreachable, and it clears the unreachable flag whenever the agent's run state is not `running`. Only the poll is replaced by connection state. The clearing effect is load-bearing: `useIsAgentOperable` gates the file and session queries on the flag, and with `lazy` enabled the socket only reopens on demand — so a flag left set disables the very queries that would reopen the connection, and nothing recovers. Slim the file to that effect and rename it (`use-agent-reachability.ts`).
 5. **Leave the polls alone.** The 5s session poll and both 2s file polls stay exactly as they are; they move transport but not mechanism. Sub-issues 04, 05 and 06 remove them.
 6. Run `mise run ui:fix`.
 
@@ -29,7 +29,7 @@ Apply `/react-ui-engineering`.
 - [ ] One WebSocket per open agent, not one per call site — verifiable in DevTools' network tab.
 - [ ] With the chat view open, `last-activity` is patched on a ~30s cadence rather than every 2s.
 - [ ] Stopping an agent while its view is open marks it unreachable through connection state, and starting it again clears that without a probe.
-- [ ] `use-agent-reachability-probe.ts` is deleted and has no remaining references.
+- [ ] The 3s poll is gone; the hook retains only its run-state flag reconciliation, renamed to `use-agent-reachability.ts`.
 - [ ] Switching between several agents in one session does not accumulate open sockets.
 
 ## Smoke test
