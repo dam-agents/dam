@@ -147,10 +147,23 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      const from = args.oldest
-        ? history.filter((m) => Number(m.ts) >= Number(args.oldest))
-        : [...history];
+      const oldest = args.oldest;
+      const from =
+        oldest === undefined
+          ? [...history]
+          : history.filter((m, i) => {
+              if (i === 0) return true;
+              if (m.ts === undefined) return true;
+              const at = Number(m.ts);
+              const floor = Number(oldest);
+              if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
+              return at >= floor;
+            });
       return from.slice(0, args.limit);
+    },
+
+    async getThreadTail(args) {
+      return history.slice(Math.max(0, history.length - args.limit));
     },
 
     async getChannelHistory() {

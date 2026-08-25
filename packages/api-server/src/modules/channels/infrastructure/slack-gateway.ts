@@ -148,6 +148,12 @@ export interface SlackGateway {
     limit: number;
     oldest?: string;
   }): Promise<SlackMessage[]>;
+  getThreadTail(args: {
+    channel: string;
+    threadTs: string;
+    limit: number;
+    maxPages?: number;
+  }): Promise<SlackMessage[]>;
   getChannelHistory(args: {
     channel: string;
     limit: number;

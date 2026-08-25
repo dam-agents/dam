@@ -33,6 +33,15 @@ export function lastOwnPostTs<T>(
   return found;
 }
 
+export function newestTs<T>(entries: ThreadEntry<T>[]): string | null {
+  let found: string | null = null;
+  for (const entry of entries) {
+    if (!entry.ts) continue;
+    found = found === null ? entry.ts : laterTs(found, entry.ts);
+  }
+  return found;
+}
+
 export function selectUnseen<T>(
   entries: ThreadEntry<T>[],
   selection: CatchUpSelection,

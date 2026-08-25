@@ -421,4 +421,87 @@ describe("what a later mention turn sees of a thread it was away from", () => {
     expect(third.text).toContain(PEER_WORDS);
     expect(third.text).toContain("Ops (another agent)");
   });
+
+  /**
+   * TEST_SCENARIO: More arrived than one read returns. The boundary may only
+   * move as far as the read actually reached — stepping it to the triggering
+   * message would skip the surplus and then step over it for good, which is the
+   * loss the boundary exists to prevent. The surplus is carried by the turn
+   * after instead, so a burst costs an extra turn rather than the messages.
+   */
+  it("moves the boundary no further than a capped read reached", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    const flood = Array.from({ length: 59 }, (_, i) => ({
+      ts: `1.${String(i + 1).padStart(3, "0")}`,
+      user: "U555",
+      text: `chatter ${i + 1}`,
+    }));
+    const late = footered(PEER, "1.060", PEER_WORDS);
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(mention(THREAD_TS, "<@U-BOT> Helper look", false));
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      ...flood,
+      late,
+      { ts: "1.061", user: "U999", text: "<@U-BOT> Helper still there" },
+    ]);
+    await h.gw.fireMention(mention("1.061", "<@U-BOT> Helper still there"));
+
+    expect(h.prompts).toHaveLength(2);
+    expect(h.prompts[1]!.resumed).toBe(true);
+    expect(h.prompts[1]!.text).not.toContain(PEER_WORDS);
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      ...flood,
+      late,
+      { ts: "1.061", user: "U999", text: "<@U-BOT> Helper still there" },
+      { ts: "1.062", user: "U999", text: "<@U-BOT> Helper so are we clear" },
+    ]);
+    await h.gw.fireMention(mention("1.062", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(3);
+    const third = h.prompts[2]!;
+    expect(third.resumed).toBe(true);
+    expect(third.text).toContain(PEER_WORDS);
+    expect(third.text).toContain("Ops (another agent)");
+  });
+
+  /**
+   * TEST_SCENARIO: The boundary is gone — a restart or handover — on a thread
+   * longer than one page. Standing in for it means finding the agent's own last
+   * post, which sits at the thread's recent end; reading the thread's beginning
+   * finds an early post of its own, or none, and hands back no catch-up. The
+   * stand-in reads the tail, so the peer's reply survives the handover.
+   */
+  it("derives a lost boundary from the tail of a long thread", async () => {
+    const h = harness([boundSession()]);
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    const filler = Array.from({ length: 57 }, (_, i) => ({
+      ts: `1.${String(i + 1).padStart(3, "0")}`,
+      user: "U555",
+      text: `chatter ${i + 1}`,
+    }));
+
+    h.gw.setHistory([
+      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      ...filler,
+      footered(SELF, "1.058", "looking now"),
+      footered(PEER, "1.059", PEER_WORDS),
+      { ts: "1.061", user: "U999", text: "<@U-BOT> Helper so are we clear" },
+    ]);
+    await h.gw.fireMention(mention("1.061", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(1);
+    const only = h.prompts[0]!;
+    expect(only.resumed).toBe(true);
+    expect(only.text).toContain(PEER_WORDS);
+    expect(only.text).toContain("Ops (another agent)");
+    expect(only.text).not.toContain("chatter 1 ");
+  });
 });

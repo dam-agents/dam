@@ -239,6 +239,31 @@ export function createBoltSlackGateway(
       }));
     },
 
+    async getThreadTail(args): Promise<SlackMessage[]> {
+      if (!app) return [];
+      const maxPages = args.maxPages ?? 10;
+      let cursor: string | undefined;
+      let tail: SlackMessage[] = [];
+      for (let page = 0; page < maxPages; page += 1) {
+        const replies = await app.client.conversations.replies({
+          channel: args.channel,
+          ts: args.threadTs,
+          limit: args.limit,
+          ...(cursor ? { cursor } : {}),
+        });
+        tail = (replies.messages ?? []).map((m) => ({
+          ts: m.ts,
+          user: m.user,
+          text: m.text,
+          blocks: m.blocks as SlackMessage["blocks"],
+          ...(m.edited ? { edited: true } : {}),
+        }));
+        cursor = replies.response_metadata?.next_cursor || undefined;
+        if (!cursor) break;
+      }
+      return tail;
+    },
+
     async getChannelHistory(args): Promise<SlackMessage[]> {
       if (!app) return [];
       const history = await app.client.conversations.history({

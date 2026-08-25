@@ -105,6 +105,7 @@ import {
 import {
   isAfterTs,
   lastOwnPostTs,
+  newestTs,
   selectUnseen,
   type CatchUpSelection,
 } from "../domain/thread-catch-up.js";
@@ -519,6 +520,8 @@ async function getContextMessages(
   lines: string[];
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
+  readNewestTs: string | null;
+  readTruncated: boolean;
 }> {
   const raw = threadTs
     ? await gateway.getThreadReplies({
@@ -570,6 +573,8 @@ async function getContextMessages(
     hasUnattributedBot: entries.some(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
+    readNewestTs: newestTs(all),
+    readTruncated: raw.length >= THREAD_LOOKBACK,
   };
 }
 
@@ -1459,7 +1464,7 @@ export function createSlackWorker(
         readThreadSeen(ctx.instanceName, threadKey) ??
         lastOwnPostTs(
           (
-            await gw.getThreadReplies({
+            await gw.getThreadTail({
               channel: ctx.channel,
               threadTs: ctx.threadTs,
               limit: THREAD_LOOKBACK,
@@ -1476,21 +1481,26 @@ export function createSlackWorker(
         userId: await gw.getBotUserId().catch(() => null),
         label: botHistoryLabel(brand),
       };
-      const { lines, hasUnattributedBot } = await getContextMessages(
-        gw,
-        ctx.channel,
-        ctx.eventTs,
+      const { lines, hasUnattributedBot, readNewestTs, readTruncated } =
+        await getContextMessages(
+          gw,
+          ctx.channel,
+          ctx.eventTs,
+          ctx.instanceName,
+          ctx.threadTs,
+          bot,
+          resolveAgentName,
+          {
+            readingAgentId: ctx.instanceName,
+            since,
+            triggeringTs: ctx.eventTs,
+          },
+        );
+      noteThreadSeen(
         ctx.instanceName,
-        ctx.threadTs,
-        bot,
-        resolveAgentName,
-        {
-          readingAgentId: ctx.instanceName,
-          since,
-          triggeringTs: ctx.eventTs,
-        },
+        threadKey,
+        readTruncated ? readNewestTs : ctx.eventTs,
       );
-      noteThreadSeen(ctx.instanceName, threadKey, ctx.eventTs);
       if (lines.length === 0) return {};
       return {
         context: lines,
