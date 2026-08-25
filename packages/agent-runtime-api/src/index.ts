@@ -2,6 +2,14 @@ export type { AppRouter } from "./router.js";
 export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
 export type {
+  FileContentNotice,
+  WorkspaceNotice,
+} from "./modules/files/types.js";
+export {
+  fileContentNoticeSchema,
+  workspaceNoticeSchema,
+} from "./modules/files/schemas.js";
+export type {
   PodSession,
   PodSessionList,
   PodSessionMode,

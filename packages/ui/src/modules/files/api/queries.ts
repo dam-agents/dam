@@ -29,13 +29,13 @@ interface ListDirsResponse {
   results: DirListResult[];
 }
 
-function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
+export function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
   return useStore((s) =>
     agentId ? (s.expandedDirs[agentId] ?? EMPTY_EXPANDED) : EMPTY_EXPANDED,
   );
 }
 
-function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
+export function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
   return ["", ...expanded].sort();
 }
 
@@ -50,7 +50,6 @@ export function useDirSnapshot(agentId: string | null, path: string) {
       return trpc.files.listDirs.query({ paths });
     },
     enabled: !!agentId && operable,
-    refetchInterval: 2000,
     staleTime: 2000,
     placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,

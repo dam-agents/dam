@@ -1,13 +1,10 @@
-import type {
-  PodSession,
-  PodSessionNotice,
-  SessionsService,
-} from "agent-runtime-api";
+import type { PodSession, SessionsService } from "agent-runtime-api";
 
 import {
   composeSessionList,
   type ListedHarnessSession,
 } from "../domain/session-list.js";
+import { noticeStream } from "../../../core/notice-stream.js";
 import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
@@ -43,31 +40,14 @@ export function createSessionsService(deps: {
       }
     },
 
-    async *watch(signal): AsyncGenerator<PodSessionNotice> {
-      const pending: PodSessionNotice[] = [{ topic: "sessions" }];
-      let wake: (() => void) | undefined;
-      const unsubscribe = deps.changes.subscribe(() => {
-        if (pending.length === 0) pending.push({ topic: "sessions" });
-        wake?.();
-      });
-      const onAbort = () => wake?.();
-      signal?.addEventListener("abort", onAbort, { once: true });
-      try {
-        while (!signal?.aborted) {
-          const next = pending.shift();
-          if (next === undefined) {
-            await new Promise<void>((resolve) => {
-              wake = resolve;
-            });
-            wake = undefined;
-            continue;
-          }
-          yield next;
-        }
-      } finally {
-        signal?.removeEventListener("abort", onAbort);
-        unsubscribe();
-      }
-    },
+    watch: (signal) =>
+      noticeStream(
+        { topic: "sessions" } as const,
+        (onChange) => {
+          const unsubscribe = deps.changes.subscribe(onChange);
+          return { close: unsubscribe };
+        },
+        signal,
+      ),
   };
 }
