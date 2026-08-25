@@ -40,9 +40,14 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
   const prompts: Array<{ resumed: boolean; text: string }> = [];
   const created: AcpSessionInfo[] = [];
 
+  const failSends = { count: 0 };
   const acp: AcpClient = {
     listSessions: async () => [...existingSessions, ...created],
     sendPrompt: async (prompt: string | ContentBlock[], opts) => {
+      if (failSends.count > 0) {
+        failSends.count -= 1;
+        throw new Error("acp prompt failed");
+      }
       const text =
         typeof prompt === "string"
           ? prompt
@@ -129,7 +134,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     () => {},
   );
 
-  return { gw, prompts, worker, failThreadReads };
+  return { gw, prompts, worker, failThreadReads, failSends };
 }
 
 function footered(agentId: string, ts: string, text: string) {
@@ -517,6 +522,41 @@ describe("what a later mention turn sees of a thread it was away from", () => {
   });
 
   /**
+   * TEST_SCENARIO: The turn is built but never reaches the agent. Reading the
+   * messages is not the same as delivering them, so a boundary recorded while
+   * the prompt is assembled steps over messages a failed send never carried.
+   * It moves on the send's success instead, leaving a failed turn's window for
+   * the next one to pick up.
+   */
+  it("keeps the boundary where it was when the send fails", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
+    expect(h.prompts).toHaveLength(1);
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(SELF, "1.1", "looking now"),
+      footered(PEER, "1.3", PEER_WORDS),
+    ]);
+
+    h.failSends.count = 2;
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper any news"));
+    expect(h.prompts).toHaveLength(1);
+
+    await h.gw.fireMention(mention("1.5", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(2);
+    const later = h.prompts[1]!;
+    expect(later.text).toContain(PEER_WORDS);
+    expect(later.text).toContain("Ops (another agent)");
+  });
+
+  /**
    * TEST_SCENARIO: The tail read spans pages. A paged read that keeps only the
    * page it happened to end on returns whatever remainder the thread's length
    * left over — a handful of messages, not the newest window it was asked for —
@@ -547,6 +587,45 @@ describe("what a later mention turn sees of a thread it was away from", () => {
       { ts: "1.120", user: "U999", text: "<@U-BOT> Helper so are we clear" },
     ]);
     await h.gw.fireMention(mention("1.120", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(1);
+    const only = h.prompts[0]!;
+    expect(only.resumed).toBe(true);
+    expect(only.text).toContain(PEER_WORDS);
+    expect(only.text).toContain("Ops (another agent)");
+  });
+
+  /**
+   * TEST_SCENARIO: Slack repeats the thread's opening message in every page, so
+   * a fold that counts what it is handed spends a slot of its window on that
+   * repeat per page and keeps fewer real messages than it was asked for — the
+   * oldest of them, the agent's own last post among them, falling off the end.
+   * The window counts distinct messages, so the repeat costs nothing.
+   */
+  it("counts distinct messages against the window, not the repeated parent", async () => {
+    const h = harness([boundSession()]);
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    const before = Array.from({ length: 71 }, (_, i) => ({
+      ts: `1.${String(i + 1).padStart(3, "0")}`,
+      user: "U555",
+      text: `chatter ${i + 1}`,
+    }));
+    const after = Array.from({ length: 47 }, (_, i) => ({
+      ts: `1.${String(i + 74).padStart(3, "0")}`,
+      user: "U555",
+      text: `later ${i + 1}`,
+    }));
+
+    h.gw.setHistory([
+      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      ...before,
+      footered(SELF, "1.072", "looking now"),
+      footered(PEER, "1.073", PEER_WORDS),
+      ...after,
+      { ts: "1.121", user: "U999", text: "<@U-BOT> Helper so are we clear" },
+    ]);
+    await h.gw.fireMention(mention("1.121", "<@U-BOT> Helper so are we clear"));
 
     expect(h.prompts).toHaveLength(1);
     const only = h.prompts[0]!;

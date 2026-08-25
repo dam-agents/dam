@@ -56,9 +56,34 @@ export function nextBoundary(
   return laterTs(stored, reached);
 }
 
-export function foldTailPage<T>(window: T[], page: T[], limit: number): T[] {
-  const next = [...window, ...page];
-  return next.length > limit ? next.slice(next.length - limit) : next;
+export interface TailFold<T> {
+  window: T[];
+  seen: Set<string>;
+}
+
+export function emptyTailFold<T>(): TailFold<T> {
+  return { window: [], seen: new Set() };
+}
+
+export function foldTailPage<T extends { ts?: string }>(
+  state: TailFold<T>,
+  page: T[],
+  limit: number,
+): TailFold<T> {
+  const seen = new Set(state.seen);
+  const fresh: T[] = [];
+  for (const entry of page) {
+    if (entry.ts !== undefined) {
+      if (seen.has(entry.ts)) continue;
+      seen.add(entry.ts);
+    }
+    fresh.push(entry);
+  }
+  const next = [...state.window, ...fresh];
+  return {
+    window: next.length > limit ? next.slice(next.length - limit) : next,
+    seen,
+  };
 }
 
 export function selectUnseen<T>(

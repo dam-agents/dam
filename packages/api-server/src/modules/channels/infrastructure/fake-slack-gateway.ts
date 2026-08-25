@@ -1,6 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
-import { foldTailPage } from "../domain/thread-catch-up.js";
+import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelMessageEvent,
   SlackGateway,
@@ -43,16 +43,24 @@ export interface FakeSlackGateway extends SlackGateway {
  * UNIT_BOUNDARY_DESCRIPTION: One page and the cursor that follows it. The
  * paging signal is page state — whether a next cursor exists — never a count of
  * the messages handed back, which the gateway contract forbids inferring from
- * because the thread parent rides along in every page.
+ * because the thread parent rides along in every page. That repeat is modelled
+ * on every page but the first, since a caller folding pages together has to
+ * cope with it and would not see the need from a fake that tidied it away.
  */
 function pageOf(
   window: SlackMessage[],
   cursor: number,
   limit: number,
 ): { messages: SlackMessage[]; nextCursor: number | null } {
-  const messages = window.slice(cursor, cursor + limit);
-  const consumed = cursor + messages.length;
-  return { messages, nextCursor: consumed < window.length ? consumed : null };
+  const parent = window[0];
+  const repeatParent = cursor > 0 && parent !== undefined;
+  const room = repeatParent ? limit - 1 : limit;
+  const slice = window.slice(cursor, cursor + room);
+  const consumed = cursor + slice.length;
+  return {
+    messages: repeatParent ? [parent, ...slice] : slice,
+    nextCursor: consumed < window.length ? consumed : null,
+  };
 }
 
 /**
@@ -192,7 +200,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async getThreadTail(args) {
       const all = threadWindowOf(history, undefined);
       const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
-      let window: SlackMessage[] = [];
+      let fold = emptyTailFold<SlackMessage>();
       let cursor: number | null = 0;
       let stoppedShort = false;
       for (let read = 0; ; read += 1) {
@@ -201,11 +209,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
           break;
         }
         const page = pageOf(all, cursor, args.limit);
-        window = foldTailPage(window, page.messages, args.limit);
+        fold = foldTailPage(fold, page.messages, args.limit);
         cursor = page.nextCursor;
         if (cursor === null) break;
       }
-      return { messages: window, hasMore: stoppedShort };
+      return { messages: fold.window, hasMore: stoppedShort };
     },
 
     async getChannelHistory() {
