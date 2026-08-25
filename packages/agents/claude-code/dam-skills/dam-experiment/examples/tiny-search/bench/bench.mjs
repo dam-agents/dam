@@ -1,19 +1,3 @@
-/**
- * Deterministic benchmark for TinySearch.
- *
- * Same seed → same corpus, same operations, same result checksum. The
- * checksum folds the ids and scores of every query's results, so a rewrite
- * that changes search semantics changes the checksum even if it gets faster.
- *
- * Usage:
- *   node bench/bench.mjs --scenario query-heavy --n 5000 --ops 400 --seed 1
- *   node bench/bench.mjs --scenario index-heavy --n 5000 --ops 2000 --seed 1
- *   node bench/bench.mjs --scenario mixed       --n 5000 --ops 400 --seed 1
- *
- * Prints one JSON line: p50_us, p95_us, mean_us (per-operation latency in
- * microseconds), ops_per_sec, build_ms (initial corpus load), checksum.
- */
-
 import { TinySearch } from "../src/tiny-search.js";
 
 function mulberry32(seed) {
@@ -40,8 +24,6 @@ const WORDS = (
   "quince raisin walnut engine wheel spring bolt gear lever piston valve"
 ).split(/\s+/);
 
-// Zipf-ish bias: squaring the uniform draw favors low indexes, so early
-// words are common and late words are rare — realistic term frequencies.
 function pickWord(rand) {
   const r = rand();
   return WORDS[Math.floor(r * r * WORDS.length)];

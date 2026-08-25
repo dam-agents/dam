@@ -1,21 +1,3 @@
-/**
- * TinySearch — a minimal in-memory full-text search index for Node.
- *
- * Deliberately naive: documents are stored as raw text, and every call to
- * search() re-tokenizes every document from scratch and scans the full token
- * list once per query term. There is no index of any kind. The slowness is
- * the exercise — do not "fix" this file outside an optimization campaign.
- *
- * Behavioral contract (pinned by the test suite):
- * - tokenize(): lowercase, split on any run of non-alphanumeric characters.
- * - search() uses AND semantics: a document matches only if it contains
- *   every query term at least once.
- * - score = total number of occurrences of all query terms in the document.
- * - Results are ordered by score descending, ties broken by id ascending
- *   (plain string comparison), capped at `limit` (default 10).
- * - add() with an existing id replaces that document.
- */
-
 export function tokenize(text) {
   return text
     .toLowerCase()

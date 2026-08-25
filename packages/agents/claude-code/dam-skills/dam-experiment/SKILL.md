@@ -135,11 +135,11 @@ whole envelope and get an explicit yes before writing the script:
   rather than at the first failed spawn.
 - **Iteration counts**: your loop's rounds, plus any the worker runs
   internally. Total runtime multiplies through them.
-- **Expected duration, stated in human terms.** "~25 min per campaign
-  iteration, two iterations, one round — about 1 h with queue slack" is a
-  deciding factor, not a footnote: the human may cut seeds or rounds to fit
-  the time they have, so give them the per-unit cost that makes that trade
-  legible. The `ttl_ms` you set is derived from this number — never the other
+- **Expected duration, stated in human terms.** "~1 h per campaign
+  iteration, one confirming iteration, one round — about 1 h with queue
+  slack" is a deciding factor, not a footnote: the human may cut seeds or
+  rounds to fit the time they have, so give them the per-unit cost that
+  makes that trade legible. The `ttl_ms` you set is derived from this number — never the other
   way around — and it is a **kill deadline, not pacing**: the platform reaps
   the target the moment it lapses, even mid-work. Size it at the worst
   plausible round plus generous slack (cold start alone is minutes; double
@@ -431,7 +431,12 @@ them on the table — then wrongly concludes it "can't force" a design it wants:
 
 `target_system.description` is substituted verbatim into the model's prompts —
 it is where baselines, exact CLI invocations, metric definitions and
-statistical guardrails belong. `plot_specs` runs figure scripts after each
+statistical guardrails belong. What it is NOT for: dictating the bundle's
+arms. The arm family is the tool's methodology and the reason its verdict is
+defensible; a measured iteration already includes the full standard bundle.
+Time-box with the schema's own knobs instead — `max_iterations`, `max_turns`
+(per-phase tool-use caps, e.g. `{design: 40, execute_analyze: 80}`), and the
+TTL sized from measured runs. `plot_specs` runs figure scripts after each
 `findings.json`, and `pre_work_script` runs a deterministic exploration before
 iteration 1 (a good place to measure the baseline). Full field list:
 `nous schema campaign`, mirrored in the image's own
@@ -471,6 +476,10 @@ instead of reporting the number as clean.
 Then report the objective score from best_found.json, the h-main arm status
 from the last iteration's findings.json, and a summary from
 meta_findings.json.
+Publish as you go, not only at the end: the moment an iteration completes,
+publish its findings.json (and any raw per-seed results worth keeping) as
+artifacts, and publish report.md the moment it exists. You can be killed by
+your deadline mid-campaign; whatever is unpublished at that moment is lost.
 Report per_seed as well: for EVERY seed of the confirming iteration, read the
 raw measurement files under runs/iter-<N>/results/<arm>/ and report its seed,
 baseline and treatment values for the primary metric, in the metric's own
@@ -560,17 +569,25 @@ Six things this example is really teaching:
   completion, or it stalls waiting for an answer nobody sends.
 - **Match the TTL to the real runtime — and know the clock starts at spawn.**
   `nous`-class work will run for hours if you let it, and the default liveness
-  deadline is not a promise your loop should lean on. Scope the campaign to
-  about an hour of work (see the interview above), estimate ~20–30 min per
-  campaign iteration at that size, and set the TTL at roughly double the
-  estimate: a spawn that queues for compute room spends its deadline waiting,
-  and a deadline that lands mid-measurement wastes the whole round. A heavy
-  worker also holds real CPU/memory/disk per target, so keep the fan-out to a
-  handful of arms, not dozens.
-- **Everything on the worker dies with it.** The worker is reaped right after
-  it reports; make the prompt name what to report and which files to publish
-  as artifacts (`report.md`, `meta_findings.json` — see the reference) or the
-  evidence is unrecoverable.
+  deadline is not a promise your loop should lean on. Estimate from **measured
+  runs, not hope**: a healthy 2-iteration campaign on a small target measured
+  ~60 min per iteration on a dev cluster — so the one-hour target means ONE
+  confirming iteration, and a 2-iteration campaign is a ~2 h proposal, said as
+  such. Set the TTL at roughly double the measured estimate: the clock also
+  pays for pod cold start, queueing for compute room, and degraded stretches —
+  a worker that cold-started into a cluster disturbance has crawled at a
+  twentieth of its healthy pace and then been executed by a TTL sized for the
+  healthy pace, losing everything. A heavy worker also holds real
+  CPU/memory/disk per target, so keep the fan-out to a handful of arms, not
+  dozens.
+- **Everything on the worker dies with it — so publish per iteration.** The
+  worker is reaped the moment it reports, hits its TTL, or its run is swept;
+  make the prompt name what to report and which files to publish as artifacts
+  (`report.md`, `meta_findings.json` — see the reference), and require each
+  iteration's `findings.json` to be published **as it completes**, not in a
+  final batch. Three consecutive campaigns have died mid-run (a starved node,
+  an inactivity reap, a TTL) and each lost hours of finished measurements that
+  publish-as-you-go would have kept.
 - **Bound the campaign's own parallelism — for survival *and* for the
   numbers.** The worker's memory limit is a hard ceiling for everything the
   campaign starts — benchmark daemons included — and blowing it OOM-kills the

@@ -51,6 +51,9 @@ node bench/bench.mjs --scenario mixed       --n 5000  --ops 400  --seed 1
 
 Output fields: `p50_us`, `p95_us`, `mean_us` (per-operation latency in
 microseconds), `ops_per_sec`, `build_ms` (initial corpus load), `checksum`.
+Term frequencies are Zipf-ish (early vocabulary words are common, late ones
+rare), and the checksum folds every query's result ids and scores — a rewrite
+that changes search semantics changes the checksum even if it gets faster.
 
 Reference baseline (Node 24, Apple Silicon): query-heavy p50 ≈ 12 ms at
 `--n 5000`, ≈ 49 ms at `--n 20000` — latency grows linearly with the corpus.

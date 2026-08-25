@@ -57,8 +57,10 @@ point, and it is what a mechanism claim predicts:
 | 5 000 | 12.97 ms | 5.3× |
 | 20 000 | 56.2 ms | 23× |
 
-`index-heavy` p50 ≈ 22 µs is the guard. One bench invocation is seconds, so
-arms × seeds × the n grid still fits inside the hour.
+`index-heavy` p50 ≈ 22 µs is the guard. One bench invocation is seconds —
+even a full five-arm bundle's grid (arms × 3 seeds × 3 reps × 3 n values,
+baseline and treatment) is minutes of measuring; the hour goes to the
+worker's reasoning.
 
 The bench prints a **`checksum`** per seed: same seed and same semantics always
 produce the same value, so a rewrite that quietly changes ranking or AND
@@ -67,13 +69,19 @@ checksum exactly like a failed test — the round scores nothing.
 
 ## The campaign, pinned
 
-Don't hand the worker a paragraph and hope. Pin the design with the four
-fields (see *You do not write the campaign's arms* in the skill), so the
-campaign commits to the curve and the guard before it runs:
+Pin what is yours; leave the arms to Nous. The bundle — h-main, ablations,
+control-negative, robustness, a dose-response when the question is a curve —
+is the tool's own methodology and the reason its verdict is defensible;
+dictating its composition turns Nous into an expensive single-patch
+benchmarker and can set the designer against its own methodology prompts.
+The measured ~60 min iteration already *includes* the full standard bundle,
+so time comes from the knobs the schema owns, not from redefining the
+science. Pin with the four fields (see *You do not write the campaign's
+arms* in the skill):
 
 - **`research_question`** — "does query latency become independent of corpus
   size, and what does the write path pay for it?" Stated as a curve, the
-  designer reaches for a dose-response arm by itself.
+  designer reaches for a dose-response arm on its own — let it.
 - **`controllable_knobs`** — `[index_strategy, n]`. The sweep variable must be
   here or it may never be swept.
 - **`ground_truth`** — `primary_metric: "speedup_p50(query-heavy, n=5000)"`,
@@ -84,29 +92,60 @@ campaign commits to the curve and the guard before it runs:
   p50 regression ≤ 3×"`.
 - **`locked_parameters`** — `n_values: [1000, 5000, 20000]`,
   `reps_per_seed: 3`, `ops_query_heavy: 400`, `ops_index_heavy: 2000`, and the
-  guard bound. These hard-fail if the bundle deviates, which is what makes
-  them a spec rather than a request.
+  guard bound. These are measurement constants — legitimately yours — and
+  they hard-fail if the bundle deviates, which is what makes them a spec
+  rather than a request.
 
-Put the baselines, the exact bench invocations and the checksum rule in
-`target_system.description` — it is substituted into the model's prompts
-verbatim.
+**The time levers**: `max_iterations: 1` (the confirming iteration; no
+rehearsal), `max_turns: {design: 40, execute_analyze: 80}` to bound the
+meandering, and a TTL of 2 h over the measured hour. Baselines, the exact
+bench invocations and the checksum rule go in `target_system.description` —
+substituted verbatim into the model's prompts.
 
 **The bar is set where it can fail.** An inverted index should clear 20×
 comfortably at n=5000; what is genuinely in doubt is the guard (does the write
 path stay within 3×?) and the flatness claim at n=20000. That is the result
 worth reporting, and either half can come back refuted.
 
+## What the run puts on screen
+
+Three score series plus a run-level table — design the spawn schema so all of
+it survives the worker being reaped:
+
+- **`seed-score`** — one span per seed at n=5000 (3 points): the spread, so a
+  reader sees whether one seed carries the median. Needs `per_seed:
+  [{seed, baseline, treatment}]` in the result schema.
+- **speedup vs n** — one span per n value (3 points, `iteration=n`): the
+  curve, which is the demo's whole argument. Needs the per-n numbers in the
+  result schema too — e.g. `per_n: [{n, baseline, treatment}]` — or the curve
+  dies with the pod exactly like per-seed data used to.
+- **`arm-score`** — one span per arm of the bundle Nous designed (~5–8
+  points): main effect large, ablations small, control ≈ 1.0. This series
+  spans orders of magnitude, so score `log2(effect)` (or build a bespoke
+  dashboard) — on the stock chart's linear axis the small arms collapse onto
+  the floor.
+- **`post_data`** — the evidence table with absolute µs next to every ratio,
+  the pass verdict against the pre-registered bar, the guard number, per-phase
+  durations, and campaign cost. The stock dashboard renders it; nothing extra
+  to build.
+
 ## Size and shape
 
-One round, 1–2 campaign iterations (rehearsal + one confirming pass), 3 seeds
-at 3 reps — the standard hour. Measurement is cheap here, so the hour goes to
-the campaign's own reasoning, not to benchmarking; if the estimate slips, cut
-an iteration before you cut the n grid, because the grid is the finding.
+One round, **one iteration with Nous's standard bundle**, 3 seeds at 3 reps —
+proposed as **~1 h, TTL 2 h**. The calibration is measured, not hoped: a
+healthy full-bundle iteration took ~60 min on a dev cluster, and a 150-min
+TTL sized for "25 min per iteration" has already executed a 2-iteration run
+of this very starter mid-campaign. If the human wants more — a rehearsal
+iteration, ten seeds — each is an explicit upgrade with its cost stated
+(~+60 min per extra iteration), never a silent default. And pin
+publish-as-you-go in the prompt: findings published the moment they exist,
+so a deadline kill loses minutes, not the campaign.
 
 Present the envelope as usual before authoring, and say what the demo shows:
 the platform drawing a live loop while a worker forms a hypothesis, patches a
-repo, measures it against a bar it pre-registered, and reports whether the
-mechanism claim held — decomposed by arm, with a guard metric it could fail.
+repo, measures a speedup curve against a bar it pre-registered, and reports
+whether the mechanism claim held — decomposed by the arms Nous designed, with
+a guard metric and a control that could each genuinely fail.
 
 ## Getting the repo onto the worker — it is already there
 

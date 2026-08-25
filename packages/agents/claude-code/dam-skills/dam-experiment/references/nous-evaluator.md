@@ -12,6 +12,12 @@ the stable fields it must report, and the artifacts it must publish
 (`report.md`, `meta_findings.json`, per-iteration `findings.json`) before
 finishing.
 
+**Demand publish-as-you-go.** The prompt must require each iteration's
+`findings.json` (and raw results worth keeping) to be published as artifacts
+**the moment the iteration completes** — never only at the end. A worker can
+die mid-campaign (TTL, OOM, a starved node, an inactivity reap; all three have
+happened) and everything unpublished dies with it.
+
 **Always demand the per-seed numbers.** The experiment's score chart plots
 one point per seed, not per campaign (a run chains one or two campaigns —
 per-round scoring draws a single dot), and the pass condition is itself
