@@ -16,6 +16,7 @@ interface OwnerHolder {
   watches: Map<string, PodSessionWatch>;
   stopAgentsSignal: () => void;
   reconciling: boolean;
+  again: boolean;
   closed: boolean;
 }
 
@@ -26,7 +27,11 @@ export function createPodSessionsService(
 
   async function reconcile(ownerSub: string): Promise<void> {
     const holder = holders.get(ownerSub);
-    if (!holder || holder.closed || holder.reconciling) return;
+    if (!holder || holder.closed) return;
+    if (holder.reconciling) {
+      holder.again = true;
+      return;
+    }
     holder.reconciling = true;
     try {
       const running = new Set(await deps.listRunningAgentIds(ownerSub));
@@ -52,6 +57,10 @@ export function createPodSessionsService(
       );
     } finally {
       holder.reconciling = false;
+      if (holder.again && !holder.closed) {
+        holder.again = false;
+        void reconcile(ownerSub);
+      }
     }
   }
 
@@ -66,6 +75,7 @@ export function createPodSessionsService(
         watches: new Map(),
         stopAgentsSignal: () => {},
         reconciling: false,
+        again: false,
         closed: false,
       };
       holders.set(ownerSub, holder);

@@ -11,12 +11,12 @@ export function useWorkspaceWatch(agentId: string | null) {
   const operable = useIsAgentOperable(agentId);
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
-  const pathKey = paths.join("\n");
+  const pathKey = JSON.stringify(paths);
 
   useEffect(() => {
     if (!agentId || !operable) return;
     const subscription = agentTrpc(agentId).files.watch.subscribe(
-      { paths: pathKey.split("\n") },
+      { paths: JSON.parse(pathKey) as string[] },
       {
         onData: () => {
           void queryClient.invalidateQueries({
