@@ -9,9 +9,10 @@ import { describeFailure, runOnce } from "../../core/run-once.js";
  * unit, so the properties they each got subtly wrong are pinned here once: a
  * deadline that kills, a byte budget on retained output, decoding that
  * survives a multi-byte character split across stream chunks, and failure
- * reported as a value rather than thrown. Output is either retained and
- * returned or relayed line by line; a relaying caller streams without
- * retaining, so a long build cannot be capped out of existence.
+ * reported as a value rather than thrown — including the errors spawn raises
+ * synchronously. Output is either retained and returned or relayed line by
+ * line; a relaying caller streams without retaining, so a long build cannot be
+ * capped out of existence, and only one partial line is ever held.
  */
 
 const node = (script: string): string[] => ["node", "-e", script];
@@ -149,5 +150,42 @@ describe("runOnce", () => {
     if (!result.ok) return;
     expect(result.value.stdout).toBe("");
     expect(lines.sort()).toEqual(["err", "first", "last", "second"]);
+  });
+
+  /**
+   * TEST_SCENARIO: spawn rejects a malformed argv synchronously, before any
+   * event can fire. A runner whose contract is "failure is a value" must
+   * report that the same way, so no caller has to attach a catch.
+   */
+  it("should report a malformed argv as a failure value, not a rejection", async () => {
+    const result = await runOnce({ command: [""], timeoutMs: 5_000 });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("not-spawnable");
+  });
+
+  /**
+   * TEST_SCENARIO: A stream can produce megabytes without ever sending a
+   * newline — a build writing a progress meter with carriage returns does
+   * exactly this. The line-reassembly buffer must stay bounded, so the partial
+   * line is relayed instead of growing for the length of the run.
+   */
+  it("should relay a partial line rather than buffer a newline-less stream without bound", async () => {
+    const lines: string[] = [];
+    const result = await runOnce({
+      command: node(
+        "for (let i = 0; i < 3; i++) process.stdout.write('x'.repeat(1024 * 1024))",
+      ),
+      timeoutMs: 20_000,
+      onLine: (line) => lines.push(line),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.stdout).toBe("");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(Math.max(...lines.map((line) => line.length))).toBeLessThan(
+      3 * 1024 * 1024,
+    );
+    expect(lines.join("").length).toBe(3 * 1024 * 1024);
   });
 });

@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { type ChildProcessByStdio, spawn } from "node:child_process";
+import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 
 import { err, ok, type Result } from "./result.js";
@@ -6,6 +7,8 @@ import { err, ok, type Result } from "./result.js";
 const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 const MAX_DESCRIBED_STDERR = 500;
+
+const MAX_PENDING_LINE_BYTES = 1024 * 1024;
 
 export interface RunOnceOptions {
   command: readonly string[];
@@ -56,12 +59,18 @@ export function describeFailure(
  * (SIGKILL on expiry, and the timeout is required — an unbounded subprocess is
  * never intended), a byte budget on retained output, and decoding that
  * reassembles multi-byte characters split across stream chunks. Failure is a
- * value, never an exception, because callers disagree about policy: some log
- * and continue, some reject, some fall back to another source. Output is
- * either retained and returned, or — when onLine is given — relayed line by
- * line and not retained at all, which is what a caller streaming a long build
- * into a log wants; only retained output is capped. Long-lived children (the
- * harness, a PTY, sshd) are out of scope: they have lifecycles, not results.
+ * value, never an exception — including the errors spawn raises
+ * synchronously on a malformed argv, cwd or env — because callers disagree
+ * about policy: some log and continue, some reject, some fall back to another
+ * source. Output is either retained and returned, or — when onLine is given —
+ * relayed line by line and not retained at all, which is what a caller
+ * streaming a long build into a log wants. maxOutputBytes caps retained
+ * output as one budget across both streams, because what it bounds is the
+ * memory this runner holds; a relaying caller retains nothing, so it is capped
+ * only by the 1 MB bound on one partial line, which is flushed as a line when
+ * a stream produces that many bytes without a newline. Long-lived children
+ * (the harness, a PTY, sshd) are out of scope: they have lifecycles, not
+ * results.
  */
 export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
   const maxOutputBytes = opts.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
@@ -74,11 +83,19 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
       return;
     }
 
-    const child = spawn(bin, args, {
-      cwd: opts.cwd,
-      env: opts.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let child: ChildProcessByStdio<null, Readable, Readable>;
+    try {
+      child = spawn(bin, args, {
+        cwd: opts.cwd,
+        env: opts.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      resolve(
+        err({ kind: "not-spawnable", message: (error as Error).message }),
+      );
+      return;
+    }
 
     let settled = false;
     let stdout = "";
@@ -103,13 +120,21 @@ export function runOnce(opts: RunOnceOptions): Promise<RunOnceResult> {
     ): (() => void) => {
       const decoder = new StringDecoder("utf8");
       let pending = "";
+      let pendingBytes = 0;
       stream.on("data", (chunk: Buffer) => {
         const text = decoder.write(chunk);
         if (relay) {
           pending += text;
+          pendingBytes += chunk.length;
           const lines = pending.split("\n");
           pending = lines.pop() ?? "";
+          if (lines.length > 0) pendingBytes = Buffer.byteLength(pending);
           for (const line of lines) if (line) relay(line);
+          if (pendingBytes > MAX_PENDING_LINE_BYTES) {
+            relay(pending);
+            pending = "";
+            pendingBytes = 0;
+          }
           return;
         }
         retainedBytes += chunk.length;
