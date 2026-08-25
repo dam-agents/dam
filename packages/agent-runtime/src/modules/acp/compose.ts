@@ -26,6 +26,11 @@ import {
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
 import type { SessionsService } from "agent-runtime-api";
+import {
+  createSessionChanges,
+  notifyingSessionMetadataStore,
+  type SessionChanges,
+} from "./services/session-changes.js";
 import { createSessionsService } from "./services/sessions-service.js";
 
 export interface ComposeAcpOptions {
@@ -71,8 +76,13 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   sessions: SessionsService;
+  sessionChanges: SessionChanges;
 } {
-  const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
+  const sessionChanges = createSessionChanges();
+  const sessionMetadata = notifyingSessionMetadataStore(
+    createSessionMetadataStore(opts.stateBackend),
+    sessionChanges,
+  );
   const backgroundWork = createBackgroundWorkRegistry({
     enabled: opts.backgroundWorkHolds,
     log: opts.log,
@@ -98,6 +108,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     acpRuntime: runtime,
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
+    changes: sessionChanges,
   });
 
   return {
@@ -106,5 +117,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     backgroundWork,
     sessions,
+    sessionChanges,
   };
 }

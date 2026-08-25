@@ -128,6 +128,7 @@ const {
   sessionMetadata,
   backgroundWork,
   sessions: sessionsService,
+  sessionChanges,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -196,7 +197,7 @@ const trpcHandler = createHTTPHandler({
 
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
-const PTY_ACTIVE_WINDOW_MS = 1_000;
+const PTY_ACTIVE_WINDOW_MS = 5_000;
 const PTY_INPUT_ECHO_MS = 500;
 
 function isPtySessionActive(sessionId: string): boolean {
@@ -220,6 +221,40 @@ interface PtySlot {
 const ptySlots = new Map<string, PtySlot>();
 const ptyLog = (sid: string, msg: string) =>
   process.stderr.write(`[pty] [${sid}] ${msg}\n`);
+
+const PTY_LIVENESS_SWEEP_MS = 1_000;
+const ptyLiveness = new Set<string>();
+let ptyLivenessTimer: NodeJS.Timeout | undefined;
+
+function sweepPtyLiveness(): void {
+  let changed = false;
+  for (const sessionId of ptySlots.keys()) {
+    const active = isPtySessionActive(sessionId);
+    if (active === ptyLiveness.has(sessionId)) continue;
+    if (active) ptyLiveness.add(sessionId);
+    else ptyLiveness.delete(sessionId);
+    changed = true;
+  }
+  for (const sessionId of [...ptyLiveness]) {
+    if (ptySlots.has(sessionId)) continue;
+    ptyLiveness.delete(sessionId);
+    changed = true;
+  }
+  if (changed) sessionChanges.notify();
+}
+
+sessionChanges.onDemand({
+  start: () => {
+    if (ptyLivenessTimer) return;
+    ptyLivenessTimer = setInterval(sweepPtyLiveness, PTY_LIVENESS_SWEEP_MS);
+    ptyLivenessTimer.unref?.();
+  },
+  stop: () => {
+    if (ptyLivenessTimer) clearInterval(ptyLivenessTimer);
+    ptyLivenessTimer = undefined;
+    ptyLiveness.clear();
+  },
+});
 
 const PTY_SEEN_STAMP_DEBOUNCE_MS = 30_000;
 

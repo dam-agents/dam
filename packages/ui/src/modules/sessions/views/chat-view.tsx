@@ -90,6 +90,7 @@ import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
+import { useSessionWatch } from "../hooks/use-session-watch.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -106,6 +107,7 @@ export function ChatView() {
 
   useSyncRestartingAgents();
   useAgentReachability(selectedAgent);
+  useSessionWatch(selectedAgent, agentOperable);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(

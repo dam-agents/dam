@@ -5,12 +5,14 @@ export type {
   PodSession,
   PodSessionList,
   PodSessionMode,
+  PodSessionNotice,
   PodSessionType,
   SessionsService,
 } from "./modules/sessions/types.js";
 export {
   podSessionListSchema,
   podSessionModeSchema,
+  podSessionNoticeSchema,
   podSessionSchema,
   podSessionTypeSchema,
 } from "./modules/sessions/schemas.js";
