@@ -1,6 +1,7 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
-import { FileTooLargeError } from "./slack-gateway.js";
+import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
   SlackGateway,
@@ -23,6 +24,22 @@ export interface BoltSlackGatewayDeps {
   botToken: string;
   appToken: string;
   commandName: string;
+}
+
+function toSlackMessage(m: {
+  ts?: string;
+  user?: string;
+  text?: string;
+  blocks?: unknown;
+  edited?: unknown;
+}): SlackMessage {
+  return {
+    ts: m.ts,
+    user: m.user,
+    text: m.text,
+    blocks: m.blocks as SlackMessage["blocks"],
+    ...(m.edited ? { edited: true } : {}),
+  };
 }
 
 export function createBoltSlackGateway(
@@ -222,20 +239,48 @@ export function createBoltSlackGateway(
       });
     },
 
-    async getThreadReplies(args): Promise<SlackMessage[]> {
-      if (!app) return [];
+    async getThreadReplies(args) {
+      if (!app) return { messages: [], hasMore: false };
       const replies = await app.client.conversations.replies({
         channel: args.channel,
         ts: args.threadTs,
         limit: args.limit,
+        ...(args.oldest ? { oldest: args.oldest } : {}),
       });
-      return (replies.messages ?? []).map((m) => ({
-        ts: m.ts,
-        user: m.user,
-        text: m.text,
-        blocks: m.blocks as SlackMessage["blocks"],
-        ...(m.edited ? { edited: true } : {}),
-      }));
+      return {
+        messages: (replies.messages ?? []).map(toSlackMessage),
+        hasMore: Boolean(
+          replies.has_more || replies.response_metadata?.next_cursor,
+        ),
+      };
+    },
+
+    async getThreadTail(args) {
+      if (!app) return { messages: [], hasMore: false };
+      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
+      let cursor: string | undefined;
+      let fold = emptyTailFold<SlackMessage>();
+      let stoppedShort = false;
+      for (let page = 0; ; page += 1) {
+        if (page >= maxPages) {
+          stoppedShort = true;
+          break;
+        }
+        const replies = await app.client.conversations.replies({
+          channel: args.channel,
+          ts: args.threadTs,
+          limit: args.limit,
+          ...(cursor ? { cursor } : {}),
+        });
+        fold = foldTailPage(
+          fold,
+          (replies.messages ?? []).map(toSlackMessage),
+          args.limit,
+        );
+        cursor = replies.response_metadata?.next_cursor || undefined;
+        if (!cursor) break;
+      }
+      return { messages: fold.window, hasMore: stoppedShort };
     },
 
     async getChannelHistory(args): Promise<SlackMessage[]> {

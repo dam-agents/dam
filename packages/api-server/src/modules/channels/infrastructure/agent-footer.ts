@@ -89,6 +89,18 @@ export function historyLegend(
     : `${base}.${bot}`;
 }
 
+export function catchUpLegend(
+  canLookupUsers: boolean,
+  opts: { botLabel: string | null },
+): string {
+  return (
+    "These messages arrived in this thread after your last turn in it, so " +
+    "you have not seen them — read them before answering, and don't repeat " +
+    "or contradict what another agent already said. " +
+    historyLegend(canLookupUsers, opts)
+  );
+}
+
 export function formatSlackTs(ts: string): string {
   const seconds = Number(ts.split(".")[0]);
   if (!Number.isFinite(seconds)) return ts;

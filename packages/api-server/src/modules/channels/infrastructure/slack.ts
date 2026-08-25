@@ -81,6 +81,7 @@ import type {
   SlackGateway,
   SlackImageFile,
   SlackMentionEvent,
+  SlackMessage,
   SlackMessageReaction,
   SlackSlashCommand,
   SlackUserInfo,
@@ -94,12 +95,21 @@ import {
   agentContextBlock,
   agentFooterLabel,
   agentFooterMrkdwn,
+  catchUpLegend,
   formatSlackTs,
   historyLegend,
   labelHistoryMessage,
   parseAgentFooter,
   type AgentFooter,
 } from "./agent-footer.js";
+import {
+  isAfterTs,
+  lastOwnPostTs,
+  newestTs,
+  nextBoundary,
+  selectUnseen,
+  type CatchUpSelection,
+} from "../domain/thread-catch-up.js";
 import {
   matchRosterName,
   orderAmbientReaders,
@@ -496,6 +506,27 @@ function renderTurnFiles(attachments: {
   return `\nTurn included: ${list.join(", ")}.`;
 }
 
+const THREAD_LOOKBACK = 50;
+
+const NO_COMMIT = (): void => {};
+
+interface CatchUpFrame {
+  frame: { context?: string[]; contextLegend?: string };
+  commit: () => void;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A prompt and the boundary write that only becomes
+ * true once the agent has it. The write is deferred rather than done where it is
+ * computed, because a boundary that moves before the send would step over
+ * messages a failed send never delivered — the loss the boundary exists to
+ * prevent.
+ */
+interface BuiltPrompt {
+  prompt: string | ContentBlock[];
+  commit: () => void;
+}
+
 async function getContextMessages(
   gateway: SlackGateway,
   channel: string,
@@ -504,20 +535,41 @@ async function getContextMessages(
   threadTs: string | undefined,
   bot: { userId: string | null; label: string },
   resolveAgentName: (agentId: string) => Promise<string>,
+  catchUp: CatchUpSelection | null,
 ): Promise<{
   lines: string[];
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
+  readNewestTs: string | null;
+  readHasMore: boolean;
 }> {
-  const raw = threadTs
-    ? await gateway.getThreadReplies({ channel, threadTs, limit: 50 })
-    : (await gateway.getChannelHistory({ channel, limit: 10 }))
-        .slice()
-        .reverse();
+  const read = threadTs
+    ? await gateway.getThreadReplies({
+        channel,
+        threadTs,
+        limit: THREAD_LOOKBACK,
+        ...(catchUp ? { oldest: catchUp.since } : {}),
+      })
+    : {
+        messages: (await gateway.getChannelHistory({ channel, limit: 10 }))
+          .slice()
+          .reverse(),
+        hasMore: false,
+      };
+  const raw = read.messages;
 
-  const entries = raw
-    .filter((m) => m.ts !== ts)
-    .map((message) => ({ message, footer: parseAgentFooter(message) }));
+  const all = raw.map((message) => ({
+    ts: message.ts,
+    authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+    message,
+  }));
+  const selected = catchUp
+    ? selectUnseen(all, catchUp)
+    : all.filter((e) => e.ts !== ts);
+  const entries = selected.map((e) => ({
+    message: e.message,
+    footer: e.authorAgentId ? { agentId: e.authorAgentId } : null,
+  }));
 
   const authorIds = [
     ...new Set(entries.flatMap((e) => (e.footer ? [e.footer.agentId] : []))),
@@ -545,6 +597,8 @@ async function getContextMessages(
     hasUnattributedBot: entries.some(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
+    readNewestTs: newestTs(all),
+    readHasMore: read.hasMore,
   };
 }
 
@@ -967,6 +1021,41 @@ export function createSlackWorker(
     return name;
   }
 
+  const THREAD_SEEN_TTL_MS = 24 * 60 * 60 * 1000;
+  const threadSeen = new Map<string, { ts: string; expiresAt: number }>();
+
+  function threadSeenKey(instanceName: string, threadKey: string): string {
+    return `${instanceName} ${threadKey}`;
+  }
+
+  function noteThreadSeen(
+    instanceName: string,
+    threadKey: string,
+    ts: string | null,
+  ): void {
+    if (!ts) return;
+    const now = Date.now();
+    if (threadSeen.size > 5_000) {
+      for (const [key, entry] of threadSeen) {
+        if (entry.expiresAt <= now) threadSeen.delete(key);
+      }
+    }
+    threadSeen.set(threadSeenKey(instanceName, threadKey), {
+      ts,
+      expiresAt: now + THREAD_SEEN_TTL_MS,
+    });
+  }
+
+  function readThreadSeen(
+    instanceName: string,
+    threadKey: string,
+  ): string | null {
+    const entry = threadSeen.get(threadSeenKey(instanceName, threadKey));
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) return null;
+    return entry.ts;
+  }
+
   async function resolveRoster(slackChannelId: string): Promise<RosterEntry[]> {
     const bindings = await channelRegistry.resolveSlackBindings(slackChannelId);
     return Promise.all(
@@ -1060,8 +1149,8 @@ export function createSlackWorker(
   async function runSessionTurn(args: {
     instanceName: string;
     threadKey: string;
-    buildResumePrompt: () => Promise<string | ContentBlock[]>;
-    buildFreshPrompt: () => Promise<string | ContentBlock[]>;
+    buildResumePrompt: () => Promise<BuiltPrompt>;
+    buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
     onImagesDropped?: () => void;
     onUpdate?: (update: PromptUpdate) => void;
@@ -1088,22 +1177,30 @@ export function createSlackWorker(
         onUpdate: args.onUpdate,
         onSession: args.onSession,
       };
+      const send = async (
+        built: BuiltPrompt,
+        opts: Parameters<typeof acp.sendPrompt>[1],
+      ) => {
+        const answer = await acp.sendPrompt(built.prompt, opts);
+        built.commit();
+        return answer;
+      };
       if (existing) {
-        const resumePrompt = await args.buildResumePrompt();
+        const resume = await args.buildResumePrompt();
         try {
-          return await acp.sendPrompt(resumePrompt, {
+          return await send(resume, {
             resumeSessionId: existing.sessionId,
             ...sendOpts,
           });
         } catch {
           args.onGhostTurn?.();
-          return acp.sendPrompt(await args.buildFreshPrompt(), {
+          return send(await args.buildFreshPrompt(), {
             platformMeta,
             ...sendOpts,
           });
         }
       }
-      return acp.sendPrompt(await args.buildFreshPrompt(), {
+      return send(await args.buildFreshPrompt(), {
         platformMeta,
         ...sendOpts,
       });
@@ -1218,13 +1315,18 @@ export function createSlackWorker(
         legacyThreadKey: ctx.threadTs,
         buildResumePrompt: async () => {
           const delivered = await deliverFiles();
-          return framePrompt({
-            contract,
-            guidance,
-            text: ctx.text + delivered.withheldNote,
-            images: ctx.images,
-            files: delivered.files,
-          });
+          const caught = await buildCatchUp(gw, ctx);
+          return {
+            prompt: framePrompt({
+              contract,
+              guidance,
+              ...caught.frame,
+              text: ctx.text + delivered.withheldNote,
+              images: ctx.images,
+              files: delivered.files,
+            }),
+            commit: caught.commit,
+          };
         },
         buildFreshPrompt: () =>
           buildThreadPrompt(gw, ctx, contract, {
@@ -1339,21 +1441,27 @@ export function createSlackWorker(
     },
     contract: string,
     opts?: { guidance?: string; deliver?: () => Promise<TurnDelivery> },
-  ): Promise<string | ContentBlock[]> {
+  ): Promise<BuiltPrompt> {
     const bot = {
       userId: await gw.getBotUserId().catch(() => null),
       label: botHistoryLabel(brand),
     };
-    const { lines, hasAgentAuthored, hasUnattributedBot } =
-      await getContextMessages(
-        gw,
-        ctx.channel,
-        ctx.eventTs,
-        ctx.instanceName,
-        ctx.hasThread ? ctx.threadTs : undefined,
-        bot,
-        resolveAgentName,
-      );
+    const {
+      lines,
+      hasAgentAuthored,
+      hasUnattributedBot,
+      readNewestTs,
+      readHasMore,
+    } = await getContextMessages(
+      gw,
+      ctx.channel,
+      ctx.eventTs,
+      ctx.instanceName,
+      ctx.hasThread ? ctx.threadTs : undefined,
+      bot,
+      resolveAgentName,
+      null,
+    );
     const legend =
       hasAgentAuthored || hasUnattributedBot
         ? historyLegend(await canLookupUsers(gw), {
@@ -1361,15 +1469,117 @@ export function createSlackWorker(
           })
         : undefined;
     const delivered = await opts?.deliver?.();
-    return framePrompt({
-      contract,
-      guidance: opts?.guidance,
-      context: lines,
-      contextLegend: legend,
-      text: ctx.text + (delivered?.withheldNote ?? ""),
-      images: ctx.images,
-      files: delivered?.files ?? [],
-    });
+    const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
+    return {
+      prompt: framePrompt({
+        contract,
+        guidance: opts?.guidance,
+        context: lines,
+        contextLegend: legend,
+        text: ctx.text + (delivered?.withheldNote ?? ""),
+        images: ctx.images,
+        files: delivered?.files ?? [],
+      }),
+      commit: () =>
+        noteThreadSeen(
+          ctx.instanceName,
+          threadKey,
+          nextBoundary(
+            {
+              hasMore: readHasMore,
+              newestReadTs: readNewestTs,
+              triggeringTs: ctx.eventTs,
+            },
+            readThreadSeen(ctx.instanceName, threadKey),
+          ),
+        ),
+    };
+  }
+
+  async function buildCatchUp(
+    gw: SlackGateway,
+    ctx: {
+      instanceName: string;
+      channel: string;
+      threadTs: string;
+      eventTs: string;
+      hasThread: boolean;
+    },
+  ): Promise<CatchUpFrame> {
+    if (!ctx.hasThread) return { frame: {}, commit: NO_COMMIT };
+    const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
+    try {
+      const since =
+        readThreadSeen(ctx.instanceName, threadKey) ??
+        lastOwnPostTs(
+          (
+            await gw.getThreadTail({
+              channel: ctx.channel,
+              threadTs: ctx.threadTs,
+              limit: THREAD_LOOKBACK,
+            })
+          ).messages.map((message) => ({
+            ts: message.ts,
+            authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+            message,
+          })),
+          ctx.instanceName,
+        );
+      if (!since) return { frame: {}, commit: NO_COMMIT };
+      const bot = {
+        userId: await gw.getBotUserId().catch(() => null),
+        label: botHistoryLabel(brand),
+      };
+      const { lines, hasUnattributedBot, readNewestTs, readHasMore } =
+        await getContextMessages(
+          gw,
+          ctx.channel,
+          ctx.eventTs,
+          ctx.instanceName,
+          ctx.threadTs,
+          bot,
+          resolveAgentName,
+          {
+            readingAgentId: ctx.instanceName,
+            since,
+            triggeringTs: ctx.eventTs,
+          },
+        );
+      const commit = () =>
+        noteThreadSeen(
+          ctx.instanceName,
+          threadKey,
+          nextBoundary(
+            {
+              hasMore: readHasMore,
+              newestReadTs: readNewestTs,
+              triggeringTs: ctx.eventTs,
+            },
+            readThreadSeen(ctx.instanceName, threadKey),
+          ),
+        );
+      if (lines.length === 0) return { frame: {}, commit };
+      return {
+        frame: {
+          context: lines,
+          contextLegend: catchUpLegend(await canLookupUsers(gw), {
+            botLabel: hasUnattributedBot ? bot.label : null,
+          }),
+        },
+        commit,
+      };
+    } catch (err) {
+      getLogger().warn(
+        {
+          agentId: ctx.instanceName,
+          channelId: ctx.channel,
+          threadTs: ctx.threadTs,
+          error: formatError(err),
+        },
+        "slack.catchup.failed",
+      );
+      return { frame: {}, commit: NO_COMMIT };
+    }
   }
 
   function rosterNames(roster: RosterEntry[]): string {
@@ -2173,13 +2383,24 @@ export function createSlackWorker(
           : {}),
         buildResumePrompt: async () => {
           const delivered = await deliverFiles();
-          return framePrompt({
-            contract,
-            guidance,
-            text: text + delivered.withheldNote,
-            images: args.images,
-            files: delivered.files,
+          const caught = await buildCatchUp(gw, {
+            instanceName: args.instanceName,
+            channel: args.channel,
+            threadTs: args.replyThreadTs,
+            eventTs: args.eventTs,
+            hasThread: args.hasThread,
           });
+          return {
+            prompt: framePrompt({
+              contract,
+              guidance,
+              ...caught.frame,
+              text: text + delivered.withheldNote,
+              images: args.images,
+              files: delivered.files,
+            }),
+            commit: caught.commit,
+          };
         },
         buildFreshPrompt: async () =>
           buildThreadPrompt(

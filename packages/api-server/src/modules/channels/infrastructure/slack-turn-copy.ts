@@ -106,7 +106,8 @@ function identitySentences(
   const reachNote = untaggedNameReaches
     ? ""
     : " In this channel only a tag reaches you — a message that just types " +
-      "a name is never delivered, so there is nothing for you to miss.";
+      "a name never starts a turn for you, though you may still be shown it " +
+      "as history when you are next brought in.";
   return (
     `You appear in this Slack workspace as the bot "${brand.name}" ` +
     `(mentioned as @${brand.short}` +

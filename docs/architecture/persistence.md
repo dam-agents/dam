@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-08-24
+Last verified: 2026-08-25
 
 ## Overview
 
@@ -59,7 +59,7 @@ flowchart LR
 
 Postgres carries application state the api-server owns end-to-end — anything that has to be queryable when no agent pod is running, plus any domain resource the controller does not reconcile.
 
-- **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md).
+- **channel routing** — bindings between external chat surfaces and the Agent/session they map to. Owned by [channels](channels.md). A Slack binding is one row per bound conversation, its identity the (Agent, conversation) pair — the conversation id being a channel, group DM or 1:1 DM, undifferentiated — so an Agent cannot connect to one conversation twice, while several Agents may share it. A second, narrower index admits at most one row per conversation marked default — at most, never exactly one, so having no default is a state the schema permits and the routing handles. Each binding carries its own ambient and default flags (absent = off). `telegram_conversations` records the conversation→Agent binding for Telegram, plus the binding owner's sub: different shapes by design, since Slack has a workspace and Telegram does not. `identity_links` maps a messenger user to a Keycloak sub, keyed by provider, so it serves any future workspace channel.
 - **identity and auth** — links between channel-side identities and platform users, the auth allow-list, and API keys for headless CLI use. Owned by [security-and-credentials](security-and-credentials.md).
 - **skills catalog** — connected sources, per-Agent install records, publish history, and the per-user named skill selections a user carries between agents. Owned by [skills](skills.md).
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`). Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary. Owned by [usage-tracking](usage-tracking.md).
