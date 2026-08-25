@@ -126,8 +126,10 @@ it survives the worker being reaped:
   the floor.
 - **`post_data`** — the evidence table with absolute µs next to every ratio,
   the pass verdict against the pre-registered bar, the guard number, per-phase
-  durations, and campaign cost. The stock dashboard renders it; nothing extra
-  to build.
+  durations, and campaign cost (USD, tokens, LLM calls — demand it in the
+  result schema; `llm_metrics_summary.json` always exists on the worker, even
+  on a failed campaign). The stock dashboard renders it; nothing extra to
+  build.
 
 ## Size and shape
 

@@ -486,7 +486,10 @@ baseline and treatment values for the primary metric, in the metric's own
 unit. Read those numbers from the raw files, never from report.md's prose or
 tables. Report per_arm too — arm_type, status and effect for every arm you
 measured, ablations included; the decomposition is the mechanism, and prose is
-not where it survives."""
+not where it survives.
+Report cost too, from llm_metrics_summary.json (or `nous cost <run_id>`):
+total USD, total tokens, and LLM call count. These files are stable and
+always exist — report them even when the campaign fails."""
 
 with x.Experiment("nous-campaigns") as exp:
     loop = exp.loop("rounds", description="one Nous campaign per pass")
@@ -511,6 +514,8 @@ with x.Experiment("nous-campaigns") as exp:
                                    "treatment": "number"}],
                      "per_arm": [{"arm_type": "string", "status": "string",
                                   "effect": "number"}],
+                     "cost": {"usd": "number", "tokens": "integer",
+                              "llm_calls": "integer"},
                      "pr_url": "string?"}),
                 template=worker,
                 connections=connections,
@@ -532,6 +537,7 @@ with x.Experiment("nous-campaigns") as exp:
             "median": statistics.median(speedups),
             "seeds_passing": sum(1 for s in speedups if s >= PASS_BAR),
             "arms": result["per_arm"],  # or a stage of their own, one span per arm
+            "cost": result["cost"],
             "status": result["status"],
         }})
         hypothesis = next_hypothesis(result)  # your own choice of what to try
@@ -656,8 +662,10 @@ tables warrant one — make sure the run's presentation carries:
   agree instead of the chart showing one dot next to a table of ten rows.
 - **Time** — when the run started, elapsed, and per-round durations; the
   human approved a duration estimate, and the run should show how it tracked.
-- **Token / cost consumption**, when the worker reports it (a Nous campaign's
-  meta findings carry cost data — pass it through).
+- **Token / cost consumption** — demand it in the typed result rather than
+  hoping the worker volunteers it (a Nous campaign always has
+  `llm_metrics_summary.json`; "when reported, pass it through" is how three
+  runs shipped without a cost number).
 - **Notes and caveats** — what the result does *not* claim ("3 seeds is a
   smoke run"), stated on the run itself rather than left in the chat.
 - **Next steps** — what a follow-up run would change: more seeds, a wider

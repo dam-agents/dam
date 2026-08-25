@@ -174,7 +174,10 @@ without touching raw seed files.
    baseline-vs-treatment deltas per seed and the seed pass count, then check
    against `ground_truth.pass_condition`.
 5. **Portable claim + confidence**: wiki `campaigns/<run_id>/principles.json`.
-6. **Cost context** (optional): `nous cost <run_id> --cache-stats`.
+6. **Cost**: `nous cost <run_id> --cache-stats`, or the stable
+   `llm_metrics_summary.json`. For a driver, not optional — demand USD, token
+   and call totals in the typed result (they exist even on failed campaigns)
+   so every run surfaces what it spent.
 
 ## 4. Outcome vocabulary
 
