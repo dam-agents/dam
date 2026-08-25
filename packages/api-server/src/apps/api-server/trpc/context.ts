@@ -282,6 +282,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       features,
       files,
       harnessConfig,
+      links: config.links,
       liveEvents,
       metrics,
       terms,

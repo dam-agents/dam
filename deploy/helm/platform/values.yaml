@@ -51,6 +51,14 @@ terms:
   # judgment — whitespace edits don't bump this.
   version: ""
 
+# -- Outbound links surfaced in the UI, changeable per install without a
+# rebuild (the api-server serves them over `links.all`).
+links:
+  # Where "Request more" next to the compute meter points — a chat channel,
+  # form, or ticket queue. Complete URL. Empty string uses the bundled
+  # default.
+  computeRequest: ""
+
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
 # lives at `keycloak.{domain}`.
