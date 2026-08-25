@@ -8,7 +8,6 @@ import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js"
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
 
-const SESSIONS_POLL_MS = 15_000;
 const SESSIONS_STALE_MS = 5_000;
 
 export const homeKeys = {
@@ -41,7 +40,6 @@ export function useFeed(): Feed {
     queries: runningAgents.map((agent) => ({
       queryKey: homeKeys.sessions(agent.id),
       queryFn: () => listAgentSessionsOverAcp(agent.id),
-      refetchInterval: SESSIONS_POLL_MS,
       staleTime: SESSIONS_STALE_MS,
       retry: false,
     })),

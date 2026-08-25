@@ -5,6 +5,7 @@ import type { Redis } from "ioredis";
 import type {
   E2eService,
   LiveEventsService,
+  PodSessionsService,
   ReposService,
   TermsService,
   UserIdentity,
@@ -89,6 +90,7 @@ export interface ApiServerDeps {
   e2e: E2eService;
   artifacts: ArtifactService;
   liveEvents: LiveEventsService;
+  podSessions: PodSessionsService;
 
   k8sClient: K8sClient;
   agentStateCache: AgentStateCache;

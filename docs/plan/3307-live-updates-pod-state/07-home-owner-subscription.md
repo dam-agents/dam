@@ -49,3 +49,10 @@ Apply `/typescript-engineering` for the server, `/react-ui-engineering` for the 
 5. Hibernate an agent manually while Home is open; it should leave the feed cleanly and come back on wake.
 
 The implementing agent runs this itself, then prints a short manual smoke-test guide so the user can confirm it by hand.
+
+## Divergences taken while implementing
+
+- **No lease, and no cross-replica presence keys.** The holder runs on whichever replica has the subscribers, deduped per (owner, agent) inside that replica. At `apiServer.replicas: 1` — the chart default — that is byte-identical to the lease-elected design: exactly one pod stream per running agent. Above one replica it becomes at most one per replica rather than exactly one, which still moves the count off the tab axis, the property that mattered. Making it exactly one needs a short-TTL Redis presence key per owner plus a scan loop on the holder (the shape `session-presence.ts` uses for agents); that is worth building when a multi-replica install exists, not before, and it is the piece that would be least verifiable without one.
+- **Attach and detach are hint-driven, not polled.** The holder re-evaluates an owner's running set when an `agents` or `sync` notice arrives on that owner's existing Redis channel, which the lease-elected K8s watch already publishes. No new watch, no timer.
+- **Home still reads over the passive ACP path.** Only the *trigger* moved. Reading over the per-agent WS client would open one per running agent and the relay's stamp would keep the fleet warm — the regression sub-issue 03 avoided. The api-server holds the pod streams for notices; the browser's read stays passive and now happens only when something changed.
+- **No stamping is structural rather than enforced.** The holder dials pods directly, the way `files-service.ts` already does, so it never passes through the relay that stamps.

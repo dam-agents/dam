@@ -34,6 +34,8 @@ function harness() {
     bus,
     log: (m) => warnings.push(m),
     k8s: { watchCustomObjects: () => () => {} },
+    namespace: "test",
+    agentsRepo: { list: async () => [] },
   });
   return { bus, subscribedChannels, warnings, module };
 }
