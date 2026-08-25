@@ -1,6 +1,20 @@
 export type { AppRouter } from "./router.js";
 export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
+export type {
+  PodSession,
+  PodSessionList,
+  PodSessionMode,
+  PodSessionType,
+  SessionsService,
+} from "./modules/sessions/types.js";
+export {
+  podSessionListSchema,
+  podSessionModeSchema,
+  podSessionSchema,
+  podSessionTypeSchema,
+} from "./modules/sessions/schemas.js";
+
 export { ok, err } from "./result.js";
 export type {
   DirEntry,

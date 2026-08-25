@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
-import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
+import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
 
@@ -40,7 +40,7 @@ export function useFeed(): Feed {
   const sessions = useQueries({
     queries: runningAgents.map((agent) => ({
       queryKey: homeKeys.sessions(agent.id),
-      queryFn: () => listAgentSessions(agent.id),
+      queryFn: () => listAgentSessionsOverAcp(agent.id),
       refetchInterval: SESSIONS_POLL_MS,
       staleTime: SESSIONS_STALE_MS,
       retry: false,

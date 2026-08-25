@@ -25,6 +25,8 @@ import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
+import type { SessionsService } from "agent-runtime-api";
+import { createSessionsService } from "./services/sessions-service.js";
 
 export interface ComposeAcpOptions {
   command: string[];
@@ -68,6 +70,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
+  sessions: SessionsService;
 } {
   const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
   const backgroundWork = createBackgroundWorkRegistry({
@@ -91,5 +94,17 @@ export function composeAcp(opts: ComposeAcpOptions): {
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver, sessionMetadata, backgroundWork };
+  const sessions = createSessionsService({
+    acpRuntime: runtime,
+    sessionMetadata,
+    isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
+  });
+
+  return {
+    runtime,
+    triggerDriver,
+    sessionMetadata,
+    backgroundWork,
+    sessions,
+  };
 }

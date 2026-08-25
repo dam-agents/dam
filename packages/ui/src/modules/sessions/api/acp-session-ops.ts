@@ -1,7 +1,9 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { PodSession } from "agent-runtime-api";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 
 import { openInitializedConnection } from "../../acp/acp.js";
+import { agentTrpc } from "../../agents/agent-trpc.js";
 
 interface PlatformMeta {
   mode?: string;
@@ -63,6 +65,13 @@ async function withConnection<T>(
   }
 }
 
+function byRecencyThenId(a: SessionView, b: SessionView): number {
+  const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
+    a.updatedAt ?? a.createdAt,
+  );
+  return byActivity !== 0 ? byActivity : a.sessionId.localeCompare(b.sessionId);
+}
+
 export async function listSessionsOn(
   agentId: string,
   conn: ClientSideConnection,
@@ -70,17 +79,36 @@ export async function listSessionsOn(
   const r = await conn.listSessions({ cwd: "." });
   return (r.sessions ?? [])
     .map((s) => toSessionView(agentId, s as unknown as ListedSession))
-    .sort((a, b) => {
-      const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
-        a.updatedAt ?? a.createdAt,
-      );
-      return byActivity !== 0
-        ? byActivity
-        : a.sessionId.localeCompare(b.sessionId);
-    });
+    .sort(byRecencyThenId);
+}
+
+function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
+  return {
+    sessionId: s.sessionId,
+    agentId,
+    type: s.type as SessionType,
+    mode: s.mode as SessionMode,
+    createdAt: s.createdAt,
+    scheduleId: s.scheduleId,
+    experimentId: s.experimentId,
+    threadTs: s.threadTs,
+    title: s.title,
+    updatedAt: s.updatedAt,
+    running: s.running,
+    seenAt: s.seenAt,
+  };
 }
 
 export async function listAgentSessions(
+  agentId: string,
+): Promise<SessionView[]> {
+  const { sessions } = await agentTrpc(agentId).sessions.list.query();
+  return sessions
+    .map((s) => toSessionViewFromPod(agentId, s))
+    .sort(byRecencyThenId);
+}
+
+export async function listAgentSessionsOverAcp(
   agentId: string,
 ): Promise<SessionView[]> {
   return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {

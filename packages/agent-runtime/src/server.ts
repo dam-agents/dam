@@ -127,6 +127,7 @@ const {
   triggerDriver,
   sessionMetadata,
   backgroundWork,
+  sessions: sessionsService,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -180,6 +181,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   files: filesService,
+  sessions: sessionsService,
   skills: skillsService,
   ssh: sshService,
   runtime: runtimeChannel.service,
