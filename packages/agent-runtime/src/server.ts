@@ -10,6 +10,7 @@ const { SerializeAddon } = serializePkg;
 import * as nodePty from "@lydell/node-pty";
 import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
+import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { appRouter } from "agent-runtime-api/router";
 import {
   AGENT_HOME_DIR,
@@ -177,15 +178,17 @@ const CORS = {
 
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
+const createTrpcContext = (): AgentRuntimeContext => ({
+  files: filesService,
+  skills: skillsService,
+  ssh: sshService,
+  runtime: runtimeChannel.service,
+  harnessConfig: runtimeChannel.harnessConfig,
+});
+
 const trpcHandler = createHTTPHandler({
   router: appRouter,
-  createContext: (): AgentRuntimeContext => ({
-    files: filesService,
-    skills: skillsService,
-    ssh: sshService,
-    runtime: runtimeChannel.service,
-    harnessConfig: runtimeChannel.harnessConfig,
-  }),
+  createContext: createTrpcContext,
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
@@ -490,6 +493,13 @@ const server = http.createServer((req, res) => {
 const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
 const sshWss = new WebSocketServer({ noServer: true });
+const trpcWss = new WebSocketServer({ noServer: true });
+
+applyWSSHandler({
+  wss: trpcWss,
+  router: appRouter,
+  createContext: createTrpcContext,
+});
 
 acpWss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
@@ -506,6 +516,10 @@ server.on("upgrade", (req, socket, head) => {
     const reset = url.searchParams.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset }),
+    );
+  } else if (url.pathname === "/api/trpc-ws") {
+    trpcWss.handleUpgrade(req, socket, head, (ws) =>
+      trpcWss.emit("connection", ws, req),
     );
   } else if (url.pathname === "/api/ssh") {
     if (!preparedSshd) {

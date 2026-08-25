@@ -1,4 +1,5 @@
 export { createAcpRelay } from "./acp-relay.js";
+export { createAgentTrpcRelay } from "./agent-trpc-relay.js";
 export { createTerminalRelay } from "./terminal-relay.js";
 export { createSshRelay } from "./ssh-relay.js";
 export {

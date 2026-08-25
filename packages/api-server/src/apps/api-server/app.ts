@@ -11,6 +11,7 @@ import {
 } from "./admission/index.js";
 import {
   createAcpRelay,
+  createAgentTrpcRelay,
   createAgentTrpcProxy,
   createImportProxy,
   createRelayAdmission,
@@ -144,6 +145,10 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
     deps.sessionPresence,
   );
+  const agentTrpcRelay = createAgentTrpcRelay(
+    config.namespace,
+    deps.agentsRepo,
+  );
 
   server.on(
     "upgrade",
@@ -156,6 +161,11 @@ export function startApiServerApp(deps: ApiServerDeps) {
         "terminal",
       ),
       "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+      "/api/agents/:id/trpc-ws": relayRoute(
+        relayAdmission,
+        agentTrpcRelay,
+        "trpc",
+      ),
     }),
   );
 
