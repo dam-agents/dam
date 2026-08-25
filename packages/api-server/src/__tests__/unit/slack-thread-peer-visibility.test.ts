@@ -28,13 +28,14 @@ const OLD_WORDS = "deploy looks broken";
 
 /**
  * TEST_OVERVIEW: What an agent taking a later turn in a Slack thread can see of
- * what a peer agent posted there while it was away. A thread maps to one
- * resumable session per agent, so only an agent's first turn in a thread opens
- * a fresh session and receives the thread's history. These tests pin what the
- * later, resumed turns are handed: the messages that arrived since that agent's
- * own last turn, attributed, and nothing it has already seen.
+ * what was said there while it was away — by a peer agent or by a person. A
+ * thread maps to one resumable session per agent, so only an agent's first turn
+ * in a thread opens a fresh session and receives the thread's history, and a
+ * mention-only binding is never relayed a message that doesn't tag it. These
+ * tests pin what the later, resumed turns are handed: what arrived since that
+ * agent's own last turn, attributed, and nothing it has already seen.
  */
-function harness(existingSessions: AcpSessionInfo[] = []) {
+function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
   const gw = createFakeSlackGateway();
   const prompts: Array<{ resumed: boolean; text: string }> = [];
   const created: AcpSessionInfo[] = [];
@@ -77,10 +78,30 @@ function harness(existingSessions: AcpSessionInfo[] = []) {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBindings: async () => [
-        { instanceName: SELF, owner: OWNER, ambient: false, isDefault: true },
-        { instanceName: PEER, owner: OWNER, ambient: false, isDefault: false },
-      ],
+      resolveSlackBindings: async () =>
+        soleAgent
+          ? [
+              {
+                instanceName: SELF,
+                owner: OWNER,
+                ambient: false,
+                isDefault: true,
+              },
+            ]
+          : [
+              {
+                instanceName: SELF,
+                owner: OWNER,
+                ambient: false,
+                isDefault: true,
+              },
+              {
+                instanceName: PEER,
+                owner: OWNER,
+                ambient: false,
+                isDefault: false,
+              },
+            ],
       resolveSlackChannelsByInstance: async () => [CHANNEL],
     } as never,
     async () => {},
@@ -129,7 +150,7 @@ function mention(ts: string, text: string, inThread = true) {
   };
 }
 
-describe("what a later mention turn sees of a peer agent's thread post", () => {
+describe("what a later mention turn sees of a thread it was away from", () => {
   /**
    * TEST_SCENARIO: The reported sequence. A human opens a thread and mentions
    * agent A, which answers. The human then mentions agent B in the same thread,
@@ -245,6 +266,39 @@ describe("what a later mention turn sees of a peer agent's thread post", () => {
     expect(only.text).toContain(PEER_WORDS);
     expect(only.text).toContain("Ops (another agent)");
     expect(only.text).not.toContain(OLD_WORDS);
+  });
+
+  /**
+   * TEST_SCENARIO: No second agent needed. A mention-only binding is never
+   * relayed a thread message that doesn't tag it, so people talking to each
+   * other in the thread — the ordinary way a thread goes — were invisible to
+   * the agent on every turn after its first. It is the same gap as the
+   * multi-agent one, and the common case: one agent, one channel, humans
+   * talking. The catch-up carries those messages under their Slack ids.
+   */
+  it("carries a human's untagged thread message that was never relayed", async () => {
+    const h = harness([], true);
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
+    expect(h.prompts).toHaveLength(1);
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(SELF, "1.1", "looking now"),
+      { ts: "1.2", user: "U555", text: "we rolled it back by hand already" },
+    ]);
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper where are we"));
+
+    expect(h.prompts).toHaveLength(2);
+    const second = h.prompts[1]!;
+    expect(second.resumed).toBe(true);
+    expect(second.text).toContain("we rolled it back by hand already");
+    expect(second.text).toContain("U555 [");
+    expect(second.text).not.toContain("looking now");
   });
 
   /**
