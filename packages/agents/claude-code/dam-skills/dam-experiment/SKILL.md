@@ -233,7 +233,11 @@ Rules that matter:
 - **Every loop and stage carries a `description`** — one plain sentence on
   what happens there and what it reports. It shows on the node in the live
   graph, so the user can read the design off the UI instead of decoding ids
-  like `verify`. Bare ids are for throwaway spikes only.
+  like `verify`. Bare ids are for throwaway spikes only. And the id itself is
+  the chart legend, so name stages for a reader who never saw the script —
+  `speedup-per-seed`, `arm-decomposition` — not for the code (`seed-score`,
+  `arm-score`, `verdict` are the exact three that once sent a user asking
+  what their own chart meant).
 - **The worker image comes from the catalog, never from a guess.** Resolve it
   with `x.require_image(<id>)` in the declaration section and pass that value
   as `template=`. Don't hardcode `claude-code` because it is the familiar one.
@@ -339,6 +343,17 @@ The failure modes below are all real ones, and they are decided at design time
   that its per-seed files did not exist; the driver had the right numbers in
   hand the whole time. Publish the worker's narrative as commentary, clearly
   labelled, and make the run's own summary the one derived from data.
+- **A boolean is not a score series.** A pass/fail verdict belongs in
+  `exp.post_data(...)` as a card the stock dashboard renders — the verdict
+  plus each named check and its outcome — not on the chart. A run once
+  scored its `verdict` stage with the median speedup: a redundant line that
+  duplicated an existing series while the actual pass/fail hid in the attrs.
+  If a verdict series is truly wanted, score `1.0` or `0.0` and nothing else.
+- **Missing data must look missing.** Never map an invalid value onto a
+  legible one: a `log2(effect) if effect > 0 else 0.0` guard renders garbage
+  as "no change", which is a *finding*. Write no score at all, set an
+  `invalid` attr with the reason, and let the gap in the series say what
+  happened.
 
 ### A purpose-built worker: one Nous campaign per iteration
 
@@ -487,15 +502,24 @@ unit. Read those numbers from the raw files, never from report.md's prose or
 tables. Report per_arm too — arm_type, status and effect for every arm you
 measured, ablations included; the decomposition is the mechanism, and prose is
 not where it survives.
+For per_arm, effect is DEFINED as: that arm's OWN baseline value of {metric}
+divided by that arm's OWN treatment value, measured separately per arm on the
+same seeds. It is a ratio: >1 means the arm helped, 1.0 means no change, and
+a control that changes nothing must come out ~1.0 — never 0, never blank,
+never a value copied from another arm.
 Report cost too, from llm_metrics_summary.json (or `nous cost <run_id>`):
-total USD, total tokens, and LLM call count. These files are stable and
-always exist — report them even when the campaign fails."""
+total USD, total tokens, and LLM call count, plus the campaign's own run_id
+so cost stays re-derivable. These files are stable and always exist — report
+them even when the campaign fails.
+Publish the winning change itself — cumulative.patch — as an artifact, so the
+driver can apply it to its own copy and re-measure rather than take your
+numbers on faith."""
 
 with x.Experiment("nous-campaigns") as exp:
     loop = exp.loop("rounds", description="one Nous campaign per pass")
     campaign = loop.stage("campaign", description="the worker runs a whole campaign")
     seed_score = loop.stage(
-        "seed-score", after=campaign,
+        "speedup-per-seed", after=campaign,
         description="one point per measured seed; the chart plots these",
     )
 
@@ -509,7 +533,7 @@ with x.Experiment("nous-campaigns") as exp:
                 CAMPAIGN.format(repo=REPO, hypothesis=hypothesis, metric=METRIC,
                                 pass_condition=PASS_CONDITION,
                                 campaign_iters=CAMPAIGN_ITERS, seeds=SEEDS),
-                x.s({"status": "string", "summary": "string",
+                x.s({"status": "string", "summary": "string", "run_id": "string",
                      "per_seed": [{"seed": "integer", "baseline": "number",
                                    "treatment": "number"}],
                      "per_arm": [{"arm_type": "string", "status": "string",
@@ -523,6 +547,11 @@ with x.Experiment("nous-campaigns") as exp:
             )
             span.attrs["summary"] = result["summary"]
             span.attrs["status"] = result["status"]
+        # Worker numbers are claims, not facts: validate before scoring
+        # (coverage, positivity, distinct arms, sign agreement — see below).
+        # Record problems instead of raising: bad evidence belongs on the
+        # results page, and result_valid gates the verdict.
+        problems = validation_problems(result)
         # One scored span per seed: a single campaign still draws a readable
         # distribution, and the spread is the scientific content.
         speedups = []
@@ -539,6 +568,8 @@ with x.Experiment("nous-campaigns") as exp:
             "arms": result["per_arm"],  # or a stage of their own, one span per arm
             "cost": result["cost"],
             "status": result["status"],
+            "result_valid": not problems,
+            "problems": problems,
         }})
         hypothesis = next_hypothesis(result)  # your own choice of what to try
 ```
@@ -549,7 +580,40 @@ str(e)` (the message carries the platform's reason — OOM, deadline, crash),
 mark the span failed, and continue to the next round. An uncaught failure
 kills the script and every remaining round with it.
 
-Six things this example is really teaching:
+Nine things this example is really teaching:
+
+- **Define every number you demand.** A schema field typed `"number"` with no
+  definition is an invitation to guess, and the worker will accept it: a run
+  once returned `effect = -1.056` on all five arms because nobody said what
+  `effect` was a number *of* — every downstream failure traced back to that
+  one gap. For each numeric field, the prompt states the formula, the unit,
+  the direction, and the value an inert control must produce (~1.0 for a
+  ratio — never 0, never blank, never copied between arms).
+- **Validate before you score.** Every worker-reported number is a claim
+  until it survives a gate the driver runs before writing any span:
+  - coverage — per-seed / per-n arrays match exactly the seeds and grid you
+    pinned; timings are positive;
+  - **distinct arms** — arms run different code and cannot agree to six
+    decimals; identical effects are a constant, not a measurement;
+  - **sign agreement** — an arm claiming "2× slower" while the raw numbers of
+    the same run show "4706× faster" is irreconcilable and must fail loudly;
+  - a plausibility ceiling — a headline past it (say 1000×) passes only with
+    corroboration (checksums unchanged, ruler untouched), because that
+    magnitude is where broken benchmarks live;
+  - the worker's baseline within a few × of one the driver measured itself;
+  - the campaign's own verdict — `h_main_status == "CONFIRMED"` from
+    `findings.json`, so a numerically-passing run cannot hide a REFUTED arm.
+  Record the problems in `post_data` instead of raising — bad evidence must
+  be visible on the results page — and gate the verdict on `result_valid`.
+- **Replicate when the driver can.** The strongest verification is not a
+  check, it is re-measurement: the worker publishes `cumulative.patch`, and a
+  driver that holds its own pristine copy of the target applies the patch,
+  runs the tests and the bench itself, and computes the headline from its
+  own numbers — the worker's figures become a cross-check, and every
+  self-graded field (tests, checksums, ruler lock, timings) becomes a
+  driver-confirmed one. Do this whenever the measurement runs on plain local
+  tooling; skip it only when the measurement needs hardware or state the
+  driver lacks.
 
 - **The round is silent until it ends.** One campaign per round means one span
   running for hours with nothing to show — no points, no progress, and the

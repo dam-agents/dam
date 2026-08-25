@@ -29,6 +29,39 @@ confirming iteration, in the metric's own unit — read from those raw files
 and **not** from `report.md`'s prose or summary table, which are free text
 and have been observed to disagree with the raw numbers.
 
+**The result contract, field by field.** Learned the hard way — each rule
+below is a real run's failure:
+
+- **Define every numeric field in the prompt** — formula, unit, direction,
+  and the value an inert control must produce. An undefined `effect:
+  "number"` came back as `-1.056` on every arm of a bundle: a guess, not a
+  measurement.
+- **Name the standard arm family you expect reported** (`h-main`,
+  `h-ablation`, `h-control-negative`, `h-robustness`, …) so presence can be
+  validated. This is a *reporting* contract — the bundle's design stays
+  Nous's; validating what came back is not designing the science.
+- **Integrity fields are reported, not assumed**: `ruler_unmodified` as a
+  boolean the worker must set after running the pristine-copy diff, and
+  checksums **per seed** (`checksums_per_seed: [{seed, unchanged}]`) when the
+  pass condition is per-seed — a blanket boolean cannot answer a per-seed
+  bar.
+- **`run_id`, cost, tokens, call count** — from `llm_metrics_summary.json`;
+  exist even on failed campaigns.
+- **`h_main_status`** from `findings.json` (`CONFIRMED | REFUTED |
+  PARTIALLY_CONFIRMED`) — and the driver's verdict must consume it, or a
+  numerically-passing run hides a refuted hypothesis.
+- **`cumulative.patch` published as an artifact** (see `nous lineage`, §5) —
+  a driver holding its own copy of the target then applies it and re-measures
+  locally, turning every self-graded field into a driver-confirmed one. This
+  replication is worth more than all other validation combined.
+
+Then validate before scoring — coverage against the pinned seeds/grid,
+positive timings, arms distinct (identical-to-6dp = constant), sign agreement
+between arm effects and the raw per-n numbers, worker baseline within a few ×
+of a driver-measured reference, a plausibility ceiling on the headline.
+Record problems in `post_data` (bad evidence belongs on the results page,
+not in a stack trace) and gate the verdict on the result being valid.
+
 There is **no central stats database**. Results are file-based in two tiers:
 
 1. **Per-campaign artifacts** — raw, complete, campaign-specific schema.

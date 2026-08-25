@@ -109,27 +109,63 @@ worth reporting, and either half can come back refuted.
 
 ## What the run puts on screen
 
-Three score series plus a run-level table — design the spawn schema so all of
-it survives the worker being reaped:
+Three score series, a verify stage, and a verdict card — with stage ids named
+for the legend, because the legend is all a viewer sees (`seed-score`,
+`arm-score` and `verdict` are the exact ids that sent a user asking what
+their own chart meant):
 
-- **`seed-score`** — one span per seed at n=5000 (3 points): the spread, so a
-  reader sees whether one seed carries the median. Needs `per_seed:
-  [{seed, baseline, treatment}]` in the result schema.
-- **speedup vs n** — one span per n value (3 points, `iteration=n`): the
-  curve, which is the demo's whole argument. Needs the per-n numbers in the
-  result schema too — e.g. `per_n: [{n, baseline, treatment}]` — or the curve
-  dies with the pod exactly like per-seed data used to.
-- **`arm-score`** — one span per arm of the bundle Nous designed (~5–8
-  points): main effect large, ablations small, control ≈ 1.0. This series
-  spans orders of magnitude, so score `log2(effect)` (or build a bespoke
-  dashboard) — on the stock chart's linear axis the small arms collapse onto
-  the floor.
-- **`post_data`** — the evidence table with absolute µs next to every ratio,
-  the pass verdict against the pre-registered bar, the guard number, per-phase
-  durations, and campaign cost (USD, tokens, LLM calls — demand it in the
-  result schema; `llm_metrics_summary.json` always exists on the worker, even
-  on a failed campaign). The stock dashboard renders it; nothing extra to
-  build.
+- **`speedup-per-seed`** — one span per seed at n=5000 (3 points): the
+  spread, so a reader sees whether one seed carries the median. Absolutes
+  (`baseline_us`, `treatment_us`, `meets_bar`) ride in the attrs.
+- **`speedup-vs-n`** — one span per n value (3 points, `iteration=n`): the
+  curve, which is the demo's whole argument.
+- **`arm-decomposition`** — one span per arm of the bundle Nous designed,
+  `iteration=` set per arm (an unset iteration once made five arms look like
+  one). Score `log2(effect)` so the control at ~1× and the main effect share
+  an axis — but only for a valid effect: garbage gets **no score** plus an
+  `invalid` attr, never a 0.0 that reads as "no change".
+- **`verify`** — the replication stage, and the reason the numbers above can
+  be trusted: the driver applies the worker's published `cumulative.patch` to
+  its own pristine copy, runs the 13 tests and the seeded bench itself, and
+  scores the primary series from its **own** measurements. The worker's
+  figures become a cross-check column, and tests/checksums/ruler-lock stop
+  being self-graded. tiny-search is plain Node — there is no excuse not to.
+- **Verdict = a `post_data` card, not a series.** PASS/FAIL plus every named
+  check (median ≥ 20×, ≥ 2/3 seeds, 13/13 tests, per-seed checksums
+  unchanged, guard ≤ 3×, `h_main_status == CONFIRMED`, `result_valid`) with
+  each outcome — the stock dashboard renders it. A previous run scored the
+  verdict stage with the median speedup: a redundant line hiding the actual
+  answer in attrs.
+- **`post_data` also carries** the evidence table with absolute µs next to
+  every ratio, per-phase durations, the Nous `run_id`, and cost (USD, tokens,
+  LLM calls — `llm_metrics_summary.json` exists even on failed campaigns).
+
+## Trust nothing the schema didn't define, score nothing you didn't validate
+
+The result schema demands `per_seed`, `per_n`, `per_arm`, `checksums_per_seed`
+(a list — the bar is per-seed, a blanket boolean can't answer it),
+`ruler_unmodified`, `h_main_status`, `run_id`, and `cost` — and the prompt
+**defines every number**: effect is "that arm's OWN baseline p50 ÷ that arm's
+OWN treatment p50, query-heavy at n=5000, same seeds and reps; a no-op
+control must come out ~1.0 — never 0, never blank, never copied from another
+arm". An undefined `effect: "number"` is how a real run got `-1.056` on all
+five arms — a guess that passed anyway because nothing validated it.
+
+Before any span is scored, the driver runs a validation gate and records what
+it finds (in `post_data`, not a raised exception — bad evidence belongs on
+the page), with `result_valid` gating the verdict:
+
+- per_seed covers exactly seeds {1, 2, 3}; per_n exactly {1000, 5000, 20000};
+  all timings positive;
+- arm effects are **distinct** — different code cannot agree to six decimals;
+- **sign agreement** — an h-main effect claiming "slower" beside per-n data
+  showing 4706× faster is irreconcilable and fails the result;
+- plausibility — a median past 1000× passes only corroborated (checksums
+  unchanged AND ruler untouched AND the driver's own verify measurements
+  agree), because that magnitude is where broken benchmarks live;
+- the worker's baselines within ~5× of the driver's own (measured at setup:
+  ~2.45 / 12.97 / 56.2 ms) — further off means different-enough hardware or
+  harness that the ratio isn't comparable.
 
 ## Size and shape
 
