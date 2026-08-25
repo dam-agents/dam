@@ -21,6 +21,11 @@ concurrency:
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
+  # Pin mise so the lockfile (mise.lock) stays deterministic. Unpinned,
+  # mise-action installs latest and each new release rewrites platform entries
+  # and the generated header, churning mise.lock on unrelated PRs. Bump this in
+  # lockstep with a `mise run … lock` regeneration commit.
+  MISE_VERSION: "2026.7.15"
 
 jobs:
   check:
@@ -35,6 +40,8 @@ jobs:
           # latest v* tag, crd-schema-generation vs the origin/main merge-base.
           fetch-depth: 0
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run check
 
@@ -48,6 +55,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run test
 
@@ -156,6 +165,8 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
       - if: matrix.component == 'keycloak'
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
         run: mise run setup && mise run keycloak-theme:build
       - id: build
@@ -616,6 +627,8 @@ jobs:
             docker tag "$IMAGE_PREFIX/$c:$SHA" "platform-$c:latest"
           done
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run e2e
         env:
@@ -659,6 +672,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
+          version: ${{ env.MISE_VERSION }}
           cache: false
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
       - name: Log in to Helm OCI registry
@@ -729,6 +743,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
+          version: ${{ env.MISE_VERSION }}
           cache: false
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
       - name: Log in to Helm OCI registry
@@ -767,6 +782,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run controller:setup
 
       - name: Detect vulnerabilities
@@ -807,6 +824,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run common:setup:pnpm
       - name: Detect vulnerabilities
         run: |
@@ -894,6 +913,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - id: list
         run: |
           set -euo pipefail
@@ -927,6 +948,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
 
       - name: Detect vulnerabilities
         id: scan
