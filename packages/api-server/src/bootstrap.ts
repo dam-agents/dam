@@ -81,6 +81,8 @@ import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
+import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
+import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
 import { createTurnMetrics } from "./core/turn-metrics.js";
 import { startTurnMetricsSaga } from "./sagas/turn-metrics.js";
@@ -164,29 +166,9 @@ export async function bootstrap() {
       ? readFileSync(config.databaseCaCertPath, "utf8")
       : undefined,
   };
-  const usageGrants = await runMigrations(
-    config.databaseUrl,
-    config.migrationsPath,
-    dbTls,
-  );
-  if (!usageGrants.rolePresent) {
-    getLogger().info({ role: usageGrants.role }, "usage.grants.role-absent");
-  } else if (usageGrants.unreadable.length > 0) {
-    getLogger().warn(
-      {
-        role: usageGrants.role,
-        readable: usageGrants.readable,
-        unreadable: usageGrants.unreadable,
-      },
-      "usage.grants.incomplete",
-    );
-  } else {
-    getLogger().info(
-      { role: usageGrants.role, readable: usageGrants.readable },
-      "usage.grants.reconciled",
-    );
-  }
+  await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
   const { db, sql } = createDb(config.databaseUrl, dbTls);
+  reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,

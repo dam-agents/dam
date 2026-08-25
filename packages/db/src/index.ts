@@ -1,6 +1,5 @@
 export { createDb, type Db, type DbTx } from "./client.js";
 export { runMigrations } from "./migrate.js";
-export type { UsageViewGrants } from "./usage-view-grants.js";
 export {
   channels,
   identityLinks,

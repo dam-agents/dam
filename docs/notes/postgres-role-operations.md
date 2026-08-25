@@ -28,8 +28,14 @@ Plus one role that is not a connection identity at all:
   every start, so a view-recreating migration cannot silently revoke a
   consumer's access, and it does not matter whether the role is created
   before or after those views exist. Each start logs which passthroughs the
-  role can read (`usage.grants.reconciled`) and warns about any it cannot
-  (`usage.grants.incomplete`); where the role is absent it logs
+  role can read (`usage.grants.reconciled`); it warns under
+  `usage.grants.incomplete` for a view it could grant and still cannot read,
+  under `usage.grants.not-grantable` for one it does not own — which no
+  restart fixes, and which needs an operator to `GRANT SELECT ON <view> TO
+  usage_readers` — under `usage.grants.unreachable` when the role has no
+  CONNECT on the database or USAGE on the schema, and under
+  `usage.grants.failed` if the reconcile itself could not complete, which
+  leaves the platform running and the grants stale. Where the role is absent it logs
   `usage.grants.role-absent` and does nothing. Creating the role stays
   outside the application, because an api-server that could mint database
   logins could mint itself a better one.
@@ -119,11 +125,18 @@ admin role:
 - Create `usage_readers` as `NOLOGIN` (no password), and `GRANT CONNECT ON
   DATABASE platform` to it. Then `GRANT usage_readers TO <read-only login>`
   for whichever login should read the metrics — that membership is what
-  survives future view migrations. Order does not matter: the api-server
-  reconciles the view grants on every start, so a role created after a
-  release is picked up by the next api-server start. Confirm with the
-  `usage.grants.reconciled` log line. Skip both steps entirely if the
-  install has no analytics consumer.
+  survives future view migrations. Order does not matter, but a restart does:
+  the api-server reconciles the view grants at startup, so a role created
+  after a release is picked up by the **next api-server start** — and nothing
+  in a release forces one, so create the role before the release or restart
+  the api-server afterwards (`kubectl rollout restart deploy/<api-server>`).
+  A restart is cheap and safe on its own: migrations are journal-gated, so a
+  start with no new migration files applies no DDL. Confirm with the
+  `usage.grants.reconciled` log line, which lists what the role can read.
+  To withdraw access later, `REVOKE usage_readers FROM <login>` — revoking a
+  view grant directly does not hold, because the reconcile treats the
+  passthrough set as authoritative and restores it on the next start. Skip
+  this bullet entirely if the install has no analytics consumer.
 - There is no dedicated admin SUPERUSER to create — managed services withhold
   tenant superuser (on IBM Cloud Databases the only superuser is IBM's internal
   `ibm` account), so the provider's admin role *is* the top role.

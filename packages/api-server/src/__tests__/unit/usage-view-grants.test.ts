@@ -1,0 +1,199 @@
+import { describe, it, expect } from "vitest";
+import { createDb, type Db } from "db";
+import { reconcileUsageViewGrants } from "../../modules/usage/infrastructure/usage-view-grants.js";
+import { reportUsageViewGrants } from "../../modules/usage/infrastructure/usage-view-grants-report.js";
+import type { UsageViewGrants } from "../../modules/usage/infrastructure/usage-view-grants.js";
+import type { Logger } from "../../core/logger.js";
+
+// TEST_OVERVIEW: The reconcile keeps the usage_readers group's SELECT on the usage_src_* passthroughs current, and must never be able to stop the api-server from starting. It runs on the startup path, issues DCL against a catalog that migrations and operators mutate concurrently, and every error it does not swallow is a CrashLoopBackOff. These specs pin the containment and the reporting split; the SQL itself is exercised against a real Postgres, which this suite has no access to.
+
+type Executed = { text: string; params: unknown[] };
+
+type Dialect = { sqlToQuery: (q: never) => { sql: string; params: unknown[] } };
+let dialect: Dialect | undefined;
+function renderer(): Dialect {
+  if (!dialect) {
+    const probe = createDb("postgresql://unused:unused@127.0.0.1:1/unused");
+    dialect = (probe.db as unknown as { dialect: Dialect }).dialect;
+    void probe.sql.end({ timeout: 0 });
+  }
+  return dialect;
+}
+
+function fakeDb(
+  reply: (text: string) => unknown[],
+  opts: { failOn?: RegExp } = {},
+): { db: Db; executed: Executed[] } {
+  const executed: Executed[] = [];
+  const execute = (query: unknown) => {
+    const { sql: text, params } = renderer().sqlToQuery(query as never);
+    executed.push({ text, params });
+    if (opts.failOn?.test(text)) {
+      return Promise.reject(new Error("boom"));
+    }
+    return Promise.resolve(reply(text));
+  };
+  const db = {
+    execute,
+    transaction: (fn: (tx: unknown) => Promise<unknown>) => fn({ execute }),
+  } as unknown as Db;
+  return { db, executed };
+}
+
+const catalogReply =
+  (rows: Array<{ name: string; readable: boolean; grantable: boolean }>) =>
+  (text: string): unknown[] => {
+    if (text.includes("to_regrole")) return [{ present: true }];
+    if (text.includes("has_database_privilege")) {
+      return [{ can_connect: true, can_use_schema: true }];
+    }
+    if (text.includes("NOT has_table_privilege")) {
+      return rows
+        .filter((r) => !r.readable && r.grantable)
+        .map(({ name }) => ({ name }));
+    }
+    if (text.includes("COALESCE(has_table_privilege")) return rows;
+    return [];
+  };
+
+function collectLogs(): { logger: Logger; lines: Array<[string, string]> } {
+  const lines: Array<[string, string]> = [];
+  const logger = {
+    info: (_o: unknown, msg: string) => lines.push(["info", msg]),
+    warn: (_o: unknown, msg: string) => lines.push(["warn", msg]),
+  } as unknown as Logger;
+  return { logger, lines };
+}
+
+describe("usage view grant reconcile", () => {
+  // TEST_SCENARIO: Most installs have no analytics consumer, so the role does not exist. Nothing may be granted and nothing may fail — a missing role is the normal state, not an error.
+  it("does nothing and reports absence when the role does not exist", async () => {
+    const { db, executed } = fakeDb((text) =>
+      text.includes("to_regrole") ? [{ present: false }] : [],
+    );
+
+    const result = await reconcileUsageViewGrants(db);
+
+    expect(result.failed).toBeUndefined();
+    expect(result.rolePresent).toBe(false);
+    expect(result.readable).toEqual([]);
+    expect(executed.filter((e) => e.text.includes("GRANT"))).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: A failure anywhere in the reconcile must degrade to a report, never propagate. This runs before the HTTP listener exists, so a rejection here is an api-server that never starts — for an optional analytics grant.
+  it("never throws when the database rejects, and says it failed", async () => {
+    const { db } = fakeDb(catalogReply([]), {
+      failOn: /pg_advisory_xact_lock/,
+    });
+
+    const result = await reconcileUsageViewGrants(db);
+
+    expect(result.failed).toBeDefined();
+    expect(result.readable).toEqual([]);
+  });
+
+  // TEST_SCENARIO: Only views missing the privilege are granted. Re-granting what is already held writes to the catalog and into the DDL audit log on every boot, for nothing.
+  it("grants only the passthroughs that are missing the privilege", async () => {
+    const { db, executed } = fakeDb(
+      catalogReply([
+        { name: "usage_src_agents", readable: true, grantable: true },
+        { name: "usage_src_events", readable: false, grantable: true },
+      ]),
+    );
+
+    await reconcileUsageViewGrants(db);
+
+    expect(
+      executed.some(
+        (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
+      ),
+    ).toBe(true);
+    const grants = executed.filter((e) => e.text.includes("GRANT SELECT"));
+    expect(grants).toHaveLength(1);
+    expect(grants[0]?.text).toContain("usage_src_events");
+  });
+
+  // TEST_SCENARIO: The GRANT must name the schema. Unqualified, it resolves through search_path, which lands the grant on whatever shadows the view — including a table — and can abort the boot.
+  it("schema-qualifies every grant", async () => {
+    const { db, executed } = fakeDb(
+      catalogReply([
+        { name: "usage_src_events", readable: false, grantable: true },
+      ]),
+    );
+
+    await reconcileUsageViewGrants(db);
+
+    expect(
+      executed.some(
+        (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
+      ),
+    ).toBe(true);
+    const grant = executed.find((e) => e.text.includes("GRANT SELECT"));
+    expect(grant?.text).toMatch(/"public"\."usage_src_events"/);
+  });
+
+  // TEST_SCENARIO: A view this role cannot grant is a different problem from one it can: no restart will fix the former. Collapsing them trains the alarm into noise.
+  it("separates views it cannot grant from views it granted and still cannot read", async () => {
+    const { db } = fakeDb(
+      catalogReply([
+        { name: "usage_src_foreign", readable: false, grantable: false },
+        { name: "usage_src_ok", readable: true, grantable: true },
+      ]),
+    );
+
+    const result = await reconcileUsageViewGrants(db);
+
+    expect(result.failed).toBeUndefined();
+    expect(result.notGrantable).toEqual(["usage_src_foreign"]);
+    expect(result.unreadable).toEqual([]);
+    expect(result.readable).toEqual(["usage_src_ok"]);
+  });
+
+  // TEST_SCENARIO: Work is bounded because it blocks startup. Without both timeouts a stalled lock holder or a hung statement keeps every replica from ever becoming ready. The form matters as much as the values: SET LOCAL cannot take a bind parameter, so spelling it that way makes every reconcile fail on the first statement.
+  it("bounds the transaction with a lock and statement timeout", async () => {
+    const { db, executed } = fakeDb(catalogReply([]));
+
+    await reconcileUsageViewGrants(db);
+
+    expect(
+      executed.some(
+        (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
+      ),
+    ).toBe(true);
+    const text = executed.map((e) => e.text).join("\n");
+    expect(text).toContain("set_config('lock_timeout'");
+    expect(text).toContain("set_config('statement_timeout'");
+    expect(executed.some((e) => e.text.includes("SET LOCAL"))).toBe(false);
+  });
+});
+
+describe("usage view grant reporting", () => {
+  const base: UsageViewGrants = {
+    role: "usage_readers",
+    rolePresent: true,
+    canConnect: true,
+    canUseSchema: true,
+    granted: [],
+    readable: ["usage_src_agents"],
+    unreadable: [],
+    notGrantable: [],
+  };
+
+  // TEST_SCENARIO: Each failure mode gets its own event name, so an operator can tell apart the one a restart heals, the one needing a manual GRANT, and the one where the role cannot reach the database at all.
+  it("names each outcome distinctly", () => {
+    const cases: Array<[Partial<UsageViewGrants>, string, string]> = [
+      [{ rolePresent: false }, "info", "usage.grants.role-absent"],
+      [{ failed: "boom" }, "warn", "usage.grants.failed"],
+      [{ canConnect: false }, "warn", "usage.grants.unreachable"],
+      [{ unreadable: ["usage_src_x"] }, "warn", "usage.grants.incomplete"],
+      [{ notGrantable: ["usage_src_y"] }, "warn", "usage.grants.not-grantable"],
+      [{}, "info", "usage.grants.reconciled"],
+    ];
+
+    for (const [patch, level, event] of cases) {
+      const { logger, lines } = collectLogs();
+      reportUsageViewGrants(logger, { ...base, ...patch });
+      expect(lines).toEqual([[level, event]]);
+    }
+  });
+});

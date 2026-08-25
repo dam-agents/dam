@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-24
+Last verified: 2026-08-25
 
 ## Overview
 
@@ -383,9 +383,9 @@ Three login roles, not one:
 - **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of
   the `platform` and `keycloak` databases respectively, each the only role its
   service connects as. `CONNECT` is revoked from `PUBLIC` and granted back only
-  to that owner — and, on `platform`, to the credential-less `usage_readers`
-  group that [usage-tracking](usage-tracking.md#source-passthrough-views) owns
-  — so a leaked api-server credential can neither read Keycloak's
+  to that owner, plus the credential-less `usage_readers` group on `platform`
+  ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked
+  api-server credential can neither read Keycloak's
   database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) —
   it can only do DDL/DML within the `platform` database it already owns.
 - **`platform`** — the lone `SUPERUSER`, used only for DBA work. It is the
@@ -393,9 +393,9 @@ Three login roles, not one:
   so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
   An existing single-role cluster already bootstrapped under this name, so it is
   kept in place rather than renamed — Postgres forbids renaming the role you
-  are connected as. A per-role `log_statement` default puts
-  every admin-session statement into the audit stream, while routine app
-  traffic stays out.
+  are connected as. A per-role `log_statement` default puts every
+  admin-session statement into the audit trail, and every role and grant
+  change is audited whoever issues it ([persistence](persistence.md)).
 
 The admin credential lives in the same `platform-postgres-secrets` Secret and
 must be treated as high-value. The statement audit is best-effort, not enforced
