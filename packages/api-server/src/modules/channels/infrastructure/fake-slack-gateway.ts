@@ -146,8 +146,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async getThreadReplies() {
-      return [...history];
+    async getThreadReplies(args) {
+      const from = args.oldest
+        ? history.filter((m) => Number(m.ts) >= Number(args.oldest))
+        : [...history];
+      return from.slice(0, args.limit);
     },
 
     async getChannelHistory() {

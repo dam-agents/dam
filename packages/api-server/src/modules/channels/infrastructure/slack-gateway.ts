@@ -146,6 +146,7 @@ export interface SlackGateway {
     channel: string;
     threadTs: string;
     limit: number;
+    oldest?: string;
   }): Promise<SlackMessage[]>;
   getChannelHistory(args: {
     channel: string;

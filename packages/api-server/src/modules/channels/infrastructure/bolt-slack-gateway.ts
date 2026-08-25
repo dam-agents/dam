@@ -228,6 +228,7 @@ export function createBoltSlackGateway(
         channel: args.channel,
         ts: args.threadTs,
         limit: args.limit,
+        ...(args.oldest ? { oldest: args.oldest } : {}),
       });
       return (replies.messages ?? []).map((m) => ({
         ts: m.ts,

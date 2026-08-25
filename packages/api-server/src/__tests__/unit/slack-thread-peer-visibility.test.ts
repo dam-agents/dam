@@ -69,9 +69,23 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
       AGENT_NAMES[id] ? { id, name: AGENT_NAMES[id] } : null,
   } as unknown as AgentsService;
 
+  const failThreadReads = { count: 0 };
+  const gateway = {
+    ...gw,
+    getThreadReplies: async (
+      args: Parameters<typeof gw.getThreadReplies>[0],
+    ) => {
+      if (failThreadReads.count > 0) {
+        failThreadReads.count -= 1;
+        throw new Error("slack conversations.replies unavailable");
+      }
+      return gw.getThreadReplies(args);
+    },
+  };
+
   const worker = createSlackWorker(
     () => acp,
-    () => gw,
+    () => gateway,
     () => agents,
     { resolve: async () => null } as never,
     { authUrl: "http://kc", clientId: "c" } as never,
@@ -115,7 +129,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     () => {},
   );
 
-  return { gw, prompts, worker };
+  return { gw, prompts, worker, failThreadReads };
 }
 
 function footered(agentId: string, ts: string, text: string) {
@@ -323,5 +337,88 @@ describe("what a later mention turn sees of a thread it was away from", () => {
     expect(only.text).toContain("Ops (another agent)");
     expect(only.text).toContain(PEER_WORDS);
     expect(only.text).toContain(OLD_WORDS);
+  });
+
+  /**
+   * TEST_SCENARIO: A thread longer than one page of replies. Slack returns a
+   * thread oldest-first, so reading a fixed page of it hands back the thread's
+   * beginning — all of it older than the boundary, leaving the catch-up empty
+   * exactly where it is needed most, in the long busy threads several agents
+   * work. The read is anchored at the boundary instead, so what arrived after
+   * it is what comes back.
+   */
+  it("finds the peer's post in a thread longer than one page of replies", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    const filler = Array.from({ length: 55 }, (_, i) => ({
+      ts: `1.${String(i + 1).padStart(2, "0")}`,
+      user: "U555",
+      text: `chatter ${i + 1}`,
+    }));
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      ...filler,
+      { ts: "1.56", user: "U999", text: "<@U-BOT> Helper still there" },
+    ]);
+    await h.gw.fireMention(mention("1.56", "<@U-BOT> Helper still there"));
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      ...filler,
+      { ts: "1.56", user: "U999", text: "<@U-BOT> Helper still there" },
+      footered(PEER, "1.6", PEER_WORDS),
+    ]);
+    await h.gw.fireMention(mention("1.61", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(3);
+    const third = h.prompts[2]!;
+    expect(third.resumed).toBe(true);
+    expect(third.text).toContain(PEER_WORDS);
+    expect(third.text).toContain("Ops (another agent)");
+    expect(third.text).not.toContain("chatter 1 ");
+  });
+
+  /**
+   * TEST_SCENARIO: Slack refusing the catch-up read must not cost the agent the
+   * messages. The boundary only moves once the messages behind it have actually
+   * been read, so a failed turn leaves it where it was and the next turn picks
+   * the same window up — rather than stepping over it and dropping the peer's
+   * reply for good.
+   */
+  it("keeps the unseen boundary where it was when the read fails", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(SELF, "1.1", "looking now"),
+      footered(PEER, "1.3", PEER_WORDS),
+    ]);
+
+    h.failThreadReads.count = 1;
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper any news"));
+
+    expect(h.prompts).toHaveLength(2);
+    expect(h.prompts[1]!.text).not.toContain(PEER_WORDS);
+
+    await h.gw.fireMention(mention("1.5", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(3);
+    const third = h.prompts[2]!;
+    expect(third.resumed).toBe(true);
+    expect(third.text).toContain(PEER_WORDS);
+    expect(third.text).toContain("Ops (another agent)");
   });
 });

@@ -103,6 +103,12 @@ import {
   type AgentFooter,
 } from "./agent-footer.js";
 import {
+  isAfterTs,
+  lastOwnPostTs,
+  selectUnseen,
+  type CatchUpSelection,
+} from "../domain/thread-catch-up.js";
+import {
   matchRosterName,
   orderAmbientReaders,
   routeMention,
@@ -498,6 +504,8 @@ function renderTurnFiles(attachments: {
   return `\nTurn included: ${list.join(", ")}.`;
 }
 
+const THREAD_LOOKBACK = 50;
+
 async function getContextMessages(
   gateway: SlackGateway,
   channel: string,
@@ -506,24 +514,35 @@ async function getContextMessages(
   threadTs: string | undefined,
   bot: { userId: string | null; label: string },
   resolveAgentName: (agentId: string) => Promise<string>,
-  opts?: { sinceTs?: string; skipOwnPosts?: boolean },
+  catchUp: CatchUpSelection | null,
 ): Promise<{
   lines: string[];
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
 }> {
   const raw = threadTs
-    ? await gateway.getThreadReplies({ channel, threadTs, limit: 50 })
+    ? await gateway.getThreadReplies({
+        channel,
+        threadTs,
+        limit: THREAD_LOOKBACK,
+        ...(catchUp ? { oldest: catchUp.since } : {}),
+      })
     : (await gateway.getChannelHistory({ channel, limit: 10 }))
         .slice()
         .reverse();
 
-  const since = opts?.sinceTs;
-  const entries = raw
-    .filter((m) => m.ts !== ts)
-    .filter((m) => since === undefined || (!!m.ts && isAfterTs(m.ts, since)))
-    .map((message) => ({ message, footer: parseAgentFooter(message) }))
-    .filter((e) => !opts?.skipOwnPosts || e.footer?.agentId !== readingAgentId);
+  const all = raw.map((message) => ({
+    ts: message.ts,
+    authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+    message,
+  }));
+  const selected = catchUp
+    ? selectUnseen(all, catchUp)
+    : all.filter((e) => e.ts !== ts);
+  const entries = selected.map((e) => ({
+    message: e.message,
+    footer: e.authorAgentId ? { agentId: e.authorAgentId } : null,
+  }));
 
   const authorIds = [
     ...new Set(entries.flatMap((e) => (e.footer ? [e.footer.agentId] : []))),
@@ -552,25 +571,6 @@ async function getContextMessages(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
   };
-}
-
-function isAfterTs(candidate: string, floor: string): boolean {
-  const a = Number(candidate);
-  const b = Number(floor);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return candidate > floor;
-  return a > b;
-}
-
-function lastOwnPostTs(
-  messages: SlackMessage[],
-  readingAgentId: string,
-): string | null {
-  for (const message of [...messages].reverse()) {
-    if (parseAgentFooter(message)?.agentId === readingAgentId) {
-      return message.ts ?? null;
-    }
-  }
-  return null;
 }
 
 export interface SlackBindingInfo {
@@ -1417,6 +1417,7 @@ export function createSlackWorker(
         ctx.hasThread ? ctx.threadTs : undefined,
         bot,
         resolveAgentName,
+        null,
       );
     const legend =
       hasAgentAuthored || hasUnattributedBot
@@ -1451,17 +1452,23 @@ export function createSlackWorker(
       hasThread: boolean;
     },
   ): Promise<{ context?: string[]; contextLegend?: string }> {
+    if (!ctx.hasThread) return {};
     const threadKey = slackThreadKey(ctx.channel, ctx.threadTs);
     try {
-      if (!ctx.hasThread) return {};
       const since =
         readThreadSeen(ctx.instanceName, threadKey) ??
         lastOwnPostTs(
-          await gw.getThreadReplies({
-            channel: ctx.channel,
-            threadTs: ctx.threadTs,
-            limit: 50,
-          }),
+          (
+            await gw.getThreadReplies({
+              channel: ctx.channel,
+              threadTs: ctx.threadTs,
+              limit: THREAD_LOOKBACK,
+            })
+          ).map((message) => ({
+            ts: message.ts,
+            authorAgentId: parseAgentFooter(message)?.agentId ?? null,
+            message,
+          })),
           ctx.instanceName,
         );
       if (!since) return {};
@@ -1477,8 +1484,13 @@ export function createSlackWorker(
         ctx.threadTs,
         bot,
         resolveAgentName,
-        { sinceTs: since, skipOwnPosts: true },
+        {
+          readingAgentId: ctx.instanceName,
+          since,
+          triggeringTs: ctx.eventTs,
+        },
       );
+      noteThreadSeen(ctx.instanceName, threadKey, ctx.eventTs);
       if (lines.length === 0) return {};
       return {
         context: lines,
@@ -1497,8 +1509,6 @@ export function createSlackWorker(
         "slack.catchup.failed",
       );
       return {};
-    } finally {
-      noteThreadSeen(ctx.instanceName, threadKey, ctx.eventTs);
     }
   }
 
