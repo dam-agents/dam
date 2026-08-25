@@ -11,12 +11,12 @@ e2e:
 nfsProvisioner:
   enabled: false
 
-# Only the mock image is built for the e2e cluster, so every template
-# values-local.yaml leaves enabled must be disabled here: one that renders
-# into the agent ConfigMap makes cluster:install load an image CI never built,
-# and the e2e job pulls only controller/api-server/ui/keycloak/mock. nous is
-# listed even though values-local disables it too — re-enabling it there for a
-# campaign must not take e2e down with it.
+# Only the mock image is built for the e2e cluster — disable the agent
+# templates values-local.yaml leaves enabled (claude-code and nous). Any
+# enabled template is rendered, and cluster:install then tries to
+# `docker save platform-<name>:latest` it; in CI that image is neither pulled
+# (only controller/api-server/ui/keycloak/mock are) nor built (SKIP_IMAGE_BUILD=1),
+# so a stray enabled template fails the load with "reference does not exist".
 agentTemplates:
   claude-code:
     enabled: false
