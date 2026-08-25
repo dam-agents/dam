@@ -1,6 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect } from "vitest";
 import type { AgentsService } from "api-server-api";
+import { SessionType, slackThreadKey } from "api-server-api";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
@@ -17,24 +18,29 @@ const OWNER = "kc|owner-1";
 const FOOTER_LABEL = "Powered by DAM";
 const CHANNEL = "C1";
 const THREAD_TS = "1.0";
+const THREAD_KEY = slackThreadKey(CHANNEL, THREAD_TS);
 
 const SELF = "agent-1";
 const PEER = "agent-99";
 
+const PEER_WORDS = "I already rolled the deploy back";
+const OLD_WORDS = "deploy looks broken";
+
 /**
- * TEST_OVERVIEW: What an agent taking a second mention in a Slack thread can
- * see of what a *peer* agent posted there while it was away. Injected history
- * is the only channel that carries a peer's words into a mention turn, and it
- * is built only when the turn opens a fresh session — so these tests pin which
- * of the two prompt shapes each turn gets, and what survives into it.
+ * TEST_OVERVIEW: What an agent taking a later turn in a Slack thread can see of
+ * what a peer agent posted there while it was away. A thread maps to one
+ * resumable session per agent, so only an agent's first turn in a thread opens
+ * a fresh session and receives the thread's history. These tests pin what the
+ * later, resumed turns are handed: the messages that arrived since that agent's
+ * own last turn, attributed, and nothing it has already seen.
  */
-function harness(existingSessions: () => AcpSessionInfo[]) {
+function harness(existingSessions: AcpSessionInfo[] = []) {
   const gw = createFakeSlackGateway();
   const prompts: Array<{ resumed: boolean; text: string }> = [];
   const created: AcpSessionInfo[] = [];
 
   const acp: AcpClient = {
-    listSessions: async () => [...existingSessions(), ...created],
+    listSessions: async () => [...existingSessions, ...created],
     sendPrompt: async (prompt: string | ContentBlock[], opts) => {
       const text =
         typeof prompt === "string"
@@ -106,91 +112,162 @@ function footered(agentId: string, ts: string, text: string) {
   };
 }
 
-const PEER_WORDS = "I already rolled the deploy back";
+function boundSession(): AcpSessionInfo {
+  return {
+    sessionId: "s-existing",
+    platform: { type: SessionType.ChannelSlack, threadTs: THREAD_KEY },
+  } as AcpSessionInfo;
+}
 
-describe("what a mention turn sees of a peer agent's thread post", () => {
+function mention(ts: string, text: string, inThread = true) {
+  return {
+    user: "U999",
+    channel: CHANNEL,
+    ts,
+    ...(inThread ? { threadTs: THREAD_TS } : {}),
+    text,
+  };
+}
+
+describe("what a later mention turn sees of a peer agent's thread post", () => {
   /**
    * TEST_SCENARIO: The reported sequence. A human opens a thread and mentions
    * agent A, which answers. The human then mentions agent B in the same thread,
    * and B answers. The human comes back to A. A's second turn resumes the
-   * session it opened on its first, so it is handed the new message with no
-   * injected history — and B's post, which arrived while A was away, is in
-   * neither. A answers a thread it cannot see the middle of.
+   * session it opened on its first, and is handed what arrived in between —
+   * B's reply, attributed to B, and the message that prompted it.
    */
-  it("does not show a peer's post to an agent resuming its own thread session", async () => {
-    const h = harness(() => []);
+  it("hands a resuming agent the peer's post that arrived while it was away", async () => {
+    const h = harness();
     await h.worker.start(SELF, {} as StoredChannelConfig);
 
-    h.gw.setHistory([{ ts: "1.0", user: "U999", text: "deploy looks broken" }]);
-    await h.gw.fireMention({
-      user: "U999",
-      channel: CHANNEL,
-      ts: THREAD_TS,
-      text: "<@U-BOT> Helper can you look",
-    });
-
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
     expect(h.prompts).toHaveLength(1);
     expect(h.prompts[0]!.resumed).toBe(false);
 
     h.gw.setHistory([
-      { ts: "1.0", user: "U999", text: "deploy looks broken" },
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
       footered(SELF, "1.1", "looking now"),
       { ts: "1.2", user: "U999", text: "<@U-BOT> Ops what do you think" },
       footered(PEER, "1.3", PEER_WORDS),
     ]);
-
-    await h.gw.fireMention({
-      user: "U999",
-      channel: CHANNEL,
-      ts: "1.4",
-      threadTs: THREAD_TS,
-      text: "<@U-BOT> Helper so are we clear now",
-    });
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper so are we clear"));
 
     expect(h.prompts).toHaveLength(2);
     const second = h.prompts[1]!;
 
     expect(second.resumed).toBe(true);
-    expect(second.text).toContain("so are we clear now");
-
-    expect(second.text).not.toContain(PEER_WORDS);
-    expect(second.text).not.toContain("another agent");
-    expect(second.text).not.toContain("<context>");
-
-    expect(second.text).toContain("You are not the only agent here");
-    expect(second.text).toContain('"Ops"');
+    expect(second.text).toContain("<context>");
+    expect(second.text).toContain(PEER_WORDS);
+    expect(second.text).toContain("Ops (another agent)");
+    expect(second.text).toContain("what do you think");
+    expect(second.text).toContain("after your last turn");
+    expect(second.text).toContain("so are we clear");
   });
 
   /**
-   * TEST_SCENARIO: The same thread state reaching an agent that has no session
-   * for it yet — agent B's first turn in the sequence above. Here history is
-   * injected, so the peer's words arrive attributed. This is the contrast that
-   * localizes the gap to session reuse rather than to attribution: the labelling
-   * works, it is just never built on a resumed turn.
+   * TEST_SCENARIO: The catch-up is bounded by the agent's own last turn, not by
+   * the thread's start. Re-showing what the resumed session already holds would
+   * duplicate it, so the message that opened the thread and the agent's own
+   * reply to it stay out.
    */
-  it("shows the peer's post, attributed, to an agent opening a fresh session", async () => {
-    const h = harness(() => []);
+  it("leaves out what the resuming agent has already seen", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(SELF, "1.1", "looking now"),
+      footered(PEER, "1.3", PEER_WORDS),
+    ]);
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper so are we clear"));
+
+    const second = h.prompts[1]!;
+    expect(second.text).toContain(PEER_WORDS);
+    expect(second.text).not.toContain(OLD_WORDS);
+    expect(second.text).not.toContain("looking now");
+  });
+
+  /**
+   * TEST_SCENARIO: Nothing arrived since the agent's last turn — the ordinary
+   * back-and-forth where one agent holds the thread alone. The turn carries no
+   * history block at all, so an uneventful thread costs nothing.
+   */
+  it("adds no history block when nothing arrived since the last turn", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    h.gw.setHistory([{ ts: THREAD_TS, user: "U999", text: OLD_WORDS }]);
+    await h.gw.fireMention(
+      mention(THREAD_TS, "<@U-BOT> Helper can you look", false),
+    );
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(SELF, "1.1", "looking now"),
+    ]);
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper anything else"));
+
+    const second = h.prompts[1]!;
+    expect(second.resumed).toBe(true);
+    expect(second.text).not.toContain("<context>");
+    expect(second.text).toContain("anything else");
+  });
+
+  /**
+   * TEST_SCENARIO: The worker holds the per-thread watermark in its own process,
+   * so a restart or a lease handover loses it while the agent's session lives
+   * on. The agent's own last post in the thread stands in for it — recovering
+   * the peer's reply without replaying the whole thread.
+   */
+  it("falls back to the agent's own last post when the watermark is lost", async () => {
+    const h = harness([boundSession()]);
     await h.worker.start(SELF, {} as StoredChannelConfig);
 
     h.gw.setHistory([
-      { ts: "1.0", user: "U999", text: "deploy looks broken" },
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(SELF, "1.1", "looking now"),
       footered(PEER, "1.3", PEER_WORDS),
     ]);
-
-    await h.gw.fireMention({
-      user: "U999",
-      channel: CHANNEL,
-      ts: "1.4",
-      threadTs: THREAD_TS,
-      text: "<@U-BOT> Helper so are we clear now",
-    });
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper so are we clear"));
 
     expect(h.prompts).toHaveLength(1);
     const only = h.prompts[0]!;
+    expect(only.resumed).toBe(true);
+    expect(only.text).toContain(PEER_WORDS);
+    expect(only.text).toContain("Ops (another agent)");
+    expect(only.text).not.toContain(OLD_WORDS);
+  });
 
+  /**
+   * TEST_SCENARIO: A first turn in a thread is unchanged — it opens a fresh
+   * session and still receives the thread's full history, attributed. The fix
+   * adds to the resumed path without altering the cold one.
+   */
+  it("still gives an agent opening a fresh session the whole thread", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    h.gw.setHistory([
+      { ts: THREAD_TS, user: "U999", text: OLD_WORDS },
+      footered(PEER, "1.3", PEER_WORDS),
+    ]);
+    await h.gw.fireMention(mention("1.4", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(1);
+    const only = h.prompts[0]!;
     expect(only.resumed).toBe(false);
     expect(only.text).toContain("<context>");
-    expect(only.text).toContain(`Ops (another agent)`);
+    expect(only.text).toContain("Ops (another agent)");
     expect(only.text).toContain(PEER_WORDS);
+    expect(only.text).toContain(OLD_WORDS);
   });
 });
