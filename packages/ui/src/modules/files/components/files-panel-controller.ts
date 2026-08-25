@@ -24,6 +24,7 @@ import {
   MOVE_MIME,
   readMoveSource,
 } from "../hooks/use-file-row-drag.js";
+import { useFileWatch } from "../hooks/use-file-watch.js";
 import { useWorkspaceWatch } from "../hooks/use-workspace-watch.js";
 import { downloadFileAt } from "../lib/download.js";
 import type { FileRowMenuAction } from "./file-row-menu-items.js";
@@ -108,6 +109,7 @@ export function useFilesPanelController({
     selectedAgent,
     openFilePath,
   );
+  useFileWatch(selectedAgent, openFilePath);
 
   useEffect(() => {
     if (openFileError) setOpenFilePath(null);

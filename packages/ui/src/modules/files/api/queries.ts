@@ -66,7 +66,6 @@ export function useFileContentQuery(
     queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
     queryFn: async () => readFileContent(agentId!, path!),
     enabled: !!agentId && !!path && operable,
-    refetchInterval: 2000,
     staleTime: 2000,
     retry: 0,
   });

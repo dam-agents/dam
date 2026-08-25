@@ -50,7 +50,7 @@ The new per-agent relay is the third activity policy on this surface, and every 
 | 03 ✅ | `sessions.list` on the pod router | agent-runtime composes the list (harness ∪ own store, closing the ADR-055 gap); UI reads it over the per-agent client. Poll stays. | 02 |
 | 04 ✅ | Session Watch | `sessions.watch`, terminal falling-edge timer, widened PTY window; UI drops the 5s poll. | 03 |
 | 05 ✅ | Workspace tree Watch | Pod-side watch machinery + tree topic; UI drops the 2s tree poll. | 02 |
-| 06 | Open-file Watch | Reuses 05's machinery for one path; UI drops the 2s content refetch. | 05 |
+| 06 ✅ | Open-file Watch | Reuses 05's machinery for one path; UI drops the 2s content refetch. | 05 |
 | 07 | Home feed on an owner subscription | Owner-scoped subscription, lease-elected holder, per-`agentId` notices; UI drops the 15s fan-out. | 04 |
 | 08 | Architecture docs | platform-topology and agent-lifecycle both state the current polling as fact. | 01–07 |
 
