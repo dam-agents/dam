@@ -42,13 +42,23 @@ export function newestTs<T>(entries: ThreadEntry<T>[]): string | null {
   return found;
 }
 
-export function nextBoundary(read: {
-  hasMore: boolean;
-  newestReadTs: string | null;
-  triggeringTs: string;
-}): string | null {
-  if (!read.hasMore) return read.triggeringTs;
-  return read.newestReadTs;
+export function nextBoundary(
+  read: {
+    hasMore: boolean;
+    newestReadTs: string | null;
+    triggeringTs: string;
+  },
+  stored: string | null,
+): string | null {
+  const reached = read.hasMore ? read.newestReadTs : read.triggeringTs;
+  if (reached === null) return stored;
+  if (stored === null) return reached;
+  return laterTs(stored, reached);
+}
+
+export function foldTailPage<T>(window: T[], page: T[], limit: number): T[] {
+  const next = [...window, ...page];
+  return next.length > limit ? next.slice(next.length - limit) : next;
 }
 
 export function selectUnseen<T>(

@@ -1,6 +1,7 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
-import { FileTooLargeError } from "./slack-gateway.js";
+import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
   SlackGateway,
@@ -256,7 +257,7 @@ export function createBoltSlackGateway(
 
     async getThreadTail(args) {
       if (!app) return { messages: [], hasMore: false };
-      const maxPages = args.maxPages ?? 20;
+      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
       let cursor: string | undefined;
       let window: SlackMessage[] = [];
       let stoppedShort = false;
@@ -271,10 +272,11 @@ export function createBoltSlackGateway(
           limit: args.limit,
           ...(cursor ? { cursor } : {}),
         });
-        window = [...window, ...(replies.messages ?? []).map(toSlackMessage)];
-        if (window.length > args.limit) {
-          window = window.slice(window.length - args.limit);
-        }
+        window = foldTailPage(
+          window,
+          (replies.messages ?? []).map(toSlackMessage),
+          args.limit,
+        );
         cursor = replies.response_metadata?.next_cursor || undefined;
         if (!cursor) break;
       }

@@ -53,6 +53,8 @@ export interface SlackThreadRead {
   hasMore: boolean;
 }
 
+export const THREAD_TAIL_MAX_PAGES = 20;
+
 export interface SlackMessage {
   ts?: string;
   user?: string;

@@ -1021,11 +1021,8 @@ export function createSlackWorker(
         if (entry.expiresAt <= now) threadSeen.delete(key);
       }
     }
-    const key = threadSeenKey(instanceName, threadKey);
-    const prev = threadSeen.get(key);
-    const keep = prev && prev.expiresAt > now && !isAfterTs(ts, prev.ts);
-    threadSeen.set(key, {
-      ts: keep ? prev.ts : ts,
+    threadSeen.set(threadSeenKey(instanceName, threadKey), {
+      ts,
       expiresAt: now + THREAD_SEEN_TTL_MS,
     });
   }
@@ -1444,11 +1441,17 @@ export function createSlackWorker(
     noteThreadSeen(
       ctx.instanceName,
       slackThreadKey(ctx.channel, ctx.threadTs),
-      nextBoundary({
-        hasMore: readHasMore,
-        newestReadTs: readNewestTs,
-        triggeringTs: ctx.eventTs,
-      }),
+      nextBoundary(
+        {
+          hasMore: readHasMore,
+          newestReadTs: readNewestTs,
+          triggeringTs: ctx.eventTs,
+        },
+        readThreadSeen(
+          ctx.instanceName,
+          slackThreadKey(ctx.channel, ctx.threadTs),
+        ),
+      ),
     );
     return framePrompt({
       contract,
@@ -1513,11 +1516,14 @@ export function createSlackWorker(
       noteThreadSeen(
         ctx.instanceName,
         threadKey,
-        nextBoundary({
-          hasMore: readHasMore,
-          newestReadTs: readNewestTs,
-          triggeringTs: ctx.eventTs,
-        }),
+        nextBoundary(
+          {
+            hasMore: readHasMore,
+            newestReadTs: readNewestTs,
+            triggeringTs: ctx.eventTs,
+          },
+          readThreadSeen(ctx.instanceName, threadKey),
+        ),
       );
       if (lines.length === 0) return {};
       return {

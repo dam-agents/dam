@@ -1,5 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
-import { FileTooLargeError } from "./slack-gateway.js";
+import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelMessageEvent,
   SlackGateway,
@@ -36,6 +37,22 @@ export interface FakeSlackGateway extends SlackGateway {
     ts: string,
     reactions: SlackMessageReaction[],
   ): void;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One page and the cursor that follows it. The
+ * paging signal is page state — whether a next cursor exists — never a count of
+ * the messages handed back, which the gateway contract forbids inferring from
+ * because the thread parent rides along in every page.
+ */
+function pageOf(
+  window: SlackMessage[],
+  cursor: number,
+  limit: number,
+): { messages: SlackMessage[]; nextCursor: number | null } {
+  const messages = window.slice(cursor, cursor + limit);
+  const consumed = cursor + messages.length;
+  return { messages, nextCursor: consumed < window.length ? consumed : null };
 }
 
 /**
@@ -168,31 +185,25 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      const from = threadWindowOf(history, args.oldest);
-      return {
-        messages: from.slice(0, args.limit),
-        hasMore: from.length > args.limit,
-      };
+      const page = pageOf(threadWindowOf(history, args.oldest), 0, args.limit);
+      return { messages: page.messages, hasMore: page.nextCursor !== null };
     },
 
     async getThreadTail(args) {
       const all = threadWindowOf(history, undefined);
-      const maxPages = args.maxPages ?? 20;
+      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
       let window: SlackMessage[] = [];
-      let consumed = 0;
+      let cursor: number | null = 0;
       let stoppedShort = false;
-      for (let page = 0; ; page += 1) {
-        if (page >= maxPages) {
-          stoppedShort = consumed < all.length;
+      for (let read = 0; ; read += 1) {
+        if (read >= maxPages) {
+          stoppedShort = true;
           break;
         }
-        const slice = all.slice(consumed, consumed + args.limit);
-        consumed += slice.length;
-        window = [...window, ...slice];
-        if (window.length > args.limit) {
-          window = window.slice(window.length - args.limit);
-        }
-        if (consumed >= all.length) break;
+        const page = pageOf(all, cursor, args.limit);
+        window = foldTailPage(window, page.messages, args.limit);
+        cursor = page.nextCursor;
+        if (cursor === null) break;
       }
       return { messages: window, hasMore: stoppedShort };
     },
