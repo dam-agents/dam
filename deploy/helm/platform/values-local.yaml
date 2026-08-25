@@ -100,7 +100,7 @@ agentTemplates:
       tag: latest
 
   nous:
-    enabled: true
+    enabled: false
     image:
       repository: platform-nous
       tag: latest
