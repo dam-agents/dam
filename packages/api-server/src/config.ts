@@ -234,9 +234,7 @@ export function loadConfig(): Config {
       },
     },
     links: {
-      computeRequest:
-        process.env.LINKS_COMPUTE_REQUEST ||
-        "https://ibm.enterprise.slack.com/archives/C0B3F03NB24",
+      computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
     },
     terms: {
       version: process.env.TERMS_VERSION,

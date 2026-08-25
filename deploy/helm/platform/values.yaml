@@ -55,7 +55,7 @@ terms:
 # rebuild (the api-server serves them over `links.all`).
 links:
   # Where "Request more" next to the compute meter points — a chat channel,
-  # form, or ticket queue. Complete URL. Empty string uses the bundled
+  # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
   # default.
   computeRequest: ""
 
