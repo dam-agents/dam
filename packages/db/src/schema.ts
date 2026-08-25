@@ -616,6 +616,31 @@ export const libraryArtifacts = pgTable(
   ],
 );
 
+export const sessionArtifactTouches = pgTable(
+  "session_artifact_touches",
+  {
+    artifactId: text("artifact_id")
+      .notNull()
+      .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    owner: text("owner").notNull(),
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    touchedAt: timestamp("touched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.artifactId, table.version] }),
+    index("session_artifact_touches_session_idx").on(
+      table.owner,
+      table.agentId,
+      table.sessionId,
+      table.touchedAt,
+    ),
+  ],
+);
+
 export const libraryArtifactVersions = pgTable(
   "library_artifact_versions",
   {

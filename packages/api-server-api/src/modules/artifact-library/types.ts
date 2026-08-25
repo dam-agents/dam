@@ -104,6 +104,11 @@ export interface ArtifactUploadTicket {
 }
 
 export interface ArtifactLibraryService {
+  listTouches(input: {
+    agentId: string;
+    sessionIds: readonly string[];
+    limit?: number;
+  }): Promise<ArtifactTouch[]>;
   list(filter?: ArtifactListFilter): Promise<LibraryArtifact[]>;
   get(id: string): Promise<LibraryArtifact | null>;
   getContent(id: string, version?: number): Promise<ArtifactContent | null>;
@@ -123,4 +128,20 @@ export interface ArtifactLibraryService {
   updateFolder(id: string, input: FolderUpdateInput): Promise<ArtifactFolder>;
   deleteFolder(id: string): Promise<void>;
   folderShareUrl(id: string): Promise<string | null>;
+}
+
+export interface ArtifactTouch {
+  artifactId: string;
+  version: number;
+  sessionId: string;
+  touchedAt: string;
+}
+
+export interface ArtifactTouchService {
+  record(input: {
+    agentId: string;
+    sessionId: string;
+    artifactId: string;
+    version: number;
+  }): Promise<boolean>;
 }

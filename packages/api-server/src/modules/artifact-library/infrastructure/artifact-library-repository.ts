@@ -6,12 +6,14 @@ import {
   ilike,
   isNull,
   lt,
+  inArray,
   or,
   sql,
   type Db,
   artifactFolders as foldersTable,
   libraryArtifacts as artifactsTable,
   libraryArtifactVersions as versionsTable,
+  sessionArtifactTouches as touchesTable,
 } from "db";
 
 export interface ArtifactRow {
@@ -41,6 +43,22 @@ export interface FolderRow {
   slug: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+const TOUCH_LIMIT_DEFAULT = 200;
+const TOUCH_LIMIT_MAX = 500;
+
+function clampTouchLimit(limit: number | undefined): number {
+  if (limit === undefined) return TOUCH_LIMIT_DEFAULT;
+  return Math.min(Math.max(1, Math.trunc(limit)), TOUCH_LIMIT_MAX);
+}
+
+export interface TouchRow {
+  artifactId: string;
+  version: number;
+  agentId: string;
+  sessionId: string;
+  touchedAt: Date;
 }
 
 export interface VersionRow {
@@ -97,6 +115,19 @@ export interface ArtifactLibraryRepository {
     owner: string,
   ): Promise<{ artifact: ArtifactRow; versions: VersionRow[] } | null>;
   incrementViewCount(id: string): Promise<void>;
+  recordTouch(row: {
+    artifactId: string;
+    version: number;
+    owner: string;
+    agentId: string;
+    sessionId: string;
+  }): Promise<void>;
+  listTouches(query: {
+    owner: string;
+    agentId: string;
+    sessionIds: readonly string[];
+    limit?: number;
+  }): Promise<TouchRow[]>;
 
   advanceVersion(
     id: string,
@@ -263,6 +294,42 @@ export function createArtifactLibraryRepository(
         .update(artifactsTable)
         .set({ viewCount: sql`${artifactsTable.viewCount} + 1` })
         .where(eq(artifactsTable.id, id));
+    },
+
+    async recordTouch(row) {
+      await db
+        .insert(touchesTable)
+        .values({
+          artifactId: row.artifactId,
+          version: row.version,
+          owner: row.owner,
+          agentId: row.agentId,
+          sessionId: row.sessionId,
+        })
+        .onConflictDoNothing();
+    },
+
+    async listTouches({ owner, agentId, sessionIds, limit }) {
+      if (sessionIds.length === 0) return [];
+      const rows = await db
+        .select({
+          artifactId: touchesTable.artifactId,
+          version: touchesTable.version,
+          agentId: touchesTable.agentId,
+          sessionId: touchesTable.sessionId,
+          touchedAt: touchesTable.touchedAt,
+        })
+        .from(touchesTable)
+        .where(
+          and(
+            eq(touchesTable.owner, owner),
+            eq(touchesTable.agentId, agentId),
+            inArray(touchesTable.sessionId, [...sessionIds]),
+          ),
+        )
+        .orderBy(desc(touchesTable.touchedAt))
+        .limit(clampTouchLimit(limit));
+      return rows;
     },
 
     async advanceVersion(id, owner, snapshot, patch) {

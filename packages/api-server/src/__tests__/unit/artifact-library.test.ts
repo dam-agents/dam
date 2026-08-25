@@ -120,6 +120,8 @@ function fakeRepo(
   };
   return {
     insertArtifact: notImplemented,
+    recordTouch: () => Promise.resolve(),
+    listTouches: () => Promise.resolve([]),
     getArtifact: (id, owner) =>
       Promise.resolve(
         artifacts.find((a) => a.id === id && a.owner === owner) ?? null,

@@ -66,7 +66,7 @@ sessions.
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | Touch record, its two doors, and the tool marker | The table and migration, repository and service, a pod-facing ingest and an owner-facing read, and the marker on the two artifact tools | — |
+| 01 ✅ | Touch record, its two doors, and the tool marker | The table and migration, repository and service, a pod-facing ingest and an owner-facing read, and the marker on the two artifact tools | — |
 | 02 | Runtime reports artifact touches | The runtime observes tool results on frames it already proxies, parses the marker, and reports touches | 01 |
 | 03 | Chips on the feed card | Artifact chips on the card for touches newer than the session's `seenAt` | 01 |
 

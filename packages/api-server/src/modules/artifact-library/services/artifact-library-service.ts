@@ -6,6 +6,7 @@ import type {
   ArtifactFolder,
   ArtifactKind,
   ArtifactLibraryService,
+  ArtifactTouch,
   ArtifactListFilter,
   ArtifactSharingInput,
   ArtifactUpdateInput,
@@ -69,6 +70,12 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
     id: string,
     version?: number,
   ): Promise<ArtifactAgentDownloadTicket>;
+  recordTouch(input: {
+    agentId: string;
+    sessionId: string;
+    artifactId: string;
+    version: number;
+  }): Promise<boolean>;
 }
 
 export interface ArtifactLibraryDeps {
@@ -569,5 +576,35 @@ export function createArtifactLibraryService(
         expiresSeconds: link.expiresSeconds,
       };
     },
+
+    async recordTouch({ agentId, sessionId, artifactId, version }) {
+      const artifact = await repo.getArtifact(artifactId, owner);
+      if (!artifact || artifact.agentId !== agentId) return false;
+      await repo.recordTouch({
+        artifactId,
+        version,
+        owner,
+        agentId,
+        sessionId,
+      });
+      return true;
+    },
+
+    listTouches: ({ agentId, sessionIds, limit }) =>
+      repo
+        .listTouches({
+          owner,
+          agentId,
+          sessionIds,
+          ...(limit === undefined ? {} : { limit }),
+        })
+        .then((rows) =>
+          rows.map((row) => ({
+            artifactId: row.artifactId,
+            version: row.version,
+            sessionId: row.sessionId,
+            touchedAt: row.touchedAt.toISOString(),
+          })),
+        ),
   };
 }
