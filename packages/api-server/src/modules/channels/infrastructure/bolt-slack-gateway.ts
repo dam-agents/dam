@@ -25,6 +25,22 @@ export interface BoltSlackGatewayDeps {
   commandName: string;
 }
 
+function toSlackMessage(m: {
+  ts?: string;
+  user?: string;
+  text?: string;
+  blocks?: unknown;
+  edited?: unknown;
+}): SlackMessage {
+  return {
+    ts: m.ts,
+    user: m.user,
+    text: m.text,
+    blocks: m.blocks as SlackMessage["blocks"],
+    ...(m.edited ? { edited: true } : {}),
+  };
+}
+
 export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
@@ -222,46 +238,47 @@ export function createBoltSlackGateway(
       });
     },
 
-    async getThreadReplies(args): Promise<SlackMessage[]> {
-      if (!app) return [];
+    async getThreadReplies(args) {
+      if (!app) return { messages: [], hasMore: false };
       const replies = await app.client.conversations.replies({
         channel: args.channel,
         ts: args.threadTs,
         limit: args.limit,
         ...(args.oldest ? { oldest: args.oldest } : {}),
       });
-      return (replies.messages ?? []).map((m) => ({
-        ts: m.ts,
-        user: m.user,
-        text: m.text,
-        blocks: m.blocks as SlackMessage["blocks"],
-        ...(m.edited ? { edited: true } : {}),
-      }));
+      return {
+        messages: (replies.messages ?? []).map(toSlackMessage),
+        hasMore: Boolean(
+          replies.has_more || replies.response_metadata?.next_cursor,
+        ),
+      };
     },
 
-    async getThreadTail(args): Promise<SlackMessage[]> {
-      if (!app) return [];
-      const maxPages = args.maxPages ?? 10;
+    async getThreadTail(args) {
+      if (!app) return { messages: [], hasMore: false };
+      const maxPages = args.maxPages ?? 20;
       let cursor: string | undefined;
-      let tail: SlackMessage[] = [];
-      for (let page = 0; page < maxPages; page += 1) {
+      let window: SlackMessage[] = [];
+      let stoppedShort = false;
+      for (let page = 0; ; page += 1) {
+        if (page >= maxPages) {
+          stoppedShort = true;
+          break;
+        }
         const replies = await app.client.conversations.replies({
           channel: args.channel,
           ts: args.threadTs,
           limit: args.limit,
           ...(cursor ? { cursor } : {}),
         });
-        tail = (replies.messages ?? []).map((m) => ({
-          ts: m.ts,
-          user: m.user,
-          text: m.text,
-          blocks: m.blocks as SlackMessage["blocks"],
-          ...(m.edited ? { edited: true } : {}),
-        }));
+        window = [...window, ...(replies.messages ?? []).map(toSlackMessage)];
+        if (window.length > args.limit) {
+          window = window.slice(window.length - args.limit);
+        }
         cursor = replies.response_metadata?.next_cursor || undefined;
         if (!cursor) break;
       }
-      return tail;
+      return { messages: window, hasMore: stoppedShort };
     },
 
     async getChannelHistory(args): Promise<SlackMessage[]> {

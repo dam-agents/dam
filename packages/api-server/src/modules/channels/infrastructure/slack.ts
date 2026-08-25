@@ -106,6 +106,7 @@ import {
   isAfterTs,
   lastOwnPostTs,
   newestTs,
+  nextBoundary,
   selectUnseen,
   type CatchUpSelection,
 } from "../domain/thread-catch-up.js";
@@ -521,18 +522,22 @@ async function getContextMessages(
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
   readNewestTs: string | null;
-  readTruncated: boolean;
+  readHasMore: boolean;
 }> {
-  const raw = threadTs
+  const read = threadTs
     ? await gateway.getThreadReplies({
         channel,
         threadTs,
         limit: THREAD_LOOKBACK,
         ...(catchUp ? { oldest: catchUp.since } : {}),
       })
-    : (await gateway.getChannelHistory({ channel, limit: 10 }))
-        .slice()
-        .reverse();
+    : {
+        messages: (await gateway.getChannelHistory({ channel, limit: 10 }))
+          .slice()
+          .reverse(),
+        hasMore: false,
+      };
+  const raw = read.messages;
 
   const all = raw.map((message) => ({
     ts: message.ts,
@@ -574,7 +579,7 @@ async function getContextMessages(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
     ),
     readNewestTs: newestTs(all),
-    readTruncated: raw.length >= THREAD_LOOKBACK,
+    readHasMore: read.hasMore,
   };
 }
 
@@ -1413,17 +1418,22 @@ export function createSlackWorker(
       userId: await gw.getBotUserId().catch(() => null),
       label: botHistoryLabel(brand),
     };
-    const { lines, hasAgentAuthored, hasUnattributedBot } =
-      await getContextMessages(
-        gw,
-        ctx.channel,
-        ctx.eventTs,
-        ctx.instanceName,
-        ctx.hasThread ? ctx.threadTs : undefined,
-        bot,
-        resolveAgentName,
-        null,
-      );
+    const {
+      lines,
+      hasAgentAuthored,
+      hasUnattributedBot,
+      readNewestTs,
+      readHasMore,
+    } = await getContextMessages(
+      gw,
+      ctx.channel,
+      ctx.eventTs,
+      ctx.instanceName,
+      ctx.hasThread ? ctx.threadTs : undefined,
+      bot,
+      resolveAgentName,
+      null,
+    );
     const legend =
       hasAgentAuthored || hasUnattributedBot
         ? historyLegend(await canLookupUsers(gw), {
@@ -1434,7 +1444,11 @@ export function createSlackWorker(
     noteThreadSeen(
       ctx.instanceName,
       slackThreadKey(ctx.channel, ctx.threadTs),
-      ctx.eventTs,
+      nextBoundary({
+        hasMore: readHasMore,
+        newestReadTs: readNewestTs,
+        triggeringTs: ctx.eventTs,
+      }),
     );
     return framePrompt({
       contract,
@@ -1469,7 +1483,7 @@ export function createSlackWorker(
               threadTs: ctx.threadTs,
               limit: THREAD_LOOKBACK,
             })
-          ).map((message) => ({
+          ).messages.map((message) => ({
             ts: message.ts,
             authorAgentId: parseAgentFooter(message)?.agentId ?? null,
             message,
@@ -1481,7 +1495,7 @@ export function createSlackWorker(
         userId: await gw.getBotUserId().catch(() => null),
         label: botHistoryLabel(brand),
       };
-      const { lines, hasUnattributedBot, readNewestTs, readTruncated } =
+      const { lines, hasUnattributedBot, readNewestTs, readHasMore } =
         await getContextMessages(
           gw,
           ctx.channel,
@@ -1499,7 +1513,11 @@ export function createSlackWorker(
       noteThreadSeen(
         ctx.instanceName,
         threadKey,
-        readTruncated ? readNewestTs : ctx.eventTs,
+        nextBoundary({
+          hasMore: readHasMore,
+          newestReadTs: readNewestTs,
+          triggeringTs: ctx.eventTs,
+        }),
       );
       if (lines.length === 0) return {};
       return {

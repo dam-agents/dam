@@ -472,6 +472,90 @@ describe("what a later mention turn sees of a thread it was away from", () => {
   });
 
   /**
+   * TEST_SCENARIO: The first turn in a long thread reads a capped page too, so
+   * it is subject to the same rule as the catch-up: the boundary may only move
+   * as far as the read reached. A cold turn that jumps the boundary to its
+   * triggering message strands everything the thread already held beyond the
+   * cap, and the resumes after it never look that far back again.
+   */
+  it("moves the boundary no further than a cold read reached", async () => {
+    const h = harness();
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    const filler = Array.from({ length: 60 }, (_, i) => ({
+      ts: `1.${String(i + 1).padStart(3, "0")}`,
+      user: "U555",
+      text: `chatter ${i + 1}`,
+    }));
+
+    h.gw.setHistory([
+      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      ...filler,
+      footered(PEER, "1.061", PEER_WORDS),
+      { ts: "1.062", user: "U999", text: "<@U-BOT> Helper can you look" },
+    ]);
+    await h.gw.fireMention(mention("1.062", "<@U-BOT> Helper can you look"));
+
+    expect(h.prompts).toHaveLength(1);
+    expect(h.prompts[0]!.resumed).toBe(false);
+    expect(h.prompts[0]!.text).not.toContain(PEER_WORDS);
+
+    h.gw.setHistory([
+      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      ...filler,
+      footered(PEER, "1.061", PEER_WORDS),
+      { ts: "1.062", user: "U999", text: "<@U-BOT> Helper can you look" },
+      { ts: "1.063", user: "U999", text: "<@U-BOT> Helper so are we clear" },
+    ]);
+    await h.gw.fireMention(mention("1.063", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(2);
+    const second = h.prompts[1]!;
+    expect(second.resumed).toBe(true);
+    expect(second.text).toContain(PEER_WORDS);
+    expect(second.text).toContain("Ops (another agent)");
+  });
+
+  /**
+   * TEST_SCENARIO: The tail read spans pages. A paged read that keeps only the
+   * page it happened to end on returns whatever remainder the thread's length
+   * left over — a handful of messages, not the newest window it was asked for —
+   * so an own post sitting earlier in that window goes unseen and the stand-in
+   * finds nothing. The read keeps a rolling window across pages instead.
+   */
+  it("keeps a rolling window across pages of the tail read", async () => {
+    const h = harness([boundSession()]);
+    await h.worker.start(SELF, {} as StoredChannelConfig);
+
+    const before = Array.from({ length: 79 }, (_, i) => ({
+      ts: `1.${String(i + 1).padStart(3, "0")}`,
+      user: "U555",
+      text: `chatter ${i + 1}`,
+    }));
+    const after = Array.from({ length: 38 }, (_, i) => ({
+      ts: `1.${String(i + 82).padStart(3, "0")}`,
+      user: "U555",
+      text: `later ${i + 1}`,
+    }));
+
+    h.gw.setHistory([
+      { ts: "1.000", user: "U999", text: OLD_WORDS },
+      ...before,
+      footered(SELF, "1.080", "looking now"),
+      footered(PEER, "1.081", PEER_WORDS),
+      ...after,
+      { ts: "1.120", user: "U999", text: "<@U-BOT> Helper so are we clear" },
+    ]);
+    await h.gw.fireMention(mention("1.120", "<@U-BOT> Helper so are we clear"));
+
+    expect(h.prompts).toHaveLength(1);
+    const only = h.prompts[0]!;
+    expect(only.resumed).toBe(true);
+    expect(only.text).toContain(PEER_WORDS);
+    expect(only.text).toContain("Ops (another agent)");
+  });
+
+  /**
    * TEST_SCENARIO: The boundary is gone — a restart or handover — on a thread
    * longer than one page. Standing in for it means finding the agent's own last
    * post, which sits at the thread's recent end; reading the thread's beginning

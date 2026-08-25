@@ -38,6 +38,27 @@ export interface FakeSlackGateway extends SlackGateway {
   ): void;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Models Slack's thread read, including the parts a
+ * caller can get wrong. The thread parent comes back in every page whatever the
+ * anchor, because the real API includes it, and an anchored read is a filter
+ * over the rest rather than a fresh window.
+ */
+function threadWindowOf(
+  history: SlackMessage[],
+  oldest: string | undefined,
+): SlackMessage[] {
+  if (oldest === undefined) return [...history];
+  return history.filter((m, i) => {
+    if (i === 0) return true;
+    if (m.ts === undefined) return true;
+    const at = Number(m.ts);
+    const floor = Number(oldest);
+    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
+    return at >= floor;
+  });
+}
+
 export function createFakeSlackGateway(): FakeSlackGateway {
   let handlers: SlackGatewayHandlers | null = null;
   const outbound: SlackOutboundRecord[] = [];
@@ -147,23 +168,33 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      const oldest = args.oldest;
-      const from =
-        oldest === undefined
-          ? [...history]
-          : history.filter((m, i) => {
-              if (i === 0) return true;
-              if (m.ts === undefined) return true;
-              const at = Number(m.ts);
-              const floor = Number(oldest);
-              if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
-              return at >= floor;
-            });
-      return from.slice(0, args.limit);
+      const from = threadWindowOf(history, args.oldest);
+      return {
+        messages: from.slice(0, args.limit),
+        hasMore: from.length > args.limit,
+      };
     },
 
     async getThreadTail(args) {
-      return history.slice(Math.max(0, history.length - args.limit));
+      const all = threadWindowOf(history, undefined);
+      const maxPages = args.maxPages ?? 20;
+      let window: SlackMessage[] = [];
+      let consumed = 0;
+      let stoppedShort = false;
+      for (let page = 0; ; page += 1) {
+        if (page >= maxPages) {
+          stoppedShort = consumed < all.length;
+          break;
+        }
+        const slice = all.slice(consumed, consumed + args.limit);
+        consumed += slice.length;
+        window = [...window, ...slice];
+        if (window.length > args.limit) {
+          window = window.slice(window.length - args.limit);
+        }
+        if (consumed >= all.length) break;
+      }
+      return { messages: window, hasMore: stoppedShort };
     },
 
     async getChannelHistory() {

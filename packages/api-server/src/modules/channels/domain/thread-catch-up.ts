@@ -42,6 +42,15 @@ export function newestTs<T>(entries: ThreadEntry<T>[]): string | null {
   return found;
 }
 
+export function nextBoundary(read: {
+  hasMore: boolean;
+  newestReadTs: string | null;
+  triggeringTs: string;
+}): string | null {
+  if (!read.hasMore) return read.triggeringTs;
+  return read.newestReadTs;
+}
+
 export function selectUnseen<T>(
   entries: ThreadEntry<T>[],
   selection: CatchUpSelection,
