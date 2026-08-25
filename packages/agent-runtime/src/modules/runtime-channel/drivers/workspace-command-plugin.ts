@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -7,6 +6,8 @@ import type {
   Plugin,
   WorkspaceCommandEventPayload,
 } from "agent-runtime-api";
+
+import { describeFailure, runOnce } from "../../../core/run-once.js";
 
 const IMPL_NAME = "workspace-command";
 
@@ -66,36 +67,19 @@ async function sentinelExists(path: string): Promise<boolean> {
   }
 }
 
-function runCommand(
+async function runCommand(
   command: string,
   cwd: string,
   log: (msg: string) => void,
 ): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const proc = spawn("bash", ["-lc", command], {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const relay = (chunk: Buffer) => {
-      const text = chunk.toString("utf8").replace(/\n$/, "");
-      if (text) log(`[workspace-command] ${text}`);
-    };
-    proc.stdout?.on("data", relay);
-    proc.stderr?.on("data", relay);
-    const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
-      reject(
-        new Error(`workspace command timed out after ${COMMAND_TIMEOUT_MS}ms`),
-      );
-    }, COMMAND_TIMEOUT_MS);
-    proc.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(`workspace command exited with code ${code}`));
-    });
+  const argv = ["bash", "-lc", command];
+  const result = await runOnce({
+    command: argv,
+    cwd,
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    onLine: (line) => log(`[workspace-command] ${line}`),
   });
+  if (!result.ok) {
+    throw new Error(describeFailure("workspace command", result.error));
+  }
 }

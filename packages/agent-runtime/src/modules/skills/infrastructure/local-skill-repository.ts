@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -12,6 +11,7 @@ import type {
   SourcePathReason,
 } from "agent-runtime-api";
 import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
+import { describeFailure, runOnce } from "../../../core/run-once.js";
 import { parseFrontmatter } from "../domain/frontmatter.js";
 import type { SkillName } from "../domain/skill-name.js";
 import { judgeOrigin } from "../domain/skill-origin.js";
@@ -617,36 +617,9 @@ function hasNullBytes(buf: Buffer): boolean {
 }
 
 async function runProc(cmd: string, args: string[]): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
-      reject(
-        new Error(
-          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
-        ),
-      );
-    }, COMMAND_TIMEOUT_MS);
-    proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
-    proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
-    proc.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve(Buffer.concat(stdoutChunks).toString("utf8"));
-        return;
-      }
-      const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-      reject(
-        new Error(
-          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
-        ),
-      );
-    });
-  });
+  const command = [cmd, ...args];
+  const result = await runOnce({ command, timeoutMs: COMMAND_TIMEOUT_MS });
+  if (!result.ok)
+    throw new Error(describeFailure(command.join(" "), result.error));
+  return result.value.stdout;
 }
