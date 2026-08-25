@@ -239,13 +239,6 @@
       "when": 1787307714327,
       "tag": "0033_last_runaways",
       "breakpoints": true
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1787578158898,
-      "tag": "0034_grant_usage_src_views_to_usage_readers",
-      "breakpoints": true
     }
   ]
 }

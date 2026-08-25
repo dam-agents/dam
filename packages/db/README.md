@@ -34,26 +34,6 @@ mise run check
 
 `db:new` wraps `drizzle-kit generate --custom`, so it records a snapshot too (a copy of the latest — a view migration changes no tracked table). That snapshot matters: without one for every journal entry, the next `db:generate` has no base to diff against. View migrations don't touch `schema.ts`, so `db:check:generated` ignores them.
 
-## `db:check:usage-src-grants` — the passthrough grant guard
-
-The `usage_src_*` source passthrough views are read by an external analytics consumer through membership in a
-`usage_readers` group role. Postgres attaches privileges to the object, not the name, so `DROP` + `CREATE VIEW`
-discards every grant — and that is the migration shape a renamed or reordered column forces. A recreate without
-a re-grant therefore revokes the consumer's access silently, surfacing only as a failed nightly export.
-
-So every migration that creates or recreates a `usage_src_*` view must re-grant it **in the same file**, guarded
-on the role existing (it is absent on installs with no analytics consumer, and an unguarded `GRANT` would abort
-the migration there). `mise run db:check:usage-src-grants` — a pure file scan, part of `mise run check` — fails
-the build otherwise. The check is per-file on purpose: a whole-history check would pass when an old migration
-granted the view and a new one recreated it, which is the exact case it exists to catch.
-
-Migrations below `FIRST_GATED_MIGRATION_INDEX` in
-[`scripts/check-usage-src-grants.mjs`](../../scripts/check-usage-src-grants.mjs) are exempt, because they are
-already applied on deployed installs — adding grants to a shipped migration would not re-run it (the migrator
-decides what to run by journal timestamp), so the grants for the passthroughs that already existed live in the
-catch-up migration instead. Raise that index only alongside a new catch-up migration; lowering it makes the
-gate demand grants in files that can no longer deliver them.
-
 ## `db:check:generated` — the guard
 
 `mise run db:check:generated` (part of `mise run check`, so it runs locally and in CI) runs `drizzle-kit generate` against `schema.ts` inside a throwaway copy of `drizzle/`: if that would produce a new migration, then `schema.ts` changed without `db:generate` (or a table migration was hand-written) and the check fails. The snapshot only advances when `db:generate` runs, so a clean result proves every table change went through generate. It's a pure file operation — **no database** — which is why it lives in the normal check bundle. Views never enter `schema.ts` or the snapshot, so they're outside its scope.

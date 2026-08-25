@@ -48,10 +48,10 @@ data:
     -- membership to whichever login should read the metrics (`GRANT
     -- usage_readers TO <login>`), and membership is attached to the two
     -- roles rather than to any view, so no view migration can revoke it. The
-    -- migrations that create the passthroughs grant them to this role by
-    -- name, which is why the name is fixed rather than configurable; those
-    -- grants are guarded on the role existing, so it must be created before
-    -- the release that grants to it. Creating roles stays out of the
+    -- api-server reconciles SELECT on the passthroughs for this role after
+    -- running migrations on every start, which is why the name is fixed
+    -- rather than configurable. Because it reconciles, this role may be
+    -- created before or after those views exist. Creating roles stays out of the
     -- application deliberately — an api-server that could mint database
     -- logins could mint itself a better one — so it is created here, as the
     -- bootstrap superuser.

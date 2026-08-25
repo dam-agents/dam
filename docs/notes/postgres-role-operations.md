@@ -24,9 +24,13 @@ Plus one role that is not a connection identity at all:
   membership in to let a read-only login read the `usage_src_*` source
   passthrough views. It holds `CONNECT` on `platform` and `SELECT` on those
   views, nothing else, and grants nobody anything until a member is added.
-  Every migration that creates or recreates a passthrough re-grants it, so a
-  view-recreating migration cannot silently revoke a consumer's access; a
-  build gate fails any migration that forgets. Creating the role stays
+  The api-server re-grants the passthroughs to it after running migrations on
+  every start, so a view-recreating migration cannot silently revoke a
+  consumer's access, and it does not matter whether the role is created
+  before or after those views exist. Each start logs which passthroughs the
+  role can read (`usage.grants.reconciled`) and warns about any it cannot
+  (`usage.grants.incomplete`); where the role is absent it logs
+  `usage.grants.role-absent` and does nothing. Creating the role stays
   outside the application, because an api-server that could mint database
   logins could mint itself a better one.
 
@@ -115,10 +119,10 @@ admin role:
 - Create `usage_readers` as `NOLOGIN` (no password), and `GRANT CONNECT ON
   DATABASE platform` to it. Then `GRANT usage_readers TO <read-only login>`
   for whichever login should read the metrics — that membership is what
-  survives future view migrations. Create the role **before** the release
-  whose migrations grant to it: the grants are guarded on the role existing,
-  so a migration that runs first skips them and the views stay ungranted
-  until an operator grants them by hand. Skip both steps entirely if the
+  survives future view migrations. Order does not matter: the api-server
+  reconciles the view grants on every start, so a role created after a
+  release is picked up by the next api-server start. Confirm with the
+  `usage.grants.reconciled` log line. Skip both steps entirely if the
   install has no analytics consumer.
 - There is no dedicated admin SUPERUSER to create — managed services withhold
   tenant superuser (on IBM Cloud Databases the only superuser is IBM's internal

@@ -164,7 +164,28 @@ export async function bootstrap() {
       ? readFileSync(config.databaseCaCertPath, "utf8")
       : undefined,
   };
-  await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
+  const usageGrants = await runMigrations(
+    config.databaseUrl,
+    config.migrationsPath,
+    dbTls,
+  );
+  if (!usageGrants.rolePresent) {
+    getLogger().info({ role: usageGrants.role }, "usage.grants.role-absent");
+  } else if (usageGrants.unreadable.length > 0) {
+    getLogger().warn(
+      {
+        role: usageGrants.role,
+        readable: usageGrants.readable,
+        unreadable: usageGrants.unreadable,
+      },
+      "usage.grants.incomplete",
+    );
+  } else {
+    getLogger().info(
+      { role: usageGrants.role, readable: usageGrants.readable },
+      "usage.grants.reconciled",
+    );
+  }
   const { db, sql } = createDb(config.databaseUrl, dbTls);
 
   const artifactsModule = composeArtifactsModule({
