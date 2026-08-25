@@ -40,27 +40,43 @@ function fakeDb(
   return { db, executed };
 }
 
+type CatalogState = {
+  pending?: string[];
+  after?: Array<{ name: string; readable: boolean; grantable: boolean }>;
+  reach?: { can_connect: boolean; can_use_schema: boolean };
+};
+
 const catalogReply =
-  (rows: Array<{ name: string; readable: boolean; grantable: boolean }>) =>
+  (state: CatalogState) =>
   (text: string): unknown[] => {
     if (text.includes("to_regrole")) return [{ present: true }];
     if (text.includes("has_database_privilege")) {
-      return [{ can_connect: true, can_use_schema: true }];
+      return [state.reach ?? { can_connect: true, can_use_schema: true }];
     }
     if (text.includes("NOT has_table_privilege")) {
-      return rows
-        .filter((r) => !r.readable && r.grantable)
-        .map(({ name }) => ({ name }));
+      return (state.pending ?? []).map((name) => ({ name }));
     }
-    if (text.includes("COALESCE(has_table_privilege")) return rows;
+    if (text.includes("COALESCE(has_table_privilege")) return state.after ?? [];
     return [];
   };
 
-function collectLogs(): { logger: Logger; lines: Array<[string, string]> } {
-  const lines: Array<[string, string]> = [];
+function expectDidNotBailEarly(executed: Executed[]): void {
+  expect(
+    executed.some(
+      (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
+    ),
+  ).toBe(true);
+}
+
+type LogLine = [string, string, Record<string, unknown>];
+
+function collectLogs(): { logger: Logger; lines: LogLine[] } {
+  const lines: LogLine[] = [];
+  const record = (level: string) => (o: Record<string, unknown>, msg: string) =>
+    lines.push([level, msg, o]);
   const logger = {
-    info: (_o: unknown, msg: string) => lines.push(["info", msg]),
-    warn: (_o: unknown, msg: string) => lines.push(["warn", msg]),
+    info: record("info"),
+    warn: record("warn"),
   } as unknown as Logger;
   return { logger, lines };
 }
@@ -82,7 +98,7 @@ describe("usage view grant reconcile", () => {
 
   // TEST_SCENARIO: A failure anywhere in the reconcile must degrade to a report, never propagate. This runs before the HTTP listener exists, so a rejection here is an api-server that never starts — for an optional analytics grant.
   it("never throws when the database rejects, and says it failed", async () => {
-    const { db } = fakeDb(catalogReply([]), {
+    const { db } = fakeDb(catalogReply({}), {
       failOn: /pg_advisory_xact_lock/,
     });
 
@@ -95,39 +111,50 @@ describe("usage view grant reconcile", () => {
   // TEST_SCENARIO: Only views missing the privilege are granted. Re-granting what is already held writes to the catalog and into the DDL audit log on every boot, for nothing.
   it("grants only the passthroughs that are missing the privilege", async () => {
     const { db, executed } = fakeDb(
-      catalogReply([
-        { name: "usage_src_agents", readable: true, grantable: true },
-        { name: "usage_src_events", readable: false, grantable: true },
-      ]),
+      catalogReply({
+        pending: ["usage_src_events"],
+        after: [
+          { name: "usage_src_agents", readable: true, grantable: true },
+          { name: "usage_src_events", readable: true, grantable: true },
+        ],
+      }),
     );
 
     await reconcileUsageViewGrants(db);
 
-    expect(
-      executed.some(
-        (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
-      ),
-    ).toBe(true);
+    expectDidNotBailEarly(executed);
     const grants = executed.filter((e) => e.text.includes("GRANT SELECT"));
     expect(grants).toHaveLength(1);
     expect(grants[0]?.text).toContain("usage_src_events");
   });
 
+  // TEST_SCENARIO: A view granted during this run is re-measured afterwards, so it must come back as readable rather than lingering in the alarm set. Reporting a view it just fixed would make the warning that means "a human is needed" fire on the ordinary path.
+  it("reports a view it granted as readable, not as an alarm", async () => {
+    const { db, executed } = fakeDb(
+      catalogReply({
+        pending: ["usage_src_events"],
+        after: [{ name: "usage_src_events", readable: true, grantable: true }],
+      }),
+    );
+
+    const result = await reconcileUsageViewGrants(db);
+
+    expectDidNotBailEarly(executed);
+    expect(result.granted).toEqual(["usage_src_events"]);
+    expect(result.readable).toEqual(["usage_src_events"]);
+    expect(result.unreadable).toEqual([]);
+    expect(result.notGrantable).toEqual([]);
+  });
+
   // TEST_SCENARIO: The GRANT must name the schema. Unqualified, it resolves through search_path, which lands the grant on whatever shadows the view — including a table — and can abort the boot.
   it("schema-qualifies every grant", async () => {
     const { db, executed } = fakeDb(
-      catalogReply([
-        { name: "usage_src_events", readable: false, grantable: true },
-      ]),
+      catalogReply({ pending: ["usage_src_events"] }),
     );
 
     await reconcileUsageViewGrants(db);
 
-    expect(
-      executed.some(
-        (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
-      ),
-    ).toBe(true);
+    expectDidNotBailEarly(executed);
     const grant = executed.find((e) => e.text.includes("GRANT SELECT"));
     expect(grant?.text).toMatch(/"public"\."usage_src_events"/);
   });
@@ -135,10 +162,12 @@ describe("usage view grant reconcile", () => {
   // TEST_SCENARIO: A view this role cannot grant is a different problem from one it can: no restart will fix the former. Collapsing them trains the alarm into noise.
   it("separates views it cannot grant from views it granted and still cannot read", async () => {
     const { db } = fakeDb(
-      catalogReply([
-        { name: "usage_src_foreign", readable: false, grantable: false },
-        { name: "usage_src_ok", readable: true, grantable: true },
-      ]),
+      catalogReply({
+        after: [
+          { name: "usage_src_foreign", readable: false, grantable: false },
+          { name: "usage_src_ok", readable: true, grantable: true },
+        ],
+      }),
     );
 
     const result = await reconcileUsageViewGrants(db);
@@ -151,15 +180,11 @@ describe("usage view grant reconcile", () => {
 
   // TEST_SCENARIO: Work is bounded because it blocks startup. Without both timeouts a stalled lock holder or a hung statement keeps every replica from ever becoming ready. The form matters as much as the values: SET LOCAL cannot take a bind parameter, so spelling it that way makes every reconcile fail on the first statement.
   it("bounds the transaction with a lock and statement timeout", async () => {
-    const { db, executed } = fakeDb(catalogReply([]));
+    const { db, executed } = fakeDb(catalogReply({}));
 
     await reconcileUsageViewGrants(db);
 
-    expect(
-      executed.some(
-        (e) => e.text.includes("GRANT") || e.text.includes("pg_class"),
-      ),
-    ).toBe(true);
+    expectDidNotBailEarly(executed);
     const text = executed.map((e) => e.text).join("\n");
     expect(text).toContain("set_config('lock_timeout'");
     expect(text).toContain("set_config('statement_timeout'");
@@ -193,7 +218,24 @@ describe("usage view grant reporting", () => {
     for (const [patch, level, event] of cases) {
       const { logger, lines } = collectLogs();
       reportUsageViewGrants(logger, { ...base, ...patch });
-      expect(lines).toEqual([[level, event]]);
+      expect(lines.map(([lvl, msg]) => [lvl, msg])).toEqual([[level, event]]);
     }
+  });
+
+  // TEST_SCENARIO: Both alarm sets can be non-empty at once. Only one line is logged, so whichever name wins must still carry the set that needs an operator — otherwise the case no restart can fix disappears exactly when something else is also wrong.
+  it("keeps the operator-actionable set when both alarms are live", () => {
+    const { logger, lines } = collectLogs();
+
+    reportUsageViewGrants(logger, {
+      ...base,
+      unreadable: ["usage_src_x"],
+      notGrantable: ["usage_src_y"],
+    });
+
+    expect(lines).toHaveLength(1);
+    const [level, event, payload] = lines[0] as LogLine;
+    expect([level, event]).toEqual(["warn", "usage.grants.incomplete"]);
+    expect(payload.unreadable).toEqual(["usage_src_x"]);
+    expect(payload.notGrantable).toEqual(["usage_src_y"]);
   });
 });

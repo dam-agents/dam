@@ -38,7 +38,10 @@ export function reportUsageViewGrants(
     return;
   }
   if (unreadable.length > 0) {
-    logger.warn({ role, readable, unreadable }, "usage.grants.incomplete");
+    logger.warn(
+      { role, readable, unreadable, notGrantable },
+      "usage.grants.incomplete",
+    );
     return;
   }
   if (notGrantable.length > 0) {

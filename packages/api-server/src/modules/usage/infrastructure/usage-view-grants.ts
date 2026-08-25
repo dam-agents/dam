@@ -63,6 +63,8 @@ export async function reconcileUsageViewGrants(
     notGrantable: [],
   };
 
+  let rolePresent = false;
+
   try {
     const present = rowsOf<{ present: boolean }>(
       await db.execute<{ present: boolean }>(
@@ -70,6 +72,7 @@ export async function reconcileUsageViewGrants(
       ),
     );
     if (!present[0]?.present) return absent;
+    rolePresent = true;
 
     return await db.transaction(async (tx) => {
       await tx.execute(
@@ -141,7 +144,7 @@ export async function reconcileUsageViewGrants(
   } catch (cause) {
     return {
       ...absent,
-      rolePresent: true,
+      rolePresent,
       failed: cause instanceof Error ? cause.message : String(cause),
     };
   }
