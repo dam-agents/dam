@@ -12,19 +12,6 @@ apiServer:
     repository: platform-api-server
     tag: latest
     pullPolicy: Never
-  # The catalogue default (500m) is a chat-workload sizing. On this VM every
-  # agent, driver and experiment status poll funnels through this one pod while
-  # a nous campaign drives the node's load average past its core count — at
-  # half a core the event loop misses its health probe, the kubelet restarts
-  # the container, and every driver polling through the waypoint takes a 503
-  # it cannot retry. The control plane must outrank the workloads it serves.
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "2"
-      memory: "1Gi"
 
 controller:
   image:
