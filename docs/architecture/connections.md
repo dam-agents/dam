@@ -73,7 +73,7 @@ A typed unit a Connection emits when granted to an Agent — a discriminated uni
 
 - **`env`** — an environment variable the harness merges in at spawn. For credential-derived env the value is a placeholder (the real secret is injected gateway-side); for user-typed and non-credential config env it is the literal value.
 - **`egress-allow`** — permission to reach a host (optionally path-scoped, optionally port-scoped for endpoints not on 443).
-- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), and carry the upstream's private CA for gateway-side TLS validation (mechanics in [security and credentials](security-and-credentials.md)).
+- **`egress-inject`** — an allowed host plus a credential the gateway injects on the wire, as a header or a query parameter. A value format carrying no credential placeholder injects a constant, non-secret header instead (e.g. a client identifier an upstream's edge requires), riding the same delivery rail. May additionally name a non-443 upstream port, opt the host's chain into streaming-upgrade tunneling (WebSocket/SPDY — `kubectl exec`/`port-forward`), and carry the upstream's private CA for gateway-side TLS validation (mechanics in [security and credentials](security-and-credentials.md)).
 - **`file`** — a config file to author, with a format and a merge mode (see [Built-in contribution impls](runtime-delivery.md#built-in-contribution-impls)).
 - **`mcp-entry`** — an MCP server to expose to the harness.
 - **`skill-ref`** — a skill source to install at a pinned version.

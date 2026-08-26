@@ -18,8 +18,10 @@ export function sdsFileKeyForInjection(c: {
   host: string;
   headerName: string;
   queryParamName?: string;
+  valueFormat?: string;
 }): string {
-  if (!c.queryParamName) return sdsFileKeyForHost(c.host);
+  const carriesCredential = c.valueFormat?.includes("{value}") ?? true;
+  if (!c.queryParamName && carriesCredential) return sdsFileKeyForHost(c.host);
   const slug = Buffer.from(`${c.host}\n${c.headerName}`, "utf8").toString(
     "base64url",
   );

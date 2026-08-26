@@ -5,6 +5,7 @@ import {
   openaiEnvMappings,
   bobEnvMappings,
   BOB_CHAT_MODES,
+  BOB_INFERENCE_USER_AGENT,
   IBM_LITELLM_HOST,
   BOB_HOST,
 } from "api-server-api";
@@ -168,7 +169,7 @@ const BOB: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "Bob CLI model proxy, and Claude models for Claude Code via Bob's Anthropic Messages route.",
+    "Bob CLI model proxy, and Claude models for Codex and Pi agents via Bob's OpenAI-compatible inference route.",
   iconSlug: "bob",
   authKind: "header",
   host: BOB_HOST,
@@ -188,6 +189,12 @@ const BOB: HeaderConnectionTemplate = {
       headerName: BOB_QUERY_PARAM_HEADER,
       valueFormat: "{value}",
       queryParamName: "key",
+    },
+    {
+      kind: "egress-inject",
+      host: BOB_HOST,
+      headerName: "User-Agent",
+      valueFormat: BOB_INFERENCE_USER_AGENT,
     },
   ],
   configInputs: [

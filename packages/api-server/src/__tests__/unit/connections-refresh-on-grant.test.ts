@@ -157,10 +157,8 @@ function stripInferenceWiring(conn: Connection): Connection {
       (c) =>
         !(
           c.kind === "env" &&
-          (c.name.startsWith("ANTHROPIC_") ||
-            c.name.startsWith("CLAUDE_") ||
-            c.name.startsWith("MODEL_GATEWAY_"))
-        ),
+          (c.name.startsWith("OPENAI_") || c.name.startsWith("CODEX_"))
+        ) && !(c.kind === "egress-inject" && c.headerName === "User-Agent"),
     ),
   };
 }
@@ -168,7 +166,7 @@ function stripInferenceWiring(conn: Connection): Connection {
 describe("granting re-renders contributions from the current template", () => {
   /**
    * TEST_SCENARIO: A Bob connection created before the template contributed
-   * the Claude Code wiring holds only the shell env. Attaching it to an agent
+   * the inference wiring holds only the shell env. Attaching it to an agent
    * must upgrade it in place: the re-rendered contributions land in the
    * repository and reach the fan-out, the config-input pins survive, and the
    * secret is rewritten with annotations rebuilt from the new contributions —
@@ -182,13 +180,13 @@ describe("granting re-renders contributions from the current template", () => {
     await svc.setAgentConnections(AGENT, [id]);
 
     const names = envNames(rows.get(id)!.contributions);
-    expect(names).toContain("ANTHROPIC_BASE_URL");
-    expect(names).toContain("ANTHROPIC_AUTH_TOKEN");
+    expect(names).toContain("OPENAI_BASE_URL");
+    expect(names).toContain("OPENAI_API_KEY");
     expect(names).toContain("BOB_SHELL_MODEL");
     expect(names).toContain("BOB_TEAM_ID");
 
     expect(envNames(fanOutGrants.at(-1)![0]!.contributions)).toContain(
-      "ANTHROPIC_BASE_URL",
+      "OPENAI_BASE_URL",
     );
 
     expect(stored.get(BOB_SECRET_PATH)!["value"]).toBe("bob-key-1");
@@ -198,7 +196,7 @@ describe("granting re-renders contributions from the current template", () => {
     });
     expect(
       refreshMeta.extraAnnotations?.["agent-platform.ai/env-mappings"],
-    ).toContain("ANTHROPIC_BASE_URL");
+    ).toContain("OPENAI_BASE_URL");
   });
 
   /**
@@ -263,7 +261,7 @@ describe("granting re-renders contributions from the current template", () => {
     expect(contributionUpdates).toEqual([]);
     expect(fanOutGrants).toHaveLength(2);
     expect(envNames(rows.get(id)!.contributions)).not.toContain(
-      "ANTHROPIC_BASE_URL",
+      "OPENAI_BASE_URL",
     );
   });
 
@@ -282,7 +280,7 @@ describe("granting re-renders contributions from the current template", () => {
     expect(contributionUpdates).toEqual([]);
     expect(stored.get(BOB_SECRET_PATH)!["value"]).toBe("bob-key-2");
     expect(envNames(rows.get(id)!.contributions)).not.toContain(
-      "ANTHROPIC_BASE_URL",
+      "OPENAI_BASE_URL",
     );
   });
 });

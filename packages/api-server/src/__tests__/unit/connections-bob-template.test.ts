@@ -3,6 +3,7 @@ import type { Contribution, SecretRef } from "api-server-api";
 import { PROVIDER_TEMPLATE_IDS } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { buildConnectionSdsFields } from "../../modules/connections/domain/connection-sds.js";
 
 const BOB_HOST = "api.us-east.bob.ibm.com";
 
@@ -62,70 +63,60 @@ describe("bob connection template serves shell and inference from one key", () =
     );
   });
 
-  it("contributes the shell credential and the Claude Code wiring together", async () => {
+  it("contributes the shell credential and the inference wiring together", async () => {
     const names = envNames((await buildBob()).contributions);
 
     expect(names).toContain("BOBSHELL_API_KEY");
-    expect(names).toContain("ANTHROPIC_AUTH_TOKEN");
-    expect(names).toContain("ANTHROPIC_BASE_URL");
+    expect(names).toContain("OPENAI_API_KEY");
+    expect(names).toContain("OPENAI_BASE_URL");
+    expect(names).toContain("OPENAI_PROXY_URL");
   });
 
-  it("points Claude Code at a base URL that composes to Bob's messages route", async () => {
+  it("points OpenAI clients at a base URL that composes to Bob's verified route", async () => {
     const built = await buildBob();
-    const base = envOf(built.contributions, "ANTHROPIC_BASE_URL").placeholder;
+    const base = envOf(built.contributions, "OPENAI_BASE_URL").placeholder;
 
-    expect(base).toBe(`https://${BOB_HOST}/inference`);
-    expect(`${base}/v1/messages`).toBe(
-      `https://${BOB_HOST}/inference/v1/messages`,
+    expect(base).toBe(`https://${BOB_HOST}/inference/v1`);
+    expect(`${base}/chat/completions`).toBe(
+      `https://${BOB_HOST}/inference/v1/chat/completions`,
     );
-    expect(base).not.toMatch(/\/v1$/);
+    expect(envOf(built.contributions, "OPENAI_PROXY_URL").placeholder).toBe(
+      base,
+    );
   });
 
-  it("keeps the real key gateway-side and disables betas Bob would reject", async () => {
+  it("keeps the real key gateway-side", async () => {
     const built = await buildBob();
 
-    for (const name of ["BOBSHELL_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {
+    for (const name of ["BOBSHELL_API_KEY", "OPENAI_API_KEY"]) {
       expect(envOf(built.contributions, name).placeholder).not.toContain(
         "bob_prod",
       );
     }
-    expect(
-      envOf(built.contributions, "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-        .placeholder,
-    ).toBe("1");
   });
 
-  it("presents an upstream user agent Bob's edge allowlist accepts", async () => {
+  it("pins Codex to the wire API and limits Bob actually serves", async () => {
     const built = await buildBob();
-    const ua = envOf(
-      built.contributions,
-      "MODEL_GATEWAY_USER_AGENT",
-    ).placeholder;
+    const env = (name: string) => envOf(built.contributions, name).placeholder;
 
-    expect(ua).toMatch(/^bob/);
+    expect(env("OPENAI_MODEL")).toBe("premium");
+    expect(env("OPENAI_PROXY_MODEL")).toBe("premium");
+    expect(env("CODEX_WIRE_API")).toBe("chat");
+    expect(env("CODEX_CONTEXT_WINDOW")).toBe("200000");
+    expect(env("CODEX_MAX_OUTPUT_TOKENS")).toBe("8192");
   });
 
-  it("resolves every Claude Code model tier to an alias Bob serves", async () => {
-    const built = await buildBob();
-    const tier = (name: string) =>
-      envOf(built.contributions, `ANTHROPIC_DEFAULT_${name}_MODEL`).placeholder;
-
-    expect(tier("FABLE")).toBe("premium");
-    expect(tier("OPUS")).toBe("premium");
-    expect(tier("SONNET")).toBe("premium");
-    expect(tier("HAIKU")).toBe("flash");
-  });
-
-  it("never sets the OpenAI vars — Claude Code does not read them", async () => {
+  it("never sets the Anthropic vars — Bob serves no Anthropic route to API keys", async () => {
     const names = envNames((await buildBob()).contributions);
 
-    expect(names.filter((n) => n.startsWith("OPENAI_"))).toEqual([]);
+    expect(names.filter((n) => n.startsWith("ANTHROPIC_"))).toEqual([]);
+    expect(names.filter((n) => n.startsWith("CLAUDE_"))).toEqual([]);
   });
 
-  it("adds no injection beyond the two Bob already had", async () => {
+  it("injects the two credentials plus a constant user agent Bob's edge accepts", async () => {
     const injects = injectsOf((await buildBob()).contributions);
 
-    expect(injects).toHaveLength(2);
+    expect(injects).toHaveLength(3);
     expect(injects[0]).toMatchObject({
       host: BOB_HOST,
       headerName: "Authorization",
@@ -136,6 +127,21 @@ describe("bob connection template serves shell and inference from one key", () =
       headerName: "X-Bobshell-Internal",
       queryParamName: "key",
     });
+    expect(injects[2]).toMatchObject({
+      host: BOB_HOST,
+      headerName: "User-Agent",
+    });
+    expect(injects[2]!.valueFormat).not.toContain("{value}");
+    expect(injects[2]!.valueFormat).toMatch(/bob/);
+  });
+
+  it("bakes every injection into its own SDS file — none may shadow another", async () => {
+    const built = await buildBob();
+    const sdsKeys = Object.keys(
+      buildConnectionSdsFields(built.contributions, "tok"),
+    );
+
+    expect(sdsKeys).toHaveLength(injectsOf(built.contributions).length);
   });
 
   it("keeps the shell pins working alongside the inference wiring", async () => {
@@ -145,8 +151,8 @@ describe("bob connection template serves shell and inference from one key", () =
       "premium-shell",
     );
     expect(envOf(built.contributions, "BOB_TEAM_ID").placeholder).toBe("t-1");
-    expect(envOf(built.contributions, "ANTHROPIC_BASE_URL").placeholder).toBe(
-      `https://${BOB_HOST}/inference`,
+    expect(envOf(built.contributions, "OPENAI_BASE_URL").placeholder).toBe(
+      `https://${BOB_HOST}/inference/v1`,
     );
   });
 

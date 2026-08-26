@@ -18,7 +18,6 @@ function customUpstream(raw) {
 
 let UPSTREAM = customUpstream(process.env.ANTHROPIC_BASE_URL);
 let TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || "";
-let UPSTREAM_UA = process.env.MODEL_GATEWAY_USER_AGENT || "";
 if (!UPSTREAM) {
   log("no custom upstream; nothing to front");
   process.exit(0);
@@ -57,7 +56,6 @@ async function fetchCatalogFrom(path) {
       "x-api-key": TOKEN,
       "anthropic-version": "2023-06-01",
       accept: "application/json",
-      ...(UPSTREAM_UA ? { "user-agent": UPSTREAM_UA } : {}),
     },
     signal: AbortSignal.timeout(10_000),
   });
@@ -188,7 +186,6 @@ async function proxy(req, res) {
     req.headers["content-type"],
   );
   const headers = keepHeaders(Object.entries(req.headers), REQ_DROP);
-  if (UPSTREAM_UA) headers["user-agent"] = UPSTREAM_UA;
 
   const ac = new AbortController();
   res.on("close", () => {
@@ -270,7 +267,6 @@ process.on("SIGHUP", () => {
     log("reload: no custom upstream; exiting");
     process.exit(0);
   }
-  UPSTREAM_UA = env.MODEL_GATEWAY_USER_AGENT || "";
   if (base !== UPSTREAM || (env.ANTHROPIC_AUTH_TOKEN || "") !== TOKEN) {
     UPSTREAM = base;
     TOKEN = env.ANTHROPIC_AUTH_TOKEN || "";

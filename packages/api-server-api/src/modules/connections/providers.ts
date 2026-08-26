@@ -50,35 +50,35 @@ export interface BobModelPins {
 export const BOB_HOST = "api.us-east.bob.ibm.com";
 const BOB_PLACEHOLDER = "dummy-placeholder";
 
-export const BOB_INFERENCE_BASE_URL = `https://${BOB_HOST}/inference`;
-export const BOB_INFERENCE_PREMIUM_MODEL = "premium";
-export const BOB_INFERENCE_FAST_MODEL = "flash";
-export const BOB_INFERENCE_USER_AGENT = "bob-platform-model-gateway/1.0";
+export const BOB_INFERENCE_BASE_URL = `https://${BOB_HOST}/inference/v1`;
+export const BOB_INFERENCE_MODEL = "premium";
+export const BOB_INFERENCE_USER_AGENT = "bob-platform-egress/1.0";
+export const BOB_INFERENCE_CONTEXT_WINDOW = "200000";
+export const BOB_INFERENCE_MAX_OUTPUT_TOKENS = "8192";
 
 export function bobInferenceEnvMappings(): EnvMapping[] {
   return [
-    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "ANTHROPIC_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
-    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
+    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "OPENAI_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
+    { envName: "OPENAI_MODEL", placeholder: BOB_INFERENCE_MODEL },
+    { envName: "CODEX_WIRE_API", placeholder: "chat" },
     {
-      envName: "MODEL_GATEWAY_USER_AGENT",
-      placeholder: BOB_INFERENCE_USER_AGENT,
+      envName: "CODEX_CONTEXT_WINDOW",
+      placeholder: BOB_INFERENCE_CONTEXT_WINDOW,
     },
     {
-      envName: "ANTHROPIC_DEFAULT_FABLE_MODEL",
-      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+      envName: "CODEX_MAX_OUTPUT_TOKENS",
+      placeholder: BOB_INFERENCE_MAX_OUTPUT_TOKENS,
+    },
+    { envName: "OPENAI_PROXY_URL", placeholder: BOB_INFERENCE_BASE_URL },
+    { envName: "OPENAI_PROXY_MODEL", placeholder: BOB_INFERENCE_MODEL },
+    {
+      envName: "OPENAI_PROXY_CONTEXT_WINDOW",
+      placeholder: BOB_INFERENCE_CONTEXT_WINDOW,
     },
     {
-      envName: "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
-    },
-    {
-      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
-    },
-    {
-      envName: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-      placeholder: BOB_INFERENCE_FAST_MODEL,
+      envName: "OPENAI_PROXY_MAX_TOKENS",
+      placeholder: BOB_INFERENCE_MAX_OUTPUT_TOKENS,
     },
   ];
 }
