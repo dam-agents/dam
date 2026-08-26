@@ -127,12 +127,8 @@ ENV MISE_DATA_DIR=/usr/local/share/mise \
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
 COPY --from=base /usr/local/bin/mise /usr/local/bin/mise
-COPY --from=base /usr/local/share/mise/ /usr/local/share/mise/
-COPY --from=base /etc/mise/ /etc/mise/
-COPY --from=builder /deploy/package.json ./
-COPY --from=builder /deploy/node_modules ./node_modules
-COPY --from=builder /app/packages/agent-runtime/dist/ ./dist/
-COPY --from=builder /app/packages/driver-sdk/dist/driver-sdk.mjs /usr/local/lib/driver-sdk.mjs
+COPY --from=base --chown=65532:0 /usr/local/share/mise/ /usr/local/share/mise/
+COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
 # The experiment SDK (#2942): one stdlib-only module, importable everywhere via
 # PYTHONPATH — the Python analog of driver-sdk.mjs. --chmod because COPY
 # preserves source modes and git doesn't: an owner-only file in a build
@@ -156,20 +152,27 @@ COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-c
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
 COPY --chmod=755 packages/platform-base/entrypoint.sh /usr/local/bin/agent-entrypoint
-COPY packages/platform-base/skills/ /app/working-dir/.agents/skills/
-COPY packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
-COPY packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
-COPY packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
-COPY packages/platform-base/AGENTS.md /etc/AGENTS.md
+COPY --chown=65532:0 packages/platform-base/skills/ /app/working-dir/.agents/skills/
+COPY --chown=65532:0 packages/platform-base/working-dir/.claude.json /app/working-dir/.claude.json
+COPY --chown=65532:0 packages/platform-base/working-dir/.claude/settings.json /app/working-dir/.claude/settings.json
+COPY --chown=65532:0 packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
+COPY --chown=65532:0 packages/platform-base/AGENTS.md /etc/AGENTS.md
 
 RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
-    chown 65532 /etc/AGENTS.md &&\
-    chown -R 65532 /etc/mise /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /app /home/agent /usr/local/share/mise &&\
+    chown 65532 /app &&\
+    chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /home/agent &&\
     ldconfig &&\
     echo 'sshd:x:74:' >> /etc/group &&\
     echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd &&\
     sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
     echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
+
+# Last: the runtime build output is the only content here that moves on an
+# ordinary commit, so nothing above it gets invalidated by one.
+COPY --from=builder --chown=65532:0 /deploy/package.json ./
+COPY --from=builder --chown=65532:0 /deploy/node_modules ./node_modules
+COPY --from=builder --chown=65532:0 /app/packages/agent-runtime/dist/ ./dist/
+COPY --from=builder /app/packages/driver-sdk/dist/driver-sdk.mjs /usr/local/lib/driver-sdk.mjs
 
 USER 65532
 
