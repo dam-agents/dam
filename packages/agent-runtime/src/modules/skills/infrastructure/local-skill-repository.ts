@@ -538,7 +538,7 @@ async function resolveSkillDirInClone(
       await fs.access(path.join(candidate, "SKILL.md"));
       const real = await fs.realpath(candidate);
       const rootReal = await fs.realpath(repoDir);
-      if (real !== rootReal && !real.startsWith(rootReal + path.sep)) continue;
+      if (!real.startsWith(rootReal + path.sep)) continue;
       return ok(real);
     } catch {}
   }

@@ -1,9 +1,10 @@
-// TEST_OVERVIEW: A skill source repo may alias one skill directory from
-// another via a relative symlink (dam publishes `.claude/skills/<name>` as
-// links into `.agents/skills/<name>`). Resolving a skill in a clone must
-// land on the real directory, and materializing it must publish a real
-// directory — never a symlink into the clone's temp dir, which dangles the
-// moment the clone is cleaned up and gets the install reaped as a ghost.
+/* TEST_OVERVIEW: A skill source repo may alias one skill directory from
+another via a relative symlink (the platform repo publishes
+`.claude/skills/<name>` as links into `.agents/skills/<name>`). Resolving a
+skill in a clone must land on the real directory, and materializing it must
+publish a real directory — never a symlink into the clone's temp dir, which
+dangles the moment the clone is cleaned up and gets the install reaped as a
+ghost. */
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -67,10 +68,7 @@ describe("resolveSkillDirInClone with symlinked source roots", () => {
     const st = await fs.lstat(published);
     expect(st.isSymbolicLink()).toBe(false);
     await fs.rm(clone, { recursive: true, force: true });
-    const content = await fs.readFile(
-      path.join(published, "SKILL.md"),
-      "utf8",
-    );
+    const content = await fs.readFile(path.join(published, "SKILL.md"), "utf8");
     expect(content).toContain("grill-me");
   });
 

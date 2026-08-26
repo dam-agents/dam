@@ -514,7 +514,7 @@ export function useSkillsSurface(
         return { ok: false as const, conflictNames, message };
       }
     },
-    [agentId],
+    [agentId, supersedeInFlightPolls],
   );
 
   const deleteStandalone = useCallback(
@@ -530,7 +530,7 @@ export function useSkillsSurface(
       emitToast({ kind: "success", message: `Deleted ${skill.name}` });
       return true;
     },
-    [agentId],
+    [agentId, supersedeInFlightPolls],
   );
 
   const downloadStandalone = useCallback(
