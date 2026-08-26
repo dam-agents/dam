@@ -9,7 +9,11 @@ USER root
 # would also preinstall every lazy tool from the base image's /etc/mise/config.toml
 COPY harness-tools.toml /etc/mise/conf.d/harness-tools.toml
 # run postinstall manually: mise's npm backend skips it, claude needs its native binary
+# npm_config_cache: mise runs npm with its own HOME, so npm cached to
+# /tmp/.npm — the mount below cached nothing and 199MB of cache shipped in the
+# layer. Naming the path puts it back on the mount, which no layer sees.
 RUN --mount=type=cache,target=/root/.npm \
+    npm_config_cache=/root/.npm \
     mise install "npm:@anthropic-ai/claude-code" "npm:@agentclientprotocol/claude-agent-acp" &&\
     node "$(mise where npm:@anthropic-ai/claude-code)/lib/node_modules/@anthropic-ai/claude-code/install.cjs" &&\
     chown -R 65532 /etc/mise \
