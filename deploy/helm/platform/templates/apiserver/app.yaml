@@ -404,6 +404,10 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            {{- if .Values.links.computeRequest }}
+            - name: LINKS_COMPUTE_REQUEST
+              value: {{ .Values.links.computeRequest | quote }}
+            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # The api-server's own operational telemetry (request traces,
             # per-procedure metrics, logs) exports OTLP straight to the

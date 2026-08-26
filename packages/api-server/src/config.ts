@@ -1,4 +1,4 @@
-import { brandSchema } from "api-server-api";
+import { brandSchema, linksSchema } from "api-server-api";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { durationToMinutesStrict } from "./duration.js";
@@ -109,6 +109,7 @@ const configSchema = z.object({
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
   experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   brand: brandSchema,
+  links: linksSchema,
   terms: z.object({
     version: z.string().min(1, "terms.version must be set"),
     text: z.string().min(1, "terms.text must be set"),
@@ -231,6 +232,9 @@ export function loadConfig(): Config {
           accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },
+    },
+    links: {
+      computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
     },
     terms: {
       version: process.env.TERMS_VERSION,

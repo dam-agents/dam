@@ -12,6 +12,7 @@ import type { LiveEventsService } from "./modules/events/types.js";
 import type { ExperimentsService } from "./modules/experiments/types.js";
 import type { InvocationsQueryService } from "./modules/invocations/types.js";
 import type { KnowledgeBasesService } from "./modules/knowledge-bases/types.js";
+import type { Links } from "./modules/links/types.js";
 import type { FilesService } from "./modules/files/router.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
@@ -47,6 +48,7 @@ export interface ApiContext {
   features: FeaturesService;
   files: FilesService;
   harnessConfig: HarnessConfigService;
+  links: Links;
   liveEvents: LiveEventsService;
   metrics: MetricsService;
   terms: TermsService;
