@@ -6,9 +6,12 @@ import { getBrand } from "@/brand";
 import {
   DialogActions,
   DialogBody,
+  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
+
+import { Button } from "@/components/ui/button";
 
 import { useShareForm } from "../hooks/use-share-form.js";
 import { PUBLIC_SHARE_TITLE, publicShareMessage } from "../lib/public-share.js";
@@ -22,6 +25,43 @@ interface Props {
 }
 
 export function ShareDialog({ artifact, onClose }: Props) {
+  if (artifact.interactive) {
+    return <InteractiveRefusal artifact={artifact} onClose={onClose} />;
+  }
+  return <SharingControls artifact={artifact} onClose={onClose} />;
+}
+
+function InteractiveRefusal({ artifact, onClose }: Props) {
+  return (
+    <Modal>
+      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
+      <DialogBody>
+        <div className="flex flex-col gap-3 text-sm">
+          <p className="font-medium text-foreground">
+            This page cannot be shared.
+          </p>
+          <p className="text-muted-foreground">
+            It is an interactive page: a button on it can ask its agent to do
+            something, and that agent works with your credentials and your
+            connections. A link anyone could open would hand them the same
+            reach, so an interactive page stays private to you.
+          </p>
+          <p className="text-muted-foreground">
+            This was settled when the page was published and cannot be changed.
+            Ask the agent for a plain copy if you need something to share.
+          </p>
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      </DialogFooter>
+    </Modal>
+  );
+}
+
+function SharingControls({ artifact, onClose }: Props) {
   const { form, shareUrl, needsPublicConfirm, submit, isPending } =
     useShareForm(artifact, onClose);
   const [draftEmail, setDraftEmail] = useState("");

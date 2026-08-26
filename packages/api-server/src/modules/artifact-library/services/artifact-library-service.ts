@@ -47,6 +47,7 @@ import { emit, EventType } from "../../../events.js";
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 export type ArtifactSurface = "ui" | "cli" | "mcp" | "system" | "other";
+const INTERACTIVE_KINDS = new Set<ArtifactKind>(["html"]);
 
 export interface ArtifactAgentDownloadTicket {
   url: string;
@@ -131,6 +132,7 @@ export function toLibraryArtifact(
     sourcePath: row.sourcePath,
     agentId: row.agentId,
     visibility: row.visibility,
+    interactive: row.interactive,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
@@ -369,6 +371,20 @@ export function createArtifactLibraryService(
       });
       const fileName = input.fileName ?? defaultFileName(input.title, kind);
       const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
+      const interactive = input.interactive === true;
+      if (interactive && !INTERACTIVE_KINDS.has(kind)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `an interactive artifact must be a page that runs — a ${kind} artifact cannot ask its agent`,
+        });
+      }
+      if (interactive && input.visibility === "public") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "an interactive artifact can talk to your agent, so it cannot be shared",
+        });
+      }
 
       const id = generateId();
       const key = versionKey(owner, id, 1, fileName);
@@ -395,6 +411,7 @@ export function createArtifactLibraryService(
           sizeBytes: stored.sizeBytes,
           version: 1,
           visibility: input.visibility ?? "private",
+          interactive,
           expiresAt: expiresAtFrom(input.expiresInHours),
           sourcePath: input.sourcePath ?? null,
         },
@@ -521,7 +538,20 @@ export function createArtifactLibraryService(
         owner,
         patch,
         parsed.viewers,
-        (before) => requireSharingPermission(before, parsed),
+        (before) => {
+          requireSharingPermission(before, parsed);
+          if (
+            before.interactive &&
+            parsed.visibility !== undefined &&
+            parsed.visibility !== "private"
+          ) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message:
+                "this page can talk to your agent, so it cannot be shared — it stays private",
+            });
+          }
+        },
       );
       if (!change) throw new TRPCError({ code: "NOT_FOUND" });
       const { before, after, viewers } = change;
