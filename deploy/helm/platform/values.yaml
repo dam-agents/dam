@@ -807,13 +807,17 @@ apiServer:
     # -- Path-style addressing, needed by SeaweedFS and most self-hosted
     # stores. Set false for AWS S3.
     forcePathStyle: true
+  # Every session stream, agent status poll and driver request funnels through
+  # this one pod, so it is sized as a control plane and not as a chat backend.
+  # Half a core let the event loop miss its health probe under load, and the
+  # kubelet restart took every in-flight request with it.
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
+      cpu: "500m"
       memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
 
 # -- Controller (Go reconciler + scheduler)
 controller:
