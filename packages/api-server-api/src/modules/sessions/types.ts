@@ -6,6 +6,7 @@ export const SessionType = {
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
   ExperimentExecute: "experiment_execute",
+  Artifact: "artifact",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -41,6 +42,7 @@ export interface SessionView {
   createdAt: string;
   scheduleId?: string | null;
   experimentId?: string | null;
+  artifactId?: string | null;
   title?: string | null;
   updatedAt?: string | null;
   threadTs?: string | null;

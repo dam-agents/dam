@@ -13,6 +13,7 @@ export type ContributionKind = z.infer<typeof contributionKind>;
 export const eventKind = z.enum([
   "trigger",
   "schedule-reset",
+  "artifact-request",
   "workspace-seed",
   "workspace-command",
   "experiment-execute",
@@ -127,6 +128,23 @@ export const scheduleResetEvent = z.object({
   payload: scheduleResetEventPayload,
 });
 
+export const artifactRequestEventPayload = z.object({
+  requestId: z.string().min(1),
+  artifactId: z.string().min(1),
+  task: z.string().min(1),
+});
+export type ArtifactRequestEventPayload = z.infer<
+  typeof artifactRequestEventPayload
+>;
+
+export const artifactRequestEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("artifact-request"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: artifactRequestEventPayload,
+});
+
 export const workspaceSeedEventPayload = z.object({
   url: z.string().min(1),
   ref: z.string().min(1).optional(),
@@ -195,6 +213,7 @@ export const harnessConfigEvent = z.object({
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
+  artifactRequestEvent,
   workspaceSeedEvent,
   workspaceCommandEvent,
   experimentExecuteEvent,
