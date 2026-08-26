@@ -95,6 +95,12 @@ export function registerArtifactLibraryTools(
         .describe("Auto-detected from file name / content when omitted."),
       folder_id: z.string().optional(),
       visibility: z.enum(["private", "public"]).optional(),
+      interactive: z
+        .boolean()
+        .optional()
+        .describe(
+          "HTML only. Makes the page able to call back to you: a button on it asks you to do something and the answer lands in the page. In exchange the artifact can NEVER be shared — it stays private to its owner, because you run with their credentials. Settled now and unchangeable: no later version can turn it on or off, so publish a separate artifact if you want a shareable copy.",
+        ),
       expires_in_hours: z
         .number()
         .int()
@@ -118,6 +124,7 @@ export function registerArtifactLibraryTools(
       type,
       folder_id,
       visibility,
+      interactive,
       expires_in_hours,
       experiment_id,
     }) =>
@@ -131,6 +138,7 @@ export function registerArtifactLibraryTools(
             kind: type,
             folderId: folder_id,
             visibility,
+            interactive,
             expiresInHours: expires_in_hours ?? null,
           },
           { agentId: deps.agentId },
@@ -258,7 +266,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE and whether it is INTERACTIVE are settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
     {
       id: z.string().min(1),
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH).optional(),
@@ -287,7 +295,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "set_artifact_sharing",
-    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private.",
+    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private. An interactive artifact refuses 'public' — it can call back to you, so it stays private — but its deletion date is still settable.",
     {
       id: z.string().min(1),
       visibility: z.enum(["private", "public"]).optional(),

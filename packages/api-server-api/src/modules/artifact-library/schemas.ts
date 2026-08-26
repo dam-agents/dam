@@ -54,6 +54,7 @@ export const artifactCreateInputSchema = z
     contentType: z.string().trim().min(1).max(200).optional(),
     folderId: z.string().min(1).optional(),
     visibility: artifactVisibilitySchema.optional(),
+    interactive: z.boolean().optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
   })
   .refine((v) => (v.content == null) !== (v.uploadRef == null), {

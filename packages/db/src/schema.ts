@@ -592,6 +592,7 @@ export const libraryArtifacts = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
+    interactive: boolean("interactive").notNull().default(false),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })

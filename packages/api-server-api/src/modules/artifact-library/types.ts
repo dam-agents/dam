@@ -37,6 +37,7 @@ export interface LibraryArtifact {
   folderId: string | null;
   agentId: string | null;
   visibility: ArtifactVisibility;
+  interactive: boolean;
   expiresAt: string | null;
   viewCount: number;
   shareUrl: string | null;
@@ -75,6 +76,7 @@ export interface ArtifactCreateInput {
   contentType?: string;
   folderId?: string;
   visibility?: ArtifactVisibility;
+  interactive?: boolean;
   expiresInHours?: number | null;
 }
 

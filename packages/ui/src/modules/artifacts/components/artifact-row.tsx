@@ -34,7 +34,11 @@ import {
 import { deletionState } from "../lib/format.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { toastCopyOutcome } from "../lib/share-link.js";
-import { ArtifactKindBadge, ArtifactStatusBadge } from "./artifact-badges.js";
+import {
+  ArtifactInteractiveBadge,
+  ArtifactKindBadge,
+  ArtifactStatusBadge,
+} from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { VersionBadge } from "./version-badge.js";
 
@@ -127,6 +131,7 @@ export function ArtifactRow({
         </span>
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        {artifact.interactive && <ArtifactInteractiveBadge />}
         <ArtifactStatusBadge artifact={artifact} />
         <div
           draggable={false}
