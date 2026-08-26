@@ -14,6 +14,11 @@ import {
   SHARE_SESSION_TTL_MS,
 } from "./domain/share-session.js";
 import { createArtifactLibraryRepository } from "./infrastructure/artifact-library-repository.js";
+import { createArtifactRequestsRepository } from "./infrastructure/artifact-requests-repository.js";
+import {
+  createArtifactRequestsService,
+  type ArtifactRequestsServiceImpl,
+} from "./services/artifact-requests-service.js";
 import {
   createKeycloakShareIdentity,
   keycloakShareJwksUrl,
@@ -50,10 +55,14 @@ export interface ComposeArtifactLibraryForOwnerOpts {
 
 export function composeArtifactLibraryForOwner(
   opts: ComposeArtifactLibraryForOwnerOpts,
-): { artifactLibrary: ArtifactLibraryServiceImpl } {
+): {
+  artifactLibrary: ArtifactLibraryServiceImpl;
+  artifactRequests: ArtifactRequestsServiceImpl;
+} {
+  const repo = createArtifactLibraryRepository(opts.db);
   return {
     artifactLibrary: createArtifactLibraryService({
-      repo: createArtifactLibraryRepository(opts.db),
+      repo,
       artifacts: opts.artifacts,
       owner: opts.owner,
       surface: z
@@ -62,6 +71,12 @@ export function composeArtifactLibraryForOwner(
         .parse(opts.surface),
       shareBaseUrl: opts.shareBaseUrl,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
+    }),
+    artifactRequests: createArtifactRequestsService({
+      requests: createArtifactRequestsRepository(opts.db),
+      library: repo,
+      owner: opts.owner,
+      surface: opts.surface,
     }),
   };
 }

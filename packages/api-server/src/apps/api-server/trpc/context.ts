@@ -195,7 +195,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const { artifactLibrary } = composeArtifactLibraryForOwner({
+    const { artifactLibrary, artifactRequests } = composeArtifactLibraryForOwner({
       surface,
       db,
       artifacts,
@@ -340,6 +340,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kbShares,
       artifactLibrary,
       caseStudies,
+      artifactRequests,
       features,
       files,
       harnessConfig,

@@ -5,7 +5,7 @@
 
 ## Context
 
-The agent side of a press. A new runtime-channel event kind opens or resumes that artifact's own
+The agent side of a request. A new runtime-channel event kind opens or resumes that artifact's own
 session and submits the prompt. This is the same mechanism a continuous schedule already uses,
 with the artifact id in place of the schedule id, so the slice is mostly a second instance of an
 existing pattern rather than new machinery.
