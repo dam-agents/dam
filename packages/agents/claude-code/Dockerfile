@@ -8,16 +8,13 @@ USER root
 # would go stale on template upgrade); install by name — a bare `mise install`
 # would also preinstall every lazy tool from the base image's /etc/mise/config.toml
 COPY harness-tools.toml /etc/mise/conf.d/harness-tools.toml
-# run postinstall manually: mise's npm backend skips it, claude needs its native binary
 # npm_config_cache: mise runs npm with its own HOME, so npm cached to
 # /tmp/.npm — the mount below cached nothing and 199MB of cache shipped in the
 # layer. Naming the path puts it back on the mount, which no layer sees.
 RUN --mount=type=cache,target=/root/.npm \
     npm_config_cache=/root/.npm \
-    mise install "npm:@anthropic-ai/claude-code" "npm:@agentclientprotocol/claude-agent-acp" &&\
-    node "$(mise where npm:@anthropic-ai/claude-code)/lib/node_modules/@anthropic-ai/claude-code/install.cjs" &&\
+    mise install "npm:@agentclientprotocol/claude-agent-acp" &&\
     chown -R 65532 /etc/mise \
-      "$(dirname "$(mise where npm:@anthropic-ai/claude-code)")" \
       "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")" &&\
     find /etc/mise -name '*.lock' -exec chmod 644 {} +
 
@@ -26,7 +23,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # explicit flags below turn exactly that off; the umbrella
 # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is deliberately NOT set — it also
 # switches off wanted behavior beyond these constituents. The auto-updater
-# loss is intentional since the harness version is pinned above. Platform
+# loss is intentional since the CLI rides the adapter pin. Platform
 # OTEL export is a separate, opt-in path and is unaffected.
 ENV DISABLE_TELEMETRY=1 \
     DISABLE_ERROR_REPORTING=1 \
@@ -55,6 +52,16 @@ COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 # harness-history-lib.mjs imports the adapter's own replay conversion; the
 # symlink pins the resolution to whatever version mise installed above
 RUN ln -s "$(mise where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp" /usr/local/lib/claude-agent-acp
+# One CLI in the image. The adapter's claude-agent-sdk bundles the native
+# binary the chat path executes and cannot be unbundled, so `claude` — the
+# terminal harness — points at that same build instead of a second, separately
+# pinned install of it. CLAUDE_CODE_EXECUTABLE leaves the adapter nothing to
+# resolve: unset, it falls back to guessing the SDK's own copy.
+RUN set -eu; \
+    cli="$(echo /usr/local/lib/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"; \
+    test -x "$cli"; \
+    ln -s "$cli" /usr/local/bin/claude
+ENV CLAUDE_CODE_EXECUTABLE=/usr/local/bin/claude
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
     mkdir -p /etc/claude-code &&\
     ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
