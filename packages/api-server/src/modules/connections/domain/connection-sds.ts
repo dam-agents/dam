@@ -10,6 +10,10 @@ export function sdsFileKeyForHost(host: string): string {
   return `host-${slug}.sds.yaml`;
 }
 
+export function isSdsFieldKey(key: string): boolean {
+  return /^host-[A-Za-z0-9_-]+\.sds\.yaml$/.test(key);
+}
+
 export function sdsFileKeyForInjection(c: {
   host: string;
   headerName: string;

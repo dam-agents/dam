@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import type {
   AgentConnections,
@@ -10,6 +11,7 @@ import type {
   Contribution,
   SecretRef,
 } from "api-server-api";
+import { connectionCreateInputSchema } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
 import type {
@@ -34,6 +36,7 @@ import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  isSdsFieldKey,
 } from "../domain/connection-sds.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
@@ -157,6 +160,90 @@ export function createConnectionsService(deps: {
       clientId: creds.clientId,
       ...(clientSecret ? { clientSecret } : {}),
     };
+  }
+
+  function connectionSecretMeta(
+    connectionId: string,
+    templateId: string,
+    contributions: Contribution[],
+  ) {
+    return {
+      owner: deps.ownerId,
+      purpose: `connection:${templateId}`,
+      extraLabels: {
+        "agent-platform.ai/secret-type": "connection",
+        "agent-platform.ai/connection": connectionId,
+      },
+      extraAnnotations: connectionSecretAnnotations(contributions),
+    };
+  }
+
+  async function refreshHeaderContributions(
+    conn: Connection,
+  ): Promise<Connection> {
+    const template = deps.templates.get(conn.templateId);
+    if (
+      !template ||
+      template.authKind !== "header" ||
+      conn.auth.kind !== "header"
+    ) {
+      return conn;
+    }
+    try {
+      const value = await deps.secretStore.getField(conn.auth.valueRef);
+      if (!value) return conn;
+      const input = connectionCreateInputSchema.parse({
+        ...conn.inputs,
+        templateId: conn.templateId,
+        name: conn.name,
+        authKind: "header",
+        value,
+      });
+      const built = await buildConnection(
+        template,
+        input,
+        (purpose) => deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
+        deps.oauthCallbackUrl,
+        deps.brandName,
+      );
+      const next = built.contributions.map(
+        (c): Contribution =>
+          c.kind === "mcp-entry" ? { ...c, name: conn.name } : c,
+      );
+      if (isDeepStrictEqual(next, conn.contributions)) return conn;
+
+      const carried = Object.fromEntries(
+        Object.entries(
+          (await deps.secretStore.get(conn.auth.valueRef)) ?? {},
+        ).filter(([key]) => !isSdsFieldKey(key)),
+      );
+      await deps.secretStore.put(
+        conn.auth.valueRef,
+        { ...carried, ...buildConnectionSdsFields(next, value) },
+        connectionSecretMeta(conn.id, conn.templateId, next),
+      );
+      await deps.repo.updateContributions(conn.id, next);
+      securityLog("info", "connection.contributions_refresh", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: { templateId: conn.templateId },
+      });
+      return { ...conn, contributions: next };
+    } catch (err) {
+      securityLog("warn", "connection.contributions_refresh", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "failure",
+        reason: err instanceof Error ? err.message : "unknown",
+        detail: { templateId: conn.templateId },
+      });
+      return conn;
+    }
   }
 
   async function rotateHeaderValue(
@@ -525,9 +612,12 @@ export function createConnectionsService(deps: {
         });
       }
 
-      const grantedConnections = deduped
-        .map((id) => ownedById.get(id))
-        .filter((c): c is Connection => c !== undefined);
+      const grantedConnections: Connection[] = [];
+      for (const id of deduped) {
+        const conn = ownedById.get(id);
+        if (conn)
+          grantedConnections.push(await refreshHeaderContributions(conn));
+      }
       await deps.fanOut.apply({
         agentId,
         ownerId: deps.ownerId,
@@ -629,15 +719,7 @@ export function createConnectionsService(deps: {
         await deps.secretStore.put(
           { storeId: deps.secretStore.storeId, path: secretPath, field: "" },
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
-          {
-            owner: deps.ownerId,
-            purpose: `connection:${template.id}`,
-            extraLabels: {
-              "agent-platform.ai/secret-type": "connection",
-              "agent-platform.ai/connection": id,
-            },
-            extraAnnotations: connectionSecretAnnotations(contributions),
-          },
+          connectionSecretMeta(id, template.id, contributions),
         );
       }
 
