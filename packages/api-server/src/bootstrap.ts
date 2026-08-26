@@ -479,10 +479,6 @@ export async function bootstrap() {
     namespace: config.namespace,
     store: artifacts,
     ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    workspace: {
-      agentHome: config.agentHome,
-      agentWorkDir: config.agentWorkDir,
-    },
     publishLimits: {
       perFileMaxBytes: config.kbSharePerFileMaxBytes,
       totalMaxBytes: config.kbShareTotalMaxBytes,

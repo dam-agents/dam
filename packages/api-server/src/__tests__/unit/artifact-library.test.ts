@@ -184,6 +184,7 @@ function stubArtifacts(
     delete: () => Promise.resolve(),
     createUploadUrl: notImplemented,
     verifyUpload: notImplemented,
+    stat: notImplemented,
     createDownloadUrl: notImplemented,
     createAgentDownloadUrl: notImplemented,
     ...overrides,

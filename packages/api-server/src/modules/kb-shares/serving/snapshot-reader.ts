@@ -1,6 +1,17 @@
+import {
+  INDEX_FORMAT_VERSION,
+  parseManifest,
+  parseSegment,
+  type AnySnapshotManifest,
+  type IndexSegment,
+  type LegacySnapshotManifestV1,
+} from "agent-runtime-api/kb-snapshot";
+
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
-import { parseSearchIndex, type SearchIndex } from "../domain/search-index.js";
-import { parseManifest, type SnapshotManifest } from "../domain/snapshot.js";
+import {
+  parseSearchIndex,
+  type SearchIndex,
+} from "../domain/legacy-search-index.js";
 
 const MANIFEST_CACHE_BUDGET_BYTES = 16 * 1024 * 1024;
 const GUIDE_FILE_NAME = "USAGE_GUIDE.md";
@@ -13,26 +24,32 @@ export interface DocumentSlice {
   truncated: boolean;
 }
 
+export type LoadedSearch =
+  | { kind: "legacy"; index: SearchIndex }
+  | { kind: "segmented"; segments: IndexSegment[]; degraded: boolean }
+  | { kind: "none" }
+  | { kind: "unreadable"; formatVersion: number };
+
 export interface SnapshotReader {
   getManifest(
     manifestKey: string,
     snapshotId: string,
-  ): Promise<SnapshotManifest | null>;
-  getSearchIndex(manifest: SnapshotManifest): Promise<SearchIndex | null>;
+  ): Promise<AnySnapshotManifest | null>;
+  getSearch(manifest: AnySnapshotManifest): Promise<LoadedSearch>;
   readDocument(
-    manifest: SnapshotManifest,
+    manifest: AnySnapshotManifest,
     path: string,
     opts?: { offset?: number; maxChars?: number },
   ): Promise<DocumentSlice | null>;
   readDocumentText(
-    manifest: SnapshotManifest,
+    manifest: AnySnapshotManifest,
     path: string,
   ): Promise<string | null>;
-  readGuide(manifest: SnapshotManifest): Promise<string | null>;
+  readGuide(manifest: AnySnapshotManifest): Promise<string | null>;
 }
 
 interface CachedEntry {
-  value: SnapshotManifest | SearchIndex;
+  value: AnySnapshotManifest | SearchIndex | IndexSegment;
   bytes: number;
 }
 
@@ -55,7 +72,7 @@ export function createSnapshotReader(
     }
   }
 
-  function recall(cacheKey: string): SnapshotManifest | SearchIndex | null {
+  function recall(cacheKey: string): CachedEntry["value"] | null {
     const entry = cache.get(cacheKey);
     if (!entry) return null;
     cache.delete(cacheKey);
@@ -64,7 +81,7 @@ export function createSnapshotReader(
   }
 
   async function readManifestEntryText(
-    manifest: SnapshotManifest,
+    manifest: AnySnapshotManifest,
     path: string,
   ): Promise<string | null> {
     const file = manifest.files.find((f) => f.path === path);
@@ -74,10 +91,25 @@ export function createSnapshotReader(
     return stored.content.toString("utf8");
   }
 
+  async function loadLegacyIndex(
+    manifest: LegacySnapshotManifestV1,
+  ): Promise<LoadedSearch> {
+    if (!manifest.searchIndexKey) return { kind: "none" };
+    const cached = recall(`i:${manifest.snapshotId}`);
+    if (cached) return { kind: "legacy", index: cached as SearchIndex };
+    const stored = await store.get(manifest.searchIndexKey);
+    if (!stored) return { kind: "none" };
+    const raw = stored.content.toString("utf8");
+    const index = parseSearchIndex(raw);
+    if (!index) return { kind: "none" };
+    remember(`i:${manifest.snapshotId}`, { value: index, bytes: raw.length });
+    return { kind: "legacy", index };
+  }
+
   return {
     async getManifest(manifestKey, snapshotId) {
       const cached = recall(`m:${snapshotId}`);
-      if (cached) return cached as SnapshotManifest;
+      if (cached) return cached as AnySnapshotManifest;
       const stored = await store.get(manifestKey);
       if (!stored) return null;
       const raw = stored.content.toString("utf8");
@@ -87,17 +119,34 @@ export function createSnapshotReader(
       return manifest;
     },
 
-    async getSearchIndex(manifest) {
-      if (!manifest.searchIndexKey) return null;
-      const cached = recall(`i:${manifest.snapshotId}`);
-      if (cached) return cached as SearchIndex;
-      const stored = await store.get(manifest.searchIndexKey);
-      if (!stored) return null;
-      const raw = stored.content.toString("utf8");
-      const index = parseSearchIndex(raw);
-      if (!index) return null;
-      remember(`i:${manifest.snapshotId}`, { value: index, bytes: raw.length });
-      return index;
+    async getSearch(manifest) {
+      if (manifest.version === 1) return loadLegacyIndex(manifest);
+      const search = manifest.search;
+      if (!search || search.segments.length === 0) return { kind: "none" };
+      if (search.formatVersion !== INDEX_FORMAT_VERSION) {
+        return { kind: "unreadable", formatVersion: search.formatVersion };
+      }
+      const segments: IndexSegment[] = [];
+      for (const entry of search.segments) {
+        const cached = recall(`s:${entry.contentId}`);
+        if (cached) {
+          segments.push(cached as IndexSegment);
+          continue;
+        }
+        const stored = await store.get(entry.key);
+        if (!stored) {
+          return { kind: "unreadable", formatVersion: search.formatVersion };
+        }
+        const raw = stored.content.toString("utf8");
+        const segment = parseSegment(raw);
+        if (!segment) {
+          return { kind: "unreadable", formatVersion: search.formatVersion };
+        }
+        remember(`s:${entry.contentId}`, { value: segment, bytes: raw.length });
+        segments.push(segment);
+      }
+      const degraded = search.segments.some((s) => s.degraded);
+      return { kind: "segmented", segments, degraded };
     },
 
     async readDocumentText(manifest, path) {

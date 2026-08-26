@@ -1,6 +1,6 @@
 import { Worker } from "node:worker_threads";
 
-import { globToMatcher } from "../domain/search-index.js";
+import { globToMatcher } from "./glob-matcher.js";
 
 export const GREP_DEADLINE_MS = 2000;
 export const GREP_MAX_MATCHES = 200;

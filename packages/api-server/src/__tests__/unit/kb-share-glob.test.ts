@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { globToMatcher } from "../../modules/kb-shares/domain/search-index.js";
+import { globToMatcher } from "../../modules/kb-shares/serving/glob-matcher.js";
 import { runGlobFilterWorker } from "../../modules/kb-shares/serving/grep-worker.js";
 
 describe("globToMatcher", () => {

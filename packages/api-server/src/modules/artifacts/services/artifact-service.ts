@@ -23,8 +23,10 @@ export interface ArtifactService {
   readonly maxBytes: number;
   createUploadUrl(
     key: string,
+    opts?: { contentLengthBytes?: number },
   ): Promise<{ url: string; expiresSeconds: number } | null>;
   verifyUpload(key: string): Promise<ArtifactStat>;
+  stat(key: string): Promise<ArtifactStat | null>;
   createDownloadUrl(key: string, filename: string): Promise<string | null>;
   createAgentDownloadUrl(
     key: string,
@@ -53,12 +55,17 @@ export function createArtifactService(deps: {
     exists: (key) => deps.store.exists(key),
     delete: (key) => deps.store.delete(key),
 
-    async createUploadUrl(key) {
+    async createUploadUrl(key, opts) {
       const url = await deps.store.presignUpload(key, {
         expiresSeconds: UPLOAD_URL_TTL_SECONDS,
+        ...(opts?.contentLengthBytes !== undefined
+          ? { contentLengthBytes: opts.contentLengthBytes }
+          : {}),
       });
       return url ? { url, expiresSeconds: UPLOAD_URL_TTL_SECONDS } : null;
     },
+
+    stat: (key) => deps.store.head(key),
 
     async verifyUpload(key) {
       const stat = await deps.store.head(key);

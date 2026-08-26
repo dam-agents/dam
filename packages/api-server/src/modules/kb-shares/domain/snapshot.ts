@@ -1,77 +1,7 @@
-import { createHash, randomBytes } from "node:crypto";
-import { z } from "zod";
+import { randomBytes } from "node:crypto";
+import type { KbPublishFailure } from "agent-runtime-api/kb-snapshot";
 
-export const MANIFEST_VERSION = 1;
-export const PER_FILE_MAX_BYTES = 2 * 1024 * 1024;
-export const TOTAL_MAX_BYTES = 200 * 1024 * 1024;
-export const MAX_FILES = 5000;
 export const STALE_SNAPSHOT_GRACE_MS = 60 * 60 * 1000;
-
-const TEXT_EXTENSIONS = new Set([
-  "md",
-  "markdown",
-  "txt",
-  "text",
-  "json",
-  "jsonc",
-  "yaml",
-  "yml",
-  "toml",
-  "csv",
-  "tsv",
-  "html",
-  "htm",
-  "css",
-  "js",
-  "mjs",
-  "cjs",
-  "ts",
-  "tsx",
-  "jsx",
-  "py",
-  "rb",
-  "go",
-  "rs",
-  "java",
-  "kt",
-  "c",
-  "h",
-  "cpp",
-  "hpp",
-  "sh",
-  "bash",
-  "zsh",
-  "sql",
-  "xml",
-  "svg",
-  "ini",
-  "cfg",
-  "conf",
-  "rst",
-  "adoc",
-  "tex",
-  "bib",
-  "mermaid",
-]);
-
-export interface SnapshotManifestFile {
-  path: string;
-  sizeBytes: number;
-  contentHash: string;
-  key: string;
-}
-
-export interface SnapshotManifest {
-  version: number;
-  snapshotId: string;
-  createdAt: string;
-  roots: readonly string[];
-  files: SnapshotManifestFile[];
-  documentCount: number;
-  totalSizeBytes: number;
-  searchIndexKey?: string;
-  searchDegraded?: boolean;
-}
 
 export interface StaleSnapshotEntry {
   snapshotId: string;
@@ -87,24 +17,12 @@ export function manifestKey(shareId: string, snapshotId: string): string {
   return `kb-snapshots/${shareId}/${snapshotId}/manifest.json`;
 }
 
-export function fileObjectKey(
-  shareId: string,
-  snapshotId: string,
-  path: string,
-): string {
-  const pathDigest = createHash("sha256").update(path).digest("hex");
-  return `kb-snapshots/${shareId}/${snapshotId}/f/${pathDigest.slice(0, 24)}`;
+export function blobKey(shareId: string, contentHash: string): string {
+  return `kb-snapshots/${shareId}/blobs/${contentHash}`;
 }
 
-export function contentHash(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
-export function shouldConsiderFileName(name: string): boolean {
-  const dot = name.lastIndexOf(".");
-  if (dot <= 0) return true;
-  const extension = name.slice(dot + 1).toLowerCase();
-  return TEXT_EXTENSIONS.has(extension);
+export function segmentKey(shareId: string, contentId: string): string {
+  return `kb-snapshots/${shareId}/seg/${contentId}`;
 }
 
 export class PublishFailure extends Error {
@@ -114,32 +32,20 @@ export class PublishFailure extends Error {
   }
 }
 
-const manifestSchema = z.object({
-  version: z.literal(MANIFEST_VERSION),
-  snapshotId: z.string(),
-  createdAt: z.string(),
-  roots: z.array(z.string()),
-  files: z.array(
-    z.object({
-      path: z.string(),
-      sizeBytes: z.number(),
-      contentHash: z.string(),
-      key: z.string(),
-    }),
-  ),
-  documentCount: z.number(),
-  totalSizeBytes: z.number(),
-  searchIndexKey: z.string().optional(),
-  searchDegraded: z.boolean().optional(),
-});
-
-export function parseManifest(raw: string): SnapshotManifest | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return null;
+export function publishFailureMessage(
+  failure: KbPublishFailure,
+  limits: { maxFiles: number; totalMaxBytes: number; maxWalkDepth: number },
+): string {
+  switch (failure.code) {
+    case "root-missing":
+      return `share root "${failure.root}" was not found in the workspace — remove it from the share or create it`;
+    case "too-deep":
+      return `the share tree is deeper than ${limits.maxWalkDepth} levels — narrow the share roots or remove any directory cycle`;
+    case "too-many-files":
+      return `the share contains more than ${limits.maxFiles} files — narrow the share roots`;
+    case "total-too-large":
+      return `the share exceeds ${Math.floor(limits.totalMaxBytes / (1024 * 1024))} MB of text content — narrow the share roots`;
+    case "upload-failed":
+      return "publishing could not upload the snapshot — retry shortly";
   }
-  const parsed = manifestSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
 }

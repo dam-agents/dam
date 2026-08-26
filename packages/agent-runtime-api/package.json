@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./router": "./src/router.ts"
+    "./router": "./src/router.ts",
+    "./kb-snapshot": "./src/modules/kb-snapshot/index.ts"
   },
   "dependencies": {
     "@trpc/server": "^11.16.0",

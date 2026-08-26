@@ -6,6 +6,7 @@ import { AGENTS_PLURAL } from "../../agents/infrastructure/labels.js";
 import {
   findActiveShareById,
   incrementShareQueryCount,
+  markShareDirty,
   touchShareLastUsed,
 } from "../infrastructure/kb-shares-repository.js";
 import { createKbShareMcpApp } from "./kb-mcp-app.js";
@@ -33,10 +34,14 @@ export function composeKbShareServing(opts: {
     return name;
   }
 
+  const markDirty = markShareDirty(opts.db);
   return createKbShareMcpApp({
     findActiveById: findActiveShareById(opts.db),
     touchLastUsed: touchShareLastUsed(opts.db),
     incrementQueryCount: incrementShareQueryCount(opts.db),
+    markShareDirty: async (agentId) => {
+      await markDirty(agentId);
+    },
     reader: createSnapshotReader(opts.store),
     agentName,
     limits: createQueryLimits(),

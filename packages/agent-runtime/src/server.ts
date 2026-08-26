@@ -31,6 +31,7 @@ import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git.js";
@@ -85,6 +86,10 @@ const manifestPath = config.PLATFORM_DEV
 const runtimeManifest = loadManifest(manifestPath);
 
 const filesService = createFilesService(homeDir);
+const kbPublish = composeKbPublish({
+  workDir,
+  log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
+});
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
 const pristineSkillPaths = [
@@ -182,6 +187,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   files: filesService,
+  kbPublish: kbPublish.service,
   sessions: sessionsService,
   skills: skillsService,
   ssh: sshService,
@@ -467,7 +473,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0,
+      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isActive(),
       backgroundWork: acp.backgroundWork,
     };
     res

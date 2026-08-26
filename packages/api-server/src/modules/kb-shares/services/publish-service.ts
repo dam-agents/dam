@@ -1,43 +1,46 @@
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
-import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
+import type {
+  KbPublishPlan,
+  KbPublishPlanFile,
+  KbPublishSegmentReport,
+} from "agent-runtime-api";
 import {
-  AgentFileNotFoundError,
-  AgentFileTooLargeError,
-  type AgentFilesClient,
-} from "../infrastructure/agent-files-client.js";
-import {
-  MANIFEST_VERSION,
+  INDEX_FORMAT_VERSION,
+  MAX_WALK_DEPTH,
   MAX_FILES,
   PER_FILE_MAX_BYTES,
-  PublishFailure,
-  STALE_SNAPSHOT_GRACE_MS,
   TOTAL_MAX_BYTES,
-  contentHash,
-  fileObjectKey,
-  manifestKey,
-  mintSnapshotId,
+  bucketForPath,
+  chooseBucketCount,
   parseManifest,
-  shouldConsiderFileName,
+  segmentContentId,
+  type KbPublishCaps,
+  type SegmentMember,
   type SnapshotManifest,
   type SnapshotManifestFile,
+  type SnapshotSearchSegment,
+} from "agent-runtime-api/kb-snapshot";
+
+import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
+import type { KbPublishClient } from "../infrastructure/kb-publish-client.js";
+import {
+  PublishFailure,
+  STALE_SNAPSHOT_GRACE_MS,
+  blobKey,
+  manifestKey,
+  mintSnapshotId,
+  publishFailureMessage,
+  segmentKey,
   type StaleSnapshotEntry,
 } from "../domain/snapshot.js";
-import {
-  createSearchIndexBuilder,
-  searchIndexKey,
-} from "../domain/search-index.js";
 import { shareIdFromRowId } from "../domain/share-string.js";
-import {
-  joinWorkspacePath,
-  stripWorkspacePrefix,
-} from "../domain/workspace-path.js";
 import type { KbShareRow } from "../domain/types.js";
 
-const LIST_DIRS_BATCH = 500;
-const READ_CONCURRENCY = 4;
 const STALE_CLAIM_MS = 15 * 60 * 1000;
-const MAX_WALK_DEPTH = 64;
+const EXECUTE_BATCH_MAX_BYTES = 32 * 1024 * 1024;
+const EXECUTE_BATCH_MAX_BLOBS = 500;
+const EXECUTE_BATCH_MAX_SEGMENTS = 64;
 
 export interface KbSharePublisher {
   startPublish(
@@ -82,10 +85,13 @@ export interface KbSharePublisherDeps {
     ): Promise<void>;
     clearSnapshotPointer(rowId: string): Promise<void>;
   };
-  files: AgentFilesClient;
-  store: Pick<ArtifactService, "put" | "get" | "delete">;
+  kbPublish: KbPublishClient;
+  getRuntimeCapabilities(agentId: string): Promise<unknown | null>;
+  store: Pick<
+    ArtifactService,
+    "put" | "get" | "delete" | "stat" | "createUploadUrl"
+  >;
   ensureReady(agentId: string): Promise<void>;
-  workspacePrefix: string;
   limits?: Partial<KbSharePublishLimits>;
   now?: () => Date;
 }
@@ -96,37 +102,61 @@ export interface KbSharePublishLimits {
   maxFiles: number;
 }
 
-interface CollectedFile {
-  readPath: string;
-  path: string;
-  root: string;
+const RUNTIME_UNSUPPORTED_MESSAGE =
+  "the knowledge base agent's runtime does not support publishing — apply the pending agent update, then refresh the share";
+const UPLOAD_VERIFY_FAILED_MESSAGE =
+  "publishing could not upload the snapshot — retry shortly";
+
+function extractKbPublishCapability(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = (raw as { kbPublish?: unknown }).kbPublish;
+  return typeof value === "number" ? value : 0;
 }
 
-async function mapWithConcurrency<T>(
+function chunkBySize<T extends { sizeBytes: number }>(
   items: readonly T[],
-  concurrency: number,
-  task: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  let aborted = false;
-  let firstError: unknown;
-  const worker = async (): Promise<void> => {
-    while (!aborted && next < items.length) {
-      const index = next;
-      next += 1;
-      try {
-        await task(items[index]!);
-      } catch (err) {
-        aborted = true;
-        if (firstError === undefined) firstError = err;
-        return;
-      }
+  maxBytes: number,
+  maxCount: number,
+): T[][] {
+  const batches: T[][] = [];
+  let current: T[] = [];
+  let bytes = 0;
+  for (const item of items) {
+    if (
+      current.length > 0 &&
+      (bytes + item.sizeBytes > maxBytes || current.length >= maxCount)
+    ) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
     }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, worker),
-  );
-  if (firstError !== undefined) throw firstError;
+    current.push(item);
+    bytes += item.sizeBytes;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+function chunkByCount<T>(items: readonly T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
+}
+
+interface BlobUploadPlan {
+  path: string;
+  expectedHash: string;
+  sizeBytes: number;
+  key: string;
+}
+
+interface SegmentBuildPlan {
+  bucket: number;
+  contentId: string;
+  key: string;
+  members: SegmentMember[];
 }
 
 export function createKbSharePublisher(
@@ -138,135 +168,59 @@ export function createKbSharePublisher(
     totalMaxBytes: deps.limits?.totalMaxBytes ?? TOTAL_MAX_BYTES,
     maxFiles: deps.limits?.maxFiles ?? MAX_FILES,
   };
+  const messageLimits = { ...limits, maxWalkDepth: MAX_WALK_DEPTH };
 
-  async function collectFiles(row: KbShareRow): Promise<CollectedFile[]> {
-    const collected: CollectedFile[] = [];
-    let pending: { path: string; root: string; depth: number }[] =
-      row.roots.map((root) => ({
-        path: joinWorkspacePath(deps.workspacePrefix, root),
-        root,
-        depth: 0,
-      }));
-    const topRoots = new Set(pending.map((item) => item.path));
-    const visited = new Set<string>(pending.map((item) => item.path));
-    while (pending.length > 0) {
-      const batch = pending.slice(0, LIST_DIRS_BATCH);
-      pending = pending.slice(LIST_DIRS_BATCH);
-      const results = await deps.files.listDirs(
-        row.agentId,
-        batch.map((item) => item.path),
+  function validatePlan(
+    plan: KbPublishPlan,
+    roots: readonly string[],
+  ): KbPublishPlanFile[] {
+    if (plan.files.length > limits.maxFiles) {
+      throw new PublishFailure(
+        `the share contains more than ${limits.maxFiles} files — narrow the share roots`,
       );
-      for (const [index, result] of results.entries()) {
-        const origin = batch[index]!;
-        if (!result.ok) {
-          if (topRoots.has(result.path)) {
-            throw new PublishFailure(
-              `share root "${origin.root}" was not found in the workspace — remove it from the share or create it`,
-            );
-          }
-          continue;
-        }
-        for (const entry of result.entries) {
-          if (entry.name.startsWith(".")) continue;
-          const childPath = `${result.path}/${entry.name}`;
-          if (entry.type === "dir") {
-            if (origin.depth + 1 > MAX_WALK_DEPTH) {
-              throw new PublishFailure(
-                `the share tree is deeper than ${MAX_WALK_DEPTH} levels — narrow the share roots or remove any directory cycle`,
-              );
-            }
-            if (visited.has(childPath)) continue;
-            visited.add(childPath);
-            pending.push({
-              path: childPath,
-              root: origin.root,
-              depth: origin.depth + 1,
-            });
-          } else if (shouldConsiderFileName(entry.name)) {
-            collected.push({
-              readPath: childPath,
-              path: stripWorkspacePrefix(deps.workspacePrefix, childPath),
-              root: origin.root,
-            });
-            if (collected.length > limits.maxFiles) {
-              throw new PublishFailure(
-                `the share contains more than ${limits.maxFiles} files — narrow the share roots`,
-              );
-            }
-          }
-        }
-      }
     }
-    return collected;
-  }
-
-  async function uploadFiles(
-    row: KbShareRow,
-    snapshotId: string,
-    candidates: readonly CollectedFile[],
-    indexText: (path: string, text: string) => void,
-    writtenKeys: Set<string>,
-  ): Promise<SnapshotManifestFile[]> {
-    const shareId = shareIdFromRowId(row.id);
-    const files: SnapshotManifestFile[] = [];
-    const includedPerRoot = new Map<string, number>(
-      row.roots.map((root) => [root, 0]),
-    );
-    let totalBytes = 0;
-    await mapWithConcurrency(
-      candidates,
-      READ_CONCURRENCY,
-      async (candidate) => {
-        let result;
-        try {
-          result = await deps.files.read(row.agentId, candidate.readPath);
-        } catch (err) {
-          if (
-            err instanceof AgentFileTooLargeError ||
-            err instanceof AgentFileNotFoundError
-          ) {
-            return;
-          }
-          throw err;
-        }
-        if (result.binary) return;
-        const content = Buffer.from(result.content, "utf8");
-        if (content.byteLength > limits.perFileMaxBytes) return;
-        totalBytes += content.byteLength;
-        if (totalBytes > limits.totalMaxBytes) {
-          throw new PublishFailure(
-            `the share exceeds ${Math.floor(limits.totalMaxBytes / (1024 * 1024))} MB of text content — narrow the share roots`,
-          );
-        }
-        const key = fileObjectKey(shareId, snapshotId, candidate.path);
-        writtenKeys.add(key);
-        await deps.store.put({
-          key,
-          content,
-          contentType: result.mimeType || "text/plain",
-        });
-        files.push({
-          path: candidate.path,
-          sizeBytes: content.byteLength,
-          contentHash: contentHash(content),
-          key,
-        });
-        indexText(candidate.path, result.content);
-        includedPerRoot.set(
-          candidate.root,
-          (includedPerRoot.get(candidate.root) ?? 0) + 1,
+    const rootSet = new Set(roots);
+    const seen = new Set<string>();
+    let total = 0;
+    for (const file of plan.files) {
+      const segments = file.path.split("/");
+      if (
+        segments.length < 2 ||
+        segments.includes("") ||
+        segments.includes("..") ||
+        segments.includes(".") ||
+        !rootSet.has(segments[0]!)
+      ) {
+        throw new PublishFailure(
+          "publish failed: the agent reported an invalid document path",
         );
-      },
-    );
-    for (const [root, count] of includedPerRoot) {
-      if (count === 0) {
+      }
+      if (seen.has(file.path)) {
+        throw new PublishFailure(
+          "publish failed: the agent reported a duplicate document path",
+        );
+      }
+      seen.add(file.path);
+      if (file.sizeBytes > limits.perFileMaxBytes) {
+        throw new PublishFailure(
+          "publish failed: the agent reported an oversized document",
+        );
+      }
+      total += file.sizeBytes;
+    }
+    if (total > limits.totalMaxBytes) {
+      throw new PublishFailure(
+        `the share exceeds ${Math.floor(limits.totalMaxBytes / (1024 * 1024))} MB of text content — narrow the share roots`,
+      );
+    }
+    for (const root of roots) {
+      if (!plan.files.some((f) => f.path.startsWith(`${root}/`))) {
         throw new PublishFailure(
           `share root "${root}" contains no publishable text files`,
         );
       }
     }
-    files.sort((a, b) => a.path.localeCompare(b.path));
-    return files;
+    return plan.files;
   }
 
   async function gcStaleSnapshots(
@@ -301,8 +255,16 @@ export function createKbSharePublisher(
             await deps.store.delete(file.key);
           }
         }
-        if (manifest.searchIndexKey) {
-          await deps.store.delete(manifest.searchIndexKey);
+        if (manifest.version === 1) {
+          if (manifest.searchIndexKey) {
+            await deps.store.delete(manifest.searchIndexKey);
+          }
+        } else if (manifest.search) {
+          for (const segment of manifest.search.segments) {
+            if (!keysInUse.has(segment.key)) {
+              await deps.store.delete(segment.key);
+            }
+          }
         }
       }
     }
@@ -318,51 +280,258 @@ export function createKbSharePublisher(
   function isAgentUnavailable(err: unknown): boolean {
     return (
       err instanceof Error &&
-      (err.name === "AgentStoppedError" || err.name === "AgentWakeTimeoutError")
+      (err.name === "AgentStoppedError" ||
+        err.name === "AgentWakeTimeoutError" ||
+        err.name === "KbPublishUnreachableError")
     );
+  }
+
+  async function mintUploadUrl(
+    key: string,
+    mintedKeys: Set<string>,
+    contentLengthBytes?: number,
+  ): Promise<string> {
+    const upload = await deps.store.createUploadUrl(
+      key,
+      contentLengthBytes !== undefined ? { contentLengthBytes } : undefined,
+    );
+    if (!upload) {
+      throw new PublishFailure(
+        "object storage is not configured for uploads — publishing is unavailable",
+      );
+    }
+    mintedKeys.add(key);
+    return upload.url;
   }
 
   async function runPublish(claimed: KbShareRow): Promise<void> {
     const { agentId } = claimed;
     const claimedAt = claimed.updatedAt;
     const claimToken = claimed.publishToken ?? "";
-    const writtenKeys = new Set<string>();
+    const mintedKeys = new Set<string>();
     try {
       await deps.ensureReady(agentId);
-      const candidates = await collectFiles(claimed);
-      const snapshotId = mintSnapshotId();
-      const indexBuilder = createSearchIndexBuilder();
-      const files = await uploadFiles(
-        claimed,
-        snapshotId,
-        candidates,
-        indexBuilder.add,
-        writtenKeys,
+
+      const capability = extractKbPublishCapability(
+        await deps.getRuntimeCapabilities(agentId),
       );
-      const createdAt = now();
-      const totalSizeBytes = files.reduce((sum, f) => sum + f.sizeBytes, 0);
-      const shareId = shareIdFromRowId(claimed.id);
-      const index = indexBuilder.finalize();
-      const indexKey = searchIndexKey(shareId, snapshotId);
-      writtenKeys.add(indexKey);
-      await deps.store.put({
-        key: indexKey,
-        content: Buffer.from(JSON.stringify(index), "utf8"),
-        contentType: "application/json",
+      if (capability === null) {
+        await deps.repo
+          .releasePublishClaim(agentId, claimToken)
+          .catch(() => {});
+        return;
+      }
+      if (capability < 1) {
+        throw new PublishFailure(RUNTIME_UNSUPPORTED_MESSAGE);
+      }
+
+      const caps: KbPublishCaps = {
+        perFileMaxBytes: limits.perFileMaxBytes,
+        totalMaxBytes: limits.totalMaxBytes,
+        maxFiles: limits.maxFiles,
+        maxWalkDepth: MAX_WALK_DEPTH,
+      };
+
+      let previous: SnapshotManifest | null = null;
+      if (claimed.snapshotManifestKey) {
+        const stored = await deps.store.get(claimed.snapshotManifestKey);
+        const parsed = stored
+          ? parseManifest(stored.content.toString("utf8"))
+          : null;
+        if (parsed && parsed.version === 2) previous = parsed;
+      }
+
+      const planResult = await deps.kbPublish.plan(agentId, {
+        roots: [...claimed.roots],
+        caps,
       });
+      if (!planResult.ok) {
+        throw new PublishFailure(
+          publishFailureMessage(planResult.error, messageLimits),
+        );
+      }
+      const planFiles = validatePlan(planResult.value, claimed.roots);
+      const shareId = shareIdFromRowId(claimed.id);
+      const snapshotId = mintSnapshotId();
+      const totalSizeBytes = planFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+
+      const previousHashes = new Set(
+        previous?.files.map((f) => f.contentHash) ?? [],
+      );
+      const blobPlans: BlobUploadPlan[] = [];
+      const plannedHashes = new Set<string>();
+      for (const file of planFiles) {
+        if (previousHashes.has(file.contentHash)) continue;
+        if (plannedHashes.has(file.contentHash)) continue;
+        plannedHashes.add(file.contentHash);
+        const key = blobKey(shareId, file.contentHash);
+        if (await deps.store.stat(key)) continue;
+        blobPlans.push({
+          path: file.path,
+          expectedHash: file.contentHash,
+          sizeBytes: file.sizeBytes,
+          key,
+        });
+      }
+
+      const previousSearch =
+        previous && previous.search &&
+        previous.search.formatVersion === INDEX_FORMAT_VERSION
+          ? previous.search
+          : null;
+      const bucketCount = chooseBucketCount(
+        totalSizeBytes,
+        previousSearch?.bucketCount,
+      );
+      const membersByBucket = new Map<number, SegmentMember[]>();
+      for (const file of planFiles) {
+        const bucket = bucketForPath(file.path, bucketCount);
+        const members = membersByBucket.get(bucket) ?? [];
+        members.push({ path: file.path, contentHash: file.contentHash });
+        membersByBucket.set(bucket, members);
+      }
+      const previousSegments = new Map(
+        previousSearch
+          ? previousSearch.segments.map((s) => [s.contentId, s] as const)
+          : [],
+      );
+      const manifestSegments: SnapshotSearchSegment[] = [];
+      const segmentPlans: SegmentBuildPlan[] = [];
+      for (const [bucket, members] of membersByBucket) {
+        const contentId = segmentContentId(members, bucketCount);
+        const carried = previousSegments.get(contentId);
+        if (carried) {
+          manifestSegments.push({ ...carried, bucket });
+          continue;
+        }
+        segmentPlans.push({
+          bucket,
+          contentId,
+          key: segmentKey(shareId, contentId),
+          members,
+        });
+      }
+
+      const drifted = new Set<string>();
+      const segmentReports = new Map<number, KbPublishSegmentReport>();
+
+      for (const batch of chunkBySize(
+        blobPlans,
+        EXECUTE_BATCH_MAX_BYTES,
+        EXECUTE_BATCH_MAX_BLOBS,
+      )) {
+        const blobs = [];
+        for (const blob of batch) {
+          blobs.push({
+            path: blob.path,
+            expectedHash: blob.expectedHash,
+            putUrl: await mintUploadUrl(blob.key, mintedKeys, blob.sizeBytes),
+          });
+        }
+        const result = await deps.kbPublish.execute(agentId, {
+          caps,
+          bucketCount,
+          blobs,
+          segments: [],
+        });
+        if (!result.ok) {
+          throw new PublishFailure(
+            publishFailureMessage(result.error, messageLimits),
+          );
+        }
+        for (const path of result.value.drifted) drifted.add(path);
+      }
+
+      for (const batch of chunkByCount(
+        segmentPlans,
+        EXECUTE_BATCH_MAX_SEGMENTS,
+      )) {
+        const segments = [];
+        for (const plan of batch) {
+          segments.push({
+            bucket: plan.bucket,
+            members: plan.members.map((m) => ({
+              path: m.path,
+              expectedHash: m.contentHash,
+            })),
+            putUrl: await mintUploadUrl(plan.key, mintedKeys),
+          });
+        }
+        const result = await deps.kbPublish.execute(agentId, {
+          caps,
+          bucketCount,
+          blobs: [],
+          segments,
+        });
+        if (!result.ok) {
+          throw new PublishFailure(
+            publishFailureMessage(result.error, messageLimits),
+          );
+        }
+        for (const path of result.value.drifted) drifted.add(path);
+        for (const report of result.value.segments) {
+          segmentReports.set(report.bucket, report);
+        }
+      }
+
+      if (drifted.size > 0) {
+        await cleanupKeys(mintedKeys);
+        await deps.repo
+          .releasePublishClaim(agentId, claimToken)
+          .catch(() => {});
+        return;
+      }
+
+      for (const plan of segmentPlans) {
+        const report = segmentReports.get(plan.bucket);
+        if (!report) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
+        manifestSegments.push({
+          bucket: plan.bucket,
+          key: plan.key,
+          contentId: plan.contentId,
+          docCount: report.docCount,
+          sizeBytes: report.sizeBytes,
+          degraded: report.degraded,
+        });
+      }
+      manifestSegments.sort((a, b) => a.bucket - b.bucket);
+
+      const blobSizeByKey = new Map(blobPlans.map((b) => [b.key, b.sizeBytes]));
+      for (const key of mintedKeys) {
+        const stat = await deps.store.stat(key);
+        if (!stat) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
+        const expected = blobSizeByKey.get(key);
+        if (expected !== undefined && stat.sizeBytes !== expected) {
+          throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
+        }
+      }
+
+      const createdAt = now();
+      const files: SnapshotManifestFile[] = planFiles.map((f) => ({
+        path: f.path,
+        sizeBytes: f.sizeBytes,
+        contentHash: f.contentHash,
+        key: blobKey(shareId, f.contentHash),
+      }));
       const manifest: SnapshotManifest = {
-        version: MANIFEST_VERSION,
+        version: 2,
         snapshotId,
         createdAt: createdAt.toISOString(),
         roots: claimed.roots,
         files,
         documentCount: files.length,
         totalSizeBytes,
-        searchIndexKey: indexKey,
-        searchDegraded: index.degraded,
+        search:
+          manifestSegments.length > 0
+            ? {
+                formatVersion: INDEX_FORMAT_VERSION,
+                bucketCount,
+                segments: manifestSegments,
+              }
+            : null,
       };
       const snapshotManifestKey = manifestKey(shareId, snapshotId);
-      writtenKeys.add(snapshotManifestKey);
+      mintedKeys.add(snapshotManifestKey);
       await deps.store.put({
         key: snapshotManifestKey,
         content: Buffer.from(JSON.stringify(manifest), "utf8"),
@@ -393,7 +562,7 @@ export function createKbSharePublisher(
         claimedAt,
       );
       if (!won) {
-        await cleanupKeys(writtenKeys);
+        await cleanupKeys(mintedKeys);
         return;
       }
       securityLog("info", "kb_share.published", {
@@ -411,8 +580,8 @@ export function createKbSharePublisher(
       });
       try {
         const currentKeys = new Set(files.map((f) => f.key));
+        for (const segment of manifestSegments) currentKeys.add(segment.key);
         currentKeys.add(snapshotManifestKey);
-        currentKeys.add(indexKey);
         await gcStaleSnapshots(claimed.id, staleSnapshots, currentKeys);
       } catch (err) {
         process.stderr.write(
@@ -420,7 +589,7 @@ export function createKbSharePublisher(
         );
       }
     } catch (err) {
-      await cleanupKeys(writtenKeys);
+      await cleanupKeys(mintedKeys);
       if (isAgentUnavailable(err)) {
         await deps.repo
           .releasePublishClaim(agentId, claimToken)

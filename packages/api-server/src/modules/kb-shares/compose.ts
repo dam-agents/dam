@@ -12,11 +12,13 @@ import {
   parseShareString,
   secretsEqual,
 } from "./domain/share-string.js";
+import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { workspacePrefixFrom } from "./domain/workspace-path.js";
 import {
   createAgentFilesClient,
   type AgentFilesClient,
 } from "./infrastructure/agent-files-client.js";
+import { createKbPublishClient } from "./infrastructure/kb-publish-client.js";
 import {
   claimPublish,
   clearSnapshotPointer,
@@ -45,7 +47,10 @@ import {
   type KbSharePublishLimits,
 } from "./services/publish-service.js";
 
-export type KbShareStorePort = Pick<ArtifactService, "put" | "get" | "delete">;
+export type KbShareStorePort = Pick<
+  ArtifactService,
+  "put" | "get" | "delete" | "stat" | "createUploadUrl"
+>;
 
 export interface WorkspaceLocation {
   agentHome: string;
@@ -58,11 +63,11 @@ interface PublisherOpts {
   namespace: string;
   store: KbShareStorePort;
   ensureReady: (agentId: string) => Promise<void>;
-  workspacePrefix: string;
   publishLimits?: Partial<KbSharePublishLimits>;
 }
 
 function composePublisher(opts: PublisherOpts): KbSharePublisher {
+  const runtimeRepo = createAgentsRuntimeRepo(opts.db);
   return createKbSharePublisher({
     owner: opts.owner,
     repo: {
@@ -73,10 +78,11 @@ function composePublisher(opts: PublisherOpts): KbSharePublisher {
       updateStaleSnapshots: updateStaleSnapshots(opts.db),
       clearSnapshotPointer: clearSnapshotPointer(opts.db),
     },
-    files: createAgentFilesClient(opts.namespace),
+    kbPublish: createKbPublishClient(opts.namespace),
+    getRuntimeCapabilities: (agentId) =>
+      runtimeRepo.get(agentId).then((r) => r?.runtimeCapabilities ?? null),
     store: opts.store,
     ensureReady: opts.ensureReady,
-    workspacePrefix: opts.workspacePrefix,
     ...(opts.publishLimits ? { limits: opts.publishLimits } : {}),
   });
 }
@@ -110,7 +116,7 @@ export function composeKbSharesForOwner(opts: {
     opts.workspace.agentHome,
     opts.workspace.agentWorkDir,
   );
-  const publisher = composePublisher({ ...opts, workspacePrefix });
+  const publisher = composePublisher(opts);
   const listWorkspaceRoots = makeListWorkspaceRoots(
     createAgentFilesClient(opts.namespace),
     workspacePrefix,
@@ -155,7 +161,7 @@ export function composeKbShareAgentOps(opts: {
     opts.workspace.agentHome,
     opts.workspace.agentWorkDir,
   );
-  const publisher = composePublisher({ ...opts, workspacePrefix });
+  const publisher = composePublisher(opts);
   const service = createKbSharesService({
     owner: opts.owner,
     agents: opts.agents,
@@ -231,15 +237,10 @@ export function startKbShareAutoRefresh(opts: {
   namespace: string;
   store: KbShareStorePort;
   ensureReady: (agentId: string) => Promise<void>;
-  workspace: WorkspaceLocation;
   publishLimits?: Partial<KbSharePublishLimits>;
   debounceMs?: number;
 }): KbShareAutoRefreshSaga {
   const findActive = findActiveShareByAgent(opts.db);
-  const workspacePrefix = workspacePrefixFrom(
-    opts.workspace.agentHome,
-    opts.workspace.agentWorkDir,
-  );
   return startKbShareAutoRefreshSaga({
     findActiveByAgent: findActive,
     listDirtyActive: listDirtyActiveShares(opts.db),
@@ -251,7 +252,6 @@ export function startKbShareAutoRefresh(opts: {
         namespace: opts.namespace,
         store: opts.store,
         ensureReady: opts.ensureReady,
-        workspacePrefix,
         ...(opts.publishLimits ? { publishLimits: opts.publishLimits } : {}),
       });
       await publisher.startPublish(agentId);
@@ -272,7 +272,6 @@ export function createKbShareAgentCleanup(opts: {
     namespace: opts.namespace,
     store: opts.store,
     ensureReady: async () => {},
-    workspacePrefix: "",
   });
   return async (agentId) => {
     const revoked = await revoke(agentId);

@@ -5,11 +5,12 @@ import { z } from "zod";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import {
-  extractSnippets,
-  querySearchIndex,
   tokenize,
-} from "../domain/search-index.js";
-import type { SnapshotManifest } from "../domain/snapshot.js";
+  type AnySnapshotManifest,
+} from "agent-runtime-api/kb-snapshot";
+import { querySearchIndex } from "../domain/legacy-search-index.js";
+import { querySegments } from "../domain/segmented-query.js";
+import { extractSnippets } from "../domain/snippets.js";
 import type { KbShareRow } from "../domain/types.js";
 import {
   GREP_DEADLINE_MS,
@@ -38,6 +39,7 @@ export interface KbShareMcpAppDeps extends TokenAuthDeps {
   reader: SnapshotReader;
   agentName: (agentId: string) => Promise<string>;
   incrementQueryCount: (rowId: string) => Promise<void>;
+  markShareDirty?: (agentId: string) => Promise<void>;
   limits: QueryLimits;
   grepDeadlineMs?: number;
 }
@@ -56,7 +58,7 @@ function errorResult(text: string): ToolContent {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-function staleness(manifest: SnapshotManifest): string {
+function staleness(manifest: AnySnapshotManifest): string {
   return `— snapshot from ${manifest.createdAt}`;
 }
 
@@ -72,6 +74,16 @@ function unexpectedError(tool: string, err: unknown): ToolContent {
 
 export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
   const grepDeadlineMs = deps.grepDeadlineMs ?? GREP_DEADLINE_MS;
+  const healRequested = new Set<string>();
+  function requestIndexHeal(row: KbShareRow, snapshotId: string): void {
+    if (healRequested.has(snapshotId)) return;
+    healRequested.add(snapshotId);
+    getLogger().warn(
+      { agentId: row.agentId, snapshotId },
+      "kb_share.index_unreadable",
+    );
+    void deps.markShareDirty?.(row.agentId).catch(() => {});
+  }
   function recordQuery(row: KbShareRow, tool: string): void {
     void deps.incrementQueryCount(row.id).catch(() => {});
     securityLog("info", "kb_share.query", {
@@ -89,7 +101,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
     shares: Map<string, KbShareRow>,
     kb: string,
   ): Promise<
-    | { ok: true; row: KbShareRow; manifest: SnapshotManifest }
+    | { ok: true; row: KbShareRow; manifest: AnySnapshotManifest }
     | { ok: false; error: ToolContent }
   > {
     const row = shares.get(kb);
@@ -264,13 +276,26 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
         if (!resolved.ok) return resolved.error;
         try {
           return await deps.limits.withSlot(kb, async () => {
-            const index = await deps.reader.getSearchIndex(resolved.manifest);
-            if (!index) {
+            const search = await deps.reader.getSearch(resolved.manifest);
+            if (search.kind === "unreadable") {
+              requestIndexHeal(resolved.row, resolved.manifest.snapshotId);
+              return errorResult(
+                "search is temporarily unavailable for this knowledge base — its index is being rebuilt; retry shortly",
+              );
+            }
+            if (search.kind === "none") {
               return errorResult(
                 "search is unavailable for this knowledge base — its snapshot predates search; ask the owner to refresh the share",
               );
             }
-            const hits = querySearchIndex(index, query, SEARCH_TOP_DOCS);
+            const hits =
+              search.kind === "legacy"
+                ? querySearchIndex(search.index, query, SEARCH_TOP_DOCS)
+                : querySegments(search.segments, query, SEARCH_TOP_DOCS);
+            const degraded =
+              search.kind === "legacy"
+                ? search.index.degraded
+                : search.degraded;
             const needles = [...new Set(tokenize(query))];
             const results = [];
             for (const hit of hits) {
@@ -294,7 +319,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
             recordQuery(resolved.row, "search_knowledge");
             return textResult(
               [
-                JSON.stringify({ results, degraded: index.degraded }),
+                JSON.stringify({ results, degraded }),
                 staleness(resolved.manifest),
               ].join("\n"),
             );
