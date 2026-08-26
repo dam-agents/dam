@@ -32,11 +32,12 @@ export function createAgentTrpcRelay(
       .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
       .catch(() => {});
   };
+  const operable = (info: { ready: boolean; stopRequested: boolean } | null) =>
+    info !== null && info.ready && !info.stopRequested;
   const bumpActivity = async (id: string) => {
     if (Date.now() - (lastActivity.get(id) ?? 0) < ACTIVITY_DEBOUNCE_MS) return;
     try {
-      const info = await repo.get(id);
-      if (!info || !info.ready || info.stopRequested) return;
+      if (!operable(await repo.get(id))) return;
     } catch {
       return;
     }
@@ -112,8 +113,7 @@ export function createAgentTrpcRelay(
       client.on("message", buffer);
 
       try {
-        const info = await repo.get(agentId);
-        if (!info || !info.ready || info.stopRequested) {
+        if (!operable(await repo.get(agentId))) {
           client.close(1011, "agent not ready");
           return;
         }
