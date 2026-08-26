@@ -6,13 +6,4 @@ fi
 if [ -n "$OPENAI_MODEL" ]; then
   set -- "$@" -c "model=\"$OPENAI_MODEL\""
 fi
-if [ -n "$CODEX_WIRE_API" ]; then
-  set -- "$@" -c "model_providers.openai-platform.wire_api=\"$CODEX_WIRE_API\""
-fi
-if [ -n "$CODEX_CONTEXT_WINDOW" ]; then
-  set -- "$@" -c "model_context_window=$CODEX_CONTEXT_WINDOW"
-fi
-if [ -n "$CODEX_MAX_OUTPUT_TOKENS" ]; then
-  set -- "$@" -c "model_max_output_tokens=$CODEX_MAX_OUTPUT_TOKENS"
-fi
 exec codex-acp "$@"

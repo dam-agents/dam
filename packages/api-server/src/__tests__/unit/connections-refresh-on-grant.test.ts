@@ -180,13 +180,13 @@ describe("granting re-renders contributions from the current template", () => {
     await svc.setAgentConnections(AGENT, [id]);
 
     const names = envNames(rows.get(id)!.contributions);
-    expect(names).toContain("OPENAI_BASE_URL");
-    expect(names).toContain("OPENAI_API_KEY");
+    expect(names).toContain("OPENAI_PROXY_URL");
+    expect(names).toContain("OPENAI_PROXY_MODEL");
     expect(names).toContain("BOB_SHELL_MODEL");
     expect(names).toContain("BOB_TEAM_ID");
 
     expect(envNames(fanOutGrants.at(-1)![0]!.contributions)).toContain(
-      "OPENAI_BASE_URL",
+      "OPENAI_PROXY_URL",
     );
 
     expect(stored.get(BOB_SECRET_PATH)!["value"]).toBe("bob-key-1");
@@ -196,7 +196,7 @@ describe("granting re-renders contributions from the current template", () => {
     });
     expect(
       refreshMeta.extraAnnotations?.["agent-platform.ai/env-mappings"],
-    ).toContain("OPENAI_BASE_URL");
+    ).toContain("OPENAI_PROXY_URL");
   });
 
   /**
@@ -261,7 +261,7 @@ describe("granting re-renders contributions from the current template", () => {
     expect(contributionUpdates).toEqual([]);
     expect(fanOutGrants).toHaveLength(2);
     expect(envNames(rows.get(id)!.contributions)).not.toContain(
-      "OPENAI_BASE_URL",
+      "OPENAI_PROXY_URL",
     );
   });
 
@@ -280,7 +280,7 @@ describe("granting re-renders contributions from the current template", () => {
     expect(contributionUpdates).toEqual([]);
     expect(stored.get(BOB_SECRET_PATH)!["value"]).toBe("bob-key-2");
     expect(envNames(rows.get(id)!.contributions)).not.toContain(
-      "OPENAI_BASE_URL",
+      "OPENAI_PROXY_URL",
     );
   });
 });

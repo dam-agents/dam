@@ -110,7 +110,7 @@ export function BobForm({
         <>
           {isEdit
             ? "Paste a new token to replace the existing one. Advanced settings are passed to Bob as CLI flags / env."
-            : "IBM's AI shell assistant, and Claude models for Codex and Pi agents. Paste a Bob API key of type Inference to get started."}{" "}
+            : "IBM's AI shell assistant, and Claude models for Pi agents. Paste a Bob API key of type Inference to get started."}{" "}
           <a
             href="https://bob.ibm.com/admin/apikeys"
             {...externalLinkProps}

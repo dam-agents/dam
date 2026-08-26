@@ -12,8 +12,7 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
   {
     type: "bob",
-    description:
-      "IBM Bob — powers the Bob Shell harness and Codex and Pi agents.",
+    description: "IBM Bob — powers the Bob Shell harness and Pi agents.",
   },
   {
     type: "anthropic",

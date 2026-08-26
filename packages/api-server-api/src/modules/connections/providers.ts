@@ -58,18 +58,6 @@ export const BOB_INFERENCE_MAX_OUTPUT_TOKENS = "8192";
 
 export function bobInferenceEnvMappings(): EnvMapping[] {
   return [
-    { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "OPENAI_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
-    { envName: "OPENAI_MODEL", placeholder: BOB_INFERENCE_MODEL },
-    { envName: "CODEX_WIRE_API", placeholder: "chat" },
-    {
-      envName: "CODEX_CONTEXT_WINDOW",
-      placeholder: BOB_INFERENCE_CONTEXT_WINDOW,
-    },
-    {
-      envName: "CODEX_MAX_OUTPUT_TOKENS",
-      placeholder: BOB_INFERENCE_MAX_OUTPUT_TOKENS,
-    },
     { envName: "OPENAI_PROXY_URL", placeholder: BOB_INFERENCE_BASE_URL },
     { envName: "OPENAI_PROXY_MODEL", placeholder: BOB_INFERENCE_MODEL },
     {

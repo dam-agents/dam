@@ -63,54 +63,55 @@ describe("bob connection template serves shell and inference from one key", () =
     );
   });
 
-  it("contributes the shell credential and the inference wiring together", async () => {
+  it("contributes the shell credential and the Pi inference wiring together", async () => {
     const names = envNames((await buildBob()).contributions);
 
     expect(names).toContain("BOBSHELL_API_KEY");
-    expect(names).toContain("OPENAI_API_KEY");
-    expect(names).toContain("OPENAI_BASE_URL");
     expect(names).toContain("OPENAI_PROXY_URL");
+    expect(names).toContain("OPENAI_PROXY_MODEL");
   });
 
-  it("points OpenAI clients at a base URL that composes to Bob's verified route", async () => {
+  it("points Pi at a base URL that composes to Bob's verified route", async () => {
     const built = await buildBob();
-    const base = envOf(built.contributions, "OPENAI_BASE_URL").placeholder;
+    const base = envOf(built.contributions, "OPENAI_PROXY_URL").placeholder;
 
     expect(base).toBe(`https://${BOB_HOST}/inference/v1`);
     expect(`${base}/chat/completions`).toBe(
       `https://${BOB_HOST}/inference/v1/chat/completions`,
     );
-    expect(envOf(built.contributions, "OPENAI_PROXY_URL").placeholder).toBe(
-      base,
-    );
   });
 
-  it("keeps the real key gateway-side", async () => {
+  it("keeps the real key gateway-side — no env carries it, not even for Pi", async () => {
     const built = await buildBob();
 
-    for (const name of ["BOBSHELL_API_KEY", "OPENAI_API_KEY"]) {
-      expect(envOf(built.contributions, name).placeholder).not.toContain(
-        "bob_prod",
-      );
-    }
+    expect(
+      envOf(built.contributions, "BOBSHELL_API_KEY").placeholder,
+    ).not.toContain("bob_prod");
+    expect(envNames(built.contributions)).not.toContain("OPENAI_PROXY_API_KEY");
   });
 
-  it("pins Codex to the wire API and limits Bob actually serves", async () => {
+  it("pins the model and the limits Bob actually serves", async () => {
     const built = await buildBob();
     const env = (name: string) => envOf(built.contributions, name).placeholder;
 
-    expect(env("OPENAI_MODEL")).toBe("premium");
     expect(env("OPENAI_PROXY_MODEL")).toBe("premium");
-    expect(env("CODEX_WIRE_API")).toBe("chat");
-    expect(env("CODEX_CONTEXT_WINDOW")).toBe("200000");
-    expect(env("CODEX_MAX_OUTPUT_TOKENS")).toBe("8192");
+    expect(env("OPENAI_PROXY_CONTEXT_WINDOW")).toBe("200000");
+    expect(env("OPENAI_PROXY_MAX_TOKENS")).toBe("8192");
   });
 
-  it("never sets the Anthropic vars — Bob serves no Anthropic route to API keys", async () => {
+  it("never wires Claude Code or Codex at Bob — neither protocol is served to API keys", async () => {
     const names = envNames((await buildBob()).contributions);
 
     expect(names.filter((n) => n.startsWith("ANTHROPIC_"))).toEqual([]);
     expect(names.filter((n) => n.startsWith("CLAUDE_"))).toEqual([]);
+    expect(names.filter((n) => n.startsWith("CODEX_"))).toEqual([]);
+    for (const codexVar of [
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "OPENAI_MODEL",
+    ]) {
+      expect(names).not.toContain(codexVar);
+    }
   });
 
   it("injects the two credentials plus a constant user agent Bob's edge accepts", async () => {
@@ -151,7 +152,7 @@ describe("bob connection template serves shell and inference from one key", () =
       "premium-shell",
     );
     expect(envOf(built.contributions, "BOB_TEAM_ID").placeholder).toBe("t-1");
-    expect(envOf(built.contributions, "OPENAI_BASE_URL").placeholder).toBe(
+    expect(envOf(built.contributions, "OPENAI_PROXY_URL").placeholder).toBe(
       `https://${BOB_HOST}/inference/v1`,
     );
   });

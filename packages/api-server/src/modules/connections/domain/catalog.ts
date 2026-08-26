@@ -169,7 +169,7 @@ const BOB: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "Bob CLI model proxy, and Claude models for Codex and Pi agents via Bob's OpenAI-compatible inference route.",
+    "Bob CLI model proxy, and Claude models for Pi agents via Bob's OpenAI-compatible inference route.",
   iconSlug: "bob",
   authKind: "header",
   host: BOB_HOST,
