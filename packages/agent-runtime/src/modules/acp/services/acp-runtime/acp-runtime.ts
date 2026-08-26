@@ -5,6 +5,10 @@ import {
   SessionType,
 } from "api-server-api";
 
+import {
+  artifactTouchIn,
+  type ArtifactTouch,
+} from "../../domain/artifact-touch.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isRequest,
@@ -83,6 +87,7 @@ export interface AcpRuntimeDeps {
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   isTerminalSessionActive?: (sessionId: string) => boolean;
+  onArtifactTouch?: (touch: ArtifactTouch) => void;
 }
 
 interface OutboundMapping {
@@ -619,6 +624,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
+      const touch = deps.onArtifactTouch ? artifactTouchIn(frame) : null;
+      if (touch) deps.onArtifactTouch?.(touch);
       if (
         orphanedHarnessLoads.has(sessionId) ||
         rehydratingSessions.has(sessionId)

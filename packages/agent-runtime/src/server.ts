@@ -41,6 +41,7 @@ import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
+  createArtifactTouchReporter,
   createEnvPlugin,
   createEnvStateStore,
   createFilePlugin,
@@ -103,6 +104,15 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
 
+const agentId =
+  process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
+
+const artifactTouchReporter = createArtifactTouchReporter({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId,
+  log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
+});
+
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 
 const envStore = createEnvStateStore(homeDir);
@@ -139,6 +149,7 @@ const {
   sessionHistory: runtimeManifest.sessionHistory,
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  onArtifactTouch: artifactTouchReporter.report,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -148,7 +159,7 @@ const runtimeChannel = await composeRuntimeChannel({
   workDir,
   stateBackend,
   apiServerUrl: config.API_SERVER_URL,
-  agentId: process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown",
+  agentId,
   triggerDriver,
   envReader: envStore,
   plugins: [
