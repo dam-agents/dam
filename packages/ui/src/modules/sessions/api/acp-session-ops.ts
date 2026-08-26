@@ -16,6 +16,7 @@ interface PlatformMeta {
   type?: string;
   scheduleId?: string;
   experimentId?: string;
+  artifactId?: string;
   threadTs?: string;
   createdAt?: string;
   running?: boolean;
@@ -44,6 +45,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
     experimentId: p?.experimentId ?? null,
+    artifactId: p?.artifactId ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
