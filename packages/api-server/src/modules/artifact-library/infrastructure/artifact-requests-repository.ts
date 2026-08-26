@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   inArray,
+  lt,
   sql,
   type Db,
   artifactRequests as requestsTable,
@@ -72,6 +73,8 @@ export interface ArtifactRequestsRepository {
     owner: string,
   ): Promise<ArtifactRequestRow | null>;
   countSince(artifactId: string, owner: string, since: Date): Promise<number>;
+  markDelivered(id: string, owner: string): Promise<ArtifactRequestRow | null>;
+  listStale(before: Date, limit: number): Promise<ArtifactRequestRow[]>;
   settle(
     id: string,
     owner: string,
@@ -182,6 +185,38 @@ export function createArtifactRequestsRepository(
           ),
         );
       return row?.count ?? 0;
+    },
+
+    async markDelivered(id, owner) {
+      const [row] = await db
+        .update(requestsTable)
+        .set({ state: "delivered" })
+        .where(
+          and(
+            eq(requestsTable.id, id),
+            eq(requestsTable.owner, owner),
+            eq(requestsTable.state, "pending"),
+          ),
+        )
+        .returning();
+      return row ? toRow(row) : null;
+    },
+
+    async listStale(before, limit) {
+      const rows = await db
+        .select()
+        .from(requestsTable)
+        .where(
+          and(
+            lt(requestsTable.createdAt, before),
+            inArray(requestsTable.state, [
+              ...ARTIFACT_REQUEST_IN_FLIGHT_STATES,
+            ]),
+          ),
+        )
+        .orderBy(requestsTable.createdAt)
+        .limit(limit);
+      return rows.map(toRow);
     },
 
     async settle(id, owner, settlement) {

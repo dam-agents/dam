@@ -9,6 +9,8 @@ export const ARTIFACT_REQUEST_HOURLY_CAP = 60;
 
 export const ARTIFACT_REQUEST_WINDOW_MS = 3_600_000;
 
+export const ARTIFACT_REQUEST_TTL_MS = 900_000;
+
 export const ARTIFACT_REQUEST_IN_FLIGHT_STATES: readonly ArtifactRequestState[] =
   ["pending", "delivered"];
 

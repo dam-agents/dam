@@ -105,7 +105,10 @@ security boundary — owner scoping is.
 `agent_deleted`, `wake_failed`, `over_budget`, `rate_limited`, `busy`, `cancelled`, `expired`.
 
 **Outbox event** (`runtime-delivery`): kind `artifact-request`, payload
-`{ requestId, artifactId, task }`, with the same TTL treatment as `trigger`.
+`{ requestId, artifactId, task }`, with the same TTL treatment as `trigger` but a **15-minute**
+TTL, not the schedule's hour: a request in flight blocks the page from asking again, so a request
+nobody answers has to give up while the person is still there. A minute-by-minute sweep settles
+requests past that TTL as `expired`, because the outbox expiry only drops the event.
 
 **MCP tool:** `answer_artifact_request({ request_id, result })`. Attribution is the calling
 agent's mesh identity — a harness cannot answer another agent's request, and the tool refuses a

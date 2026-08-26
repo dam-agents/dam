@@ -32,6 +32,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Shows each session’s LLM cost next to its timestamp in the sessions list, including child runs the session spawned.",
   },
+  {
+    id: "interactive-artifacts",
+    label: "Interactive artifacts",
+    description:
+      "Lets a private HTML page ask the agent that published it to do something, with the answer landing back in the page. An interactive page can never be shared.",
+  },
 ];
 
 function FeatureRowCard({

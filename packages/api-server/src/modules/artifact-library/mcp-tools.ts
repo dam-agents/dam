@@ -9,6 +9,7 @@ import {
 
 import { securityLog } from "../../core/security-log.js";
 import type { ArtifactLibraryServiceImpl } from "./services/artifact-library-service.js";
+import type { ArtifactRequestsServiceImpl } from "./services/artifact-requests-service.js";
 
 function withInternalLink(
   artifact: LibraryArtifact,
@@ -365,6 +366,39 @@ export function registerArtifactLibraryTools(
       run(async () => {
         await lib.deleteFolder(id);
         return json({ deleted: id });
+      }),
+  );
+}
+
+export function registerArtifactRequestTools(
+  server: McpServer,
+  deps: {
+    artifactRequests: ArtifactRequestsServiceImpl;
+    agentId: string;
+  },
+): void {
+  server.tool(
+    "answer_artifact_request",
+    "Answer one request that came from an interactive page you published. The request id is in the prompt that asked you. `result` is a JSON value the page reads with its own code, so shape it for the page. The page waits until this call lands — finishing your turn answers nothing — and a request takes exactly one answer, so a second call for the same request is refused. You can only answer requests for your own pages.",
+    {
+      request_id: z.string().min(1),
+      result: z
+        .unknown()
+        .describe("The answer — a JSON value the page's own code reads."),
+    },
+    ({ request_id, result }) =>
+      run(async () => {
+        const outcome = await deps.artifactRequests.answer({
+          requestId: request_id,
+          agentId: deps.agentId,
+          result,
+        });
+        if (!outcome.ok) return errorResult(outcome.error);
+        return json({
+          answered: outcome.request.id,
+          artifact_id: outcome.request.artifactId,
+          seq: outcome.request.seq,
+        });
       }),
   );
 }
