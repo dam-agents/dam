@@ -10,7 +10,7 @@ import type {
   SkillsState,
 } from "api-server-api";
 import { skillKey } from "api-server-api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
 import { toScanFailure } from "@/lib/scan-failure";
@@ -135,6 +135,12 @@ export function useSkillsSurface(
   const [setsFailed, setSetsFailed] = useState(false);
   const [applyingSets, setApplyingSets] = useState(false);
 
+  const localWriteEpochRef = useRef(0);
+  const pollSeqRef = useRef(0);
+  const supersedeInFlightPolls = useCallback(() => {
+    localWriteEpochRef.current += 1;
+  }, []);
+
   useEffect(() => {
     if (!stateLoaded) return;
     onStateChange?.({
@@ -191,9 +197,15 @@ export function useSkillsSurface(
         }
         return;
       }
+      const epoch = localWriteEpochRef.current;
+      const seq = ++pollSeqRef.current;
       try {
         const state = await api.skills.state.query({ agentId });
-        if (!cancelled) {
+        const fresh =
+          !cancelled &&
+          epoch === localWriteEpochRef.current &&
+          seq === pollSeqRef.current;
+        if (fresh) {
           setInstalled(state.installed);
           setStandalone(state.standalone);
           setPublishes(state.instancePublishes);
@@ -263,10 +275,13 @@ export function useSkillsSurface(
               }),
         `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
       );
-      if (result !== ACTION_FAILED) setInstalled(result);
+      if (result !== ACTION_FAILED) {
+        supersedeInFlightPolls();
+        setInstalled(result);
+      }
       setBusyKey(null);
     },
-    [agentId, isError, readOnly, installedRef],
+    [agentId, isError, readOnly, installedRef, supersedeInFlightPolls],
   );
 
   const update = useCallback(
@@ -285,11 +300,14 @@ export function useSkillsSurface(
           }),
         `Failed to update ${skill.name}`,
       );
-      if (result !== ACTION_FAILED) setInstalled(result);
+      if (result !== ACTION_FAILED) {
+        supersedeInFlightPolls();
+        setInstalled(result);
+      }
       setBusyKey(null);
       return result !== ACTION_FAILED;
     },
-    [agentId, isError, readOnly],
+    [agentId, isError, readOnly, supersedeInFlightPolls],
   );
 
   const toggleSource = useCallback(
@@ -318,10 +336,13 @@ export function useSkillsSurface(
           }),
         `Failed to ${on ? "enable" : "disable"} all skills`,
       );
-      if (result !== ACTION_FAILED) setInstalled(result);
+      if (result !== ACTION_FAILED) {
+        supersedeInFlightPolls();
+        setInstalled(result);
+      }
       setBusySourceId(null);
     },
-    [agentId, isError, readOnly, installedRef],
+    [agentId, isError, readOnly, installedRef, supersedeInFlightPolls],
   );
 
   const updateAll = useCallback(
@@ -342,10 +363,13 @@ export function useSkillsSurface(
           }),
         "Failed to update all skills",
       );
-      if (result !== ACTION_FAILED) setInstalled(result);
+      if (result !== ACTION_FAILED) {
+        supersedeInFlightPolls();
+        setInstalled(result);
+      }
       setUpdatingAll(false);
     },
-    [agentId, isError, readOnly],
+    [agentId, isError, readOnly, supersedeInFlightPolls],
   );
 
   useEffect(() => {
@@ -405,6 +429,7 @@ export function useSkillsSurface(
       );
       setApplyingSets(false);
       if (result === ACTION_FAILED) return false;
+      supersedeInFlightPolls();
       setInstalled(result.installed);
 
       const { added } = result;
@@ -428,7 +453,7 @@ export function useSkillsSurface(
       });
       return true;
     },
-    [agentId, isError, readOnly],
+    [agentId, isError, readOnly, supersedeInFlightPolls],
   );
 
   const createSource = useCallback(
@@ -463,6 +488,7 @@ export function useSkillsSurface(
           agentId,
           skills,
         });
+        supersedeInFlightPolls();
         setStandalone((prev) => {
           const byName = new Map(prev.map((s) => [s.name, s]));
           for (const s of created) byName.set(s.name, s);
@@ -499,6 +525,7 @@ export function useSkillsSurface(
         `Failed to delete ${skill.name}`,
       );
       if (result === ACTION_FAILED) return false;
+      supersedeInFlightPolls();
       setStandalone(result);
       emitToast({ kind: "success", message: `Deleted ${skill.name}` });
       return true;
@@ -580,6 +607,7 @@ export function useSkillsSurface(
           ttl: 10_000,
         });
         const src = sources.find((s) => s.id === input.sourceId);
+        supersedeInFlightPolls();
         setPublishes((p) => [
           ...p,
           {
@@ -609,7 +637,7 @@ export function useSkillsSurface(
         return false;
       }
     },
-    [agentId, sources, refreshSource],
+    [agentId, sources, refreshSource, supersedeInFlightPolls],
   );
 
   return {
