@@ -13,11 +13,7 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "bob",
     description:
-      "IBM Bob Shell endpoint with twin-secret credential injection.",
-  },
-  {
-    type: "bob-inference",
-    description: "Claude on Bob's inference endpoint — no LiteLLM needed.",
+      "IBM Bob — the Bob Shell harness, or Claude for Claude Code agents.",
   },
   {
     type: "anthropic",

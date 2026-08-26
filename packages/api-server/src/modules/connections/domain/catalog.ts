@@ -230,7 +230,7 @@ const BOB: HeaderConnectionTemplate = {
 
 const BOB_INFERENCE: HeaderConnectionTemplate = {
   id: "bob-inference",
-  name: "Bob Inference",
+  name: "Bob (Inference)",
   category: "app",
   isCustom: false,
   description:

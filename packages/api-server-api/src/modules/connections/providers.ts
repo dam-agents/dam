@@ -1,9 +1,4 @@
-export type ProviderPresetType =
-  | "anthropic"
-  | "ibm-litellm"
-  | "openai"
-  | "bob"
-  | "bob-inference";
+export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
 
 export interface EnvMapping {
   envName: string;
@@ -218,8 +213,9 @@ export const PROVIDERS = {
     modes: [
       {
         key: "api-key",
-        label: "API Key",
+        label: "Shell",
         templateId: "bob",
+        isDefault: true,
         defaultEnvMappings: bobEnvMappings(),
         injection: {
           headerName: "Authorization",
@@ -229,17 +225,9 @@ export const PROVIDERS = {
           { headerName: "X-Bobshell-Internal", queryParamName: "key" },
         ],
       },
-    ],
-  },
-  "bob-inference": {
-    id: "bob-inference",
-    displayName: "Bob Inference",
-    hostPattern: BOB_HOST,
-    pathPattern: BOB_INFERENCE_PATH_PATTERN,
-    modes: [
       {
-        key: "api-key",
-        label: "API Key",
+        key: "inference",
+        label: "Inference",
         templateId: "bob-inference",
         defaultEnvMappings: bobInferenceEnvMappings(),
         injection: {

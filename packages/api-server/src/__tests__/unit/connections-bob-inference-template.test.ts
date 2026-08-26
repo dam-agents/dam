@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { Contribution, SecretRef } from "api-server-api";
-import { PROVIDER_TEMPLATE_IDS } from "api-server-api";
+import {
+  PROVIDER_TEMPLATE_IDS,
+  PROVIDERS,
+  providerTypeForTemplateId,
+  templateIdForProvider,
+} from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 
@@ -45,8 +50,17 @@ function injectsOf(contributions: Contribution[]) {
 }
 
 describe("bob-inference connection template", () => {
-  it("is registered for the bob-inference provider preset", () => {
+  it("is a second mode of the existing bob provider, not a provider of its own", () => {
     expect(PROVIDER_TEMPLATE_IDS.has("bob-inference")).toBe(true);
+    expect(providerTypeForTemplateId("bob-inference")).toBe("bob");
+    expect(PROVIDERS.bob.modes.map((m) => m.templateId)).toEqual([
+      "bob",
+      "bob-inference",
+    ]);
+  });
+
+  it("leaves the shell mode as the bob provider's default", () => {
+    expect(templateIdForProvider("bob", "bob_prod_bob-apikey_x")).toBe("bob");
   });
 
   it("points Claude Code at a base URL that composes to Bob's messages route", async () => {
