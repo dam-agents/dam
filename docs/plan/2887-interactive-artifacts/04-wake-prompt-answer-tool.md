@@ -17,7 +17,7 @@ Apply the `/typescript-engineering` skill.
 1. **Prompt composition.** New `domain/artifact-request-prompt.ts` in the artifact-library
    module, modelled on
    [`invocation-prompt.ts`](../../../packages/api-server/src/modules/invocations/domain/invocation-prompt.ts).
-   It states the press, and instructs the agent to call `answer_artifact_request` with the
+   It states the request, and instructs the agent to call `answer_artifact_request` with the
    request id, saying plainly that finishing the turn is not an answer. On the **first** request
    of an artifact's session it also carries the page's current source; later ones do not, because
    the session already holds it. Decide "first" from whether a session binding exists, which the

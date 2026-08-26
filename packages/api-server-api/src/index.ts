@@ -191,12 +191,25 @@ export type {
   FolderUpdateInput,
   ArtifactUploadTicket,
   ArtifactLibraryService,
+  ArtifactRequest,
+  ArtifactRequestCreateInput,
+  ArtifactRequestFailureReason,
+  ArtifactRequestReceipt,
+  ArtifactRequestState,
+  ArtifactRequestTrigger,
+  ArtifactRequestsService,
 } from "./modules/artifact-library/types.js";
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
   ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
+  ARTIFACT_REQUEST_ACTION_MAX_LENGTH,
+  ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES,
+  artifactRequestFailureReasonSchema,
+  artifactRequestRefusalSchema,
+  artifactRequestStateSchema,
+  artifactRequestTriggerSchema,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,

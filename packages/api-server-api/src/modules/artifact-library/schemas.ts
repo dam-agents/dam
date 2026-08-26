@@ -96,3 +96,50 @@ export const folderUpdateInputSchema = z.object({
 });
 
 export const folderIdInputSchema = z.object({ id: z.string().min(1) });
+
+export const artifactRequestStateSchema = z.enum([
+  "pending",
+  "delivered",
+  "answered",
+  "failed",
+]);
+
+export const artifactRequestTriggerSchema = z.enum(["user", "auto"]);
+
+export const artifactRequestFailureReasonSchema = z.enum([
+  "agent_deleted",
+  "wake_failed",
+  "over_budget",
+  "rate_limited",
+  "busy",
+  "cancelled",
+  "expired",
+]);
+
+export const artifactRequestRefusalSchema = z.object({
+  reason: artifactRequestFailureReasonSchema,
+});
+
+export const ARTIFACT_REQUEST_ACTION_MAX_LENGTH = 200;
+
+export const ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES = 16 * 1024;
+
+const artifactRequestPayloadSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (payload) =>
+      new TextEncoder().encode(JSON.stringify(payload)).length <=
+      ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES,
+    { message: `payload exceeds ${ARTIFACT_REQUEST_PAYLOAD_MAX_BYTES} bytes` },
+  );
+
+export const artifactRequestCreateInputSchema = z.object({
+  artifactId: z.string().min(1),
+  action: z.string().trim().min(1).max(ARTIFACT_REQUEST_ACTION_MAX_LENGTH),
+  payload: artifactRequestPayloadSchema.optional(),
+  trigger: artifactRequestTriggerSchema,
+});
+
+export const artifactRequestIdInputSchema = z.object({
+  requestId: z.string().min(1),
+});

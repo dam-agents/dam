@@ -19,6 +19,7 @@ import {
   type ArtifactShared,
   type ArtifactDeleted,
   type ArtifactViewed,
+  type ArtifactRequestSettled,
   type AgentSkillChanged,
   type SkillPublished,
   type SkillSetSaved,
@@ -422,6 +423,39 @@ export function startPersistActivitySaga(
           } catch (err) {
             process.stderr.write(
               `[usage/persist-activity] artifact_viewed insert failed: ${err}\n`,
+            );
+          }
+        }, STREAM_CONCURRENCY),
+      )
+      .subscribe(),
+  );
+
+  sub.add(
+    events$()
+      .pipe(
+        ofType<ArtifactRequestSettled>(EventType.ArtifactRequestSettled),
+        mergeMap(async (event) => {
+          if (!event.actorSub) return;
+          try {
+            await deps.insert({
+              type: "artifact_request",
+              actorSub: event.actorSub,
+              agentId: event.agentId,
+              surface: event.surface ?? null,
+              outcome: event.state === "answered" ? "success" : "failure",
+              payload: {
+                artifactId: event.artifactId,
+                requestId: event.requestId,
+                action: event.action,
+                seq: event.seq,
+                ...(event.failureReason
+                  ? { failureReason: event.failureReason }
+                  : {}),
+              },
+            });
+          } catch (err) {
+            process.stderr.write(
+              `[usage/persist-activity] artifact_request insert failed: ${err}\n`,
             );
           }
         }, STREAM_CONCURRENCY),

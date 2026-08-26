@@ -5,7 +5,7 @@
 
 ## Context
 
-The half of the feature a person actually touches. The page hands a press to the app, the app
+The half of the feature a person actually touches. The page hands a request to the app, the app
 calls the server as the owner, and the app shows what is happening while the turn runs. This is
 the security boundary in code: after this slice the page must still have no way to reach the
 api-server itself.
@@ -41,11 +41,11 @@ Apply the `/react-ui-engineering` skill.
 
 ## Acceptance criteria
 
-- [ ] A press in an interactive page produces an answer rendered in that page, with typed text
+- [ ] A request from an interactive page produces an answer rendered in that page, with typed text
       elsewhere in the page preserved.
 - [ ] A message from any window other than the artifact's own iframe is ignored.
 - [ ] Replies are posted with a concrete target origin.
-- [ ] A second press while one is in flight is refused in the app, with wording, not queued.
+- [ ] A second request while one is in flight is refused in the app, with wording, not queued.
 - [ ] Each failure reason renders its own message.
 - [ ] Closing the panel mid-flight abandons the answer without an error, and the turn is not
       cancelled.

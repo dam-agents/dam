@@ -19,6 +19,7 @@ const invalidations: Record<Topic, () => readonly (readonly unknown[])[]> = {
   harnessConfig: () => [trpc.harnessConfig.pathKey()],
   experiments: () => [trpc.experiments.pathKey()],
   artifacts: () => [trpc.artifactLibrary.pathKey()],
+  artifactRequest: () => [trpc.artifactLibrary.requests.pathKey()],
 };
 
 export function invalidateForLiveEvent(event: LiveEvent): void {

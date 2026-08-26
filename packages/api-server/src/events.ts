@@ -1,4 +1,7 @@
-import type { EntryPointChoice } from "api-server-api";
+import type {
+  ArtifactRequestFailureReason,
+  EntryPointChoice,
+} from "api-server-api";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -34,6 +37,7 @@ export enum EventType {
   ArtifactUpdated = "ArtifactUpdated",
   ArtifactDeleted = "ArtifactDeleted",
   ArtifactFolderChanged = "ArtifactFolderChanged",
+  ArtifactRequestSettled = "ArtifactRequestSettled",
   ExperimentChanged = "ExperimentChanged",
   ArtifactPublished = "ArtifactPublished",
   ArtifactShared = "ArtifactShared",
@@ -232,6 +236,20 @@ export type ArtifactFolderChanged = {
   ownerSub: string;
 };
 
+export type ArtifactRequestSettled = {
+  type: EventType.ArtifactRequestSettled;
+  requestId: string;
+  artifactId: string;
+  agentId: string;
+  ownerSub: string;
+  seq: number;
+  action: string;
+  state: "answered" | "failed";
+  failureReason?: ArtifactRequestFailureReason;
+  actorSub?: string;
+  surface?: string;
+};
+
 export type ExperimentChanged = {
   type: EventType.ExperimentChanged;
   experimentId: string;
@@ -380,6 +398,7 @@ export type DomainEvent =
   | ArtifactUpdated
   | ArtifactDeleted
   | ArtifactFolderChanged
+  | ArtifactRequestSettled
   | ExperimentChanged
   | SessionTurnRelayed
   | AgentRelayAttached

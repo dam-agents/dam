@@ -19,17 +19,17 @@ and connections, so a page anyone could open must never be able to drive it.
 The whole design was settled in a grilling session (22 decisions). The load-bearing ones:
 
 - **The page never talks to the api-server.** It runs in a sandboxed iframe with an opaque
-  origin. A press is handed to the app over `postMessage`, and the app — already signed in as
+  origin. A request is handed to the app over `postMessage`, and the app — already signed in as
   the owner — makes the tRPC call. Private-only is therefore structural, not a check that
   could regress. Any step that gives the page its own endpoint or token has broken the design.
-- **A press is a full agent turn.** Not a prepared function. Slow, paid for, able to do
+- **Serving one is a full agent turn.** Not a prepared function. Slow, paid for, able to do
   anything the agent can do.
-- **A press is not an Invocation.** Invocations work because the asking agent lends its
+- **An Artifact Request is not an Invocation.** Invocations work because the asking agent lends its
   network reach and pays for the target. A page has neither, so it cannot be a driver. We copy
   the *shape* (a numbered request, an answer reported through a tool) and none of the machinery.
 - **Delivery reuses the schedule-fire rails.** Outbox event, activity poke, `hello` catch-up,
   TTL. See [agent-lifecycle](../../architecture/agent-lifecycle.md#trigger-fire).
-- **One conversation per artifact**, resumed on every press, exactly like a continuous
+- **One conversation per artifact**, resumed on every request, exactly like a continuous
   schedule.
 - **Interactive is settled at create**, like an artifact's kind, and an interactive artifact
   **cannot be shared**.
@@ -40,7 +40,7 @@ Architecture pages this touches: [artifact-library](../../architecture/artifact-
 [usage-tracking](../../architecture/usage-tracking.md),
 [features](../../architecture/features.md).
 
-### The path of one press
+### The path of one request
 
 ```mermaid
 sequenceDiagram
@@ -50,7 +50,7 @@ sequenceDiagram
   participant R as agent-runtime
   participant H as harness
 
-  P->>A: postMessage, a press
+  P->>A: postMessage, a request
   A->>S: requests.create (tRPC)
   S->>S: row written, number minted
   S->>R: outbox event kind "artifact-request" + wake poke
@@ -127,7 +127,7 @@ concrete target origin, never `"*"`.
 
 **Caps** (Q12): the server refuses beyond **60 requests per artifact per rolling hour**
 (`rate_limited`) and beyond **one in flight per artifact** (`busy`). The client additionally
-paces automatic presses at no more than one per 30 s, pauses them while the tab is hidden, and
+paces automatic requests at no more than one per 30 s, pauses them while the tab is hidden, and
 stops them after 30 minutes with no human interaction.
 
 ## Conventions & glossary
@@ -139,9 +139,13 @@ names which.
 Vocabulary, to be used in code, logs and errors:
 
 - **Interactive Artifact** — an artifact that may ask its agent. Settled at create, never later.
-- **Artifact Request** — one press. Numbered, answered once, or failed with a named reason.
-- **Artifact Session** — the ACP session a page's presses land in. One per artifact, resumed.
+- **Artifact Request** — one thing a page asked its agent to do: a button clicked, a choice
+  made in a dropdown, a form submitted. `action` names what was asked, `payload` carries its
+  arguments. Numbered, answered once, or failed with a named reason.
+- **Artifact Session** — the ACP session a page's requests land in. One per artifact, resumed.
 - **Callback** — an explaining word for prose only. Never a table, field, or error string.
+- **Press** — do not use, in code or in prose. A page asks through a button, a dropdown, a
+  form; "press" names only one of those and reads as a button everywhere else.
 
 Do not name anything `Invocation`: that word belongs to agent-to-agent requests.
 
@@ -154,7 +158,7 @@ With the `interactive-artifacts` flag on for the test user:
 2. Open it in the Artifacts destination. Confirm Share is refused with a reason.
 3. Press Refresh on a hibernated agent. The app shows waking, then running, then the page
    updates in place with the agent's answer.
-4. Press again. The agent's answer shows it remembered the previous press (same session).
+4. Press Refresh again. The agent's answer shows it remembered the first one (same session).
 5. Delete the agent, reload the page, press again: it renders as a document and the button
    reports that the agent is gone.
 

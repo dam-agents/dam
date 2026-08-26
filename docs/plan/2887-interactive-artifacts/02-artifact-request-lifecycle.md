@@ -5,7 +5,7 @@
 
 ## Context
 
-The record of one press, and every rule that governs it, with no agent involved yet. After this
+The record of one request, and every rule that governs it, with no agent involved yet. After this
 slice a request can be created, read, cancelled, and failed, and the rules that protect the
 owner (one in flight, hourly cap, ownership, named failures) are enforced. Delivery arrives in
 04.
@@ -32,7 +32,7 @@ domain / services / infrastructure split.
      in the rolling hour, otherwise insert with the next `seq`.
    - `get`, `cancel` (settles as `cancelled`), and an internal `fail(reason)` used by 04.
    - Raise a live event on every settle, and an [Activity Event](../../architecture/usage-tracking.md)
-     **only when `trigger` is `user`** — an automatic press has no actor, so it must not reach
+     **only when `trigger` is `user`** — an automatic request has no actor, so it must not reach
      the activity log. This mirrors the existing rule; do not invent a new one.
 5. **Contract and wiring.** Add the `requests.*` procedures to
    [`router.ts`](../../../packages/api-server-api/src/modules/artifact-library/router.ts) under

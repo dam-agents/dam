@@ -27,7 +27,7 @@ reference an ADR from any page.
 3. **[`agent-lifecycle.md`](../../architecture/agent-lifecycle.md)** — Wake lists three ways an
    agent is woken. Add the fourth, and note that an open interactive page keeps an agent out of
    hibernation and why that is bounded by the idle stop.
-4. **[`usage-tracking.md`](../../architecture/usage-tracking.md)** — a human press is an activity
+4. **[`usage-tracking.md`](../../architecture/usage-tracking.md)** — a request a person made is an activity
    event, an automatic one is not, and the reason is the existing actor rule rather than a new
    exception.
 5. **`Last verified:`** — update the date on every page touched.

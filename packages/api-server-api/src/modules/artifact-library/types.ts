@@ -126,3 +126,54 @@ export interface ArtifactLibraryService {
   deleteFolder(id: string): Promise<void>;
   folderShareUrl(id: string): Promise<string | null>;
 }
+
+export type ArtifactRequestState =
+  | "pending"
+  | "delivered"
+  | "answered"
+  | "failed";
+
+export type ArtifactRequestTrigger = "user" | "auto";
+
+export type ArtifactRequestFailureReason =
+  | "agent_deleted"
+  | "wake_failed"
+  | "over_budget"
+  | "rate_limited"
+  | "busy"
+  | "cancelled"
+  | "expired";
+
+export interface ArtifactRequest {
+  id: string;
+  artifactId: string;
+  agentId: string;
+  seq: number;
+  action: string;
+  payload: Record<string, unknown>;
+  trigger: ArtifactRequestTrigger;
+  state: ArtifactRequestState;
+  result: unknown;
+  failureReason: ArtifactRequestFailureReason | null;
+  createdAt: string;
+  settledAt: string | null;
+}
+
+export interface ArtifactRequestReceipt {
+  requestId: string;
+  seq: number;
+  state: ArtifactRequestState;
+}
+
+export interface ArtifactRequestCreateInput {
+  artifactId: string;
+  action: string;
+  payload?: Record<string, unknown>;
+  trigger: ArtifactRequestTrigger;
+}
+
+export interface ArtifactRequestsService {
+  create(input: ArtifactRequestCreateInput): Promise<ArtifactRequestReceipt>;
+  get(requestId: string): Promise<ArtifactRequest | null>;
+  cancel(requestId: string): Promise<ArtifactRequest>;
+}

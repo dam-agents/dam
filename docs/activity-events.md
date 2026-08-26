@@ -40,6 +40,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |
 | `ArtifactFolderChanged` | _elsewhere_ | artifact-library |
+| `ArtifactRequestSettled` | `artifact_request` | artifact-library |
 | `ExperimentChanged` | `experiment_<action>` | experiments |
 | `ArtifactPublished` | `artifact_published` | artifact-library |
 | `ArtifactShared` | `artifact_shared` | artifact-library |

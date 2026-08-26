@@ -165,13 +165,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         await agentsRepo.wakeIfHibernated(agentId);
       },
     });
-    const { artifactLibrary } = composeArtifactLibraryForOwner({
-      surface,
-      db,
-      artifacts,
-      owner: user.sub,
-      shareBaseUrl: config.shareBaseUrl,
-    });
+    const { artifactLibrary, artifactRequests } =
+      composeArtifactLibraryForOwner({
+        surface,
+        db,
+        artifacts,
+        owner: user.sub,
+        shareBaseUrl: config.shareBaseUrl,
+      });
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
@@ -279,6 +280,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       invocationsQuery,
       knowledgeBases,
       artifactLibrary,
+      artifactRequests,
       features,
       files,
       harnessConfig,

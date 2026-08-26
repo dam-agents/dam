@@ -28,6 +28,7 @@ export {
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
+  artifactRequests,
   invocations,
 } from "./schema.js";
 export {
@@ -35,6 +36,7 @@ export {
   and,
   or,
   gt,
+  gte,
   ilike,
   inArray,
   asc,
