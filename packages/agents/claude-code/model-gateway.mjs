@@ -38,6 +38,7 @@ const CATALOG_PATHS = ["/v1/models?limit=1000", "/v1/model/info"];
 
 const modelId = (m) => {
   const id = m?.id ?? m?.model_name ?? m?.name;
+  if (typeof id === "number") return String(id);
   return typeof id === "string" && id ? id : null;
 };
 
