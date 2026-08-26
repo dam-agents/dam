@@ -167,8 +167,6 @@ RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extr
     sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
     echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
 
-# Last: the runtime build output is the only content here that moves on an
-# ordinary commit, so nothing above it gets invalidated by one.
 COPY --from=builder --chown=65532:0 /deploy/package.json ./
 COPY --from=builder --chown=65532:0 /deploy/node_modules ./node_modules
 COPY --from=builder --chown=65532:0 /app/packages/agent-runtime/dist/ ./dist/

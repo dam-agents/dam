@@ -165,13 +165,6 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
-          # Registry cache rather than type=gha: GitHub caps a repo's Actions
-          # cache at 10GB and mode=max for ten components across two arches is
-          # multiples of that, so entries were evicted between runs. A missed
-          # step re-executes and its output carries fresh file timestamps, so
-          # unchanged content lands on a new layer digest and every node pulls
-          # it again — 451MiB per release on the agent image (#3403).
-          # PRs read the cache and never write it, keeping branch layers out.
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || '' }}
       - name: Export digest
