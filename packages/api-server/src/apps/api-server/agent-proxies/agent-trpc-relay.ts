@@ -26,14 +26,21 @@ export function createAgentTrpcRelay(
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const lastActivity = new Map<string, number>();
 
-  const bumpActivity = (id: string) => {
-    const now = Date.now();
-    if (now - (lastActivity.get(id) ?? 0) >= ACTIVITY_DEBOUNCE_MS) {
-      lastActivity.set(id, now);
-      repo
-        .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
-        .catch(() => {});
+  const stampNow = (id: string) => {
+    lastActivity.set(id, Date.now());
+    repo
+      .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
+      .catch(() => {});
+  };
+  const bumpActivity = async (id: string) => {
+    if (Date.now() - (lastActivity.get(id) ?? 0) < ACTIVITY_DEBOUNCE_MS) return;
+    try {
+      const info = await repo.get(id);
+      if (!info || !info.ready || info.stopRequested) return;
+    } catch {
+      return;
     }
+    stampNow(id);
   };
   const pipe = (from: WebSocket, to: WebSocket) =>
     from.on(
@@ -66,9 +73,8 @@ export function createAgentTrpcRelay(
         } catch {}
       }, PING_INTERVAL_MS);
 
-      bumpActivity(agentId);
       const activity = setInterval(
-        () => bumpActivity(agentId),
+        () => void bumpActivity(agentId),
         ACTIVITY_INTERVAL_MS,
       );
 
@@ -105,11 +111,18 @@ export function createAgentTrpcRelay(
       };
       client.on("message", buffer);
 
-      if (!(await repo.isReady(agentId))) {
-        client.close(1011, "agent not ready");
+      try {
+        const info = await repo.get(agentId);
+        if (!info || !info.ready || info.stopRequested) {
+          client.close(1011, "agent not ready");
+          return;
+        }
+      } catch {
+        client.close(1011, "agent unavailable");
         return;
       }
       if (clientGone || overflow) return;
+      stampNow(agentId);
 
       upstream = new WebSocket(
         `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,

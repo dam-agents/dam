@@ -107,7 +107,7 @@ export function ChatView() {
 
   useSyncRestartingAgents();
   useAgentReachability(selectedAgent);
-  useSessionWatch(selectedAgent, agentOperable);
+  useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(

@@ -47,7 +47,8 @@ export function createPodSessionsService(
         holder.watches.set(
           agentId,
           deps.watchAgent(agentId, () => {
-            for (const listener of holder.listeners) listener({ agentId });
+            for (const listener of holder.listeners)
+              listener({ topic: "sessions", agentId });
           }),
         );
       }
@@ -101,7 +102,7 @@ export function createPodSessionsService(
 
   return {
     async *ownerStream(sub, signal) {
-      const pending: PodSessionsNotice[] = [];
+      const pending: PodSessionsNotice[] = [{ topic: "sync" }];
       let wake: (() => void) | undefined;
       const release = acquire(sub, (notice) => {
         pending.push(notice);

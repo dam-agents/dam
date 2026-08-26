@@ -1,26 +1,23 @@
 import type { PodSession, SessionsService } from "agent-runtime-api";
 
+import { noticeStream } from "../../../core/notice-stream.js";
 import {
   composeSessionList,
   type ListedHarnessSession,
 } from "../domain/session-list.js";
-import { noticeStream } from "../../../core/notice-stream.js";
-import { createInProcessCaller } from "../infrastructure/in-process-request.js";
+import type { InProcessCaller } from "../infrastructure/in-process-request.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
-import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
 import type { SessionChanges } from "./session-changes.js";
 
 export function createSessionsService(deps: {
-  acpRuntime: AcpRuntime;
+  openCaller: () => InProcessCaller;
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
   changes: SessionChanges;
 }): SessionsService {
   return {
     async list(): Promise<PodSession[]> {
-      const caller = createInProcessCaller((channel) =>
-        deps.acpRuntime.attach(channel, { viewer: false }),
-      );
+      const caller = deps.openCaller();
       try {
         await caller.request("initialize", {
           protocolVersion: 1,
@@ -32,8 +29,12 @@ export function createSessionsService(deps: {
         }>("session/list", { cwd: "." });
         return composeSessionList(
           result.sessions ?? [],
-          deps.sessionMetadata,
-          deps.isRunning,
+          deps.sessionMetadata.all(),
+          {
+            isTombstoned: (sessionId) =>
+              deps.sessionMetadata.isTombstoned(sessionId),
+            isRunning: deps.isRunning,
+          },
         );
       } finally {
         caller.close();

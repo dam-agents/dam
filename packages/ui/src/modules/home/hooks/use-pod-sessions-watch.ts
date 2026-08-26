@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import { api } from "../../../api.js";
+import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { homeKeys } from "../api/queries.js";
 
 const COALESCE_MS = 250;
@@ -24,8 +25,15 @@ export function usePodSessionsWatch() {
     };
 
     const subscription = api.events.podSessions.subscribe(undefined, {
-      onData: ({ agentId }) => {
-        dirty.add(agentId);
+      onData: (notice) => {
+        if (notice.topic === "sync") {
+          dirty.clear();
+          void queryClient.invalidateQueries({
+            queryKey: acpSessionsKeys.all,
+          });
+          return;
+        }
+        dirty.add(notice.agentId);
         timer ??= setTimeout(flush, COALESCE_MS);
       },
     });

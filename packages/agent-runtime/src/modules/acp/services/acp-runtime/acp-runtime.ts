@@ -965,21 +965,20 @@ function injectPlatformMetaIntoList(
     listed.push(raw as unknown as ListedHarnessSession);
   }
 
-  const sessions = composeSessionList(listed, store, isRunning).map(
-    (session) => {
-      const original = originals.get(session.sessionId) ?? {};
-      const existingMeta = isNonNullObject(original._meta)
-        ? original._meta
-        : {};
-      return {
-        ...original,
-        sessionId: session.sessionId,
-        title: session.title,
-        updatedAt: session.updatedAt,
-        _meta: { ...existingMeta, platform: toAcpPlatformMeta(session) },
-      };
-    },
-  );
+  const sessions = composeSessionList(listed, store.all(), {
+    isTombstoned: (sessionId) => store.isTombstoned(sessionId),
+    isRunning,
+  }).map((session) => {
+    const original = originals.get(session.sessionId) ?? {};
+    const existingMeta = isNonNullObject(original._meta) ? original._meta : {};
+    return {
+      ...original,
+      sessionId: session.sessionId,
+      title: session.title,
+      updatedAt: session.updatedAt,
+      _meta: { ...existingMeta, platform: toAcpPlatformMeta(session) },
+    };
+  });
 
   return { ...frame, result: { ...result, sessions } };
 }

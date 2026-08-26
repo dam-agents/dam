@@ -31,6 +31,7 @@ import {
   notifyingSessionMetadataStore,
   type SessionChanges,
 } from "./services/session-changes.js";
+import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
 
 export interface ComposeAcpOptions {
@@ -105,7 +106,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
   const sessions = createSessionsService({
-    acpRuntime: runtime,
+    openCaller: () =>
+      createInProcessCaller((channel) =>
+        runtime.attach(channel, { viewer: false }),
+      ),
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,

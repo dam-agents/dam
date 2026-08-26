@@ -1,22 +1,10 @@
-import type {
-  PodSession,
-  PodSessionMode,
-  PodSessionType,
+import {
+  podSessionModeSchema,
+  podSessionTypeSchema,
+  type PodSession,
+  type PodSessionMode,
+  type PodSessionType,
 } from "agent-runtime-api";
-
-import type {
-  SessionMetaEntry,
-  SessionMetadataStore,
-} from "../infrastructure/session-metadata-store.js";
-
-const MODES: readonly string[] = ["chat", "terminal"];
-const TYPES: readonly string[] = [
-  "regular",
-  "channel_slack",
-  "channel_telegram",
-  "schedule_cron",
-  "experiment_execute",
-];
 
 const EPOCH = new Date(0).toISOString();
 
@@ -26,24 +14,40 @@ export interface ListedHarnessSession {
   updatedAt?: string | null;
 }
 
+export interface SessionMetaLike {
+  meta: {
+    mode?: string;
+    type?: string;
+    scheduleId?: string;
+    experimentId?: string;
+    threadTs?: string;
+  };
+  createdAt: string;
+  lastActivityAt?: string;
+  seenAt?: string;
+}
+
+export interface SessionListPredicates {
+  isTombstoned: (sessionId: string) => boolean;
+  isRunning: (sessionId: string) => boolean;
+}
+
 function asMode(
   value: string | undefined,
   fallback: PodSessionMode,
 ): PodSessionMode {
-  return value !== undefined && MODES.includes(value)
-    ? (value as PodSessionMode)
-    : fallback;
+  const parsed = podSessionModeSchema.safeParse(value);
+  return parsed.success ? parsed.data : fallback;
 }
 
 function asType(value: string | undefined): PodSessionType {
-  return value !== undefined && TYPES.includes(value)
-    ? (value as PodSessionType)
-    : "regular";
+  const parsed = podSessionTypeSchema.safeParse(value);
+  return parsed.success ? parsed.data : "regular";
 }
 
 function fromEntry(
   sessionId: string,
-  entry: SessionMetaEntry,
+  entry: SessionMetaLike,
   listed: ListedHarnessSession | undefined,
   running: boolean,
 ): PodSession {
@@ -83,16 +87,16 @@ function fromHarnessOnly(
 
 export function composeSessionList(
   listed: readonly ListedHarnessSession[],
-  store: SessionMetadataStore,
-  isRunning: (sessionId: string) => boolean,
+  entries: Readonly<Record<string, SessionMetaLike>>,
+  { isTombstoned, isRunning }: SessionListPredicates,
 ): PodSession[] {
   const composed: PodSession[] = [];
   const listedIds = new Set<string>();
 
   for (const session of listed) {
-    if (store.isTombstoned(session.sessionId)) continue;
+    if (isTombstoned(session.sessionId)) continue;
     listedIds.add(session.sessionId);
-    const entry = store.get(session.sessionId);
+    const entry = entries[session.sessionId];
     composed.push(
       entry
         ? fromEntry(
@@ -105,8 +109,8 @@ export function composeSessionList(
     );
   }
 
-  for (const [sessionId, entry] of Object.entries(store.all())) {
-    if (listedIds.has(sessionId) || store.isTombstoned(sessionId)) continue;
+  for (const [sessionId, entry] of Object.entries(entries)) {
+    if (listedIds.has(sessionId) || isTombstoned(sessionId)) continue;
     composed.push(fromEntry(sessionId, entry, undefined, isRunning(sessionId)));
   }
 
