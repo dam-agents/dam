@@ -35,7 +35,9 @@ Plus one role that is not a connection identity at all:
   usage_readers` — under `usage.grants.unreachable` when the role has no
   CONNECT on the database or USAGE on the schema, and under
   `usage.grants.failed` if the reconcile itself could not complete, which
-  leaves the platform running and the grants stale. Where the role is absent it logs
+  leaves the platform running and the grants stale. Where several replicas
+  start together only one does the pass; the rest log `usage.grants.skipped`
+  and move on. Where the role is absent it logs
   `usage.grants.role-absent` and does nothing. Creating the role stays
   outside the application, because an api-server that could mint database
   logins could mint itself a better one.

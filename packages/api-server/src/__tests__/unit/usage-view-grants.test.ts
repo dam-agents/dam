@@ -41,6 +41,7 @@ function fakeDb(
 }
 
 type CatalogState = {
+  locked?: boolean;
   pending?: string[];
   after?: Array<{ name: string; readable: boolean; grantable: boolean }>;
   reach?: { can_connect: boolean; can_use_schema: boolean };
@@ -50,6 +51,9 @@ const catalogReply =
   (state: CatalogState) =>
   (text: string): unknown[] => {
     if (text.includes("to_regrole")) return [{ present: true }];
+    if (text.includes("pg_try_advisory_xact_lock")) {
+      return [{ locked: state.locked ?? true }];
+    }
     if (text.includes("has_database_privilege")) {
       return [state.reach ?? { can_connect: true, can_use_schema: true }];
     }
@@ -96,14 +100,14 @@ describe("usage view grant reconcile", () => {
     expect(executed.filter((e) => e.text.includes("GRANT"))).toHaveLength(0);
   });
 
-  // TEST_SCENARIO: A failure anywhere in the reconcile must degrade to a report, never propagate. This runs before the HTTP listener exists, so a rejection here is an api-server that never starts — for an optional analytics grant.
+  // TEST_SCENARIO: A failure anywhere in the reconcile must degrade to a report, never propagate. This runs before the HTTP listener exists, so a rejection here is an api-server that never starts — for an optional analytics grant. The injection is keyed on statement text, so renaming the statement disarms it; the first assertion is there to fail on that rather than leave the scenario silently untested.
   it("never throws when the database rejects, and says it failed", async () => {
-    const { db } = fakeDb(catalogReply({}), {
-      failOn: /pg_advisory_xact_lock/,
-    });
+    const failOn = /advisory_xact_lock/;
+    const { db, executed } = fakeDb(catalogReply({}), { failOn });
 
     const result = await reconcileUsageViewGrants(db);
 
+    expect(executed.some((e) => failOn.test(e.text))).toBe(true);
     expect(result.failed).toBeDefined();
     expect(result.readable).toEqual([]);
   });
@@ -144,6 +148,27 @@ describe("usage view grant reconcile", () => {
     expect(result.readable).toEqual(["usage_src_events"]);
     expect(result.unreadable).toEqual([]);
     expect(result.notGrantable).toEqual([]);
+  });
+
+  // TEST_SCENARIO: Several replicas start at once and only one pass is needed. A replica that does not win the lock must do nothing further — not even read back, because it would see the winner's half-applied state and report it as an alarm — and must not wait, or every replica's startup queues behind the first.
+  it("skips the whole pass when another replica holds the lock", async () => {
+    const { db, executed } = fakeDb(
+      catalogReply({
+        locked: false,
+        pending: ["usage_src_events"],
+        after: [{ name: "usage_src_events", readable: false, grantable: true }],
+      }),
+    );
+
+    const result = await reconcileUsageViewGrants(db);
+
+    expect(result.skipped).toBe(true);
+    expect(result.failed).toBeUndefined();
+    expect(executed.some((e) => e.text.includes("GRANT SELECT"))).toBe(false);
+    expect(
+      executed.some((e) => e.text.includes("COALESCE(has_table_privilege")),
+    ).toBe(false);
+    expect(result.unreadable).toEqual([]);
   });
 
   // TEST_SCENARIO: The GRANT must name the schema. Unqualified, it resolves through search_path, which lands the grant on whatever shadows the view — including a table — and can abort the boot.
@@ -198,6 +223,7 @@ describe("usage view grant reporting", () => {
     rolePresent: true,
     canConnect: true,
     canUseSchema: true,
+    skipped: false,
     granted: [],
     readable: ["usage_src_agents"],
     unreadable: [],
@@ -208,6 +234,7 @@ describe("usage view grant reporting", () => {
   it("names each outcome distinctly", () => {
     const cases: Array<[Partial<UsageViewGrants>, string, string]> = [
       [{ rolePresent: false }, "info", "usage.grants.role-absent"],
+      [{ skipped: true }, "info", "usage.grants.skipped"],
       [{ failed: "boom" }, "warn", "usage.grants.failed"],
       [{ canConnect: false }, "warn", "usage.grants.unreachable"],
       [{ unreadable: ["usage_src_x"] }, "warn", "usage.grants.incomplete"],

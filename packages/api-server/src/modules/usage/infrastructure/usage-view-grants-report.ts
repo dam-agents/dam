@@ -27,6 +27,10 @@ export function reportUsageViewGrants(
     logger.info({ role }, "usage.grants.role-absent");
     return;
   }
+  if (grants.skipped) {
+    logger.info({ role }, "usage.grants.skipped");
+    return;
+  }
   if (!grants.canConnect || !grants.canUseSchema) {
     logger.warn(
       {

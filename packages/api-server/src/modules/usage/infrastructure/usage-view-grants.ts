@@ -5,6 +5,7 @@ export interface UsageViewGrants {
   rolePresent: boolean;
   canConnect: boolean;
   canUseSchema: boolean;
+  skipped: boolean;
   granted: string[];
   readable: string[];
   unreadable: string[];
@@ -39,10 +40,14 @@ const rowsOf = <T>(result: unknown): T[] => result as unknown as T[];
  * reconciles instead of riding in the migration that happens to need it.
  *
  * Everything here is bounded rather than best-effort, because it runs on the
- * startup path: statement and lock timeouts cap the work, the advisory lock
- * stops concurrent starts colliding on the same catalog row, and the caller
+ * startup path: statement and lock timeouts cap the work, and the caller
  * treats any failure as degraded rather than fatal. Analytics access is
  * optional; the platform starting is not.
+ *
+ * One replica's worth of this is enough, so concurrent starts take the lock
+ * without waiting and whichever loses skips the whole pass. Waiting would put
+ * every replica's startup in a queue behind the first, and a loser that went
+ * on to read back would see a half-applied state and report it as an alarm.
  *
  * The reported sets are measured from the catalog after the grants, and split
  * by whether this role could do anything about them: `unreadable` is a view it
@@ -57,6 +62,7 @@ export async function reconcileUsageViewGrants(
     rolePresent: false,
     canConnect: false,
     canUseSchema: false,
+    skipped: false,
     granted: [],
     readable: [],
     unreadable: [],
@@ -81,9 +87,14 @@ export async function reconcileUsageViewGrants(
       await tx.execute(
         sql`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true)`,
       );
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(pg_catalog.hashtext(${LOCK_KEY}))`,
+      const lock = rowsOf<{ locked: boolean }>(
+        await tx.execute<{ locked: boolean }>(
+          sql`SELECT pg_try_advisory_xact_lock(pg_catalog.hashtext(${LOCK_KEY})) AS locked`,
+        ),
       );
+      if (!lock[0]?.locked) {
+        return { ...absent, rolePresent: true, skipped: true };
+      }
 
       const reach = rowsOf<{ can_connect: boolean; can_use_schema: boolean }>(
         await tx.execute<{ can_connect: boolean; can_use_schema: boolean }>(sql`
@@ -129,6 +140,7 @@ export async function reconcileUsageViewGrants(
       return {
         role: ROLE,
         rolePresent: true,
+        skipped: false,
         canConnect: reach?.can_connect ?? false,
         canUseSchema: reach?.can_use_schema ?? false,
         granted: pending,
