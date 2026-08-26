@@ -95,6 +95,16 @@ describe("bob connection template serves shell and inference from one key", () =
     ).toBe("1");
   });
 
+  it("presents an upstream user agent Bob's edge allowlist accepts", async () => {
+    const built = await buildBob();
+    const ua = envOf(
+      built.contributions,
+      "MODEL_GATEWAY_USER_AGENT",
+    ).placeholder;
+
+    expect(ua).toMatch(/^bob/);
+  });
+
   it("resolves every Claude Code model tier to an alias Bob serves", async () => {
     const built = await buildBob();
     const tier = (name: string) =>

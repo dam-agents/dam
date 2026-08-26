@@ -157,7 +157,9 @@ function stripInferenceWiring(conn: Connection): Connection {
       (c) =>
         !(
           c.kind === "env" &&
-          (c.name.startsWith("ANTHROPIC_") || c.name.startsWith("CLAUDE_"))
+          (c.name.startsWith("ANTHROPIC_") ||
+            c.name.startsWith("CLAUDE_") ||
+            c.name.startsWith("MODEL_GATEWAY_"))
         ),
     ),
   };

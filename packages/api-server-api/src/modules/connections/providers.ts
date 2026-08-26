@@ -53,12 +53,17 @@ const BOB_PLACEHOLDER = "dummy-placeholder";
 export const BOB_INFERENCE_BASE_URL = `https://${BOB_HOST}/inference`;
 export const BOB_INFERENCE_PREMIUM_MODEL = "premium";
 export const BOB_INFERENCE_FAST_MODEL = "flash";
+export const BOB_INFERENCE_USER_AGENT = "bob-platform-model-gateway/1.0";
 
 export function bobInferenceEnvMappings(): EnvMapping[] {
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "ANTHROPIC_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
+    {
+      envName: "MODEL_GATEWAY_USER_AGENT",
+      placeholder: BOB_INFERENCE_USER_AGENT,
+    },
     {
       envName: "ANTHROPIC_DEFAULT_FABLE_MODEL",
       placeholder: BOB_INFERENCE_PREMIUM_MODEL,
