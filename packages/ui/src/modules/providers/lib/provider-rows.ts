@@ -13,7 +13,7 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "bob",
     description:
-      "IBM Bob — the Bob Shell harness, or Claude for Claude Code agents.",
+      "IBM Bob — powers the Bob Shell harness and Claude Code agents.",
   },
   {
     type: "anthropic",

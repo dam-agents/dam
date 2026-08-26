@@ -9,10 +9,6 @@ import {
 import { AnthropicForm } from "./anthropic/form.js";
 import { type Mode, MODES } from "./anthropic/modes.js";
 import { BobForm } from "./bob/form.js";
-import {
-  modeForTemplateId as bobModeForTemplateId,
-  MODES as BOB_MODES,
-} from "./bob/modes.js";
 import { IbmLitellmForm } from "./ibm-litellm/form.js";
 import { OpenAIForm } from "./openai/form.js";
 import {
@@ -62,8 +58,6 @@ export function ProviderConnectDialog({
     ? bobPinsFromConnection(item.conn)
     : undefined;
 
-  const bobMode = item ? bobModeForTemplateId(item.conn.templateId) : "api-key";
-
   return (
     <Modal widthClass="w-[505px]">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -89,16 +83,14 @@ export function ProviderConnectDialog({
         {provider === "bob" && (
           <BobForm
             variant={variant}
-            initialMode={bobMode}
-            lockMode={!!item}
             initialPins={bobPins}
             onCancel={onClose}
-            onSave={({ mode, value, pins }) =>
+            onSave={({ value, pins }) =>
               persist({
                 value,
                 createInput: {
-                  templateId: BOB_MODES[mode].templateId,
-                  name: BOB_MODES[mode].templateId,
+                  templateId: "bob",
+                  name: "bob",
                   authKind: "header",
                   value,
                   configInputs: bobConfigInputs(pins),

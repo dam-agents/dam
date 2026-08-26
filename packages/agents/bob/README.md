@@ -16,7 +16,7 @@ Bob 2.0 removed the `--experimental-acp` mode the previous shim bridged, so the 
 
 Bob expects `BOBSHELL_API_KEY` in the pod env (2.0 renamed it to `BOB_API_KEY`, but the old name is a supported alias — Bob copies it over and errors only if both are set to different values). On the platform the agent only ever sees a **placeholder** — the real key is materialized at the Envoy sidecar, never in the agent container.
 
-1. **Open Settings → Providers → Bob Shell** and paste your Bob API key. The provider preset creates a secret pinned to `api.us-east.bob.ibm.com` (unchanged in 2.0) with `Authorization: Apikey {value}` injection plus a twin entry on the same host that handles the `?key=` URL parameter Bob appends to several admin endpoints. `BOBSHELL_API_KEY` is seeded as `dummy-placeholder` — the literal content is irrelevant because Envoy overwrites the wire value, but it must not start with `sk-`/`pk-` or Bob's bundle would silently downgrade to the legacy `prod.ibm-bob-staging.cloud.ibm.com` backend (which only accepts JWT keys). The Advanced disclosure lets you set the default model and tenant-scoping flags (see below) — those flow as additional env-mappings rather than free-form env vars in the agent dialog.
+1. **Open Settings → Providers → Bob** and paste your Bob API key. The provider preset creates a secret pinned to `api.us-east.bob.ibm.com` (unchanged in 2.0) with `Authorization: Apikey {value}` injection plus a twin entry on the same host that handles the `?key=` URL parameter Bob appends to several admin endpoints. `BOBSHELL_API_KEY` is seeded as `dummy-placeholder` — the literal content is irrelevant because Envoy overwrites the wire value, but it must not start with `sk-`/`pk-` or Bob's bundle would silently downgrade to the legacy `prod.ibm-bob-staging.cloud.ibm.com` backend (which only accepts JWT keys). The Advanced disclosure lets you set the default model and tenant-scoping flags (see below) — those flow as additional env-mappings rather than free-form env vars in the agent dialog.
 
 2. **Grant the secret to the Bob agent instance** from Configure Agent → Secrets. The next pod restart picks up `BOBSHELL_API_KEY` and any pinned `BOB_*` envs along with the Envoy filter chain.
 
@@ -36,9 +36,9 @@ Bob's own guardrail that remains active: `session.maxTurns` (Bob default 100) en
 
 ## Configuration
 
-Bob 2.x accepts settings from `~/.bob/settings/settings.json` (merged by the shim from the env vars below) and CLI flags (translated by the harness scripts). The Bob Shell provider preset pins the most common ones; the rest stay free-form in **Configure Agent → Env**.
+Bob 2.x accepts settings from `~/.bob/settings/settings.json` (merged by the shim from the env vars below) and CLI flags (translated by the harness scripts). The Bob provider preset pins the most common ones; the rest stay free-form in **Configure Agent → Env**.
 
-### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
+### Pinned via the Bob provider (Settings → Providers → Bob → Advanced)
 
 These ride on the secret's `envMappings`, so every agent granted the Bob secret inherits them automatically — no per-agent re-entry.
 

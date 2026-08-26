@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Contribution, SecretRef } from "api-server-api";
-import {
-  PROVIDER_TEMPLATE_IDS,
-  PROVIDERS,
-  providerTypeForTemplateId,
-  templateIdForProvider,
-} from "api-server-api";
+import { PROVIDER_TEMPLATE_IDS } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 
@@ -15,20 +10,21 @@ function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
 }
 
-function bobInferenceTemplate() {
-  const t = buildCatalog().find((t) => t.id === "bob-inference");
-  if (!t) throw new Error("bob-inference template missing from catalog");
+function bobTemplate() {
+  const t = buildCatalog().find((t) => t.id === "bob");
+  if (!t) throw new Error("bob template missing from catalog");
   return t;
 }
 
-async function buildBobInference() {
+async function buildBob(configInputs?: Record<string, string>) {
   return buildConnection(
-    bobInferenceTemplate(),
+    bobTemplate(),
     {
-      templateId: "bob-inference",
-      name: "bob-inference",
+      templateId: "bob",
+      name: "bob",
       authKind: "header",
       value: "bob_prod_bob-apikey_secret",
+      ...(configInputs ? { configInputs } : {}),
     },
     mintRef,
     "https://cb.example/oauth/callback",
@@ -42,6 +38,14 @@ function envOf(contributions: Contribution[], name: string) {
   return c;
 }
 
+function envNames(contributions: Contribution[]) {
+  return contributions
+    .filter(
+      (c): c is Extract<Contribution, { kind: "env" }> => c.kind === "env",
+    )
+    .map((c) => c.name);
+}
+
 function injectsOf(contributions: Contribution[]) {
   return contributions.filter(
     (c): c is Extract<Contribution, { kind: "egress-inject" }> =>
@@ -49,36 +53,42 @@ function injectsOf(contributions: Contribution[]) {
   );
 }
 
-describe("bob-inference connection template", () => {
-  it("is a second mode of the existing bob provider, not a provider of its own", () => {
-    expect(PROVIDER_TEMPLATE_IDS.has("bob-inference")).toBe(true);
-    expect(providerTypeForTemplateId("bob-inference")).toBe("bob");
-    expect(PROVIDERS.bob.modes.map((m) => m.templateId)).toEqual([
-      "bob",
-      "bob-inference",
-    ]);
-  });
-
-  it("leaves the shell mode as the bob provider's default", () => {
-    expect(templateIdForProvider("bob", "bob_prod_bob-apikey_x")).toBe("bob");
-  });
-
-  it("points Claude Code at a base URL that composes to Bob's messages route", async () => {
-    const built = await buildBobInference();
-    const base = envOf(built.contributions, "ANTHROPIC_BASE_URL").placeholder;
-
-    expect(base).toBe(`https://${BOB_HOST}/inference`);
-    expect(new URL("/v1/messages", `${base}/`).pathname).not.toContain("v1/v1");
-    expect(`${base}/v1/messages`).toBe(
-      `https://${BOB_HOST}/inference/v1/messages`,
+describe("bob connection template serves shell and inference from one key", () => {
+  it("stays a single template — inference is not a separate one", () => {
+    expect(PROVIDER_TEMPLATE_IDS.has("bob")).toBe(true);
+    expect(PROVIDER_TEMPLATE_IDS.has("bob-inference")).toBe(false);
+    expect(buildCatalog().filter((t) => t.id.startsWith("bob"))).toHaveLength(
+      1,
     );
   });
 
-  it("keeps the real key gateway-side and disables betas Bob would reject", async () => {
-    const built = await buildBobInference();
-    const token = envOf(built.contributions, "ANTHROPIC_AUTH_TOKEN");
+  it("contributes the shell credential and the Claude Code wiring together", async () => {
+    const names = envNames((await buildBob()).contributions);
 
-    expect(token.placeholder).not.toContain("bob_prod");
+    expect(names).toContain("BOBSHELL_API_KEY");
+    expect(names).toContain("ANTHROPIC_AUTH_TOKEN");
+    expect(names).toContain("ANTHROPIC_BASE_URL");
+  });
+
+  it("points Claude Code at a base URL that composes to Bob's messages route", async () => {
+    const built = await buildBob();
+    const base = envOf(built.contributions, "ANTHROPIC_BASE_URL").placeholder;
+
+    expect(base).toBe(`https://${BOB_HOST}/inference`);
+    expect(`${base}/v1/messages`).toBe(
+      `https://${BOB_HOST}/inference/v1/messages`,
+    );
+    expect(base).not.toMatch(/\/v1$/);
+  });
+
+  it("keeps the real key gateway-side and disables betas Bob would reject", async () => {
+    const built = await buildBob();
+
+    for (const name of ["BOBSHELL_API_KEY", "ANTHROPIC_AUTH_TOKEN"]) {
+      expect(envOf(built.contributions, name).placeholder).not.toContain(
+        "bob_prod",
+      );
+    }
     expect(
       envOf(built.contributions, "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
         .placeholder,
@@ -86,7 +96,7 @@ describe("bob-inference connection template", () => {
   });
 
   it("resolves every Claude Code model tier to an alias Bob serves", async () => {
-    const built = await buildBobInference();
+    const built = await buildBob();
     const tier = (name: string) =>
       envOf(built.contributions, `ANTHROPIC_DEFAULT_${name}_MODEL`).placeholder;
 
@@ -97,40 +107,43 @@ describe("bob-inference connection template", () => {
   });
 
   it("never sets the OpenAI vars — Claude Code does not read them", async () => {
-    const built = await buildBobInference();
-    const names = built.contributions
-      .filter(
-        (c): c is Extract<Contribution, { kind: "env" }> => c.kind === "env",
-      )
-      .map((c) => c.name);
+    const names = envNames((await buildBob()).contributions);
 
     expect(names.filter((n) => n.startsWith("OPENAI_"))).toEqual([]);
   });
 
-  it("injects the Apikey header and its query-param twin, scoped to /inference/*", async () => {
-    const injects = injectsOf((await buildBobInference()).contributions);
+  it("adds no injection beyond the two Bob already had", async () => {
+    const injects = injectsOf((await buildBob()).contributions);
 
     expect(injects).toHaveLength(2);
-    for (const inject of injects) {
-      expect(inject.host).toBe(BOB_HOST);
-      expect(inject.pathPattern).toBe("/inference/*");
-    }
     expect(injects[0]).toMatchObject({
+      host: BOB_HOST,
       headerName: "Authorization",
       valueFormat: "Apikey {value}",
     });
     expect(injects[1]).toMatchObject({
+      host: BOB_HOST,
       headerName: "X-Bobshell-Internal",
       queryParamName: "key",
     });
   });
 
+  it("keeps the shell pins working alongside the inference wiring", async () => {
+    const built = await buildBob({ model: "premium-shell", teamId: "t-1" });
+
+    expect(envOf(built.contributions, "BOB_SHELL_MODEL").placeholder).toBe(
+      "premium-shell",
+    );
+    expect(envOf(built.contributions, "BOB_TEAM_ID").placeholder).toBe("t-1");
+    expect(envOf(built.contributions, "ANTHROPIC_BASE_URL").placeholder).toBe(
+      `https://${BOB_HOST}/inference`,
+    );
+  });
+
   it("contributes no env name twice, so first-occurrence-wins cannot shadow a value", async () => {
-    const names = (await buildBobInference()).contributions
-      .filter(
-        (c): c is Extract<Contribution, { kind: "env" }> => c.kind === "env",
-      )
-      .map((c) => c.name);
+    const names = envNames(
+      (await buildBob({ model: "premium-shell" })).contributions,
+    );
 
     expect(names).toHaveLength(new Set(names).size);
   });

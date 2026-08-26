@@ -50,9 +50,38 @@ export interface BobModelPins {
 export const BOB_HOST = "api.us-east.bob.ibm.com";
 const BOB_PLACEHOLDER = "dummy-placeholder";
 
+export const BOB_INFERENCE_BASE_URL = `https://${BOB_HOST}/inference`;
+export const BOB_INFERENCE_PREMIUM_MODEL = "premium";
+export const BOB_INFERENCE_FAST_MODEL = "flash";
+
+export function bobInferenceEnvMappings(): EnvMapping[] {
+  return [
+    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "ANTHROPIC_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
+    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
+    {
+      envName: "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+    },
+    {
+      envName: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+    },
+    {
+      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+    },
+    {
+      envName: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+      placeholder: BOB_INFERENCE_FAST_MODEL,
+    },
+  ];
+}
+
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
     { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
+    ...bobInferenceEnvMappings(),
   ];
   const push = (envName: string, value?: string) => {
     const trimmed = value?.trim();
@@ -83,35 +112,6 @@ export function bobPinsFromEnvMappings(
   if (maxCost) pins.maxCost = maxCost;
   if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
   return pins;
-}
-
-export const BOB_INFERENCE_PATH_PATTERN = "/inference/*";
-export const BOB_INFERENCE_BASE_URL = `https://${BOB_HOST}/inference`;
-export const BOB_INFERENCE_PREMIUM_MODEL = "premium";
-export const BOB_INFERENCE_FAST_MODEL = "flash";
-
-export function bobInferenceEnvMappings(): EnvMapping[] {
-  return [
-    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "ANTHROPIC_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
-    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
-    {
-      envName: "ANTHROPIC_DEFAULT_FABLE_MODEL",
-      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
-    },
-    {
-      envName: "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
-    },
-    {
-      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
-    },
-    {
-      envName: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-      placeholder: BOB_INFERENCE_FAST_MODEL,
-    },
-  ];
 }
 
 export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
@@ -208,28 +208,14 @@ export const PROVIDERS = {
   },
   bob: {
     id: "bob",
-    displayName: "Bob Shell",
+    displayName: "Bob",
     hostPattern: BOB_HOST,
     modes: [
       {
         key: "api-key",
-        label: "Shell",
+        label: "API Key",
         templateId: "bob",
-        isDefault: true,
         defaultEnvMappings: bobEnvMappings(),
-        injection: {
-          headerName: "Authorization",
-          valueFormat: "Apikey {value}",
-        },
-        extraInjections: [
-          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
-        ],
-      },
-      {
-        key: "inference",
-        label: "Inference",
-        templateId: "bob-inference",
-        defaultEnvMappings: bobInferenceEnvMappings(),
         injection: {
           headerName: "Authorization",
           valueFormat: "Apikey {value}",
