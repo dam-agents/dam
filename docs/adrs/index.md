@@ -78,6 +78,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 082 | [Prompt delivery is measured by the server, not inferred by the client](082-server-authoritative-prompt-delivery.md) |  | agent-lifecycle | The runtime tells the originating channel what happened to each identified prompt via two ephemeral notifications, and the client's delivery indicator is a state machine driven only by those frames. |
 | 083 | [Eventing layers by guarantee — in-process sagas, Redis signals, BullMQ work](083-eventing-layering.md) |  | platform-topology | Domain events stay in-process and non-durable, consumed by sagas that forward cross-replica signals to Redis pub/sub or enqueue durable work as BullMQ jobs; no single distributed bus. |
 | 084 | [A resumed channel thread session is caught up on what it could not see](084-resumed-session-catch-up.md) | 025 | channels | A resuming channel thread turn carries the messages that arrived after that Agent's own last turn, best-effort, because a session's context only covers the messages that were relayed to it. |
+| 085 | [Usage passthrough access via a reconciled group role](085-usage-passthrough-grants.md) |  | usage-tracking | A credential-less group role holds SELECT on the usage source passthrough views, reconciled by the api-server after each migration run rather than granted inside migrations, with operators granting membership; the startup path it rides on is made safe for concurrent replicas. |
 
 ## Superseded
 
