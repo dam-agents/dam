@@ -10,6 +10,7 @@ import { match } from "ts-pattern";
 
 import { emit, EventType } from "../../../events.js";
 import { admitRequest, windowStart } from "../domain/artifact-request.js";
+import { buildArtifactRequestPrompt } from "../domain/artifact-request-prompt.js";
 import { generateId } from "../domain/share-crypto.js";
 import type { ArtifactLibraryRepository } from "../infrastructure/artifact-library-repository.js";
 import {
@@ -18,17 +19,29 @@ import {
   type ArtifactRequestRow,
   type ArtifactRequestsRepository,
 } from "../infrastructure/artifact-requests-repository.js";
+import type { ArtifactRequestDelivery } from "./artifact-request-delivery.js";
+
+export type ArtifactRequestAnswerOutcome =
+  | { ok: true; request: ArtifactRequest }
+  | { ok: false; error: string };
 
 export interface ArtifactRequestsServiceImpl extends ArtifactRequestsService {
   fail(
     requestId: string,
     reason: ArtifactRequestFailureReason,
   ): Promise<ArtifactRequest | null>;
+  answer(input: {
+    requestId: string;
+    agentId: string;
+    result: unknown;
+  }): Promise<ArtifactRequestAnswerOutcome>;
 }
 
 export interface ArtifactRequestsDeps {
   requests: ArtifactRequestsRepository;
   library: ArtifactLibraryRepository;
+  delivery: ArtifactRequestDelivery;
+  readPageSource: (artifactId: string) => Promise<string | null>;
   owner: string;
   surface: string;
 }
@@ -81,7 +94,7 @@ export function toArtifactRequest(row: ArtifactRequestRow): ArtifactRequest {
 export function createArtifactRequestsService(
   deps: ArtifactRequestsDeps,
 ): ArtifactRequestsServiceImpl {
-  const { requests, library, owner, surface } = deps;
+  const { requests, library, delivery, readPageSource, owner, surface } = deps;
 
   function announceSettled(row: ArtifactRequestRow): void {
     emit({
@@ -110,6 +123,47 @@ export function createArtifactRequestsService(
     if (!settled) return null;
     announceSettled(settled);
     return toArtifactRequest(settled);
+  }
+
+  async function pageSourceOrNothing(
+    row: ArtifactRequestRow,
+  ): Promise<string | null> {
+    try {
+      return await readPageSource(row.artifactId);
+    } catch (error) {
+      process.stderr.write(
+        `[artifact-requests] source of ${row.artifactId} unreadable, asking without it: ${String(error)}\n`,
+      );
+      return null;
+    }
+  }
+
+  async function deliver(
+    row: ArtifactRequestRow,
+    title: string,
+  ): Promise<void> {
+    const source = row.seq === 1 ? await pageSourceOrNothing(row) : null;
+    const task = buildArtifactRequestPrompt({
+      requestId: row.id,
+      artifactId: row.artifactId,
+      title,
+      seq: row.seq,
+      action: row.action,
+      payload: row.payload,
+      trigger: row.trigger,
+      source,
+    });
+    const outcome = await delivery.deliver({
+      requestId: row.id,
+      artifactId: row.artifactId,
+      agentId: row.agentId,
+      task,
+    });
+    if (outcome.ok) {
+      await requests.markDelivered(row.id, owner);
+      return;
+    }
+    await settleAs(row.id, outcome.reason);
   }
 
   return {
@@ -166,6 +220,11 @@ export function createArtifactRequestsService(
           payload: input.payload ?? {},
           trigger: input.trigger,
         });
+        void deliver(row, page.title).catch((error: unknown) => {
+          process.stderr.write(
+            `[artifact-requests] delivery of ${row.id} threw: ${String(error)}\n`,
+          );
+        });
         return {
           requestId: row.id,
           seq: row.seq,
@@ -198,6 +257,31 @@ export function createArtifactRequestsService(
           message: "request not found",
         });
       return toArtifactRequest(row);
+    },
+
+    async answer({ requestId, agentId, result }) {
+      const row = await requests.get(requestId, owner);
+      if (!row || row.agentId !== agentId) {
+        return {
+          ok: false,
+          error: `no request ${requestId} belongs to this agent`,
+        };
+      }
+      const answered = await requests.settle(requestId, owner, {
+        state: "answered",
+        result,
+        settledAt: new Date(),
+      });
+      if (!answered) {
+        return {
+          ok: false,
+          error: `request ${requestId} is already ${row.state}${
+            row.failureReason ? ` (${row.failureReason})` : ""
+          } and takes no answer`,
+        };
+      }
+      announceSettled(answered);
+      return { ok: true, request: toArtifactRequest(answered) };
     },
 
     fail: settleAs,

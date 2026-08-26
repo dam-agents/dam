@@ -17,7 +17,7 @@ import {
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
-import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
+import { composeArtifactLibraryForOwner, composeArtifactRequestsForOwner } from "../../../modules/artifact-library/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
@@ -195,13 +195,21 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const { artifactLibrary, artifactRequests } = composeArtifactLibraryForOwner({
+    const { artifactLibrary } = composeArtifactLibraryForOwner({
       surface,
       db,
       artifacts,
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
+    });
+    const { artifactRequests } = composeArtifactRequestsForOwner({
+      db,
+      artifactLibrary,
+      runtimeMutator,
+      ensureAgentReady: (agentId) => agentsRepo.ensureReady(agentId),
+      owner: user.sub,
+      surface,
     });
     const { experiments } = composeExperimentsForOwner({
       db,

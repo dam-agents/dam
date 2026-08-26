@@ -13,8 +13,10 @@ import {
   SHARE_LOGIN_TTL_MS,
   SHARE_SESSION_TTL_MS,
 } from "./domain/share-session.js";
+import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { createArtifactLibraryRepository } from "./infrastructure/artifact-library-repository.js";
 import { createArtifactRequestsRepository } from "./infrastructure/artifact-requests-repository.js";
+import { createArtifactRequestDelivery } from "./services/artifact-request-delivery.js";
 import {
   createArtifactRequestsService,
   type ArtifactRequestsServiceImpl,
@@ -40,6 +42,10 @@ import {
   type ShareAuthService,
 } from "./services/share-auth-service.js";
 import {
+  createArtifactRequestExpirySweeper,
+  type ArtifactRequestExpirySweeper,
+} from "./services/request-expiry-sweeper.js";
+import {
   createShareViewerService,
   type ShareViewerService,
 } from "./services/share-viewer-service.js";
@@ -57,12 +63,10 @@ export function composeArtifactLibraryForOwner(
   opts: ComposeArtifactLibraryForOwnerOpts,
 ): {
   artifactLibrary: ArtifactLibraryServiceImpl;
-  artifactRequests: ArtifactRequestsServiceImpl;
 } {
-  const repo = createArtifactLibraryRepository(opts.db);
   return {
     artifactLibrary: createArtifactLibraryService({
-      repo,
+      repo: createArtifactLibraryRepository(opts.db),
       artifacts: opts.artifacts,
       owner: opts.owner,
       surface: z
@@ -72,9 +76,36 @@ export function composeArtifactLibraryForOwner(
       shareBaseUrl: opts.shareBaseUrl,
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),
+  };
+}
+
+export interface ComposeArtifactRequestsForOwnerOpts {
+  db: Db;
+  artifactLibrary: ArtifactLibraryServiceImpl;
+  runtimeMutator: RuntimeMutator;
+  ensureAgentReady: (agentId: string) => Promise<void>;
+  owner: string;
+  surface: string;
+}
+
+export function composeArtifactRequestsForOwner(
+  opts: ComposeArtifactRequestsForOwnerOpts,
+): {
+  artifactRequests: ArtifactRequestsServiceImpl;
+} {
+  return {
     artifactRequests: createArtifactRequestsService({
       requests: createArtifactRequestsRepository(opts.db),
-      library: repo,
+      library: createArtifactLibraryRepository(opts.db),
+      delivery: createArtifactRequestDelivery({
+        runtimeMutator: opts.runtimeMutator,
+        ensureAgentReady: opts.ensureAgentReady,
+      }),
+      readPageSource: async (artifactId) => {
+        const content = await opts.artifactLibrary.getContent(artifactId);
+        if (!content || content.binary || content.tooLarge) return null;
+        return content.content;
+      },
       owner: opts.owner,
       surface: opts.surface,
     }),
@@ -153,5 +184,15 @@ export function composeShareAuth(opts: ComposeShareAuthOpts): ShareAuthService {
     ),
     shareBaseUrl: shareBase,
     now: () => Date.now(),
+  });
+}
+
+export function composeArtifactRequestExpirySweeper(opts: {
+  db: Db;
+  batchSize: number;
+}): ArtifactRequestExpirySweeper {
+  return createArtifactRequestExpirySweeper({
+    requests: createArtifactRequestsRepository(opts.db),
+    batchSize: opts.batchSize,
   });
 }

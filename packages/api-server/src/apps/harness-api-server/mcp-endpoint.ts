@@ -14,6 +14,7 @@ import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
   quietWindowSchema,
+  type FeaturesService,
   type SchedulesService,
   type SkillsService,
 } from "api-server-api";
@@ -26,8 +27,8 @@ import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import { securityLog } from "../../core/security-log.js";
-import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
-import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
+import { registerArtifactLibraryTools, registerArtifactRequestTools } from "../../modules/artifact-library/mcp-tools.js";
+import type { ArtifactLibraryServiceImpl, ArtifactRequestsServiceImpl } from "../../modules/artifact-library/index.js";
 import {
   registerKbShareTools,
   type KbShareAgentOps,
@@ -96,6 +97,8 @@ export interface McpSessionDeps {
   skills: SkillsService;
   schedules: SchedulesService;
   artifactLibrary: ArtifactLibraryServiceImpl;
+  artifactRequests: ArtifactRequestsServiceImpl;
+  interactiveArtifacts: boolean;
   invocations: InvocationsService;
   experiments: ExperimentsService;
   kbShares: KbShareAgentOps | null;
@@ -826,6 +829,13 @@ export function createMcpSession(
     usageSummary: deps.usageSummary,
   });
 
+  if (deps.interactiveArtifacts) {
+    registerArtifactRequestTools(server, {
+      artifactRequests: deps.artifactRequests,
+      agentId,
+    });
+  }
+
   server.tool(
     "report_result",
     "Report this invocation's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
@@ -862,6 +872,11 @@ export interface MountMcpDeps {
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  artifactRequestsServiceFor: (
+    owner: string,
+    artifactLibrary: ArtifactLibraryServiceImpl,
+  ) => ArtifactRequestsServiceImpl;
+  featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
@@ -893,13 +908,18 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
+    const artifactRequests = deps.artifactRequestsServiceFor(
+      verified.owner,
+      artifactLibrary,
+    );
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
-    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector] =
+    const [supportsUserLookup, supportsMessageReactions, ownerIsInspector, flags] =
       await Promise.all([
         deps.channelManager.supportsUserLookup(),
         deps.channelManager.supportsMessageReactions(),
         deps.carriesInspectorRole(verified.owner),
+        deps.featuresServiceFor(verified.owner).flags(),
       ]);
     const session = createMcpSession(agentId, {
       channelManager: deps.channelManager,
@@ -907,6 +927,8 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       skills,
       schedules,
       artifactLibrary,
+      artifactRequests,
+      interactiveArtifacts: flags["interactive-artifacts"],
       invocations,
       experiments,
       kbShares:

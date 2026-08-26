@@ -15,10 +15,16 @@ import {
   type ArtifactRequestsRepository,
 } from "../../modules/artifact-library/infrastructure/artifact-requests-repository.js";
 import { createArtifactRequestsService } from "../../modules/artifact-library/services/artifact-requests-service.js";
+import type {
+  ArtifactRequestDelivery,
+  ArtifactRequestDeliveryInput,
+} from "../../modules/artifact-library/services/artifact-request-delivery.js";
+import { createArtifactRequestExpirySweeper } from "../../modules/artifact-library/services/request-expiry-sweeper.js";
+import { ARTIFACT_REQUEST_TTL_MS } from "../../modules/artifact-library/domain/artifact-request.js";
 import type { ActivityEventRow } from "../../modules/usage/domain/types.js";
 import { startPersistActivitySaga } from "../../modules/usage/sagas/persist-activity.js";
 
-// TEST_OVERVIEW: An Artifact Request is one thing an interactive page asked its agent to do — a button clicked, a choice made in a dropdown, a form submitted. `action` names what was asked. The owner may only ask through a page that is interactive, private, and theirs, and the page must have an agent to ask. Requests are numbered per artifact, at most one is in flight at a time (a second gets `busy`, never a queue), and no more than 60 land in a rolling hour (past that, `rate_limited`). Every settle raises a live event so the app refetches. A request a person made is recorded in the activity log; an automatic one has no actor and must not reach it.
+// TEST_OVERVIEW: An Artifact Request is one thing an interactive page asked its agent to do — a button clicked, a choice made in a dropdown, a form submitted. `action` names what was asked. The owner may only ask through a page that is interactive, private, and theirs, and the page must have an agent to ask. Requests are numbered per artifact, at most one is in flight at a time (a second gets `busy`, never a queue), and no more than 60 land in a rolling hour (past that, `rate_limited`). Every settle raises a live event so the app refetches. A request a person made is recorded in the activity log; an automatic one has no actor and must not reach it. Once the row is committed the request is carried to the agent: an outbox event plus a wake, marked `delivered` when the agent is up, or settled with the reason the wake gave — `agent_deleted`, `over_budget`, `wake_failed`. The agent settles it by calling `answer_artifact_request`, which only takes an answer for its own request and only once. A request nobody answered before its TTL is swept as `expired` so the page is not stuck waiting.
 
 type PageOverrides = Partial<{
   id: string;
@@ -99,6 +105,20 @@ function fakeRequests(rows: ArtifactRequestRow[]): ArtifactRequestsRepository {
             r.createdAt >= since,
         ).length,
       ),
+    markDelivered: (id, owner) => {
+      const row = rows.find(
+        (r) => r.id === id && r.owner === owner && r.state === "pending",
+      );
+      if (!row) return Promise.resolve(null);
+      row.state = "delivered";
+      return Promise.resolve(row);
+    },
+    listStale: (before, limit) =>
+      Promise.resolve(
+        rows
+          .filter((r) => isInFlight(r.state) && r.createdAt < before)
+          .slice(0, limit),
+      ),
     settle: (id, owner, settlement) => {
       const row = rows.find(
         (r) => r.id === id && r.owner === owner && isInFlight(r.state),
@@ -114,14 +134,39 @@ function fakeRequests(rows: ArtifactRequestRow[]): ArtifactRequestsRepository {
   };
 }
 
+function fakeDelivery(
+  outcome: Awaited<ReturnType<ArtifactRequestDelivery["deliver"]>> = {
+    ok: true,
+  },
+): ArtifactRequestDelivery & { calls: ArtifactRequestDeliveryInput[] } {
+  const calls: ArtifactRequestDeliveryInput[] = [];
+  return {
+    calls,
+    deliver: (input) => {
+      calls.push(input);
+      return Promise.resolve(outcome);
+    },
+  };
+}
+
+async function settleBackgroundWork(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 function serviceOver(
   pages: ReturnType<typeof page>[],
   rows: ArtifactRequestRow[] = [],
   owner = "o1",
+  overrides: {
+    delivery?: ArtifactRequestDelivery;
+    readPageSource?: (artifactId: string) => Promise<string | null>;
+  } = {},
 ) {
   return createArtifactRequestsService({
     requests: fakeRequests(rows),
     library: fakeLibrary(pages),
+    delivery: overrides.delivery ?? fakeDelivery(),
+    readPageSource: overrides.readPageSource ?? (() => Promise.resolve(null)),
     owner,
     surface: "ui",
   });
@@ -334,6 +379,8 @@ describe("creating a request", () => {
         findInFlight: () => Promise.resolve(null),
       },
       library: fakeLibrary([page()]),
+      delivery: fakeDelivery(),
+      readPageSource: () => Promise.resolve(null),
       owner: "o1",
       surface: "ui",
     });
@@ -341,6 +388,271 @@ describe("creating a request", () => {
     await expect(
       service.create({ artifactId: "art-1", action: "a", trigger: "user" }),
     ).rejects.toThrow(/already waiting on an answer/);
+  });
+});
+
+describe("carrying a request to the agent", () => {
+  // TEST_SCENARIO: The receipt is not the delivery. Once the row is committed the request is carried to the agent as an outbox event plus a wake, and the row says `delivered` only after the agent is up.
+  it("delivers the prompt and marks the row delivered", async () => {
+    const rows: ArtifactRequestRow[] = [];
+    const delivery = fakeDelivery();
+    const service = serviceOver([page()], rows, "o1", { delivery });
+
+    const receipt = await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      payload: { city: "Prague" },
+      trigger: "user",
+    });
+    expect(receipt.state).toBe("pending");
+    await settleBackgroundWork();
+
+    expect(delivery.calls).toHaveLength(1);
+    expect(delivery.calls[0]).toMatchObject({
+      requestId: receipt.requestId,
+      artifactId: "art-1",
+      agentId: "agent-1",
+    });
+    expect(delivery.calls[0]!.task).toContain("refresh");
+    expect(delivery.calls[0]!.task).toContain(receipt.requestId);
+    expect(rows[0]!.state).toBe("delivered");
+  });
+
+  // TEST_SCENARIO: The page's source is what the agent needs to answer sensibly, but the session keeps it once it has seen it. Repeating it on every request would pay for the same bytes again and again.
+  it("carries the page source on the first request only", async () => {
+    const rows: ArtifactRequestRow[] = [];
+    const delivery = fakeDelivery();
+    const service = serviceOver([page()], rows, "o1", {
+      delivery,
+      readPageSource: () => Promise.resolve("<h1>board</h1>"),
+    });
+
+    const first = await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+    await service.cancel(first.requestId);
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+
+    expect(delivery.calls[0]!.task).toContain("<h1>board</h1>");
+    expect(delivery.calls[1]!.task).not.toContain("<h1>board</h1>");
+  });
+
+  // TEST_SCENARIO: The page's source is a nice-to-have, not the request. If the object store cannot be read the agent is still asked — it can fetch the page with get_artifact.
+  it("asks without the source when the source cannot be read", async () => {
+    const delivery = fakeDelivery();
+    const service = serviceOver([page()], [], "o1", {
+      delivery,
+      readPageSource: () => Promise.reject(new Error("store down")),
+    });
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+
+    expect(delivery.calls).toHaveLength(1);
+    expect(delivery.calls[0]!.task).not.toContain("```html");
+  });
+
+  // TEST_SCENARIO: An agent that is gone, one the owner has no room to start, and a wake that just gave up are three different things to the person looking at the page, so each settles under its own reason.
+  it("settles with the reason the wake gave", async () => {
+    for (const reason of [
+      "agent_deleted",
+      "over_budget",
+      "wake_failed",
+    ] as const) {
+      const rows: ArtifactRequestRow[] = [];
+      const service = serviceOver([page()], rows, "o1", {
+        delivery: fakeDelivery({ ok: false, reason }),
+      });
+      const { requestId } = await service.create({
+        artifactId: "art-1",
+        action: "refresh",
+        trigger: "user",
+      });
+      await settleBackgroundWork();
+      await expect(service.get(requestId)).resolves.toMatchObject({
+        state: "failed",
+        failureReason: reason,
+      });
+    }
+  });
+
+  // TEST_SCENARIO: A failed delivery must free the page: the settle raises the live event so the waiting page hears the reason instead of timing out.
+  it("raises the live event when delivery fails", async () => {
+    const service = serviceOver([page()], [], "o1", {
+      delivery: fakeDelivery({ ok: false, reason: "over_budget" }),
+    });
+    const { seen, stop } = collect();
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+    stop();
+
+    expect(seen).toMatchObject([
+      {
+        type: EventType.ArtifactRequestSettled,
+        state: "failed",
+        failureReason: "over_budget",
+      },
+    ]);
+  });
+});
+
+describe("answering a request", () => {
+  // TEST_SCENARIO: The answer is the whole point: the agent's result is stored on the row and the live event tells the waiting page to read it.
+  it("stores the result and raises the live event", async () => {
+    const rows = [
+      settledRow({ id: "req-1", state: "delivered", settledAt: null }),
+    ];
+    const service = serviceOver([page()], rows);
+
+    const { seen, stop } = collect();
+    const outcome = await service.answer({
+      requestId: "req-1",
+      agentId: "agent-1",
+      result: { temperature: 21 },
+    });
+    stop();
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      request: { state: "answered", result: { temperature: 21 } },
+    });
+    expect(seen).toMatchObject([
+      { type: EventType.ArtifactRequestSettled, state: "answered" },
+    ]);
+  });
+
+  // TEST_SCENARIO: Attribution is the agent's own identity. One agent answering another's request would let a page be driven by an agent it never published from.
+  it("refuses a request that belongs to another agent", async () => {
+    const rows = [
+      settledRow({ id: "req-1", state: "delivered", settledAt: null }),
+    ];
+    const service = serviceOver([page()], rows);
+    await expect(
+      service.answer({
+        requestId: "req-1",
+        agentId: "agent-2",
+        result: { ok: true },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "no request req-1 belongs to this agent",
+    });
+    expect(rows[0]!.state).toBe("delivered");
+  });
+
+  // TEST_SCENARIO: A request takes exactly one answer. A second call, or an answer to a request the owner already cancelled, must say which state refused it so the agent stops retrying.
+  it("refuses a request that has already settled", async () => {
+    const rows = [
+      settledRow({ id: "req-answered", state: "answered" }),
+      settledRow({
+        id: "req-cancelled",
+        state: "failed",
+        failureReason: "cancelled",
+      }),
+    ];
+    const service = serviceOver([page()], rows);
+
+    await expect(
+      service.answer({
+        requestId: "req-answered",
+        agentId: "agent-1",
+        result: {},
+      }),
+    ).resolves.toMatchObject({ ok: false, error: /already answered/ });
+    await expect(
+      service.answer({
+        requestId: "req-cancelled",
+        agentId: "agent-1",
+        result: {},
+      }),
+    ).resolves.toMatchObject({ ok: false, error: /cancelled/ });
+  });
+
+  // TEST_SCENARIO: An unknown id reads the same as another agent's request — the tool must not confirm that some other agent's request exists.
+  it("refuses an unknown request", async () => {
+    const service = serviceOver([page()], []);
+    await expect(
+      service.answer({ requestId: "nope", agentId: "agent-1", result: {} }),
+    ).resolves.toMatchObject({ ok: false });
+  });
+});
+
+describe("expiring a request nobody answered", () => {
+  // TEST_SCENARIO: One request in flight blocks the page from asking again. If an agent never answers, the sweep must settle the request as `expired` — otherwise the page stays busy forever.
+  it("settles requests older than the TTL and leaves fresh ones alone", async () => {
+    const rows = [
+      settledRow({
+        id: "req-stale",
+        state: "delivered",
+        settledAt: null,
+        createdAt: new Date(Date.now() - ARTIFACT_REQUEST_TTL_MS - 1_000),
+      }),
+      settledRow({
+        id: "req-fresh",
+        state: "pending",
+        settledAt: null,
+        createdAt: new Date(),
+      }),
+    ];
+    const sweeper = createArtifactRequestExpirySweeper({
+      requests: fakeRequests(rows),
+      batchSize: 50,
+    });
+
+    const { seen, stop } = collect();
+    await expect(sweeper.tick()).resolves.toBe(1);
+    stop();
+
+    expect(rows[0]).toMatchObject({
+      state: "failed",
+      failureReason: "expired",
+    });
+    expect(rows[1]!.state).toBe("pending");
+    expect(seen).toMatchObject([
+      {
+        type: EventType.ArtifactRequestSettled,
+        requestId: "req-stale",
+        state: "failed",
+        failureReason: "expired",
+      },
+    ]);
+  });
+
+  // TEST_SCENARIO: The sweep runs on a timer for every owner, so it has no actor. An expiry must not be logged as something a person did.
+  it("names no actor on an expiry", async () => {
+    const rows = [
+      settledRow({
+        id: "req-stale",
+        state: "pending",
+        settledAt: null,
+        createdAt: new Date(Date.now() - ARTIFACT_REQUEST_TTL_MS - 1_000),
+      }),
+    ];
+    const sweeper = createArtifactRequestExpirySweeper({
+      requests: fakeRequests(rows),
+      batchSize: 50,
+    });
+
+    const { seen, stop } = collect();
+    await sweeper.tick();
+    stop();
+
+    expect(seen[0]).not.toHaveProperty("actorSub");
   });
 });
 
