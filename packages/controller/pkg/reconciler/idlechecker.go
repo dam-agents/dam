@@ -88,6 +88,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
+		if isHibernated(agent) {
+			continue
+		}
+
 		if c.busyProbe(ctx, name) {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
@@ -102,6 +106,23 @@ func (c *IdleChecker) check(ctx context.Context) {
 	}
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+func isHibernated(agent *unstructured.Unstructured) bool {
+	conds, found, err := unstructured.NestedSlice(agent.Object, "status", "conditions")
+	if err != nil || !found {
+		return false
+	}
+	for _, raw := range conds {
+		cond, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if cond["type"] == apiv1.ConditionReady && cond["reason"] == apiv1.ReasonHibernated {
+			return true
+		}
+	}
+	return false
 }
 
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
