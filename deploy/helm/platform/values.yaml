@@ -292,13 +292,16 @@ seaweedfs:
   secretAccessKey: null
   storage: 10Gi
   storageClass: ""
+  # Measured at 283Mi idle on a store holding little content, so the old 128Mi
+  # request under-accounted it by more than half and left it high on the
+  # kubelet's eviction order. The footprint grows with what the library holds.
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 320Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 1Gi
 
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
 # chart installed out-of-band first (deploy/tasks.toml). See docs/architecture/observability.md.
@@ -316,13 +319,18 @@ clickstack:
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
     ttl: 720h
+    # The memory_limiter processor refuses OTLP ingest above its soft limit,
+    # which upstream defines as limit_percentage minus spike_limit_percentage
+    # of this limit — 55% with the values in templates/clickstack/collector.yaml.
+    # At 512Mi that put refusal at 281Mi with the collector idling at 387Mi,
+    # which is how it accumulated 99 SIGKILLs. At 1Gi the soft limit is 563Mi.
     resources:
       requests:
         cpu: 100m
-        memory: 256Mi
+        memory: 448Mi
       limits:
         cpu: "1"
-        memory: 512Mi
+        memory: 1Gi
 
   # --- forwarded to the clickstack subchart ---
   # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
@@ -512,13 +520,18 @@ keycloak:
     # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
     caCert: ""
 
+  # Idles at 623Mi, above the old 512Mi request, which put it high on the
+  # kubelet's eviction order. No explicit heap size is set, so the JVM sizes
+  # its heap as a percentage of the limit and non-heap has to fit in what is
+  # left — at a 1Gi limit a filled heap leaves too little for metaspace,
+  # threads and code cache.
   resources:
     requests:
       cpu: 200m
-      memory: 512Mi
+      memory: 768Mi
     limits:
       cpu: "1"
-      memory: 1Gi
+      memory: 1536Mi
 
 # -- Ingress (hostnames derived from `domain` and `urls` values above)
 #
