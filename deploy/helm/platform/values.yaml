@@ -311,13 +311,15 @@ clickstack:
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
     ttl: 720h
-    # The memory_limiter processor starts refusing OTLP ingest at
-    # limit_percentage (80) of this limit. At 512Mi that threshold is 410Mi and
-    # the collector idles at 387Mi, which is how it accumulated 99 SIGKILLs.
+    # The memory_limiter processor refuses OTLP ingest above its soft limit,
+    # which upstream defines as limit_percentage minus spike_limit_percentage
+    # of this limit — 55% with the values in templates/clickstack/collector.yaml.
+    # At 512Mi that put refusal at 281Mi with the collector idling at 387Mi,
+    # which is how it accumulated 99 SIGKILLs. At 1Gi the soft limit is 563Mi.
     resources:
       requests:
         cpu: 100m
-        memory: 384Mi
+        memory: 448Mi
       limits:
         cpu: "1"
         memory: 1Gi
