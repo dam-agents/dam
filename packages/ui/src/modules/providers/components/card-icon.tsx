@@ -36,6 +36,11 @@ const STYLES: Record<
     bg: "",
     iconClass: "w-full h-full",
   },
+  "bob-inference": {
+    Icon: BobIcon,
+    bg: "",
+    iconClass: "w-full h-full",
+  },
 };
 
 const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
@@ -49,6 +54,7 @@ const LARGE_ICON_CLASS: Record<ProviderPresetType, string> = {
   openai: "!w-8 !h-8",
   "ibm-litellm": "!text-[40px]",
   bob: "",
+  "bob-inference": "",
 };
 
 export function CardIcon({
@@ -74,6 +80,7 @@ export function CardIcon({
           size === "lg" && LARGE_ICON_CLASS[provider],
           size === "sm" &&
             provider !== "bob" &&
+            provider !== "bob-inference" &&
             (provider === "ibm-litellm" ? "!text-base" : "!w-3.5 !h-3.5"),
         )}
       />

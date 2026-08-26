@@ -9,6 +9,7 @@ import {
 import { AnthropicForm } from "./anthropic/form.js";
 import { type Mode, MODES } from "./anthropic/modes.js";
 import { BobForm } from "./bob/form.js";
+import { BobInferenceForm } from "./bob-inference/form.js";
 import { IbmLitellmForm } from "./ibm-litellm/form.js";
 import { OpenAIForm } from "./openai/form.js";
 import {
@@ -94,6 +95,23 @@ export function ProviderConnectDialog({
                   authKind: "header",
                   value,
                   configInputs: bobConfigInputs(pins),
+                },
+              })
+            }
+          />
+        )}
+        {provider === "bob-inference" && (
+          <BobInferenceForm
+            variant={variant}
+            onCancel={onClose}
+            onSave={({ value }) =>
+              persist({
+                value,
+                createInput: {
+                  templateId: "bob-inference",
+                  name: "bob-inference",
+                  authKind: "header",
+                  value,
                 },
               })
             }

@@ -1,4 +1,9 @@
-export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
+export type ProviderPresetType =
+  | "anthropic"
+  | "ibm-litellm"
+  | "openai"
+  | "bob"
+  | "bob-inference";
 
 export interface EnvMapping {
   envName: string;
@@ -83,6 +88,35 @@ export function bobPinsFromEnvMappings(
   if (maxCost) pins.maxCost = maxCost;
   if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
   return pins;
+}
+
+export const BOB_INFERENCE_PATH_PATTERN = "/inference/*";
+export const BOB_INFERENCE_BASE_URL = `https://${BOB_HOST}/inference`;
+export const BOB_INFERENCE_PREMIUM_MODEL = "premium";
+export const BOB_INFERENCE_FAST_MODEL = "flash";
+
+export function bobInferenceEnvMappings(): EnvMapping[] {
+  return [
+    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "ANTHROPIC_BASE_URL", placeholder: BOB_INFERENCE_BASE_URL },
+    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
+    {
+      envName: "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+    },
+    {
+      envName: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+    },
+    {
+      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      placeholder: BOB_INFERENCE_PREMIUM_MODEL,
+    },
+    {
+      envName: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+      placeholder: BOB_INFERENCE_FAST_MODEL,
+    },
+  ];
 }
 
 export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
@@ -187,6 +221,27 @@ export const PROVIDERS = {
         label: "API Key",
         templateId: "bob",
         defaultEnvMappings: bobEnvMappings(),
+        injection: {
+          headerName: "Authorization",
+          valueFormat: "Apikey {value}",
+        },
+        extraInjections: [
+          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
+        ],
+      },
+    ],
+  },
+  "bob-inference": {
+    id: "bob-inference",
+    displayName: "Bob Inference",
+    hostPattern: BOB_HOST,
+    pathPattern: BOB_INFERENCE_PATH_PATTERN,
+    modes: [
+      {
+        key: "api-key",
+        label: "API Key",
+        templateId: "bob-inference",
+        defaultEnvMappings: bobInferenceEnvMappings(),
         injection: {
           headerName: "Authorization",
           valueFormat: "Apikey {value}",

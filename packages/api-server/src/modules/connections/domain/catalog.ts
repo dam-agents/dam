@@ -4,7 +4,9 @@ import {
   ibmLitellmEnvMappings,
   openaiEnvMappings,
   bobEnvMappings,
+  bobInferenceEnvMappings,
   BOB_CHAT_MODES,
+  BOB_INFERENCE_PATH_PATTERN,
   IBM_LITELLM_HOST,
   BOB_HOST,
 } from "api-server-api";
@@ -222,6 +224,38 @@ const BOB: HeaderConnectionTemplate = {
       label: "Mode",
       hint: `Default mode for new sessions. One of: ${BOB_CHAT_MODES.join(", ")}.`,
       enumValues: BOB_CHAT_MODES,
+    },
+  ],
+};
+
+const BOB_INFERENCE: HeaderConnectionTemplate = {
+  id: "bob-inference",
+  name: "Bob Inference",
+  category: "app",
+  isCustom: false,
+  description:
+    "Bob's Anthropic Messages route — Claude models for Claude Code, no LiteLLM needed.",
+  iconSlug: "bob",
+  authKind: "header",
+  host: BOB_HOST,
+  headerName: "Authorization",
+  valueFormat: "Apikey {value}",
+  contributions: [
+    ...envContributions(bobInferenceEnvMappings()),
+    {
+      kind: "egress-inject",
+      host: BOB_HOST,
+      pathPattern: BOB_INFERENCE_PATH_PATTERN,
+      headerName: "Authorization",
+      valueFormat: "Apikey {value}",
+    },
+    {
+      kind: "egress-inject",
+      host: BOB_HOST,
+      pathPattern: BOB_INFERENCE_PATH_PATTERN,
+      headerName: BOB_QUERY_PARAM_HEADER,
+      valueFormat: "{value}",
+      queryParamName: "key",
     },
   ],
 };
@@ -795,6 +829,7 @@ export function buildCatalog(
     OPENAI,
     IBM_LITELLM,
     BOB,
+    BOB_INFERENCE,
     MODAL,
     github(creds.github),
     GITHUB_PAT,

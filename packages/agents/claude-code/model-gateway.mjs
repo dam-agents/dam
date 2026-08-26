@@ -34,37 +34,55 @@ const resolveModel = (name) =>
   knownModels.get(name) ??
   (name.toLowerCase().startsWith(PREFIX) ? name.slice(PREFIX.length) : name);
 
-const isEmbedding = (m) =>
-  ["id", "mode", "type"].some((f) =>
-    String(m?.[f] ?? "")
+const CATALOG_PATHS = ["/v1/models?limit=1000", "/v1/model/info"];
+
+const modelId = (m) => {
+  const id = m?.id ?? m?.model_name ?? m?.name;
+  return typeof id === "string" && id ? id : null;
+};
+
+const isEmbedding = (m, id) =>
+  [id, m?.mode, m?.type, m?.model_info?.mode].some((f) =>
+    String(f ?? "")
       .toLowerCase()
       .includes("embedding"),
   );
 
+async function fetchCatalogFrom(path) {
+  const r = await fetch(`${UPSTREAM}${path}`, {
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      "x-api-key": TOKEN,
+      "anthropic-version": "2023-06-01",
+      accept: "application/json",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!r.ok) throw new Error(`upstream responded ${r.status}`);
+  const data = (await r.json())?.data;
+  if (!Array.isArray(data)) return null;
+  const ids = [
+    ...new Set(
+      data
+        .map((m) => modelId(m))
+        .filter((id, i) => id && !isEmbedding(data[i], id)),
+    ),
+  ].sort();
+  return ids.length ? ids : null;
+}
+
 async function fetchCatalog() {
-  try {
-    const r = await fetch(`${UPSTREAM}/v1/models?limit=1000`, {
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "x-api-key": TOKEN,
-        "anthropic-version": "2023-06-01",
-        accept: "application/json",
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!r.ok) throw new Error(`upstream responded ${r.status}`);
-    const data = (await r.json())?.data;
-    if (!Array.isArray(data)) return null;
-    const ids = [
-      ...new Set(
-        data.filter((m) => m?.id && !isEmbedding(m)).map((m) => String(m.id)),
-      ),
-    ].sort();
-    return ids.length ? ids : null;
-  } catch (err) {
-    log(`model fetch failed (${err.message}); keeping current models`);
-    return null;
+  for (const path of CATALOG_PATHS) {
+    try {
+      const ids = await fetchCatalogFrom(path);
+      if (ids) return ids;
+      log(`no usable models at ${path}`);
+    } catch (err) {
+      log(`model fetch failed at ${path} (${err.message})`);
+    }
   }
+  log("no catalog endpoint answered; keeping current models");
+  return null;
 }
 
 async function refreshCatalog() {
