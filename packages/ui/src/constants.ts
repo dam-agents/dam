@@ -13,4 +13,4 @@ export const MCP_DOCS_URL =
   "https://pages.github.ibm.com/dam-agents/docs/core-concepts/connections/#mcp-servers";
 
 export const COMPUTE_REQUEST_URL =
-  "https://slack.com/app_redirect?channel=DAMBUDGET";
+  "https://ibm.enterprise.slack.com/archives/C0B3F03NB24";
