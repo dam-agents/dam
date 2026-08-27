@@ -119,8 +119,22 @@ requests past that TTL as `expired`, because the outbox expiry only drops the ev
 agent's mesh identity — a harness cannot answer another agent's request, and the tool refuses a
 request that is not pending or not its own.
 
-**postMessage protocol** (the page's public API, and the only thing an agent needs to know to
-write an interactive page):
+**Page API** (the whole of what an agent has to know to write an interactive page). The renderer
+injects a shim into an interactive page, which puts this on the page's `window`:
+
+```
+await platform.ask(action, payload?)   // resolves with the agent's result
+platform.onState(cb)                   // "sent" | "waking" | "queued" | "running"
+platform.ready                         // resolves once the app has handed over the port
+```
+
+A refusal is a rejection carrying `{ reason, message }` from the named reason set above. The
+shim owns the connect handshake, the `ref`, and matching a reply to the ask that is waiting for
+it. It does not queue, retry or pace — one in flight is the app's rule and the server's rule, and
+`busy` reaches the page as a rejection like any other.
+
+**postMessage transport** (between the app and the shim, not the page's API — a page that talks
+to it directly is reaching under the contract, and we may change these shapes):
 
 ```
 app  → page  { type: "artifact.connect" }   + one MessagePort, on load
@@ -130,10 +144,10 @@ port → page  { type: "artifact.answer",  ref, result }
 port → page  { type: "artifact.failed",  ref, reason, message }
 ```
 
-`ref` is minted by the page and never leaves the browser; the app maps it to the server-side
+`ref` is minted by the shim and never leaves the browser; the app maps it to the server-side
 request id.
 
-The page asks on the window: `window.parent.postMessage(request, "*")`. The app drops anything
+The shim asks on the window: `window.parent.postMessage(request, "*")`. The app drops anything
 whose `event.source` is not its own iframe, and anything that is not the shape above.
 
 Replies come back on a **MessagePort**, not on the window. The frame is `srcDoc` inside
@@ -141,7 +155,7 @@ Replies come back on a **MessagePort**, not on the window. The frame is `srcDoc`
 SyntaxError in every browser, and a concrete target origin is therefore not reachable. A port is
 strictly stronger than one anyway: it is bound to the document that received it, so a page that
 navigates itself away cannot be handed an answer. The app posts `artifact.connect` with the port
-once, on the frame's `load`, and the page keeps `event.ports[0]`.
+once, on the frame's `load`, and the shim keeps `event.ports[0]`.
 
 **Caps** (Q12): the server refuses beyond **60 requests per artifact per rolling hour**
 (`rate_limited`) and beyond **one in flight per artifact** (`busy`). The client additionally
