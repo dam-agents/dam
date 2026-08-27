@@ -18,6 +18,7 @@ export interface RunningAgentStateCache extends AgentStateCache {
 }
 
 const RESTART_DELAY_MS = 5_000;
+const MAX_RESTART_DELAY_MS = 60_000;
 
 type LiveReads = Pick<K8sClient, "getCustomObject" | "listCustomObjects">;
 
@@ -63,19 +64,33 @@ export function startAgentStateCache(deps: {
 
   let stopped = false;
   let restartTimer: NodeJS.Timeout | undefined;
+  let restartDelay = RESTART_DELAY_MS;
+  let attempt = 0;
 
   async function connect(): Promise<void> {
     if (stopped) return;
+    const mine = ++attempt;
     try {
       await deps.informer.start();
-      synced = true;
     } catch (err) {
-      synced = false;
-      deps.log(
-        `agent cache could not start, serving live reads: ${String(err)}`,
-      );
-      scheduleRestart();
+      abandon(`agent cache could not start: ${String(err)}`);
+      return;
     }
+    if (stopped) {
+      void deps.informer.stop();
+      return;
+    }
+    if (mine !== attempt) return;
+    synced = true;
+    restartDelay = RESTART_DELAY_MS;
+  }
+
+  function abandon(reason: string): void {
+    attempt += 1;
+    synced = false;
+    deps.log(`${reason} — serving live reads`);
+    releaseAll();
+    scheduleRestart();
   }
 
   function scheduleRestart(): void {
@@ -83,18 +98,16 @@ export function startAgentStateCache(deps: {
     restartTimer = setTimeout(() => {
       restartTimer = undefined;
       void connect();
-    }, RESTART_DELAY_MS);
+    }, restartDelay);
     restartTimer.unref();
+    restartDelay = Math.min(restartDelay * 2, MAX_RESTART_DELAY_MS);
   }
 
   deps.informer.on("add", onObject);
   deps.informer.on("update", onObject);
   deps.informer.on("delete", onObject);
   deps.informer.on("error", (err) => {
-    synced = false;
-    deps.log(`agent cache desynced, serving live reads: ${String(err)}`);
-    releaseAll();
-    scheduleRestart();
+    abandon(`agent cache desynced: ${String(err)}`);
   });
 
   void connect();
@@ -132,6 +145,7 @@ export function startAgentStateCache(deps: {
     async stop() {
       stopped = true;
       synced = false;
+      attempt += 1;
       if (restartTimer) clearTimeout(restartTimer);
       releaseAll();
       await deps.informer.stop();

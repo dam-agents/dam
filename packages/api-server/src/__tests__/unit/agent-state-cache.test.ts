@@ -25,6 +25,7 @@ function fakeInformer(objects: KubeObject[] = []) {
   const handlers = new Map<string, Array<(arg?: unknown) => void>>();
   let starts = 0;
   let failStart: unknown = null;
+  let failList: unknown = null;
   const fire = (verb: string, arg?: unknown) => {
     for (const cb of handlers.get(verb) ?? []) cb(arg);
   };
@@ -38,6 +39,10 @@ function fakeInformer(objects: KubeObject[] = []) {
       fire("connect");
       await Promise.resolve();
       if (failStart) throw failStart;
+      if (failList) {
+        fire("error", failList);
+        return;
+      }
       for (const o of objects) cached.set(o.metadata?.name ?? "", o);
     },
     stop: () => Promise.resolve(),
@@ -51,6 +56,12 @@ function fakeInformer(objects: KubeObject[] = []) {
     startCount: () => starts,
     failNextStart: (err: unknown) => {
       failStart = err;
+    },
+    failNextList: (err: unknown) => {
+      failList = err;
+    },
+    healList: () => {
+      failList = null;
     },
     healStart: () => {
       failStart = null;
@@ -88,6 +99,28 @@ describe("agent state cache", () => {
 
     await settled(null);
     expect(await cache.get("a1")).not.toBeNull();
+  });
+
+  // TEST_SCENARIO: A failed initial list resolves start() normally, so resolving is not on its own proof the store is populated.
+  it("stays on live reads when the initial list fails", async () => {
+    const { client } = fakeK8s([agent("a1")]);
+    const f = cacheOver([agent("a1")], client);
+    f.failNextList(new Error("list refused"));
+    f.fire("error", new Error("list refused"));
+    await settled(null);
+
+    expect(await f.cache.get("a1")).not.toBeNull();
+    expect(await f.cache.get("nope")).toBeNull();
+  });
+
+  // TEST_SCENARIO: A cache stopped while its start is in flight must not come up synced afterwards.
+  it("does not mark itself synced after being stopped mid-start", async () => {
+    const { client } = fakeK8s([agent("a1")]);
+    const f = cacheOver([], client);
+    await f.cache.stop();
+    await settled(null);
+
+    expect(await f.cache.get("a1")).not.toBeNull();
   });
 
   // TEST_SCENARIO: The watch stops on error, so the cache must restart it rather than serving live reads forever.
