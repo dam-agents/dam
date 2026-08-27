@@ -108,6 +108,7 @@ export function startAgentStateCache(deps: {
       };
     },
     async stop() {
+      synced = false;
       releaseAll();
       await deps.informer.stop();
     },

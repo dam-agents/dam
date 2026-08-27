@@ -118,6 +118,19 @@ describe("agent state cache", () => {
     expect(woken).toBe(true);
   });
 
+  // TEST_SCENARIO: A read racing shutdown must not be answered from the stopped informer's frozen view.
+  it("reads live again once stopped", async () => {
+    const { client } = fakeK8s([agent("fresh")]);
+    const { cache, fire } = cacheOver([agent("stale")], client);
+    fire("connect");
+    expect(await cache.get("stale")).not.toBeNull();
+
+    await cache.stop();
+
+    expect(await cache.get("stale")).toBeNull();
+    expect(await cache.get("fresh")).not.toBeNull();
+  });
+
   // TEST_SCENARIO: A desync releases waiters so a polling caller re-checks instead of sleeping through the gap.
   it("releases waiters on desync", async () => {
     const { cache, fire } = cacheOver([]);
