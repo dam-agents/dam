@@ -17,10 +17,12 @@ interface OwnerHolder {
   stopAgentsSignal: () => void;
   reconciling: boolean;
   again: boolean;
+  retry: ReturnType<typeof setTimeout> | undefined;
   closed: boolean;
 }
 
 const MAX_PENDING = 256;
+const RECONCILE_RETRY_MS = 5_000;
 
 export function createPodSessionsService(
   deps: PodSessionsDeps,
@@ -58,6 +60,12 @@ export function createPodSessionsService(
       deps.log(
         `pod-sessions reconcile failed for ${ownerSub}: ${(error as Error).message}`,
       );
+      if (!holder.closed) {
+        holder.retry ??= setTimeout(() => {
+          holder.retry = undefined;
+          void reconcile(ownerSub);
+        }, RECONCILE_RETRY_MS);
+      }
     } finally {
       holder.reconciling = false;
       if (holder.again && !holder.closed) {
@@ -79,6 +87,7 @@ export function createPodSessionsService(
         stopAgentsSignal: () => {},
         reconciling: false,
         again: false,
+        retry: undefined,
         closed: false,
       };
       holders.set(ownerSub, holder);
@@ -95,6 +104,7 @@ export function createPodSessionsService(
       current.listeners.delete(listener);
       if (current.listeners.size > 0) return;
       current.closed = true;
+      if (current.retry) clearTimeout(current.retry);
       current.stopAgentsSignal();
       for (const watch of current.watches.values()) watch.close();
       current.watches.clear();

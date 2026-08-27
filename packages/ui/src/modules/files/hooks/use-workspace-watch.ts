@@ -1,6 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { workspaceNoticeSchema } from "agent-runtime-api";
 import { useEffect } from "react";
 
+import { watchWithRetry } from "../../../lib/watch-retry.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { fileKeys } from "../api/keys.js";
@@ -15,16 +17,19 @@ export function useWorkspaceWatch(agentId: string | null) {
 
   useEffect(() => {
     if (!agentId || !operable) return;
-    const subscription = agentTrpc(agentId).files.watch.subscribe(
-      { paths: JSON.parse(pathKey) as string[] },
-      {
-        onData: () => {
-          void queryClient.invalidateQueries({
-            queryKey: fileKeys.tree(agentId),
-          });
+    return watchWithRetry((onError) =>
+      agentTrpc(agentId).files.watch.subscribe(
+        { paths: JSON.parse(pathKey) as string[] },
+        {
+          onData: (notice) => {
+            if (!workspaceNoticeSchema.safeParse(notice).success) return;
+            void queryClient.invalidateQueries({
+              queryKey: fileKeys.tree(agentId),
+            });
+          },
+          onError,
         },
-      },
+      ),
     );
-    return () => subscription.unsubscribe();
   }, [agentId, operable, pathKey, queryClient]);
 }

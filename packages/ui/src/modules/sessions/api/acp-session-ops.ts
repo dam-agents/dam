@@ -82,12 +82,25 @@ export async function listSessionsOn(
     .sort(byRecencyThenId);
 }
 
+const POD_TYPE: Record<PodSession["type"], SessionType> = {
+  regular: SessionType.Regular,
+  channel_slack: SessionType.ChannelSlack,
+  channel_telegram: SessionType.ChannelTelegram,
+  schedule_cron: SessionType.ScheduleCron,
+  experiment_execute: SessionType.ExperimentExecute,
+};
+
+const POD_MODE: Record<PodSession["mode"], SessionMode> = {
+  chat: SessionMode.Chat,
+  terminal: SessionMode.Terminal,
+};
+
 function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
   return {
     sessionId: s.sessionId,
     agentId,
-    type: s.type as SessionType,
-    mode: s.mode as SessionMode,
+    type: POD_TYPE[s.type],
+    mode: POD_MODE[s.mode],
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
     experimentId: s.experimentId,

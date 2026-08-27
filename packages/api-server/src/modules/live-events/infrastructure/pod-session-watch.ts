@@ -1,5 +1,8 @@
 import { createTRPCClient, createWSClient, wsLink } from "@trpc/client";
-import type { AppRouter as AgentRuntimeRouter } from "agent-runtime-api";
+import {
+  podSessionNoticeSchema,
+  type AppRouter as AgentRuntimeRouter,
+} from "agent-runtime-api";
 
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 import type { PodSessionWatch } from "../services/pod-sessions-service.js";
@@ -21,7 +24,13 @@ export function createPodSessionWatcher(
       links: [wsLink({ client: wsClient })],
     });
     const subscription = client.sessions.watch.subscribe(undefined, {
-      onData: () => onNotice(),
+      onData: (raw) => {
+        if (!podSessionNoticeSchema.safeParse(raw).success) {
+          log(`dropped unknown session notice from ${agentId}`);
+          return;
+        }
+        onNotice();
+      },
       onError: () => log(`pod session watch dropped for ${agentId}`),
     });
 
