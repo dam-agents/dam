@@ -80,6 +80,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 	now := time.Now().UTC()
 	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
+	atZero := c.agentsAtZero(ctx)
 	hibernated := 0
 	for i := range agents.Items {
 		agent := &agents.Items[i]
@@ -88,7 +89,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if isHibernated(agent) {
+		if atZero[name] {
 			continue
 		}
 
@@ -108,21 +109,32 @@ func (c *IdleChecker) check(ctx context.Context) {
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
 }
 
-func isHibernated(agent *unstructured.Unstructured) bool {
-	conds, found, err := unstructured.NestedSlice(agent.Object, "status", "conditions")
-	if err != nil || !found {
-		return false
+func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
+	sss, err := c.client.AppsV1().
+		StatefulSets(c.config.Namespace).
+		List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.ErrorContext(ctx, "idle checker: listing statefulsets", "error", err)
+		return nil
 	}
-	for _, raw := range conds {
-		cond, ok := raw.(map[string]any)
-		if !ok {
+	scaledUp := map[string]bool{}
+	seen := map[string]bool{}
+	for i := range sss.Items {
+		ss := &sss.Items[i]
+		name := ss.Labels[LabelAgent]
+		if name == "" {
 			continue
 		}
-		if cond["type"] == apiv1.ConditionReady && cond["reason"] == apiv1.ReasonHibernated {
-			return true
+		seen[name] = true
+		if ss.Spec.Replicas == nil || *ss.Spec.Replicas != 0 {
+			scaledUp[name] = true
 		}
 	}
-	return false
+	atZero := map[string]bool{}
+	for name := range seen {
+		atZero[name] = !scaledUp[name]
+	}
+	return atZero
 }
 
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
