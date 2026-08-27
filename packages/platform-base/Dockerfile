@@ -150,6 +150,8 @@ RUN set -eu; \
     done
 RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
     mise install jq fd rg gh; \
+    for t in jq fd rg gh; do chown -R 65532 "/usr/local/share/mise/installs/$t"; done; \
+    chown 65532 /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; \
     mkdir /usr/local/share/tool-bin; \
     chown 65532 /usr/local/share/tool-bin
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
