@@ -176,8 +176,10 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -263,8 +265,10 @@ jobs:
           file: packages/platform-base/Dockerfile
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=platform-base-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=platform-base-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
+            type=gha,scope=platform-base-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || format('type=gha,mode=max,scope=platform-base-{0}', matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -351,8 +355,10 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -446,8 +452,10 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -584,8 +592,10 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: type=gha,scope=mock
-          cache-to: type=gha,mode=max,scope=mock
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
+            type=gha,scope=mock
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || 'type=gha,mode=max,scope=mock' }}
 
   e2e:
     name: mise e2e

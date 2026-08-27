@@ -8,12 +8,10 @@ USER root
 # would go stale on template upgrade); install by name — a bare `mise install`
 # would also preinstall every lazy tool from the base image's /etc/mise/config.toml
 COPY harness-tools.toml /etc/mise/conf.d/harness-tools.toml
-# run postinstall manually: mise's npm backend skips it, claude needs its native binary
 RUN --mount=type=cache,target=/root/.npm \
-    mise install "npm:@anthropic-ai/claude-code" "npm:@agentclientprotocol/claude-agent-acp" &&\
-    node "$(mise where npm:@anthropic-ai/claude-code)/lib/node_modules/@anthropic-ai/claude-code/install.cjs" &&\
+    npm_config_cache=/root/.npm \
+    mise install "npm:@agentclientprotocol/claude-agent-acp" &&\
     chown -R 65532 /etc/mise \
-      "$(dirname "$(mise where npm:@anthropic-ai/claude-code)")" \
       "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")" &&\
     find /etc/mise -name '*.lock' -exec chmod 644 {} +
 
@@ -22,7 +20,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # explicit flags below turn exactly that off; the umbrella
 # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is deliberately NOT set — it also
 # switches off wanted behavior beyond these constituents. The auto-updater
-# loss is intentional since the harness version is pinned above. Platform
+# loss is intentional since the CLI rides the adapter pin. Platform
 # OTEL export is a separate, opt-in path and is unaffected.
 ENV DISABLE_TELEMETRY=1 \
     DISABLE_ERROR_REPORTING=1 \
@@ -51,6 +49,11 @@ COPY --chmod=0755 harness-terminal.sh /usr/local/bin/harness-terminal
 # harness-history-lib.mjs imports the adapter's own replay conversion; the
 # symlink pins the resolution to whatever version mise installed above
 RUN ln -s "$(mise where npm:@agentclientprotocol/claude-agent-acp)/lib/node_modules/@agentclientprotocol/claude-agent-acp" /usr/local/lib/claude-agent-acp
+RUN set -eu; \
+    cli="$(echo /usr/local/lib/claude-agent-acp/node_modules/@anthropic-ai/claude-agent-sdk-*/claude)"; \
+    test -x "$cli"; \
+    ln -s "$cli" /usr/local/bin/claude
+ENV CLAUDE_CODE_EXECUTABLE=/usr/local/bin/claude
 RUN ln -s ../.agents/skills /app/working-dir/.claude/skills &&\
     mkdir -p /etc/claude-code &&\
     ln -s /etc/AGENTS.md /etc/claude-code/CLAUDE.md
