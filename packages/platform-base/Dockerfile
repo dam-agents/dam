@@ -149,10 +149,8 @@ RUN set -eu; \
     chmod 755 "$bin"; \
     done
 RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
-    eager="jq fd rg"; \
-    mise install $eager; \
+    mise install jq fd rg; \
     mkdir /usr/local/share/tool-bin; \
-    for bin in $eager; do ln -s "$(mise which "$bin")" "/usr/local/share/tool-bin/$bin"; done; \
     chown 65532 /usr/local/share/tool-bin
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
