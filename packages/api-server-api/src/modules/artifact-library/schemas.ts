@@ -143,3 +143,25 @@ export const artifactRequestCreateInputSchema = z.object({
 export const artifactRequestIdInputSchema = z.object({
   requestId: z.string().min(1),
 });
+
+export const ARTIFACT_BRIDGE_CONNECT_TYPE = "artifact.connect";
+export const ARTIFACT_BRIDGE_REQUEST_TYPE = "artifact.request";
+export const ARTIFACT_BRIDGE_STATE_TYPE = "artifact.state";
+export const ARTIFACT_BRIDGE_ANSWER_TYPE = "artifact.answer";
+export const ARTIFACT_BRIDGE_FAILED_TYPE = "artifact.failed";
+
+export const ARTIFACT_BRIDGE_REF_MAX_LENGTH = 200;
+
+export const artifactRequestProgressSchema = z.enum([
+  "sent",
+  "waking",
+  "queued",
+  "running",
+]);
+
+export const pageArtifactRequestSchema = z.object({
+  type: z.literal(ARTIFACT_BRIDGE_REQUEST_TYPE),
+  ref: z.string().min(1).max(ARTIFACT_BRIDGE_REF_MAX_LENGTH),
+  action: z.string().trim().min(1).max(ARTIFACT_REQUEST_ACTION_MAX_LENGTH),
+  payload: artifactRequestPayloadSchema.optional(),
+});

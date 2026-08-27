@@ -198,6 +198,9 @@ export type {
   ArtifactRequestState,
   ArtifactRequestTrigger,
   ArtifactRequestsService,
+  ArtifactRequestProgress,
+  ArtifactBridgeReply,
+  PageArtifactRequest,
 } from "./modules/artifact-library/types.js";
 export {
   artifactKindSchema,
@@ -210,6 +213,14 @@ export {
   artifactRequestRefusalSchema,
   artifactRequestStateSchema,
   artifactRequestTriggerSchema,
+  artifactRequestProgressSchema,
+  pageArtifactRequestSchema,
+  ARTIFACT_BRIDGE_CONNECT_TYPE,
+  ARTIFACT_BRIDGE_REQUEST_TYPE,
+  ARTIFACT_BRIDGE_STATE_TYPE,
+  ARTIFACT_BRIDGE_ANSWER_TYPE,
+  ARTIFACT_BRIDGE_FAILED_TYPE,
+  ARTIFACT_BRIDGE_REF_MAX_LENGTH,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,

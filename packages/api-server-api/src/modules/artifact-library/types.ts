@@ -177,3 +177,22 @@ export interface ArtifactRequestsService {
   get(requestId: string): Promise<ArtifactRequest | null>;
   cancel(requestId: string): Promise<ArtifactRequest>;
 }
+
+export type ArtifactRequestProgress = "sent" | "waking" | "queued" | "running";
+
+export interface PageArtifactRequest {
+  type: "artifact.request";
+  ref: string;
+  action: string;
+  payload?: Record<string, unknown>;
+}
+
+export type ArtifactBridgeReply =
+  | { type: "artifact.state"; ref: string; state: ArtifactRequestProgress }
+  | { type: "artifact.answer"; ref: string; result: unknown }
+  | {
+      type: "artifact.failed";
+      ref: string;
+      reason: ArtifactRequestFailureReason;
+      message: string;
+    };

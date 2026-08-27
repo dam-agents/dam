@@ -19,8 +19,10 @@ Apply the `/react-ui-engineering` skill.
    which today only pushes data in. Add an inbound listener that:
    - ignores any message whose `event.source` is not this iframe's `contentWindow`,
    - ignores any message that does not match the pinned `artifact.request` shape,
-   - posts replies with a concrete target origin, never `"*"` (the existing `postMessage(postData, "*")`
-     is pre-existing and should be tightened in the same pass).
+   - posts replies over a MessagePort handed to the page on `load`, never on the window (a
+     concrete target origin is not reachable for an opaque-origin frame — see the pinned
+     protocol in the README; the existing `postMessage(postData, "*")` carries the experiment
+     feed and stays as it is, because dashboard pages listen for it on the window).
    Keep the frame dumb: it forwards, it does not call tRPC.
 2. **The broker.** A hook in `packages/ui/src/modules/artifacts/hooks/` owning the mapping from
    the page's `ref` to a server request id, the mutation, the subscription to settles on the
@@ -35,7 +37,12 @@ Apply the `/react-ui-engineering` skill.
    `agent_deleted` says the page still works as a document.
 5. **Gating.** The interactive surfaces appear only when the `interactive-artifacts` flag is on,
    as the other flagged destinations do.
-6. **Where it applies.** The bridge belongs to the artifact preview surfaces —
+6. **Reaching the conversation.** A page's requests land in an Artifact Session the person
+   never chose and cannot find. Both preview surfaces get a Session button that opens it,
+   resolved the way a schedule's runs already are: list the agent's sessions over ACP and take
+   the one whose `artifactId` matches. It is absent while the agent is asleep or before the
+   first request, because there is no session to open yet.
+7. **Where it applies.** The bridge belongs to the artifact preview surfaces —
    `artifact-preview-dialog.tsx` and `docked-artifact-panel.tsx`. The experiments dashboard
    canvas uses the same frame and must keep working unchanged; it pushes data in and never asks.
 
@@ -44,9 +51,11 @@ Apply the `/react-ui-engineering` skill.
 - [ ] A request from an interactive page produces an answer rendered in that page, with typed text
       elsewhere in the page preserved.
 - [ ] A message from any window other than the artifact's own iframe is ignored.
-- [ ] Replies are posted with a concrete target origin.
+- [ ] Replies travel on the page's port, never on the window.
 - [ ] A second request while one is in flight is refused in the app, with wording, not queued.
 - [ ] Each failure reason renders its own message.
+- [ ] The Session button opens the conversation the page's requests land in, and is absent
+      when there is no session yet.
 - [ ] Closing the panel mid-flight abandons the answer without an error, and the turn is not
       cancelled.
 - [ ] The experiments dashboard still receives its feed.

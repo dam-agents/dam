@@ -118,15 +118,25 @@ request that is not pending or not its own.
 write an interactive page):
 
 ```
+app  → page  { type: "artifact.connect" }   + one MessagePort, on load
 page → app   { type: "artifact.request", ref, action, payload }
-app  → page  { type: "artifact.state",   ref, state: "sent"|"waking"|"queued"|"running" }
-app  → page  { type: "artifact.answer",  ref, result }
-app  → page  { type: "artifact.failed",  ref, reason, message }
+port → page  { type: "artifact.state",   ref, state: "sent"|"waking"|"queued"|"running" }
+port → page  { type: "artifact.answer",  ref, result }
+port → page  { type: "artifact.failed",  ref, reason, message }
 ```
 
 `ref` is minted by the page and never leaves the browser; the app maps it to the server-side
-request id. The app validates `event.source` against its own iframe and posts back with a
-concrete target origin, never `"*"`.
+request id.
+
+The page asks on the window: `window.parent.postMessage(request, "*")`. The app drops anything
+whose `event.source` is not its own iframe, and anything that is not the shape above.
+
+Replies come back on a **MessagePort**, not on the window. The frame is `srcDoc` inside
+`sandbox="allow-scripts"`, so its origin is opaque; `postMessage(reply, "null")` is a
+SyntaxError in every browser, and a concrete target origin is therefore not reachable. A port is
+strictly stronger than one anyway: it is bound to the document that received it, so a page that
+navigates itself away cannot be handed an answer. The app posts `artifact.connect` with the port
+once, on the frame's `load`, and the page keeps `event.ports[0]`.
 
 **Caps** (Q12): the server refuses beyond **60 requests per artifact per rolling hour**
 (`rate_limited`) and beyond **one in flight per artifact** (`busy`). The client additionally
