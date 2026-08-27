@@ -90,16 +90,26 @@ fi
 # boot, hence the `|| true`s.
 user_mise_cfg="$home/.config/mise/config.toml"
 user_mise_lock="$home/.config/mise/mise.lock"
+# Retired pins are the other half of the same hazard: once the image stops
+# listing a tool, the loop below stops naming it, and a workspace copy seeded
+# before retirement survives forever. It is not inert — a later `mise install`
+# honors that pin, installs the package without its postinstall, and the shim
+# it creates shadows the real binary on PATH. Name retired keys here until no
+# agent can predate the release that retired them.
+retired_harness_tools="npm:@anthropic-ai/claude-code"
 if [ -f "$user_mise_cfg" ]; then
-	for conf in /etc/mise/conf.d/*.toml; do
-		[ -e "$conf" ] || continue
-		# keys of the [tools] entries, quoted or bare (see the format
-		# contract in harness-tools.toml)
-		sed -n \
-			-e 's/^"\([^"]\{1,\}\)"[[:space:]]*=.*/\1/p' \
-			-e 's/^\([^"#[:space:]][^=[:space:]]*\)[[:space:]]*=.*/\1/p' \
-			"$conf"
-	done | while IFS= read -r tool; do
+	{
+		printf '%s\n' $retired_harness_tools
+		for conf in /etc/mise/conf.d/*.toml; do
+			[ -e "$conf" ] || continue
+			# keys of the [tools] entries, quoted or bare (see the format
+			# contract in harness-tools.toml)
+			sed -n \
+				-e 's/^"\([^"]\{1,\}\)"[[:space:]]*=.*/\1/p' \
+				-e 's/^\([^"#[:space:]][^=[:space:]]*\)[[:space:]]*=.*/\1/p' \
+				"$conf"
+		done
+	} | while IFS= read -r tool; do
 		esc=$(printf '%s' "$tool" | sed 's/\./\\./g')
 		sed -i "\%^\"\{0,1\}${esc}\"\{0,1\}[[:space:]]*=%d" "$user_mise_cfg" || true
 		if [ -f "$user_mise_lock" ]; then
