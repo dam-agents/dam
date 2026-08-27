@@ -4,6 +4,7 @@ import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
+import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
@@ -62,6 +63,7 @@ export type {
 
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
+  agentStateCache: AgentStateCache;
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
@@ -91,7 +93,7 @@ export function composeAgentsModule(deps: {
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s);
+  const repo = createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   const owner = deps.owner ?? "";

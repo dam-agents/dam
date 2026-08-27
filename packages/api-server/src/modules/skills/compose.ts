@@ -8,6 +8,7 @@ import {
 } from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
 import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { createGithubCredentialPort } from "./infrastructure/github-credential-port.js";
@@ -61,6 +62,7 @@ export function composeSkillsModule(deps: {
   runtimeMutator: RuntimeMutator;
   templatesRepo: TemplatesRepository;
   runtimeProgress: RuntimeProgressPort;
+  agentStateCache: AgentStateCache;
 }): SkillsService {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
@@ -69,7 +71,7 @@ export function composeSkillsModule(deps: {
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8sClient),
+    agentsRepo: createAgentsRepository(k8sClient, deps.agentStateCache),
     templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),

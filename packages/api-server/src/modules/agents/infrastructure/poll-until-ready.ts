@@ -1,16 +1,42 @@
+import type { AgentChangeSubscription } from "./agent-state-cache.js";
+
+export interface PollTiming {
+  initialMs: number;
+  maxMs: number;
+  timeoutMs: number;
+  wakeOn?: () => AgentChangeSubscription;
+}
+
+function sleep(ms: number): { elapsed: Promise<void>; cancel(): void } {
+  let timer: NodeJS.Timeout | undefined;
+  const elapsed = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return { elapsed, cancel: () => clearTimeout(timer) };
+}
+
 export async function pollUntilReady(
   isReady: () => Promise<boolean>,
-  initialMs: number,
-  maxMs: number,
-  timeoutMs: number,
+  timing: PollTiming,
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  let interval = initialMs;
+  const deadline = Date.now() + timing.timeoutMs;
+  let interval = timing.initialMs;
   while (Date.now() < deadline) {
-    if (await isReady()) return true;
-    const jittered = interval * (0.8 + 0.4 * Math.random());
-    await new Promise((r) => setTimeout(r, jittered));
-    interval = Math.min(Math.floor(interval * 1.5), maxMs);
+    const wakeup = timing.wakeOn?.();
+    try {
+      if (await isReady()) return true;
+      const waited = sleep(interval * (0.8 + 0.4 * Math.random()));
+      try {
+        await (wakeup
+          ? Promise.race([waited.elapsed, wakeup.changed])
+          : waited.elapsed);
+      } finally {
+        waited.cancel();
+      }
+    } finally {
+      wakeup?.cancel();
+    }
+    interval = Math.min(Math.floor(interval * 1.5), timing.maxMs);
   }
   return false;
 }

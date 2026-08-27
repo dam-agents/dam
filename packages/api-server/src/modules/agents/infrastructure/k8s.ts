@@ -1,4 +1,5 @@
 import * as k8s from "@kubernetes/client-node";
+import { AGENTS_PLURAL } from "./labels.js";
 
 export interface K8sClient {
   readonly namespace: string;
@@ -54,12 +55,17 @@ function isStatus(err: unknown, code: number): boolean {
 }
 const is404 = (err: unknown) => isStatus(err, 404);
 
+function loadKubeConfig(): k8s.KubeConfig {
+  const kc = new k8s.KubeConfig();
+  kc.loadFromDefault();
+  return kc;
+}
+
 export function createK8sClient(
   api: k8s.CoreV1Api,
   namespace: string,
 ): K8sClient {
-  const kc = new k8s.KubeConfig();
-  kc.loadFromDefault();
+  const kc = loadKubeConfig();
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
   const watcher = new k8s.Watch(kc);
   const crArgs = (plural: string) => ({
@@ -187,10 +193,27 @@ export function podBaseUrl(agentId: string, namespace: string): string {
 }
 
 export function createApi(namespace: string) {
-  const kc = new k8s.KubeConfig();
-  kc.loadFromDefault();
+  const kc = loadKubeConfig();
   return {
     api: kc.makeApiClient(k8s.CoreV1Api),
     namespace,
   };
+}
+
+export type AgentInformer = k8s.Informer<KubeObject> &
+  k8s.ObjectCache<KubeObject>;
+
+export function createAgentInformer(namespace: string): AgentInformer {
+  const kc = loadKubeConfig();
+  const co = kc.makeApiClient(k8s.CustomObjectsApi);
+  const path = `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${AGENTS_PLURAL}`;
+  return k8s.makeInformer<KubeObject>(kc, path, async () => {
+    const res = (await co.listNamespacedCustomObject({
+      group: CR_GROUP,
+      version: CR_VERSION,
+      namespace,
+      plural: AGENTS_PLURAL,
+    })) as k8s.KubernetesListObject<KubeObject>;
+    return res;
+  });
 }

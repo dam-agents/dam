@@ -9,7 +9,11 @@ describe("pollUntilReady", () => {
 
   it("returns true immediately when isReady is true on the first attempt", async () => {
     const isReady = vi.fn().mockResolvedValue(true);
-    const result = await pollUntilReady(isReady, 100, 1000, 10_000);
+    const result = await pollUntilReady(isReady, {
+      initialMs: 100,
+      maxMs: 1000,
+      timeoutMs: 10_000,
+    });
     expect(result).toBe(true);
     expect(isReady).toHaveBeenCalledTimes(1);
   });
@@ -18,7 +22,11 @@ describe("pollUntilReady", () => {
     vi.useFakeTimers();
     let calls = 0;
     const isReady = vi.fn().mockImplementation(async () => ++calls >= 3);
-    const resultPromise = pollUntilReady(isReady, 100, 1000, 10_000);
+    const resultPromise = pollUntilReady(isReady, {
+      initialMs: 100,
+      maxMs: 1000,
+      timeoutMs: 10_000,
+    });
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await resultPromise).toBe(true);
     expect(calls).toBe(3);
@@ -27,7 +35,11 @@ describe("pollUntilReady", () => {
   it("returns false once the deadline is exceeded", async () => {
     vi.useFakeTimers();
     const isReady = vi.fn().mockResolvedValue(false);
-    const resultPromise = pollUntilReady(isReady, 100, 500, 1_000);
+    const resultPromise = pollUntilReady(isReady, {
+      initialMs: 100,
+      maxMs: 500,
+      timeoutMs: 1_000,
+    });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await resultPromise).toBe(false);
     expect(isReady.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -47,7 +59,11 @@ describe("pollUntilReady", () => {
       return false;
     });
 
-    const resultPromise = pollUntilReady(isReady, 100, 500, 5_000);
+    const resultPromise = pollUntilReady(isReady, {
+      initialMs: 100,
+      maxMs: 500,
+      timeoutMs: 5_000,
+    });
     await vi.advanceTimersByTimeAsync(10_000);
     await resultPromise;
 

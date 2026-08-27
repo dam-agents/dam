@@ -18,6 +18,7 @@ import type {
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type {
   AgentCleanupHook,
@@ -90,6 +91,7 @@ export interface ApiServerDeps {
   liveEvents: LiveEventsService;
 
   k8sClient: K8sClient;
+  agentStateCache: AgentStateCache;
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;

@@ -148,6 +148,8 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease } from "./core/leader-lease.js";
+import { startAgentStateCache } from "./modules/agents/infrastructure/agent-state-cache.js";
+import { createAgentInformer } from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -217,7 +219,13 @@ export async function bootstrap() {
   });
 
   const k8sClient = createK8sClient(api, config.namespace);
-  const agentsRepo = createAgentsRepository(k8sClient);
+  const agentStateCache = startAgentStateCache({
+    informer: createAgentInformer(config.namespace),
+    live: k8sClient,
+    namespace: config.namespace,
+    log: (m) => getLogger().warn(`[agents] ${m}`),
+  });
+  const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -466,6 +474,7 @@ export async function bootstrap() {
 
   const { agents: systemAgents } = composeAgentsModule({
     api,
+    agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
@@ -846,6 +855,7 @@ export async function bootstrap() {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
       api,
+      agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       virtualizationEnabled: config.virtualizationEnabled,
@@ -899,6 +909,7 @@ export async function bootstrap() {
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
   const apiServerDeps: ApiServerDeps = {
+    agentStateCache,
     periodicJobs,
     sharedRedis,
     config,
@@ -949,6 +960,7 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
+    agentStateCache,
     config,
     api,
     db,
@@ -982,6 +994,7 @@ export async function bootstrap() {
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
+    await agentStateCache.stop();
     await agentWatchLease.stop();
     liveEventsModule.stop();
     await periodicJobs.close();
