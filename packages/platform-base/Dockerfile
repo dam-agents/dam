@@ -143,15 +143,16 @@ RUN chmod 0755 /usr/local/lib/platform-python
 # image build — an unreadable lock degrades every shim call to API lookups.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
-    for spec in jq fd rg gh uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
+    for spec in gh uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nreal=$(mise which %s 2>/dev/null)\nif [ -x "$real" ]; then\n  ln -sf "$real" /usr/local/share/tool-bin/%s 2>/dev/null\n  exec "$real" "$@"\nfi\nexec mise exec %s -- %s "$@"\n' "$tool" "$bin" "$bin" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
 RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
-    mise install jq fd rg; \
+    eager="jq fd rg"; \
+    mise install $eager; \
     mkdir /usr/local/share/tool-bin; \
-    for bin in jq fd rg; do ln -s "$(mise which "$bin")" "/usr/local/share/tool-bin/$bin"; done; \
+    for bin in $eager; do ln -s "$(mise which "$bin")" "/usr/local/share/tool-bin/$bin"; done; \
     chown 65532 /usr/local/share/tool-bin
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
