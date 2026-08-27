@@ -122,7 +122,7 @@ WORKDIR /app
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_PROVENANCE_API_FAILURES_FATAL=false \
     MISE_NODE_VERIFY=false \
-    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
+    PATH="/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
@@ -145,9 +145,14 @@ RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
     for spec in jq fd rg gh uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nreal=$(mise which %s 2>/dev/null)\nif [ -x "$real" ]; then\n  ln -sf "$real" /usr/local/share/tool-bin/%s 2>/dev/null\n  exec "$real" "$@"\nfi\nexec mise exec %s -- %s "$@"\n' "$tool" "$bin" "$bin" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
+RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
+    mise install jq fd rg; \
+    mkdir /usr/local/share/tool-bin; \
+    for bin in jq fd rg; do ln -s "$(mise which "$bin")" "/usr/local/share/tool-bin/$bin"; done; \
+    chown 65532 /usr/local/share/tool-bin
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
