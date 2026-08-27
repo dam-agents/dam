@@ -1027,8 +1027,8 @@ controller:
   # another. Raise (or lower) per user with a UserBudget CR named
   # `budget-<keycloak-sub>` in the agent namespace.
   userBudgets:
-    defaultCpu: "4"
-    defaultMemory: "8Gi"
+    defaultCpu: "8"
+    defaultMemory: "16Gi"
 
   # -- How pod requests are derived from an agent's limits (#1900). Requests
   # are scheduling internals, never a user concept: the scheduler packs on
