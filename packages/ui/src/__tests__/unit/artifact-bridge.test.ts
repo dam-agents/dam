@@ -40,8 +40,7 @@ describe("reading what the page sent", () => {
     expect(fromPage(noPayload)).toEqual(noPayload);
   });
 
-  // TEST_SCENARIO: The app listens on its own window, which any frame on the
-  // page can post to. Only the artifact's own iframe may drive its agent.
+  // TEST_SCENARIO: The app listens on its own window, which any frame on the page can post to. Only the artifact's own iframe may drive its agent.
   test("drops the same request sent by any other window", () => {
     expect(
       readPageRequest({ source: otherWindow, data: wellFormed }, pageWindow),
@@ -57,9 +56,7 @@ describe("reading what the page sent", () => {
     ).toBeNull();
   });
 
-  // TEST_SCENARIO: The same window carries the experiment dashboard feed and
-  // whatever else a page decides to post. Only the pinned shape may become a
-  // call to the agent.
+  // TEST_SCENARIO: The same window carries the experiment dashboard feed and whatever else a page decides to post. Only the pinned shape may become a call to the agent.
   test.each([
     ["another message type", { type: "experiment-feed", feed: [] }],
     ["no type at all", { ref: "r-1", action: "refresh" }],
@@ -82,8 +79,7 @@ describe("reading what the page sent", () => {
     ).toBeNull();
   });
 
-  // TEST_SCENARIO: The page can put anything on the message. Only the pinned
-  // fields may travel on to the server.
+  // TEST_SCENARIO: The page can put anything on the message. Only the pinned fields may travel on to the server.
   test("keeps only the pinned fields", () => {
     expect(
       fromPage({ ...wellFormed, trigger: "auto", agentId: "a-1" }),
@@ -92,8 +88,7 @@ describe("reading what the page sent", () => {
 });
 
 describe("naming what is happening", () => {
-  // TEST_SCENARIO: The row is committed but delivery has not started, so all
-  // the app can honestly say is that it sent the request.
+  // TEST_SCENARIO: The row is committed but delivery has not started, so all the app can honestly say is that it sent the request.
   test("a request with no row yet is sent", () => {
     expect(deriveRequestProgress(undefined, "running")).toBe("sent");
   });
@@ -106,9 +101,7 @@ describe("naming what is happening", () => {
     );
   });
 
-  // TEST_SCENARIO: The agent is up but has not taken the event out of its
-  // outbox yet. That is a queue, not a cold start, and saying "waking" here
-  // would be a lie the person can see through.
+  // TEST_SCENARIO: The agent is up but has not taken the event out of its outbox yet. That is a queue, not a cold start, and saying "waking" here would be a lie the person can see through.
   test("a pending request on a running agent is queued", () => {
     expect(deriveRequestProgress("pending", "running")).toBe("queued");
   });
@@ -142,8 +135,7 @@ describe("saying what went wrong", () => {
     expect(new Set(messages).size).toBe(reasons.length);
   });
 
-  // TEST_SCENARIO: A reason a person can act on has to say what to do. Being
-  // cancelled is the one thing with nothing left to do.
+  // TEST_SCENARIO: A reason a person can act on has to say what to do. Being cancelled is the one thing with nothing left to do.
   test("a reason with a way forward carries its next step", () => {
     expect(describeFailure("over_budget").nextStep).toBeTruthy();
     expect(describeFailure("rate_limited").nextStep).toBeTruthy();
@@ -177,9 +169,7 @@ describe("saying what went wrong", () => {
     expect(failureReasonOf(error)).toBeNull();
   });
 
-  // TEST_SCENARIO: A dropped connection or a page deleted between render and
-  // click has no named reason, but the page is still waiting and has to be
-  // told the ask is over.
+  // TEST_SCENARIO: A dropped connection or a page deleted between render and click has no named reason, but the page is still waiting and has to be told the ask is over.
   test("an untyped failure keeps the server's own words", () => {
     const failure = failureFromError({ message: "artifact not found" });
     expect(failure.reason).toBe("wake_failed");

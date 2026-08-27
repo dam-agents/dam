@@ -23,6 +23,7 @@ import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
+import { ArtifactSelfRefreshChip } from "./artifact-self-refresh-chip.js";
 import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
@@ -53,6 +54,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
   const {
     bridge,
     status: requestStatus,
+    selfRefresh,
     dismissFailure,
   } = useArtifactBridge(version === artifact.version ? artifact : null);
 
@@ -95,6 +97,11 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
               </>
             )}
           </div>
+
+          <ArtifactSelfRefreshChip
+            selfRefresh={selfRefresh}
+            className="mb-2 rounded border border-border"
+          />
 
           <ArtifactRequestStatusBar
             status={requestStatus}

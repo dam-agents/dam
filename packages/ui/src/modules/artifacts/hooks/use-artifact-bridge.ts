@@ -23,6 +23,13 @@ import {
   describeFailure,
   failureFromError,
 } from "../lib/artifact-request-status.js";
+import {
+  holdReason,
+  type SelfRefreshHold,
+  selfRefreshLabel,
+} from "../lib/self-refresh.js";
+import { askedByAPerson } from "../lib/user-gesture.js";
+import { type SelfRefresh, useSelfRefresh } from "./use-self-refresh.js";
 
 interface PendingRequest {
   ref: string;
@@ -39,6 +46,7 @@ export interface ArtifactBridgeStatus {
 export interface ArtifactBridge {
   bridge: ArtifactFrameBridge | undefined;
   status: ArtifactBridgeStatus;
+  selfRefresh: SelfRefresh;
   dismissFailure: () => void;
 }
 
@@ -60,6 +68,8 @@ export function useArtifactBridge(
     pending?.requestId ?? null,
   );
   const agentState = useAgentRunState(artifact?.agentId ?? null);
+  const selfRefresh = useSelfRefresh(askable && artifact ? artifact.id : null);
+  const { gate } = selfRefresh;
 
   useEffect(() => {
     askableIdRef.current = askable && artifact ? artifact.id : null;
@@ -88,13 +98,35 @@ export function useArtifactBridge(
     [send],
   );
 
+  const decline = useCallback(
+    (ref: string, held: SelfRefreshHold) => {
+      send({
+        type: ARTIFACT_BRIDGE_FAILED_TYPE,
+        ref,
+        reason: holdReason(held),
+        message: selfRefreshLabel(held),
+      });
+    },
+    [send],
+  );
+
   const onRequest = useCallback(
     (incoming: PageArtifactRequest) => {
       const artifactId = askableIdRef.current;
       if (!artifactId) return;
-      if (pendingRef.current) {
-        refuse(incoming.ref, describeFailure("busy"));
-        return;
+      const trigger = askedByAPerson(navigator) ? "user" : "auto";
+      if (trigger === "auto") {
+        const held = gate.admitAuto(pendingRef.current !== null);
+        if (held) {
+          decline(incoming.ref, held);
+          return;
+        }
+      } else {
+        gate.noteGesture();
+        if (pendingRef.current) {
+          refuse(incoming.ref, describeFailure("busy"));
+          return;
+        }
       }
       hold({ ref: incoming.ref, action: incoming.action, requestId: null });
       setFailure(null);
@@ -109,7 +141,7 @@ export function useArtifactBridge(
           artifactId,
           action: incoming.action,
           payload: incoming.payload,
-          trigger: "user",
+          trigger,
         },
         {
           onSuccess: (receipt) => {
@@ -125,7 +157,7 @@ export function useArtifactBridge(
         },
       );
     },
-    [createRequest, hold, refuse, send],
+    [createRequest, decline, gate, hold, refuse, send],
   );
 
   useEffect(() => {
@@ -186,6 +218,7 @@ export function useArtifactBridge(
   return {
     bridge,
     status: { action: pending?.action ?? null, progress, failure },
+    selfRefresh,
     dismissFailure,
   };
 }
