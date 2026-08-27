@@ -158,10 +158,20 @@ func TestIdleChecker_HibernatingAZeroedAgentIsIdempotent(t *testing.T) {
 	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "already-hibernated agent stays at zero (idempotent)")
 }
 
-// TEST_SCENARIO: An agent whose StatefulSets are observed at zero is not probed or rewritten.
-func TestIdleChecker_SkipsAgentAlreadyAtZero(t *testing.T) {
+func hibernatedCondition() []metav1.Condition {
+	return []metav1.Condition{{
+		Type:               apiv1.ConditionReady,
+		Status:             metav1.ConditionFalse,
+		Reason:             apiv1.ReasonHibernated,
+		LastTransitionTime: metav1.Now(),
+	}}
+}
+
+// TEST_SCENARIO: An agent at zero that already reports hibernated has no work left, so it is skipped.
+func TestIdleChecker_SkipsAgentAtZeroAndReportedHibernated(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("sleeping-agent", staleTime, nil)
+	agent.Status.Conditions = hibernatedCondition()
 	ss := agentStatefulSet("sleeping-agent", 0)
 	checker, _ := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
 	probed := false
@@ -172,16 +182,25 @@ func TestIdleChecker_SkipsAgentAlreadyAtZero(t *testing.T) {
 	assert.False(t, probed, "a sleeping agent must not be probed or re-hibernated")
 }
 
+// TEST_SCENARIO: An agent held at zero without hibernation published still needs its status flipped.
+func TestIdleChecker_HibernatesAgentAtZeroWithoutPublishedHibernation(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("parked-agent", staleTime, nil)
+	ss := agentStatefulSet("parked-agent", 0)
+	checker, _ := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
+	probed := false
+	checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+
+	checker.check(context.Background())
+
+	assert.True(t, probed, "an agent whose status has not caught up must still be swept")
+}
+
 // TEST_SCENARIO: A running pod is reaped even when its status wrongly reads hibernated.
 func TestIdleChecker_HibernatesRunningAgentDespiteHibernatedStatus(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("mislabelled-agent", staleTime, nil)
-	agent.Status.Conditions = []metav1.Condition{{
-		Type:               apiv1.ConditionReady,
-		Status:             metav1.ConditionFalse,
-		Reason:             apiv1.ReasonHibernated,
-		LastTransitionTime: metav1.Now(),
-	}}
+	agent.Status.Conditions = hibernatedCondition()
 	ss := agentStatefulSet("mislabelled-agent", 1)
 	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss)
 

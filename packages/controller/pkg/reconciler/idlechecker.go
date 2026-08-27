@@ -89,7 +89,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if atZero[name] {
+		if atZero[name] && hibernationPublished(agent) {
 			continue
 		}
 
@@ -107,6 +107,23 @@ func (c *IdleChecker) check(ctx context.Context) {
 	}
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+func hibernationPublished(agent *unstructured.Unstructured) bool {
+	conds, found, err := unstructured.NestedSlice(agent.Object, "status", "conditions")
+	if err != nil || !found {
+		return false
+	}
+	for _, raw := range conds {
+		cond, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if cond["type"] == apiv1.ConditionReady && cond["reason"] == apiv1.ReasonHibernated {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
