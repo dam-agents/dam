@@ -992,7 +992,7 @@ controller:
       resources:
         limits:
           cpu: "1"
-          memory: "1Gi"
+          memory: "2Gi"
       mounts:
         - path: $HOME
           persist: true
