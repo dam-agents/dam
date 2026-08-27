@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-08-24
+Last verified: 2026-08-27
 
 ## Overview
 
@@ -26,7 +26,7 @@ flowchart LR
   agent-runtime -->|hello / MCP| api-server
   agent-runtime -->|HTTPS_PROXY| gateway
   gateway -->|ext_authz Check| api-server
-  api-server -->|REST| k8s-api
+  api-server -->|REST + watch| k8s-api
   controller -->|watch + status writes| k8s-api
 ```
 
@@ -49,7 +49,7 @@ The public port also accepts streamed bundled file imports per agent and proxies
 
 Recurring background reconciliation (expiry sweeps and similar) runs as scheduled jobs on per-job queues backed by the platform Redis — one execution per period across the api-server replicas, with each tick idempotent. Subsystem pages describe their own jobs (e.g. [artifact-library](artifact-library.md)); all recurring sweeps (runtime outbox, approvals delivery, OAuth refresh, agent/invocation/experiment reapers) run this way. Other cross-replica state also lives in shared stores: session-presence pins, OAuth/bind handoff flows and terminal-supersede signals in Redis, per-owner resize serialization and OAuth refresh backoff in Postgres. Two things are pinned rather than shared, because they are in-process by nature. In-process MCP sessions need each agent gateway to reach one replica: the waypoint hashes on source IP to achieve that (a Service `sessionAffinity` cannot — kube-proxy's setting is bypassed on a waypoint-fronted Service). The channel workers need a single holder install-wide, since their transports admit one consumer each; a Redis lease elects it, and other replicas marshal outbound channel calls to the holder over the Redis bus ([channels](channels.md)).
 
-**Domain events and live updates.** Services announce every state change by emitting a domain event in-process after the write commits. Events are non-durable and advisory by contract — nothing may depend on one arriving; every domain whose events matter carries a reconciliation bounding the loss. Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, per-agent cleanups, and two that reach across replicas by forwarding a *signal* over the shared Redis bus — never the event itself. One wakes egress-approval holds parked on other replicas; the other projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription. A hint means "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay. Agent lifecycle hints come from a K8s watch on the Agent resources rather than from write sites — the watch also sees controller- and pod-driven transitions — and fingerprints each resource's meaningful content so reconcile bookkeeping doesn't fan out to browsers; like the channel workers, the watch runs on a single lease-elected replica so each transition is projected once, not once per replica. Anything crossing the process boundary is schema-parsed on receipt and dropped on mismatch, so replicas on different versions cannot poison each other's streams.
+**Domain events and live updates.** Services announce every state change by emitting a domain event in-process after the write commits. Events are non-durable and advisory by contract — nothing may depend on one arriving; every domain whose events matter carries a reconciliation bounding the loss. Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, per-agent cleanups, and two that reach across replicas by forwarding a *signal* over the shared Redis bus — never the event itself. One wakes egress-approval holds parked on other replicas; the other projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription. A hint means "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay. Agent lifecycle hints come from a K8s watch on the Agent resources rather than from write sites — the watch also sees controller- and pod-driven transitions — and fingerprints each resource's meaningful content so reconcile bookkeeping doesn't fan out to browsers; like the channel workers, that watch runs on a single lease-elected replica so each transition is projected once, not once per replica. A second Agent watch is deliberately unleased: every replica keeps one to serve its own Agent reads from cache, which projects nothing and so needs no election — watch count there tracks replica count. Anything crossing the process boundary is schema-parsed on receipt and dropped on mismatch, so replicas on different versions cannot poison each other's streams.
 
 A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients observe it on their next `session/list`. There is no server-side mode-change side effect and no cross-client broadcast — mode is a hint about which surface to render, and the running harness is unaffected. The same `session/list` read also reflects each session's live turn status — whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently — so a client can show per-session working/idle state across all of an agent's sessions without holding a connection open to each. That read is passive: it neither wakes a hibernated agent nor defers hibernation of a running one. Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices. Read state is per-session, not per-user: agents currently have a single driving user, and shared-agent work must revisit this.
 
@@ -98,7 +98,7 @@ Continuing such a conversation here makes a session outlive the surface it start
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello` |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
-| api-server → K8s API | REST | Resource CRUD, spec writes, pod wake |
+| api-server → K8s API | REST + watch | Resource CRUD, spec writes, pod wake; a watch per replica keeps the Agent read cache current ([agent-lifecycle](agent-lifecycle.md)) |
 | api-server → agent-runtime | HTTP (tRPC) | Runtime-channel `applyState` delivery from the outbox worker |
 
 ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.

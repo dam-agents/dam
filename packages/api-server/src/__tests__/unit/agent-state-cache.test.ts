@@ -141,29 +141,36 @@ describe("agent state cache", () => {
 });
 
 describe("poll wake-up", () => {
-  // TEST_SCENARIO: A change mid-sleep cuts the wait short instead of paying the full interval.
+  // TEST_SCENARIO: A change mid-sleep re-checks without any of the 5s interval elapsing.
   it("re-checks as soon as the cache reports a change", async () => {
-    const { cache, fire } = cacheOver([]);
-    let checks = 0;
-    const started = Date.now();
+    vi.useFakeTimers();
+    try {
+      const { cache, fire } = cacheOver([]);
+      let checks = 0;
 
-    const result = pollUntilReady(
-      async () => {
-        checks += 1;
-        return checks > 1;
-      },
-      {
-        initialMs: 5_000,
-        maxMs: 5_000,
-        timeoutMs: 30_000,
-        wakeOn: () => cache.whenChanged("a1"),
-      },
-    );
-    await vi.waitFor(() => expect(checks).toBe(1));
-    fire("update", agent("a1"));
+      const result = pollUntilReady(
+        async () => {
+          checks += 1;
+          return checks > 1;
+        },
+        {
+          initialMs: 5_000,
+          maxMs: 5_000,
+          timeoutMs: 30_000,
+          wakeOn: () => cache.whenChanged("a1"),
+        },
+      );
+      await Promise.resolve();
+      expect(checks).toBe(1);
 
-    expect(await result).toBe(true);
-    expect(Date.now() - started).toBeLessThan(1_000);
+      fire("update", agent("a1"));
+
+      expect(await result).toBe(true);
+      expect(checks).toBe(2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // TEST_SCENARIO: With no change signal the interval is the only pacing, as before.
