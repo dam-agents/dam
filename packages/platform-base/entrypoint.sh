@@ -94,9 +94,9 @@ user_mise_lock="$home/.config/mise/mise.lock"
 # listing a tool, the loop below stops naming it, and a workspace copy seeded
 # before retirement survives forever. It is not inert — a later `mise install`
 # honors that pin, installs the package without its postinstall, and the shim
-# it creates shadows the real binary on PATH. Name retired keys here until no
-# agent can predate the release that retired them.
-retired_harness_tools="npm:@anthropic-ai/claude-code"
+# it creates shadows the real binary on PATH. Each entry carries the date it was
+# retired; drop it once every agent has booted since then.
+retired_harness_tools="npm:@anthropic-ai/claude-code" # retired 2026-08-27
 if [ -f "$user_mise_cfg" ]; then
 	{
 		printf '%s\n' $retired_harness_tools
