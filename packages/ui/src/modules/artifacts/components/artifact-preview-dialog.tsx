@@ -35,6 +35,7 @@ import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
 import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
+import { ArtifactSelfRefreshChip } from "./artifact-self-refresh-chip.js";
 import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { CopyLinkButton } from "./copy-link-button.js";
@@ -99,6 +100,7 @@ export function ArtifactPreviewDialog({
   const {
     bridge,
     status: requestStatus,
+    selfRefresh,
     dismissFailure,
   } = useArtifactBridge(version === head ? artifact : null);
 
@@ -184,6 +186,11 @@ export function ArtifactPreviewDialog({
               </>
             )}
           </div>
+
+          <ArtifactSelfRefreshChip
+            selfRefresh={selfRefresh}
+            className="mb-2 rounded border border-border"
+          />
 
           <ArtifactRequestStatusBar
             status={requestStatus}

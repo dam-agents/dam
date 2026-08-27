@@ -17,9 +17,17 @@ the server already enforces; do not re-implement the cap in the browser, and do 
 1. **Trigger kind.** Automatic requests send `trigger: "auto"`, ones a person made send
    `"user"`. This
    is what keeps timers out of the activity log, so it must be decided from a real user gesture,
-   not from a heuristic.
+   not from a heuristic. The gesture is read from `navigator.userActivation.isActive` on the
+   app's own window: a click inside the frame gives every window above it transient activation,
+   a timer gives none, and the page cannot forge it — 05 already strips anything the page puts
+   on the message beyond the pinned fields.
 2. **Pacing.** Refuse an automatic request less than 30 s after the previous one, locally, so the
-   server cap is a backstop rather than the everyday path.
+   server cap is a backstop rather than the everyday path. The same gate also holds an automatic
+   request while the previous one is still with the agent: a turn runs for minutes while the page
+   keeps asking, and those asks are ordinary, not a failure the person has to dismiss. A held
+   request never reaches the server and never sets the failure bar — it only moves the chip, and
+   it reaches the page inside the pinned reason set (`busy` for the one still running,
+   `rate_limited` for the rest).
 3. **Visibility.** Pause automatic requests while the document is hidden and resume on return.
 4. **Idle stop.** Stop them entirely after 30 minutes with no human interaction with the page,
    and say so. Any interaction starts them again.
