@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-21
+Last verified: 2026-08-27
 
 ## Overview
 
@@ -190,9 +190,9 @@ The **target** lifetime model is single-use Kubernetes Jobs per turn, with a Red
 
 ### Hibernate
 
-Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is deliberately split across two independent checks that must agree before a pod is scaled down.
+Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
-**The decision.** The controller's idle checker scans running Agents on a timer (the interval scales with the timeout, clamped to 30 s–5 min). It hibernates an Agent only when *both* checks below agree it is quiet:
+**The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the timeout, skipping any already at rest — pair observed at zero *and* hibernation published. For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to scale *up*, so scale-down and scale-up can never disagree. The Agent stays awake while `active-session` is set, or while `last-activity` falls within the idle timeout. The gate fails open — a missing or unparseable stamp keeps it running — so hibernation only ever follows a *positive* idle signal, never absent data.
 2. **agent-runtime's live `idle` flag** — before scaling down, the checker probes the pod. The runtime is authoritative about its own idleness and reports one boolean; the controller reads nothing more into it. An unreachable pod counts as *not busy*, which permits hibernation.
