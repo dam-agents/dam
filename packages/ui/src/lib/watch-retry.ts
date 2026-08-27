@@ -1,3 +1,8 @@
+import {
+  isTermsStaleError,
+  onTermsStale,
+} from "../modules/terms/lib/on-terms-stale.js";
+
 const RESUBSCRIBE_DELAY_MS = 3_000;
 
 interface Unsubscribable {
@@ -5,7 +10,7 @@ interface Unsubscribable {
 }
 
 export function watchWithRetry(
-  subscribe: (onError: () => void) => Unsubscribable,
+  subscribe: (onError: (error: unknown) => void) => Unsubscribable,
 ): () => void {
   let disposed = false;
   let subscription: Unsubscribable | undefined;
@@ -13,7 +18,11 @@ export function watchWithRetry(
 
   const open = () => {
     if (disposed) return;
-    subscription = subscribe(() => {
+    subscription = subscribe((error) => {
+      if (isTermsStaleError(error)) {
+        onTermsStale();
+        return;
+      }
       retry = setTimeout(open, RESUBSCRIBE_DELAY_MS);
     });
   };

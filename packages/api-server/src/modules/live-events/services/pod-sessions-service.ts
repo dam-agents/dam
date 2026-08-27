@@ -60,11 +60,12 @@ export function createPodSessionsService(
       deps.log(
         `pod-sessions reconcile failed for ${ownerSub}: ${(error as Error).message}`,
       );
-      if (!holder.closed) {
-        holder.retry ??= setTimeout(() => {
+      if (!holder.closed && holder.retry === undefined) {
+        holder.retry = setTimeout(() => {
           holder.retry = undefined;
           void reconcile(ownerSub);
         }, RECONCILE_RETRY_MS);
+        holder.retry.unref?.();
       }
     } finally {
       holder.reconciling = false;
