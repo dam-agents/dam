@@ -103,6 +103,7 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     sizeBytes: 10,
     version: 1,
     visibility: "public",
+    interactive: false,
     expiresAt: null,
     viewCount: 0,
     createdAt: new Date(),
@@ -574,5 +575,133 @@ describe("expiry sweeper", () => {
       "library/o1/a1/v0/old.html",
       "library/o1/a1/v1/t.html",
     ]);
+  });
+});
+
+describe("library service — interactive is settled at create", () => {
+  async function serviceOver(rows: ArtifactRow[]) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      surface: "ui",
+      repo: {
+        ...fakeRepo(rows),
+        insertArtifact: (row) => {
+          const stored: ArtifactRow = {
+            ...row,
+            viewCount: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          rows.push(stored);
+          return Promise.resolve(stored);
+        },
+        advanceVersion: (id, owner, _snapshot, patch) => {
+          const row = rows.find((a) => a.id === id && a.owner === owner);
+          if (!row) return Promise.resolve(null);
+          Object.assign(row, patch);
+          return Promise.resolve(row);
+        },
+      },
+      owner: "o1",
+      shareBaseUrl: "http://share.localhost",
+      artifacts: stubArtifacts({ put: () => Promise.resolve() }),
+    });
+  }
+
+  it("stores the flag on a page that can run", async () => {
+    const service = await serviceOver([]);
+    await expect(
+      service.create({
+        title: "Live dashboard",
+        content: "<!DOCTYPE html><html></html>",
+        interactive: true,
+      }),
+    ).resolves.toMatchObject({ kind: "html", interactive: true });
+  });
+
+  it("defaults to a plain artifact when the flag is absent", async () => {
+    const service = await serviceOver([]);
+    await expect(
+      service.create({
+        title: "Report",
+        content: "<!DOCTYPE html><html></html>",
+      }),
+    ).resolves.toMatchObject({ interactive: false });
+  });
+
+  it("refuses a kind that cannot run", async () => {
+    const service = await serviceOver([]);
+    await expect(
+      service.create({
+        title: "Notes",
+        content: "# notes",
+        fileName: "notes.md",
+        interactive: true,
+      }),
+    ).rejects.toThrow(/markdown/);
+  });
+
+  it("refuses to publish an interactive page straight to public", async () => {
+    const service = await serviceOver([]);
+    await expect(
+      service.create({
+        title: "Live dashboard",
+        content: "<!DOCTYPE html><html></html>",
+        interactive: true,
+        visibility: "public",
+      }),
+    ).rejects.toThrow(/cannot be shared/);
+  });
+
+  it("keeps the flag across a new version", async () => {
+    const rows = [artifactRow({ interactive: true, visibility: "private" })];
+    const service = await serviceOver(rows);
+    await expect(
+      service.update("a1", { content: "<!DOCTYPE html><html>v2</html>" }),
+    ).resolves.toMatchObject({ interactive: true, version: 2 });
+  });
+});
+
+describe("library service — an interactive artifact cannot be shared", () => {
+  async function serviceOver(rows: ArtifactRow[]) {
+    const { createArtifactLibraryService } =
+      await import("../../modules/artifact-library/services/artifact-library-service.js");
+    return createArtifactLibraryService({
+      surface: "ui",
+      repo: fakeRepo(rows),
+      owner: "o1",
+      shareBaseUrl: "http://share.localhost",
+      artifacts: stubArtifacts(),
+    });
+  }
+
+  it("refuses the public transition and leaves the artifact private", async () => {
+    const rows = [artifactRow({ interactive: true, visibility: "private" })];
+    const service = await serviceOver(rows);
+    await expect(
+      service.setSharing("a1", { visibility: "public" }),
+    ).rejects.toThrow(/cannot be shared/);
+    expect(rows[0]!.visibility).toBe("private");
+  });
+
+  it("still lets the owner set a deletion date", async () => {
+    const rows = [artifactRow({ interactive: true, visibility: "private" })];
+    const service = await serviceOver(rows);
+    await expect(
+      service.setSharing("a1", { expiresInHours: 24 }),
+    ).resolves.toMatchObject({ visibility: "private", interactive: true });
+    expect(rows[0]!.expiresAt).toBeInstanceOf(Date);
+  });
+
+  it("leaves a plain artifact shareable", async () => {
+    const rows = [artifactRow({ visibility: "private" })];
+    const service = await serviceOver(rows);
+    await expect(
+      service.setSharing("a1", { visibility: "public" }),
+    ).resolves.toMatchObject({
+      visibility: "public",
+      shareUrl: "http://share.localhost/a/slug-a",
+    });
   });
 });

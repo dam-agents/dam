@@ -2,6 +2,7 @@ import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import { trpc } from "../../../trpc.js";
+import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
 
 export interface ArtifactListFilter {
   folderId?: string | null;
@@ -84,5 +85,33 @@ export function useFolderShareUrl(id: string | null) {
       id ? { id } : skipToken,
     ),
     meta: { errorToast: "Couldn't resolve folder link" },
+  });
+}
+
+export function useArtifactRequest(requestId: string | null) {
+  return useQuery({
+    ...trpc.artifactLibrary.requests.get.queryOptions(
+      requestId ? { requestId } : skipToken,
+    ),
+    staleTime: 0,
+    retry: 2,
+  });
+}
+
+export function useArtifactSession(
+  agentId: string | null,
+  artifactId: string | null,
+) {
+  return useQuery({
+    queryKey: ["artifact-session", agentId, artifactId] as const,
+    queryFn:
+      agentId && artifactId
+        ? async () => {
+            const sessions = await listAgentSessions(agentId);
+            return sessions.find((s) => s.artifactId === artifactId) ?? null;
+          }
+        : skipToken,
+    retry: 0,
+    staleTime: 30_000,
   });
 }

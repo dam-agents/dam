@@ -39,6 +39,7 @@ import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+const INTERACTIVE_KINDS = new Set<ArtifactKind>(["html"]);
 
 export interface ArtifactAgentDownloadTicket {
   url: string;
@@ -102,6 +103,7 @@ export function toLibraryArtifact(
     folderId: row.folderId,
     agentId: row.agentId,
     visibility: row.visibility as ArtifactVisibility,
+    interactive: row.interactive,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl:
@@ -302,6 +304,20 @@ export function createArtifactLibraryService(
       });
       const fileName = input.fileName ?? defaultFileName(input.title, kind);
       const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
+      const interactive = input.interactive === true;
+      if (interactive && !INTERACTIVE_KINDS.has(kind)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `an interactive artifact must be a page that runs — a ${kind} artifact cannot ask its agent`,
+        });
+      }
+      if (interactive && input.visibility === "public") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "an interactive artifact can talk to your agent, so it cannot be shared",
+        });
+      }
 
       const id = generateId();
       const key = versionKey(owner, id, 1, fileName);
@@ -326,6 +342,7 @@ export function createArtifactLibraryService(
         sizeBytes: stored.sizeBytes,
         version: 1,
         visibility: input.visibility ?? "private",
+        interactive,
         expiresAt: expiresAtFrom(input.expiresInHours),
       });
       emit({
@@ -412,6 +429,13 @@ export function createArtifactLibraryService(
 
     async setSharing(id, input: ArtifactSharingInput) {
       const before = await requireArtifact(id);
+      if (before.interactive && input.visibility === "public") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this page can talk to your agent, so it cannot be shared — it stays private",
+        });
+      }
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.visibility !== undefined) patch.visibility = input.visibility;
       if (input.expiresInHours !== undefined)

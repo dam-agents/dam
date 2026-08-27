@@ -14,7 +14,12 @@ import {
   composeSchedulesForOwner,
   type SchedulesBoot,
 } from "../../modules/schedules/index.js";
-import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
+import {
+  composeArtifactLibraryForOwner,
+  composeArtifactRequestsForOwner,
+  type ArtifactLibraryServiceImpl,
+} from "../../modules/artifact-library/index.js";
+import { composeFeaturesForOwner } from "../../modules/features/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
 import {
   composeInvocationsForOwner,
@@ -106,6 +111,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     }).artifactLibrary;
 
   const harnessAgentsRepo = createAgentsRepository(k8sClient);
+
+  const artifactRequestsServiceFor = (
+    owner: string,
+    artifactLibrary: ArtifactLibraryServiceImpl,
+  ) =>
+    composeArtifactRequestsForOwner({
+      db,
+      artifactLibrary,
+      runtimeMutator,
+      ensureAgentReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      owner,
+      surface: "mcp",
+    }).artifactRequests;
   const experimentPin = {
     set: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
@@ -146,6 +164,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         agents: agentsServiceFor(owner),
       }).experiments,
     artifactLibraryFor,
+    artifactRequestsServiceFor,
+    featuresServiceFor: (owner) =>
+      composeFeaturesForOwner({ db, owner, surface: "mcp" }).features,
     invocationsServiceFor,
     connectionsServiceFor,
     templates,

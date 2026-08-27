@@ -25,6 +25,7 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     sizeBytes: 64,
     version: 1,
     visibility: "public",
+    interactive: false,
     expiresAt: null,
     viewCount: 0,
     createdAt: new Date(),

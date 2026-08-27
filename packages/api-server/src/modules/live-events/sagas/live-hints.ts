@@ -48,6 +48,16 @@ export function hintFor(
       };
     case EventType.ArtifactFolderChanged:
       return { ownerSub: event.ownerSub, hint: { topic: "artifacts" } };
+    case EventType.ArtifactRequestSettled:
+      return {
+        ownerSub: event.ownerSub,
+        hint: {
+          topic: "artifactRequest",
+          requestId: event.requestId,
+          artifactId: event.artifactId,
+          state: event.state,
+        },
+      };
     case EventType.ExperimentChanged:
       return {
         ownerSub: event.ownerSub,

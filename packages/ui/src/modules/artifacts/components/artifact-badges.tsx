@@ -1,7 +1,8 @@
-import { Globe } from "@carbon/icons-react";
+import { Flash, Globe } from "@carbon/icons-react";
 import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { deletionState } from "../lib/format.js";
 
@@ -46,5 +47,18 @@ export function ArtifactStatusBadge({
       <Globe size={12} />
       Public
     </Badge>
+  );
+}
+
+export function ArtifactInteractiveBadge() {
+  return (
+    <Tooltip content="This page can ask its agent to do something, so it stays private — it can never be shared.">
+      <span className="inline-flex">
+        <Badge variant="accent" className="gap-1">
+          <Flash size={12} />
+          Interactive
+        </Badge>
+      </span>
+    </Tooltip>
   );
 }

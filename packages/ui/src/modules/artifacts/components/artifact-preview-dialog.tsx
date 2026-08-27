@@ -19,8 +19,12 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
+import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
+import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
+import { ArtifactSelfRefreshChip } from "./artifact-self-refresh-chip.js";
+import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { VersionSwitcher } from "./version-switcher.js";
@@ -47,6 +51,12 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
     version === artifact.version ? latestFeedPost : undefined;
   const wantSource = !renderable || showSource;
   const content = useArtifactContent(wantSource ? artifact.id : null, version);
+  const {
+    bridge,
+    status: requestStatus,
+    selfRefresh,
+    dismissFailure,
+  } = useArtifactBridge(version === artifact.version ? artifact : null);
 
   return (
     <>
@@ -88,6 +98,17 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
             )}
           </div>
 
+          <ArtifactSelfRefreshChip
+            selfRefresh={selfRefresh}
+            className="mb-2 rounded border border-border"
+          />
+
+          <ArtifactRequestStatusBar
+            status={requestStatus}
+            onDismissFailure={dismissFailure}
+            className="mb-2 rounded border border-border"
+          />
+
           {renderable && !showSource ? (
             <div className="h-[58vh] w-full overflow-hidden rounded border border-border bg-white">
               {!preview.isLoading && !preview.data ? (
@@ -102,6 +123,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
                     title={artifact.title}
                     className="h-full w-full"
                     postData={experimentFeedPost}
+                    bridge={fullscreen ? undefined : bridge}
                   />
                 )
               )}
@@ -115,6 +137,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
           )}
         </DialogBody>
         <DialogFooter>
+          <ArtifactSessionButton artifact={artifact} onOpened={onClose} />
           {artifact.shareUrl && (
             <Button variant="outline" asChild>
               <a href={artifact.shareUrl} {...externalLinkProps}>
@@ -144,6 +167,7 @@ export function ArtifactPreviewDialog({ artifact, onClose }: Props) {
             title={artifact.title}
             className="h-full w-full rounded border border-border bg-white"
             deferMs={0}
+            bridge={bridge}
           />
         </FullscreenPreviewDialog>
       )}

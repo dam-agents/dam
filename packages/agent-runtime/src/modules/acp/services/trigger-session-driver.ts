@@ -2,6 +2,8 @@ import { createInMemoryChannel } from "../infrastructure/in-memory-channel.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
 
+const PROMPT_HANDOFF_GRACE_MS = 60_000;
+
 export interface TriggerSessionDriver {
   start(opts: {
     task: string;
@@ -69,10 +71,28 @@ export function createTriggerSessionDriver(deps: {
         });
       }
 
-      function sendFireAndForget(method: string, params: unknown): void {
+      let closed = false;
+      let graceTimer: ReturnType<typeof setTimeout> | undefined;
+
+      function closeChannel(): void {
+        if (closed) return;
+        closed = true;
+        if (graceTimer) clearTimeout(graceTimer);
+        channel.close();
+      }
+
+      function submitPrompt(sessionId: string): void {
         const id = nextId++;
+        pending.set(id, () => closeChannel());
+        graceTimer = setTimeout(closeChannel, PROMPT_HANDOFF_GRACE_MS);
+        graceTimer.unref?.();
         channel.sendToServer(
-          JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            method: "session/prompt",
+            params: { sessionId, prompt: [{ type: "text", text: task }] },
+          }),
         );
       }
 
@@ -106,14 +126,12 @@ export function createTriggerSessionDriver(deps: {
           sessionId = res.sessionId;
         }
 
-        sendFireAndForget("session/prompt", {
-          sessionId,
-          prompt: [{ type: "text", text: task }],
-        });
+        submitPrompt(sessionId);
 
         return { sessionId };
-      } finally {
-        channel.close();
+      } catch (err) {
+        closeChannel();
+        throw err;
       }
     },
   };

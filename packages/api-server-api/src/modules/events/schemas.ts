@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { artifactRequestStateSchema } from "../artifact-library/schemas.js";
+
 export const liveEventSchema = z.discriminatedUnion("topic", [
   z.object({ topic: z.literal("sync") }),
 
@@ -18,6 +20,13 @@ export const liveEventSchema = z.discriminatedUnion("topic", [
     topic: z.literal("artifacts"),
     artifactId: z.string().min(1).optional(),
     agentId: z.string().min(1).optional(),
+  }),
+
+  z.object({
+    topic: z.literal("artifactRequest"),
+    requestId: z.string().min(1),
+    artifactId: z.string().min(1),
+    state: artifactRequestStateSchema,
   }),
 ]);
 

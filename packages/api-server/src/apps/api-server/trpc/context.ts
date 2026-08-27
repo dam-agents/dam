@@ -15,7 +15,10 @@ import {
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
-import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
+import {
+  composeArtifactLibraryForOwner,
+  composeArtifactRequestsForOwner,
+} from "../../../modules/artifact-library/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
@@ -172,6 +175,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       owner: user.sub,
       shareBaseUrl: config.shareBaseUrl,
     });
+    const { artifactRequests } = composeArtifactRequestsForOwner({
+      db,
+      artifactLibrary,
+      runtimeMutator,
+      ensureAgentReady: (agentId) => agentsRepo.ensureReady(agentId),
+      owner: user.sub,
+      surface,
+    });
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
@@ -279,6 +290,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       invocationsQuery,
       knowledgeBases,
       artifactLibrary,
+      artifactRequests,
       features,
       files,
       harnessConfig,

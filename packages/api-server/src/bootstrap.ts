@@ -139,6 +139,7 @@ import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js
 import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
+  composeArtifactRequestExpirySweeper,
 } from "./modules/artifact-library/index.js";
 import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
@@ -810,6 +811,14 @@ export async function bootstrap() {
   });
   await periodicJobs.register("artifact-expiry-sweep", 60 * 60_000, () =>
     artifactExpirySweeper.tick(),
+  );
+
+  const artifactRequestExpirySweeper = composeArtifactRequestExpirySweeper({
+    db,
+    batchSize: 200,
+  });
+  await periodicJobs.register("artifact-request-expiry-sweep", 60_000, () =>
+    artifactRequestExpirySweeper.tick(),
   );
 
   const prStateResolver = composePrStateResolver({

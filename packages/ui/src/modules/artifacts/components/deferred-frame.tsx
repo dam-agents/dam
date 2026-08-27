@@ -1,8 +1,23 @@
+import {
+  ARTIFACT_BRIDGE_CONNECT_TYPE,
+  type ArtifactBridgeReply,
+  type PageArtifactRequest,
+} from "api-server-api";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { readPageRequest } from "../lib/page-request.js";
+
 const MODAL_ANIMATION_MS = 220;
+
+export type ArtifactReplySender = (reply: ArtifactBridgeReply) => void;
+
+export interface ArtifactFrameBridge {
+  onConnect: (send: ArtifactReplySender) => void;
+  onDisconnect: (send: ArtifactReplySender) => void;
+  onRequest: (request: PageArtifactRequest) => void;
+}
 
 export function DeferredFrame({
   html,
@@ -10,12 +25,14 @@ export function DeferredFrame({
   className,
   deferMs = MODAL_ANIMATION_MS,
   postData,
+  bridge,
 }: {
   html: string;
   title: string;
   className: string;
   deferMs?: number;
   postData?: unknown;
+  bridge?: ArtifactFrameBridge;
 }) {
   const [mounted, setMounted] = useState(deferMs === 0);
   const [loaded, setLoaded] = useState(false);
@@ -30,6 +47,30 @@ export function DeferredFrame({
     if (!loaded || postData === undefined) return;
     frameRef.current?.contentWindow?.postMessage(postData, "*");
   }, [loaded, postData]);
+
+  useEffect(() => {
+    const pageWindow = frameRef.current?.contentWindow;
+    if (!loaded || !bridge || !pageWindow) return;
+
+    const channel = new MessageChannel();
+    const send: ArtifactReplySender = (reply) =>
+      channel.port1.postMessage(reply);
+    const readRequest = (event: MessageEvent) => {
+      const request = readPageRequest(event, pageWindow);
+      if (request) bridge.onRequest(request);
+    };
+    window.addEventListener("message", readRequest);
+    bridge.onConnect(send);
+    pageWindow.postMessage({ type: ARTIFACT_BRIDGE_CONNECT_TYPE }, "*", [
+      channel.port2,
+    ]);
+
+    return () => {
+      window.removeEventListener("message", readRequest);
+      bridge.onDisconnect(send);
+      channel.port1.close();
+    };
+  }, [loaded, bridge]);
 
   return (
     <div className={cn("relative", className)}>

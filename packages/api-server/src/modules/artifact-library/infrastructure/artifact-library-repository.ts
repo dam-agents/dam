@@ -28,6 +28,7 @@ export interface ArtifactRow {
   sizeBytes: number;
   version: number;
   visibility: string;
+  interactive: boolean;
   expiresAt: Date | null;
   viewCount: number;
   createdAt: Date;
@@ -142,6 +143,7 @@ export function createArtifactLibraryRepository(
     sizeBytes: artifactsTable.sizeBytes,
     version: artifactsTable.version,
     visibility: artifactsTable.visibility,
+    interactive: artifactsTable.interactive,
     expiresAt: artifactsTable.expiresAt,
     viewCount: artifactsTable.viewCount,
     createdAt: artifactsTable.createdAt,

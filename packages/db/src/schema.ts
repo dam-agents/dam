@@ -592,6 +592,7 @@ export const libraryArtifacts = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
+    interactive: boolean("interactive").notNull().default(false),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -627,6 +628,42 @@ export const libraryArtifactVersions = pgTable(
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
+);
+
+export const artifactRequests = pgTable(
+  "artifact_requests",
+  {
+    id: text("id").primaryKey(),
+    owner: text("owner").notNull(),
+    artifactId: text("artifact_id")
+      .notNull()
+      .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    seq: integer("seq").notNull(),
+    action: text("action").notNull(),
+    payload: jsonb("payload").notNull(),
+    trigger: text("trigger").notNull(),
+    state: text("state").notNull().default("pending"),
+    result: jsonb("result"),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("artifact_requests_artifact_created_idx").on(
+      table.artifactId,
+      table.createdAt,
+    ),
+    uniqueIndex("artifact_requests_artifact_seq_unique_idx").on(
+      table.artifactId,
+      table.seq,
+    ),
+    uniqueIndex("artifact_requests_in_flight_unique_idx")
+      .on(table.artifactId)
+      .where(sql`${table.state} in ('pending', 'delivered')`),
+  ],
 );
 
 export const invocations = pgTable(

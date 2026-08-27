@@ -3,6 +3,7 @@ import type {
   BudgetsService,
   ConnectionsService,
   ExperimentsService,
+  FeaturesService,
   SchedulesService,
   SkillsService,
   RuntimeDeliveryService,
@@ -15,7 +16,10 @@ import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
-import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
+import type {
+  ArtifactLibraryServiceImpl,
+  ArtifactRequestsServiceImpl,
+} from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 
 export function createHarnessRouter(deps: {
@@ -25,6 +29,11 @@ export function createHarnessRouter(deps: {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
+  artifactRequestsServiceFor: (
+    owner: string,
+    artifactLibrary: ArtifactLibraryServiceImpl,
+  ) => ArtifactRequestsServiceImpl;
+  featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
@@ -40,6 +49,8 @@ export function createHarnessRouter(deps: {
     composeSkills: deps.composeSkills,
     schedulesServiceFor: deps.schedulesServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
+    artifactRequestsServiceFor: deps.artifactRequestsServiceFor,
+    featuresServiceFor: deps.featuresServiceFor,
     invocationsServiceFor: deps.invocationsServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,
   });

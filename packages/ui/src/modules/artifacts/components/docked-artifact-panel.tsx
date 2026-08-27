@@ -19,8 +19,12 @@ import {
   useArtifactPreview,
   useArtifactVersions,
 } from "../api/queries.js";
+import { useArtifactBridge } from "../hooks/use-artifact-bridge.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
+import { ArtifactRequestStatusBar } from "./artifact-request-status-bar.js";
+import { ArtifactSelfRefreshChip } from "./artifact-self-refresh-chip.js";
+import { ArtifactSessionButton } from "./artifact-session-button.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { ShareDialog } from "./share-dialog.js";
@@ -59,6 +63,12 @@ export function DockedArtifactPanel() {
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
+  const {
+    bridge,
+    status: requestStatus,
+    selfRefresh,
+    dismissFailure,
+  } = useArtifactBridge(shownVersion === latest ? artifact : null);
 
   const frame =
     artifact && preview.data ? (
@@ -69,6 +79,7 @@ export function DockedArtifactPanel() {
         className="h-full w-full bg-white"
         deferMs={0}
         postData={feedPostForShown}
+        bridge={bridge}
       />
     ) : null;
   const frameFallback = (
@@ -97,6 +108,7 @@ export function DockedArtifactPanel() {
             onChange={(v) => setPinnedVersion(v === latest ? null : v)}
           />
         )}
+        {artifact && <ArtifactSessionButton artifact={artifact} />}
         {artifact && (
           <Button
             variant="outline"
@@ -148,6 +160,17 @@ export function DockedArtifactPanel() {
           <Close size={16} />
         </Button>
       </div>
+
+      <ArtifactSelfRefreshChip
+        selfRefresh={selfRefresh}
+        className="border-b border-border"
+      />
+
+      <ArtifactRequestStatusBar
+        status={requestStatus}
+        onDismissFailure={dismissFailure}
+        className="border-b border-border"
+      />
 
       <div className="min-h-0 flex-1">
         {artifactError ? (
