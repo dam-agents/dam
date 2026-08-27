@@ -982,13 +982,15 @@ controller:
       # a template) overrides the derivation — an operator escape hatch, not
       # a user concept.
       #
-      # UPGRADE NOTE (#1900): this default is smaller than the pre-Sizes one
-      # (limits were 1 CPU / 2Gi, requests 250m / 512Mi). It applies to NEW
-      # sandboxes only — existing ones are backfilled at `legacyAgentSize`
-      # below — but the derived default CPU request is 500m (limit × 0.5)
-      # where it used to be 250m, so a packed cluster fits fewer default-size
-      # agents. Tune `requestsFromLimits.fraction` if density matters more
-      # than burst headroom.
+      # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
+      # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
+      # an existing sandbox — NEW sandboxes get it directly, existing ones are
+      # backfilled at the identical `legacyAgentSize` below. One thing still
+      # changed from the pre-Sizes chart: the derived default CPU request is
+      # 500m (limit × 0.5) where it used to be an explicit 250m, so a packed
+      # cluster fits fewer default-size agents. Tune
+      # `requestsFromLimits.fraction` if density matters more than burst
+      # headroom.
       resources:
         limits:
           cpu: "1"
