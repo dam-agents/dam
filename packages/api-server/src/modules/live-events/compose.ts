@@ -14,6 +14,7 @@ import {
 } from "../agents/infrastructure/labels.js";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import { agentStreamable } from "../agents/index.js";
 
 export interface LiveEventsModule {
   liveEvents: LiveEventsService;
@@ -38,7 +39,7 @@ export function composeLiveEventsModule(deps: {
     log: deps.log,
     listRunningAgentIds: async (ownerSub) =>
       (await deps.agentsRepo.list(ownerSub))
-        .filter((agent) => agent.ready && !agent.hibernated)
+        .filter(agentStreamable)
         .map((agent) => agent.id),
     watchAgent: createPodSessionWatcher(deps.namespace, deps.log),
     onAgentsChanged: (ownerSub, listener) =>

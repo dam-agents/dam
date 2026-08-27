@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
+import { agentStreamable } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -32,12 +33,10 @@ export function createAgentTrpcRelay(
       .patchAnnotation(id, LAST_ACTIVITY_KEY, new Date().toISOString())
       .catch(() => {});
   };
-  const operable = (info: { ready: boolean; stopRequested: boolean } | null) =>
-    info !== null && info.ready && !info.stopRequested;
   const bumpActivity = async (id: string) => {
     if (Date.now() - (lastActivity.get(id) ?? 0) < ACTIVITY_DEBOUNCE_MS) return;
     try {
-      if (!operable(await repo.get(id))) return;
+      if (!agentStreamable(await repo.get(id))) return;
     } catch {
       return;
     }
@@ -113,7 +112,7 @@ export function createAgentTrpcRelay(
       client.on("message", buffer);
 
       try {
-        if (!operable(await repo.get(agentId))) {
+        if (!agentStreamable(await repo.get(agentId))) {
           client.close(1011, "agent not ready");
           return;
         }

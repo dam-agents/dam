@@ -20,6 +20,8 @@ interface OwnerHolder {
   closed: boolean;
 }
 
+const MAX_PENDING = 256;
+
 export function createPodSessionsService(
   deps: PodSessionsDeps,
 ): PodSessionsService {
@@ -105,7 +107,12 @@ export function createPodSessionsService(
       const pending: PodSessionsNotice[] = [{ topic: "sync" }];
       let wake: (() => void) | undefined;
       const release = acquire(sub, (notice) => {
-        pending.push(notice);
+        if (pending.length >= MAX_PENDING) {
+          pending.length = 0;
+          pending.push({ topic: "sync" });
+        } else {
+          pending.push(notice);
+        }
         wake?.();
       });
       const onAbort = () => wake?.();
