@@ -55,10 +55,14 @@ function isStatus(err: unknown, code: number): boolean {
 }
 const is404 = (err: unknown) => isStatus(err, 404);
 
+let cachedKubeConfig: k8s.KubeConfig | undefined;
+
 function loadKubeConfig(): k8s.KubeConfig {
-  const kc = new k8s.KubeConfig();
-  kc.loadFromDefault();
-  return kc;
+  if (!cachedKubeConfig) {
+    cachedKubeConfig = new k8s.KubeConfig();
+    cachedKubeConfig.loadFromDefault();
+  }
+  return cachedKubeConfig;
 }
 
 export function createK8sClient(

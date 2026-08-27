@@ -19,23 +19,43 @@ function agent(name: string, owner = "kc|one"): KubeObject {
   } as KubeObject;
 }
 
+// TEST_OVERVIEW: Models the pinned client's ListWatch ordering — connect fires before the initial list lands, and an error stops the watch for good until start() is called again.
 function fakeInformer(objects: KubeObject[] = []) {
-  const cached = new Map(objects.map((o) => [o.metadata?.name ?? "", o]));
+  const cached = new Map<string, KubeObject>();
   const handlers = new Map<string, Array<(arg?: unknown) => void>>();
+  let starts = 0;
+  let failStart: unknown = null;
+  const fire = (verb: string, arg?: unknown) => {
+    for (const cb of handlers.get(verb) ?? []) cb(arg);
+  };
   const informer = {
     on(verb: string, cb: (arg?: unknown) => void) {
       handlers.set(verb, [...(handlers.get(verb) ?? []), cb]);
     },
     off() {},
-    start: () => Promise.resolve(),
+    async start() {
+      starts += 1;
+      fire("connect");
+      await Promise.resolve();
+      if (failStart) throw failStart;
+      for (const o of objects) cached.set(o.metadata?.name ?? "", o);
+    },
     stop: () => Promise.resolve(),
     get: (name: string) => cached.get(name),
     list: () => [...cached.values()],
   } as unknown as AgentInformer;
-  const fire = (verb: string, arg?: unknown) => {
-    for (const cb of handlers.get(verb) ?? []) cb(arg);
+  return {
+    informer,
+    cached,
+    fire,
+    startCount: () => starts,
+    failNextStart: (err: unknown) => {
+      failStart = err;
+    },
+    healStart: () => {
+      failStart = null;
+    },
   };
-  return { informer, cached, fire };
 }
 
 function cacheOver(objects: KubeObject[], live = fakeK8s(objects).client) {
@@ -49,26 +69,70 @@ function cacheOver(objects: KubeObject[], live = fakeK8s(objects).client) {
   return { cache, ...f };
 }
 
+async function settled<T>(value: T): Promise<T> {
+  await Promise.resolve();
+  await Promise.resolve();
+  return value;
+}
+
 describe("agent state cache", () => {
-  // TEST_SCENARIO: Before the initial sync completes the cache cannot tell "absent" from "unseen", so it reads live.
-  it("reads live until the informer connects", async () => {
-    const { client, store } = fakeK8s([agent("a1")]);
-    const { cache, fire } = cacheOver([], client);
+  // TEST_SCENARIO: connect fires before the initial list lands, so it must not mark the cache usable — an empty store would report every agent absent.
+  it("reads live until the initial list has landed", async () => {
+    const { client } = fakeK8s([agent("a1")]);
+    const { cache } = cacheOver([agent("a1")], client);
 
+    const duringWindow = cache.get("a1");
+    const listedInWindow = cache.list();
+    expect(await duringWindow).not.toBeNull();
+    expect(await listedInWindow).toHaveLength(1);
+
+    await settled(null);
     expect(await cache.get("a1")).not.toBeNull();
+  });
 
-    store.delete("a1");
-    expect(await cache.get("a1")).toBeNull();
-    fire("connect");
-    expect(await cache.get("a1")).toBeNull();
+  // TEST_SCENARIO: The watch stops on error, so the cache must restart it rather than serving live reads forever.
+  it("restarts the informer after an error", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client } = fakeK8s([agent("a1")]);
+      const f = cacheOver([agent("a1")], client);
+      await settled(null);
+      expect(f.startCount()).toBe(1);
+
+      f.fire("error", new Error("watch dropped"));
+      expect(f.startCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(f.startCount()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: A cache stopped for shutdown must not keep restarting its informer.
+  it("stops restarting once stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = cacheOver([]);
+      await settled(null);
+      f.fire("error", new Error("dropped"));
+      await f.cache.stop();
+
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      expect(f.startCount()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // TEST_SCENARIO: Once synced, reads are served from the cache and never reach the API.
   it("serves reads from the cache once synced", async () => {
     const { client } = fakeK8s([]);
     const liveGet = vi.spyOn(client, "getCustomObject");
-    const { cache, fire } = cacheOver([agent("a1")], client);
-    fire("connect");
+    const { cache } = cacheOver([agent("a1")], client);
+    await settled(null);
 
     expect(await cache.get("a1")).not.toBeNull();
     expect(await cache.get("missing")).toBeNull();
@@ -79,7 +143,7 @@ describe("agent state cache", () => {
   it("filters a synced listing by owner", async () => {
     const objects = [agent("a1", "kc|one"), agent("a2", "kc|two")];
     const { cache, fire } = cacheOver(objects, fakeK8s(objects).client);
-    fire("connect");
+    await settled(null);
 
     expect((await cache.list("kc|one")).map((o) => o.metadata?.name)).toEqual([
       "a1",
@@ -91,7 +155,7 @@ describe("agent state cache", () => {
   it("reverts to live reads when the informer errors", async () => {
     const { client } = fakeK8s([agent("fresh")]);
     const { cache, fire } = cacheOver([agent("stale")], client);
-    fire("connect");
+    await settled(null);
     expect(await cache.get("stale")).not.toBeNull();
 
     fire("error", new Error("watch dropped"));
@@ -122,7 +186,7 @@ describe("agent state cache", () => {
   it("reads live again once stopped", async () => {
     const { client } = fakeK8s([agent("fresh")]);
     const { cache, fire } = cacheOver([agent("stale")], client);
-    fire("connect");
+    await settled(null);
     expect(await cache.get("stale")).not.toBeNull();
 
     await cache.stop();

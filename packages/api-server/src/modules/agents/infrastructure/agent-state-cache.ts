@@ -17,10 +17,16 @@ export interface RunningAgentStateCache extends AgentStateCache {
   stop(): Promise<void>;
 }
 
+const RESTART_DELAY_MS = 5_000;
+
 type LiveReads = Pick<K8sClient, "getCustomObject" | "listCustomObjects">;
 
 function ownerSelector(owner?: string): string | undefined {
   return owner ? `${LABEL_OWNER}=${owner}` : undefined;
+}
+
+function noChangeSignal(): AgentChangeSubscription {
+  return { changed: new Promise<void>(() => {}), cancel: () => {} };
 }
 
 export function createLiveAgentStateCache(live: LiveReads): AgentStateCache {
@@ -28,10 +34,7 @@ export function createLiveAgentStateCache(live: LiveReads): AgentStateCache {
     get: (id) => live.getCustomObject(AGENTS_PLURAL, id),
     list: (owner) =>
       live.listCustomObjects(AGENTS_PLURAL, ownerSelector(owner)),
-    whenChanged: () => ({
-      changed: new Promise<void>(() => {}),
-      cancel: () => {},
-    }),
+    whenChanged: noChangeSignal,
   };
 }
 
@@ -58,24 +61,43 @@ export function startAgentStateCache(deps: {
     if (id) release(id);
   };
 
+  let stopped = false;
+  let restartTimer: NodeJS.Timeout | undefined;
+
+  async function connect(): Promise<void> {
+    if (stopped) return;
+    try {
+      await deps.informer.start();
+      synced = true;
+    } catch (err) {
+      synced = false;
+      deps.log(
+        `agent cache could not start, serving live reads: ${String(err)}`,
+      );
+      scheduleRestart();
+    }
+  }
+
+  function scheduleRestart(): void {
+    if (stopped || restartTimer) return;
+    restartTimer = setTimeout(() => {
+      restartTimer = undefined;
+      void connect();
+    }, RESTART_DELAY_MS);
+    restartTimer.unref();
+  }
+
   deps.informer.on("add", onObject);
   deps.informer.on("update", onObject);
   deps.informer.on("delete", onObject);
-  deps.informer.on("connect", () => {
-    synced = true;
-  });
   deps.informer.on("error", (err) => {
     synced = false;
-    deps.log(
-      `agent cache desynced, falling back to live reads: ${String(err)}`,
-    );
+    deps.log(`agent cache desynced, serving live reads: ${String(err)}`);
     releaseAll();
+    scheduleRestart();
   });
 
-  void deps.informer.start().catch((err) => {
-    synced = false;
-    deps.log(`agent cache failed to start: ${String(err)}`);
-  });
+  void connect();
 
   return {
     async get(id) {
@@ -108,7 +130,9 @@ export function startAgentStateCache(deps: {
       };
     },
     async stop() {
+      stopped = true;
       synced = false;
+      if (restartTimer) clearTimeout(restartTimer);
       releaseAll();
       await deps.informer.stop();
     },

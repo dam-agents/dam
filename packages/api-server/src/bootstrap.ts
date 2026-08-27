@@ -148,7 +148,10 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease } from "./core/leader-lease.js";
-import { startAgentStateCache } from "./modules/agents/infrastructure/agent-state-cache.js";
+import {
+  startAgentStateCache,
+  createLiveAgentStateCache,
+} from "./modules/agents/infrastructure/agent-state-cache.js";
 import { createAgentInformer } from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
@@ -226,6 +229,10 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[agents] ${m}`),
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  const liveAgentsRepo = createAgentsRepository(
+    k8sClient,
+    createLiveAgentStateCache(k8sClient),
+  );
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -272,7 +279,7 @@ export async function bootstrap() {
       uiBaseUrl: config.uiBaseUrl,
     }),
   );
-  const sessionPresence = createSessionPresence(agentsRepo, sharedRedis);
+  const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
     sessionPresence.reconcile(),
   );
@@ -903,7 +910,7 @@ export async function bootstrap() {
   );
 
   const agentSweep = createAgentSweep({
-    listAgents: () => agentsRepo.list(),
+    listAgents: () => liveAgentsRepo.list(),
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());

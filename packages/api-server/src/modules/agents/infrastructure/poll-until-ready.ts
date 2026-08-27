@@ -1,5 +1,7 @@
 import type { AgentChangeSubscription } from "./agent-state-cache.js";
 
+const MIN_WAKE_GAP_MS = 50;
+
 export interface PollTiming {
   initialMs: number;
   maxMs: number;
@@ -21,15 +23,31 @@ export async function pollUntilReady(
 ): Promise<boolean> {
   const deadline = Date.now() + timing.timeoutMs;
   let interval = timing.initialMs;
+  let lastWakeAt = 0;
   while (Date.now() < deadline) {
     const wakeup = timing.wakeOn?.();
     try {
       if (await isReady()) return true;
       const waited = sleep(interval * (0.8 + 0.4 * Math.random()));
       try {
-        await (wakeup
-          ? Promise.race([waited.elapsed, wakeup.changed])
-          : waited.elapsed);
+        const wokeEarly = wakeup
+          ? await Promise.race([
+              waited.elapsed.then(() => false),
+              wakeup.changed.then(() => true),
+            ])
+          : await waited.elapsed.then(() => false);
+        if (wokeEarly) {
+          const sinceLastWake = Date.now() - lastWakeAt;
+          if (sinceLastWake < MIN_WAKE_GAP_MS) {
+            const paced = sleep(MIN_WAKE_GAP_MS - sinceLastWake);
+            try {
+              await paced.elapsed;
+            } finally {
+              paced.cancel();
+            }
+          }
+          lastWakeAt = Date.now();
+        }
       } finally {
         waited.cancel();
       }
