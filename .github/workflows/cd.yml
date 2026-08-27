@@ -21,6 +21,12 @@ concurrency:
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
+  # Layer digests must depend on content alone. A rebuilt step stamps files with
+  # the build time, so byte-identical content lands on a new digest and every
+  # node re-pulls it; rewrite-timestamp on the image outputs normalizes them to
+  # this instant. It is deliberately a constant rather than the commit time —
+  # a per-commit stamp would make every release differ again (#3495).
+  SOURCE_DATE_EPOCH: "1735689600"
   # Pin mise so the lockfile (mise.lock) stays deterministic. Unpinned,
   # mise-action installs latest and each new release rewrites platform entries
   # and the generated header, churning mise.lock on unrelated PRs. Bump this in
@@ -175,7 +181,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           cache-from: |
             type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
             type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
@@ -264,7 +270,7 @@ jobs:
           context: .
           file: packages/platform-base/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           cache-from: |
             type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
             type=gha,scope=platform-base-${{ matrix.arch }}
@@ -352,7 +358,7 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
           cache-from: |
@@ -449,7 +455,7 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
           cache-from: |
