@@ -70,9 +70,14 @@ sequenceDiagram
 | 04 | Wake, prompt, and the answer tool | outbox emit + wake, prompt composition, `answer_artifact_request` behind the flag | 03 |
 | 05 | The browser bridge | two-way postMessage, app-owned waiting states, typed failures | 04 |
 | 06 | Self-refresh limits and the indicator | client pacing, pause when hidden, idle stop, visible chip | 05 |
-| 07 | Documentation | vocabulary section + four architecture pages | 06 |
+| 08 | The bridge shim | `platform.ask` injected at render, protocol becomes internal | 06 |
+| 09 | The brief | what the cold Artifact Session needs, asked for at create | 08 |
+| 07 | Documentation | vocabulary section + four architecture pages | 09 |
 
-Order is linear. 04 is the first slice where the feature is visible end to end.
+Order is linear and runs 01 → 06, 08, 09, 07. 04 is the first slice where the feature is visible
+end to end. 08 and 09 were added after 06 shipped, when publishing a page by hand showed that the
+protocol is unusable without them, so 07 keeps its number and stays last: it documents what
+exists, and 08 and 09 change what exists.
 
 ## Pinned contracts
 

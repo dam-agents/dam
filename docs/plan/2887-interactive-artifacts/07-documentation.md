@@ -1,6 +1,6 @@
 # 07 — Documentation
 
-**Depends on:** 06-self-refresh-limits
+**Depends on:** 09-artifact-brief
 **Part of:** Interactive Artifacts — see [README](./README.md)
 
 ## Context
