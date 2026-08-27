@@ -1,5 +1,6 @@
 import type { ArtifactKind } from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
+import { ARTIFACT_BRIDGE_SHIM } from "./bridge-shim.js";
 
 export function escapeHtml(s: string): string {
   return s
@@ -105,14 +106,17 @@ export function renderWrapper(input: WrapperInput): string {
 </html>`;
 }
 
-export function renderHtmlInner(content: string): string {
-  if (/<base[\s>]/i.test(content)) return content;
+export function renderHtmlInner(content: string, interactive = false): string {
+  const shim = interactive ? ARTIFACT_BRIDGE_SHIM : "";
+  const base = /<base[\s>]/i.test(content) ? "" : `<base target="_blank">`;
+  const prelude = `${shim}${base}`;
+  if (prelude === "") return content;
   const headMatch = content.match(/<head[^>]*>/i);
   if (headMatch && headMatch.index !== undefined) {
     const at = headMatch.index + headMatch[0].length;
-    return `${content.slice(0, at)}<base target="_blank">${content.slice(at)}`;
+    return `${content.slice(0, at)}${prelude}${content.slice(at)}`;
   }
-  return `<base target="_blank">${content}`;
+  return `${prelude}${content}`;
 }
 
 const JSX_IMPORT_MAP = `{
@@ -287,9 +291,10 @@ export function renderCodeInner(
 export function renderTextKindInner(
   kind: Exclude<ArtifactKind, "binary">,
   source: string,
-  opts: { title: string; fileName: string },
+  opts: { title: string; fileName: string; interactive?: boolean },
 ): string {
-  if (kind === "html") return renderHtmlInner(source);
+  if (kind === "html")
+    return renderHtmlInner(source, opts.interactive === true);
   if (kind === "jsx") return renderJsxInner(source, opts.title);
   if (kind === "markdown") return renderMarkdownInner(source, opts.title);
   return renderCodeInner(source, opts.fileName, opts.title);

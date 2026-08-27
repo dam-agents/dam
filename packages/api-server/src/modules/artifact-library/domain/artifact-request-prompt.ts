@@ -24,6 +24,7 @@ function answerDirective(requestId: string): string {
     `Report the answer by calling the \`answer_artifact_request\` tool with request_id "${requestId}" ` +
     "and a `result` object. The page reads `result` with its own code, so shape it for the page, not for a human reader. " +
     "Finishing your turn is not an answer: the page waits until the tool call lands, and a request takes exactly one answer. " +
+    "The page can ask again the moment this answer lands, so answer what was asked and stop — a page that asks in small steps beats one that makes the person wait for everything at once. " +
     "If you cannot do what was asked, still call the tool and say why inside `result`."
   );
 }
@@ -38,8 +39,9 @@ function sourceSection(source: string): string {
   }
   return [
     "This is the first request in this session, so here is the page's current source. " +
-      "Later requests in this session do not repeat it — call `get_artifact` to re-read it, " +
-      "and `update_artifact` to publish a new version of the page.",
+      "Later requests in this session do not repeat it — call `get_artifact` to re-read it. " +
+      "The page renders your `result` itself, so answering never needs a new version: " +
+      "publish one with `update_artifact` only when the page's own code has to change.",
     "```html",
     source,
     "```",

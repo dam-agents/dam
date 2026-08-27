@@ -270,7 +270,11 @@ export function createArtifactLibraryService(
       return renderTextKindInner(
         row.kind as Exclude<ArtifactKind, "binary">,
         blob.content.toString("utf8"),
-        { title: row.title, fileName: ref.fileName },
+        {
+          title: row.title,
+          fileName: ref.fileName,
+          interactive: row.interactive,
+        },
       );
     },
 
