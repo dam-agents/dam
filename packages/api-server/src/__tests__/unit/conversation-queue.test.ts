@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { createConversationQueue } from "../../modules/channels/infrastructure/conversation-queue.js";
+import {
+  createConversationQueue,
+  type SteerResult,
+} from "../../modules/channels/infrastructure/conversation-queue.js";
 
 /**
  * TEST_OVERVIEW: The queue both channel workers run a conversation through. It
@@ -16,14 +19,17 @@ const settleFor = (ms: number) => new Promise((r) => setTimeout(r, ms * 8));
 
 function spyQueue(opts: {
   settleMs?: number;
-  injected?: boolean;
+  steerResult?: SteerResult;
   canSteer?: (m: Msg) => boolean;
   hold?: boolean;
+  slowSteer?: boolean;
 }) {
   const turns: string[][] = [];
   const steers: string[][] = [];
+  const steered: string[][] = [];
   const settled: string[][] = [];
   const gates: Array<() => void> = [];
+  const steerGates: Array<() => void> = [];
 
   const queue = createConversationQueue<Msg>({
     settleMs: opts.settleMs ?? 0,
@@ -35,8 +41,10 @@ function spyQueue(opts: {
     },
     steer: async (_sessionId, batch) => {
       steers.push(batch.map((m) => m.id));
-      return opts.injected ?? false;
+      if (opts.slowSteer) await new Promise<void>((r) => steerGates.push(r));
+      return opts.steerResult ?? "refused";
     },
+    onSteered: (batch) => steered.push(batch.map((m) => m.id)),
     onTurnSettled: (batch) => settled.push(batch.map((m) => m.id)),
   });
 
@@ -44,10 +52,15 @@ function spyQueue(opts: {
     queue,
     turns,
     steers,
+    steered,
     settled,
     releaseAll() {
       for (const g of gates) g();
       gates.length = 0;
+    },
+    releaseSteers() {
+      for (const g of steerGates) g();
+      steerGates.length = 0;
     },
     async waitFor(done: () => boolean) {
       for (let i = 0; i < 400 && !done(); i++) await tick();
@@ -88,7 +101,7 @@ describe("createConversationQueue", () => {
    * running turn, so the conversation is still answered once.
    */
   it("steers a mid-turn arrival into the running turn", async () => {
-    const h = spyQueue({ hold: true, injected: true });
+    const h = spyQueue({ hold: true, steerResult: "injected" });
 
     void h.queue.submit({ id: "a" });
     await h.waitFor(() => h.turns.length === 1);
@@ -107,7 +120,7 @@ describe("createConversationQueue", () => {
    * answered, as the next turn — never as a second turn racing the first.
    */
   it("runs a refused steer as the following turn", async () => {
-    const h = spyQueue({ hold: true, injected: false });
+    const h = spyQueue({ hold: true, steerResult: "refused" });
 
     void h.queue.submit({ id: "a" });
     await h.waitFor(() => h.turns.length === 1);
@@ -129,7 +142,7 @@ describe("createConversationQueue", () => {
   it("never steers past a message it cannot steer", async () => {
     const h = spyQueue({
       hold: true,
-      injected: true,
+      steerResult: "injected" as const,
       canSteer: (m) => m.heavy !== true,
     });
 
@@ -163,7 +176,7 @@ describe("createConversationQueue", () => {
           throw new Error("boom");
         }
       },
-      steer: async () => false,
+      steer: async () => "refused" as const,
       onError: () => {},
     });
 
@@ -171,6 +184,87 @@ describe("createConversationQueue", () => {
     await queue.submit({ id: "b" });
 
     expect(turns).toEqual([["a"], ["b"]]);
+  });
+
+  /**
+   * TEST_SCENARIO: A steer is a round trip, and someone can send another
+   * message inside it. The batch already on its way must not be planned a
+   * second time, or the agent is handed the same message twice.
+   */
+  it("does not re-steer a batch when a message arrives inside the round trip", async () => {
+    const h = spyQueue({
+      hold: true,
+      slowSteer: true,
+      steerResult: "injected",
+    });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    void h.queue.submit({ id: "b" });
+    await h.waitFor(() => h.steers.length === 1);
+
+    void h.queue.submit({ id: "c" });
+    await h.waitFor(() => h.steers.length === 2);
+
+    expect(h.steers).toEqual([["b"], ["c"]]);
+
+    h.releaseSteers();
+    await h.waitFor(() => h.steered.length === 2);
+    expect(h.steered).toEqual([["b"], ["c"]]);
+  });
+
+  /**
+   * TEST_SCENARIO: A turn can end while a steer is still in flight. The message
+   * must be delivered once — the queue may not both inject it into the turn
+   * that just ended and run it again as the next turn.
+   */
+  it("delivers once when the turn ends during a steer", async () => {
+    const h = spyQueue({
+      hold: true,
+      slowSteer: true,
+      steerResult: "injected",
+    });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    void h.queue.submit({ id: "b" });
+    await h.waitFor(() => h.steers.length === 1);
+
+    h.releaseAll();
+    await h.waitFor(() => h.settled.length === 1);
+    expect(h.turns).toEqual([["a"]]);
+
+    h.releaseSteers();
+    await h.waitFor(() => h.turns.length === 2);
+
+    expect(h.steered).toEqual([]);
+    expect(h.turns).toEqual([["a"], ["b"]]);
+  });
+
+  /**
+   * TEST_SCENARIO: Whether a harness can be steered is a fact about the
+   * harness, not about one message, so it is asked once — every later arrival
+   * on that turn waits instead of opening another connection to be refused.
+   */
+  it("asks an unsupported harness only once", async () => {
+    const h = spyQueue({ hold: true, steerResult: "unsupported" });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    void h.queue.submit({ id: "b" });
+    await h.waitFor(() => h.steers.length === 1);
+    void h.queue.submit({ id: "c" });
+    void h.queue.submit({ id: "d" });
+    await h.waitFor(() => h.steers.length > 1);
+
+    expect(h.steers).toEqual([["b"]]);
+
+    h.releaseAll();
+    await h.waitFor(() => h.turns.length === 2);
+    expect(h.turns[1]).toEqual(["b", "c", "d"]);
   });
 
   /**

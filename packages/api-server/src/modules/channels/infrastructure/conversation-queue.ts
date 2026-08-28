@@ -3,6 +3,8 @@ import {
   settleRoundsRemaining,
 } from "../domain/turn-coalescing.js";
 
+export type SteerResult = "injected" | "refused" | "unsupported";
+
 export interface ConversationQueue<T> {
   submit(message: T): Promise<void>;
 }
@@ -14,8 +16,8 @@ export interface ConversationQueueDeps<T> {
     batch: T[],
     onSession: (sessionId: string) => void,
   ) => Promise<void>;
-  steer: (sessionId: string, batch: T[]) => Promise<boolean>;
-  onSteered?: (batch: T[], turnStillRunning: boolean) => void;
+  steer: (sessionId: string, batch: T[]) => Promise<SteerResult>;
+  onSteered?: (batch: T[]) => void;
   onTurnSettled?: (batch: T[]) => void;
   onEmpty?: () => void;
   onError?: (err: unknown) => void;
@@ -30,8 +32,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  steered into it — the agent reads it before it calls its reply tool, so the
  *  conversation still gets one answer — and where the harness refuses steering
  *  the message waits and becomes the next turn instead of a second one racing
- *  the first. The caller supplies what a turn and a steer mean on its surface;
- *  the ordering, the quiet period, and the one-turn-at-a-time rule live here. */
+ *  the first. A steer claims its batch out of the queue before it goes out, and
+ *  puts it back at the head if the harness refuses or if the turn ended while
+ *  the steer was in flight: a message must reach the agent once, so the queue
+ *  never leaves a batch reachable by two deliveries at the same time. The caller
+ *  supplies what a turn and a steer mean on its surface; the ordering, the quiet
+ *  period, and the one-turn-at-a-time rule live here. */
 export function createConversationQueue<T>(
   deps: ConversationQueueDeps<T>,
 ): ConversationQueue<T> {
@@ -39,6 +45,8 @@ export function createConversationQueue<T>(
   let draining = false;
   let sessionId: string | null = null;
   let turnEpoch = 0;
+  let steersInFlight = 0;
+  let steeringUnsupported = false;
 
   async function settle(): Promise<void> {
     if (deps.settleMs <= 0) return;
@@ -55,9 +63,10 @@ export function createConversationQueue<T>(
   }
 
   async function steerPending(): Promise<void> {
+    if (steeringUnsupported) return;
     const target = sessionId;
     if (target === null) return;
-    const epoch = turnEpoch;
+
     const plan = planCoalescedDelivery({
       pending,
       turnInFlight: true,
@@ -66,15 +75,33 @@ export function createConversationQueue<T>(
     });
     if (plan.kind !== "steer") return;
 
-    const injected = await deps.steer(target, plan.batch);
-    if (!injected) return;
+    const epoch = turnEpoch;
+    const batch = plan.batch;
+    pending = plan.remaining;
+    steersInFlight += 1;
 
-    const steered = new Set(plan.batch);
-    pending = pending.filter((message) => !steered.has(message));
-    deps.onSteered?.(plan.batch, turnEpoch === epoch);
+    let result: SteerResult = "refused";
+    try {
+      result = await deps.steer(target, batch);
+    } catch (err) {
+      deps.onError?.(err);
+    } finally {
+      steersInFlight -= 1;
+    }
+
+    if (result === "unsupported") steeringUnsupported = true;
+
+    if (result !== "injected" || turnEpoch !== epoch) {
+      pending = [...batch, ...pending];
+      if (!draining) void drain();
+      return;
+    }
+
+    deps.onSteered?.(batch);
   }
 
   async function drain(): Promise<void> {
+    if (draining) return;
     draining = true;
     try {
       await settle();
@@ -101,8 +128,8 @@ export function createConversationQueue<T>(
       deps.onError?.(err);
     } finally {
       draining = false;
-      if (pending.length === 0) deps.onEmpty?.();
-      else void drain();
+      if (pending.length > 0) void drain();
+      else if (steersInFlight === 0) deps.onEmpty?.();
     }
   }
 

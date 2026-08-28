@@ -42,6 +42,7 @@ import {
 type TelegramPendingMessage = {
   text: string;
   author: TelegramInboundMessage["author"];
+  thread: ThreadLike;
 };
 
 export interface TelegramConversationsPort {
@@ -474,30 +475,30 @@ export function createTelegramWorker(deps: {
   function createChatQueue(
     key: string,
     agentId: string,
-    thread: ThreadLike,
+    threadId: string,
   ): ConversationQueue<TelegramPendingMessage> {
     return createConversationQueue<TelegramPendingMessage>({
       settleMs: deps.settleMs ?? 0,
       runTurn: (batch, onSession) =>
-        relayToInstance(agentId, thread, batch, onSession),
+        relayToInstance(agentId, batch.at(-1)!.thread, batch, onSession),
       steer: async (sessionId, batch) => {
         const outcome = await makeAcpClient(agentId).steer(
           sessionId,
           steerFrame(batch),
         );
-        if (outcome === "injected") return true;
+        if (outcome === "injected") return "injected";
         getLogger().debug(
-          { agentId, threadId: thread.id, outcome },
+          { agentId, threadId, outcome },
           "telegram.turn.steer_declined",
         );
-        return false;
+        return outcome === "unsupported" ? "unsupported" : "refused";
       },
       onEmpty: () => {
         telegramQueues.delete(key);
       },
       onError: (err) => {
         getLogger().warn(
-          { agentId, threadId: thread.id, error: String(err) },
+          { agentId, threadId, error: String(err) },
           "telegram.chat_drain.failed",
         );
       },
@@ -513,10 +514,10 @@ export function createTelegramWorker(deps: {
     const key = `${agentId}|${thread.id}`;
     let queue = telegramQueues.get(key);
     if (!queue) {
-      queue = createChatQueue(key, agentId, thread);
+      queue = createChatQueue(key, agentId, thread.id);
       telegramQueues.set(key, queue);
     }
-    return queue.submit({ text, author });
+    return queue.submit({ text, author, thread });
   }
 
   function emitTurn(

@@ -2232,12 +2232,7 @@ export function createSlackWorker(
         threadTs,
         hasThread: !!event.threadTs,
         instanceName: binding.instanceName,
-        owner: binding.owner,
-        ...(event.teamId ? { teamId: event.teamId } : {}),
         speakerLabel: !opts.directMessage,
-        ambient: binding.ambient,
-        roster,
-        ambiguousName: routed.ambiguousName,
       },
       slackUserId,
       {
@@ -2247,6 +2242,13 @@ export function createSlackWorker(
         images: fetched.images,
         files: fetched.files,
         release: fetched.release,
+        turn: {
+          owner: binding.owner,
+          ...(event.teamId ? { teamId: event.teamId } : {}),
+          ambient: binding.ambient,
+          roster,
+          ambiguousName: routed.ambiguousName,
+        },
       },
     );
   }
@@ -2256,15 +2258,23 @@ export function createSlackWorker(
     threadTs: string;
     hasThread: boolean;
     instanceName: string;
+    speakerLabel: boolean;
+  };
+
+  type AddressedTurnContext = {
     owner: string;
     teamId?: string;
-    speakerLabel: boolean;
     ambient: boolean;
     roster?: RosterEntry[];
     ambiguousName?: string | null;
   };
 
-  const addressedQueues = new Map<string, ConversationQueue<PendingMessage>>();
+  type AddressedPending = PendingMessage & { turn: AddressedTurnContext };
+
+  const addressedQueues = new Map<
+    string,
+    ConversationQueue<AddressedPending>
+  >();
 
   function addressedQueueKey(
     conversation: AddressedConversation,
@@ -2301,13 +2311,14 @@ export function createSlackWorker(
   function createAddressedQueue(
     key: string,
     conversation: AddressedConversation,
-  ): ConversationQueue<PendingMessage> {
+  ): ConversationQueue<AddressedPending> {
     const steeredRefs: TurnRef[] = [];
-    return createConversationQueue<PendingMessage>({
+    return createConversationQueue<AddressedPending>({
       settleMs,
       canSteer: (msg) => !carriesAttachments(msg),
       runTurn: async (batch, onSession) => {
         const { kept, dropped } = batchFiles(batch);
+        const latest = batch.at(-1)!;
         await relaySharedTurn({
           channel: conversation.channelId,
           threadTs: conversation.threadTs,
@@ -2317,17 +2328,17 @@ export function createSlackWorker(
             slackUserId,
           })),
           hasThread: conversation.hasThread,
-          slackUserId: batch.at(-1)!.slackUserId,
+          slackUserId: latest.slackUserId,
           instanceName: conversation.instanceName,
-          owner: conversation.owner,
-          ...(conversation.teamId ? { teamId: conversation.teamId } : {}),
+          owner: latest.turn.owner,
+          ...(latest.turn.teamId ? { teamId: latest.turn.teamId } : {}),
           images: batch.flatMap((m) => m.images),
           files: kept,
           droppedFiles: dropped.map((f) => f.name),
           speakerLabel: conversation.speakerLabel,
-          ambient: conversation.ambient,
-          roster: conversation.roster,
-          ambiguousName: conversation.ambiguousName,
+          ambient: latest.turn.ambient,
+          roster: latest.turn.roster,
+          ambiguousName: latest.turn.ambiguousName,
           onSession,
         });
       },
@@ -2336,7 +2347,7 @@ export function createSlackWorker(
           sessionId,
           steerFrame(conversation, batch),
         );
-        if (outcome === "injected") return true;
+        if (outcome === "injected") return "injected";
         getLogger().debug(
           {
             agentId: conversation.instanceName,
@@ -2345,39 +2356,37 @@ export function createSlackWorker(
           },
           "slack.turn.steer_declined",
         );
-        return false;
+        return outcome === "unsupported" ? "unsupported" : "refused";
       },
-      onSteered: (batch, turnStillRunning) => {
+      onSteered: (batch) => {
         for (const msg of batch) {
-          if (turnStillRunning) {
-            const ref: TurnRef = {
-              channel: conversation.channelId,
-              threadTs: conversation.hasThread
-                ? conversation.threadTs
-                : msg.eventTs,
-              eventTs: msg.eventTs,
-              text: msg.text,
+          const ref: TurnRef = {
+            channel: conversation.channelId,
+            threadTs: conversation.hasThread
+              ? conversation.threadTs
+              : msg.eventTs,
+            eventTs: msg.eventTs,
+            text: msg.text,
+            slackUserId: msg.slackUserId,
+            hasThread: conversation.hasThread,
+            hadAttachments: false,
+          };
+          beginTurn(conversation.instanceName, ref);
+          steeredRefs.push(ref);
+          securityLog("info", "channel.authz", {
+            category: "channel",
+            actor: null,
+            actorKind: "external",
+            surface: "slack",
+            agentId: conversation.instanceName,
+            decision: "allow",
+            detail: {
+              basis: "place",
+              trigger: "steer",
               slackUserId: msg.slackUserId,
-              hasThread: conversation.hasThread,
-              hadAttachments: false,
-            };
-            beginTurn(conversation.instanceName, ref);
-            steeredRefs.push(ref);
-            securityLog("info", "channel.authz", {
-              category: "channel",
-              actor: null,
-              actorKind: "external",
-              surface: "slack",
-              agentId: conversation.instanceName,
-              decision: "allow",
-              detail: {
-                basis: "place",
-                trigger: "steer",
-                slackUserId: msg.slackUserId,
-                channelId: conversation.channelId,
-              },
-            });
-          }
+              channelId: conversation.channelId,
+            },
+          });
           msg.release();
         }
       },
@@ -2406,7 +2415,7 @@ export function createSlackWorker(
   function enqueueAddressed(
     conversation: AddressedConversation,
     slackUserId: string,
-    msg: PendingMessage,
+    msg: AddressedPending,
   ): Promise<void> {
     const key = addressedQueueKey(conversation, slackUserId);
     let queue = addressedQueues.get(key);
@@ -2709,7 +2718,7 @@ export function createSlackWorker(
       if (bytes + f.bytes.length > TOTAL_FILE_BYTES_CAP) {
         getLogger().warn(
           { file: f.name, bytes: f.bytes.length },
-          "slack.ambient_file.over_batch_cap",
+          "slack.file.over_batch_cap",
         );
         dropped.push(f);
         continue;
@@ -2724,18 +2733,98 @@ export function createSlackWorker(
 
   const heldBudget = createAttachmentBudget(HELD_BYTES_CAP);
 
-  type AmbientQueue = {
-    channelId: string;
-    threadTs: string | null;
-    pending: PendingMessage[];
-    draining: boolean;
-  };
-  const ambientQueues = new Map<string, AmbientQueue>();
+  const ambientQueues = new Map<string, ConversationQueue<PendingMessage>>();
 
   function ambientQueueKey(channelId: string, threadTs: string | null): string {
     return threadTs === null
       ? `top:${channelId}`
       : `thread:${channelId}:${threadTs}`;
+  }
+
+  function createAmbientQueue(
+    key: string,
+    channelId: string,
+    threadTs: string | null,
+  ): ConversationQueue<PendingMessage> {
+    return createConversationQueue<PendingMessage>({
+      settleMs,
+      runTurn: async (batch) => {
+        const last = batch.at(-1);
+        if (!last) return;
+        const roster = await resolveRoster(channelId);
+        const readers: RosterEntry[] = [];
+        for (const entry of roster) {
+          if (!entry.ambient) continue;
+          if (await isTermsAccepted(entry.owner)) {
+            readers.push(entry);
+            continue;
+          }
+          getLogger().debug(
+            { agentId: entry.instanceName, channelId },
+            "slack.ambient_turn.skipped_terms",
+          );
+        }
+        if (readers.length === 0) return;
+
+        const inThread = threadTs !== null;
+        const { kept, dropped } = batchFiles(batch);
+        const answeredAlready: AmbientPeerReply[] = [];
+        for (const reader of orderAmbientReaders(readers)) {
+          securityLog("info", "channel.authz", {
+            category: "channel",
+            actor: null,
+            actorKind: "external",
+            surface: "slack",
+            agentId: reader.instanceName,
+            decision: "allow",
+            detail: {
+              basis: "place",
+              trigger: "ambient",
+              slackUserId: last.slackUserId,
+              channelId,
+            },
+          });
+          const { posted, replyText } = await relayAmbientTurn({
+            roster,
+            readers,
+            answeredAlready: [...answeredAlready],
+            instanceName: reader.instanceName,
+            channel: channelId,
+            threadKey: inThread
+              ? slackThreadKey(channelId, threadTs)
+              : ambientThreadKey(channelId),
+            ...(inThread ? { legacyThreadKey: threadTs } : {}),
+            replyThreadTs: inThread ? threadTs : last.eventTs,
+            eventTs: last.eventTs,
+            hasThread: inThread,
+            messages: batch.map(({ text, eventTs, slackUserId }) => ({
+              text,
+              eventTs,
+              slackUserId,
+            })),
+            images: batch.flatMap((m) => m.images),
+            files: kept,
+            droppedFiles: dropped.map((f) => f.name),
+            externalActorId: last.slackUserId,
+          });
+          if (posted)
+            answeredAlready.push({ name: reader.name, text: replyText });
+        }
+      },
+      steer: async () => "refused",
+      onTurnSettled: (batch) => {
+        for (const msg of batch) msg.release();
+      },
+      onEmpty: () => {
+        ambientQueues.delete(key);
+      },
+      onError: (err) => {
+        getLogger().warn(
+          { channelId, error: formatError(err) },
+          "slack.ambient_drain.failed",
+        );
+      },
+    });
   }
 
   function enqueueAmbient(
@@ -2746,93 +2835,10 @@ export function createSlackWorker(
     const key = ambientQueueKey(channelId, threadTs);
     let queue = ambientQueues.get(key);
     if (!queue) {
-      queue = { channelId, threadTs, pending: [], draining: false };
+      queue = createAmbientQueue(key, channelId, threadTs);
       ambientQueues.set(key, queue);
     }
-    queue.pending.push(msg);
-    if (!queue.draining) void drainAmbientQueue(key, queue);
-  }
-
-  async function drainAmbientQueue(key: string, queue: AmbientQueue) {
-    queue.draining = true;
-    try {
-      while (queue.pending.length > 0) {
-        const batch = queue.pending.splice(0);
-        try {
-          const last = batch.at(-1);
-          if (!last) continue;
-          const roster = await resolveRoster(queue.channelId);
-          const readers: RosterEntry[] = [];
-          for (const entry of roster) {
-            if (!entry.ambient) continue;
-            if (await isTermsAccepted(entry.owner)) {
-              readers.push(entry);
-              continue;
-            }
-            getLogger().debug(
-              { agentId: entry.instanceName, channelId: queue.channelId },
-              "slack.ambient_turn.skipped_terms",
-            );
-          }
-          if (readers.length === 0) continue;
-
-          const inThread = queue.threadTs !== null;
-          const { kept, dropped } = batchFiles(batch);
-          const answeredAlready: AmbientPeerReply[] = [];
-          for (const reader of orderAmbientReaders(readers)) {
-            securityLog("info", "channel.authz", {
-              category: "channel",
-              actor: null,
-              actorKind: "external",
-              surface: "slack",
-              agentId: reader.instanceName,
-              decision: "allow",
-              detail: {
-                basis: "place",
-                trigger: "ambient",
-                slackUserId: last.slackUserId,
-                channelId: queue.channelId,
-              },
-            });
-            const { posted, replyText } = await relayAmbientTurn({
-              roster,
-              readers,
-              answeredAlready: [...answeredAlready],
-              instanceName: reader.instanceName,
-              channel: queue.channelId,
-              threadKey: inThread
-                ? slackThreadKey(queue.channelId, queue.threadTs!)
-                : ambientThreadKey(queue.channelId),
-              ...(inThread ? { legacyThreadKey: queue.threadTs! } : {}),
-              replyThreadTs: inThread ? queue.threadTs! : last.eventTs,
-              eventTs: last.eventTs,
-              hasThread: inThread,
-              messages: batch.map(({ text, eventTs, slackUserId }) => ({
-                text,
-                eventTs,
-                slackUserId,
-              })),
-              images: batch.flatMap((m) => m.images),
-              files: kept,
-              droppedFiles: dropped.map((f) => f.name),
-              externalActorId: last.slackUserId,
-            });
-            if (posted)
-              answeredAlready.push({ name: reader.name, text: replyText });
-          }
-        } finally {
-          for (const msg of batch) msg.release();
-        }
-      }
-    } catch (err) {
-      getLogger().warn(
-        { channelId: queue.channelId, error: formatError(err) },
-        "slack.ambient_drain.failed",
-      );
-    } finally {
-      queue.draining = false;
-      if (queue.pending.length === 0) ambientQueues.delete(key);
-    }
+    void queue.submit(msg);
   }
 
   async function handleChannelMessage(event: SlackChannelMessageEvent) {
