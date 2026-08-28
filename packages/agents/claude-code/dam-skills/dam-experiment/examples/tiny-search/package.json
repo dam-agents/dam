@@ -1,0 +1,12 @@
+{
+  "name": "tiny-search",
+  "version": "1.0.0",
+  "description": "A minimal, deliberately naive in-memory full-text search index for Node. No dependencies.",
+  "type": "module",
+  "main": "src/tiny-search.js",
+  "scripts": {
+    "test": "node --test",
+    "bench": "node bench/bench.mjs"
+  },
+  "license": "MIT"
+}
