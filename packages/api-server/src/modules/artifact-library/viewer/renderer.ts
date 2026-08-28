@@ -101,7 +101,7 @@ export function renderWrapper(input: WrapperInput): string {
   ${versionNav}
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="${escapeHtml(input.innerHtml)}" title="${escapeHtml(input.title)}"></iframe>
+<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms" srcdoc="${escapeHtml(input.innerHtml)}" title="${escapeHtml(input.title)}"></iframe>
 </body>
 </html>`;
 }

@@ -82,7 +82,7 @@ export function DeferredFrame({
       {mounted && (
         <iframe
           ref={frameRef}
-          sandbox="allow-scripts allow-popups"
+          sandbox="allow-scripts allow-popups allow-forms"
           srcDoc={html}
           title={title}
           onLoad={() => setLoaded(true)}
