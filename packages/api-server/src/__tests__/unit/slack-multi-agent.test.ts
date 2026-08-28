@@ -58,6 +58,7 @@ function harness(
     agentSpecs.find((a) => a.instanceName === instanceName)?.owner ?? OWNER;
 
   const makeAcp = (instanceName: string): AcpClient => ({
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt: unknown, sendOpts: SendPromptOpts) => {
       prompts.push({

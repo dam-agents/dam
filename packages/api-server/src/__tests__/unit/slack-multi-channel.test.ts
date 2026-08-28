@@ -27,6 +27,7 @@ function harness(opts?: {
   const freshKeys: string[] = [];
   const resumed: string[] = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => opts?.sessions ?? [],
     sendPrompt: async (_prompt: unknown, sendOpts: SendPromptOpts) => {
       if ("resumeSessionId" in sendOpts) resumed.push(sendOpts.resumeSessionId);

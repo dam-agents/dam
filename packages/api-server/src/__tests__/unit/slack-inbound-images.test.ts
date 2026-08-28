@@ -65,6 +65,7 @@ function harness() {
   const prompts: Array<string | ContentBlock[]> = [];
   const pending = createMemoryTtlStore<SlackOAuthPending>(600_000);
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
       prompts.push(prompt);

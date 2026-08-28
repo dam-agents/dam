@@ -23,6 +23,10 @@ import {
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import {
+  createConversationQueue,
+  type ConversationQueue,
+} from "./conversation-queue.js";
+import {
   buildAuthorizeUrl,
   generatePkce,
   type KeycloakOAuthConfig,
@@ -34,6 +38,11 @@ import {
   type DomainEvent,
   type TurnOutcome,
 } from "../../../events.js";
+
+type TelegramPendingMessage = {
+  text: string;
+  author: TelegramInboundMessage["author"];
+};
 
 export interface TelegramConversationsPort {
   findAgentByConversation(
@@ -343,6 +352,7 @@ export function createTelegramWorker(deps: {
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
+  settleMs?: number;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
   const { botToken, makeAcpClient, agents, attendance, brandName } = deps;
@@ -369,14 +379,25 @@ export function createTelegramWorker(deps: {
   async function relayToInstance(
     agentId: string,
     thread: ThreadLike,
-    text: string,
-    author: { userId: string; fullName: string; userName: string },
+    messages: TelegramPendingMessage[],
+    onSession?: (sessionId: string) => void,
   ) {
     lastThread.set(agentId, thread as Thread);
 
-    const context = thread.isDM
-      ? `This is a 1:1 direct message from ${author.fullName} (@${author.userName}, id=${author.userId}). Every message here is directed at you — always reply.`
-      : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; only respond when it makes sense — stay quiet when the conversation isn't for you.`;
+    const author = messages.at(-1)!.author;
+    const batched = messages.length > 1;
+    const text = batched
+      ? messages.map((m) => `[@${m.author.userName}] ${m.text}`).join("\n")
+      : messages[0]!.text;
+
+    const who = batched
+      ? `${messages.length} messages arrived together; each line is tagged with who sent it. Answer them as one — reply once, covering all of them.`
+      : "";
+    const context = (
+      thread.isDM
+        ? `This is a 1:1 direct message from ${author.fullName} (@${author.userName}, id=${author.userId}). Every message here is directed at you — always reply.`
+        : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; only respond when it makes sense — stay quiet when the conversation isn't for you.`
+    ).concat(who ? ` ${who}` : "");
 
     const freshPrompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
@@ -400,6 +421,7 @@ export function createTelegramWorker(deps: {
       const existing = await findThreadSession(agentId, thread.id);
       if (existing) {
         try {
+          onSession?.(existing.sessionId);
           await acp.sendPrompt(text, { resumeSessionId: existing.sessionId });
           outcome = "success";
           return;
@@ -414,6 +436,7 @@ export function createTelegramWorker(deps: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
         },
+        ...(onSession ? { onSession } : {}),
       });
       outcome = "success";
     } catch (err) {
@@ -431,6 +454,69 @@ export function createTelegramWorker(deps: {
       releaseAttendance();
       emitTurn(agentId, outcome, author.userId, failureReason);
     }
+  }
+
+  const telegramQueues = new Map<
+    string,
+    ConversationQueue<TelegramPendingMessage>
+  >();
+
+  function steerFrame(batch: TelegramPendingMessage[]): string {
+    const one = batch.length === 1;
+    return [
+      "<new-messages>",
+      `${one ? "Another message" : `${batch.length} more messages`} arrived in this chat while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
+      ...batch.map((m) => `[@${m.author.userName}] ${m.text}`),
+      "</new-messages>",
+    ].join("\n");
+  }
+
+  function createChatQueue(
+    key: string,
+    agentId: string,
+    thread: ThreadLike,
+  ): ConversationQueue<TelegramPendingMessage> {
+    return createConversationQueue<TelegramPendingMessage>({
+      settleMs: deps.settleMs ?? 0,
+      runTurn: (batch, onSession) =>
+        relayToInstance(agentId, thread, batch, onSession),
+      steer: async (sessionId, batch) => {
+        const outcome = await makeAcpClient(agentId).steer(
+          sessionId,
+          steerFrame(batch),
+        );
+        if (outcome === "injected") return true;
+        getLogger().debug(
+          { agentId, threadId: thread.id, outcome },
+          "telegram.turn.steer_declined",
+        );
+        return false;
+      },
+      onEmpty: () => {
+        telegramQueues.delete(key);
+      },
+      onError: (err) => {
+        getLogger().warn(
+          { agentId, threadId: thread.id, error: String(err) },
+          "telegram.chat_drain.failed",
+        );
+      },
+    });
+  }
+
+  function enqueueTelegramTurn(
+    agentId: string,
+    thread: ThreadLike,
+    text: string,
+    author: TelegramInboundMessage["author"],
+  ): Promise<void> {
+    const key = `${agentId}|${thread.id}`;
+    let queue = telegramQueues.get(key);
+    if (!queue) {
+      queue = createChatQueue(key, agentId, thread);
+      telegramQueues.set(key, queue);
+    }
+    return queue.submit({ text, author });
   }
 
   function emitTurn(
@@ -484,7 +570,7 @@ export function createTelegramWorker(deps: {
           isTermsAccepted: deps.isTermsAccepted,
           uiBaseUrl: deps.uiBaseUrl,
           brandShort: deps.brandShort,
-          relay: relayToInstance,
+          relay: enqueueTelegramTurn,
         });
 
         chat.onDirectMessage((thread, message) =>
