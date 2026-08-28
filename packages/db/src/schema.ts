@@ -593,6 +593,8 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
+    ownSession: boolean("own_session").notNull().default(false),
+    sessionId: text("session_id"),
     brief: text("brief"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),

@@ -38,6 +38,7 @@ import { createHarnessRouter } from "./harness-router.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type { AcpClientFactory } from "../../core/acp-client.js";
 
 export interface HarnessApiServerAppDeps {
   config: Config;
@@ -53,6 +54,7 @@ export interface HarnessApiServerAppDeps {
   connectionsServiceFor: (owner: string) => ConnectionsService;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeProgress: RuntimeProgressPort;
+  makeAcpClient: AcpClientFactory;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -70,6 +72,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     connectionsServiceFor,
     wakeAgent,
     runtimeProgress,
+    makeAcpClient,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -121,6 +124,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       artifactLibrary,
       runtimeMutator,
       ensureAgentReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),
       owner,
       surface: "mcp",
     }).artifactRequests;

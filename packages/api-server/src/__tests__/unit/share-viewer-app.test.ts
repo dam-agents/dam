@@ -26,6 +26,8 @@ function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
     version: 1,
     visibility: "public",
     interactive: false,
+    ownSession: false,
+    sessionId: null,
     brief: null,
     expiresAt: null,
     viewCount: 0,

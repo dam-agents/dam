@@ -10,6 +10,7 @@ export interface ArtifactRequestPromptInput {
   action: string;
   payload: Record<string, unknown>;
   trigger: ArtifactRequestTrigger;
+  bound: boolean;
   brief: string | null;
   source: string | null;
 }
@@ -20,23 +21,23 @@ function askedBy(trigger: ArtifactRequestTrigger): string {
     : "The page asked for this on its own, with nobody clicking. Keep the work small.";
 }
 
-function answerDirective(requestId: string): string {
+function answerDirective(requestId: string, bound: boolean): string {
+  const waiting = bound
+    ? "Your reply in this conversation is not the answer: the page waits for that call."
+    : "Finishing your turn is not the answer: the page waits for that call.";
   return (
-    `Report the answer by calling the \`answer_artifact_request\` tool with request_id "${requestId}" ` +
-    "and a `result` object. The page reads `result` with its own code, so shape it for the page, not for a human reader. " +
-    "Finishing your turn is not an answer: the page waits until the tool call lands, and a request takes exactly one answer. " +
-    "The page can ask again the moment this answer lands, so answer what was asked and stop — a page that asks in small steps beats one that makes the person wait for everything at once. " +
-    "If you cannot do what was asked, still call the tool and say why inside `result`."
+    `Answer with \`answer_artifact_request\`, request_id "${requestId}". ` +
+    `${waiting} Call it even if only to say you could not.`
   );
 }
 
-function briefSection(brief: string): string {
-  return [
-    "You left this brief on the page when you published it, for this exact moment. This session " +
+function briefSection(brief: string, bound: boolean): string {
+  const why = bound
+    ? "The standing rules you left on this page when you published it. Later asks do not repeat them:"
+    : "You left this brief on the page when you published it, for this exact moment. This session " +
       "cannot see the conversation the page was written in, so the brief is the only thing you told " +
-      "yourself about the job the page is doing. Follow it:",
-    brief,
-  ].join("\n\n");
+      "yourself about the job the page is doing. Follow it:";
+  return [why, brief].join("\n\n");
 }
 
 function sourceSection(source: string): string {
@@ -62,15 +63,14 @@ export function buildArtifactRequestPrompt(
   input: ArtifactRequestPromptInput,
 ): string {
   const parts = [
-    `Your interactive page "${input.title}" (artifact ${input.artifactId}) is asking you to do something.`,
-    ...(input.brief !== null ? [briefSection(input.brief)] : []),
+    `Your interactive page "${input.title}" (artifact ${input.artifactId}) is asking you something.`,
+    ...(input.brief !== null ? [briefSection(input.brief, input.bound)] : []),
     [
-      `Request #${input.seq}`,
-      `action: ${input.action}`,
-      `payload: ${JSON.stringify(input.payload)}`,
+      `Request #${String(input.seq)}: ${input.action}`,
+      JSON.stringify(input.payload),
     ].join("\n"),
-    askedBy(input.trigger),
-    answerDirective(input.requestId),
+    ...(input.bound ? [] : [askedBy(input.trigger)]),
+    answerDirective(input.requestId, input.bound),
   ];
   if (input.source !== null) parts.push(sourceSection(input.source));
   return parts.join("\n\n");

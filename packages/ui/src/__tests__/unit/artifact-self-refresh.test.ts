@@ -16,6 +16,7 @@ const NOW = 1_700_000_000_000;
 function clock(over: Partial<SelfRefreshClock> = {}): SelfRefreshClock {
   return {
     now: NOW,
+    bound: false,
     lastAutoAt: null,
     lastActivityAt: NOW,
     hidden: false,
@@ -25,7 +26,7 @@ function clock(over: Partial<SelfRefreshClock> = {}): SelfRefreshClock {
   };
 }
 
-// TEST_OVERVIEW: A page's refresh timer was written by the agent, not by the person watching, so the app paces automatic Artifact Requests before they become turns the owner pays for. Which kind a request is comes only from the browser's own user-activation signal: a click inside the frame lifts every window above it, a timer lifts nothing. Once a request is automatic, four rules can hold it back — the person paused it, the tab is in the background, nobody has touched the page for 30 minutes, or its last request is still with the agent — plus a floor of 30 seconds between two of them. The server's caps of 60 an hour and one in flight stay the backstop; these rules keep the everyday path away from them. Every hold has its own wording, because that wording is both what the chip says and what the page is told.
+// TEST_OVERVIEW: A page's refresh timer was written by the agent, not by the person watching, so the app paces automatic Artifact Requests before they become turns the owner pays for. Which kind a request is comes only from the browser's own user-activation signal: a click inside the frame lifts every window above it, a timer lifts nothing. A page bound to a conversation is refused every automatic request outright, whatever the timer says: its turns land in a chat somebody is reading. Otherwise four rules can hold one back — the person paused it, the tab is in the background, nobody has touched the page for 30 minutes, or its last request is still with the agent — plus a floor of 30 seconds between two of them. The server's caps of 60 an hour and one in flight stay the backstop; these rules keep the everyday path away from them. Every hold has its own wording, because that wording is both what the chip says and what the page is told.
 
 describe("telling a person's click from the page's timer", () => {
   test("transient activation means a person asked", () => {
@@ -46,6 +47,12 @@ describe("telling a person's click from the page's timer", () => {
 describe("pacing the page's own requests", () => {
   test("nothing holds back the first automatic request", () => {
     expect(selfRefreshHold(clock())).toBeNull();
+  });
+
+  // TEST_SCENARIO: A bound page asks inside a conversation somebody is reading, so a timer in it would fill that chat with work nobody asked for. This hold is the page's kind, not its pace, so it wins over every other rule and nothing lifts it.
+  test("a page bound to a conversation is held before anything else", () => {
+    expect(selfRefreshHold(clock({ bound: true }))).toBe("bound");
+    expect(selfRefreshHold(clock({ bound: true, paused: true }))).toBe("bound");
   });
 
   test("a pause the person asked for holds everything", () => {
@@ -103,6 +110,7 @@ describe("pacing the page's own requests", () => {
 
 describe("saying what the page is doing", () => {
   const holds = [
+    "bound",
     "paused",
     "hidden",
     "idle",

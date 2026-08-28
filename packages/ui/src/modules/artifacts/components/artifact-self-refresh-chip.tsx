@@ -17,6 +17,7 @@ export function ArtifactSelfRefreshChip({
   if (!selfRefreshing) return null;
 
   const paused = hold === "paused";
+  const pausable = hold !== "bound";
 
   return (
     <div
@@ -33,14 +34,16 @@ export function ArtifactSelfRefreshChip({
       <span className="min-w-0 flex-1 text-muted-foreground">
         {selfRefreshLabel(hold)}
       </span>
-      <Button
-        variant="ghost"
-        size="xs"
-        onClick={paused ? gate.resume : gate.pause}
-      >
-        {paused ? <Play size={14} /> : <Pause size={14} />}
-        {paused ? "Resume" : "Pause"}
-      </Button>
+      {pausable && (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={paused ? gate.resume : gate.pause}
+        >
+          {paused ? <Play size={14} /> : <Pause size={14} />}
+          {paused ? "Resume" : "Pause"}
+        </Button>
+      )}
     </div>
   );
 }

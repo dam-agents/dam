@@ -71,6 +71,7 @@ export const artifactCreateInputSchema = z
     folderId: z.string().min(1).optional(),
     visibility: artifactVisibilitySchema.optional(),
     interactive: z.boolean().optional(),
+    ownSession: z.boolean().optional(),
     brief: briefSchema.optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
   })
@@ -126,6 +127,7 @@ export const artifactRequestTriggerSchema = z.enum(["user", "auto"]);
 
 export const artifactRequestFailureReasonSchema = z.enum([
   "agent_deleted",
+  "session_deleted",
   "wake_failed",
   "over_budget",
   "rate_limited",
@@ -156,6 +158,7 @@ export const artifactRequestCreateInputSchema = z.object({
   action: z.string().trim().min(1).max(ARTIFACT_REQUEST_ACTION_MAX_LENGTH),
   payload: artifactRequestPayloadSchema.optional(),
   trigger: artifactRequestTriggerSchema,
+  sessionId: z.string().min(1).max(200).optional(),
 });
 
 export const artifactRequestIdInputSchema = z.object({

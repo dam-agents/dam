@@ -122,6 +122,7 @@ describe("naming what is happening", () => {
 describe("saying what went wrong", () => {
   const reasons = [
     "agent_deleted",
+    "session_deleted",
     "wake_failed",
     "over_budget",
     "rate_limited",
@@ -145,6 +146,16 @@ describe("saying what went wrong", () => {
 
   test("agent_deleted says the page still works", () => {
     expect(describeFailure("agent_deleted").nextStep).toContain(
+      "page still works",
+    );
+  });
+
+  // TEST_SCENARIO: Deleting a conversation kills a bound page's interactivity and nothing else, the same degradation as a deleted agent. The person has to read that the document survives.
+  test("session_deleted says the page still works", () => {
+    expect(describeFailure("session_deleted").message).toContain(
+      "conversation this page asks in",
+    );
+    expect(describeFailure("session_deleted").nextStep).toContain(
       "page still works",
     );
   });

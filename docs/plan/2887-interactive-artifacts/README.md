@@ -96,12 +96,15 @@ security boundary — owner scoping is.
 - `library_artifacts.own_session` — `boolean not null default false`, written only at create.
   True means the page takes its own Artifact Session and never binds to a conversation, which is
   what a page has to do if it must outlive the chat that made it.
-- `library_artifacts.session_id` — `text`, nullable, written **once** on the page's first ask and
-  never rewritten: the conversation the page asks in for the rest of its life. Null means no
-  conversation was open at that first ask, or `own_session` is set, and the page uses its own
-  Artifact Session. Null on every row published before slice 10.
+- `library_artifacts.session_id` — `text`, nullable, written **once** and never rewritten: the
+  conversation the page asks in for the rest of its life. Written by the first ask that carries a
+  conversation, which is not always the page's first ask — a page asked from the Artifacts
+  destination with no chat open binds nothing and can still bind later, because otherwise where a
+  page asks would depend on where it happened to be opened first. Null means no ask has yet
+  carried a conversation, or `own_session` is set, and the page uses its own Artifact Session.
+  Null on every row published before slice 10.
 - `library_artifacts.brief` — `text`, nullable, at most 8 KB. What the page's author left for
-  the cold Artifact Session: written at create and replaceable later **without** publishing a
+  the session that serves it: written at create and replaceable later **without** publishing a
   version, because a version bump reloads the frame and destroys the state the brief serves.
 - `artifact_requests` — `id`, `owner`, `artifact_id` (fk → `library_artifacts`, cascade),
   `agent_id`, `seq` (per-artifact counter), `action`, `payload` (jsonb), `trigger`
@@ -112,8 +115,9 @@ security boundary — owner scoping is.
 
 - `requests.create({ artifactId, action, payload, trigger, sessionId? })` →
   `{ requestId, seq, state }`. Returns as soon as the row is committed. **Never waits for the
-  turn.** `sessionId` is the conversation the app has open behind the page, sent on every ask and
-  used only on the first one, which pins it. Omitted when no chat is open.
+  turn.** `sessionId` is the conversation the app has open behind the page, sent on every ask.
+  The first ask that carries one pins the page; every ask after that ignores it. Omitted when no
+  chat is open, and only ever sent when the open chat belongs to the page's own agent.
 - `requests.get({ requestId })` → current state, result or failure.
 - `requests.cancel({ requestId })` → stops listening. It does **not** stop the agent.
 - `create({ …, brief })` / `update({ …, brief })` → the brief. A brief-only `update` publishes
@@ -179,10 +183,20 @@ strictly stronger than one anyway: it is bound to the document that received it,
 navigates itself away cannot be handed an answer. The app posts `artifact.connect` with the port
 once, on the frame's `load`, and the shim keeps `event.ports[0]`.
 
+**Request prompt.** Short on purpose. The rules for answering are written on the
+`answer_artifact_request` tool, so the prompt carries only what the tool cannot know: which page
+asked, the action and payload, the request id, and one line saying the answer is that tool call
+and not a reply. A bound page's prompt is shorter again — no inlined source, no line about who is
+waiting (a bound page is refused automatic asks, so a person always is), and the brief only on the
+ask that bound it. An `own_session` page keeps the source on its first request and the brief on
+every one, because that session starts cold and can see nothing else.
+
 **Caps** (Q12): the server refuses beyond **60 requests per artifact per rolling hour**
-(`rate_limited`) and beyond **one in flight per artifact** (`busy`). The client additionally
-paces automatic requests at no more than one per 30 s, pauses them while the tab is hidden, and
-stops them after 30 minutes with no human interaction.
+(`rate_limited`) and beyond **one in flight per artifact** (`busy`), and refuses an automatic
+request on a page that is not `own_session` at all — a bound page's turns land in a conversation
+somebody is reading. The client additionally paces automatic requests at no more than one per
+30 s, pauses them while the tab is hidden, and stops them after 30 minutes with no human
+interaction.
 
 ## Conventions & glossary
 
@@ -198,11 +212,12 @@ Vocabulary, to be used in code, logs and errors:
   arguments. Numbered, answered once, or failed with a named reason.
 - **Artifact Session** — the dedicated ACP session an `own_session` page's requests land in.
   One per artifact, resumed. A page bound to a conversation has none: it asks there instead.
-- **Bound** — a page asks in the conversation it was first used in, pinned on the first ask and
-  fixed for the page's life. The default.
-- **Brief** — what the page's author left for the Artifact Session: standing instructions on
-  the artifact, prepended to every request prompt. The source says what the page is; the
-  brief says what to do about it.
+- **Bound** — a page asks in the conversation it was first used in, pinned by the first ask that
+  carries one and fixed for the page's life. The default.
+- **Brief** — what the page's author left for the session that serves it: standing instructions
+  on the artifact. Prepended to every request prompt for an Artifact Session, which starts cold
+  and can see nothing else, and only to the ask that bound a page to a conversation, which keeps
+  its own history. The source says what the page is; the brief says what to do about it.
 - **Callback** — an explaining word for prose only. Never a table, field, or error string.
 - **Press** — do not use, in code or in prose. A page asks through a button, a dropdown, a
   form; "press" names only one of those and reads as a button everywhere else.

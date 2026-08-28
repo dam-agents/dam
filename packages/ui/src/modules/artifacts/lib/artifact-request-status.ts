@@ -55,6 +55,13 @@ export function describeFailure(
         message: "The agent that published this page is gone.",
         nextStep: "The page still works, it just cannot ask for anything new.",
       };
+    case "session_deleted":
+      return {
+        reason,
+        message: "The conversation this page asks in has been deleted.",
+        nextStep:
+          "The page still works, it just has nowhere left to ask. Ask the agent for a fresh page.",
+      };
     case "wake_failed":
       return {
         reason,

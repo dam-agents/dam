@@ -157,6 +157,25 @@ describe("trigger plugin", () => {
     );
   });
 
+  it("resumes the conversation the page is bound to, ignoring its own binding", async () => {
+    const { driver, calls } = fakeDriver();
+    const stateStore = fakeStateStore({
+      artifacts: { "art-4": "artifact-session" },
+    });
+    await handlerFor({ driver, stateStore }, "artifact-request")(
+      {
+        requestId: "req-4",
+        artifactId: "art-4",
+        task: "answer it",
+        sessionId: "chat-session",
+      },
+      ctx,
+    );
+    expect(calls[0]?.resumeSessionId).toBe("chat-session");
+    expect(calls[0]?.platformMeta).toBeUndefined();
+    expect(stateStore.setSessionForArtifact).not.toHaveBeenCalled();
+  });
+
   it("refuses an event kind it does not handle", () => {
     const { driver } = fakeDriver();
     expect(() =>

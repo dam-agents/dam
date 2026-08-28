@@ -9,6 +9,7 @@ import type {
   TermsService,
   UserIdentity,
 } from "api-server-api";
+import type { AcpClientFactory } from "../../core/acp-client.js";
 import type { PeriodicJobs } from "../../core/periodic-jobs.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
@@ -88,6 +89,7 @@ export interface ApiServerDeps {
   e2e: E2eService;
   artifacts: ArtifactService;
   liveEvents: LiveEventsService;
+  makeAcpClient: AcpClientFactory;
 
   k8sClient: K8sClient;
   agentsRepo: AgentsRepository;

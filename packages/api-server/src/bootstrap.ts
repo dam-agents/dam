@@ -939,6 +939,7 @@ export async function bootstrap() {
     e2e: e2eService,
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
+    makeAcpClient,
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -968,6 +969,7 @@ export async function bootstrap() {
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
     wakeAgent: wakeAgentFor,
+    makeAcpClient,
   };
   const extAuthzDeps = {
     port: config.extAuthzPort,

@@ -70,6 +70,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     connectionsBoot,
     apiKeysModule,
     liveEvents,
+    makeAcpClient,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -180,6 +181,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifactLibrary,
       runtimeMutator,
       ensureAgentReady: (agentId) => agentsRepo.ensureReady(agentId),
+      listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),
       owner: user.sub,
       surface,
     });

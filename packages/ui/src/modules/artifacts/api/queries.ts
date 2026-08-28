@@ -1,4 +1,5 @@
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { LibraryArtifact } from "api-server-api";
 import { useCallback } from "react";
 
 import { trpc } from "../../../trpc.js";
@@ -98,17 +99,21 @@ export function useArtifactRequest(requestId: string | null) {
   });
 }
 
-export function useArtifactSession(
-  agentId: string | null,
-  artifactId: string | null,
-) {
+export function useArtifactSession(artifact: LibraryArtifact | null) {
+  const agentId = artifact?.agentId ?? null;
+  const artifactId = artifact?.id ?? null;
+  const boundTo = artifact?.sessionId ?? null;
   return useQuery({
-    queryKey: ["artifact-session", agentId, artifactId] as const,
+    queryKey: ["artifact-session", agentId, artifactId, boundTo] as const,
     queryFn:
       agentId && artifactId
         ? async () => {
             const sessions = await listAgentSessions(agentId);
-            return sessions.find((s) => s.artifactId === artifactId) ?? null;
+            const found =
+              boundTo === null
+                ? sessions.find((s) => s.artifactId === artifactId)
+                : sessions.find((s) => s.sessionId === boundTo);
+            return found ?? null;
           }
         : skipToken,
     retry: 0,

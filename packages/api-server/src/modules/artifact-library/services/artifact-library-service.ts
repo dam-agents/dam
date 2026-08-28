@@ -88,6 +88,16 @@ function briefUnread(): TRPCError {
   });
 }
 
+function ownSessionFor(ownSession: boolean, interactive: boolean): boolean {
+  if (ownSession && !interactive)
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "only an interactive artifact has a session to own — a page that cannot ask its agent never opens one",
+    });
+  return ownSession;
+}
+
 function briefFor(brief: string, interactive: boolean): string {
   if (!interactive) throw briefUnread();
   const written = brief.trim();
@@ -130,6 +140,8 @@ export function toLibraryArtifact(
     agentId: row.agentId,
     visibility: row.visibility as ArtifactVisibility,
     interactive: row.interactive,
+    ownSession: row.ownSession,
+    sessionId: row.sessionId,
     brief: row.brief,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
@@ -349,6 +361,7 @@ export function createArtifactLibraryService(
             "an interactive artifact can talk to your agent, so it cannot be shared",
         });
       }
+      const ownSession = ownSessionFor(input.ownSession === true, interactive);
       const brief =
         input.brief !== undefined ? briefFor(input.brief, interactive) : null;
 
@@ -376,6 +389,8 @@ export function createArtifactLibraryService(
         version: 1,
         visibility: input.visibility ?? "private",
         interactive,
+        ownSession,
+        sessionId: null,
         brief,
         expiresAt: expiresAtFrom(input.expiresInHours),
       });
