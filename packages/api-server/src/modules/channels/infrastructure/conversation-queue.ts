@@ -36,11 +36,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  puts it back at the head if the harness refuses or if the turn ended while
  *  the steer was in flight: a message must reach the agent once, so the queue
  *  never leaves a batch reachable by two deliveries at the same time. One steer
- *  runs at a time and picks up whatever arrived during its round trip, so a
- *  batch that comes back cannot land behind messages sent after it — a split
- *  thought would otherwise reach the agent out of order. The caller supplies
- *  what a turn and a steer mean on its surface; the ordering, the quiet period,
- *  and the one-turn-at-a-time rule live here. */
+ *  runs at a time and picks up whatever arrived during its round trip, and no
+ *  turn is composed while a batch is still claimed — otherwise a batch coming
+ *  back would land behind messages sent after it, and the agent would read a
+ *  split thought out of order. The caller supplies what a turn and a steer mean
+ *  on its surface; the ordering, the quiet period, and the one-turn-at-a-time
+ *  rule live here. */
 export function createConversationQueue<T>(
   deps: ConversationQueueDeps<T>,
 ): ConversationQueue<T> {
@@ -48,8 +49,7 @@ export function createConversationQueue<T>(
   let draining = false;
   let sessionId: string | null = null;
   let turnEpoch = 0;
-  let steersInFlight = 0;
-  let steering = false;
+  let steerCycle: Promise<void> | null = null;
   let steeringUnsupported = false;
 
   async function settle(): Promise<void> {
@@ -66,49 +66,49 @@ export function createConversationQueue<T>(
     }
   }
 
-  async function steerPending(): Promise<void> {
-    if (steering) return;
-    steering = true;
-    try {
-      while (!steeringUnsupported) {
-        const target = sessionId;
-        if (target === null) return;
+  async function runSteerCycle(): Promise<void> {
+    while (!steeringUnsupported) {
+      const target = sessionId;
+      if (target === null) return;
 
-        const plan = planCoalescedDelivery({
-          pending,
-          turnInFlight: true,
-          steerable: true,
-          ...(deps.canSteer ? { canSteer: deps.canSteer } : {}),
-        });
-        if (plan.kind !== "steer") return;
+      const plan = planCoalescedDelivery({
+        pending,
+        turnInFlight: true,
+        steerable: true,
+        ...(deps.canSteer ? { canSteer: deps.canSteer } : {}),
+      });
+      if (plan.kind !== "steer") return;
 
-        const epoch = turnEpoch;
-        const batch = plan.batch;
-        pending = plan.remaining;
-        steersInFlight += 1;
+      const epoch = turnEpoch;
+      const batch = plan.batch;
+      pending = plan.remaining;
 
-        let result: SteerResult = "refused";
-        try {
-          result = await deps.steer(target, batch);
-        } catch (err) {
-          deps.onError?.(err);
-        } finally {
-          steersInFlight -= 1;
-        }
-
-        if (result === "unsupported") steeringUnsupported = true;
-
-        if (result !== "injected" || turnEpoch !== epoch) {
-          pending = [...batch, ...pending];
-          if (!draining) void drain();
-          return;
-        }
-
-        deps.onSteered?.(batch);
+      let result: SteerResult = "refused";
+      try {
+        result = await deps.steer(target, batch);
+      } catch (err) {
+        deps.onError?.(err);
       }
-    } finally {
-      steering = false;
+
+      if (result === "unsupported") steeringUnsupported = true;
+
+      if (result !== "injected" || turnEpoch !== epoch) {
+        pending = [...batch, ...pending];
+        return;
+      }
+
+      deps.onSteered?.(batch);
     }
+  }
+
+  function steerPending(): Promise<void> {
+    if (steerCycle) return steerCycle;
+    const cycle = runSteerCycle().finally(() => {
+      steerCycle = null;
+      if (!draining && pending.length > 0) void drain();
+    });
+    steerCycle = cycle;
+    return cycle;
   }
 
   async function drain(): Promise<void> {
@@ -117,6 +117,7 @@ export function createConversationQueue<T>(
     try {
       await settle();
       while (pending.length > 0) {
+        if (steerCycle) await steerCycle;
         const plan = planCoalescedDelivery({
           pending,
           turnInFlight: false,
@@ -140,7 +141,7 @@ export function createConversationQueue<T>(
     } finally {
       draining = false;
       if (pending.length > 0) void drain();
-      else if (steersInFlight === 0) deps.onEmpty?.();
+      else if (steerCycle === null) deps.onEmpty?.();
     }
   }
 

@@ -45,7 +45,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 
 ## Topology
 
-Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the `ChannelManager` that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound. The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off the `telegram_conversations` binding table (conversation → Agent). Both messengers' tokens come from Helm values.
+Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the channel manager that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound. The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (conversation → Agent). Both messengers' tokens come from Helm values.
 
 ### Slack — platform channel
 
@@ -55,7 +55,7 @@ flowchart LR
   SAPI[Slack API]
 
   subgraph api-server[api-server process]
-    CM[ChannelManager]
+    CM[channel manager]
     SW[SlackWorker]
     IL[IdentityLinkService]
     MCP[per-agent MCP endpoint]
@@ -89,14 +89,14 @@ flowchart LR
   TAPI[Telegram API]
 
   subgraph api-server[api-server process]
-    CM[ChannelManager]
+    CM[channel manager]
     TW[TelegramWorker<br/>one platform bot]
     MCP[per-agent MCP endpoint]
     REL[ACP relay]
   end
 
   subgraph DB[Postgres]
-    BND[(telegram_conversations<br/>chat → agent)]
+    BND[(binding table<br/>chat → agent)]
   end
 
   POD[agent pod]

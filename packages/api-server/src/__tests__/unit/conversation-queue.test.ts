@@ -67,6 +67,9 @@ function spyQueue(opts: {
       for (const g of gates) g();
       gates.length = 0;
     },
+    releaseTurn() {
+      gates.shift()?.();
+    },
     releaseSteers() {
       holdSteers = false;
       for (const g of steerGates) g();
@@ -328,6 +331,55 @@ describe("createConversationQueue", () => {
     h.releaseAll();
     await h.waitFor(() => h.turns.length === 2);
     expect(h.turns[1]).toEqual(["b", "c", "d"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A turn can end while a batch is still claimed by a steer. No
+   * later turn may be composed until that batch is back, or it reaches the
+   * agent after messages that were sent after it.
+   */
+  it("does not compose a turn while a batch is still claimed", async () => {
+    const h = spyQueue({ hold: true, slowSteer: true, steerResult: "refused" });
+
+    void h.queue.submit({ id: "b1" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    void h.queue.submit({ id: "b2" });
+    await h.waitFor(() => h.steers.length === 1);
+
+    void h.queue.submit({ id: "b3" });
+    await tick();
+    h.releaseTurn();
+    await tick();
+    h.releaseSteers();
+    await h.waitFor(() => h.turns.length === 2);
+
+    expect(h.turns[1]).toEqual(["b2", "b3"]);
+    expect(h.turns.flat()).toEqual(["b1", "b2", "b3"]);
+  });
+
+  /**
+   * TEST_SCENARIO: Steering must still work on the turn after one whose steer
+   * outlived it — the guard that serialises a round trip is not allowed to
+   * latch shut across turns.
+   */
+  it("still steers into the turn after a slow steer", async () => {
+    const h = spyQueue({ hold: true, slowSteer: true, steerResult: "refused" });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    void h.queue.submit({ id: "b" });
+    await h.waitFor(() => h.steers.length === 1);
+
+    h.releaseTurn();
+    h.releaseSteers();
+    await h.waitFor(() => h.turns.length === 2);
+
+    void h.queue.submit({ id: "c" });
+    await h.waitFor(() => h.steers.length === 2);
+
+    expect(h.steers[1]).toEqual(["c"]);
   });
 
   /**
