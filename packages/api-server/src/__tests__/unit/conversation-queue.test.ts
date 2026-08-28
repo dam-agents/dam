@@ -30,6 +30,9 @@ function spyQueue(opts: {
   const settled: string[][] = [];
   const gates: Array<() => void> = [];
   const steerGates: Array<() => void> = [];
+  let holdSteers = opts.slowSteer ?? false;
+  let live = 0;
+  let peak = 0;
 
   const queue = createConversationQueue<Msg>({
     settleMs: opts.settleMs ?? 0,
@@ -41,8 +44,14 @@ function spyQueue(opts: {
     },
     steer: async (_sessionId, batch) => {
       steers.push(batch.map((m) => m.id));
-      if (opts.slowSteer) await new Promise<void>((r) => steerGates.push(r));
-      return opts.steerResult ?? "refused";
+      live += 1;
+      peak = Math.max(peak, live);
+      try {
+        if (holdSteers) await new Promise<void>((r) => steerGates.push(r));
+        return opts.steerResult ?? "refused";
+      } finally {
+        live -= 1;
+      }
     },
     onSteered: (batch) => steered.push(batch.map((m) => m.id)),
     onTurnSettled: (batch) => settled.push(batch.map((m) => m.id)),
@@ -59,9 +68,11 @@ function spyQueue(opts: {
       gates.length = 0;
     },
     releaseSteers() {
+      holdSteers = false;
       for (const g of steerGates) g();
       steerGates.length = 0;
     },
+    peakConcurrentSteers: () => peak,
     async waitFor(done: () => boolean) {
       for (let i = 0; i < 400 && !done(); i++) await tick();
     },
@@ -205,13 +216,65 @@ describe("createConversationQueue", () => {
     await h.waitFor(() => h.steers.length === 1);
 
     void h.queue.submit({ id: "c" });
-    await h.waitFor(() => h.steers.length === 2);
-
-    expect(h.steers).toEqual([["b"], ["c"]]);
+    await h.waitFor(() => h.steers.length > 1);
+    expect(h.steers).toEqual([["b"]]);
 
     h.releaseSteers();
     await h.waitFor(() => h.steered.length === 2);
+    expect(h.steers).toEqual([["b"], ["c"]]);
     expect(h.steered).toEqual([["b"], ["c"]]);
+  });
+
+  /**
+   * TEST_SCENARIO: Every arrival used to start its own steer, so a burst opened
+   * one connection per message and their answers came back interleaved. One
+   * steer runs at a time and takes whatever has gathered behind it.
+   */
+  it("runs one steer at a time and gathers the rest behind it", async () => {
+    const h = spyQueue({
+      hold: true,
+      slowSteer: true,
+      steerResult: "injected",
+    });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    for (const id of ["b", "c", "d", "e", "f"]) void h.queue.submit({ id });
+    await h.waitFor(() => h.steers.length > 1);
+
+    expect(h.peakConcurrentSteers()).toBe(1);
+    expect(h.steers).toEqual([["b"]]);
+
+    h.releaseSteers();
+    await h.waitFor(() => h.steered.flat().length === 5);
+
+    expect(h.peakConcurrentSteers()).toBe(1);
+    expect(h.steered.flat()).toEqual(["b", "c", "d", "e", "f"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A batch the harness refused goes back ahead of whatever was
+   * sent after it. Losing its place would hand the agent a split thought in the
+   * wrong order, which is the failure this queue exists to prevent.
+   */
+  it("keeps a refused batch ahead of what arrived after it", async () => {
+    const h = spyQueue({ hold: true, slowSteer: true, steerResult: "refused" });
+
+    void h.queue.submit({ id: "a" });
+    await h.waitFor(() => h.turns.length === 1);
+
+    void h.queue.submit({ id: "b" });
+    await h.waitFor(() => h.steers.length === 1);
+
+    void h.queue.submit({ id: "c" });
+    h.releaseSteers();
+    await h.waitFor(() => h.steers.length > 1);
+
+    h.releaseAll();
+    await h.waitFor(() => h.turns.length === 2);
+
+    expect(h.turns[1]).toEqual(["b", "c"]);
   });
 
   /**

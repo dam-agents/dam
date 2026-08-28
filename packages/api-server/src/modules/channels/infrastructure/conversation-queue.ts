@@ -35,9 +35,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  *  the first. A steer claims its batch out of the queue before it goes out, and
  *  puts it back at the head if the harness refuses or if the turn ended while
  *  the steer was in flight: a message must reach the agent once, so the queue
- *  never leaves a batch reachable by two deliveries at the same time. The caller
- *  supplies what a turn and a steer mean on its surface; the ordering, the quiet
- *  period, and the one-turn-at-a-time rule live here. */
+ *  never leaves a batch reachable by two deliveries at the same time. One steer
+ *  runs at a time and picks up whatever arrived during its round trip, so a
+ *  batch that comes back cannot land behind messages sent after it — a split
+ *  thought would otherwise reach the agent out of order. The caller supplies
+ *  what a turn and a steer mean on its surface; the ordering, the quiet period,
+ *  and the one-turn-at-a-time rule live here. */
 export function createConversationQueue<T>(
   deps: ConversationQueueDeps<T>,
 ): ConversationQueue<T> {
@@ -46,6 +49,7 @@ export function createConversationQueue<T>(
   let sessionId: string | null = null;
   let turnEpoch = 0;
   let steersInFlight = 0;
+  let steering = false;
   let steeringUnsupported = false;
 
   async function settle(): Promise<void> {
@@ -63,41 +67,48 @@ export function createConversationQueue<T>(
   }
 
   async function steerPending(): Promise<void> {
-    if (steeringUnsupported) return;
-    const target = sessionId;
-    if (target === null) return;
-
-    const plan = planCoalescedDelivery({
-      pending,
-      turnInFlight: true,
-      steerable: true,
-      ...(deps.canSteer ? { canSteer: deps.canSteer } : {}),
-    });
-    if (plan.kind !== "steer") return;
-
-    const epoch = turnEpoch;
-    const batch = plan.batch;
-    pending = plan.remaining;
-    steersInFlight += 1;
-
-    let result: SteerResult = "refused";
+    if (steering) return;
+    steering = true;
     try {
-      result = await deps.steer(target, batch);
-    } catch (err) {
-      deps.onError?.(err);
+      while (!steeringUnsupported) {
+        const target = sessionId;
+        if (target === null) return;
+
+        const plan = planCoalescedDelivery({
+          pending,
+          turnInFlight: true,
+          steerable: true,
+          ...(deps.canSteer ? { canSteer: deps.canSteer } : {}),
+        });
+        if (plan.kind !== "steer") return;
+
+        const epoch = turnEpoch;
+        const batch = plan.batch;
+        pending = plan.remaining;
+        steersInFlight += 1;
+
+        let result: SteerResult = "refused";
+        try {
+          result = await deps.steer(target, batch);
+        } catch (err) {
+          deps.onError?.(err);
+        } finally {
+          steersInFlight -= 1;
+        }
+
+        if (result === "unsupported") steeringUnsupported = true;
+
+        if (result !== "injected" || turnEpoch !== epoch) {
+          pending = [...batch, ...pending];
+          if (!draining) void drain();
+          return;
+        }
+
+        deps.onSteered?.(batch);
+      }
     } finally {
-      steersInFlight -= 1;
+      steering = false;
     }
-
-    if (result === "unsupported") steeringUnsupported = true;
-
-    if (result !== "injected" || turnEpoch !== epoch) {
-      pending = [...batch, ...pending];
-      if (!draining) void drain();
-      return;
-    }
-
-    deps.onSteered?.(batch);
   }
 
   async function drain(): Promise<void> {
