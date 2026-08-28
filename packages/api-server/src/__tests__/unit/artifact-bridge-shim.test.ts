@@ -1,17 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { ARTIFACT_BRIDGE_SHIM } from "../../modules/artifact-library/viewer/bridge-shim.js";
+import { ARTIFACT_BRIDGE_SHIM_BODY as SHIM_BODY } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import {
   renderHtmlInner,
   renderTextKindInner,
 } from "../../modules/artifact-library/viewer/renderer.js";
 
 // TEST_OVERVIEW: The shim is the whole public API of an interactive page: `platform.ask` for one Artifact Request, `platform.onState` for what the app is doing with it, `platform.ready` for the moment the port arrived. It is injected only into an interactive page, and only ahead of that page's own scripts, so a page can ask on load. Everything under it — the `artifact.connect` handshake, the MessagePort, the `ref` that ties a reply to the ask waiting for it — is the shim's business and never the page's. A page that is not interactive must come out of the renderer exactly as it went in.
-
-const SHIM_BODY = ARTIFACT_BRIDGE_SHIM.replace(/^<script>/, "").replace(
-  /<\/script>$/,
-  "",
-);
 
 interface PageRequest {
   type: string;

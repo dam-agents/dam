@@ -13,7 +13,7 @@ function literal(value: string): string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: The script an interactive page gets for free, so that asking its agent is `await platform.ask(action, payload)` and nothing else. It owns the whole `artifact.connect` handshake — keeping the MessagePort, minting the `ref`, matching a reply back to the ask that is waiting for it — which is work no page author should have to get right, and which stays ours to change only as long as no page does it by hand. It deliberately does not queue, retry or pace: one Artifact Request in flight is the app's rule and the server's rule, so a `busy` refusal reaches the page as a rejection like any other.
-export const ARTIFACT_BRIDGE_SHIM = `<script>
+export const ARTIFACT_BRIDGE_SHIM_BODY = `
 (() => {
   const CONNECT = ${literal(ARTIFACT_BRIDGE_CONNECT_TYPE)};
   const REQUEST = ${literal(ARTIFACT_BRIDGE_REQUEST_TYPE)};
@@ -102,4 +102,6 @@ export const ARTIFACT_BRIDGE_SHIM = `<script>
 
   window.platform = Object.freeze({ ask, onState, ready });
 })();
-</script>`;
+`;
+
+export const ARTIFACT_BRIDGE_SHIM = `<script>${ARTIFACT_BRIDGE_SHIM_BODY}</script>`;
