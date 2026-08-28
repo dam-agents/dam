@@ -27,6 +27,7 @@ import {
 } from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import {
+  composeKbPublishGate,
   composeKbShareAgentOps,
   composeKbShareServing,
 } from "../../modules/kb-shares/index.js";
@@ -151,11 +152,21 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8s: k8sClient,
     grepDeadlineMs: config.kbShareGrepDeadlineMs,
   });
+  const kbPublishGate = composeKbPublishGate({
+    db,
+    store: artifacts,
+    publishLimits: {
+      perFileMaxBytes: config.kbSharePerFileMaxBytes,
+      totalMaxBytes: config.kbShareTotalMaxBytes,
+      maxFiles: config.kbShareMaxFiles,
+    },
+  });
 
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
     runtimeHello,
+    kbPublishGate,
     composeSkills: (owner) =>
       composeSkillsModule({
         agentStateCache: deps.agentStateCache,

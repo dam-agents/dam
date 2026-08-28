@@ -80,6 +80,20 @@ export function updateSharePublicName(db: Db) {
   };
 }
 
+export function updateShareRoots(db: Db) {
+  return async (
+    agentId: string,
+    roots: readonly string[],
+  ): Promise<boolean> => {
+    const result = await db
+      .update(kbShares)
+      .set({ roots: [...roots], updatedAt: new Date() })
+      .where(activeByAgent(agentId))
+      .returning({ id: kbShares.id });
+    return result.length > 0;
+  };
+}
+
 export function updateShareSecret(db: Db) {
   return async (agentId: string, secret: string): Promise<boolean> => {
     const result = await db

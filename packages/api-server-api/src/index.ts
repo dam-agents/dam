@@ -654,3 +654,16 @@ export {
   apiKeyRevokeInputSchema,
   scopeSchema,
 } from "./modules/api-keys/schemas.js";
+export {
+  kbPublishCompleteInputSchema,
+  kbPublishInventoryFileSchema,
+  kbPublishRequestInputSchema,
+  type KbPublishCompleteReport,
+  type KbPublishCompleteResult,
+  type KbPublishGate,
+  type KbPublishInventoryFile,
+  type KbPublishRequestInput,
+  type KbPublishRequestResult,
+  type KbPublishWorkCaps,
+  type KbPublishWorkOrder,
+} from "./modules/kb-publish/harness.js";

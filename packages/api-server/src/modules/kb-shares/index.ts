@@ -1,10 +1,11 @@
 export {
+  composeKbPublishGate,
   composeKbShareAgentOps,
   composeKbSharesForOwner,
   createKbShareResolver,
   createKbShareAgentCleanup,
   createShareStringVerifier,
-  startKbShareAutoRefresh,
+  startKbShareSync,
   type KbShareAgentOps,
   type KbShareStorePort,
 } from "./compose.js";

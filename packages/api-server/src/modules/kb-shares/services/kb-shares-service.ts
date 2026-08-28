@@ -14,7 +14,6 @@ import type {
 } from "api-server-api";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import { securityLog } from "../../../core/security-log.js";
-import type { KbSharePublisher } from "./publish-service.js";
 import {
   formatShareString,
   kbShareRowId,
@@ -42,8 +41,11 @@ export interface KbSharesServiceDeps {
   }) => Promise<KbShareRow>;
   updateSecret: (agentId: string, secret: string) => Promise<boolean>;
   updatePublicName: (agentId: string, name: string) => Promise<boolean>;
+  updateRoots: (agentId: string, roots: readonly string[]) => Promise<boolean>;
   revokeByAgent: (agentId: string) => Promise<KbShareRow | null>;
-  publisher: KbSharePublisher;
+  purgeShareObjects: (row: KbShareRow) => Promise<void>;
+  requestFlush: (agentId: string) => Promise<void>;
+  unconfigurePod: (agentId: string) => Promise<void>;
   defaultRootsForKbTemplate: (
     kbTemplateId: string | undefined,
   ) => readonly string[];
@@ -174,8 +176,12 @@ export function createKbSharesService(
         throw err;
       }
       logShareAction("kb_share.created", input.agentId);
-      const claimed = await deps.publisher.startPublish(input.agentId);
-      return rowToView(claimed ?? row);
+      void deps.requestFlush(input.agentId).catch((err: unknown) => {
+        process.stderr.write(
+          `[kb-shares] publish nudge failed for ${input.agentId}: ${err}\n`,
+        );
+      });
+      return rowToView(row);
     },
 
     async reveal(agentId: string): Promise<KbShareStringResult> {
@@ -199,8 +205,9 @@ export function createKbSharesService(
       await requireActiveShare(agentId);
       const revoked = await deps.revokeByAgent(agentId);
       logShareAction("kb_share.revoked", agentId);
+      void deps.unconfigurePod(agentId).catch(() => {});
       if (revoked) {
-        void deps.publisher.purgeShareObjects(revoked).catch((err: unknown) => {
+        void deps.purgeShareObjects(revoked).catch((err: unknown) => {
           process.stderr.write(
             `[kb-shares] snapshot purge failed for ${agentId}: ${err}\n`,
           );
@@ -210,17 +217,16 @@ export function createKbSharesService(
 
     async refresh(input: KbShareRefreshInput): Promise<KbShareView> {
       await requireActiveShare(input.agentId);
-      const claimed = await deps.publisher.startPublish(
-        input.agentId,
-        input.roots ? { roots: input.roots } : undefined,
-      );
-      if (!claimed) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "a publish is already running for this knowledge base",
-        });
+      if (input.roots) {
+        await deps.updateRoots(input.agentId, input.roots);
       }
-      return rowToView(claimed);
+      void deps.requestFlush(input.agentId).catch((err: unknown) => {
+        process.stderr.write(
+          `[kb-shares] publish nudge failed for ${input.agentId}: ${err}\n`,
+        );
+      });
+      const row = await requireActiveShare(input.agentId);
+      return rowToView(row);
     },
 
     async setName(input: KbShareSetNameInput): Promise<KbShareView> {

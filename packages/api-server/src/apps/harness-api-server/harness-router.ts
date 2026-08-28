@@ -3,6 +3,7 @@ import type {
   BudgetsService,
   ConnectionsService,
   ExperimentsService,
+  KbPublishGate,
   SchedulesService,
   SkillsService,
   RuntimeDeliveryService,
@@ -36,6 +37,7 @@ export function createHarnessRouter(deps: {
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
   runtimeHello: RuntimeDeliveryService;
+  kbPublishGate: KbPublishGate;
 }) {
   const app = new Hono();
 
@@ -66,6 +68,7 @@ export function createHarnessRouter(deps: {
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,
     hello: deps.runtimeHello,
+    kbPublish: deps.kbPublishGate,
   });
 
   return app;

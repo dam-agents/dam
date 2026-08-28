@@ -175,13 +175,8 @@ export {
   type PluginProtocolVersion,
 } from "./modules/plugin/index.js";
 export {
-  kbPublishExecuteInputSchema,
-  kbPublishPlanInputSchema,
-  kbPublishWatchRootsInputSchema,
-  kbRootsNoticeSchema,
-  type KbPublishExecuteInput,
-  type KbPublishPlanInput,
-  type KbRootsNotice,
+  kbPublishSyncInputSchema,
+  type KbPublishSyncInput,
 } from "./modules/kb-publish/schemas.js";
 export type {
   KbPublishExecuteReport,

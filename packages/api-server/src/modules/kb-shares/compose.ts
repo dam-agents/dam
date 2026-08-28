@@ -1,25 +1,28 @@
-import { TRPCError } from "@trpc/server";
 import type { Db } from "db";
 import type {
   AgentsService,
   KbSharesService,
   KbShareView,
 } from "api-server-api";
+import {
+  MAX_FILES,
+  PER_FILE_MAX_BYTES,
+  TOTAL_MAX_BYTES,
+} from "agent-runtime-api/kb-snapshot";
 import { defaultShareRootsForKbTemplate } from "../knowledge-bases/index.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
+import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import {
   kbShareRowId,
   parseShareString,
   secretsEqual,
 } from "./domain/share-string.js";
-import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { workspacePrefixFrom } from "./domain/workspace-path.js";
 import {
   createAgentFilesClient,
   type AgentFilesClient,
 } from "./infrastructure/agent-files-client.js";
-import { createKbPublishClient } from "./infrastructure/kb-publish-client.js";
-import { createKbShareRootsWatcher } from "./infrastructure/kb-share-watch.js";
+import { createKbPublishPodClient } from "./infrastructure/kb-publish-client.js";
 import {
   claimPublish,
   clearSnapshotPointer,
@@ -30,21 +33,25 @@ import {
   insertShare,
   listActiveSharesByOwner,
   listDirtyActiveShares,
-  markShareDirty,
   releasePublishClaim,
   revokeShareByAgent,
   updateSharePublicName,
+  updateShareRoots,
   updateShareSecret,
   updateStaleSnapshots,
 } from "./infrastructure/kb-shares-repository.js";
 import {
-  startKbShareAutoRefreshSaga,
-  type KbShareAutoRefreshSaga,
+  startKbShareSyncSaga,
+  type KbShareSyncSaga,
 } from "./sagas/auto-refresh.js";
 import { createKbSharesService } from "./services/kb-shares-service.js";
 import {
-  createKbSharePublisher,
-  type KbSharePublisher,
+  createKbShareFlushNudge,
+  type KbShareFlushNudge,
+} from "./services/publish-nudge.js";
+import {
+  createKbSharePublishGate,
+  type KbSharePublishGate,
   type KbSharePublishLimits,
 } from "./services/publish-service.js";
 
@@ -58,19 +65,22 @@ export interface WorkspaceLocation {
   agentWorkDir: string;
 }
 
-interface PublisherOpts {
-  owner: string;
-  db: Db;
-  namespace: string;
-  store: KbShareStorePort;
-  ensureReady: (agentId: string) => Promise<void>;
-  publishLimits?: Partial<KbSharePublishLimits>;
+function resolveLimits(
+  partial?: Partial<KbSharePublishLimits>,
+): KbSharePublishLimits {
+  return {
+    perFileMaxBytes: partial?.perFileMaxBytes ?? PER_FILE_MAX_BYTES,
+    totalMaxBytes: partial?.totalMaxBytes ?? TOTAL_MAX_BYTES,
+    maxFiles: partial?.maxFiles ?? MAX_FILES,
+  };
 }
 
-function composePublisher(opts: PublisherOpts): KbSharePublisher {
-  const runtimeRepo = createAgentsRuntimeRepo(opts.db);
-  return createKbSharePublisher({
-    owner: opts.owner,
+export function composeKbPublishGate(opts: {
+  db: Db;
+  store: KbShareStorePort;
+  publishLimits?: Partial<KbSharePublishLimits>;
+}): KbSharePublishGate {
+  return createKbSharePublishGate({
     repo: {
       claimPublish: claimPublish(opts.db),
       finishPublishSuccess: finishPublishSuccess(opts.db),
@@ -79,12 +89,31 @@ function composePublisher(opts: PublisherOpts): KbSharePublisher {
       updateStaleSnapshots: updateStaleSnapshots(opts.db),
       clearSnapshotPointer: clearSnapshotPointer(opts.db),
     },
-    kbPublish: createKbPublishClient(opts.namespace),
+    findActiveByAgent: findActiveShareByAgent(opts.db),
+    store: opts.store,
+    ...(opts.publishLimits ? { limits: opts.publishLimits } : {}),
+  });
+}
+
+function composeNudge(opts: {
+  db: Db;
+  namespace: string;
+  ensureReady: (agentId: string) => Promise<void>;
+  publishLimits?: Partial<KbSharePublishLimits>;
+}): KbShareFlushNudge {
+  const runtimeRepo = createAgentsRuntimeRepo(opts.db);
+  return createKbShareFlushNudge({
+    findActiveByAgent: findActiveShareByAgent(opts.db),
+    ensureReady: opts.ensureReady,
     getRuntimeCapabilities: (agentId) =>
       runtimeRepo.get(agentId).then((r) => r?.runtimeCapabilities ?? null),
-    store: opts.store,
-    ensureReady: opts.ensureReady,
-    ...(opts.publishLimits ? { limits: opts.publishLimits } : {}),
+    pod: createKbPublishPodClient(opts.namespace),
+    repo: {
+      claimPublish: claimPublish(opts.db),
+      finishPublishFailure: finishPublishFailure(opts.db),
+    },
+    limits: resolveLimits(opts.publishLimits),
+    log: (message) => process.stderr.write(`[kb-share-nudge] ${message}\n`),
   });
 }
 
@@ -102,7 +131,7 @@ function makeListWorkspaceRoots(
   };
 }
 
-export function composeKbSharesForOwner(opts: {
+interface ComposeShareServiceOpts {
   owner: string;
   db: Db;
   agents: Pick<AgentsService, "get">;
@@ -112,58 +141,17 @@ export function composeKbSharesForOwner(opts: {
   workspace: WorkspaceLocation;
   objectStoreConfigured: boolean;
   publishLimits?: Partial<KbSharePublishLimits>;
-}): { kbShares: KbSharesService } {
+  logActor?: "user" | "agent";
+}
+
+function composeShareService(opts: ComposeShareServiceOpts): KbSharesService {
   const workspacePrefix = workspacePrefixFrom(
     opts.workspace.agentHome,
     opts.workspace.agentWorkDir,
   );
-  const publisher = composePublisher(opts);
-  const listWorkspaceRoots = makeListWorkspaceRoots(
-    createAgentFilesClient(opts.namespace),
-    workspacePrefix,
-  );
-  return {
-    kbShares: createKbSharesService({
-      owner: opts.owner,
-      agents: opts.agents,
-      findActiveByAgent: findActiveShareByAgent(opts.db),
-      findActiveById: findActiveShareById(opts.db),
-      listActiveByOwner: listActiveSharesByOwner(opts.db),
-      insert: insertShare(opts.db),
-      updateSecret: updateShareSecret(opts.db),
-      updatePublicName: updateSharePublicName(opts.db),
-      revokeByAgent: revokeShareByAgent(opts.db),
-      publisher,
-      defaultRootsForKbTemplate: defaultShareRootsForKbTemplate,
-      listWorkspaceRoots,
-      objectStoreConfigured: opts.objectStoreConfigured,
-    }),
-  };
-}
-
-export interface KbShareAgentOps {
-  share(agentId: string): Promise<KbShareView>;
-  refresh(agentId: string): Promise<KbShareView>;
-  status(agentId: string): Promise<KbShareView | null>;
-}
-
-export function composeKbShareAgentOps(opts: {
-  owner: string;
-  db: Db;
-  agents: Pick<AgentsService, "get">;
-  namespace: string;
-  store: KbShareStorePort;
-  ensureReady: (agentId: string) => Promise<void>;
-  workspace: WorkspaceLocation;
-  objectStoreConfigured: boolean;
-  publishLimits?: Partial<KbSharePublishLimits>;
-}): KbShareAgentOps {
-  const workspacePrefix = workspacePrefixFrom(
-    opts.workspace.agentHome,
-    opts.workspace.agentWorkDir,
-  );
-  const publisher = composePublisher(opts);
-  const service = createKbSharesService({
+  const gate = composeKbPublishGate(opts);
+  const nudge = composeNudge(opts);
+  return createKbSharesService({
     owner: opts.owner,
     agents: opts.agents,
     findActiveByAgent: findActiveShareByAgent(opts.db),
@@ -172,33 +160,44 @@ export function composeKbShareAgentOps(opts: {
     insert: insertShare(opts.db),
     updateSecret: updateShareSecret(opts.db),
     updatePublicName: updateSharePublicName(opts.db),
+    updateRoots: updateShareRoots(opts.db),
     revokeByAgent: revokeShareByAgent(opts.db),
-    publisher,
+    purgeShareObjects: (row) => gate.purgeShareObjects(row),
+    requestFlush: (agentId) => nudge.requestFlush(agentId),
+    unconfigurePod: (agentId) => nudge.unconfigure(agentId),
     defaultRootsForKbTemplate: defaultShareRootsForKbTemplate,
     listWorkspaceRoots: makeListWorkspaceRoots(
       createAgentFilesClient(opts.namespace),
       workspacePrefix,
     ),
     objectStoreConfigured: opts.objectStoreConfigured,
-    logActor: "agent",
+    ...(opts.logActor ? { logActor: opts.logActor } : {}),
   });
+}
+
+export function composeKbSharesForOwner(
+  opts: Omit<ComposeShareServiceOpts, "logActor">,
+): { kbShares: KbSharesService } {
+  return { kbShares: composeShareService(opts) };
+}
+
+export interface KbShareAgentOps {
+  share(agentId: string): Promise<KbShareView>;
+  refresh(agentId: string): Promise<KbShareView>;
+  status(agentId: string): Promise<KbShareView | null>;
+}
+
+export function composeKbShareAgentOps(
+  opts: Omit<ComposeShareServiceOpts, "logActor">,
+): KbShareAgentOps {
+  const service = composeShareService({ ...opts, logActor: "agent" });
   return {
     async share(agentId) {
       const existing = await service.status(agentId);
       if (existing) return existing;
       return service.create({ agentId });
     },
-    async refresh(agentId) {
-      try {
-        return await service.refresh({ agentId });
-      } catch (err) {
-        if (err instanceof TRPCError && err.code === "CONFLICT") {
-          const current = await service.status(agentId);
-          if (current) return current;
-        }
-        throw err;
-      }
-    },
+    refresh: (agentId) => service.refresh({ agentId }),
     status: (agentId) => service.status(agentId),
   };
 }
@@ -233,52 +232,29 @@ export function createKbShareResolver(
   };
 }
 
-export function startKbShareAutoRefresh(opts: {
+export function startKbShareSync(opts: {
   db: Db;
   namespace: string;
-  store: KbShareStorePort;
-  ensureReady: (agentId: string) => Promise<void>;
-  publishLimits?: Partial<KbSharePublishLimits>;
-  debounceMs?: number;
-}): KbShareAutoRefreshSaga {
-  const findActive = findActiveShareByAgent(opts.db);
-  return startKbShareAutoRefreshSaga({
-    findActiveByAgent: findActive,
+}): KbShareSyncSaga {
+  const nudge = composeNudge({
+    db: opts.db,
+    namespace: opts.namespace,
+    ensureReady: async () => {},
+  });
+  return startKbShareSyncSaga({
     listDirtyActive: listDirtyActiveShares(opts.db),
-    markDirty: markShareDirty(opts.db),
-    watchRoots: createKbShareRootsWatcher(opts.namespace, (message) =>
-      process.stderr.write(`[kb-share-watch] ${message}\n`),
-    ),
-    publishAs: async (owner, agentId) => {
-      const publisher = composePublisher({
-        owner,
-        db: opts.db,
-        namespace: opts.namespace,
-        store: opts.store,
-        ensureReady: opts.ensureReady,
-        ...(opts.publishLimits ? { publishLimits: opts.publishLimits } : {}),
-      });
-      await publisher.startPublish(agentId);
-    },
-    ...(opts.debounceMs !== undefined ? { debounceMs: opts.debounceMs } : {}),
+    attemptSync: (agentId) => nudge.attemptSync(agentId),
   });
 }
 
 export function createKbShareAgentCleanup(opts: {
   db: Db;
-  namespace: string;
   store: KbShareStorePort;
 }): (agentId: string) => Promise<void> {
   const revoke = revokeShareByAgent(opts.db);
-  const publisher = composePublisher({
-    owner: "system",
-    db: opts.db,
-    namespace: opts.namespace,
-    store: opts.store,
-    ensureReady: async () => {},
-  });
+  const gate = composeKbPublishGate({ db: opts.db, store: opts.store });
   return async (agentId) => {
     const revoked = await revoke(agentId);
-    if (revoked) await publisher.purgeShareObjects(revoked);
+    if (revoked) await gate.purgeShareObjects(revoked);
   };
 }

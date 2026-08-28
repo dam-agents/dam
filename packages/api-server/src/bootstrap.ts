@@ -33,7 +33,7 @@ import {
   composeKbShareServing,
   createKbShareAgentCleanup,
   createShareHostApp,
-  startKbShareAutoRefresh,
+  startKbShareSync,
   startKbSharesCleanupSaga,
 } from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
@@ -470,20 +470,12 @@ export async function bootstrap() {
   const kbSharesCleanupSub = startKbSharesCleanupSaga(
     createKbShareAgentCleanup({
       db,
-      namespace: config.namespace,
       store: artifacts,
     }),
   );
-  const kbShareAutoRefresh = startKbShareAutoRefresh({
+  const kbShareAutoRefresh = startKbShareSync({
     db,
     namespace: config.namespace,
-    store: artifacts,
-    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
-    publishLimits: {
-      perFileMaxBytes: config.kbSharePerFileMaxBytes,
-      totalMaxBytes: config.kbShareTotalMaxBytes,
-      maxFiles: config.kbShareMaxFiles,
-    },
   });
   const turnMetricsSub = startTurnMetricsSaga(
     createTurnMetrics(metrics.getMeter("platform-apiserver")),

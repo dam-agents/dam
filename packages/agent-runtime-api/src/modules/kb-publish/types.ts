@@ -1,10 +1,4 @@
-import type { Result } from "../../result.js";
-import type { KbPublishFailure } from "../kb-snapshot/failures.js";
-import type {
-  KbPublishExecuteInput,
-  KbPublishPlanInput,
-  KbRootsNotice,
-} from "./schemas.js";
+import type { KbPublishSyncInput } from "./schemas.js";
 
 export interface KbPublishPlanFile {
   path: string;
@@ -36,14 +30,5 @@ export interface KbPublishExecuteReport {
 }
 
 export interface KbPublishService {
-  plan(
-    input: KbPublishPlanInput,
-  ): Promise<Result<KbPublishPlan, KbPublishFailure>>;
-  execute(
-    input: KbPublishExecuteInput,
-  ): Promise<Result<KbPublishExecuteReport, KbPublishFailure>>;
-  watchRoots(
-    roots: string[],
-    signal?: AbortSignal,
-  ): AsyncIterable<KbRootsNotice>;
+  sync(input: KbPublishSyncInput): Promise<{ ok: true }>;
 }
