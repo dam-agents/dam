@@ -18,12 +18,14 @@ configureLogger({ level: "error", write: () => {} });
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-// TEST_OVERVIEW: How an addressed Slack conversation turns several messages
-// into one answer. Messages waiting when a turn has not started yet go into
-// that turn together. A message arriving while a turn runs is steered into it,
-// so the agent reads it before it calls its reply tool and answers once. Where
-// the harness does not support steering the message waits and becomes the next
-// turn, which is the old behaviour minus the extra turns.
+/**
+ * TEST_OVERVIEW: How an addressed Slack conversation turns several messages
+ * into one answer. Messages waiting when a turn has not started yet go into
+ * that turn together. A message arriving while a turn runs is steered into it,
+ * so the agent reads it before it calls its reply tool and answers once. Where
+ * the harness does not support steering the message waits and becomes the next
+ * turn, which is the old behaviour minus the extra turns.
+ */
 
 type Gate = { release: () => void };
 
@@ -118,9 +120,11 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
 }
 
 describe("slack addressed turns — coalescing", () => {
-  // TEST_SCENARIO: A thought split over two messages in a thread, both arriving
-  // before the turn starts, must produce one turn carrying both — the reported
-  // bug was one turn (and one answer) per message.
+  /**
+   * TEST_SCENARIO: A thought split over two messages in a thread, both arriving
+   * before the turn starts, must produce one turn carrying both — the reported
+   * bug was one turn (and one answer) per message.
+   */
   it("carries a settled burst into a single turn", async () => {
     const h = harness({ settleMs: 5 });
     await h.start();
@@ -138,9 +142,11 @@ describe("slack addressed turns — coalescing", () => {
     expect(prompt).toContain("[ts 100.2]");
   });
 
-  // TEST_SCENARIO: The mid-turn case steering exists for: the agent is already
-  // working when the rest of the thought lands. It must reach the running turn
-  // rather than start a second one, so the conversation gets one answer.
+  /**
+   * TEST_SCENARIO: The mid-turn case steering exists for: the agent is already
+   * working when the rest of the thought lands. It must reach the running turn
+   * rather than start a second one, so the conversation gets one answer.
+   */
   it("steers a message that arrives while a turn is running", async () => {
     const h = harness({ steer: () => "injected" });
     await h.start();
@@ -161,9 +167,11 @@ describe("slack addressed turns — coalescing", () => {
     expect(h.prompts).toHaveLength(1);
   });
 
-  // TEST_SCENARIO: Not every harness supports steering. There the message must
-  // still be answered — as the next turn — rather than dropped, and it must not
-  // run alongside the turn already in flight.
+  /**
+   * TEST_SCENARIO: Not every harness supports steering. There the message must
+   * still be answered — as the next turn — rather than dropped, and it must not
+   * run alongside the turn already in flight.
+   */
   it("falls back to a following turn when the harness cannot be steered", async () => {
     const h = harness({ steer: () => "unsupported" });
     await h.start();
@@ -183,9 +191,11 @@ describe("slack addressed turns — coalescing", () => {
     expect(String(h.prompts[1])).toContain("second half");
   });
 
-  // TEST_SCENARIO: Two people addressing the agent about different things are
-  // two conversations, not one thought — merging them would answer one person
-  // under the other's message, so they stay separate turns.
+  /**
+   * TEST_SCENARIO: Two people addressing the agent about different things are
+   * two conversations, not one thought — merging them would answer one person
+   * under the other's message, so they stay separate turns.
+   */
   it("keeps two senders' top-level mentions apart", async () => {
     const h = harness({ settleMs: 5 });
     await h.start();
@@ -197,8 +207,10 @@ describe("slack addressed turns — coalescing", () => {
     expect(h.prompts).toHaveLength(2);
   });
 
-  // TEST_SCENARIO: A single message must not gain batch framing — the [ts …]
-  // tags and the multi-message contract only make sense for a real batch.
+  /**
+   * TEST_SCENARIO: A single message must not gain batch framing — the [ts …]
+   * tags and the multi-message contract only make sense for a real batch.
+   */
   it("leaves a lone message unbatched", async () => {
     const h = harness({ settleMs: 5 });
     await h.start();

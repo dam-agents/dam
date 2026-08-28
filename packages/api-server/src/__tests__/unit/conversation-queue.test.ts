@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { createConversationQueue } from "../../modules/channels/infrastructure/conversation-queue.js";
 
-// TEST_OVERVIEW: The queue both channel workers run a conversation through. It
-// holds arriving messages for a quiet period so a burst becomes one turn,
-// steers anything that lands while a turn is running into that turn, and falls
-// back to a following turn where the harness refuses to be steered. It runs one
-// turn at a time and never reorders what people sent.
+/**
+ * TEST_OVERVIEW: The queue both channel workers run a conversation through. It
+ * holds arriving messages for a quiet period so a burst becomes one turn,
+ * steers anything that lands while a turn is running into that turn, and falls
+ * back to a following turn where the harness refuses to be steered. It runs one
+ * turn at a time and never reorders what people sent.
+ */
 
 type Msg = { id: string; heavy?: boolean };
 
@@ -54,8 +56,10 @@ function spyQueue(opts: {
 }
 
 describe("createConversationQueue", () => {
-  // TEST_SCENARIO: The reported bug. Messages sent in quick succession must be
-  // answered together, so the quiet period gathers them into one turn.
+  /**
+   * TEST_SCENARIO: The reported bug. Messages sent in quick succession must be
+   * answered together, so the quiet period gathers them into one turn.
+   */
   it("gathers a burst into one turn during the quiet period", async () => {
     const h = spyQueue({ settleMs: 2 });
 
@@ -69,16 +73,20 @@ describe("createConversationQueue", () => {
     expect(h.turns).toEqual([["a", "b", "c"]]);
   });
 
-  // TEST_SCENARIO: With no quiet period configured the first message starts a
-  // turn straight away — the surface that wants latency over batching keeps it.
+  /**
+   * TEST_SCENARIO: With no quiet period configured the first message starts a
+   * turn straight away — the surface that wants latency over batching keeps it.
+   */
   it("starts immediately when no quiet period is set", async () => {
     const h = spyQueue({ settleMs: 0 });
     await h.queue.submit({ id: "a" });
     expect(h.turns).toEqual([["a"]]);
   });
 
-  // TEST_SCENARIO: A message arriving mid-turn reaches the agent through the
-  // running turn, so the conversation is still answered once.
+  /**
+   * TEST_SCENARIO: A message arriving mid-turn reaches the agent through the
+   * running turn, so the conversation is still answered once.
+   */
   it("steers a mid-turn arrival into the running turn", async () => {
     const h = spyQueue({ hold: true, injected: true });
 
@@ -94,8 +102,10 @@ describe("createConversationQueue", () => {
     expect(h.turns).toEqual([["a"]]);
   });
 
-  // TEST_SCENARIO: Where the harness refuses steering the message must still be
-  // answered, as the next turn — never as a second turn racing the first.
+  /**
+   * TEST_SCENARIO: Where the harness refuses steering the message must still be
+   * answered, as the next turn — never as a second turn racing the first.
+   */
   it("runs a refused steer as the following turn", async () => {
     const h = spyQueue({ hold: true, injected: false });
 
@@ -111,9 +121,11 @@ describe("createConversationQueue", () => {
     expect(h.turns).toEqual([["a"], ["b"]]);
   });
 
-  // TEST_SCENARIO: Attachments travel with the turn that carries them, so a
-  // message holding one cannot be steered — and it must block the messages
-  // behind it rather than let them overtake it.
+  /**
+   * TEST_SCENARIO: Attachments travel with the turn that carries them, so a
+   * message holding one cannot be steered — and it must block the messages
+   * behind it rather than let them overtake it.
+   */
   it("never steers past a message it cannot steer", async () => {
     const h = spyQueue({
       hold: true,
@@ -135,8 +147,10 @@ describe("createConversationQueue", () => {
     expect(h.turns[1]).toEqual(["withFile", "c"]);
   });
 
-  // TEST_SCENARIO: A turn that throws must not wedge the conversation — the
-  // messages queued behind it still get their turn.
+  /**
+   * TEST_SCENARIO: A turn that throws must not wedge the conversation — the
+   * messages queued behind it still get their turn.
+   */
   it("keeps draining after a turn fails", async () => {
     const turns: string[][] = [];
     let fail = true;
@@ -159,8 +173,10 @@ describe("createConversationQueue", () => {
     expect(turns).toEqual([["a"], ["b"]]);
   });
 
-  // TEST_SCENARIO: The quiet period cannot be extended for ever by someone who
-  // keeps typing — it stops after a bounded number of rounds and answers.
+  /**
+   * TEST_SCENARIO: The quiet period cannot be extended for ever by someone who
+   * keeps typing — it stops after a bounded number of rounds and answers.
+   */
   it("stops waiting once the quiet period has been extended enough", async () => {
     const h = spyQueue({ settleMs: 1 });
     let stop = false;
