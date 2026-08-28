@@ -140,17 +140,18 @@ export function createArtifactRequestsService(
 
   async function deliver(
     row: ArtifactRequestRow,
-    title: string,
+    page: { title: string; brief: string | null },
   ): Promise<void> {
     const source = row.seq === 1 ? await pageSourceOrNothing(row) : null;
     const task = buildArtifactRequestPrompt({
       requestId: row.id,
       artifactId: row.artifactId,
-      title,
+      title: page.title,
       seq: row.seq,
       action: row.action,
       payload: row.payload,
       trigger: row.trigger,
+      brief: page.brief,
       source,
     });
     const outcome = await delivery.deliver({
@@ -220,7 +221,7 @@ export function createArtifactRequestsService(
           payload: input.payload ?? {},
           trigger: input.trigger,
         });
-        void deliver(row, page.title).catch((error: unknown) => {
+        void deliver(row, page).catch((error: unknown) => {
           process.stderr.write(
             `[artifact-requests] delivery of ${row.id} threw: ${String(error)}\n`,
           );

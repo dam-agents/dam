@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { ARTIFACT_BRIEF_TOO_BIG_MESSAGE, briefFitsCap } from "api-server-api";
 import type {
   ArtifactContent,
   ArtifactCreateInput,
@@ -79,6 +80,31 @@ export interface ArtifactLibraryDeps {
   shareBaseUrl: string;
 }
 
+function briefUnread(): TRPCError {
+  return new TRPCError({
+    code: "BAD_REQUEST",
+    message:
+      "only an interactive artifact has a brief — nothing would ever read one on a page that cannot ask its agent",
+  });
+}
+
+function briefFor(brief: string, interactive: boolean): string {
+  if (!interactive) throw briefUnread();
+  const written = brief.trim();
+  if (written === "")
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "an empty brief says nothing — write what the page's own session will need, or leave the brief out to keep the one already there",
+    });
+  if (!briefFitsCap(written))
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: ARTIFACT_BRIEF_TOO_BIG_MESSAGE,
+    });
+  return written;
+}
+
 export function shareUrlFor(shareBaseUrl: string, slug: string): string {
   return `${shareBaseUrl.replace(/\/+$/, "")}/a/${slug}`;
 }
@@ -104,6 +130,7 @@ export function toLibraryArtifact(
     agentId: row.agentId,
     visibility: row.visibility as ArtifactVisibility,
     interactive: row.interactive,
+    brief: row.brief,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl:
@@ -322,6 +349,8 @@ export function createArtifactLibraryService(
             "an interactive artifact can talk to your agent, so it cannot be shared",
         });
       }
+      const brief =
+        input.brief !== undefined ? briefFor(input.brief, interactive) : null;
 
       const id = generateId();
       const key = versionKey(owner, id, 1, fileName);
@@ -347,6 +376,7 @@ export function createArtifactLibraryService(
         version: 1,
         visibility: input.visibility ?? "private",
         interactive,
+        brief,
         expiresAt: expiresAtFrom(input.expiresInHours),
       });
       emit({
@@ -376,6 +406,8 @@ export function createArtifactLibraryService(
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.title !== undefined) patch.title = input.title;
       if (input.folderId !== undefined) patch.folderId = input.folderId;
+      if (input.brief !== undefined)
+        patch.brief = briefFor(input.brief, row.interactive);
 
       if (input.content != null || input.uploadRef != null) {
         const kind = row.kind as ArtifactKind;
