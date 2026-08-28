@@ -24,6 +24,8 @@ const WORDS = (
   "quince raisin walnut engine wheel spring bolt gear lever piston valve"
 ).split(/\s+/);
 
+const VERIFY_EVERY = 16;
+
 function pickWord(rand) {
   const r = rand();
   return WORDS[Math.floor(r * r * WORDS.length)];
@@ -60,11 +62,11 @@ function percentileUs(sortedNs, p) {
   return Number(sortedNs[index]) / 1000;
 }
 
-function positiveInt(key, raw) {
+function boundedInt(key, raw, min) {
   if (raw === undefined) throw new Error(`--${key} needs a value`);
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`--${key} must be a positive integer, got: ${raw}`);
+  if (!Number.isInteger(value) || value < min) {
+    throw new Error(`--${key} must be an integer >= ${min}, got: ${raw}`);
   }
   return value;
 }
@@ -77,8 +79,10 @@ function parseArgs(argv) {
     if (key === "scenario") {
       if (value === undefined) throw new Error("--scenario needs a value");
       args.scenario = value;
-    } else if (key === "n" || key === "ops" || key === "seed") {
-      args[key] = positiveInt(key, value);
+    } else if (key === "n" || key === "ops") {
+      args[key] = boundedInt(key, value, 1);
+    } else if (key === "seed") {
+      args[key] = boundedInt(key, value, 0);
     } else throw new Error(`unknown argument: ${argv[i]}`);
   }
   if (!["query-heavy", "index-heavy", "mixed"].includes(args.scenario)) {
@@ -117,9 +121,13 @@ for (let i = 0; i < ops; i += 1) {
     const start = process.hrtime.bigint();
     index.add(id, text);
     samplesNs.push(process.hrtime.bigint() - start);
-    const verify = index.search(tokenize(text)[0] ?? "", { limit: 3 });
     checksum = (Math.imul(checksum, 31) + index.size) | 0;
-    checksum = foldChecksum(checksum, verify);
+    if (i % VERIFY_EVERY === 0) {
+      checksum = foldChecksum(
+        checksum,
+        index.search(tokenize(text)[0] ?? "", { limit: 3 }),
+      );
+    }
   }
 }
 

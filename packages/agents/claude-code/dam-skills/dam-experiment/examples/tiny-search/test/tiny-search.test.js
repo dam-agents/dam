@@ -137,3 +137,12 @@ test("tokenize rejects a non-string input", () => {
   const index = fixture();
   assert.throws(() => index.search(null), TypeError);
 });
+
+test("decomposed and composed input tokenize alike", () => {
+  assert.deepEqual(tokenize("café".normalize("NFD")), ["café".normalize("NFC")]);
+  const index = new TinySearch();
+  index.add("a", "un café".normalize("NFD"));
+  assert.deepEqual(index.search("café".normalize("NFC")), [
+    { id: "a", score: 1 },
+  ]);
+});

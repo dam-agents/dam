@@ -3,6 +3,7 @@ export function tokenize(text) {
     throw new TypeError("text must be a string");
   }
   return text
+    .normalize("NFC")
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);

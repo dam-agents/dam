@@ -15,7 +15,8 @@ the exercise.
 - **replace on re-add**, `remove()`, result `limit` (default 10)
 - **Unicode tokenizer** — lowercases, then splits on every run of characters
   that are neither a Unicode letter (`\p{L}`) nor a Unicode number (`\p{N}`),
-  so `café` and `día` tokenize as single terms
+  so `café` and `día` tokenize as single terms; input is normalized to NFC
+  first, so a decomposed document matches a composed query
 
 A campaign optimizes against this contract, so treat it as the specification:
 `add()`, `search()` and `tokenize()` reject bad input (`TypeError`) rather
@@ -38,7 +39,7 @@ index.search("rust fast");   // [{ id: "alpha", score: 3 }]
 
 ## Tests
 
-Behavioral test suite (node:test, no install needed) — 13 tests pinning the
+Behavioral test suite (node:test, no install needed) — 19 tests pinning the
 tokenizer, AND semantics, occurrence scoring, ordering, tie-breaks, limits,
 replace-on-re-add, and removal:
 
@@ -65,6 +66,13 @@ Term frequencies are Zipf-ish (early vocabulary words are common, late ones
 rare), and the checksum folds every query's result ids and scores — a rewrite
 that changes search semantics changes the checksum even if it gets faster.
 
+On the write path the checksum folds `index.size` after every `add()` plus a
+verification query every `VERIFY_EVERY` (16) operations. `index.size` alone is
+invariant by construction, so it would detect nothing; the sampled query is
+what makes `index-heavy` a real guard. It is sampled rather than run on every
+write because each one costs a full corpus scan, which would dominate the
+scenario's own measurement.
+
 Reference baseline (Node 24, Apple Silicon): query-heavy p50 ≈ 12 ms at
 `--n 5000`, ≈ 49 ms at `--n 20000` — latency grows linearly with the corpus.
 `index-heavy` p50 ≈ 23 µs.
@@ -90,7 +98,7 @@ Suggested pre-registration:
 - **Primary metric:** `speedup_p50` on `query-heavy` at `--n 5000`
   (baseline p50 ÷ candidate p50), higher is better.
 - **Pass condition:** median speedup ≥ 20 across 5 seeds, ≥ 4/5 seeds
-  individually ≥ 20, all 13 tests green, per-seed `checksum` unchanged, and
+  individually ≥ 20, all 19 tests green, per-seed `checksum` unchanged, and
   `index-heavy` p50 regression ≤ 3×.
 - **Dose-response:** the effect should grow with `--n` (try 1000 / 5000 /
   20000) — a mechanism claim about scan cost predicts that; a fixed-overhead
