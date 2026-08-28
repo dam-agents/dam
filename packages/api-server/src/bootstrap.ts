@@ -469,6 +469,8 @@ export async function bootstrap() {
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
+    namespace: config.namespace,
+    agentsRepo,
   });
   liveEventsModule.start();
   const agentWatchLease = createLeaderLease({
@@ -951,6 +953,7 @@ export async function bootstrap() {
     e2e: e2eService,
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
+    podSessions: liveEventsModule.podSessions,
     k8sClient,
     agentsRepo,
     connectionsBoot,

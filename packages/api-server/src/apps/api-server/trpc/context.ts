@@ -67,6 +67,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     connectionsBoot,
     apiKeysModule,
     liveEvents,
+    podSessions,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -292,6 +293,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       harnessConfig,
       links: config.links,
       liveEvents,
+      podSessions,
       metrics,
       terms,
       usage: composeUsageForOwner(user.sub),

@@ -8,7 +8,10 @@ import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type { FeaturesService } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
-import type { LiveEventsService } from "./modules/events/types.js";
+import type {
+  LiveEventsService,
+  PodSessionsService,
+} from "./modules/events/types.js";
 import type { ExperimentsService } from "./modules/experiments/types.js";
 import type { InvocationsQueryService } from "./modules/invocations/types.js";
 import type { KnowledgeBasesService } from "./modules/knowledge-bases/types.js";
@@ -50,6 +53,7 @@ export interface ApiContext {
   harnessConfig: HarnessConfigService;
   links: Links;
   liveEvents: LiveEventsService;
+  podSessions: PodSessionsService;
   metrics: MetricsService;
   terms: TermsService;
   usage: UsageService;

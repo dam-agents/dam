@@ -22,3 +22,8 @@ export const liveEventSchema = z.discriminatedUnion("topic", [
 ]);
 
 export type LiveEvent = z.infer<typeof liveEventSchema>;
+
+export const podSessionsNoticeSchema = z.discriminatedUnion("topic", [
+  z.object({ topic: z.literal("sync") }),
+  z.object({ topic: z.literal("sessions"), agentId: z.string().min(1) }),
+]);

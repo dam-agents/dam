@@ -9,8 +9,6 @@ import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { listAgentSessions } from "./acp-session-ops.js";
 
-const STATUS_POLL_MS = 5_000;
-
 export interface SessionListInclude {
   channels: boolean;
   scheduled: boolean;
@@ -125,8 +123,7 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
-    refetchInterval: live ? STATUS_POLL_MS : false,
-    staleTime: STATUS_POLL_MS,
+    staleTime: 5_000,
     meta: { errorToast: "Couldn't refresh session list" },
   });
 }

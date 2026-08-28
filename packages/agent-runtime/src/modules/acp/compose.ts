@@ -25,6 +25,14 @@ import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
+import type { SessionsService } from "agent-runtime-api";
+import {
+  createSessionChanges,
+  notifyingSessionMetadataStore,
+  type SessionChanges,
+} from "./services/session-changes.js";
+import { createInProcessCaller } from "./infrastructure/in-process-request.js";
+import { createSessionsService } from "./services/sessions-service.js";
 
 export interface ComposeAcpOptions {
   command: string[];
@@ -68,8 +76,14 @@ export function composeAcp(opts: ComposeAcpOptions): {
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
+  sessions: SessionsService;
+  sessionChanges: SessionChanges;
 } {
-  const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
+  const sessionChanges = createSessionChanges();
+  const sessionMetadata = notifyingSessionMetadataStore(
+    createSessionMetadataStore(opts.stateBackend),
+    sessionChanges,
+  );
   const backgroundWork = createBackgroundWorkRegistry({
     enabled: opts.backgroundWorkHolds,
     log: opts.log,
@@ -91,5 +105,22 @@ export function composeAcp(opts: ComposeAcpOptions): {
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver, sessionMetadata, backgroundWork };
+  const sessions = createSessionsService({
+    openCaller: () =>
+      createInProcessCaller((channel) =>
+        runtime.attach(channel, { viewer: false }),
+      ),
+    sessionMetadata,
+    isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
+    changes: sessionChanges,
+  });
+
+  return {
+    runtime,
+    triggerDriver,
+    sessionMetadata,
+    backgroundWork,
+    sessions,
+    sessionChanges,
+  };
 }

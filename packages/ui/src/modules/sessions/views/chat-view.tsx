@@ -46,7 +46,7 @@ import {
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
-import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import {
@@ -90,6 +90,7 @@ import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
+import { useSessionWatch } from "../hooks/use-session-watch.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -105,7 +106,8 @@ export function ChatView() {
   useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
-  useAgentReachabilityProbe(selectedAgent);
+  useAgentReachability(selectedAgent);
+  useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(

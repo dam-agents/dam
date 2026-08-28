@@ -41,6 +41,10 @@ export {
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export {
+  agentStreamable,
+  type AgentStreamability,
+} from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
 export {
   createPublicAgentRoutes,
