@@ -47,9 +47,7 @@ export const kbPublishCompleteInputSchema = z.object({
   }),
 });
 
-export type KbPublishRequestInput = z.infer<
-  typeof kbPublishRequestInputSchema
->;
+export type KbPublishRequestInput = z.infer<typeof kbPublishRequestInputSchema>;
 export type KbPublishInventoryFile = z.infer<
   typeof kbPublishInventoryFileSchema
 >;
