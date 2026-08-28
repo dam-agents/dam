@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { DirContents } from "./dir-contents.js";
 import {
@@ -116,6 +117,9 @@ export function FilesPanel({
                 onCommit={controller.handleCommitNew}
                 onCancel={controller.handleCancelNew}
               />
+            )}
+            {controller.runtimeOutdated && (
+              <RuntimeOutdatedNotice agentId={controller.agentId} />
             )}
             {controller.rootIsLoadedEmpty && (
               <p className="px-4 py-5 text-xs text-muted-foreground">

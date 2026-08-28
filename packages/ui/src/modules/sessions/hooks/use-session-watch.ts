@@ -4,13 +4,17 @@ import { useEffect } from "react";
 
 import { watchWithRetry } from "../../../lib/watch-retry.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
-import { useAgentRunState } from "../../agents/api/queries.js";
+import {
+  useAgentLacksLiveUpdates,
+  useAgentRunState,
+} from "../../agents/api/queries.js";
 import { acpSessionsKeys } from "../api/queries.js";
 
 export function useSessionWatch(agentId: string | null) {
   const queryClient = useQueryClient();
   const runState = useAgentRunState(agentId);
-  const enabled = !!agentId && runState === "running";
+  const compat = useAgentLacksLiveUpdates(agentId);
+  const enabled = !!agentId && !compat && runState === "running";
 
   useEffect(() => {
     if (!agentId || !enabled) return;

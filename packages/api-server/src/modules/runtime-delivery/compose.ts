@@ -1,4 +1,5 @@
 import type { ConnectionOptions } from "bullmq";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { Db } from "db";
 import type { DriverFailure, RuntimeDeliveryService } from "api-server-api";
 import { getLogger } from "../../core/logger.js";
@@ -50,6 +51,9 @@ export interface RuntimeDeliveryComposition {
   stateBuilder: StateBuilder;
   builtin: BuiltinContributions;
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
+  runtimeFeaturesMany(
+    agentIds: string[],
+  ): Promise<Map<string, RuntimeFeatures>>;
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
@@ -60,6 +64,7 @@ export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  features: RuntimeFeatures;
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -136,12 +141,25 @@ export function composeRuntimeDelivery(
     stateBuilder,
     builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
-      const [row, seeding] = await Promise.all([
+      const [row, seeding, caps] = await Promise.all([
         outboxRepo.getRow(agentId),
         outboxRepo.seedingAgentIds([agentId]),
+        outboxRepo.runtimeCapabilitiesMany([agentId]),
       ]);
       const { settled, failures } = progressOf(row);
-      return { settled, failures, preparingWorkspace: seeding.has(agentId) };
+      return {
+        settled,
+        failures,
+        preparingWorkspace: seeding.has(agentId),
+        features: runtimeFeaturesOf(caps.get(agentId)),
+      };
+    },
+
+    async runtimeFeaturesMany(agentIds): Promise<Map<string, RuntimeFeatures>> {
+      const caps = await outboxRepo.runtimeCapabilitiesMany(agentIds);
+      return new Map(
+        agentIds.map((id) => [id, runtimeFeaturesOf(caps.get(id))]),
+      );
     },
 
     async contributionsProgress(agentId): Promise<ContributionsProgress> {
@@ -153,9 +171,10 @@ export function composeRuntimeDelivery(
     ): Promise<Map<string, ContributionsStatus>> {
       const result = new Map<string, ContributionsStatus>();
       if (agentIds.length === 0) return result;
-      const [rows, seeding] = await Promise.all([
+      const [rows, seeding, caps] = await Promise.all([
         outboxRepo.getRows(agentIds),
         outboxRepo.seedingAgentIds(agentIds),
+        outboxRepo.runtimeCapabilitiesMany(agentIds),
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
@@ -164,6 +183,7 @@ export function composeRuntimeDelivery(
           settled,
           failures,
           preparingWorkspace: seeding.has(id),
+          features: runtimeFeaturesOf(caps.get(id)),
         });
       }
       return result;

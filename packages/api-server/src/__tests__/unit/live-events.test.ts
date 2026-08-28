@@ -36,6 +36,7 @@ function harness() {
     k8s: { watchCustomObjects: () => () => {} },
     namespace: "test",
     agentsRepo: { list: async () => [] },
+    runtimeFeaturesFor: async () => new Map(),
   });
   return { bus, subscribedChannels, warnings, module };
 }

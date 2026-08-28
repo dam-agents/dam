@@ -14,6 +14,10 @@ import {
   agents as agentsTable,
 } from "db";
 import type { DriverFailure, RuntimeEventKind } from "api-server-api";
+import {
+  capabilities as capabilitiesSchema,
+  type Capabilities,
+} from "agent-runtime-api";
 
 export interface OutboxRow {
   agentId: string;
@@ -47,6 +51,9 @@ export interface ApplyTransitions {
 export interface OutboxRepo {
   getRow(agentId: string): Promise<OutboxRow | null>;
   getRows(agentIds: string[]): Promise<OutboxRow[]>;
+  runtimeCapabilitiesMany(
+    agentIds: string[],
+  ): Promise<Map<string, Capabilities | null>>;
   bumpVersion(
     agentId: string,
     tx?: Db | DbTx,
@@ -93,6 +100,25 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .from(runtimeStateOutbox)
         .where(eq(runtimeStateOutbox.agentId, agentId))) as InternalRow[];
       return rows[0] ?? null;
+    },
+
+    async runtimeCapabilitiesMany(
+      agentIds,
+    ): Promise<Map<string, Capabilities | null>> {
+      const result = new Map<string, Capabilities | null>();
+      if (agentIds.length === 0) return result;
+      const rows = await db
+        .select({
+          id: agentsTable.id,
+          caps: agentsTable.runtimeCapabilities,
+        })
+        .from(agentsTable)
+        .where(inArray(agentsTable.id, agentIds));
+      for (const row of rows) {
+        const parsed = capabilitiesSchema.safeParse(row.caps);
+        result.set(row.id, parsed.success ? parsed.data : null);
+      }
+      return result;
     },
 
     async getRows(agentIds): Promise<OutboxRow[]> {

@@ -10,6 +10,7 @@ import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
 
 const SESSIONS_STALE_MS = 5_000;
 const SESSIONS_ERROR_RETRY_MS = 15_000;
+const SESSIONS_COMPAT_POLL_MS = 15_000;
 
 export const homeKeys = {
   sessions: (agentId: string) =>
@@ -44,7 +45,11 @@ export function useFeed(): Feed {
       staleTime: SESSIONS_STALE_MS,
       retry: false,
       refetchInterval: (query: { state: { status: string } }) =>
-        query.state.status === "error" ? SESSIONS_ERROR_RETRY_MS : false,
+        !agent.features.liveUpdates
+          ? SESSIONS_COMPAT_POLL_MS
+          : query.state.status === "error"
+            ? SESSIONS_ERROR_RETRY_MS
+            : false,
     })),
     combine: (results) => ({
       byAgent: results.map((result) => result.data ?? []),

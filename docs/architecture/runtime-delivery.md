@@ -99,7 +99,7 @@ Concurrent dispatches from different replicas race naturally: the agent rejects 
 
 Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
-The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply.
+The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply, plus boolean feature flags (`harnessConfig`, and `liveUpdates` for the pod's watch surface) that gate UI surfaces and the platform's pod-facing streams.
 
 The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
 

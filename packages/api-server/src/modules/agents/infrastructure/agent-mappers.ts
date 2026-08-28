@@ -1,4 +1,5 @@
 import { agentKindSchema } from "api-server-api";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type {
   Agent,
   AgentKind,
@@ -200,6 +201,7 @@ export function assembleAgent(
   globalIdleTimeoutMin: number,
   preparingWorkspace = false,
   templateUpdate?: TemplateUpdate,
+  features: RuntimeFeatures = runtimeFeaturesOf(null),
 ): Agent {
   return {
     id: infra.id,
@@ -221,6 +223,7 @@ export function assembleAgent(
     channels,
     kind: infra.kind,
     kbTemplateId: infra.kbTemplateId,
+    features,
   };
 }
 

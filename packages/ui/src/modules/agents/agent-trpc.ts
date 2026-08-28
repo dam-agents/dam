@@ -1,4 +1,9 @@
-import { createTRPCClient, createWSClient, wsLink } from "@trpc/client";
+import {
+  createTRPCClient,
+  createWSClient,
+  httpBatchLink,
+  wsLink,
+} from "@trpc/client";
 import type { AppRouter } from "agent-runtime-api";
 
 import { getAccessToken } from "../../auth.js";
@@ -37,6 +42,25 @@ function createAgentTrpc(agentId: string): AgentTrpcClient {
 }
 
 const clients = new Map<string, AgentTrpcClient>();
+const httpClients = new Map<string, AgentTrpcClient>();
+
+export function agentTrpcHttp(agentId: string): AgentTrpcClient {
+  let client = httpClients.get(agentId);
+  if (!client) {
+    client = createTRPCClient<AppRouter>({
+      links: [
+        httpBatchLink({
+          url: `/api/agents/${encodeURIComponent(agentId)}/trpc`,
+          headers: async () => ({
+            Authorization: `Bearer ${await getAccessToken()}`,
+          }),
+        }),
+      ],
+    });
+    httpClients.set(agentId, client);
+  }
+  return client;
+}
 
 export function agentTrpc(agentId: string): AgentTrpcClient {
   let client = clients.get(agentId);

@@ -13,6 +13,7 @@ import { getErrorMessage } from "@/lib/errors";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
+import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
 import { type BundleEntry, walkDataTransfer } from "../api/import-bundle.js";
 import { useDirSnapshot, useFileContentQuery } from "../api/queries.js";
 import {
@@ -84,6 +85,7 @@ export function useFilesPanelController({
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
+  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
   useWorkspaceWatch(selectedAgent);
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
@@ -380,6 +382,8 @@ export function useFilesPanelController({
   const showPanelOverlay = panelDragActive && dragTargetPath === null;
 
   return {
+    runtimeOutdated,
+    agentId: selectedAgent,
     ctxValue,
     openFile,
     pendingNew,

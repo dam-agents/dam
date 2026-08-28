@@ -14,6 +14,7 @@ import {
 } from "../agents/infrastructure/labels.js";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import type { RuntimeFeatures } from "agent-runtime-api";
 import { agentStreamable } from "../agents/index.js";
 
 export interface LiveEventsModule {
@@ -31,16 +32,22 @@ export function composeLiveEventsModule(deps: {
   k8s: Pick<K8sClient, "watchCustomObjects">;
   namespace: string;
   agentsRepo: Pick<AgentsRepository, "list">;
+  runtimeFeaturesFor: (
+    agentIds: string[],
+  ) => Promise<Map<string, RuntimeFeatures>>;
 }): LiveEventsModule {
   const bus = createRedisLiveEventsBus(deps.bus, deps.log);
   let saga: Subscription | null = null;
   let watch: { stop(): void } | null = null;
   const podSessions = createPodSessionsService({
     log: deps.log,
-    listRunningAgentIds: async (ownerSub) =>
-      (await deps.agentsRepo.list(ownerSub))
+    listRunningAgentIds: async (ownerSub) => {
+      const running = (await deps.agentsRepo.list(ownerSub))
         .filter(agentStreamable)
-        .map((agent) => agent.id),
+        .map((agent) => agent.id);
+      const features = await deps.runtimeFeaturesFor(running);
+      return running.filter((id) => features.get(id)?.liveUpdates);
+    },
     watchAgent: createPodSessionWatcher(deps.namespace, deps.log),
     onAgentsChanged: (ownerSub, listener) =>
       bus.subscribe(ownerSub, (event) => {

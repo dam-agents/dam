@@ -471,6 +471,7 @@ export async function bootstrap() {
     k8s: k8sClient,
     namespace: config.namespace,
     agentsRepo,
+    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
   });
   liveEventsModule.start();
   const agentWatchLease = createLeaderLease({

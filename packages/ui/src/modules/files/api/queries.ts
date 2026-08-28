@@ -10,11 +10,22 @@ import type { DirListResult } from "agent-runtime-api";
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { agentTrpc } from "../../agents/agent-trpc.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { agentTrpc, agentTrpcHttp } from "../../agents/agent-trpc.js";
+import {
+  agentLacksLiveUpdates,
+  useAgentLacksLiveUpdates,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
 import { fileKeys } from "./keys.js";
 
 const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
+const COMPAT_POLL_MS = 5_000;
+
+function clientFor(agentId: string) {
+  return agentLacksLiveUpdates(agentId)
+    ? agentTrpcHttp(agentId)
+    : agentTrpc(agentId);
+}
 
 export interface FileContent {
   path: string;
@@ -43,13 +54,15 @@ export function useDirSnapshot(agentId: string | null, path: string) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
   const operable = useIsAgentOperable(agentId);
+  const compat = useAgentLacksLiveUpdates(agentId);
   return useQuery({
     queryKey: fileKeys.treeForPaths(agentId ?? "_none", paths),
     queryFn: async (): Promise<ListDirsResponse> => {
-      const trpc = agentTrpc(agentId!);
+      const trpc = clientFor(agentId!);
       return trpc.files.listDirs.query({ paths });
     },
     enabled: !!agentId && operable,
+    refetchInterval: compat ? COMPAT_POLL_MS : false,
     staleTime: 2000,
     placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,
@@ -62,10 +75,12 @@ export function useFileContentQuery(
   path: string | null,
 ) {
   const operable = useIsAgentOperable(agentId);
+  const compat = useAgentLacksLiveUpdates(agentId);
   return useQuery({
     queryKey: fileKeys.content(agentId ?? "_none", path ?? "_none"),
     queryFn: async () => readFileContent(agentId!, path!),
     enabled: !!agentId && !!path && operable,
+    refetchInterval: compat ? COMPAT_POLL_MS : false,
     staleTime: 2000,
     retry: 0,
   });
@@ -75,7 +90,7 @@ async function readFileContent(
   agentId: string,
   path: string,
 ): Promise<FileContent> {
-  const trpc = agentTrpc(agentId);
+  const trpc = clientFor(agentId);
   try {
     const result = await trpc.files.read.query({ path });
     return {
@@ -121,7 +136,7 @@ export function useFileWriteMutation(agentId: string | null) {
       content: string;
       expectedMtimeMs?: number;
     }) => {
-      const trpc = agentTrpc(agentId!);
+      const trpc = clientFor(agentId!);
       return trpc.files.write.mutate(input);
     },
     onSuccess: (_data, vars) => {
@@ -135,7 +150,7 @@ export function useFileCreateMutation(agentId: string | null) {
   return useMutation({
     meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string; content?: string }) => {
-      const trpc = agentTrpc(agentId!);
+      const trpc = clientFor(agentId!);
       return trpc.files.create.mutate({
         path: input.path,
         content: input.content ?? "",
@@ -152,7 +167,7 @@ export function useFolderCreateMutation(agentId: string | null) {
   return useMutation({
     meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
-      const trpc = agentTrpc(agentId!);
+      const trpc = clientFor(agentId!);
       return trpc.files.mkdir.mutate(input);
     },
     onSuccess: () => {
@@ -170,7 +185,7 @@ export function useFileRenameMutation(agentId: string | null) {
       to: string;
       overwrite?: boolean;
     }) => {
-      const trpc = agentTrpc(agentId!);
+      const trpc = clientFor(agentId!);
       return trpc.files.rename.mutate(input);
     },
     onSuccess: (_data, vars) => {
@@ -189,7 +204,7 @@ export function useFileDeleteMutation(agentId: string | null) {
   return useMutation({
     meta: { suppressErrorToast: true },
     mutationFn: async (input: { path: string }) => {
-      const trpc = agentTrpc(agentId!);
+      const trpc = clientFor(agentId!);
       return trpc.files.remove.mutate(input);
     },
     onSuccess: (_data, vars) => {
@@ -211,7 +226,7 @@ export async function uploadMessageAttachment(
   sessionId: string,
   attachment: { name: string; data: string; mimeType: string },
 ): Promise<{ absolutePath: string; relPath: string }> {
-  const trpc = agentTrpc(agentId);
+  const trpc = clientFor(agentId);
   const sid = sanitizeSegment(sessionId);
   const safeName = sanitizeSegment(attachment.name || "file");
   const unique = crypto.randomUUID().slice(0, 8);

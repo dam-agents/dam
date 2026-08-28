@@ -7,7 +7,11 @@ import {
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { listAgentSessions } from "./acp-session-ops.js";
+import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
+import {
+  listAgentSessions,
+  listAgentSessionsOverAcp,
+} from "./acp-session-ops.js";
 
 export interface SessionListInclude {
   channels: boolean;
@@ -91,12 +95,15 @@ export function useAcpSessions(
     activeSessionId?: string | null;
   },
 ) {
+  const compat = useAgentLacksLiveUpdates(agentId);
   const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
     queryKey: acpSessionsKeys.list(agentId, include),
     queryFn: live
       ? async () => {
-          const sessions = await listAgentSessions(agentId);
+          const sessions = compat
+            ? await listAgentSessionsOverAcp(agentId)
+            : await listAgentSessions(agentId);
           const store = useStore.getState();
           if (store.selectedAgent === agentId) {
             store.pruneDrafts(
@@ -123,6 +130,7 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
+    refetchInterval: live && compat ? 5_000 : false,
     staleTime: 5_000,
     meta: { errorToast: "Couldn't refresh session list" },
   });
