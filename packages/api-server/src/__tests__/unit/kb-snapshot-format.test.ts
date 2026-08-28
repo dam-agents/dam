@@ -65,7 +65,7 @@ describe("tokenize", () => {
   it("stems plurals consistently", () => {
     expect(tokenize("Pages page PAGES")).toEqual(["page", "page", "page"]);
     expect(tokenize("libraries")).toEqual(["library"]);
-    expect(tokenize("glass classes")).toEqual(["glass", "classe"]);
+    expect(tokenize("glass classes")).toEqual(["glass", "class"]);
   });
 });
 
