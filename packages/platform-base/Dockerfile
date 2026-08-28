@@ -111,7 +111,8 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 USER root
 WORKDIR /app
 # MISE_PROVENANCE_API_FAILURES_FATAL: the lazy-tools shims (below) run `mise
-# install` on every jq/fd/rg/gh call. mise re-verifies each tool's GitHub
+# install` until the tool is resolved — uv, uvx, kubectl, oc and gws, the tiers
+# that stayed lazy. mise re-verifies each tool's GitHub
 # artifact attestation against api.github.com, and a long-lived agent doing
 # this thousands of times/hr exhausts the per-token rate limit — every call
 # then loops on 429s (observed on dev: one agent driving ~1k 429/hr). Keeping
