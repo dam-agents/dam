@@ -12,6 +12,7 @@ export function hintFor(
 ): { ownerSub: string; hint: PublishableLiveEvent } | null {
   switch (event.type) {
     case EventType.AgentCreated:
+    case EventType.RuntimeHelloReceived:
       return {
         ownerSub: event.ownerSub,
         hint: { topic: "agents", agentId: event.agentId },

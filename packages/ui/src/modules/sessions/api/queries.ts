@@ -8,10 +8,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
-import {
-  listAgentSessions,
-  listAgentSessionsOverAcp,
-} from "./acp-session-ops.js";
+import { listAgentSessions } from "./acp-session-ops.js";
 
 export interface SessionListInclude {
   channels: boolean;
@@ -101,9 +98,7 @@ export function useAcpSessions(
     queryKey: acpSessionsKeys.list(agentId, include),
     queryFn: live
       ? async () => {
-          const sessions = compat
-            ? await listAgentSessionsOverAcp(agentId)
-            : await listAgentSessions(agentId);
+          const sessions = await listAgentSessions(agentId);
           const store = useStore.getState();
           if (store.selectedAgent === agentId) {
             store.pruneDrafts(

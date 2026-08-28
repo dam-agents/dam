@@ -17,8 +17,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
-import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
@@ -72,7 +70,6 @@ export function SessionsSidebar({
   const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
-  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
   const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
     enabled: agentOperable,
     activeSessionId: sessionId,
@@ -229,7 +226,6 @@ export function SessionsSidebar({
       style={style}
     >
       <div className="flex-1 overflow-y-auto">
-        {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
         {loading && <SessionListSkeleton />}
         {!loading && sessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">

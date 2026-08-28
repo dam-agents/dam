@@ -74,6 +74,7 @@ export interface ComposeRuntimeDeliveryOpts {
   agentRunningPort: IsAgentRunning;
   snapshotWriter: HarnessConfigSnapshotWriter;
   harnessServerUrl: string;
+  resolveOwner: (agentId: string) => Promise<string | null>;
   log?: (msg: string) => void;
 }
 
@@ -121,6 +122,7 @@ export function composeRuntimeDelivery(
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
     queue,
+    resolveOwner: opts.resolveOwner,
     log,
   });
 
@@ -141,24 +143,24 @@ export function composeRuntimeDelivery(
     stateBuilder,
     builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
-      const [row, seeding, caps] = await Promise.all([
+      const [row, seeding, features] = await Promise.all([
         outboxRepo.getRow(agentId),
         outboxRepo.seedingAgentIds([agentId]),
-        outboxRepo.runtimeCapabilitiesMany([agentId]),
+        outboxRepo.runtimeFeaturesMany([agentId]),
       ]);
       const { settled, failures } = progressOf(row);
       return {
         settled,
         failures,
         preparingWorkspace: seeding.has(agentId),
-        features: runtimeFeaturesOf(caps.get(agentId)),
+        features: features.get(agentId) ?? runtimeFeaturesOf(null),
       };
     },
 
     async runtimeFeaturesMany(agentIds): Promise<Map<string, RuntimeFeatures>> {
-      const caps = await outboxRepo.runtimeCapabilitiesMany(agentIds);
+      const features = await outboxRepo.runtimeFeaturesMany(agentIds);
       return new Map(
-        agentIds.map((id) => [id, runtimeFeaturesOf(caps.get(id))]),
+        agentIds.map((id) => [id, features.get(id) ?? runtimeFeaturesOf(null)]),
       );
     },
 
@@ -171,10 +173,10 @@ export function composeRuntimeDelivery(
     ): Promise<Map<string, ContributionsStatus>> {
       const result = new Map<string, ContributionsStatus>();
       if (agentIds.length === 0) return result;
-      const [rows, seeding, caps] = await Promise.all([
+      const [rows, seeding, features] = await Promise.all([
         outboxRepo.getRows(agentIds),
         outboxRepo.seedingAgentIds(agentIds),
-        outboxRepo.runtimeCapabilitiesMany(agentIds),
+        outboxRepo.runtimeFeaturesMany(agentIds),
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
@@ -183,7 +185,7 @@ export function composeRuntimeDelivery(
           settled,
           failures,
           preparingWorkspace: seeding.has(id),
-          features: runtimeFeaturesOf(caps.get(id)),
+          features: features.get(id) ?? runtimeFeaturesOf(null),
         });
       }
       return result;

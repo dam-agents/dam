@@ -14,10 +14,7 @@ import {
   agents as agentsTable,
 } from "db";
 import type { DriverFailure, RuntimeEventKind } from "api-server-api";
-import {
-  capabilities as capabilitiesSchema,
-  type Capabilities,
-} from "agent-runtime-api";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 
 export interface OutboxRow {
   agentId: string;
@@ -51,9 +48,9 @@ export interface ApplyTransitions {
 export interface OutboxRepo {
   getRow(agentId: string): Promise<OutboxRow | null>;
   getRows(agentIds: string[]): Promise<OutboxRow[]>;
-  runtimeCapabilitiesMany(
+  runtimeFeaturesMany(
     agentIds: string[],
-  ): Promise<Map<string, Capabilities | null>>;
+  ): Promise<Map<string, RuntimeFeatures>>;
   bumpVersion(
     agentId: string,
     tx?: Db | DbTx,
@@ -102,10 +99,8 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       return rows[0] ?? null;
     },
 
-    async runtimeCapabilitiesMany(
-      agentIds,
-    ): Promise<Map<string, Capabilities | null>> {
-      const result = new Map<string, Capabilities | null>();
+    async runtimeFeaturesMany(agentIds): Promise<Map<string, RuntimeFeatures>> {
+      const result = new Map<string, RuntimeFeatures>();
       if (agentIds.length === 0) return result;
       const rows = await db
         .select({
@@ -115,8 +110,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .from(agentsTable)
         .where(inArray(agentsTable.id, agentIds));
       for (const row of rows) {
-        const parsed = capabilitiesSchema.safeParse(row.caps);
-        result.set(row.id, parsed.success ? parsed.data : null);
+        result.set(row.id, runtimeFeaturesOf(row.caps));
       }
       return result;
     },

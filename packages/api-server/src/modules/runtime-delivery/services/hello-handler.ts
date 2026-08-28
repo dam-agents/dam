@@ -9,12 +9,14 @@ import type {
 } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
+import { emit, EventType } from "../../../events.js";
 
 export function createHelloHandler(deps: {
   outboxRepo: OutboxRepo;
   agentsRuntimeRepo: AgentsRuntimeRepo;
   snapshotWriter: HarnessConfigSnapshotWriter;
   queue: StateQueue;
+  resolveOwner: (agentId: string) => Promise<string | null>;
   log: (msg: string) => void;
 }): RuntimeDeliveryService {
   return {
@@ -25,6 +27,11 @@ export function createHelloHandler(deps: {
         capabilities: input.capabilities,
         agentRuntimeVersion: input.agentRuntimeVersion,
       });
+
+      const ownerSub = await deps.resolveOwner(agentId);
+      if (ownerSub) {
+        emit({ type: EventType.RuntimeHelloReceived, agentId, ownerSub });
+      }
 
       if (input.harnessConfigCurrent) {
         try {

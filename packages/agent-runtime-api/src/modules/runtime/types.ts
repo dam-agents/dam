@@ -247,10 +247,13 @@ export interface RuntimeFeatures {
   liveUpdates: boolean;
 }
 
-export function runtimeFeaturesOf(
-  caps: Capabilities | null | undefined,
-): RuntimeFeatures {
-  return { liveUpdates: caps?.liveUpdates === true };
+const runtimeFeatureFlags = z.looseObject({
+  liveUpdates: z.boolean().optional().catch(undefined),
+});
+
+export function runtimeFeaturesOf(caps: unknown): RuntimeFeatures {
+  const parsed = runtimeFeatureFlags.safeParse(caps);
+  return { liveUpdates: parsed.success && parsed.data.liveUpdates === true };
 }
 
 export const stateSlice = z.object({
