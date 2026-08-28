@@ -60,6 +60,7 @@ function harness(opts: {
         ]
       : [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt, o) => {
       prompts.push(prompt);

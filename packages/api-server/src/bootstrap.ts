@@ -37,6 +37,7 @@ import {
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
+import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
@@ -601,6 +602,8 @@ export async function bootstrap() {
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
+        undefined,
+        DEFAULT_SETTLE_MS,
       )
     : undefined;
 
@@ -631,6 +634,7 @@ export async function bootstrap() {
           brandShort: config.brand.short,
           brandName: config.brand.name,
           attendance: turnAttendance,
+          settleMs: DEFAULT_SETTLE_MS,
         })
       : undefined;
 

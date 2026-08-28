@@ -42,6 +42,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
 
   const failSends = { count: 0 };
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [...existingSessions, ...created],
     sendPrompt: async (prompt: string | ContentBlock[], opts) => {
       if (failSends.count > 0) {

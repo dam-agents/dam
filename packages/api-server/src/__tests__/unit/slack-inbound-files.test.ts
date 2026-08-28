@@ -42,6 +42,7 @@ function harness(opts?: {
     opts?.failStagingWith ? { failWith: opts.failStagingWith } : undefined,
   );
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () =>
       opts?.resumableThreadKey
         ? [

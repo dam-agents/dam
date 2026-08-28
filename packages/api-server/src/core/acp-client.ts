@@ -14,6 +14,9 @@ const PING_INTERVAL_MS = 30_000;
 const MAX_MISSED_PONGS = 2;
 const DEFAULT_TURN_CEILING_MS = 60 * 60 * 1000;
 
+const STEER_METHOD = "_session/steering";
+const STEER_CEILING_MS = 30_000;
+
 function wsStream(url: string): Promise<{ stream: Stream; ws: WebSocket }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
@@ -79,6 +82,24 @@ export interface TriggerSessionResult {
   stopReason?: string;
 }
 
+export type SteerOutcome =
+  | "injected"
+  | "no-running-turn"
+  | "unsupported"
+  | "failed";
+
+const steerResponseSchema = z.object({
+  outcome: z.string().optional(),
+});
+
+function steeringSupported(init: InitializeResponse): boolean {
+  const meta = (init as { _meta?: unknown })._meta;
+  if (typeof meta !== "object" || meta === null) return false;
+  const steering = (meta as { steering?: unknown }).steering;
+  if (typeof steering !== "object" || steering === null) return false;
+  return (steering as { supported?: unknown }).supported === true;
+}
+
 type SessionAttach =
   | { resumeSessionId: string }
   | { onSessionCreated: (sessionId: string) => Promise<void> };
@@ -137,6 +158,10 @@ export interface AcpClient {
     prompt: string | ContentBlock[],
     opts: SendPromptOpts,
   ): Promise<string>;
+  steer(
+    sessionId: string,
+    prompt: string | ContentBlock[],
+  ): Promise<SteerOutcome>;
   triggerSession(opts: TriggerSessionOpts): Promise<TriggerSessionResult>;
 }
 
@@ -384,6 +409,38 @@ function createAcpClientForUrl(url: string, turnCeilingMs: number): AcpClient {
       );
 
       return responseChunks.join("");
+    },
+
+    async steer(
+      sessionId: string,
+      prompt: string | ContentBlock[],
+    ): Promise<SteerOutcome> {
+      const blocks: ContentBlock[] =
+        typeof prompt === "string" ? [{ type: "text", text: prompt }] : prompt;
+      try {
+        return await withAcpConnection(
+          url,
+          "platform-steer",
+          {},
+          STEER_CEILING_MS,
+          async (connection, init) => {
+            if (!steeringSupported(init)) return "unsupported";
+            const raw = await connection.extMethod(STEER_METHOD, {
+              sessionId,
+              prompt: blocks,
+              _meta: { steering: { idleBehavior: "promptRequired" } },
+            });
+            const parsed = steerResponseSchema.safeParse(raw);
+            const outcome = parsed.success ? parsed.data.outcome : undefined;
+            if (outcome === "injected") return "injected";
+            if (outcome === "promptRequired") return "no-running-turn";
+            return "failed";
+          },
+        );
+      } catch (err) {
+        getLogger().debug({ err, sessionId }, "acp steer failed");
+        return "failed";
+      }
     },
 
     async triggerSession(

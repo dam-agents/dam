@@ -28,6 +28,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async () => "the answer",
     triggerSession: () => Promise.reject(new Error("unused")),

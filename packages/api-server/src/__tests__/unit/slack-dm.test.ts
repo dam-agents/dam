@@ -39,6 +39,7 @@ function harness(opts: { binding: Binding }) {
   const { store: pending, map: pendingMap } =
     createInspectableTtlStore<SlackOAuthPending>();
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
       prompts.push(prompt);
