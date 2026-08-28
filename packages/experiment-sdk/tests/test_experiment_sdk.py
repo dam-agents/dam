@@ -373,6 +373,9 @@ def test_event_report_outage_is_survived_and_events_redeliver(
         with stage.run() as span:
             span.score = 1.0
         outage["on"] = False
+        # A failed flush parks the next attempts; clearing the gate stands in
+        # for that window elapsing, so this still asserts redelivery.
+        exp._flush_blocked_until = 0.0
         with stage.run() as span:
             span.score = 2.0
 
@@ -425,3 +428,75 @@ def test_finish_treats_409_as_already_closed(stub, tmp_path, monkeypatch):
 
     finishes = [r for r in stub.requests if r[1].endswith("/finish")]
     assert len(finishes) == 1
+
+
+def test_long_outage_keeps_the_retained_batch_within_the_server_cap(
+    stub, tmp_path, monkeypatch
+):
+    """A retained batch that outgrew the server's 500-event cap used to be
+    rejected on every later attempt, wedging reporting for the rest of the
+    run. The buffer is bounded, so what is held back stays deliverable."""
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/finish")] = (200, {"ok": True})
+
+    def events_route(body):
+        if len(body["events"]) > x._EVENT_BATCH_MAX:
+            return (400, {"error": "too many events"})
+        return (200, {"accepted": len(body["events"])})
+
+    stub.routes[("POST", "/events")] = events_route
+
+    exp = x.Experiment("evolver", script_path=write_script(tmp_path))
+    exp.stage("eval")
+    exp.ready()
+    exp._flush_blocked_until = 0.0
+    exp._buffer = []
+    for i in range(x._EVENT_BATCH_MAX * 3):
+        exp._emit({"type": "custom-data", "data": {"i": i}})
+        assert len(exp._buffer) <= x._EVENT_BATCH_MAX
+
+    exp._flush_blocked_until = 0.0
+    exp._flush(force=True, ignore_backoff=True)
+    assert exp._buffer == []
+    assert all(
+        len(body["events"]) <= x._EVENT_BATCH_MAX
+        for method, path, body in stub.requests
+        if method == "POST" and path.endswith("/events")
+    )
+
+
+def test_outage_costs_one_retry_ladder_per_window_not_one_per_emit(
+    stub, tmp_path, monkeypatch
+):
+    """Without the back-off gate every emit during an outage paid the full
+    four-attempt ladder, charging reporting latency to the loop."""
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/finish")] = (200, {"ok": True})
+    stub.routes[("POST", "/events")] = (500, {"error": "db restarting"})
+
+    exp = x.Experiment("evolver", script_path=write_script(tmp_path))
+    exp.stage("eval")
+    exp.ready()
+
+    # ready() already failed a flush and armed the gate; open it so the loop
+    # below measures exactly one back-off window.
+    exp._flush_blocked_until = 0.0
+    before = sum(
+        1
+        for method, path, _b in stub.requests
+        if method == "POST" and path.endswith("/events")
+    )
+    for i in range(25):
+        exp._emit({"type": "custom-data", "data": {"i": i}}, flush=True)
+    attempts = (
+        sum(
+            1
+            for method, path, _b in stub.requests
+            if method == "POST" and path.endswith("/events")
+        )
+        - before
+    )
+    # One ladder (_RETRY_ATTEMPTS posts), not one per emit.
+    assert attempts == x._RETRY_ATTEMPTS

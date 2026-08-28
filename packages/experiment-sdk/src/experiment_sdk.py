@@ -59,6 +59,12 @@ SCRIPT_CONTENT_MAX_BYTES = 256 * 1024
 DASHBOARD_CONTENT_MAX_BYTES = 512 * 1024
 _EVENT_FLUSH_MAX = 100
 _EVENT_FLUSH_SECONDS = 2.0
+# Mirrors the server's `appendEventsRequestSchema` cap. The buffer retains at
+# most this many events, so a batch held back by a failed flush is still a
+# batch the server will accept once it returns.
+_EVENT_BATCH_MAX = 500
+# One outage costs one retry ladder, not one ladder per emit.
+_EVENT_RETRY_BACKOFF_S = 30.0
 _DEFAULT_POLL_SECONDS = 5.0
 # Mirrors the server's ttl clamp (~1min..6h) plus a poll of slack.
 _DEFAULT_SPAWN_TIMEOUT_S = 6 * 60 * 60 + 60
@@ -476,6 +482,8 @@ class Experiment:
         self._heartbeat_stop: threading.Event | None = None
         self._buffer: list[dict[str, Any]] = []
         self._last_flush = time.monotonic()
+        self._flush_blocked_until = 0.0
+        self._dropped_events = 0
 
     # -- declaration ------------------------------------------------------------
 
@@ -671,7 +679,7 @@ class Experiment:
         if error:
             body["error"] = error[:2000]
         try:
-            self._flush(force=True)
+            self._flush(force=True, ignore_backoff=True)
             _request(
                 "POST", f"/experiments/{self._experiment_id}/finish", body, retry=True
             )
@@ -700,22 +708,36 @@ class Experiment:
 
     def _emit(self, event: dict[str, Any], flush: bool = False) -> None:
         self._buffer.append(event)
+        if len(self._buffer) > _EVENT_BATCH_MAX:
+            self._buffer = self._buffer[-_EVENT_BATCH_MAX:]
+            self._dropped_events += 1
         stale = time.monotonic() - self._last_flush > _EVENT_FLUSH_SECONDS
         if flush or stale or len(self._buffer) >= _EVENT_FLUSH_MAX:
             self._flush(force=True)
 
-    def _flush(self, force: bool = False) -> None:
+    def _flush(self, force: bool = False, ignore_backoff: bool = False) -> None:
         """Report buffered events; the buffer is drained only once the POST
         lands. Reports are observability, so a transient outage costs
         latency, never the run: on failure the events stay buffered (the next
         emit retries them) and the caller — often ``Span.__exit__`` — is not
         killed. ``ExperimentClosed`` still propagates: the run was stopped on
-        the platform and the loop should exit promptly."""
+        the platform and the loop should exit promptly.
+
+        An outage is bounded on both axes. The buffer retains only the newest
+        ``_EVENT_BATCH_MAX`` events, so what is held back stays a payload the
+        server accepts — an unbounded retained batch would pass the server's
+        cap and then be rejected on every future attempt, wedging reporting
+        for the rest of the run. A failed flush also parks the next attempts
+        for ``_EVENT_RETRY_BACKOFF_S``, so a long outage costs one retry
+        ladder per window instead of one per emit. ``finish`` passes
+        ``ignore_backoff`` to buy the tail one last honest attempt."""
         if not self._buffer or self._experiment_id is None:
             return
         if not force and len(self._buffer) < _EVENT_FLUSH_MAX:
             return
-        events = list(self._buffer)
+        if not ignore_backoff and time.monotonic() < self._flush_blocked_until:
+            return
+        events = self._buffer[:_EVENT_BATCH_MAX]
         try:
             _request(
                 "POST",
@@ -726,7 +748,17 @@ class Experiment:
         except ExperimentClosed:
             raise
         except Exception as err:  # noqa: BLE001 — kept buffered; next emit retries
-            _log(f"event report failed, {len(events)} event(s) kept for retry: {err}")
+            self._flush_blocked_until = time.monotonic() + _EVENT_RETRY_BACKOFF_S
+            dropped = (
+                f", {self._dropped_events} dropped so far"
+                if self._dropped_events
+                else ""
+            )
+            _log(
+                f"event report failed, {len(self._buffer)} event(s) kept for "
+                f"retry{dropped}: {err}"
+            )
             return
+        self._flush_blocked_until = 0.0
         self._buffer = self._buffer[len(events) :]
         self._last_flush = time.monotonic()
