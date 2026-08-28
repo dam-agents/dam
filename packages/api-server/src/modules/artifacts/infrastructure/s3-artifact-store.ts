@@ -106,13 +106,7 @@ export function createS3ArtifactStore(deps: {
     presignUpload(key, opts): Promise<string | null> {
       return getSignedUrl(
         deps.agentSigner,
-        new PutObjectCommand({
-          Bucket: deps.bucket,
-          Key: key,
-          ...(opts.contentLengthBytes !== undefined
-            ? { ContentLength: opts.contentLengthBytes }
-            : {}),
-        }),
+        new PutObjectCommand({ Bucket: deps.bucket, Key: key }),
         { expiresIn: opts.expiresSeconds },
       );
     },

@@ -28,7 +28,7 @@ export interface ArtifactStore {
   delete(key: string): Promise<void>;
   presignUpload(
     key: string,
-    opts: { expiresSeconds: number; contentLengthBytes?: number },
+    opts: { expiresSeconds: number },
   ): Promise<string | null>;
   presignDownload(
     key: string,

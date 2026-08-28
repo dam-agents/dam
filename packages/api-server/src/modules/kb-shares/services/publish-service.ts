@@ -286,15 +286,18 @@ export function createKbSharePublisher(
     );
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: minted URLs deliberately carry no signed
+   * content-length pin — SeaweedFS rebuilds presigned signatures without the
+   * Content-Length header (Go's server strips it from r.Header), so a pinned
+   * URL can never verify, and it enforces no length either way. The stat()
+   * verification at commit is the size authority.
+   */
   async function mintUploadUrl(
     key: string,
     mintedKeys: Set<string>,
-    contentLengthBytes?: number,
   ): Promise<string> {
-    const upload = await deps.store.createUploadUrl(
-      key,
-      contentLengthBytes !== undefined ? { contentLengthBytes } : undefined,
-    );
+    const upload = await deps.store.createUploadUrl(key);
     if (!upload) {
       throw new PublishFailure(
         "object storage is not configured for uploads — publishing is unavailable",
@@ -464,7 +467,7 @@ export function createKbSharePublisher(
           blobs.push({
             path: blob.path,
             expectedHash: blob.expectedHash,
-            putUrl: await mintUploadUrl(blob.key, mintedKeys, blob.sizeBytes),
+            putUrl: await mintUploadUrl(blob.key, mintedKeys),
           });
         }
         const result = await deps.kbPublish.execute(agentId, {
