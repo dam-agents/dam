@@ -177,8 +177,11 @@ export {
 export {
   kbPublishExecuteInputSchema,
   kbPublishPlanInputSchema,
+  kbPublishWatchRootsInputSchema,
+  kbRootsNoticeSchema,
   type KbPublishExecuteInput,
   type KbPublishPlanInput,
+  type KbRootsNotice,
 } from "./modules/kb-publish/schemas.js";
 export type {
   KbPublishExecuteReport,

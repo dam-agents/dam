@@ -3,6 +3,7 @@ import type { KbPublishFailure } from "../kb-snapshot/failures.js";
 import type {
   KbPublishExecuteInput,
   KbPublishPlanInput,
+  KbRootsNotice,
 } from "./schemas.js";
 
 export interface KbPublishPlanFile {
@@ -41,4 +42,8 @@ export interface KbPublishService {
   execute(
     input: KbPublishExecuteInput,
   ): Promise<Result<KbPublishExecuteReport, KbPublishFailure>>;
+  watchRoots(
+    roots: string[],
+    signal?: AbortSignal,
+  ): AsyncIterable<KbRootsNotice>;
 }

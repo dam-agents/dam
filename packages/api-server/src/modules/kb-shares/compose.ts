@@ -19,6 +19,7 @@ import {
   type AgentFilesClient,
 } from "./infrastructure/agent-files-client.js";
 import { createKbPublishClient } from "./infrastructure/kb-publish-client.js";
+import { createKbShareRootsWatcher } from "./infrastructure/kb-share-watch.js";
 import {
   claimPublish,
   clearSnapshotPointer,
@@ -245,6 +246,9 @@ export function startKbShareAutoRefresh(opts: {
     findActiveByAgent: findActive,
     listDirtyActive: listDirtyActiveShares(opts.db),
     markDirty: markShareDirty(opts.db),
+    watchRoots: createKbShareRootsWatcher(opts.namespace, (message) =>
+      process.stderr.write(`[kb-share-watch] ${message}\n`),
+    ),
     publishAs: async (owner, agentId) => {
       const publisher = composePublisher({
         owner,

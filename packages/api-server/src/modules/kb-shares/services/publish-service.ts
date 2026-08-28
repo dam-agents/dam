@@ -358,6 +358,9 @@ export function createKbSharePublisher(
       const previousHashes = new Set(
         previous?.files.map((f) => f.contentHash) ?? [],
       );
+      const previousFilesByPath = new Map(
+        previous?.files.map((f) => [f.path, f.contentHash] as const) ?? [],
+      );
       const blobPlans: BlobUploadPlan[] = [];
       const plannedHashes = new Set<string>();
       for (const file of planFiles) {
@@ -410,6 +413,42 @@ export function createKbSharePublisher(
           key: segmentKey(shareId, contentId),
           members,
         });
+      }
+
+      if (
+        previous !== null &&
+        claimed.snapshotId !== null &&
+        claimed.snapshotManifestKey !== null &&
+        blobPlans.length === 0 &&
+        segmentPlans.length === 0 &&
+        previous.files.length === planFiles.length &&
+        planFiles.every(
+          (f) => previousFilesByPath.get(f.path) === f.contentHash,
+        ) &&
+        previous.roots.length === claimed.roots.length &&
+        previous.roots.every((root, i) => root === claimed.roots[i])
+      ) {
+        const won = await deps.repo.finishPublishSuccess(
+          agentId,
+          {
+            snapshotId: claimed.snapshotId,
+            snapshotManifestKey: claimed.snapshotManifestKey,
+            snapshotCreatedAt: claimed.snapshotCreatedAt ?? now(),
+            documentCount: planFiles.length,
+            totalSizeBytes,
+            staleSnapshots: [...claimed.staleSnapshots],
+          },
+          claimToken,
+          claimedAt,
+        );
+        if (won) {
+          emit({
+            type: EventType.KbSharePublished,
+            agentId,
+            ownerSub: claimed.owner,
+          });
+        }
+        return;
       }
 
       const drifted = new Set<string>();

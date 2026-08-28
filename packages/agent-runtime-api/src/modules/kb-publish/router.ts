@@ -2,6 +2,7 @@ import { protectedProcedure, t } from "../../trpc.js";
 import {
   kbPublishExecuteInputSchema,
   kbPublishPlanInputSchema,
+  kbPublishWatchRootsInputSchema,
 } from "./schemas.js";
 
 /**
@@ -19,4 +20,11 @@ export const kbPublishRouter = t.router({
   execute: protectedProcedure
     .input(kbPublishExecuteInputSchema)
     .mutation(({ ctx, input }) => ctx.kbPublish.execute(input)),
+
+  watchRoots: protectedProcedure
+    .input(kbPublishWatchRootsInputSchema)
+    .subscription(async function* ({ ctx, input, signal }) {
+      for await (const notice of ctx.kbPublish.watchRoots(input.roots, signal))
+        yield notice;
+    }),
 });

@@ -31,5 +31,14 @@ export const kbPublishExecuteInputSchema = z.object({
   segments: z.array(kbPublishSegmentBuildSchema).max(64),
 });
 
+export const kbPublishWatchRootsInputSchema = z.object({
+  roots: z.array(z.string().min(1)).max(16),
+});
+
+export const kbRootsNoticeSchema = z.object({
+  topic: z.literal("kb-roots"),
+});
+
 export type KbPublishPlanInput = z.infer<typeof kbPublishPlanInputSchema>;
 export type KbPublishExecuteInput = z.infer<typeof kbPublishExecuteInputSchema>;
+export type KbRootsNotice = z.infer<typeof kbRootsNoticeSchema>;
