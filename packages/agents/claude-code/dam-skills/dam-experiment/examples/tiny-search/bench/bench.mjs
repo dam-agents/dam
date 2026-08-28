@@ -1,4 +1,4 @@
-import { TinySearch } from "../src/tiny-search.js";
+import { TinySearch, tokenize } from "../src/tiny-search.js";
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -55,11 +55,18 @@ function foldChecksum(checksum, results) {
 }
 
 function percentileUs(sortedNs, p) {
-  const index = Math.min(
-    sortedNs.length - 1,
-    Math.floor((p / 100) * sortedNs.length),
-  );
+  const rank = Math.ceil((p / 100) * sortedNs.length);
+  const index = Math.min(sortedNs.length - 1, Math.max(0, rank - 1));
   return Number(sortedNs[index]) / 1000;
+}
+
+function positiveInt(key, raw) {
+  if (raw === undefined) throw new Error(`--${key} needs a value`);
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`--${key} must be a positive integer, got: ${raw}`);
+  }
+  return value;
 }
 
 function parseArgs(argv) {
@@ -67,9 +74,11 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i += 2) {
     const key = argv[i].replace(/^--/, "");
     const value = argv[i + 1];
-    if (key === "scenario") args.scenario = value;
-    else if (key === "n" || key === "ops" || key === "seed") {
-      args[key] = Number(value);
+    if (key === "scenario") {
+      if (value === undefined) throw new Error("--scenario needs a value");
+      args.scenario = value;
+    } else if (key === "n" || key === "ops" || key === "seed") {
+      args[key] = positiveInt(key, value);
     } else throw new Error(`unknown argument: ${argv[i]}`);
   }
   if (!["query-heavy", "index-heavy", "mixed"].includes(args.scenario)) {
@@ -108,7 +117,9 @@ for (let i = 0; i < ops; i += 1) {
     const start = process.hrtime.bigint();
     index.add(id, text);
     samplesNs.push(process.hrtime.bigint() - start);
+    const verify = index.search(tokenize(text)[0] ?? "", { limit: 3 });
     checksum = (Math.imul(checksum, 31) + index.size) | 0;
+    checksum = foldChecksum(checksum, verify);
   }
 }
 

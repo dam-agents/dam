@@ -1,7 +1,10 @@
 export function tokenize(text) {
+  if (typeof text !== "string") {
+    throw new TypeError("text must be a string");
+  }
   return text
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
 }
 
@@ -31,6 +34,9 @@ export class TinySearch {
   }
 
   search(query, { limit = 10 } = {}) {
+    if (!Number.isInteger(limit) || limit < 0) {
+      throw new TypeError("limit must be a non-negative integer");
+    }
     const terms = tokenize(query);
     if (terms.length === 0) return [];
 

@@ -104,3 +104,36 @@ test("add validates its arguments", () => {
   assert.throws(() => index.add(42, "text"), TypeError);
   assert.throws(() => index.add("id", 42), TypeError);
 });
+
+test("tokenize keeps Unicode letters and numbers as single terms", () => {
+  assert.deepEqual(tokenize("Café: día 2, naïve"), [
+    "café",
+    "día",
+    "2",
+    "naïve",
+  ]);
+});
+
+test("accented text is searchable", () => {
+  const index = new TinySearch();
+  index.add("a", "un café très fort");
+  assert.deepEqual(index.search("café"), [{ id: "a", score: 1 }]);
+});
+
+test("limit of zero returns no results", () => {
+  const index = fixture();
+  assert.deepEqual(index.search("fast", { limit: 0 }), []);
+});
+
+test("search rejects an invalid limit", () => {
+  const index = fixture();
+  assert.throws(() => index.search("fast", { limit: -1 }), TypeError);
+  assert.throws(() => index.search("fast", { limit: 1.5 }), TypeError);
+  assert.throws(() => index.search("fast", { limit: "3" }), TypeError);
+});
+
+test("tokenize rejects a non-string input", () => {
+  assert.throws(() => tokenize(42), TypeError);
+  const index = fixture();
+  assert.throws(() => index.search(null), TypeError);
+});

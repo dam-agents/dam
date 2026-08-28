@@ -13,6 +13,16 @@ the exercise.
 - **occurrence scoring** — score = total occurrences of all query terms
 - **deterministic ordering** — score descending, ties by id ascending
 - **replace on re-add**, `remove()`, result `limit` (default 10)
+- **Unicode tokenizer** — lowercases, then splits on every run of characters
+  that are neither a Unicode letter (`\p{L}`) nor a Unicode number (`\p{N}`),
+  so `café` and `día` tokenize as single terms
+
+A campaign optimizes against this contract, so treat it as the specification:
+`add()`, `search()` and `tokenize()` reject bad input (`TypeError`) rather
+than degrading silently, and `search()` requires a non-negative integer
+`limit`. Note that `add()` calls the linear `remove()` to replace an existing
+id, so building a corpus is quadratic — that is a second deliberate source of
+slowness alongside the per-query re-tokenization.
 
 ## Usage
 
