@@ -91,6 +91,9 @@ security boundary — owner scoping is.
 **Postgres** (`packages/db/src/schema.ts`, generated via `mise run db:generate`):
 
 - `library_artifacts.interactive` — `boolean not null default false`, written only at create.
+- `library_artifacts.brief` — `text`, nullable, at most 8 KB. What the page's author left for
+  the cold Artifact Session: written at create and replaceable later **without** publishing a
+  version, because a version bump reloads the frame and destroys the state the brief serves.
 - `artifact_requests` — `id`, `owner`, `artifact_id` (fk → `library_artifacts`, cascade),
   `agent_id`, `seq` (per-artifact counter), `action`, `payload` (jsonb), `trigger`
   (`user` | `auto`), `state` (`pending` | `delivered` | `answered` | `failed`), `result`
@@ -102,6 +105,8 @@ security boundary — owner scoping is.
   Returns as soon as the row is committed. **Never waits for the turn.**
 - `requests.get({ requestId })` → current state, result or failure.
 - `requests.cancel({ requestId })` → stops listening. It does **not** stop the agent.
+- `create({ …, brief })` / `update({ …, brief })` → the brief. A brief-only `update` publishes
+  no version. A brief on a non-interactive artifact is refused; nothing would ever read it.
 
 **Live event** on the existing owner stream (`api.events.owner`):
 `ArtifactRequestSettled { requestId, artifactId, state }`. The app refetches on it.
@@ -175,6 +180,9 @@ Vocabulary, to be used in code, logs and errors:
   made in a dropdown, a form submitted. `action` names what was asked, `payload` carries its
   arguments. Numbered, answered once, or failed with a named reason.
 - **Artifact Session** — the ACP session a page's requests land in. One per artifact, resumed.
+- **Brief** — what the page's author left for the Artifact Session: standing instructions on
+  the artifact, prepended to every request prompt. The source says what the page is; the
+  brief says what to do about it.
 - **Callback** — an explaining word for prose only. Never a table, field, or error string.
 - **Press** — do not use, in code or in prose. A page asks through a button, a dropdown, a
   form; "press" names only one of those and reads as a button everywhere else.

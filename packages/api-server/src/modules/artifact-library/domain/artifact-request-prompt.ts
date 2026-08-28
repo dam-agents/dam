@@ -10,6 +10,7 @@ export interface ArtifactRequestPromptInput {
   action: string;
   payload: Record<string, unknown>;
   trigger: ArtifactRequestTrigger;
+  brief: string | null;
   source: string | null;
 }
 
@@ -27,6 +28,15 @@ function answerDirective(requestId: string): string {
     "The page can ask again the moment this answer lands, so answer what was asked and stop — a page that asks in small steps beats one that makes the person wait for everything at once. " +
     "If you cannot do what was asked, still call the tool and say why inside `result`."
   );
+}
+
+function briefSection(brief: string): string {
+  return [
+    "You left this brief on the page when you published it, for this exact moment. This session " +
+      "cannot see the conversation the page was written in, so the brief is the only thing you told " +
+      "yourself about the job the page is doing. Follow it:",
+    brief,
+  ].join("\n\n");
 }
 
 function sourceSection(source: string): string {
@@ -53,6 +63,7 @@ export function buildArtifactRequestPrompt(
 ): string {
   const parts = [
     `Your interactive page "${input.title}" (artifact ${input.artifactId}) is asking you to do something.`,
+    ...(input.brief !== null ? [briefSection(input.brief)] : []),
     [
       `Request #${input.seq}`,
       `action: ${input.action}`,

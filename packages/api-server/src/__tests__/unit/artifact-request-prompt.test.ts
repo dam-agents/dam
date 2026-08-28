@@ -5,7 +5,7 @@ import {
   buildArtifactRequestPrompt,
 } from "../../modules/artifact-library/domain/artifact-request-prompt.js";
 
-// TEST_OVERVIEW: The prompt is the whole brief the agent gets for one Artifact Request. It has to say which page asked, what it asked for with its arguments, whether a person is waiting, and that the answer only counts when `answer_artifact_request` is called with that request id — finishing the turn answers nothing. The page's source rides along on the first request of a session, because later requests land in the same session, which already holds it. A page too big to inline is named as a tool call instead of being cut in half.
+// TEST_OVERVIEW: The prompt is the whole brief the agent gets for one Artifact Request. It has to say which page asked, what it asked for with its arguments, whether a person is waiting, and that the answer only counts when `answer_artifact_request` is called with that request id — finishing the turn answers nothing. The page's source rides along on the first request of a session, because later requests land in the same session, which already holds it. A page too big to inline is named as a tool call instead of being cut in half. The brief goes the other way: it rides every request, because it is the standing instruction the agent left itself for a session that cannot see the conversation the page was written in.
 
 const base = {
   requestId: "req-1",
@@ -15,6 +15,7 @@ const base = {
   action: "refresh",
   payload: { city: "Prague" },
   trigger: "user" as const,
+  brief: null,
   source: null,
 };
 
@@ -35,6 +36,23 @@ describe("the prompt for one request", () => {
     expect(prompt).toContain("answer_artifact_request");
     expect(prompt).toContain('request_id "req-1"');
     expect(prompt).toMatch(/Finishing your turn is not an answer/);
+  });
+
+  // TEST_SCENARIO: The brief is what the agent left for a session that cannot see the conversation the page was written in. It has to arrive before the request, so the agent reads its own instructions before it reads what was asked.
+  it("puts the brief ahead of the request", () => {
+    const prompt = buildArtifactRequestPrompt({
+      ...base,
+      brief: "Ask one interview question at a time. Never repeat one.",
+    });
+    expect(prompt).toContain("Ask one interview question at a time");
+    expect(prompt.indexOf("one interview question")).toBeLessThan(
+      prompt.indexOf("Request #1"),
+    );
+  });
+
+  // TEST_SCENARIO: Most pages have no brief. Their prompt must not mention one, or the agent looks for instructions that were never written.
+  it("says nothing about a brief when there is none", () => {
+    expect(buildArtifactRequestPrompt(base)).not.toContain("brief");
   });
 
   // TEST_SCENARIO: A page refreshing itself has nobody watching. The agent should know that before it decides how much work to do.

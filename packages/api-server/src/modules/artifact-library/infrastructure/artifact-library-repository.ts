@@ -37,6 +37,7 @@ export interface ArtifactRow {
   version: number;
   visibility: ArtifactVisibility;
   interactive: boolean;
+  brief: string | null;
   expiresAt: Date | null;
   viewCount: number;
   createdAt: Date;
@@ -101,6 +102,7 @@ export type ArtifactPatch = Partial<
     | "version"
     | "sourcePath"
     | "visibility"
+    | "brief"
     | "expiresAt"
   >
 >;
@@ -205,6 +207,7 @@ export function createArtifactLibraryRepository(
       artifactVisibilitySchema.parse(value),
     ),
     interactive: artifactsTable.interactive,
+    brief: artifactsTable.brief,
     expiresAt: artifactsTable.expiresAt,
     viewCount: artifactsTable.viewCount,
     createdAt: artifactsTable.createdAt,

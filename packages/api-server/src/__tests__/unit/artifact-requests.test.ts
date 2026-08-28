@@ -32,6 +32,7 @@ type PageOverrides = Partial<{
   agentId: string | null;
   interactive: boolean;
   visibility: string;
+  brief: string | null;
 }>;
 
 function page(overrides: PageOverrides = {}) {
@@ -41,6 +42,8 @@ function page(overrides: PageOverrides = {}) {
     agentId: "agent-1",
     interactive: true,
     visibility: "private",
+    title: "Weather board",
+    brief: null,
     ...overrides,
   };
 }
@@ -443,6 +446,35 @@ describe("carrying a request to the agent", () => {
 
     expect(delivery.calls[0]!.task).toContain("<h1>board</h1>");
     expect(delivery.calls[1]!.task).not.toContain("<h1>board</h1>");
+  });
+
+  // TEST_SCENARIO: The brief is the opposite of the source. The source is what the page is, so the session keeps it after one look; the brief is what to do about it, and the session must be reminded of it every time — including on requests it never saw the source for.
+  it("carries the brief on every request, not just the first", async () => {
+    const rows: ArtifactRequestRow[] = [];
+    const delivery = fakeDelivery();
+    const service = serviceOver(
+      [page({ brief: "Answer in Czech. Never invent a temperature." })],
+      rows,
+      "o1",
+      { delivery },
+    );
+
+    const first = await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+    await service.cancel(first.requestId);
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+
+    expect(delivery.calls[0]!.task).toContain("Answer in Czech");
+    expect(delivery.calls[1]!.task).toContain("Answer in Czech");
   });
 
   // TEST_SCENARIO: The page's source is a nice-to-have, not the request. If the object store cannot be read the agent is still asked — it can fetch the page with get_artifact.

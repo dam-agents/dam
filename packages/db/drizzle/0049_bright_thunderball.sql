@@ -1,0 +1,1 @@
+ALTER TABLE "library_artifacts" ADD COLUMN "brief" text;
