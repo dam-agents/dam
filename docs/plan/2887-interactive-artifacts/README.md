@@ -29,8 +29,9 @@ The whole design was settled in a grilling session (22 decisions). The load-bear
   the *shape* (a numbered request, an answer reported through a tool) and none of the machinery.
 - **Delivery reuses the schedule-fire rails.** Outbox event, activity poke, `hello` catch-up,
   TTL. See [agent-lifecycle](../../architecture/agent-lifecycle.md#trigger-fire).
-- **One conversation per artifact**, resumed on every request, exactly like a continuous
-  schedule.
+- **A page asks in the conversation it belongs to.** Bound to the chat it was first used in,
+  resumed on every request. A page built to outlive that chat sets `own_session` and gets its
+  own Artifact Session instead, resumed the same way, exactly like a continuous schedule.
 - **Interactive is settled at create**, like an artifact's kind, and an interactive artifact
   **cannot be shared**.
 
@@ -72,12 +73,13 @@ sequenceDiagram
 | 06 | Self-refresh limits and the indicator | client pacing, pause when hidden, idle stop, visible chip | 05 |
 | 08 | The bridge shim | `platform.ask` injected at render, protocol becomes internal | 06 |
 | 09 | The brief | what the cold Artifact Session needs, asked for at create | 08 |
-| 07 | Documentation | vocabulary section + four architecture pages | 09 |
+| 10 | Conversation binding | a page asks in the chat it belongs to; `own_session` opts out; `session_deleted` | 09 |
+| 07 | Documentation | vocabulary section + four architecture pages | 10 |
 
-Order is linear and runs 01 → 06, 08, 09, 07. 04 is the first slice where the feature is visible
-end to end. 08 and 09 were added after 06 shipped, when publishing a page by hand showed that the
-protocol is unusable without them, so 07 keeps its number and stays last: it documents what
-exists, and 08 and 09 change what exists.
+Order is linear and runs 01 → 06, 08, 09, 10, 07. 04 is the first slice where the feature is
+visible end to end. 08, 09 and 10 were added after 06 shipped, when using a page by hand showed
+what the protocol was missing, so 07 keeps its number and stays last: it documents what exists,
+and the later slices change what exists.
 
 ## Pinned contracts
 
@@ -91,6 +93,13 @@ security boundary — owner scoping is.
 **Postgres** (`packages/db/src/schema.ts`, generated via `mise run db:generate`):
 
 - `library_artifacts.interactive` — `boolean not null default false`, written only at create.
+- `library_artifacts.own_session` — `boolean not null default false`, written only at create.
+  True means the page takes its own Artifact Session and never binds to a conversation, which is
+  what a page has to do if it must outlive the chat that made it.
+- `library_artifacts.session_id` — `text`, nullable, written **once** on the page's first ask and
+  never rewritten: the conversation the page asks in for the rest of its life. Null means no
+  conversation was open at that first ask, or `own_session` is set, and the page uses its own
+  Artifact Session. Null on every row published before slice 10.
 - `library_artifacts.brief` — `text`, nullable, at most 8 KB. What the page's author left for
   the cold Artifact Session: written at create and replaceable later **without** publishing a
   version, because a version bump reloads the frame and destroys the state the brief serves.
@@ -101,21 +110,29 @@ security boundary — owner scoping is.
 
 **tRPC** (`packages/api-server-api/src/modules/artifact-library/router.ts`):
 
-- `requests.create({ artifactId, action, payload, trigger })` → `{ requestId, seq, state }`.
-  Returns as soon as the row is committed. **Never waits for the turn.**
+- `requests.create({ artifactId, action, payload, trigger, sessionId? })` →
+  `{ requestId, seq, state }`. Returns as soon as the row is committed. **Never waits for the
+  turn.** `sessionId` is the conversation the app has open behind the page, sent on every ask and
+  used only on the first one, which pins it. Omitted when no chat is open.
 - `requests.get({ requestId })` → current state, result or failure.
 - `requests.cancel({ requestId })` → stops listening. It does **not** stop the agent.
 - `create({ …, brief })` / `update({ …, brief })` → the brief. A brief-only `update` publishes
   no version. A brief on a non-interactive artifact is refused; nothing would ever read it.
+- `create({ …, ownSession })` → settled at create like `interactive`, unchangeable after, and
+  refused on a non-interactive artifact for the same reason.
 
 **Live event** on the existing owner stream (`api.events.owner`):
 `ArtifactRequestSettled { requestId, artifactId, state }`. The app refetches on it.
 
 **Named failure reasons** (the whole set, the page renders its own copy for each):
-`agent_deleted`, `wake_failed`, `over_budget`, `rate_limited`, `busy`, `cancelled`, `expired`.
+`agent_deleted`, `session_deleted`, `wake_failed`, `over_budget`, `rate_limited`, `busy`,
+`cancelled`, `expired`. `session_deleted` is a bound page whose conversation the owner deleted:
+the artifact is **kept** and still reads as a document, only its interactivity is gone, exactly
+as for `agent_deleted`.
 
 **Outbox event** (`runtime-delivery`): kind `artifact-request`, payload
-`{ requestId, artifactId, task }`, with the same TTL treatment as `trigger` but a **15-minute**
+`{ requestId, artifactId, task, sessionId }` where `sessionId` is the bound conversation or null
+for an `own_session` page, with the same TTL treatment as `trigger` but a **15-minute**
 TTL, not the schedule's hour: a request in flight blocks the page from asking again, so a request
 nobody answers has to give up while the person is still there. A minute-by-minute sweep settles
 requests past that TTL as `expired`, because the outbox expiry only drops the event.
@@ -179,7 +196,10 @@ Vocabulary, to be used in code, logs and errors:
 - **Artifact Request** — one thing a page asked its agent to do: a button clicked, a choice
   made in a dropdown, a form submitted. `action` names what was asked, `payload` carries its
   arguments. Numbered, answered once, or failed with a named reason.
-- **Artifact Session** — the ACP session a page's requests land in. One per artifact, resumed.
+- **Artifact Session** — the dedicated ACP session an `own_session` page's requests land in.
+  One per artifact, resumed. A page bound to a conversation has none: it asks there instead.
+- **Bound** — a page asks in the conversation it was first used in, pinned on the first ask and
+  fixed for the page's life. The default.
 - **Brief** — what the page's author left for the Artifact Session: standing instructions on
   the artifact, prepended to every request prompt. The source says what the page is; the
   brief says what to do about it.
