@@ -7,6 +7,7 @@ import {
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
 import { listAgentSessions } from "./acp-session-ops.js";
 
 export interface SessionListInclude {
@@ -91,6 +92,7 @@ export function useAcpSessions(
     activeSessionId?: string | null;
   },
 ) {
+  const compat = useAgentLacksLiveUpdates(agentId);
   const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
     queryKey: acpSessionsKeys.list(agentId, include),
@@ -123,6 +125,7 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
+    refetchInterval: live && compat ? 5_000 : false,
     staleTime: 5_000,
     meta: { errorToast: "Couldn't refresh session list" },
   });

@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-08-24
+Last verified: 2026-08-28
 
 ## Overview
 
@@ -99,7 +99,7 @@ Concurrent dispatches from different replicas race naturally: the agent rejects 
 
 Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind, it enqueues a worker dispatch and the catch-up arrives as an ordinary `applyState`.
 
-The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply.
+The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply, and which optional surfaces its image serves: harness configuration, and the pod's own watch surface for live updates. A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; each claim gates both the UI surfaces that read it and the platform's pod-facing streams. Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
 The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
 

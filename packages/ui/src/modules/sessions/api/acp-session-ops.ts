@@ -4,6 +4,7 @@ import { SessionMode, SessionType, type SessionView } from "api-server-api";
 
 import { openInitializedConnection } from "../../acp/acp.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
+import { agentLacksLiveUpdates } from "../../agents/api/queries.js";
 
 interface PlatformMeta {
   mode?: string;
@@ -115,6 +116,9 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
+  if (agentLacksLiveUpdates(agentId)) {
+    return listAgentSessionsOverAcp(agentId);
+  }
   const { sessions } = await agentTrpc(agentId).sessions.list.query();
   return sessions
     .map((s) => toSessionViewFromPod(agentId, s))

@@ -112,6 +112,8 @@ export {
   event,
   eventKind,
   capabilities,
+  runtimeFeaturesOf,
+  type RuntimeFeatures,
   harnessConfigChoice,
   harnessConfigOptionGroup,
   harnessConfigCatalog,

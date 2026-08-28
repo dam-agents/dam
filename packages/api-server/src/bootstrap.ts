@@ -300,6 +300,9 @@ export async function bootstrap() {
     },
   );
 
+  const resolveAgentOwner = async (agentId: string) =>
+    (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
+
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
@@ -309,10 +312,10 @@ export async function bootstrap() {
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
-      resolveOwner: async (agentId) =>
-        (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null,
+      resolveOwner: resolveAgentOwner,
     }),
     harnessServerUrl: config.harnessServerUrl,
+    resolveOwner: resolveAgentOwner,
   });
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
@@ -472,6 +475,7 @@ export async function bootstrap() {
     k8s: k8sClient,
     namespace: config.namespace,
     agentsRepo,
+    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
   });
   liveEventsModule.start();
   const agentWatchLease = createLeaderLease({
