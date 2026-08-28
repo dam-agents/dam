@@ -23,9 +23,11 @@ controller:
     templateDefaults:
       imagePullPolicy: IfNotPresent
   # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
-  # (2 CPU / 8Gi) with headroom for a second sandbox. The stock 4 CPU / 8Gi
-  # ceiling parked the nous target in OverBudget for hours (the deadline clock
-  # kept running) and later couldn't have admitted the resized worker at all.
+  # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
+  # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
+  # stay inside what the lima VM can schedule — a too-small ceiling once parked
+  # the nous target in OverBudget for hours (the deadline clock kept running),
+  # but the fix here is the VM's capacity, not the stock default.
   #
   # Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml) with
   # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
