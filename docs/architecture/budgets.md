@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-08-21
+Last verified: 2026-08-27
 
 ## Overview
 
@@ -12,7 +12,7 @@ Enforcement lives in the **controller, at the 0→1 scale transition**. The reco
 
 **Reserved** — the consumption side of a Budget — is the sum of **Sizes** (`spec.resources.limits`) across the owner's scaled-up agents:
 
-- **Limits, because the Budget bounds what agents can actually use.** An agent's Size — its CPU/memory limits — is the one resource concept users see: the template's default at create, the slider in the agent's settings, else the small chart default (1 CPU / 1Gi). Limits hard-cap consumption (memory OOM-caps, CPU throttles), so Σ Sizes ≤ Ceiling is a deterministic guarantee: a user's agents can never consume past their Ceiling, even all bursting at once. The requests/limits split is deliberately *not* a user concept.
+- **Limits, because the Budget bounds what agents can actually use.** An agent's Size — its CPU/memory limits — is the one resource concept users see: the template's default at create, the slider in the agent's settings, else the small chart default (1 CPU / 2Gi). Limits hard-cap consumption (memory OOM-caps, CPU throttles), so Σ Sizes ≤ Ceiling is a deterministic guarantee: a user's agents can never consume past their Ceiling, even all bursting at once. The requests/limits split is deliberately *not* a user concept.
 - **Requests are derived scheduling internals.** The controller computes them at render: `max(limit × fraction, floor)` per dimension (`controller.requestsFromLimits`, default fraction 0.5, floors 100m/128Mi, clamped to the limit). The cluster packs on `Σ Sizes × fraction` — a fixed, operator-chosen overcommit ratio. A template that sets `requests` explicitly bypasses derivation (operator escape hatch).
 - **Straight off the spec.** The api-server stamps a concrete Size onto every Agent CR at create (an explicitly requested size wins, else template, else default) — user intent stays api-server-written. The controller **materializes** the chart's `legacyAgentSize` — the limits pre-Sizes agents actually ran with (default 1 CPU / 2Gi), so convergence records reality rather than silently shrinking a workload — into any spec missing a dimension: fill-if-absent on reconcile, never touching a set value (the same license the K8s scheduler takes with `spec.nodeName`). The watch-driven fill is what makes limits effectively *required* without schema-level enforcement: every Agent converges to a concrete Size within one reconcile of existing, however it was created (api-server, kubectl, GitOps), and the filling reconcile itself already renders and budgets with the filled values. An unfilled spec (a peer awaiting its own reconcile) counts at `legacyAgentSize` — fallback, never zero.
 - **Scaled-up means desired replicas ≥ 1** on the agent StatefulSet — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
@@ -30,8 +30,8 @@ metadata:
   namespace: <agents-namespace>   # the chart's agent namespace (default platform-agents)
 spec:
   owner: "<keycloak-sub>"        # exact plaintext sub, as on the agent owner label
-  cpu: "8"
-  memory: "16Gi"
+  cpu: "16"
+  memory: "32Gi"
 ```
 
 The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed ceiling is rejected rather than silently parsed to zero. UserBudgets are operator-managed (`kubectl`/GitOps); there is no self-service path. Role-based budgets and approval flows are out of scope — when they arrive, richer policy in the api-server will *materialize* its results as UserBudget CRs, and the controller's contract stays a dumb numeric invariant.
