@@ -23,6 +23,7 @@ import {
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { isEditableArtifact } from "../lib/editable.js";
+import { useOpenConversation } from "../hooks/use-open-conversation.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactStatusBadge } from "./artifact-badges.js";
@@ -95,12 +96,16 @@ export function DockedArtifactPanel() {
   const experimentFeedPost = useDashboardFeedPost(openArtifactId);
   const feedPostForShown =
     shownVersion === latest ? experimentFeedPost : undefined;
+  const openConversation = useOpenConversation(artifact?.agentId ?? null);
   const {
     bridge,
     status: requestStatus,
     selfRefresh,
     dismissFailure,
-  } = useArtifactBridge(shownVersion === latest ? artifact : null);
+  } = useArtifactBridge(
+    shownVersion === latest ? artifact : null,
+    openConversation,
+  );
 
   const frame =
     artifact && preview.data ? (

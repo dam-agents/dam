@@ -37,6 +37,8 @@ export interface ArtifactRow {
   version: number;
   visibility: ArtifactVisibility;
   interactive: boolean;
+  ownSession: boolean;
+  sessionId: string | null;
   brief: string | null;
   expiresAt: Date | null;
   viewCount: number;
@@ -130,6 +132,11 @@ export interface ArtifactLibraryRepository {
     owner: string,
     patch: ArtifactPatch,
   ): Promise<ArtifactRow | null>;
+  pinSession(
+    id: string,
+    owner: string,
+    sessionId: string,
+  ): Promise<string | null>;
   deleteArtifactWithVersions(
     id: string,
     owner: string,
@@ -207,6 +214,8 @@ export function createArtifactLibraryRepository(
       artifactVisibilitySchema.parse(value),
     ),
     interactive: artifactsTable.interactive,
+    ownSession: artifactsTable.ownSession,
+    sessionId: artifactsTable.sessionId,
     brief: artifactsTable.brief,
     expiresAt: artifactsTable.expiresAt,
     viewCount: artifactsTable.viewCount,
@@ -322,6 +331,26 @@ export function createArtifactLibraryRepository(
         .where(and(eq(artifactsTable.id, id), eq(artifactsTable.owner, owner)))
         .returning(artifactColumns);
       return row ?? null;
+    },
+
+    async pinSession(id, owner, sessionId) {
+      const [pinned] = await db
+        .update(artifactsTable)
+        .set({ sessionId })
+        .where(
+          and(
+            eq(artifactsTable.id, id),
+            eq(artifactsTable.owner, owner),
+            isNull(artifactsTable.sessionId),
+          ),
+        )
+        .returning({ sessionId: artifactsTable.sessionId });
+      if (pinned) return pinned.sessionId;
+      const [current] = await db
+        .select({ sessionId: artifactsTable.sessionId })
+        .from(artifactsTable)
+        .where(and(eq(artifactsTable.id, id), eq(artifactsTable.owner, owner)));
+      return current?.sessionId ?? null;
     },
 
     async deleteArtifactWithVersions(id, owner) {

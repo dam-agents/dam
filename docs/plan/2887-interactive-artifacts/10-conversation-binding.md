@@ -43,12 +43,16 @@ Apply the `/typescript-engineering` skill, and `/react-ui-engineering` for step 
 
    The app already knows both facts. It is signed in, it renders the docked panel inside the
    chat, and the open session is `useStore(s => s.sessionId)`. So `requests.create` carries the
-   open session id, the server **pins it on the first ask** and stores it, and every later ask
-   uses the pinned one no matter where the page is opened from. A first ask with no chat open,
-   from the Artifacts destination, pins nothing and falls back to an Artifact Session.
+   open session id, the server **pins the first ask that carries one** and stores it, and every
+   later ask uses the pinned one no matter where the page is opened from. An ask with no chat
+   open, from the Artifacts destination, pins nothing and falls back to an Artifact Session — and
+   leaves the page free to bind the next time it is asked from a chat.
 
    This does deviate from "settled at create". Accept it and say so: what is settled is where a
-   page asks *for its whole life*, and it is settled at the first ask and never again.
+   page asks *for its whole life*, and it is settled by the first ask that has a conversation to
+   offer, and never again. Pinning on the page's literal first ask was tried and reverted: one
+   ask from the Artifacts destination, or from a browser tab holding a stale bundle, settled the
+   page as sessionless for life with nothing said about it.
 
 2. **Storage.** `library_artifacts.session_id`, text, nullable, written once and never
    rewritten, generated through `mise run db:generate`. Null means the page has no bound
@@ -94,18 +98,27 @@ Apply the `/typescript-engineering` skill, and `/react-ui-engineering` for step 
    a deleted agent, and it is why this slice needs no cascade, no sweeper and no new pod-to-server
    signal.
 
-6. **A bound prompt drops the source.**
+6. **A bound prompt is cut to the ask.** Landing in a conversation a person reads turned the
+   prompt into something they have to scroll past, and most of it was already written elsewhere.
    [`artifact-request-prompt.ts`](../../../packages/api-server/src/modules/artifact-library/domain/artifact-request-prompt.ts)
-   inlines up to 128 KB of the page's own HTML on the first ask of a session. For a bound page
-   that is the session that just wrote the file, and the block lands in a conversation a person
-   reads. Drop it, and tell the agent to call `get_artifact` if it needs the source back, which
-   is what the oversized branch already says.
+   keeps only what the `answer_artifact_request` tool cannot know: the page, the action and
+   payload, the request id, and one line that a reply in the chat is not the answer. Three of the
+   five sentences of the old directive were already on that tool word for word, and the advice
+   about building a page out of small asks belongs in `create_artifact`, where the page is written.
 
-   The brief still rides every ask when it is there. A long conversation gets compacted and
-   standing instructions outlive that. What has to change is its tool description: it currently
-   tells the agent the serving session is not this conversation, which for a bound page is now
-   false. Rewrite it to say the brief matters most for an `own_session` page and is optional,
-   short insurance otherwise.
+   For a bound page, drop the inlined source (that conversation wrote the file, and the artifact
+   id on the first line is enough to read it back) and drop the line about who is waiting (a bound
+   page is refused automatic asks, so a person always is). The brief rides only the ask that bound
+   the page: the conversation keeps its own history, so repeating standing rules on every ask
+   charges the owner for the same bytes every turn. If that conversation is later compacted the
+   brief is gone from context and `get_artifact` returns it — accept that, it is the same bet
+   compaction already makes about everything else in the thread.
+
+   An `own_session` page keeps both, because its session starts cold and can see nothing else: the
+   source on its first request, the brief on every one. Its tool description still has to change,
+   since it currently tells the agent the serving session is never this conversation, which for a
+   bound page is false. `create_artifact` also gains one line telling the agent to send only what
+   changed in a payload, because a page that replays its own history pays for it every turn.
 
 7. **Say where the answers land.** The Session button
    ([`artifact-session-button.tsx`](../../../packages/ui/src/modules/artifacts/components/artifact-session-button.tsx))

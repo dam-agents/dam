@@ -351,6 +351,13 @@
       "when": 1789377828932,
       "tag": "0049_bright_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789377898922,
+      "tag": "0050_chubby_lady_bullseye",
+      "breakpoints": true
     }
   ]
 }

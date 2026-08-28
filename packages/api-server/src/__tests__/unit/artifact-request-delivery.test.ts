@@ -8,7 +8,7 @@ import { ARTIFACT_REQUEST_TTL_MS } from "../../modules/artifact-library/domain/a
 import { createArtifactRequestDelivery } from "../../modules/artifact-library/services/artifact-request-delivery.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
-// TEST_OVERVIEW: Delivery is the schedule-fire sequence with an artifact id in place of a schedule id: write an `artifact-request` event into the agent's outbox, poke the agent's state queue, then wake the agent. The event id is `artifact-request:<requestId>:<firedAt>` because the pod splits an event id into a key and a timestamp to decide whether it has already run that event. The event carries the same kind of TTL a trigger does, so a request nobody serves is dropped rather than served hours later. The wake is where the platform tells us what went wrong, and its typed cause is what the page renders: a missing agent is `agent_deleted`, no room to start is `over_budget`, and anything else is `wake_failed`.
+// TEST_OVERVIEW: Delivery is the schedule-fire sequence with an artifact id in place of a schedule id: write an `artifact-request` event into the agent's outbox, poke the agent's state queue, then wake the agent. The event id is `artifact-request:<requestId>:<firedAt>` because the pod splits an event id into a key and a timestamp to decide whether it has already run that event. The event carries the same kind of TTL a trigger does, so a request nobody serves is dropped rather than served hours later, and it names the conversation the page is bound to, or null for a page that asks in its own Artifact Session. The wake is where the platform tells us what went wrong, and its typed cause is what the page renders: a missing agent is `agent_deleted`, no room to start is `over_budget`, and anything else is `wake_failed`. Before any of that, a bound page's conversation has to still exist: deleting one only writes a tombstone the pod keeps out of its session list, so the check is a wake plus that list, and a pinned id missing from it settles the request `session_deleted` with nothing left in the outbox.
 
 interface Bumped {
   agentId: string;
@@ -39,10 +39,13 @@ const input = {
   requestId: "req-1",
   artifactId: "art-1",
   agentId: "agent-1",
+  sessionId: null,
   task: "do the thing",
 };
 
 const silent = () => {};
+
+const noSessions = () => Promise.resolve([]);
 
 describe("delivering an artifact request", () => {
   // TEST_SCENARIO: The event is what the pod reads to open or resume the page's session, so it must carry the request, the page and the prompt, and expire like a trigger does.
@@ -56,6 +59,7 @@ describe("delivering an artifact request", () => {
         woken.push(agentId);
         return Promise.resolve();
       },
+      listSessions: noSessions,
       now: () => now,
       log: silent,
     });
@@ -72,6 +76,7 @@ describe("delivering an artifact request", () => {
               requestId: "req-1",
               artifactId: "art-1",
               task: "do the thing",
+              sessionId: null,
             },
             expiresAt: new Date(now.getTime() + ARTIFACT_REQUEST_TTL_MS),
           },
@@ -104,6 +109,7 @@ describe("delivering an artifact request", () => {
               failure,
             }),
           ),
+        listSessions: noSessions,
         log: silent,
       });
       await expect(delivery.deliver(input)).resolves.toEqual({
@@ -118,6 +124,7 @@ describe("delivering an artifact request", () => {
     const delivery = createArtifactRequestDelivery({
       runtimeMutator: fakeRuntime(),
       ensureAgentReady: () => Promise.reject(new Error("connection reset")),
+      listSessions: noSessions,
       log: silent,
     });
     await expect(delivery.deliver(input)).resolves.toEqual({
@@ -135,9 +142,95 @@ describe("delivering an artifact request", () => {
         bump: () => Promise.reject(new Error("db down")),
       },
       ensureAgentReady: () => Promise.resolve(),
+      listSessions: noSessions,
       log: silent,
     });
     await expect(delivery.deliver(input)).resolves.toEqual({
+      ok: false,
+      reason: "wake_failed",
+    });
+  });
+
+  // TEST_SCENARIO: A bound page names the conversation its turn has to land in, and the pod reads that from the event rather than from its own per-artifact binding.
+  it("carries the bound conversation on the event", async () => {
+    const runtime = fakeRuntime();
+    const delivery = createArtifactRequestDelivery({
+      runtimeMutator: runtime,
+      ensureAgentReady: () => Promise.resolve(),
+      listSessions: noSessions,
+      log: silent,
+    });
+    await delivery.deliver({ ...input, sessionId: "sess-7" });
+    expect(runtime.bumped[0]!.events[0]!.payload).toMatchObject({
+      sessionId: "sess-7",
+    });
+  });
+});
+
+describe("checking the conversation a page is bound to", () => {
+  const bound = {
+    requestId: "req-1",
+    agentId: "agent-1",
+    sessionId: "sess-7",
+  };
+
+  // TEST_SCENARIO: The pod filters tombstoned sessions out of the list it serves, so a pinned id that is still listed is a conversation the person still has.
+  it("passes when the conversation is still listed", async () => {
+    const delivery = createArtifactRequestDelivery({
+      runtimeMutator: fakeRuntime(),
+      ensureAgentReady: () => Promise.resolve(),
+      listSessions: () =>
+        Promise.resolve([{ sessionId: "sess-1" }, { sessionId: "sess-7" }]),
+      log: silent,
+    });
+    await expect(delivery.checkBinding(bound)).resolves.toEqual({ ok: true });
+  });
+
+  // TEST_SCENARIO: Deleting a conversation writes a tombstone and nothing else — `session/resume` never consults it — so without this check a page would go on driving a conversation the person believes they deleted.
+  it("settles session_deleted when the conversation is gone", async () => {
+    const delivery = createArtifactRequestDelivery({
+      runtimeMutator: fakeRuntime(),
+      ensureAgentReady: () => Promise.resolve(),
+      listSessions: () => Promise.resolve([{ sessionId: "sess-1" }]),
+      log: silent,
+    });
+    await expect(delivery.checkBinding(bound)).resolves.toEqual({
+      ok: false,
+      reason: "session_deleted",
+    });
+  });
+
+  // TEST_SCENARIO: The list lives in the pod, so reading it needs the agent up. A wake that fails is reported as itself, never as a deleted conversation.
+  it("reports the wake failure rather than guessing the conversation is gone", async () => {
+    const delivery = createArtifactRequestDelivery({
+      runtimeMutator: fakeRuntime(),
+      ensureAgentReady: () =>
+        Promise.reject(
+          new AgentWakeTimeoutError({
+            agentId: "agent-1",
+            timeoutMs: 1_000,
+            durationMs: 10,
+            failure: { kind: "not-found" },
+          }),
+        ),
+      listSessions: () => Promise.reject(new Error("never reached")),
+      log: silent,
+    });
+    await expect(delivery.checkBinding(bound)).resolves.toEqual({
+      ok: false,
+      reason: "agent_deleted",
+    });
+  });
+
+  // TEST_SCENARIO: An agent that is up but whose session list cannot be read tells us nothing about the conversation, so the page hears that the agent could not be reached instead of that its conversation is gone.
+  it("reports an unreadable session list as wake_failed", async () => {
+    const delivery = createArtifactRequestDelivery({
+      runtimeMutator: fakeRuntime(),
+      ensureAgentReady: () => Promise.resolve(),
+      listSessions: () => Promise.reject(new Error("socket closed")),
+      log: silent,
+    });
+    await expect(delivery.checkBinding(bound)).resolves.toEqual({
       ok: false,
       reason: "wake_failed",
     });

@@ -24,7 +24,7 @@ import { ARTIFACT_REQUEST_TTL_MS } from "../../modules/artifact-library/domain/a
 import type { ActivityEventRow } from "../../modules/usage/domain/types.js";
 import { startPersistActivitySaga } from "../../modules/usage/sagas/persist-activity.js";
 
-// TEST_OVERVIEW: An Artifact Request is one thing an interactive page asked its agent to do — a button clicked, a choice made in a dropdown, a form submitted. `action` names what was asked. The owner may only ask through a page that is interactive, private, and theirs, and the page must have an agent to ask. Requests are numbered per artifact, at most one is in flight at a time (a second gets `busy`, never a queue), and no more than 60 land in a rolling hour (past that, `rate_limited`). Every settle raises a live event so the app refetches. A request a person made is recorded in the activity log; an automatic one has no actor and must not reach it. Once the row is committed the request is carried to the agent: an outbox event plus a wake, marked `delivered` when the agent is up, or settled with the reason the wake gave — `agent_deleted`, `over_budget`, `wake_failed`. The agent settles it by calling `answer_artifact_request`, which only takes an answer for its own request and only once. A request nobody answered before its TTL is swept as `expired` so the page is not stuck waiting.
+// TEST_OVERVIEW: An Artifact Request is one thing an interactive page asked its agent to do — a button clicked, a choice made in a dropdown, a form submitted. `action` names what was asked. The owner may only ask through a page that is interactive, private, and theirs, and the page must have an agent to ask. Requests are numbered per artifact, at most one is in flight at a time (a second gets `busy`, never a queue), and no more than 60 land in a rolling hour (past that, `rate_limited`). Every settle raises a live event so the app refetches. A request a person made is recorded in the activity log; an automatic one has no actor and must not reach it. Once the row is committed the request is carried to the agent: an outbox event plus a wake, marked `delivered` when the agent is up, or settled with the reason the wake gave — `agent_deleted`, `over_budget`, `wake_failed`. The agent settles it by calling `answer_artifact_request`, which only takes an answer for its own request and only once. A request nobody answered before its TTL is swept as `expired` so the page is not stuck waiting. Where the turn lands is settled by the first ask that carries a conversation: the app sends the one it has open behind the page, that ask pins it, and every later ask uses the pinned one wherever the page was opened from. A page published `own_session` never binds and keeps its own Artifact Session, which is also the only kind of page allowed to ask on a timer — an automatic ask inside a conversation somebody is reading is refused. A bound prompt carries no inlined source, and its brief rides only the ask that bound it, because the conversation keeps its own history. A bound page whose conversation the owner deleted settles `session_deleted` with nothing left in the outbox.
 
 type PageOverrides = Partial<{
   id: string;
@@ -32,6 +32,8 @@ type PageOverrides = Partial<{
   agentId: string | null;
   interactive: boolean;
   visibility: string;
+  ownSession: boolean;
+  sessionId: string | null;
   brief: string | null;
 }>;
 
@@ -42,6 +44,8 @@ function page(overrides: PageOverrides = {}) {
     agentId: "agent-1",
     interactive: true,
     visibility: "private",
+    ownSession: false,
+    sessionId: null as string | null,
     title: "Weather board",
     brief: null,
     ...overrides,
@@ -55,7 +59,13 @@ function fakeLibrary(
     Promise.resolve(
       pages.find((p) => p.id === id && p.owner === owner) ?? null,
     );
-  return { getArtifact } as unknown as ArtifactLibraryRepository;
+  const pinSession = (id: string, owner: string, sessionId: string) => {
+    const found = pages.find((p) => p.id === id && p.owner === owner);
+    if (!found) return Promise.resolve(null);
+    found.sessionId ??= sessionId;
+    return Promise.resolve(found.sessionId);
+  };
+  return { getArtifact, pinSession } as unknown as ArtifactLibraryRepository;
 }
 
 function fakeRequests(rows: ArtifactRequestRow[]): ArtifactRequestsRepository {
@@ -141,10 +151,22 @@ function fakeDelivery(
   outcome: Awaited<ReturnType<ArtifactRequestDelivery["deliver"]>> = {
     ok: true,
   },
-): ArtifactRequestDelivery & { calls: ArtifactRequestDeliveryInput[] } {
+  binding: Awaited<ReturnType<ArtifactRequestDelivery["checkBinding"]>> = {
+    ok: true,
+  },
+): ArtifactRequestDelivery & {
+  calls: ArtifactRequestDeliveryInput[];
+  checked: string[];
+} {
   const calls: ArtifactRequestDeliveryInput[] = [];
+  const checked: string[] = [];
   return {
     calls,
+    checked,
+    checkBinding: ({ sessionId }) => {
+      checked.push(sessionId);
+      return Promise.resolve(binding);
+    },
     deliver: (input) => {
       calls.push(input);
       return Promise.resolve(outcome);
@@ -203,7 +225,11 @@ function collect(): { seen: DomainEvent[]; stop: () => void } {
 }
 
 describe("admitting a request", () => {
-  const load = { inFlight: false, requestsInWindow: 0 };
+  const load = {
+    trigger: "user" as const,
+    inFlight: false,
+    requestsInWindow: 0,
+  };
 
   // TEST_SCENARIO: A plain artifact has no bridge to its agent, so asking through it is a caller mistake rather than a temporary failure.
   it("refuses a page that was not published interactive", () => {
@@ -228,6 +254,21 @@ describe("admitting a request", () => {
       ok: false,
       error: { code: "named", reason: "agent_deleted" },
     });
+  });
+
+  // TEST_SCENARIO: A bound page's turns land in a conversation a person is reading. A timer in the page would fill that chat with work nobody asked for, so an automatic ask is refused for what the page is, not for how often it asks.
+  it("refuses an automatic ask on a page bound to a conversation", () => {
+    expect(admitRequest(page(), { ...load, trigger: "auto" })).toEqual({
+      ok: false,
+      error: { code: "no-self-refresh" },
+    });
+  });
+
+  // TEST_SCENARIO: Self-refresh is what an Artifact Session is for, so the same automatic ask is admitted on a page that has one.
+  it("admits an automatic ask on an own_session page", () => {
+    expect(
+      admitRequest(page({ ownSession: true }), { ...load, trigger: "auto" }),
+    ).toEqual({ ok: true, value: { agentId: "agent-1" } });
   });
 
   // TEST_SCENARIO: Serving a request is a whole agent turn. A second one while the first is unanswered is refused outright — queueing them would let a page stack up turns the owner pays for.
@@ -274,10 +315,10 @@ describe("creating a request", () => {
     ).resolves.toMatchObject({ seq: 1, state: "pending" });
   });
 
-  // TEST_SCENARIO: seq numbers the requests of one page in order, so a page can tell which answer belongs to which request.
+  // TEST_SCENARIO: seq numbers the requests of one page in order, so a page can tell which answer belongs to which request. An `own_session` page is used here because it is the only kind allowed to ask on its own timer.
   it("numbers each request of the same page in turn", async () => {
     const rows: ArtifactRequestRow[] = [];
-    const service = serviceOver([page()], rows);
+    const service = serviceOver([page({ ownSession: true })], rows);
     const first = await service.create({
       artifactId: "art-1",
       action: "refresh",
@@ -448,12 +489,17 @@ describe("carrying a request to the agent", () => {
     expect(delivery.calls[1]!.task).not.toContain("<h1>board</h1>");
   });
 
-  // TEST_SCENARIO: The brief is the opposite of the source. The source is what the page is, so the session keeps it after one look; the brief is what to do about it, and the session must be reminded of it every time — including on requests it never saw the source for.
-  it("carries the brief on every request, not just the first", async () => {
+  // TEST_SCENARIO: The brief is the opposite of the source. The source is what the page is, so the session keeps it after one look; the brief is what to do about it, and a cold Artifact Session must be reminded of it every time — including on requests it never saw the source for.
+  it("carries the brief on every request into an Artifact Session", async () => {
     const rows: ArtifactRequestRow[] = [];
     const delivery = fakeDelivery();
     const service = serviceOver(
-      [page({ brief: "Answer in Czech. Never invent a temperature." })],
+      [
+        page({
+          ownSession: true,
+          brief: "Answer in Czech. Never invent a temperature.",
+        }),
+      ],
       rows,
       "o1",
       { delivery },
@@ -540,6 +586,207 @@ describe("carrying a request to the agent", () => {
         failureReason: "over_budget",
       },
     ]);
+  });
+});
+
+describe("where a page asks", () => {
+  // TEST_SCENARIO: The page's first ask carries the conversation the app has open behind it, and that write is what binds the page. The turn has to land there, not in a session of the page's own.
+  it("pins the open conversation on the first ask", async () => {
+    const pages = [page()];
+    const delivery = fakeDelivery();
+    const service = serviceOver(pages, [], "o1", { delivery });
+
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+
+    expect(pages[0]!.sessionId).toBe("sess-7");
+    expect(delivery.calls[0]!.sessionId).toBe("sess-7");
+  });
+
+  // TEST_SCENARIO: The binding is for the page's whole life. Opening the page from the Artifacts destination, or from another chat, must not move where it asks.
+  it("keeps the pinned conversation whatever the later ask says", async () => {
+    const pages = [page({ sessionId: "sess-7" })];
+    const delivery = fakeDelivery();
+    const rows: ArtifactRequestRow[] = [];
+    const service = serviceOver(pages, rows, "o1", { delivery });
+
+    const first = await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+      sessionId: "sess-99",
+    });
+    await settleBackgroundWork();
+    await service.cancel(first.requestId);
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+
+    expect(pages[0]!.sessionId).toBe("sess-7");
+    expect(delivery.calls.map((c) => c.sessionId)).toEqual([
+      "sess-7",
+      "sess-7",
+    ]);
+  });
+
+  // TEST_SCENARIO: A page first used from the Artifacts destination has no conversation to belong to, so it falls back to its own Artifact Session — which is also what every page published before binding existed does.
+  it("binds nothing when no conversation is open", async () => {
+    const pages = [page()];
+    const delivery = fakeDelivery();
+    const service = serviceOver(pages, [], "o1", { delivery });
+
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+
+    expect(pages[0]!.sessionId).toBeNull();
+    expect(delivery.calls[0]!.sessionId).toBeNull();
+    expect(delivery.checked).toEqual([]);
+  });
+
+  // TEST_SCENARIO: Pinning is not limited to the page's very first ask. A page opened from the Artifacts destination asks in an Artifact Session, and would be stuck there for life if only the first ask could bind — where a page asks would then depend on where it happened to be opened first.
+  it("binds a page whose earlier asks carried no conversation", async () => {
+    const pages = [page()];
+    const delivery = fakeDelivery();
+    const rows: ArtifactRequestRow[] = [];
+    const service = serviceOver(pages, rows, "o1", { delivery });
+
+    const first = await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+    await service.cancel(first.requestId);
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+
+    expect(pages[0]!.sessionId).toBe("sess-7");
+    expect(delivery.calls.map((c) => c.sessionId)).toEqual([null, "sess-7"]);
+  });
+
+  // TEST_SCENARIO: A page built to outlive the chat that made it must never bind to that chat, even when the app sends the open conversation with every ask.
+  it("never binds an own_session page", async () => {
+    const pages = [page({ ownSession: true })];
+    const delivery = fakeDelivery();
+    const service = serviceOver(pages, [], "o1", { delivery });
+
+    await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+
+    expect(pages[0]!.sessionId).toBeNull();
+    expect(delivery.calls[0]!.sessionId).toBeNull();
+  });
+
+  // TEST_SCENARIO: The bound conversation is the one that wrote the page, and a person is reading it. A 128 KB block of the page's own HTML in that transcript is noise, so the source rides only into an Artifact Session.
+  it("drops the source for a bound page and keeps it for an own_session one", async () => {
+    const bound = fakeDelivery();
+    await serviceOver([page()], [], "o1", {
+      delivery: bound,
+      readPageSource: () => Promise.resolve("<h1>board</h1>"),
+    }).create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+
+    const own = fakeDelivery();
+    await serviceOver([page({ ownSession: true })], [], "o1", {
+      delivery: own,
+      readPageSource: () => Promise.resolve("<h1>board</h1>"),
+    }).create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+
+    expect(bound.calls[0]!.task).not.toContain("<h1>board</h1>");
+    expect(own.calls[0]!.task).toContain("<h1>board</h1>");
+  });
+
+  // TEST_SCENARIO: Deleting a conversation writes a tombstone the pod hides from its session list and nothing else, so a bound page would otherwise go on driving a conversation the person believes they deleted. The request settles under its own reason and nothing is left queued.
+  it("settles session_deleted when the bound conversation is gone", async () => {
+    const delivery = fakeDelivery(
+      { ok: true },
+      { ok: false, reason: "session_deleted" },
+    );
+    const service = serviceOver([page({ sessionId: "sess-7" })], [], "o1", {
+      delivery,
+    });
+
+    const { requestId } = await service.create({
+      artifactId: "art-1",
+      action: "refresh",
+      trigger: "user",
+    });
+    await settleBackgroundWork();
+
+    expect(delivery.checked).toEqual(["sess-7"]);
+    expect(delivery.calls).toEqual([]);
+    await expect(service.get(requestId)).resolves.toMatchObject({
+      state: "failed",
+      failureReason: "session_deleted",
+    });
+  });
+
+  // TEST_SCENARIO: A bound conversation keeps its own history, so the brief only has to arrive once — on the ask that bound the page. Repeating it would charge the owner for the same standing rules on every turn the page causes, in a chat that already holds them.
+  it("carries the brief only on the ask that binds the page", async () => {
+    const pages = [page({ brief: "Ask one question at a time." })];
+    const delivery = fakeDelivery();
+    const rows: ArtifactRequestRow[] = [];
+    const service = serviceOver(pages, rows, "o1", { delivery });
+
+    const first = await service.create({
+      artifactId: "art-1",
+      action: "answer",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+    await service.cancel(first.requestId);
+    await service.create({
+      artifactId: "art-1",
+      action: "answer",
+      trigger: "user",
+      sessionId: "sess-7",
+    });
+    await settleBackgroundWork();
+
+    expect(delivery.calls[0]!.task).toContain("Ask one question at a time");
+    expect(delivery.calls[1]!.task).not.toContain("Ask one question at a time");
+  });
+
+  // TEST_SCENARIO: A page bound to a conversation only asks when a person does. The refusal names what the page is rather than a limit it hit, so an agent that wrote a timer into the page can tell it needs `own_session` instead.
+  it("refuses an automatic ask on a bound page", async () => {
+    const service = serviceOver([page()], []);
+    await expect(
+      service.create({ artifactId: "art-1", action: "tick", trigger: "auto" }),
+    ).rejects.toThrow(/own_session/);
   });
 });
 
@@ -762,7 +1009,7 @@ describe("settling a request", () => {
   // TEST_SCENARIO: An automatic request had no person behind it, so the settle event must carry no actor — that absence is what keeps it out of the activity log.
   it("names an actor only for a request a person made", async () => {
     const rows: ArtifactRequestRow[] = [];
-    const service = serviceOver([page()], rows);
+    const service = serviceOver([page({ ownSession: true })], rows);
     const auto = await service.create({
       artifactId: "art-1",
       action: "tick",

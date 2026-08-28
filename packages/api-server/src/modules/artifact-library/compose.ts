@@ -84,6 +84,9 @@ export interface ComposeArtifactRequestsForOwnerOpts {
   artifactLibrary: ArtifactLibraryServiceImpl;
   runtimeMutator: RuntimeMutator;
   ensureAgentReady: (agentId: string) => Promise<void>;
+  listAgentSessions: (
+    agentId: string,
+  ) => Promise<readonly { sessionId: string }[]>;
   owner: string;
   surface: string;
 }
@@ -100,6 +103,7 @@ export function composeArtifactRequestsForOwner(
       delivery: createArtifactRequestDelivery({
         runtimeMutator: opts.runtimeMutator,
         ensureAgentReady: opts.ensureAgentReady,
+        listSessions: opts.listAgentSessions,
       }),
       readPageSource: async (artifactId) => {
         const content = await opts.artifactLibrary.getContent(artifactId);

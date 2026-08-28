@@ -22,6 +22,7 @@ const invalidations: Record<Topic, () => readonly (readonly unknown[])[]> = {
   artifacts: () => [trpc.artifactLibrary.pathKey()],
   artifactRequest: () => [
     trpc.artifactLibrary.requests.pathKey(),
+    trpc.artifactLibrary.get.pathKey(),
     ["artifact-session"],
   ],
 };

@@ -1,6 +1,7 @@
 import type {
   ArtifactRequestFailureReason,
   ArtifactRequestState,
+  ArtifactRequestTrigger,
 } from "api-server-api";
 
 import { err, ok, type Result } from "../../../core/result.js";
@@ -26,9 +27,11 @@ export interface RequestablePage {
   interactive: boolean;
   visibility: string;
   agentId: string | null;
+  ownSession: boolean;
 }
 
-export interface RequestLoad {
+export interface RequestAsk {
+  trigger: ArtifactRequestTrigger;
   inFlight: boolean;
   requestsInWindow: number;
 }
@@ -36,18 +39,21 @@ export interface RequestLoad {
 export type RequestRefusal =
   | { code: "not-interactive" }
   | { code: "shared" }
+  | { code: "no-self-refresh" }
   | { code: "named"; reason: ArtifactRequestFailureReason };
 
 export function admitRequest(
   page: RequestablePage,
-  load: RequestLoad,
+  ask: RequestAsk,
 ): Result<{ agentId: string }, RequestRefusal> {
   if (!page.interactive) return err({ code: "not-interactive" });
   if (page.visibility !== "private") return err({ code: "shared" });
   if (page.agentId === null)
     return err({ code: "named", reason: "agent_deleted" });
-  if (load.inFlight) return err({ code: "named", reason: "busy" });
-  if (load.requestsInWindow >= ARTIFACT_REQUEST_HOURLY_CAP)
+  if (ask.trigger === "auto" && !page.ownSession)
+    return err({ code: "no-self-refresh" });
+  if (ask.inFlight) return err({ code: "named", reason: "busy" });
+  if (ask.requestsInWindow >= ARTIFACT_REQUEST_HOURLY_CAP)
     return err({ code: "named", reason: "rate_limited" });
   return ok({ agentId: page.agentId });
 }

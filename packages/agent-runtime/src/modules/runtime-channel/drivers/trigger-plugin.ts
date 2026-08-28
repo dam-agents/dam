@@ -50,6 +50,13 @@ export function createTriggerPlugin(deps: {
   const serveArtifactRequest = async (
     payload: ArtifactRequestEventPayload,
   ): Promise<void> => {
+    if (payload.sessionId) {
+      await deps.driver.start({
+        task: payload.task,
+        resumeSessionId: payload.sessionId,
+      });
+      return;
+    }
     const prior = deps.stateStore.getSessionForArtifact(payload.artifactId);
     if (prior) {
       await deps.driver.start({ task: payload.task, resumeSessionId: prior });

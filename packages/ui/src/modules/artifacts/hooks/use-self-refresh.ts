@@ -23,7 +23,10 @@ export interface SelfRefresh {
   gate: SelfRefreshGate;
 }
 
-export function useSelfRefresh(artifactId: string | null): SelfRefresh {
+export function useSelfRefresh(
+  artifactId: string | null,
+  bound: boolean,
+): SelfRefresh {
   const [selfRefreshing, setSelfRefreshing] = useState(false);
   const [hold, setHold] = useState<SelfRefreshHold | null>(null);
 
@@ -63,21 +66,25 @@ export function useSelfRefresh(artifactId: string | null): SelfRefresh {
     };
   }, [artifactId]);
 
-  const admitAuto = useCallback((inFlight: boolean) => {
-    const now = Date.now();
-    const next = selfRefreshHold({
-      now,
-      lastAutoAt: lastAutoAt.current,
-      lastActivityAt: lastActivityAt.current,
-      hidden: hidden.current,
-      paused: paused.current,
-      inFlight,
-    });
-    if (next === null) lastAutoAt.current = now;
-    setSelfRefreshing(true);
-    setHold(next);
-    return next;
-  }, []);
+  const admitAuto = useCallback(
+    (inFlight: boolean) => {
+      const now = Date.now();
+      const next = selfRefreshHold({
+        now,
+        bound,
+        lastAutoAt: lastAutoAt.current,
+        lastActivityAt: lastActivityAt.current,
+        hidden: hidden.current,
+        paused: paused.current,
+        inFlight,
+      });
+      if (next === null) lastAutoAt.current = now;
+      setSelfRefreshing(true);
+      setHold(next);
+      return next;
+    },
+    [bound],
+  );
 
   const noteGesture = useCallback(() => {
     lastActivityAt.current = Date.now();

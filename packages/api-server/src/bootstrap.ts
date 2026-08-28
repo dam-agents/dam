@@ -1161,6 +1161,7 @@ export async function bootstrap() {
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
     podSessions: liveEventsModule.podSessions,
+    makeAcpClient,
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -1198,6 +1199,7 @@ export async function bootstrap() {
       ? createAgentUsageSummary({ reader: metricsReader })
       : createUnavailableAgentUsageSummary(),
     wakeAgent: wakeAgentFor,
+    makeAcpClient,
   };
   const extAuthzDeps = {
     port: config.extAuthzPort,

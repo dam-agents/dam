@@ -52,15 +52,18 @@ export interface ArtifactBridge {
 
 export function useArtifactBridge(
   artifact: LibraryArtifact | null | undefined,
+  openConversation: string | null = null,
 ): ArtifactBridge {
   const flagOn = useFeatures().data?.["interactive-artifacts"] ?? false;
   const askable = flagOn && artifact?.interactive === true;
+  const bound = askable && artifact?.ownSession === false;
 
   const [pending, setPending] = useState<PendingRequest | null>(null);
   const [failure, setFailure] = useState<ArtifactRequestFailure | null>(null);
   const pendingRef = useRef<PendingRequest | null>(null);
   const sendRef = useRef<ArtifactReplySender | null>(null);
   const askableIdRef = useRef<string | null>(null);
+  const conversationRef = useRef<string | null>(null);
   const lastProgressRef = useRef<ArtifactRequestProgress | null>(null);
 
   const { mutate: createRequest } = useCreateArtifactRequest();
@@ -68,12 +71,16 @@ export function useArtifactBridge(
     pending?.requestId ?? null,
   );
   const agentState = useAgentRunState(artifact?.agentId ?? null);
-  const selfRefresh = useSelfRefresh(askable && artifact ? artifact.id : null);
+  const selfRefresh = useSelfRefresh(
+    askable && artifact ? artifact.id : null,
+    bound,
+  );
   const { gate } = selfRefresh;
 
   useEffect(() => {
     askableIdRef.current = askable && artifact ? artifact.id : null;
-  }, [askable, artifact]);
+    conversationRef.current = openConversation;
+  }, [askable, artifact, openConversation]);
 
   const hold = useCallback((next: PendingRequest | null) => {
     pendingRef.current = next;
@@ -136,12 +143,14 @@ export function useArtifactBridge(
         ref: incoming.ref,
         state: "sent",
       });
+      const conversation = conversationRef.current;
       createRequest(
         {
           artifactId,
           action: incoming.action,
           payload: incoming.payload,
           trigger,
+          ...(conversation !== null ? { sessionId: conversation } : {}),
         },
         {
           onSuccess: (receipt) => {

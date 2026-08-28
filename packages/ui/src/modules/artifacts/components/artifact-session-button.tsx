@@ -7,6 +7,14 @@ import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useArtifactSession } from "../api/queries.js";
 
+function tooltipFor(artifact: LibraryArtifact, title: string | null): string {
+  if (artifact.sessionId === null)
+    return "Open the conversation this page's requests land in";
+  return title === null
+    ? "This page asks in a conversation of yours — open it"
+    : `This page asks in "${title}" — open it`;
+}
+
 export function ArtifactSessionButton({
   artifact,
   onOpened,
@@ -16,20 +24,17 @@ export function ArtifactSessionButton({
 }) {
   const flagOn = useFeatures().data?.["interactive-artifacts"] ?? false;
   const askable = flagOn && artifact.interactive && artifact.agentId !== null;
-  const agentId = askable ? artifact.agentId : null;
-  const { data: session } = useArtifactSession(
-    agentId,
-    askable ? artifact.id : null,
-  );
+  const { data: session } = useArtifactSession(askable ? artifact : null);
   const openAgentSession = useStore((s) => s.openAgentSession);
 
-  if (!agentId || !session) return null;
+  const agentId = artifact.agentId;
+  if (!askable || agentId === null || !session) return null;
 
   return (
     <Button
       variant="outline"
       size="xs"
-      tooltip="Open the conversation this page's requests land in"
+      tooltip={tooltipFor(artifact, session.title ?? null)}
       onClick={() => {
         openAgentSession(agentId, session.sessionId);
         onOpened?.();

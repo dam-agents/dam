@@ -10,9 +10,13 @@ import { match } from "ts-pattern";
 
 import { emit, EventType } from "../../../events.js";
 import { admitRequest, windowStart } from "../domain/artifact-request.js";
+import { resolveBinding } from "../domain/artifact-request-binding.js";
 import { buildArtifactRequestPrompt } from "../domain/artifact-request-prompt.js";
 import { generateId } from "../domain/share-crypto.js";
-import type { ArtifactLibraryRepository } from "../infrastructure/artifact-library-repository.js";
+import type {
+  ArtifactLibraryRepository,
+  ArtifactRow,
+} from "../infrastructure/artifact-library-repository.js";
 import {
   ArtifactRequestCollisionError,
   ArtifactRequestPageGoneError,
@@ -51,6 +55,10 @@ export function refusalMessage(reason: ArtifactRequestFailureReason): string {
     .with(
       "agent_deleted",
       () => "the agent that published this page is no longer there",
+    )
+    .with(
+      "session_deleted",
+      () => "the conversation this page asks in has been deleted",
     )
     .with("wake_failed", () => "the agent could not be woken")
     .with("over_budget", () => "there is no room to run the agent right now")
@@ -138,11 +146,60 @@ export function createArtifactRequestsService(
     }
   }
 
+  async function bindingFor(
+    row: ArtifactRequestRow,
+    page: ArtifactRow,
+    offered: string | null,
+  ): Promise<
+    | { ok: true; sessionId: string | null; pinning: boolean }
+    | { ok: false; reason: ArtifactRequestFailureReason }
+  > {
+    const binding = resolveBinding(page, offered);
+    const chosen = await match(binding)
+      .with({ kind: "artifact-session" }, () =>
+        Promise.resolve({ sessionId: null as string | null, pinning: false }),
+      )
+      .with({ kind: "bound" }, ({ sessionId: bound }) =>
+        Promise.resolve({
+          sessionId: bound as string | null,
+          pinning: false,
+        }),
+      )
+      .with({ kind: "pin" }, async ({ sessionId: offer }) => ({
+        sessionId:
+          (await library.pinSession(row.artifactId, owner, offer)) ?? offer,
+        pinning: true,
+      }))
+      .exhaustive();
+    if (chosen.sessionId === null)
+      return { ok: true, sessionId: null, pinning: false };
+    const reachable = await delivery.checkBinding({
+      requestId: row.id,
+      agentId: row.agentId,
+      sessionId: chosen.sessionId,
+    });
+    if (!reachable.ok) return { ok: false, reason: reachable.reason };
+    return { ok: true, sessionId: chosen.sessionId, pinning: chosen.pinning };
+  }
+
   async function deliver(
     row: ArtifactRequestRow,
-    page: { title: string; brief: string | null },
+    page: ArtifactRow,
+    offered: string | null,
   ): Promise<void> {
-    const source = row.seq === 1 ? await pageSourceOrNothing(row) : null;
+    const binding = await bindingFor(row, page, offered);
+    process.stderr.write(
+      `[artifact-requests] ${row.id} seq ${String(row.seq)} of ${row.artifactId}: ` +
+        `offered ${offered ?? "no conversation"}, ` +
+        `${binding.ok ? (binding.sessionId ?? "asking in the page's own Artifact Session") : `refused as ${binding.reason}`}\n`,
+    );
+    if (!binding.ok) {
+      await settleAs(row.id, binding.reason);
+      return;
+    }
+    const bound = binding.sessionId !== null;
+    const source =
+      !bound && row.seq === 1 ? await pageSourceOrNothing(row) : null;
     const task = buildArtifactRequestPrompt({
       requestId: row.id,
       artifactId: row.artifactId,
@@ -151,13 +208,15 @@ export function createArtifactRequestsService(
       action: row.action,
       payload: row.payload,
       trigger: row.trigger,
-      brief: page.brief,
+      bound,
+      brief: bound && !binding.pinning ? null : page.brief,
       source,
     });
     const outcome = await delivery.deliver({
       requestId: row.id,
       artifactId: row.artifactId,
       agentId: row.agentId,
+      sessionId: binding.sessionId,
       task,
     });
     if (outcome.ok) {
@@ -183,6 +242,7 @@ export function createArtifactRequestsService(
       ]);
 
       const admitted = admitRequest(page, {
+        trigger: input.trigger,
         inFlight: inFlight !== null,
         requestsInWindow,
       });
@@ -205,6 +265,15 @@ export function createArtifactRequestsService(
                 message: "a shared page cannot ask its agent",
               }),
           )
+          .with(
+            { code: "no-self-refresh" },
+            () =>
+              new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message:
+                  "this page asks in the conversation it belongs to, so it only asks when a person does — a page that refreshes itself has to be published with own_session",
+              }),
+          )
           .with({ code: "named" }, ({ reason }) =>
             artifactRequestRefusal(reason),
           )
@@ -221,11 +290,13 @@ export function createArtifactRequestsService(
           payload: input.payload ?? {},
           trigger: input.trigger,
         });
-        void deliver(row, page).catch((error: unknown) => {
-          process.stderr.write(
-            `[artifact-requests] delivery of ${row.id} threw: ${String(error)}\n`,
-          );
-        });
+        void deliver(row, page, input.sessionId ?? null).catch(
+          (error: unknown) => {
+            process.stderr.write(
+              `[artifact-requests] delivery of ${row.id} threw: ${String(error)}\n`,
+            );
+          },
+        );
         return {
           requestId: row.id,
           seq: row.seq,

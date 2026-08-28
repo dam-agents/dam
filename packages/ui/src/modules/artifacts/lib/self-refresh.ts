@@ -5,6 +5,7 @@ export const AUTO_REQUEST_MIN_GAP_MS = 30_000;
 export const AUTO_REQUEST_IDLE_LIMIT_MS = 30 * 60 * 1000;
 
 export type SelfRefreshHold =
+  | "bound"
   | "paused"
   | "hidden"
   | "idle"
@@ -13,6 +14,7 @@ export type SelfRefreshHold =
 
 export interface SelfRefreshClock {
   now: number;
+  bound: boolean;
   lastAutoAt: number | null;
   lastActivityAt: number;
   hidden: boolean;
@@ -20,10 +22,11 @@ export interface SelfRefreshClock {
   inFlight: boolean;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: The agent wrote the page's refresh timer, not the person watching it, so an automatic Artifact Request is paced in the browser before it becomes a turn the owner pays for. The server's caps (60 per artifact per hour, one in flight) stay the backstop; these rules are the everyday path, and they are pure so each one can be checked on its own.
+// UNIT_BOUNDARY_DESCRIPTION: The agent wrote the page's refresh timer, not the person watching it, so an automatic Artifact Request is paced in the browser before it becomes a turn the owner pays for. A page bound to a conversation is refused every automatic ask outright: its turns land in a chat somebody is reading, and a timer would fill that chat with work nobody asked for. The server's caps (60 per artifact per hour, one in flight, no automatic ask on a bound page) stay the backstop; these rules are the everyday path, and they are pure so each one can be checked on its own.
 export function selfRefreshHold(
   clock: SelfRefreshClock,
 ): SelfRefreshHold | null {
+  if (clock.bound) return "bound";
   if (clock.paused) return "paused";
   if (clock.hidden) return "hidden";
   if (clock.now - clock.lastActivityAt >= AUTO_REQUEST_IDLE_LIMIT_MS)
@@ -41,6 +44,8 @@ export function selfRefreshLabel(hold: SelfRefreshHold | null): string {
   switch (hold) {
     case null:
       return "This page is refreshing itself.";
+    case "bound":
+      return "This page asks in the conversation it belongs to, so it only asks when you do.";
     case "paused":
       return "You paused this page's own refresh.";
     case "hidden":

@@ -53,6 +53,7 @@ import type {
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
+import type { AcpClientFactory } from "../../core/acp-client.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -74,6 +75,7 @@ export interface HarnessApiServerAppDeps {
   usageSummary: AgentUsageSummaryService;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeProgress: RuntimeProgressPort;
+  makeAcpClient: AcpClientFactory;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -96,6 +98,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     usageSummary,
     wakeAgent,
     runtimeProgress,
+    makeAcpClient,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -169,6 +172,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       artifactLibrary,
       runtimeMutator,
       ensureAgentReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),
       owner,
       surface: "mcp",
     }).artifactRequests;
