@@ -605,6 +605,7 @@ export function createAgentsService(deps: {
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
         await templateUpdateFor(infra),
+        status.features,
       ),
     );
   };
@@ -830,6 +831,9 @@ export function createAgentsService(deps: {
         [],
         [],
         deps.agentIdleTimeoutMinutes,
+        false,
+        undefined,
+        runtimeFeaturesOf(null),
       );
       securityLog("info", "agent.create", {
         category: "resource",

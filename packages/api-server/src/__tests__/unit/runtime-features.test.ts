@@ -11,8 +11,7 @@ import { describe, it, expect } from "vitest";
 import { runtimeFeaturesOf } from "agent-runtime-api";
 
 describe("runtimeFeaturesOf", () => {
-  // TEST_SCENARIO: The ordinary case — a runtime that serves the watch surface
-  // claims it, and a runtime built before the surface existed says nothing.
+  // TEST_SCENARIO: The ordinary case — a runtime that serves the watch surface claims it, and a runtime built before the surface existed says nothing.
   it("reads the claim a runtime makes", () => {
     expect(
       runtimeFeaturesOf({ contributions: [], events: [], liveUpdates: true }),
@@ -22,10 +21,7 @@ describe("runtimeFeaturesOf", () => {
     });
   });
 
-  // TEST_SCENARIO: A newer agent advertises an event kind this replica's schema
-  // does not know. Parsing the whole capability set would reject it wholesale
-  // and report the watch surface as unserved, degrading a newer runtime to
-  // polling. The claim being read is well-formed, so it must be honoured.
+  // TEST_SCENARIO: A newer agent advertises an event kind this replica's schema does not know. Parsing the whole capability set would reject it wholesale and report the watch surface as unserved, degrading a newer runtime to polling. The claim being read is well-formed, so it must be honoured.
   it("honours the claim when a neighbouring member is unknown", () => {
     expect(
       runtimeFeaturesOf({
@@ -36,8 +32,7 @@ describe("runtimeFeaturesOf", () => {
     ).toEqual({ liveUpdates: true });
   });
 
-  // TEST_SCENARIO: Nothing outside the claim can decide it — a malformed
-  // neighbour is still not this read's concern.
+  // TEST_SCENARIO: Nothing outside the claim can decide it — a malformed neighbour is still not this read's concern.
   it("honours the claim when a neighbouring member is malformed", () => {
     expect(
       runtimeFeaturesOf({
@@ -48,10 +43,7 @@ describe("runtimeFeaturesOf", () => {
     ).toEqual({ liveUpdates: true });
   });
 
-  // TEST_SCENARIO: Detection fails closed. An agent that has never said hello
-  // has no stored capability set, and a claim of the wrong shape is not a
-  // claim — both leave the agent on the polled path, which serves every
-  // runtime, rather than on a transport its image may not have.
+  // TEST_SCENARIO: Detection fails closed. An agent that has never said hello has no stored capability set, and a claim of the wrong shape is not a claim — both leave the agent on the polled path, which serves every runtime, rather than on a transport its image may not have.
   it("fails closed when the claim is absent or not a boolean", () => {
     expect(runtimeFeaturesOf(null)).toEqual({ liveUpdates: false });
     expect(runtimeFeaturesOf(undefined)).toEqual({ liveUpdates: false });
