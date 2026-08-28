@@ -1,5 +1,5 @@
 ---
-id: 085
+id: 087
 title: Knowledge-base sharing via a published read-only MCP snapshot
 status: accepted
 subsystem: knowledge-bases
@@ -7,7 +7,7 @@ tags: [knowledge-bases, mcp, object-store, connections]
 summary: Serve knowledge-base shares from a published object-store snapshot over a read-only aggregate MCP endpoint consumed in-cluster, not by proxying the live agent.
 ---
 
-# ADR-085: Knowledge-base sharing via a published read-only MCP snapshot
+# ADR-087: Knowledge-base sharing via a published read-only MCP snapshot
 
 **Date:** 2026-08-25
 **Status:** Accepted
