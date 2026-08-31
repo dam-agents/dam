@@ -21,7 +21,8 @@ oc = "latest"
 [hooks]
 postinstall = '''
 mkdir -p /usr/local/share/tool-bin
-mise bin-paths -C /etc/mise | while read -r d; do
+bin_paths=$(mise bin-paths -C /etc/mise)
+for d in $bin_paths; do
   for f in "$d"/*; do
     if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi
   done

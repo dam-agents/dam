@@ -26,14 +26,15 @@ COPY packages/platform-base/mise.toml /etc/mise/config.toml
 RUN --mount=type=cache,target=/root/.cache/mise \
     --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
     set -eu; \
+    export MISE_CACHE_DIR=/root/.cache/mise; \
     mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
     cd /tmp/lockgen; mise trust -q; mise lock; \
     cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
-RUN --mount=type=cache,target=/root/.cache/mise mise install node
+RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
-RUN --mount=type=cache,target=/root/.cache/mise mise install python
+RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install python
 # mise's CPython bundles pip 26.0.1 (CVE-2026-3219, CVE-2026-8643); self-upgrade
 # until a python release bundles pip >= 26.1.2.
 RUN mise exec python -- python -m pip install --upgrade pip==26.1.2
