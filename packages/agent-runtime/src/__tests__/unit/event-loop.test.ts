@@ -84,4 +84,19 @@ describe("runtime-channel event loop", () => {
     ]);
     expect(d.calls()).toBe(1);
   });
+
+  it("settles an id with no readable fire time without ever running it", async () => {
+    const s = store();
+    const d = dispatcher(() => {});
+    const malformed = { ...trigger(1000, 6), id: "sched-1:not-a-number" };
+
+    // Dedupe rests on the id's ts alone, and NaN <= x is false — settling here
+    // is what stops a malformed id re-running on every poll, forever.
+    for (const _ of [1, 2]) {
+      expect(await processEvents([malformed], d, s, () => {})).toEqual([
+        "sched-1:not-a-number",
+      ]);
+    }
+    expect(d.calls()).toBe(0);
+  });
 });
