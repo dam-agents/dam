@@ -44,9 +44,7 @@ export interface LibraryArtifact {
   sourcePath: string | null;
   visibility: ArtifactVisibility;
   interactive: boolean;
-  ownSession: boolean;
   sessionId: string | null;
-  brief: string | null;
   expiresAt: string | null;
   viewCount: number;
   shareUrl: string | null;
@@ -92,8 +90,6 @@ export interface ArtifactCreateInput {
   folderId?: string;
   visibility?: ArtifactCreateVisibility;
   interactive?: boolean;
-  ownSession?: boolean;
-  brief?: string;
   expiresInHours?: number | null;
   sourcePath?: string;
   agentId?: string;
@@ -108,7 +104,6 @@ export interface ArtifactUpdateInput {
   contentType?: string;
   sourcePath?: string;
   expectedVersion?: number;
-  brief?: string;
 }
 
 export interface ArtifactSharingInput {
@@ -186,11 +181,10 @@ export type ArtifactRequestState =
   | "answered"
   | "failed";
 
-export type ArtifactRequestTrigger = "user" | "auto";
-
 export type ArtifactRequestFailureReason =
   | "agent_deleted"
   | "session_deleted"
+  | "not_bound"
   | "wake_failed"
   | "over_budget"
   | "rate_limited"
@@ -205,7 +199,6 @@ export interface ArtifactRequest {
   seq: number;
   action: string;
   payload: Record<string, unknown>;
-  trigger: ArtifactRequestTrigger;
   state: ArtifactRequestState;
   result: unknown;
   failureReason: ArtifactRequestFailureReason | null;
@@ -223,7 +216,6 @@ export interface ArtifactRequestCreateInput {
   artifactId: string;
   action: string;
   payload?: Record<string, unknown>;
-  trigger: ArtifactRequestTrigger;
   sessionId?: string;
 }
 

@@ -8,7 +8,7 @@ import { ARTIFACT_REQUEST_TTL_MS } from "../../modules/artifact-library/domain/a
 import { createArtifactRequestDelivery } from "../../modules/artifact-library/services/artifact-request-delivery.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
-// TEST_OVERVIEW: Delivery is the schedule-fire sequence with an artifact id in place of a schedule id: write an `artifact-request` event into the agent's outbox, poke the agent's state queue, then wake the agent. The event id is `artifact-request:<requestId>:<firedAt>` because the pod splits an event id into a key and a timestamp to decide whether it has already run that event. The event carries the same kind of TTL a trigger does, so a request nobody serves is dropped rather than served hours later, and it names the conversation the page is bound to, or null for a page that asks in its own Artifact Session. The wake is where the platform tells us what went wrong, and its typed cause is what the page renders: a missing agent is `agent_deleted`, no room to start is `over_budget`, and anything else is `wake_failed`. Before any of that, a bound page's conversation has to still exist: deleting one only writes a tombstone the pod keeps out of its session list, so the check is a wake plus that list, and a pinned id missing from it settles the request `session_deleted` with nothing left in the outbox.
+// TEST_OVERVIEW: Delivery is the schedule-fire sequence with an artifact id in place of a schedule id: write an `artifact-request` event into the agent's outbox, poke the agent's state queue, then wake the agent. The event id is `artifact-request:<requestId>:<firedAt>` because the pod splits an event id into a key and a timestamp to decide whether it has already run that event. The event carries the same kind of TTL a trigger does, so a request nobody serves is dropped rather than served hours later, and it names the conversation the page is bound to. The wake is where the platform tells us what went wrong, and its typed cause is what the page renders: a missing agent is `agent_deleted`, no room to start is `over_budget`, and anything else is `wake_failed`. Before any of that, a bound page's conversation has to still exist: deleting one only writes a tombstone the pod keeps out of its session list, so the check is a wake plus that list, and a pinned id missing from it settles the request `session_deleted` with nothing left in the outbox.
 
 interface Bumped {
   agentId: string;
@@ -39,7 +39,7 @@ const input = {
   requestId: "req-1",
   artifactId: "art-1",
   agentId: "agent-1",
-  sessionId: null,
+  sessionId: "sess-7",
   task: "do the thing",
 };
 
@@ -76,7 +76,7 @@ describe("delivering an artifact request", () => {
               requestId: "req-1",
               artifactId: "art-1",
               task: "do the thing",
-              sessionId: null,
+              sessionId: "sess-7",
             },
             expiresAt: new Date(now.getTime() + ARTIFACT_REQUEST_TTL_MS),
           },
@@ -148,21 +148,6 @@ describe("delivering an artifact request", () => {
     await expect(delivery.deliver(input)).resolves.toEqual({
       ok: false,
       reason: "wake_failed",
-    });
-  });
-
-  // TEST_SCENARIO: A bound page names the conversation its turn has to land in, and the pod reads that from the event rather than from its own per-artifact binding.
-  it("carries the bound conversation on the event", async () => {
-    const runtime = fakeRuntime();
-    const delivery = createArtifactRequestDelivery({
-      runtimeMutator: runtime,
-      ensureAgentReady: () => Promise.resolve(),
-      listSessions: noSessions,
-      log: silent,
-    });
-    await delivery.deliver({ ...input, sessionId: "sess-7" });
-    expect(runtime.bumped[0]!.events[0]!.payload).toMatchObject({
-      sessionId: "sess-7",
     });
   });
 });

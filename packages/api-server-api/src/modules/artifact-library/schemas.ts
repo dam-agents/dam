@@ -36,21 +36,6 @@ const titleSchema = z
   .max(ARTIFACT_TITLE_MAX_LENGTH);
 const fileNameSchema = z.string().trim().min(1).max(255);
 
-export const ARTIFACT_BRIEF_MAX_BYTES = 8 * 1024;
-
-export const ARTIFACT_BRIEF_TOO_BIG_MESSAGE =
-  `a brief must fit in ${String(ARTIFACT_BRIEF_MAX_BYTES)} bytes (8 KB) — it rides every request ` +
-  "this page ever makes, so it is charged to every turn the page causes, not once";
-
-export function briefFitsCap(brief: string): boolean {
-  return new TextEncoder().encode(brief).length <= ARTIFACT_BRIEF_MAX_BYTES;
-}
-
-const briefSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .refine(briefFitsCap, { message: ARTIFACT_BRIEF_TOO_BIG_MESSAGE });
 const expiresInHoursSchema = z
   .number()
   .int()
@@ -89,8 +74,6 @@ export const artifactCreateInputSchema = z
     folderId: z.string().min(1).optional(),
     visibility: artifactCreateVisibilitySchema.optional(),
     interactive: z.boolean().optional(),
-    ownSession: z.boolean().optional(),
-    brief: briefSchema.optional(),
     expiresInHours: expiresInHoursSchema.nullish(),
     sourcePath: sourcePathSchema.optional(),
     agentId: z.string().min(1).optional(),
@@ -110,7 +93,6 @@ export const artifactUpdateInputSchema = z
     contentType: z.string().trim().min(1).max(200).optional(),
     sourcePath: sourcePathSchema.optional(),
     expectedVersion: z.number().int().positive().optional(),
-    brief: briefSchema.optional(),
   })
   .refine((v) => !(v.content != null && v.uploadRef != null), {
     message: "provide at most one of content or uploadRef",
@@ -177,11 +159,10 @@ export const artifactRequestStateSchema = z.enum([
   "failed",
 ]);
 
-export const artifactRequestTriggerSchema = z.enum(["user", "auto"]);
-
 export const artifactRequestFailureReasonSchema = z.enum([
   "agent_deleted",
   "session_deleted",
+  "not_bound",
   "wake_failed",
   "over_budget",
   "rate_limited",
@@ -211,7 +192,6 @@ export const artifactRequestCreateInputSchema = z.object({
   artifactId: z.string().min(1),
   action: z.string().trim().min(1).max(ARTIFACT_REQUEST_ACTION_MAX_LENGTH),
   payload: artifactRequestPayloadSchema.optional(),
-  trigger: artifactRequestTriggerSchema,
   sessionId: z.string().min(1).max(200).optional(),
 });
 

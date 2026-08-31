@@ -50,27 +50,10 @@ export function createTriggerPlugin(deps: {
   const serveArtifactRequest = async (
     payload: ArtifactRequestEventPayload,
   ): Promise<void> => {
-    if (payload.sessionId) {
-      await deps.driver.start({
-        task: payload.task,
-        resumeSessionId: payload.sessionId,
-      });
-      return;
-    }
-    const prior = deps.stateStore.getSessionForArtifact(payload.artifactId);
-    if (prior) {
-      await deps.driver.start({ task: payload.task, resumeSessionId: prior });
-      return;
-    }
-    const res = await deps.driver.start({
+    await deps.driver.start({
       task: payload.task,
-      platformMeta: {
-        type: SessionType.Artifact,
-        mode: SessionMode.Chat,
-        artifactId: payload.artifactId,
-      },
+      resumeSessionId: payload.sessionId,
     });
-    deps.stateStore.setSessionForArtifact(payload.artifactId, res.sessionId);
   };
 
   return {

@@ -82,7 +82,7 @@ describe("reading what the page sent", () => {
   // TEST_SCENARIO: The page can put anything on the message. Only the pinned fields may travel on to the server.
   test("keeps only the pinned fields", () => {
     expect(
-      fromPage({ ...wellFormed, trigger: "auto", agentId: "a-1" }),
+      fromPage({ ...wellFormed, sessionId: "sess-9", agentId: "a-1" }),
     ).toEqual(wellFormed);
   });
 });
@@ -123,6 +123,7 @@ describe("saying what went wrong", () => {
   const reasons = [
     "agent_deleted",
     "session_deleted",
+    "not_bound",
     "wake_failed",
     "over_budget",
     "rate_limited",
@@ -158,6 +159,12 @@ describe("saying what went wrong", () => {
     expect(describeFailure("session_deleted").nextStep).toContain(
       "page still works",
     );
+  });
+
+  // TEST_SCENARIO: An unbound page asked with no chat open has nowhere to ask yet. The copy has to tell the person the fix: ask from the page's conversation.
+  test("not_bound says to ask from a chat with the page's agent", () => {
+    expect(describeFailure("not_bound").message).toContain("no conversation");
+    expect(describeFailure("not_bound").nextStep).toContain("chat");
   });
 
   test("lifts the reason the server typed onto the error", () => {

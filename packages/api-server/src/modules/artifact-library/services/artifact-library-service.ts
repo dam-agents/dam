@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { match } from "ts-pattern";
 import { artifactSharingInputSchema } from "api-server-api";
 import { TRPCError } from "@trpc/server";
-import { ARTIFACT_BRIEF_TOO_BIG_MESSAGE, briefFitsCap } from "api-server-api";
 import type {
   ArtifactContent,
   ArtifactCreateInput,
@@ -99,41 +98,6 @@ export interface ArtifactLibraryDeps {
   agentExists?: (agentId: string) => Promise<boolean>;
 }
 
-function briefUnread(): TRPCError {
-  return new TRPCError({
-    code: "BAD_REQUEST",
-    message:
-      "only an interactive artifact has a brief — nothing would ever read one on a page that cannot ask its agent",
-  });
-}
-
-function ownSessionFor(ownSession: boolean, interactive: boolean): boolean {
-  if (ownSession && !interactive)
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        "only an interactive artifact has a session to own — a page that cannot ask its agent never opens one",
-    });
-  return ownSession;
-}
-
-function briefFor(brief: string, interactive: boolean): string {
-  if (!interactive) throw briefUnread();
-  const written = brief.trim();
-  if (written === "")
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        "an empty brief says nothing — write what the page's own session will need, or leave the brief out to keep the one already there",
-    });
-  if (!briefFitsCap(written))
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: ARTIFACT_BRIEF_TOO_BIG_MESSAGE,
-    });
-  return written;
-}
-
 export function shareUrlFor(shareBaseUrl: string, slug: string): string {
   return `${shareBaseUrl.replace(/\/+$/, "")}/a/${slug}`;
 }
@@ -169,9 +133,7 @@ export function toLibraryArtifact(
     agentId: row.agentId,
     visibility: row.visibility,
     interactive: row.interactive,
-    ownSession: row.ownSession,
     sessionId: row.sessionId,
-    brief: row.brief,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
@@ -428,10 +390,6 @@ export function createArtifactLibraryService(
             "an interactive artifact can talk to your agent, so it cannot be shared",
         });
       }
-      const ownSession = ownSessionFor(input.ownSession === true, interactive);
-      const brief =
-        input.brief !== undefined ? briefFor(input.brief, interactive) : null;
-
       const id = generateId();
       const key = versionKey(owner, id, 1, fileName);
       const stored = await ingestBytes({
@@ -458,9 +416,7 @@ export function createArtifactLibraryService(
           version: 1,
           visibility: input.visibility ?? "private",
           interactive,
-          ownSession,
           sessionId: null,
-          brief,
           expiresAt: expiresAtFrom(input.expiresInHours),
           sourcePath: input.sourcePath ?? null,
         },
@@ -514,8 +470,6 @@ export function createArtifactLibraryService(
       if (input.sourcePath !== undefined) patch.sourcePath = input.sourcePath;
       if (input.title !== undefined) patch.title = input.title;
       if (input.folderId !== undefined) patch.folderId = input.folderId;
-      if (input.brief !== undefined)
-        patch.brief = briefFor(input.brief, row.interactive);
 
       if (input.content != null || input.uploadRef != null) {
         const kind = row.kind as ArtifactKind;

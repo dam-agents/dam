@@ -7,7 +7,6 @@ export const SessionType = {
   ScheduleCron: "schedule_cron",
   ExperimentExecute: "experiment_execute",
   CliRun: "cli_run",
-  Artifact: "artifact",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -43,7 +42,6 @@ export interface SessionView {
   createdAt: string;
   scheduleId?: string | null;
   experimentId?: string | null;
-  artifactId?: string | null;
   title?: string | null;
   updatedAt?: string | null;
   threadTs?: string | null;

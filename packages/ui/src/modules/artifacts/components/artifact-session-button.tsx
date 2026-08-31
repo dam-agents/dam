@@ -7,9 +7,7 @@ import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useArtifactSession } from "../api/queries.js";
 
-function tooltipFor(artifact: LibraryArtifact, title: string | null): string {
-  if (artifact.sessionId === null)
-    return "Open the conversation this page's requests land in";
+function tooltipFor(title: string | null): string {
   return title === null
     ? "This page asks in a conversation of yours — open it"
     : `This page asks in "${title}" — open it`;
@@ -34,7 +32,7 @@ export function ArtifactSessionButton({
     <Button
       variant="outline"
       size="xs"
-      tooltip={tooltipFor(artifact, session.title ?? null)}
+      tooltip={tooltipFor(session.title ?? null)}
       onClick={() => {
         openAgentSession(agentId, session.sessionId);
         onOpened?.();

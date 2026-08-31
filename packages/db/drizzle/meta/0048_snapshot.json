@@ -1,5 +1,5 @@
 {
-  "id": "c8f58367-0afa-4c43-8fb0-c006e77767ec",
+  "id": "c6572e5c-7d8d-4733-afce-714f9e2d03df",
   "prevId": "8e84580f-09ce-4ccf-b124-31d62af74fcc",
   "version": "7",
   "dialect": "postgresql",
@@ -1102,12 +1102,6 @@
         "payload": {
           "name": "payload",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -2591,6 +2585,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "expires_at": {
           "name": "expires_at",
