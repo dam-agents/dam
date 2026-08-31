@@ -158,9 +158,14 @@ RUN set -eu; \
 # it — here for the image's own tools, and again whenever the agent installs a
 # tool at runtime. The trailing test fails the build if the hook ever stops
 # firing, which would otherwise show up only as a slow agent.
+# MISE_CACHE_DIR: HOME is /tmp in this image, so mise would otherwise ignore the
+# cache mount and leave a root-owned /tmp/.cache behind — build residue that a
+# derived image's agent-user install then cannot write into. Same for the state
+# dir it tracks configs in; /tmp is an emptyDir at runtime, so both are dropped.
 RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
     mkdir /usr/local/share/tool-bin; chown 65532 /usr/local/share/tool-bin; \
-    mise install jq fd rg gh; \
+    MISE_CACHE_DIR=/root/.cache/mise mise install jq fd rg gh; \
+    rm -rf /tmp/.cache /tmp/.local; \
     for t in jq fd rg gh; do chown -R 65532 "/usr/local/share/mise/installs/$t"; done; \
     chown 65532 /etc/mise/mise.lock; \
     test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node
