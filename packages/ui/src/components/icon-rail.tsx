@@ -1,5 +1,6 @@
 import {
   type CarbonIconType,
+  Categories,
   ChevronLeft,
   ChevronRight,
   ContainerSoftware,
@@ -47,6 +48,13 @@ export function IconRail({
     active: view === "agents" || view === "agent-new",
     badge: 0,
     navigate: () => setView("agents"),
+  };
+  const packs: Destination = {
+    label: "Packs",
+    icon: Categories,
+    active: view === "packs",
+    badge: 0,
+    navigate: () => setView("packs"),
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -123,6 +131,7 @@ export function IconRail({
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
           <RailItem {...agents} expanded={expandedNav} />
+          <RailItem {...packs} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
@@ -133,7 +142,7 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, agents, artifacts, settings].map((destination) => (
+          {[sandboxes, agents, packs, artifacts, settings].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>
