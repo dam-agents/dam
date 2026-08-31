@@ -147,13 +147,13 @@ RUN set -eu; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
-RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
-    mkdir /usr/local/share/tool-bin; chown 65532 /usr/local/share/tool-bin; \
-    MISE_CACHE_DIR=/root/.cache/mise mise install jq fd rg gh; \
-    rm -rf /tmp/.cache /tmp/.local; \
-    for t in jq fd rg gh; do chown -R 65532 "/usr/local/share/mise/installs/$t"; done; \
-    chown 65532 /etc/mise/mise.lock; \
+RUN install -d -o 65532 /usr/local/share/tool-bin
+USER 65532
+RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
+    MISE_CACHE_DIR=/tmp/mise-cache mise install jq fd rg gh; \
+    rm -rf /tmp/.local; \
     test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node
+USER root
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
