@@ -70,6 +70,11 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import {
+  getDefaultExamples,
+  useRotatingPlaceholder,
+} from "../../schedules/components/schedule-chat-discovery.js";
+import { ScheduleIndicator } from "../../schedules/components/schedule-indicator.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -222,6 +227,8 @@ export function ChatView() {
     idle: chatIdle,
     sendPrompt,
   });
+
+  const rotatingPlaceholder = useRotatingPlaceholder(getDefaultExamples());
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -725,22 +732,33 @@ export function ChatView() {
                   loadingSession={loadingSession}
                   onSend={sendPrompt}
                   onStop={stopAgent}
+                  rotatingPlaceholder={rotatingPlaceholder}
                 />
-                {!hasPendingPermission && harnessCurrent?.model && (
+                {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <ModelIndicator
-                        model={harnessCurrent.model}
-                        subject={surfaceCopy.modelSubject}
-                        settings={
-                          surfaceCopy.modelSettings
-                            ? {
-                                label: surfaceCopy.modelSettings,
-                                onConfigure: handleConfigureSandbox,
-                              }
-                            : undefined
-                        }
-                      />
+                      <div className="flex items-center gap-3">
+                        {harnessCurrent?.model && (
+                          <ModelIndicator
+                            model={harnessCurrent.model}
+                            subject={surfaceCopy.modelSubject}
+                            settings={
+                              surfaceCopy.modelSettings
+                                ? {
+                                    label: surfaceCopy.modelSettings,
+                                    onConfigure: handleConfigureSandbox,
+                                  }
+                                : undefined
+                            }
+                          />
+                        )}
+                        {selectedAgent && (
+                          <>
+                            <span className="text-border">·</span>
+                            <ScheduleIndicator agentId={selectedAgent} />
+                          </>
+                        )}
+                      </div>
                     </ChatColumn>
                   </div>
                 )}
