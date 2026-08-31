@@ -12,6 +12,13 @@
 # writable at build time (see Dockerfile).
 set -eu
 
+# Resolve mise's tools onto PATH once, here, instead of paying mise's startup on
+# every call through a shim. A pod is one long-lived process tree, so everything
+# the harness spawns inherits this; measured on a pod, a shim call costs ~250ms
+# more than the binary it resolves to (#3294). Tools installed later still
+# resolve through their lazy wrapper, which links itself into tool-bin.
+eval "$(mise env 2>/dev/null || true)"
+
 mitm_ca=/etc/platform/ca/ca.crt
 anchor=/etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt
 extracted=/etc/pki/ca-trust/extracted
