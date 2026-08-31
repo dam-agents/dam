@@ -1,4 +1,6 @@
 [settings]
+# The postinstall hook below is gated behind mise's experimental flag.
+experimental = true
 lockfile = true
 minimum_release_age = "7d"
 python.compile = false
@@ -16,3 +18,17 @@ python = "3.12"
 # contribution; these make it usable out of the box.
 kubectl = "latest"
 oc = "latest"
+
+[hooks]
+# Every tool mise installs — at image build time, or later by the agent — gets
+# its real binary linked into tool-bin, which leads PATH. Resolving the same
+# tool through a mise shim instead costs ~250ms per call on a pod (#3294).
+# `-C /etc/mise` so that installing from a project directory cannot leak that
+# project's pinned versions into this machine-wide dir; the system and the
+# user's global config are still both in scope. Non-executables and the
+# subdirectories some archives unpack next to their binary (fd ships a README
+# and an autocomplete/ dir in its bin path) are filtered out. Best-effort: a
+# link that cannot be written is a startup-latency wart, never a failed install
+# — mise only warns when a hook exits non-zero. `if`, not `[ ... ] && ln`: mise
+# runs the hook under `sh -o errexit`, where a skipped file would end the loop.
+postinstall = 'mkdir -p /usr/local/share/tool-bin && mise bin-paths -C /etc/mise | while read -r d; do for f in "$d"/*; do if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi; done; done'

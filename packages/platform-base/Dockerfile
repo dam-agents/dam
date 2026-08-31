@@ -147,15 +147,20 @@ RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
     for spec in uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nreal=$(mise which %s 2>/dev/null)\nif [ -x "$real" ]; then\n  ln -sf "$real" /usr/local/share/tool-bin/%s 2>/dev/null\n  exec "$real" "$@"\nfi\nexec mise exec %s -- %s "$@"\n' "$tool" "$bin" "$bin" "$tool" "$bin" > "$bin"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nreal=$(mise which %s 2>/dev/null)\n[ -x "$real" ] && exec "$real" "$@"\nexec mise exec %s -- %s "$@"\n' "$tool" "$bin" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
+# tool-bin is created and handed to the agent user *before* the install: mise's
+# postinstall hook (see mise.toml) links every installed tool's real binary into
+# it — here for the image's own tools, and again whenever the agent installs a
+# tool at runtime. The trailing test fails the build if the hook ever stops
+# firing, which would otherwise show up only as a slow agent.
 RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
+    mkdir /usr/local/share/tool-bin; chown 65532 /usr/local/share/tool-bin; \
     mise install jq fd rg gh; \
     for t in jq fd rg gh; do chown -R 65532 "/usr/local/share/mise/installs/$t"; done; \
     chown 65532 /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; \
-    mkdir /usr/local/share/tool-bin; \
-    chown 65532 /usr/local/share/tool-bin
+    test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
