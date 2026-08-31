@@ -1,3 +1,5 @@
+import { boundedSet } from "../../../core/bounded-map.js";
+
 export interface OwnerDirectoryPort {
   isActive(sub: string): Promise<boolean>;
 }
@@ -19,8 +21,7 @@ export function createOwnerActiveProbe(deps: {
     try {
       const active = await deps.directory.isActive(sub);
       if (active) {
-        if (activeUntil.size >= 10_000) activeUntil.clear();
-        activeUntil.set(sub, now() + ttlMs);
+        boundedSet(activeUntil, sub, now() + ttlMs);
       }
       return active;
     } catch {

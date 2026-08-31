@@ -177,6 +177,8 @@ export const channelRpcRequestSchema = z.object({
 });
 export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
 
+const TRANSPORT_RETRY_MS = 60_000;
+
 const okOrErrorSchema = z.union([
   z.object({ ok: z.literal(true) }),
   z.object({ error: z.string() }),
@@ -245,8 +247,42 @@ export function createChannelManager(deps: {
   ) as Worker[];
   const subscriptions: Subscription[] = [];
   let stopServing: (() => void) | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A transport that fails to start does not cost
+   * the lease. Nothing about a provider outage is replica-specific, so handing
+   * the lease on would only ping-pong it between replicas that fail the same
+   * way — while the transports that did come up go down with each handover.
+   * The holder keeps the lease, serves whatever started, and retries the rest
+   * on a timer until it stands down.
+   */
+  async function startTransports(): Promise<void> {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    const attempts: [string, () => Promise<unknown>][] = [];
+    if (telegramWorker)
+      attempts.push(["telegram", () => telegramWorker.start()]);
+    if (slackWorker) attempts.push(["slack", () => slackWorker.connect()]);
+    const results = await Promise.allSettled(attempts.map(([, go]) => go()));
+    const failed = results.flatMap((r, i) =>
+      r.status === "rejected"
+        ? [{ name: attempts[i]![0], reason: r.reason }]
+        : [],
+    );
+    for (const f of failed) {
+      process.stderr.write(
+        `[channels] ${f.name} worker start failed, retrying in ${TRANSPORT_RETRY_MS / 1000}s: ${f.reason instanceof Error ? f.reason.message : f.reason}\n`,
+      );
+    }
+    if (failed.length === 0) return;
+    retryTimer = setTimeout(() => void startTransports(), TRANSPORT_RETRY_MS);
+    retryTimer.unref?.();
+  }
 
   async function standDown() {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
     stopServing?.();
     stopServing = null;
     await Promise.all(workers.map((w) => w.stopAll()));
@@ -446,26 +482,7 @@ export function createChannelManager(deps: {
         });
       }
 
-      const attempts: [string, () => Promise<unknown>][] = [];
-      if (telegramWorker)
-        attempts.push(["telegram", () => telegramWorker.start()]);
-      if (slackWorker) attempts.push(["slack", () => slackWorker.connect()]);
-      const results = await Promise.allSettled(attempts.map(([, go]) => go()));
-      const failed = results.flatMap((r, i) =>
-        r.status === "rejected"
-          ? [{ name: attempts[i]![0], reason: r.reason }]
-          : [],
-      );
-      for (const f of failed) {
-        process.stderr.write(
-          `[channels] ${f.name} worker start failed: ${f.reason instanceof Error ? f.reason.message : f.reason}\n`,
-        );
-      }
-      if (failed.length > 0 && failed.length === attempts.length) {
-        throw new Error(
-          `all channel workers failed to start: ${failed.map((f) => f.name).join(", ")}`,
-        );
-      }
+      await startTransports();
 
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {

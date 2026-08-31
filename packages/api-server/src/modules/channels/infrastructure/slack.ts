@@ -2912,6 +2912,7 @@ export function createSlackWorker(
 
     async connect() {
       serving = true;
+      gatewayFailed = false;
       if (!(await ensureGateway()))
         throw new Error("Slack gateway failed to connect");
     },

@@ -10,6 +10,7 @@ import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
+import { boundedSet } from "../../../core/bounded-map.js";
 
 const DEBOUNCE_MS = 30_000;
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -91,9 +92,7 @@ function shouldUpdateActivity(agentId: string): boolean {
   const now = Date.now();
   const last = lastActivityTimestamps.get(agentId) ?? 0;
   if (now - last < DEBOUNCE_MS) return false;
-  if (lastActivityTimestamps.size >= ACTIVITY_MAP_MAX_ENTRIES)
-    lastActivityTimestamps.clear();
-  lastActivityTimestamps.set(agentId, now);
+  boundedSet(lastActivityTimestamps, agentId, now, ACTIVITY_MAP_MAX_ENTRIES);
   return true;
 }
 

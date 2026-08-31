@@ -81,6 +81,45 @@ describe("channel-manager bootstrap", () => {
 
     await manager.stopAll();
   });
+
+  it("keeps the lease and retries when the only transport fails", async () => {
+    vi.useFakeTimers();
+    const slackWorker = fakeSlackWorker();
+    vi.mocked(slackWorker.connect)
+      .mockRejectedValueOnce(new Error("slack is down"))
+      .mockResolvedValueOnce(undefined);
+    const manager = createChannelManager({ slackWorker });
+
+    await expect(manager.bootstrap(new Map())).resolves.toBeUndefined();
+    expect(slackWorker.connect).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(slackWorker.connect).toHaveBeenCalledTimes(2);
+
+    await manager.stopAll();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(slackWorker.connect).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("serves the transports that came up when one fails", async () => {
+    vi.useFakeTimers();
+    const slackWorker = fakeSlackWorker();
+    const telegramWorker = fakeTelegramWorker();
+    vi.mocked(telegramWorker.start).mockRejectedValue(new Error("no telegram"));
+    const manager = createChannelManager({ slackWorker, telegramWorker });
+
+    const channel: ChannelConfig = {
+      type: ChannelType.Slack,
+      slackChannelId: "C123",
+    };
+    await manager.bootstrap(new Map([["agent-1", [channel]]]));
+
+    expect(slackWorker.start).toHaveBeenCalledWith("agent-1", channel);
+
+    await manager.stopAll();
+    vi.useRealTimers();
+  });
 });
 
 describe("channel-manager user lookup", () => {

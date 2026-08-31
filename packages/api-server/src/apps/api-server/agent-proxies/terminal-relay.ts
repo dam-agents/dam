@@ -9,6 +9,7 @@ import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
+import { boundedSet } from "../../../core/bounded-map.js";
 
 const ACTIVITY_DEBOUNCE_MS = 30_000;
 const ACTIVITY_MAP_MAX_ENTRIES = 10_000;
@@ -147,9 +148,7 @@ export function createTerminalRelay(
               now - (lastActivity.get(agentId) ?? 0) >=
               ACTIVITY_DEBOUNCE_MS
             ) {
-              if (lastActivity.size >= ACTIVITY_MAP_MAX_ENTRIES)
-                lastActivity.clear();
-              lastActivity.set(agentId, now);
+              boundedSet(lastActivity, agentId, now, ACTIVITY_MAP_MAX_ENTRIES);
               repo
                 .patchAnnotation(
                   agentId,
