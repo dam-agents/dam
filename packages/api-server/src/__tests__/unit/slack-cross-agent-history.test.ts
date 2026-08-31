@@ -12,6 +12,7 @@ import {
 } from "../../modules/channels/infrastructure/agent-footer.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
+import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 configureLogger({ level: "error", write: () => {} });
 
