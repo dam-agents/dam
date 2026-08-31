@@ -4,26 +4,36 @@ import { V1MicroTime } from "@kubernetes/client-node";
 import type { CoordinationV1Api, V1Lease } from "@kubernetes/client-node";
 
 /*
- * UNIT_BOUNDARY_DESCRIPTION: Elects one api-server replica to run the work that
- * must have a single holder install-wide — the channel workers and the agent
- * watch. The lock is a `coordination.k8s.io` Lease in the agent namespace, the
- * same primitive and namespace the controller elects on, renewed by the holder
- * every third of its duration. A challenger never trusts the `renewTime` it
- * reads, because the clocks of two nodes differ: it takes over only after the
- * Lease has stood unchanged for a full duration measured on its own clock. Two
- * failed campaigns in a row stand the holder down — running the Slack socket
- * without a Lease it can still renew is how one install ends up with two
- * consumers. `stop()` cannot be outrun by a campaign that is still awaiting the
- * API server: it moves a generation the campaign re-reads after its await, so a
- * late win starts nothing, and it waits for that campaign before deleting the
- * Lease the campaign may just have written. Handler failure is a signal, not a
- * log line: a replica whose start handler keeps throwing backs off for whole
- * durations instead of re-taking the Lease three times a duration and starving
- * a healthy replica, and a stop handler that fails twice keeps the Lease, since
- * transports this replica could not prove it stopped must not be handed on.
+ * UNIT_BOUNDARY_DESCRIPTION: Elects one api-server replica to run every piece
+ * of work that admits a single holder install-wide — the channel workers and
+ * the agent watch — on one `coordination.k8s.io` Lease in the agent namespace,
+ * the same primitive and namespace the controller elects on. One Lease, one
+ * campaign, several roles: two elections could disagree, and an operator asking
+ * which pod is leading should get one answer. The holder renews every third of
+ * the duration. A challenger never trusts the `renewTime` it reads, because the
+ * clocks of two nodes differ: it takes over only after the Lease has stood
+ * unchanged for a full duration measured on its own clock. Two failed campaigns
+ * in a row stand the holder down, since serving without a Lease it can renew is
+ * how one install ends up with two Slack consumers. `stop()` cannot be outrun by
+ * a campaign still awaiting the API server: it moves a generation the campaign
+ * re-reads after each await, and waits for in-flight claims before deleting the
+ * Lease one of them may just have written. Handler failure is a signal, not a
+ * log line. A role that fails to start is rolled back and retried on later
+ * ticks while its siblings keep serving, because a role failing for its own
+ * reasons is no reason to drop the ones that work; only when no role at all can
+ * start does the replica release the Lease and back off, so a broken replica
+ * cannot squat on it. A role that fails to stop twice keeps the Lease: work this
+ * replica could not prove it stopped must never be handed to another.
  */
+export interface LeaderRole {
+  name: string;
+  onAcquired: () => Promise<void> | void;
+  onLost: () => Promise<void> | void;
+}
+
 export interface LeaderLease {
   isLeader(): boolean;
+  isRunning(role: string): boolean;
   start(): Promise<void>;
   stop(): Promise<void>;
 }
@@ -37,12 +47,11 @@ export function createLeaderLease(opts: {
   leases: CoordinationV1Api;
   namespace: string;
   name: string;
+  roles: LeaderRole[];
   ttlMs?: number;
-  onAcquired: () => Promise<void> | void;
-  onLost: () => Promise<void> | void;
   log?: (msg: string) => void;
 }): LeaderLease {
-  const { leases, namespace, name } = opts;
+  const { leases, namespace, name, roles } = opts;
   const ttlMs = opts.ttlMs ?? 30_000;
   const identity = `${hostname()}-${randomUUID().slice(0, 8)}`;
   const log =
@@ -56,6 +65,7 @@ export function createLeaderLease(opts: {
   let acquireFailures = 0;
   let backoffUntil = 0;
   let releaseFailed = false;
+  const running = new Set<string>();
 
   const read = (): Promise<V1Lease | null> =>
     leases.readNamespacedLease({ name, namespace }).catch((err: unknown) => {
@@ -66,7 +76,7 @@ export function createLeaderLease(opts: {
   const releaseLease = async () => {
     if (releaseFailed) {
       log(
-        `ERROR: keeping lease ${name}: the release handler failed twice, so this replica may still be serving`,
+        `ERROR: keeping lease ${name}: a role failed to stop twice, so this replica may still be serving`,
       );
       return;
     }
@@ -86,35 +96,57 @@ export function createLeaderLease(opts: {
       .catch(() => {});
   };
 
+  const stopRole = async (role: LeaderRole) => {
+    try {
+      await role.onLost();
+      running.delete(role.name);
+    } catch (err) {
+      log(`role ${role.name} failed to stop: ${err}`);
+      try {
+        await role.onLost();
+        running.delete(role.name);
+      } catch (retryErr) {
+        log(`role ${role.name} failed to stop on retry: ${retryErr}`);
+        releaseFailed = true;
+      }
+    }
+  };
+
+  const startRoles = async (): Promise<void> => {
+    for (const role of roles) {
+      if (running.has(role.name)) continue;
+      try {
+        await role.onAcquired();
+        running.add(role.name);
+      } catch (err) {
+        log(`role ${role.name} failed to start: ${err}`);
+        await stopRole(role);
+      }
+    }
+    if (running.size > 0) {
+      acquireFailures = 0;
+      return;
+    }
+    held = false;
+    acquireFailures += 1;
+    backoffUntil = Date.now() + ttlMs * Math.min(acquireFailures, 4);
+    log(
+      `no role could start; standing down for ${backoffUntil - Date.now()}ms`,
+    );
+    await releaseLease();
+  };
+
   const transitionTo = (next: boolean) => {
     transition = transition.then(async () => {
-      if (held === next) return;
-      held = next;
-      try {
-        await (next ? opts.onAcquired() : opts.onLost());
-        if (next) acquireFailures = 0;
-      } catch (err) {
-        log(`${next ? "acquire" : "release"} handler failed: ${err}`);
-        if (next) {
-          held = false;
-          acquireFailures += 1;
-          backoffUntil = Date.now() + ttlMs * Math.min(acquireFailures, 4);
-          try {
-            await opts.onLost();
-          } catch (lostErr) {
-            log(`release handler failed: ${lostErr}`);
-            releaseFailed = true;
-          }
-          await releaseLease();
-        } else {
-          try {
-            await opts.onLost();
-          } catch (retryErr) {
-            log(`release handler retry failed: ${retryErr}`);
-            releaseFailed = true;
-          }
-        }
+      if (held === next) {
+        if (held) await startRoles();
+        return;
       }
+      held = next;
+      if (next) await startRoles();
+      else
+        for (const role of roles)
+          if (running.has(role.name)) await stopRole(role);
     });
     return transition;
   };
@@ -201,6 +233,7 @@ export function createLeaderLease(opts: {
 
   return {
     isLeader: () => held,
+    isRunning: (role: string) => held && running.has(role),
 
     async start() {
       const generationAtStart = generation;

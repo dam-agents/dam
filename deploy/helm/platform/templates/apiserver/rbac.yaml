@@ -72,9 +72,9 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Leader election for the work that must have one holder install-wide (the
-  # channel workers, the live-events agent watch): one Lease per role, created
-  # and renewed by the holder and deleted when it stands down. Same primitive
-  # and namespace the controller elects on.
+  # channel workers, the live-events agent watch): a single Lease carrying every
+  # such role, created and renewed by the holder and deleted when it stands
+  # down. Same primitive and namespace the controller elects on.
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update", "delete"]

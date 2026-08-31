@@ -150,7 +150,7 @@ import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
-import { createLeaderLease } from "./core/leader-lease.js";
+import { createLeaderLease, type LeaderRole } from "./core/leader-lease.js";
 import {
   startAgentStateCache,
   createLiveAgentStateCache,
@@ -492,14 +492,11 @@ export async function bootstrap() {
     runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
   });
   liveEventsModule.start();
-  const agentWatchLease = createLeaderLease({
-    leases: leaseApi,
-    namespace: config.namespace,
-    name: `${config.releaseName}-live-events-agent-watch`,
+  const agentWatchRole: LeaderRole = {
+    name: "live-events-agent-watch",
     onAcquired: () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
-    log: (m) => getLogger().info(`[live-events] ${m}`),
-  });
+  };
 
   const { agents: systemAgents } = composeAgentsModule({
     api,
@@ -676,18 +673,25 @@ export async function bootstrap() {
     telegramWorker,
     rpc: channelRpc,
     blobs: createRedisBlobHandoff(sharedRedis),
-    isLeader: () => channelLease.isLeader(),
+    isLeader: () => leaderLease.isRunning("channels"),
   });
 
-  const channelLease = createLeaderLease({
+  const leaderLease = createLeaderLease({
     leases: leaseApi,
     namespace: config.namespace,
-    name: `${config.releaseName}-channels`,
-    onAcquired: async () => {
-      const channelsByInstance = await listChannelsByOwner(db, "")();
-      await channelManager.bootstrap(channelsByInstance);
-    },
-    onLost: () => channelManager.standDown(),
+    name: `${config.releaseName}-apiserver`,
+    roles: [
+      {
+        name: "channels",
+        onAcquired: async () => {
+          const channelsByInstance = await listChannelsByOwner(db, "")();
+          await channelManager.bootstrap(channelsByInstance);
+        },
+        onLost: () => channelManager.standDown(),
+      },
+      agentWatchRole,
+    ],
+    log: (m) => getLogger().info(`[leader] ${m}`),
   });
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
@@ -1021,8 +1025,7 @@ export async function bootstrap() {
   };
 
   void telegramWorker?.resolveIdentity();
-  void channelLease.start();
-  void agentWatchLease.start();
+  void leaderLease.start();
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
@@ -1033,10 +1036,9 @@ export async function bootstrap() {
     usage.stop();
     audit.stop();
     await agentStateCache.stop();
-    await agentWatchLease.stop();
+    await leaderLease.stop();
     liveEventsModule.stop();
     await periodicJobs.close();
-    await channelLease.stop();
     channelRpc.close();
     await channelManager.stopAll();
     await runtimeDelivery.worker.close();

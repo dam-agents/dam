@@ -62,7 +62,22 @@ function fakeLeaseApi(): FakeLeaseApi {
   } as unknown as FakeLeaseApi;
 }
 
-const LEASE = "platform-channels";
+const LEASE = "platform-apiserver";
+
+const makeLease = (
+  leaseApi: FakeLeaseApi,
+  handlers: {
+    onAcquired: () => Promise<void> | void;
+    onLost: () => Promise<void> | void;
+  },
+) =>
+  createLeaderLease({
+    leases: leaseApi,
+    namespace: "platform-agents",
+    name: LEASE,
+    roles: [{ name: "channels", ...handlers }],
+    log: () => {},
+  });
 
 /*
  * TEST_OVERVIEW: Leader election for the api-server work that must have one
@@ -78,13 +93,9 @@ describe("leader lease", () => {
     const leaseApi = fakeLeaseApi();
     const acquired: string[] = [];
     const leases = ["a", "b", "c"].map((name) =>
-      createLeaderLease({
-        leases: leaseApi,
-        namespace: "platform-agents",
-        name: LEASE,
+      makeLease(leaseApi, {
         onAcquired: () => void acquired.push(name),
         onLost: () => {},
-        log: () => {},
       }),
     );
 
@@ -100,13 +111,9 @@ describe("leader lease", () => {
     const leaseApi = fakeLeaseApi();
     const events: string[] = [];
     const make = (name: string) =>
-      createLeaderLease({
-        leases: leaseApi,
-        namespace: "platform-agents",
-        name: LEASE,
+      makeLease(leaseApi, {
         onAcquired: () => void events.push(`+${name}`),
         onLost: () => void events.push(`-${name}`),
-        log: () => {},
       });
 
     const first = make("a");
@@ -137,13 +144,9 @@ describe("leader lease", () => {
           renewTime: new Date(),
         },
       });
-      const lease = createLeaderLease({
-        leases: leaseApi,
-        namespace: "platform-agents",
-        name: LEASE,
+      const lease = makeLease(leaseApi, {
         onAcquired: () => {},
         onLost: () => {},
-        log: () => {},
       });
 
       await lease.start();
@@ -165,24 +168,16 @@ describe("leader lease", () => {
   it("releases the lease when onAcquired fails, so another replica can win", async () => {
     const leaseApi = fakeLeaseApi();
     const events: string[] = [];
-    const broken = createLeaderLease({
-      leases: leaseApi,
-      namespace: "platform-agents",
-      name: LEASE,
+    const broken = makeLease(leaseApi, {
       onAcquired: () => {
         events.push("+a");
         throw new Error("slack gateway failed to connect");
       },
       onLost: () => void events.push("-a"),
-      log: () => {},
     });
-    const healthy = createLeaderLease({
-      leases: leaseApi,
-      namespace: "platform-agents",
-      name: LEASE,
+    const healthy = makeLease(leaseApi, {
       onAcquired: () => void events.push("+b"),
       onLost: () => void events.push("-b"),
-      log: () => {},
     });
 
     await broken.start();
@@ -202,13 +197,9 @@ describe("leader lease", () => {
     vi.useFakeTimers();
     try {
       const leaseApi = fakeLeaseApi();
-      const lease = createLeaderLease({
-        leases: leaseApi,
-        namespace: "platform-agents",
-        name: LEASE,
+      const lease = makeLease(leaseApi, {
         onAcquired: () => {},
         onLost: () => {},
-        log: () => {},
       });
       await lease.start();
       expect(lease.isLeader()).toBe(true);
@@ -237,16 +228,12 @@ describe("leader lease", () => {
   it("retries a failed onLost once", async () => {
     const leaseApi = fakeLeaseApi();
     let lostCalls = 0;
-    const lease = createLeaderLease({
-      leases: leaseApi,
-      namespace: "platform-agents",
-      name: LEASE,
+    const lease = makeLease(leaseApi, {
       onAcquired: () => {},
       onLost: () => {
         lostCalls += 1;
         if (lostCalls === 1) throw new Error("bolt stop failed");
       },
-      log: () => {},
     });
     await lease.start();
     expect(lease.isLeader()).toBe(true);
@@ -273,13 +260,9 @@ describe("leader lease", () => {
     }) as CoordinationV1Api["readNamespacedLease"];
 
     let acquisitions = 0;
-    const lease = createLeaderLease({
-      leases: leaseApi,
-      namespace: "platform-agents",
-      name: LEASE,
+    const lease = makeLease(leaseApi, {
       onAcquired: () => void (acquisitions += 1),
       onLost: () => {},
-      log: () => {},
     });
 
     const starting = lease.start();
@@ -306,16 +289,12 @@ describe("leader lease", () => {
     try {
       const leaseApi = fakeLeaseApi();
       let attempts = 0;
-      const lease = createLeaderLease({
-        leases: leaseApi,
-        namespace: "platform-agents",
-        name: LEASE,
+      const lease = makeLease(leaseApi, {
         onAcquired: () => {
           attempts += 1;
           throw new Error("database is down");
         },
         onLost: () => {},
-        log: () => {},
       });
 
       await lease.start();
@@ -337,15 +316,11 @@ describe("leader lease", () => {
   // TEST_SCENARIO: the release handler failed twice, so this replica cannot prove its Slack socket is closed. Deleting the Lease would invite a second consumer, so the Lease stays until this pod is gone and it expires.
   it("keeps the lease when the release handler fails twice", async () => {
     const leaseApi = fakeLeaseApi();
-    const lease = createLeaderLease({
-      leases: leaseApi,
-      namespace: "platform-agents",
-      name: LEASE,
+    const lease = makeLease(leaseApi, {
       onAcquired: () => {},
       onLost: () => {
         throw new Error("slack gateway will not close");
       },
-      log: () => {},
     });
 
     await lease.start();
@@ -360,13 +335,9 @@ describe("leader lease", () => {
   // TEST_SCENARIO: an operator deleting the Lease between the holder's read and its renew must cost nothing — the holder recreates it in the same campaign instead of standing the channel workers down until the next tick.
   it("recreates a lease deleted between the read and the renew", async () => {
     const leaseApi = fakeLeaseApi();
-    const lease = createLeaderLease({
-      leases: leaseApi,
-      namespace: "platform-agents",
-      name: LEASE,
+    const lease = makeLease(leaseApi, {
       onAcquired: () => {},
       onLost: () => {},
-      log: () => {},
     });
     await lease.start();
 
@@ -390,15 +361,91 @@ describe("leader lease", () => {
     await lease.stop();
   });
 
-  it("stands down when the K8s API is unreachable rather than acting as leader", async () => {
+  // TEST_SCENARIO: one Lease carries every single-holder role, so the pod that wins it starts them all and the pod that stops it stops them all. Two separate elections could disagree and put the Slack socket on one replica and the agent watch on another.
+  it("starts and stops every role on the one lease it holds", async () => {
     const leaseApi = fakeLeaseApi();
+    const log: string[] = [];
     const lease = createLeaderLease({
       leases: leaseApi,
       namespace: "platform-agents",
       name: LEASE,
+      roles: [
+        {
+          name: "channels",
+          onAcquired: () => void log.push("+channels"),
+          onLost: () => void log.push("-channels"),
+        },
+        {
+          name: "agent-watch",
+          onAcquired: () => void log.push("+watch"),
+          onLost: () => void log.push("-watch"),
+        },
+      ],
+      log: () => {},
+    });
+
+    await lease.start();
+    expect(log).toEqual(["+channels", "+watch"]);
+    expect(lease.isRunning("channels")).toBe(true);
+    expect(lease.isRunning("agent-watch")).toBe(true);
+
+    await lease.stop();
+    expect(log).toEqual(["+channels", "+watch", "-channels", "-watch"]);
+    expect(lease.isRunning("channels")).toBe(false);
+    expect(leaseApi.store.has(LEASE)).toBe(false);
+  });
+
+  // TEST_SCENARIO: one role failing for its own reasons (a DB read under the channel bootstrap) must not take its siblings down with it. The holder keeps the Lease, serves what started, and retries the failed role on later ticks — the same rule the channel workers already follow for one dead transport.
+  it("keeps serving the roles that started when one role fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const leaseApi = fakeLeaseApi();
+      let channelAttempts = 0;
+      let watchRunning = false;
+      const lease = createLeaderLease({
+        leases: leaseApi,
+        namespace: "platform-agents",
+        name: LEASE,
+        roles: [
+          {
+            name: "channels",
+            onAcquired: () => {
+              channelAttempts += 1;
+              if (channelAttempts < 3) throw new Error("database is down");
+            },
+            onLost: () => {},
+          },
+          {
+            name: "agent-watch",
+            onAcquired: () => void (watchRunning = true),
+            onLost: () => void (watchRunning = false),
+          },
+        ],
+        log: () => {},
+      });
+
+      await lease.start();
+      expect(lease.isLeader()).toBe(true);
+      expect(watchRunning).toBe(true);
+      expect(lease.isRunning("channels")).toBe(false);
+      expect(leaseApi.store.has(LEASE)).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(channelAttempts).toBe(3);
+      expect(lease.isRunning("channels")).toBe(true);
+      expect(watchRunning).toBe(true);
+
+      await lease.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stands down when the K8s API is unreachable rather than acting as leader", async () => {
+    const leaseApi = fakeLeaseApi();
+    const lease = makeLease(leaseApi, {
       onAcquired: () => {},
       onLost: () => {},
-      log: () => {},
     });
     await lease.start();
     expect(lease.isLeader()).toBe(true);
