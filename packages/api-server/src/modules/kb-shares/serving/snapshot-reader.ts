@@ -53,22 +53,47 @@ interface CachedEntry {
   bytes: number;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the cache budget must bound resident heap, and
+ * the cache retains parsed structures, not their wire form — a parsed segment
+ * measures roughly four times its serialized bytes — so admission is priced
+ * by walking the retained value with deliberately generous per-node costs
+ * rather than by the length of the JSON it came from.
+ */
+function estimateRetainedBytes(value: unknown): number {
+  if (typeof value === "string") return 16 + value.length * 2;
+  if (Array.isArray(value)) {
+    let sum = 32 + value.length * 8;
+    for (const item of value) sum += estimateRetainedBytes(item);
+    return sum;
+  }
+  if (value !== null && typeof value === "object") {
+    let sum = 56;
+    for (const [key, item] of Object.entries(value)) {
+      sum += 32 + key.length * 2 + estimateRetainedBytes(item);
+    }
+    return sum;
+  }
+  return 16;
+}
+
 export function createSnapshotReader(
   store: Pick<ArtifactService, "get">,
 ): SnapshotReader {
   const cache = new Map<string, CachedEntry>();
   let cachedBytes = 0;
 
-  function remember(cacheKey: string, entry: CachedEntry): void {
+  function remember(cacheKey: string, value: CachedEntry["value"]): void {
+    const entry: CachedEntry = { value, bytes: estimateRetainedBytes(value) };
     const prev = cache.get(cacheKey);
     if (prev) cachedBytes -= prev.bytes;
     cache.delete(cacheKey);
     cache.set(cacheKey, entry);
     cachedBytes += entry.bytes;
-    for (const [key, value] of cache) {
+    for (const [key, evicted] of cache) {
       if (cachedBytes <= MANIFEST_CACHE_BUDGET_BYTES) break;
       cache.delete(key);
-      cachedBytes -= value.bytes;
+      cachedBytes -= evicted.bytes;
     }
   }
 
@@ -99,10 +124,9 @@ export function createSnapshotReader(
     if (cached) return { kind: "legacy", index: cached as SearchIndex };
     const stored = await store.get(manifest.searchIndexKey);
     if (!stored) return { kind: "none" };
-    const raw = stored.content.toString("utf8");
-    const index = parseSearchIndex(raw);
+    const index = parseSearchIndex(stored.content.toString("utf8"));
     if (!index) return { kind: "none" };
-    remember(`i:${manifest.snapshotId}`, { value: index, bytes: raw.length });
+    remember(`i:${manifest.snapshotId}`, index);
     return { kind: "legacy", index };
   }
 
@@ -112,10 +136,9 @@ export function createSnapshotReader(
       if (cached) return cached as AnySnapshotManifest;
       const stored = await store.get(manifestKey);
       if (!stored) return null;
-      const raw = stored.content.toString("utf8");
-      const manifest = parseManifest(raw);
+      const manifest = parseManifest(stored.content.toString("utf8"));
       if (!manifest || manifest.snapshotId !== snapshotId) return null;
-      remember(`m:${snapshotId}`, { value: manifest, bytes: raw.length });
+      remember(`m:${snapshotId}`, manifest);
       return manifest;
     },
 
@@ -137,12 +160,11 @@ export function createSnapshotReader(
         if (!stored) {
           return { kind: "unreadable", formatVersion: search.formatVersion };
         }
-        const raw = stored.content.toString("utf8");
-        const segment = parseSegment(raw);
+        const segment = parseSegment(stored.content.toString("utf8"));
         if (!segment) {
           return { kind: "unreadable", formatVersion: search.formatVersion };
         }
-        remember(`s:${entry.contentId}`, { value: segment, bytes: raw.length });
+        remember(`s:${entry.contentId}`, segment);
         segments.push(segment);
       }
       const degraded = search.segments.some((s) => s.degraded);
