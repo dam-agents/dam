@@ -1,4 +1,5 @@
 [settings]
+experimental = true
 lockfile = true
 minimum_release_age = "7d"
 python.compile = false
@@ -16,3 +17,16 @@ python = "3.12"
 # contribution; these make it usable out of the box.
 kubectl = "latest"
 oc = "latest"
+
+[hooks]
+postinstall = '''
+mkdir -p /usr/local/share/tool-bin
+just=$(printf '%s' "${MISE_INSTALLED_TOOLS:-}" | sed 's/},{/}\n{/g' | sed -n 's/.*"name":"\([^"]*\)".*"version":"\([^"]*\)".*/\1@\2/p')
+bin_paths=$(mise bin-paths -C /etc/mise; { [ -z "$just" ] || mise bin-paths $just; } || true)
+for d in $bin_paths; do
+  for f in "$d"/*; do
+    if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi
+  done
+done
+find /etc/mise -name '*.lock' -exec chmod 644 {} + 2>/dev/null || true
+'''

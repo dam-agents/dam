@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const ADAPTER_DIR =
-  process.env.CLAUDE_AGENT_ACP_DIR ?? "/usr/local/lib/claude-agent-acp";
+  process.env.CLAUDE_AGENT_ACP_DIR ?? "/usr/local/share/tool-bin/claude-agent-acp-lib";
 
 let modulesPromise;
 
