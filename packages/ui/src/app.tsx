@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { ChangeIndex } from "./components/change-index.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
@@ -10,6 +11,7 @@ import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
+import { SlackCardsPreviewView } from "./modules/agents/views/slack-cards-preview-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
@@ -52,7 +54,21 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
-  return <MainApp />;
+  if (view === "slack-cards-preview")
+    return (
+      <div className="min-h-dvh bg-background">
+        <div className="mx-auto w-full max-w-[960px] px-4 py-6 md:px-[5%] md:py-10">
+          <SlackCardsPreviewView />
+        </div>
+        <ChangeIndex />
+      </div>
+    );
+  return (
+    <>
+      <MainApp />
+      <ChangeIndex />
+    </>
+  );
 }
 
 const SETUP_VIEWS = new Set<Route["view"]>([
@@ -153,3 +169,4 @@ function MainApp() {
     </div>
   );
 }
+

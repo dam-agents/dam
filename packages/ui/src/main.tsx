@@ -19,27 +19,7 @@ import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
-async function main() {
-  const publicAgentId = parsePublicAgentPath(window.location.pathname);
-  if (publicAgentId !== null) {
-    await loadBrand().then(applyBrand);
-    const { renderPublicAgentPage } = await import("./public-agent-page.js");
-    await renderPublicAgentPage(publicAgentId);
-    return;
-  }
-
-  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
-  if (!user) return;
-
-  if (!(await preflightTermsGate())) {
-    rememberReturnPath("terms");
-    window.history.replaceState({}, "", routeToPath({ view: "terms" }));
-  }
-
-  useStore.getState().hydrateRoute();
-  startDraftSync(user.profile.sub);
-
-  const { default: App } = await import("./app.js");
+function render(App: React.ComponentType) {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
@@ -50,6 +30,41 @@ async function main() {
       </QueryClientProvider>
     </StrictMode>,
   );
+}
+
+async function main() {
+  const publicAgentId = parsePublicAgentPath(window.location.pathname);
+  if (publicAgentId !== null) {
+    await loadBrand().then(applyBrand).catch(() => {});
+    const { renderPublicAgentPage } = await import("./public-agent-page.js");
+    await renderPublicAgentPage(publicAgentId);
+    return;
+  }
+
+  let user;
+  try {
+    [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
+  } catch {
+    await loadBrand().then(applyBrand).catch(() => {});
+  }
+
+  if (!user) {
+    useStore.getState().hydrateRoute();
+    const { default: App } = await import("./app.js");
+    render(App);
+    return;
+  }
+
+  if (!(await preflightTermsGate())) {
+    rememberReturnPath("terms");
+    window.history.replaceState({}, "", routeToPath({ view: "terms" }));
+  }
+
+  useStore.getState().hydrateRoute();
+  startDraftSync(user.profile.sub);
+
+  const { default: App } = await import("./app.js");
+  render(App);
 }
 
 main();

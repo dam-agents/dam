@@ -63,6 +63,7 @@ export function agentTrpcHttp(agentId: string): AgentTrpcClient {
 }
 
 export function agentTrpc(agentId: string): AgentTrpcClient {
+  if (import.meta.env.VITE_MOCK) return agentTrpcHttp(agentId);
   let client = clients.get(agentId);
   if (!client) {
     client = createAgentTrpc(agentId);

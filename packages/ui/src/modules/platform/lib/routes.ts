@@ -38,7 +38,8 @@ export type Route =
   | { view: "knowledge-bases" }
   | { view: "knowledge-base-chat"; agent: string }
   | { view: "knowledge-base-config"; agentId: string }
-  | { view: "artifacts" };
+  | { view: "artifacts" }
+  | { view: "slack-cards-preview" };
 
 export type View = Route["view"];
 
@@ -96,6 +97,7 @@ export function parseRoute(path: string): Route {
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/slack-cards-preview") return { view: "slack-cards-preview" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -172,6 +174,8 @@ export function routeToPath(route: Route): string {
       return `/knowledge-bases/${encodeURIComponent(route.agentId)}/settings`;
     case "artifacts":
       return "/artifacts";
+    case "slack-cards-preview":
+      return "/slack-cards-preview";
     default: {
       const unhandled: never = route;
       return unhandled;

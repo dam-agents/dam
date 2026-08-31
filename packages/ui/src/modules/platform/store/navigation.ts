@@ -20,7 +20,8 @@ type ParameterlessView =
   | "experiments"
   | "experiment-new"
   | "knowledge-base-new"
-  | "knowledge-bases";
+  | "knowledge-bases"
+  | "slack-cards-preview";
 
 export interface NavigationSlice {
   view: View;
