@@ -1,217 +1,329 @@
-export interface PackRequirement {
-  type: "connection" | "skill" | "knowledge-base";
-  name: string;
+import type { CarbonIconType } from "@carbon/icons-react";
+import {
+  Chat,
+  Code,
+  Debug,
+  Document,
+  FlashFilled,
+  Notebook,
+} from "@carbon/icons-react";
+
+export const INGREDIENT_KINDS = [
+  "harness",
+  "framework",
+  "connection",
+  "channel",
+  "schedule",
+  "skill",
+  "knowledge-base",
+  "starter-repo",
+  "artifact",
+] as const;
+
+export type PackIngredientKind = (typeof INGREDIENT_KINDS)[number];
+
+export const INGREDIENT_LABELS: Record<PackIngredientKind, string> = {
+  harness: "Harness",
+  framework: "Framework",
+  connection: "Connection",
+  channel: "Channel",
+  schedule: "Schedule",
+  skill: "Skill",
+  "knowledge-base": "Knowledge base",
+  "starter-repo": "Starter repo",
+  artifact: "Artifact",
+};
+
+export interface PackSlot {
+  kind: PackIngredientKind;
+  label: string;
   description: string;
-  required: boolean;
+  templateId?: string;
+  demoValue?: string;
 }
+
+export const PACK_CATEGORIES = [
+  "Development",
+  "Knowledge",
+  "Monitoring",
+  "Research",
+] as const;
+
+export type PackCategory = (typeof PACK_CATEGORIES)[number];
 
 export interface Pack {
   id: string;
   name: string;
-  category: "Personal" | "Team";
-  accent: "blue" | "violet" | "amber" | "emerald" | "rose" | "cyan";
-  icon: string;
   tagline: string;
   description: string;
-  requirements: PackRequirement[];
+  icon: CarbonIconType;
+  category: PackCategory;
+  included: PackSlot[];
+  required: PackSlot[];
 }
 
 export const PACKS: Pack[] = [
   {
     id: "design-prototyper",
     name: "Design Prototyper",
-    category: "Personal",
-    accent: "blue",
-    icon: "🎨",
+    category: "Development",
+    icon: Notebook,
     tagline:
-      "Reads your GitHub issues and builds interactive prototypes with your design system",
+      "Reads GitHub issues and builds interactive prototypes with your design system",
     description:
-      "Reads your GitHub issues and spins up interactive prototypes with your design system. Connects Figma, reads project context, and iterates with you in real-time chat. The fastest path from idea to clickable mockup.",
-    requirements: [
+      "Connects to your repository, watches for design-tagged issues, and generates interactive prototypes. Pairs with a knowledge base of your design tokens and component library for consistent output.",
+    included: [
       {
-        type: "connection",
-        name: "GitHub",
-        description: "Read issues, PRs, and repo files",
-        required: true,
+        kind: "harness",
+        label: "Claude Code",
+        description: "AI coding harness for generating and iterating on code",
+        templateId: "claude-code",
       },
       {
-        type: "connection",
-        name: "Figma",
-        description: "Push and pull design assets",
-        required: true,
-      },
-      {
-        type: "skill",
-        name: "Prototyper",
-        description: "Generates interactive HTML/React prototypes",
-        required: true,
-      },
-      {
-        type: "knowledge-base",
-        name: "Project context",
+        kind: "skill",
+        label: "Prototyper",
         description:
-          "Your design system, brand guidelines, and past decisions",
-        required: false,
+          "Generates interactive HTML/React prototypes from issue specs",
+      },
+      {
+        kind: "skill",
+        label: "Design system reader",
+        description:
+          "Parses tokens, components, and usage patterns from your repo",
+      },
+      {
+        kind: "schedule",
+        label: "Issue scan",
+        description: "Checks for new issues tagged 'design' every 30 minutes",
+        demoValue: "*/30 * * * *",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Read issues, PRs, and repo files",
+        templateId: "github",
+        demoValue: "acme-org/design-system",
+      },
+      {
+        kind: "knowledge-base",
+        label: "Design system docs",
+        description:
+          "Your design tokens, component library, and brand guidelines",
       },
     ],
   },
   {
     id: "code-reviewer",
     name: "Code Reviewer",
-    category: "Team",
-    accent: "violet",
-    icon: "🔍",
+    category: "Development",
+    icon: Code,
     tagline:
-      "Reviews pull requests against your team's standards automatically",
+      "Reviews pull requests against your coding standards automatically",
     description:
-      "Automatically reviews pull requests against your team's coding standards. Catches bugs, suggests improvements, and flags security vulnerabilities before they reach production.",
-    requirements: [
+      "Watches your repository for new pull requests and runs automated code review. Checks style, flags security issues, audits dependencies, and posts review comments directly on the PR.",
+    included: [
       {
-        type: "connection",
-        name: "GitHub",
+        kind: "harness",
+        label: "Claude Code",
+        description: "AI coding harness for generating and iterating on code",
+        templateId: "claude-code",
+      },
+      {
+        kind: "skill",
+        label: "Code review",
+        description:
+          "Style checks, security scanning, and best-practice enforcement",
+      },
+      {
+        kind: "skill",
+        label: "Dependency audit",
+        description: "Flags outdated or vulnerable packages in lockfiles",
+      },
+      {
+        kind: "schedule",
+        label: "Nightly audit",
+        description: "Full security scan of changed files, daily at 2 AM",
+        demoValue: "0 2 * * *",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
         description: "Read PRs, diffs, and CI status",
-        required: true,
+        templateId: "github",
       },
       {
-        type: "skill",
-        name: "Code Review",
-        description: "Static analysis, style checks, and security scanning",
-        required: true,
-      },
-      {
-        type: "knowledge-base",
-        name: "Team standards",
+        kind: "knowledge-base",
+        label: "Team standards",
         description: "Your coding conventions and review checklist",
-        required: false,
       },
     ],
   },
   {
-    id: "research-assistant",
-    name: "Research Assistant",
-    category: "Personal",
-    accent: "amber",
-    icon: "📚",
+    id: "codebase-qa",
+    name: "Codebase Q&A",
+    category: "Knowledge",
+    icon: Chat,
     tagline:
-      "Deep-dives into topics with web search and structured synthesis",
+      "Indexes your repository and answers questions about your codebase",
     description:
-      "Deep-dives into topics with web search, document analysis, and structured synthesis. Produces cited reports and maintains a running knowledge base that improves over time.",
-    requirements: [
+      "Connects to your repo and builds a searchable index of your code, architecture, and documentation. Ask questions in chat or through a channel and get answers grounded in your actual codebase.",
+    included: [
       {
-        type: "connection",
-        name: "Web Search",
-        description: "Search the web for current information",
-        required: true,
+        kind: "harness",
+        label: "Claude Code",
+        description: "AI coding harness for generating and iterating on code",
+        templateId: "claude-code",
       },
       {
-        type: "skill",
-        name: "Analysis & Synthesis",
-        description: "Structured research with citations and summaries",
-        required: true,
+        kind: "skill",
+        label: "Codebase indexer",
+        description: "Indexes repository structure, docs, and code patterns",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Read repository files and history",
+        templateId: "github",
       },
       {
-        type: "knowledge-base",
-        name: "Research archive",
-        description: "Prior findings, sources, and accumulated context",
-        required: true,
+        kind: "knowledge-base",
+        label: "Codebase docs",
+        description: "Architecture docs, ADRs, and onboarding guides",
+      },
+      {
+        kind: "channel",
+        label: "Team channel",
+        description: "Route questions from your team to this agent",
+        demoValue: "#eng-questions",
       },
     ],
   },
   {
-    id: "devops-monitor",
-    name: "DevOps Monitor",
-    category: "Team",
-    accent: "emerald",
-    icon: "⚡",
-    tagline:
-      "Watches infrastructure, surfaces anomalies, and suggests remediation",
+    id: "broken-link-monitor",
+    name: "Broken Link Monitor",
+    category: "Monitoring",
+    icon: Debug,
+    tagline: "Scans your sites for broken links and reports them daily",
     description:
-      "Watches your infrastructure, surfaces anomalies, and suggests remediation before they become incidents. Connects to your cloud provider and incident management tools.",
-    requirements: [
+      "Uses the link-guardian starter repo to crawl your sites on a schedule. Reports broken links, redirects, and SSL issues. Sends alerts through your preferred channel.",
+    included: [
       {
-        type: "connection",
-        name: "AWS / GCP",
-        description: "Read metrics, logs, and resource state",
-        required: true,
+        kind: "harness",
+        label: "Claude Code",
+        description: "AI coding harness for generating and iterating on code",
+        templateId: "claude-code",
       },
       {
-        type: "connection",
-        name: "PagerDuty",
-        description: "Create and manage incident alerts",
-        required: false,
-      },
-      {
-        type: "skill",
-        name: "Monitoring",
+        kind: "starter-repo",
+        label: "Link Guardian",
         description:
-          "Anomaly detection, log analysis, and runbook execution",
-        required: true,
+          "Crawls sites and detects broken links, redirects, and SSL issues",
+        templateId: "link-guardian",
+      },
+      {
+        kind: "skill",
+        label: "Link reporter",
+        description: "Formats scan results into actionable reports",
+      },
+      {
+        kind: "schedule",
+        label: "Daily scan",
+        description: "Crawls all configured sites daily at 6 AM",
+        demoValue: "0 6 * * *",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Store scan results and configuration",
+        templateId: "github",
+      },
+      {
+        kind: "channel",
+        label: "Alert channel",
+        description: "Receive broken-link alerts in Slack or Telegram",
+        demoValue: "#site-health",
       },
     ],
   },
   {
-    id: "content-writer",
-    name: "Content Writer",
-    category: "Personal",
-    accent: "rose",
-    icon: "✍️",
-    tagline:
-      "Drafts content in your brand voice and publishes to your CMS",
+    id: "research-paper-scanner",
+    name: "Research Paper Scanner",
+    category: "Research",
+    icon: Document,
+    tagline: "Monitors arXiv for papers matching your research interests",
     description:
-      "Drafts blog posts, documentation, and marketing copy in your brand voice. Learns your style guide and integrates with your CMS for direct publishing.",
-    requirements: [
+      "Uses the arxiv-scanner starter repo to watch for new papers in your areas of interest. Summarizes findings, extracts key results, and maintains a knowledge base of relevant literature.",
+    included: [
       {
-        type: "connection",
-        name: "CMS",
-        description: "Publish directly to WordPress, Notion, or Contentful",
-        required: true,
+        kind: "harness",
+        label: "Claude Code",
+        description: "AI coding harness for generating and iterating on code",
+        templateId: "claude-code",
       },
       {
-        type: "skill",
-        name: "SEO & Writing",
+        kind: "starter-repo",
+        label: "arXiv Scanner",
+        description: "Watches arXiv feeds and filters papers by topic",
+        templateId: "arxiv-scanner",
+      },
+      {
+        kind: "skill",
+        label: "Paper summarizer",
+        description: "Extracts key findings, methods, and results from papers",
+      },
+      {
+        kind: "schedule",
+        label: "Daily scan",
+        description: "Checks for new papers daily at 7 AM",
+        demoValue: "0 7 * * *",
+      },
+    ],
+    required: [
+      {
+        kind: "knowledge-base",
+        label: "Research topics",
+        description: "Your areas of interest, key authors, and reading notes",
+      },
+    ],
+  },
+  {
+    id: "optimization-campaign",
+    name: "Optimization Campaign",
+    category: "Research",
+    icon: FlashFilled,
+    tagline: "Runs evolutionary code optimization on GPU with OpenEvolve",
+    description:
+      "Sets up an OpenEvolve optimization campaign that evolves code solutions using LLM-guided mutations. Connects to Modal for GPU evaluation and tracks optimization progress across generations.",
+    included: [
+      {
+        kind: "framework",
+        label: "OpenEvolve",
+        description: "Evolutionary code-optimization agent",
+        templateId: "openevolve",
+      },
+      {
+        kind: "skill",
+        label: "Benchmark runner",
         description:
-          "Keyword research, meta tags, and readability optimization",
-        required: true,
-      },
-      {
-        type: "knowledge-base",
-        name: "Brand guidelines",
-        description: "Tone of voice, style guide, and approved terminology",
-        required: true,
+          "Executes fitness evaluations and tracks optimization metrics",
       },
     ],
-  },
-  {
-    id: "data-analyst",
-    name: "Data Analyst",
-    category: "Team",
-    accent: "cyan",
-    icon: "📊",
-    tagline:
-      "Queries databases, builds visualizations, and generates reports",
-    description:
-      "Queries your databases, builds visualizations, and generates reports. Understands SQL, dbt models, and your data warehouse schema for accurate, context-aware analysis.",
-    requirements: [
+    required: [
       {
-        type: "connection",
-        name: "Database",
-        description: "Read-only access to your data warehouse",
-        required: true,
-      },
-      {
-        type: "connection",
-        name: "dbt",
-        description: "Understand model lineage and definitions",
-        required: false,
-      },
-      {
-        type: "skill",
-        name: "Visualization",
-        description: "Charts, dashboards, and formatted reports",
-        required: true,
+        kind: "connection",
+        label: "Modal",
+        description: "GPU compute for fitness evaluation",
+        templateId: "modal",
+        demoValue: "modal-workspace",
       },
     ],
   },
 ];
-
-export const PACK_CATEGORIES = ["Personal", "Team"] as const;

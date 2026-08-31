@@ -1,6 +1,8 @@
+import { Categories } from "@carbon/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -110,10 +112,12 @@ export function AgentSetupView() {
     } catch {}
   };
 
+  const setView = useStore((s) => s.setView);
+
   return (
     <SetupPageShell
       title="Create an agent"
-      subtitle="Configure your agent with a name, image, and connections."
+      subtitle="Configure your agent with a name, harness, and connections."
       footer={
         <>
           {registryPartial && (
@@ -127,6 +131,19 @@ export function AgentSetupView() {
         </>
       }
     >
+      <Callout tone="muted" className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Categories size={16} className="shrink-0 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Want a head start? Pick a pack to pre-fill harness, skills, and
+            connections.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setView("packs")}>
+          Browse packs
+        </Button>
+      </Callout>
+
       <NameSection value={form.name} onChange={(name) => update({ name })} />
       <ImageSection
         harnesses={catalogue.harnesses}
