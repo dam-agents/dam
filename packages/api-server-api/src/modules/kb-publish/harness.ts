@@ -1,9 +1,11 @@
 import { z } from "zod";
 
+export const contentHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
+
 export const kbPublishInventoryFileSchema = z.object({
   path: z.string().min(1),
   sizeBytes: z.number().int().nonnegative(),
-  contentHash: z.string().min(1),
+  contentHash: contentHashSchema,
 });
 
 export const kbPublishRequestInputSchema = z.discriminatedUnion("kind", [
@@ -28,7 +30,7 @@ export const kbPublishCompleteInputSchema = z.object({
       .array(
         z.object({
           path: z.string().min(1),
-          contentHash: z.string().min(1),
+          contentHash: contentHashSchema,
           sizeBytes: z.number().int().nonnegative(),
         }),
       )
