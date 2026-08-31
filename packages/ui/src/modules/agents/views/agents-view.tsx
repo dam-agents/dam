@@ -30,7 +30,7 @@ export function AgentsView() {
         title="Agents"
         description={
           visible.length > 0
-            ? "Each agent runs in its own isolated sandbox, with your credentials and tools injected. Open one to work with it in chat."
+            ? "Each agent runs in its own isolated environment with your credentials and tools injected. Open one to work with it in chat."
             : undefined
         }
         actions={
@@ -47,7 +47,7 @@ export function AgentsView() {
       {initialLoaded && visible.length === 0 && (
         <PageEmptyState
           title="No agents yet"
-          message="Each agent runs in its own isolated sandbox with your credentials and tools injected. Create a coding agent, research agent, assistant, or knowledge base to get started."
+          message="Each agent runs in its own isolated environment with your credentials and tools injected. Start from a pack or configure one from scratch."
           actionLabel="Create agent"
           onAction={createAgent}
         />

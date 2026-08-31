@@ -1,32 +1,40 @@
+import type { CarbonIconType } from "@carbon/icons-react";
 import {
-  Close,
+  Categories,
+  Chat,
+  Code,
   ConnectionSignal,
+  ContainerSoftware,
   FlashFilled,
+  Folders,
   Notebook,
+  Play,
+  Time,
 } from "@carbon/icons-react";
-import { useEffect } from "react";
 
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "@/components/modal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { SectionLabel } from "@/components/ui/section-label";
 
-import type { Pack, PackRequirement } from "../data/packs.js";
+import type { Pack, PackIngredientKind, PackSlot } from "../data/packs.js";
+import { INGREDIENT_LABELS } from "../data/packs.js";
 
-const TYPE_META: Record<
-  PackRequirement["type"],
-  { icon: typeof ConnectionSignal; className: string }
-> = {
-  connection: {
-    icon: ConnectionSignal,
-    className: "bg-blue-500/10 text-blue-400",
-  },
-  skill: {
-    icon: FlashFilled,
-    className: "bg-violet-500/10 text-violet-400",
-  },
-  "knowledge-base": {
-    icon: Notebook,
-    className: "bg-amber-500/10 text-amber-400",
-  },
+const INGREDIENT_ICONS: Record<PackIngredientKind, CarbonIconType> = {
+  harness: ContainerSoftware,
+  framework: Categories,
+  connection: ConnectionSignal,
+  channel: Chat,
+  schedule: Time,
+  skill: FlashFilled,
+  "knowledge-base": Notebook,
+  "starter-repo": Code,
+  artifact: Folders,
 };
 
 interface Props {
@@ -35,106 +43,98 @@ interface Props {
 }
 
 export function PackDetailSheet({ pack, onClose }: Props) {
-  useEffect(() => {
-    if (!pack) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [pack, onClose]);
-
   if (!pack) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
+    <Modal widthClass="w-[960px]">
+      <DialogHeader
+        title={pack.name}
+        subtitle={pack.tagline}
+        onClose={onClose}
+        divided={false}
+        titleAccessory={
+          <Badge variant="muted" size="sm">
+            {pack.category}
+          </Badge>
+        }
       />
-      <div className="relative z-10 w-full max-w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-        <div className="p-8">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-3xl">
-                {pack.icon}
-              </span>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {pack.category}
-                </p>
-                <h2 className="text-2xl font-bold tracking-tight text-foreground">
-                  {pack.name}
-                </h2>
+
+      <DialogBody>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          <div className="flex flex-col gap-6">
+            <div>
+              <SectionLabel spaced>Included</SectionLabel>
+              <div className="flex flex-col gap-2">
+                {pack.included.map((slot) => (
+                  <SlotRow key={`${slot.kind}-${slot.label}`} slot={slot} />
+                ))}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Close size={16} />
-            </button>
+
+            {pack.required.length > 0 && (
+              <div>
+                <SectionLabel spaced>You'll need</SectionLabel>
+                <div className="flex flex-col gap-2">
+                  {pack.required.map((slot) => (
+                    <SlotRow key={`${slot.kind}-${slot.label}`} slot={slot} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          <p className="mt-6 text-[15px] leading-relaxed text-muted-foreground">
-            {pack.description}
-          </p>
-
-          <div className="mt-8">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              What&apos;s included
-            </h3>
-            <div className="mt-3 flex flex-col gap-2.5">
-              {pack.requirements.map((req) => {
-                const meta = TYPE_META[req.type];
-                const Icon = meta.icon;
-                return (
-                  <div
-                    key={req.name}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-muted/50 px-4 py-3"
-                  >
-                    <span
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                        meta.className,
-                      )}
-                    >
-                      <Icon size={16} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        {req.name}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {req.description}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold",
-                        req.required
-                          ? "bg-rose-500/10 text-rose-400"
-                          : "bg-emerald-500/10 text-emerald-400",
-                      )}
-                    >
-                      {req.required ? "Required" : "Optional"}
-                    </span>
-                  </div>
-                );
-              })}
+          <div className="flex flex-col gap-4">
+            <div className="flex aspect-[9/14] w-full flex-col items-center justify-center rounded-xl border border-border bg-muted">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground/10">
+                <Play size={16} className="ml-0.5 text-muted-foreground" />
+              </div>
+              <p className="mt-3 text-sm font-medium text-muted-foreground">
+                See it in action
+              </p>
+              <p className="mt-1 text-[14px] text-muted-foreground/60">
+                Video coming soon
+              </p>
             </div>
           </div>
-
-          <div className="mt-8 flex gap-3">
-            <Button className="flex-1" size="lg">
-              Create agent with this pack
-            </Button>
-            <Button variant="outline" size="lg" onClick={onClose}>
-              Try demo
-            </Button>
-          </div>
         </div>
+
+        <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
+          {pack.description}
+        </p>
+      </DialogBody>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Close
+        </Button>
+        <Button>Create agent with this pack</Button>
+      </DialogFooter>
+    </Modal>
+  );
+}
+
+function SlotRow({ slot }: { slot: PackSlot }) {
+  const Icon = INGREDIENT_ICONS[slot.kind];
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/50 px-4 py-3">
+      <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
+        <Icon size={16} className="text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-foreground">{slot.label}</p>
+          <Badge variant="muted" size="sm">
+            {INGREDIENT_LABELS[slot.kind]}
+          </Badge>
+        </div>
+        <p className="mt-0.5 text-[14px] text-muted-foreground">
+          {slot.description}
+        </p>
+        {slot.demoValue && (
+          <p className="mt-1 font-mono text-[14px] text-muted-foreground/60">
+            {slot.demoValue}
+          </p>
+        )}
       </div>
     </div>
   );

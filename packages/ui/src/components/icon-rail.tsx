@@ -142,9 +142,11 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, agents, packs, artifacts, settings].map((destination) => (
-            <BottomBarItem key={destination.label} {...destination} />
-          ))}
+          {[sandboxes, agents, packs, artifacts, settings].map(
+            (destination) => (
+              <BottomBarItem key={destination.label} {...destination} />
+            ),
+          )}
         </nav>
       )}
     </>
