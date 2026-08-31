@@ -53,6 +53,7 @@ export function registerArtifactLibraryTools(
   deps: {
     artifactLibrary: ArtifactLibraryServiceImpl;
     agentId: string;
+    interactiveArtifacts: boolean;
     attachToExperiment?: (
       artifactId: string,
       experimentId?: string,
@@ -100,7 +101,7 @@ export function registerArtifactLibraryTools(
         .boolean()
         .optional()
         .describe(
-          "HTML only. Set it whenever the page has to give you something back — otherwise the page can only ask the person to copy text into the chat, and you never see what they did on it. Makes the page able to call back to you: a button on it asks you to do something and the answer lands in the page. The page calls `await platform.ask(action, payload)` — `platform` is already there, needs no setup, and the promise resolves with whatever you pass to answer_artifact_request, or rejects with `{ reason, message }` if the ask is refused. `platform.onState(cb)` reports progress ('sent', 'waking', 'queued', 'running') while you work. Write the page against those two calls and nothing else. Every ask is a full turn of yours, so build the page as many small asks — one per step, each rendering its own answer in place — not one form that submits everything at once and makes the person wait for all of it. In exchange the artifact can NEVER be shared — it stays private to its owner, because you run with their credentials. Settled now and unchangeable: no later version can turn it on or off, so publish a separate artifact if you want a shareable copy. The page asks in the conversation it is first asked from — usually right here, so its questions and answers appear in the chat the person is reading. Every ask reaches a session that already holds the asks before it, so send only what changed in `payload`: a page that replays its whole history in every ask pays for that history again on every turn.",
+          "HTML only. Set it whenever the page has to hand something back to you — a form to submit, choices to record, a Refresh button — because a page without it can never reach you. Settled now and permanent, and the page can never be shared; load the `platform-artifacts` skill before writing an interactive page.",
         ),
       expires_in_hours: z
         .number()
@@ -130,6 +131,11 @@ export function registerArtifactLibraryTools(
       experiment_id,
     }) =>
       run(async () => {
+        if (interactive && !deps.interactiveArtifacts) {
+          return errorResult(
+            "interactive: true refused — the `interactive-artifacts` feature flag is off for this owner, so nothing could ever answer the page's asks. Publish a static page instead.",
+          );
+        }
         const artifact = await lib.create(
           {
             title,
