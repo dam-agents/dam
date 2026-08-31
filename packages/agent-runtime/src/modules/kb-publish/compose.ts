@@ -216,14 +216,16 @@ export function composeKbPublish(opts: {
       await persist();
       return { ok: true };
     }
+    if (rootsChanged || input.flush) generation += 1;
     state = {
       roots: input.roots,
       caps: input.caps,
-      dirty: state.dirty || input.flush,
+      dirty: state.dirty || input.flush || rootsChanged,
     };
     await persist();
     if (rootsChanged) startWatching();
     if (input.flush) arm(0);
+    else if (rootsChanged) arm(DEBOUNCE_MS);
     return { ok: true };
   }
 
