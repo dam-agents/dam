@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
+import { V1MicroTime } from "@kubernetes/client-node";
 import type { CoordinationV1Api, V1Lease } from "@kubernetes/client-node";
 
 /*
@@ -100,7 +101,7 @@ export function createLeaderLease(opts: {
     const spec = () => ({
       holderIdentity: identity,
       leaseDurationSeconds: Math.ceil(ttlMs / 1000),
-      renewTime: new Date(),
+      renewTime: new V1MicroTime(),
     });
     try {
       const current = await read();
@@ -109,7 +110,7 @@ export function createLeaderLease(opts: {
           namespace,
           body: {
             metadata: { name, namespace },
-            spec: { ...spec(), acquireTime: new Date() },
+            spec: { ...spec(), acquireTime: new V1MicroTime() },
           },
         });
         return true;
@@ -133,7 +134,9 @@ export function createLeaderLease(opts: {
           ...current,
           spec: {
             ...spec(),
-            acquireTime: mine ? current.spec?.acquireTime : new Date(),
+            acquireTime: new V1MicroTime(
+              (mine && current.spec?.acquireTime) || Date.now(),
+            ),
             leaseTransitions: mine
               ? current.spec?.leaseTransitions
               : (current.spec?.leaseTransitions ?? 0) + 1,

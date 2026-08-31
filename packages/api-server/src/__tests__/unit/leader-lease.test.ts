@@ -11,6 +11,8 @@ function fakeLeaseApi(): FakeLeaseApi {
   const store = new Map<string, V1Lease>();
   let revision = 0;
   const persist = (name: string, body: V1Lease) => {
+    for (const stamp of [body.spec?.renewTime, body.spec?.acquireTime])
+      if (stamp && !/\.\d{6}Z$/.test(stamp.toISOString())) throw status(400);
     const stored = {
       ...body,
       metadata: { ...body.metadata, resourceVersion: String(++revision) },
@@ -62,6 +64,15 @@ function fakeLeaseApi(): FakeLeaseApi {
 
 const LEASE = "platform-channels";
 
+/*
+ * TEST_OVERVIEW: Leader election for the api-server work that must have one
+ * holder install-wide. The lock is a `coordination.k8s.io` Lease, so the fake
+ * API here enforces what a real API server enforces: `resourceVersion`
+ * compare-and-swap on every write, 404 on a missing Lease, 409 on a lost race,
+ * and MicroTime stamps carrying microsecond precision — a Lease whose
+ * `renewTime` has only millisecond digits is rejected with a 400, which is how
+ * a campaign that never wins looks from inside the pod.
+ */
 describe("leader lease", () => {
   it("elects exactly one holder among replicas campaigning at once", async () => {
     const leaseApi = fakeLeaseApi();
