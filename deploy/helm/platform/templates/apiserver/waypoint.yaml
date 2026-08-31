@@ -26,12 +26,16 @@ spec:
     - name: mesh
       port: 15008
       protocol: HBONE
-{{- if gt (int (.Values.apiServer.replicas | default 1)) 1 }}
+{{- $replicas := int (.Values.apiServer.replicas | default 1) }}
+{{- if gt $replicas 1 }}
 ---
 # An HA api-server is only as available as this waypoint: every harness call
-# (MCP, hello, trigger handoff) traverses it. Istio's synthesized Deployment
-# defaults to 1 replica and leaves the replica count unmanaged, so pinning it
-# via an HPA (the documented pattern for auto-deployed gateways) is safe.
+# (MCP, hello, trigger handoff) traverses it, so it matches the api-server
+# replica for replica. A Gateway has no replicas field and Istio's synthesized
+# Deployment defaults to 1 and leaves the count unmanaged, so an HPA with
+# min == max is the documented way to pin one for an auto-deployed gateway.
+# No metric is declared because a clamped count can never move; the API server
+# defaults a CPU target in regardless, and it stays inert.
 # RING_HASH pinning survives scale-out: same endpoint set, same ring.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -45,15 +49,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ .Values.istio.waypointName }}
-  minReplicas: 2
-  maxReplicas: 2
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 80
+  minReplicas: {{ $replicas }}
+  maxReplicas: {{ $replicas }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
