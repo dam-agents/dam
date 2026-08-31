@@ -18,8 +18,18 @@ interface Props {
   };
 }
 
+function friendlyModelName(slug: string): string {
+  const lower = slug.toLowerCase();
+  if (lower.includes("opus")) return "Opus";
+  if (lower.includes("sonnet")) return "Sonnet";
+  if (lower.includes("haiku")) return "Haiku";
+  if (lower.includes("fable")) return "Fable";
+  return slug;
+}
+
 export function ModelIndicator({ model, subject, settings }: Props) {
   const titleId = useId();
+  const displayName = friendlyModelName(model);
 
   return (
     <Popover>
@@ -28,7 +38,7 @@ export function ModelIndicator({ model, subject, settings }: Props) {
           type="button"
           className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          {model}
+          {displayName}
         </button>
       </PopoverTrigger>
       <PopoverContent

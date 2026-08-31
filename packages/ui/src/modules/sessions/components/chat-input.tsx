@@ -25,12 +25,15 @@ import { ChatColumn } from "./chat-column.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
+import type { RotatingPlaceholder } from "../../schedules/components/schedule-chat-discovery.js";
+
 export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  rotatingPlaceholder?: RotatingPlaceholder | null;
 }
 
 export function ChatInput({
@@ -39,6 +42,7 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  rotatingPlaceholder,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -157,6 +161,7 @@ export function ChatInput({
   const showStop = isComputing;
   const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
+  const showRotating = !hasInput && rotatingPlaceholder != null;
 
   const send = useCallback(() => {
     if (!key) return;
@@ -222,17 +227,30 @@ export function ChatInput({
             >
               <Add size={16} />
             </Button>
-            <Textarea
-              ref={textareaRef}
-              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
-              value={input}
-              onChange={(e) => key && setDraft(key, { text: e.target.value })}
-              onKeyDown={onKeyDown}
-              onPaste={onPaste}
-              placeholder={placeholder}
-              rows={1}
-              disabled={loadingSession || !key}
-            />
+            <div className="relative flex-1">
+              {showRotating && (
+                <span
+                  className={cn(
+                    "pointer-events-none absolute left-0 top-[17px] pr-2 text-sm leading-[22px] text-muted-foreground/50 transition-opacity duration-300",
+                    rotatingPlaceholder!.fading && "opacity-0",
+                  )}
+                >
+                  {rotatingPlaceholder!.text}
+                </span>
+              )}
+              <Textarea
+                ref={textareaRef}
+                className="relative z-[1] w-full bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground caret-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                value={input}
+                onChange={(e) => key && setDraft(key, { text: e.target.value })}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                placeholder={showRotating ? "" : placeholder}
+                rows={1}
+                disabled={loadingSession || !key}
+                autoFocus
+              />
+            </div>
             {showStop && (
               <Button
                 variant="ghost"

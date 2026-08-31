@@ -8,6 +8,30 @@ import type { SandboxNameKind } from "../../agents/lib/sandbox-name.js";
 
 export type SetupFlow = SandboxNameKind;
 
+const scheduleDraftInnerSchema = z.object({
+  name: z.string(),
+  task: z.string(),
+  timezone: z.string(),
+  sessionMode: z.enum(["fresh", "continuous"]),
+  kind: z.enum(["daily", "hourly", "minutely", "custom"]),
+  interval: z.string(),
+  time: z.string(),
+  days: z.array(z.number()),
+  customRRule: z.string(),
+  quietHours: z.array(
+    z.object({
+      startTime: z.string(),
+      endTime: z.string(),
+      enabled: z.boolean(),
+    }),
+  ),
+  enabled: z.boolean().default(true),
+});
+
+const scheduleDraftSchema = scheduleDraftInnerSchema.nullable().default(null);
+
+export type ScheduleDraft = NonNullable<z.infer<typeof scheduleDraftSchema>>;
+
 export const setupFormSchema = z.object({
   name: z.string(),
   providerRef: z.object({ id: z.string() }).nullable().default(null),
@@ -15,6 +39,8 @@ export const setupFormSchema = z.object({
   templateId: z.string().nullable().default(null),
   kbTemplateId: knowledgeBaseTemplateIdSchema.nullable().default(null),
   customImage: z.string().default(""),
+  scheduleDraft: scheduleDraftSchema,
+  scheduleDrafts: z.array(scheduleDraftInnerSchema).default([]),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 
