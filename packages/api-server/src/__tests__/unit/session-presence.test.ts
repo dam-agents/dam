@@ -103,6 +103,7 @@ describe("session presence", () => {
     presence.close();
   });
 
+  // TEST_SCENARIO: the debounce wants two consecutive ticks of affirmative absence, so a SCAN hit resets it rather than counting against a running miss total — a hit is evidence the agent is held, and accumulating misses across one would let a re-acquired agent be cleared while live.
   it("reconcile clears unheld pins after two ticks, spares held ones", async () => {
     const redis = fakeRedis();
     redis.keys.set("presence:agent:held:other-replica", "1");
