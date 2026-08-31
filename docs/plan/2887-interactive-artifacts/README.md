@@ -64,35 +64,41 @@ sequenceDiagram
 
 ## Sub-issues
 
-| #   | Title                                            | Scope                                                                               | Depends on |
-| --- | ------------------------------------------------ | ----------------------------------------------------------------------------------- | ---------- |
-| 01  | Interactive artifacts exist and cannot be shared | `interactive` settled at create, surfaced on reads, sharing refused                 | —          |
-| 02  | Artifact Request lifecycle                       | table, repository, service, tRPC, one-in-flight, cap, named failures, activity      | 01         |
-| 03  | Pod-side delivery                                | new event kind in the runtime-channel plugin, per-artifact session binding          | 02         |
-| 04  | Wake, prompt, and the answer tool                | outbox emit + wake, prompt composition, `answer_artifact_request` behind the flag   | 03         |
-| 05  | The browser bridge                               | two-way postMessage, app-owned waiting states, typed failures                       | 04         |
-| 06  | Self-refresh limits and the indicator            | client pacing, pause when hidden, idle stop, visible chip                           | 05         |
-| 08  | The bridge shim                                  | `platform.ask` injected at render, protocol becomes internal                        | 06         |
-| 09  | The brief                                        | what the cold Artifact Session needs, asked for at create                           | 08         |
-| 10  | Conversation binding                             | a page asks in the chat it belongs to; `own_session` opts out; `session_deleted`    | 09         |
-| 11  | Every page is bound                              | `own_session`, the brief and self-refresh removed; unbound sessionless asks refused | 10         |
-| 07  | Documentation                                    | vocabulary section + four architecture pages                                        | 11         |
+| #   | Title                                            | Scope                                                                                            | Depends on |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ---------- |
+| 01  | Interactive artifacts exist and cannot be shared | `interactive` settled at create, surfaced on reads, sharing refused                              | —          |
+| 02  | Artifact Request lifecycle                       | table, repository, service, tRPC, one-in-flight, cap, named failures, activity                   | 01         |
+| 03  | Pod-side delivery                                | new event kind in the runtime-channel plugin, per-artifact session binding                       | 02         |
+| 04  | Wake, prompt, and the answer tool                | outbox emit + wake, prompt composition, `answer_artifact_request` behind the flag                | 03         |
+| 05  | The browser bridge                               | two-way postMessage, app-owned waiting states, typed failures                                    | 04         |
+| 06  | Self-refresh limits and the indicator            | client pacing, pause when hidden, idle stop, visible chip                                        | 05         |
+| 08  | The bridge shim                                  | `platform.ask` injected at render, protocol becomes internal                                     | 06         |
+| 09  | The brief                                        | what the cold Artifact Session needs, asked for at create                                        | 08         |
+| 10  | Conversation binding                             | a page asks in the chat it belongs to; `own_session` opts out; `session_deleted`                 | 09         |
+| 11  | Every page is bound                              | `own_session`, the brief and self-refresh removed; unbound sessionless asks refused              | 10         |
+| 12  | The platform-artifacts skill                     | creation-time knowledge moves to a seeded skill; param becomes a pointer; flag refusal at create | 11         |
+| 07  | Documentation                                    | vocabulary section + four architecture pages                                                     | 12         |
 
-Order is linear and runs 01 → 06, 08, 09, 10, 11, 07. 04 is the first slice where the feature is
-visible end to end. 08, 09 and 10 were added after 06 shipped, when using a page by hand showed
-what the protocol was missing. 11 was settled in a second grilling after using 10 by hand: the
-Artifact Session was not worth the two slices (06, 09) that existed to patch it, so 11 removes
-all three surfaces. 07 keeps its number and stays last: it documents what exists, and the later
-slices change what exists.
+Order is linear and runs 01 → 06, 08, 09, 10, 11, 12, 07. 04 is the first slice where the
+feature is visible end to end. 08, 09 and 10 were added after 06 shipped, when using a page by
+hand showed what the protocol was missing. 11 was settled in a second grilling after using 10 by
+hand: the Artifact Session was not worth the two slices (06, 09) that existed to patch it, so 11
+removes all three surfaces. 12 was settled in a third grilling: the `interactive` param's essay
+rode every session's tool listing, so its creation-time half moves into a pristine-seeded skill
+(the platform-schedules path) and the answer-time half stays on the tool and the prompt, which a
+woken chat can always see. 07 keeps its number and stays last: it documents what exists, and the
+later slices change what exists.
 
 ## Pinned contracts
 
 Both sides implement against these. Do not redesign them mid-slice; if one is wrong, change it
 here first.
 
-**Feature flag id:** `interactive-artifacts` (per-user, off by default). It gates UI surfaces
-_and_ whether `answer_artifact_request` is registered into an agent's MCP session. It is not a
-security boundary — owner scoping is.
+**Feature flag id:** `interactive-artifacts` (per-user, off by default). It gates UI surfaces,
+whether `answer_artifact_request` is registered into an agent's MCP session, _and_ whether
+`create_artifact` accepts `interactive: true` — with the flag off the create refuses loudly, so
+no page is ever published whose asks nothing can answer. It is not a security boundary — owner
+scoping is.
 
 **Postgres** (`packages/db/src/schema.ts`, generated via `mise run db:generate`):
 
@@ -140,8 +146,10 @@ requests past that TTL as `expired`, because the outbox expiry only drops the ev
 agent's mesh identity — a harness cannot answer another agent's request, and the tool refuses a
 request that is not pending or not its own.
 
-**Page API** (the whole of what an agent has to know to write an interactive page). The renderer
-injects a shim into an interactive page, which puts this on the page's `window`:
+**Page API** (the whole of what an agent has to know to write an interactive page). The agent
+learns it from the seeded `platform-artifacts` skill (slice 12) — the `interactive` param is
+only a pointer at that skill. The renderer injects a shim into an interactive page, which puts
+this on the page's `window`:
 
 ```
 await platform.ask(action, payload?)   // resolves with the agent's result
