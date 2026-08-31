@@ -1,4 +1,5 @@
 import { Close } from "@carbon/icons-react";
+import type { ApprovalView } from "api-server-api";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { useNow } from "@/hooks/use-now";
@@ -9,8 +10,7 @@ import { timeAgo } from "../lib/format-time.js";
 import { useAgentsList } from "../modules/agents/api/queries.js";
 import { useApprovalsForOwner } from "../modules/approvals/api/queries.js";
 import { FeedApprovalCard } from "../modules/home/components/feed-approval-card.js";
-import { useDismissals } from "../modules/home/hooks/use-dismissals.js";
-import { type FeedItem, sortFeedItems } from "../modules/home/lib/feed-item.js";
+import { approvalDismissalKey } from "../modules/home/lib/dismissals.js";
 import { useStore } from "../store.js";
 
 const TICK_MS = 60_000;
@@ -19,7 +19,8 @@ export function FloatingApprovalsPill() {
   const view = useStore((s) => s.view);
   const agents = useAgentsList();
   const { data } = useApprovalsForOwner();
-  const { isDismissed, dismiss } = useDismissals();
+  const dismissedKeys = useStore((s) => s.dismissedKeys);
+  const dismissByKey = useStore((s) => s.dismissByKey);
   const [expanded, setExpanded] = useState(false);
   const now = useNow(TICK_MS);
   const banner =
@@ -27,17 +28,11 @@ export function FloatingApprovalsPill() {
     "connected";
 
   const items = useMemo(() => {
-    const pending: FeedItem[] = (data ?? [])
-      .filter((approval) => approval.status === "pending")
-      .map((approval) => ({
-        kind: "approval",
-        id: `approval:${approval.id}`,
-        agentId: approval.agentId,
-        at: approval.createdAt,
-        approval,
-      }));
-    return sortFeedItems(pending).filter((item) => !isDismissed(item));
-  }, [data, isDismissed]);
+    return (data ?? [])
+      .filter((a) => a.status === "pending")
+      .filter((a) => !dismissedKeys.has(approvalDismissalKey(a)))
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }, [data, dismissedKeys]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -87,17 +82,15 @@ export function FloatingApprovalsPill() {
             </button>
           </div>
           <div className="max-h-[420px] space-y-2 overflow-y-auto p-2">
-            {items.map((item) =>
-              item.kind === "approval" ? (
-                <FeedApprovalCard
-                  key={item.id}
-                  approval={item.approval}
-                  agentName={nameOf(item.agentId)}
-                  meta={item.at ? timeAgo(item.at, now) : "—"}
-                  onDismiss={() => dismiss([item])}
-                />
-              ) : null,
-            )}
+            {items.map((approval: ApprovalView) => (
+              <FeedApprovalCard
+                key={approval.id}
+                approval={approval}
+                agentName={nameOf(approval.agentId)}
+                meta={timeAgo(approval.createdAt, now)}
+                onDismiss={() => dismissByKey(approvalDismissalKey(approval))}
+              />
+            ))}
           </div>
         </div>
       ) : (

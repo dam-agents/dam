@@ -66,6 +66,18 @@ export function formatDateTime(
   return toDate(value)?.toLocaleString(undefined, options) ?? "—";
 }
 
+export function clockOf(value: DateInput): string {
+  const d = toDate(value);
+  if (!d) return "—";
+  return d
+    .toLocaleString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(" ", " ");
+}
+
 export function formatDurationMs(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const seconds = ms / 1000;

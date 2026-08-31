@@ -116,6 +116,11 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
 export async function listAgentSessions(
   agentId: string,
 ): Promise<SessionView[]> {
+  if (import.meta.env.VITE_MOCK) {
+    const { getSessionsForAgent } =
+      await import("../../../mock/data/sessions.js");
+    return getSessionsForAgent(agentId);
+  }
   if (agentLacksLiveUpdates(agentId)) {
     return listAgentSessionsOverAcp(agentId);
   }
@@ -128,6 +133,11 @@ export async function listAgentSessions(
 export async function listAgentSessionsOverAcp(
   agentId: string,
 ): Promise<SessionView[]> {
+  if (import.meta.env.VITE_MOCK) {
+    const { getSessionsForAgent } =
+      await import("../../../mock/data/sessions.js");
+    return getSessionsForAgent(agentId);
+  }
   return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {
     passive: true,
   });

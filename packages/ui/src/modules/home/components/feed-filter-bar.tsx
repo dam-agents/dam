@@ -4,34 +4,54 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import {
-  FEED_SOURCE_LABELS,
-  FEED_SOURCES,
-  FEED_STATUS_LABELS,
-  FEED_STATUSES,
-  type FeedSource,
-  type FeedStatus,
+  SESSION_CATEGORIES,
+  SESSION_CATEGORY_LABELS,
+  type SessionCategory,
+} from "../../sessions/lib/session-category.js";
+import {
+  ALL_CATEGORIES,
+  ALL_STATES,
+  FEED_STATE_LABELS,
+  FEED_STATES,
+  type FeedState,
 } from "../lib/feed-filter.js";
 
 interface Props {
-  status: FeedStatus;
-  onStatusChange: (status: FeedStatus) => void;
-  included: ReadonlySet<FeedSource>;
-  onToggleSource: (source: FeedSource) => void;
+  includedStates: ReadonlySet<FeedState>;
+  includedCategories: ReadonlySet<SessionCategory>;
+  onToggleState: (state: FeedState) => void;
+  onToggleCategory: (cat: SessionCategory) => void;
+  onToggleAll: () => void;
+}
+
+function triggerLabel(
+  states: ReadonlySet<FeedState>,
+  categories: ReadonlySet<SessionCategory>,
+): string {
+  const allStates = states.size === ALL_STATES.size;
+  const allCats = categories.size === ALL_CATEGORIES.size;
+  if (allStates && allCats) return "All";
+  const active = states.size + categories.size;
+  const total = ALL_STATES.size + ALL_CATEGORIES.size;
+  return `${active} of ${total}`;
 }
 
 export function FeedFilterBar({
-  status,
-  onStatusChange,
-  included,
-  onToggleSource,
+  includedStates,
+  includedCategories,
+  onToggleState,
+  onToggleCategory,
+  onToggleAll,
 }: Props) {
+  const allChecked =
+    includedStates.size === ALL_STATES.size &&
+    includedCategories.size === ALL_CATEGORIES.size;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -40,32 +60,47 @@ export function FeedFilterBar({
           data-testid="feed-filter"
           className="inline-flex cursor-pointer items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          {FEED_STATUS_LABELS[status]}
+          {triggerLabel(includedStates, includedCategories)}
           <ChevronDown size={16} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[200px]">
-        {FEED_STATUSES.map((option) => (
-          <DropdownMenuItem
-            key={option}
-            onSelect={() => onStatusChange(option)}
-            className={cn(option === status && "font-medium text-foreground")}
-          >
-            {FEED_STATUS_LABELS[option]}
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent align="start" className="min-w-[220px]">
+        <DropdownMenuCheckboxItem
+          checked={allChecked}
+          onCheckedChange={onToggleAll}
+          onSelect={(e) => e.preventDefault()}
+          className="font-medium"
+        >
+          All
+        </DropdownMenuCheckboxItem>
+
         <DropdownMenuSeparator />
-        <p className="px-3 py-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Include
+        <p className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          State
         </p>
-        {FEED_SOURCES.map((source) => (
+        {FEED_STATES.map((state) => (
           <DropdownMenuCheckboxItem
-            key={source}
-            checked={included.has(source)}
-            onCheckedChange={() => onToggleSource(source)}
-            onSelect={(event) => event.preventDefault()}
+            key={state}
+            checked={includedStates.has(state)}
+            onCheckedChange={() => onToggleState(state)}
+            onSelect={(e) => e.preventDefault()}
           >
-            {FEED_SOURCE_LABELS[source]}
+            {FEED_STATE_LABELS[state]}
+          </DropdownMenuCheckboxItem>
+        ))}
+
+        <DropdownMenuSeparator />
+        <p className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Where it came from
+        </p>
+        {SESSION_CATEGORIES.map((cat) => (
+          <DropdownMenuCheckboxItem
+            key={cat}
+            checked={includedCategories.has(cat)}
+            onCheckedChange={() => onToggleCategory(cat)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            {SESSION_CATEGORY_LABELS[cat]}
           </DropdownMenuCheckboxItem>
         ))}
       </DropdownMenuContent>

@@ -1,9 +1,12 @@
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
+import { bucketOf } from "../../modules/home/lib/feed-buckets.js";
 import {
+  ALL_CATEGORIES,
+  ALL_STATES,
   emptyStateFor,
-  type FeedSource,
+  type FeedState,
   feedStats,
   filterFeed,
 } from "../../modules/home/lib/feed-filter.js";
@@ -11,9 +14,8 @@ import {
   type FeedItem,
   sortFeedItems,
 } from "../../modules/home/lib/feed-item.js";
+import type { SessionCategory } from "../../modules/sessions/lib/session-category.js";
 import type { SessionView } from "../../types.js";
-
-// TEST_OVERVIEW: the Home feed's ordering and filtering rules, kept pure so they can be pinned here.
 
 function session(overrides: Partial<SessionView> = {}): SessionView {
   return {
@@ -40,7 +42,19 @@ function unread(
   };
 }
 
-const ALL_SOURCES: ReadonlySet<FeedSource> = new Set(["channels", "schedules"]);
+function inProgress(
+  id: string,
+  at: string | null,
+  type: SessionType = SessionType.Regular,
+): FeedItem {
+  return {
+    kind: "in-progress",
+    id,
+    agentId: "a-1",
+    at,
+    session: session({ sessionId: id, type, running: true }),
+  };
+}
 
 describe("sortFeedItems", () => {
   it("puts the newest first", () => {
@@ -53,7 +67,6 @@ describe("sortFeedItems", () => {
     expect(sorted.map((i) => i.id)).toEqual(["new", "mid", "old"]);
   });
 
-  // TEST_SCENARIO: undated work is happening now, so it leads rather than being dropped.
   it("leads with an item that has no timestamp", () => {
     const sorted = sortFeedItems([
       unread("dated", "2026-08-19T12:00:00Z"),
@@ -75,104 +88,113 @@ describe("sortFeedItems", () => {
 
 describe("filterFeed", () => {
   const items: FeedItem[] = [
-    {
-      kind: "approval",
-      id: "ap",
-      agentId: "a-1",
-      at: "2026-08-19T12:00:00Z",
-      approval: { id: "ap" } as never,
-    },
-    {
-      kind: "in-progress",
-      id: "run",
-      agentId: "a-1",
-      at: "2026-08-19T11:00:00Z",
-      session: session({ sessionId: "run", running: true }),
-    },
+    inProgress("run", "2026-08-19T12:00:00Z"),
     unread("chat", "2026-08-19T10:00:00Z"),
     unread("sched", "2026-08-19T09:00:00Z", SessionType.ScheduleCron),
     unread("slack", "2026-08-19T08:00:00Z", SessionType.ChannelSlack),
   ];
 
-  it("matches each status to its own kind", () => {
-    const ids = (status: Parameters<typeof filterFeed>[1]) =>
-      filterFeed(items, status, ALL_SOURCES).map((i) => i.id);
-
-    expect(ids("all")).toHaveLength(5);
-    expect(ids("attention")).toEqual(["ap"]);
-    expect(ids("in-progress")).toEqual(["run"]);
-    expect(ids("unread")).toEqual(["chat", "sched", "slack"]);
+  it("shows all when both facets are fully on", () => {
+    expect(filterFeed(items, ALL_STATES, ALL_CATEGORIES)).toHaveLength(4);
   });
 
-  // TEST_SCENARIO: excluding a source must not take approvals with it — they belong to no source.
-  it("keeps sourceless items when a source is excluded", () => {
-    const ids = filterFeed(items, "all", new Set(["channels"])).map(
-      (i) => i.id,
-    );
-
-    expect(ids).toEqual(["ap", "run", "chat", "slack"]);
+  it("filters by state", () => {
+    const states: ReadonlySet<FeedState> = new Set(["in-progress"]);
+    const ids = filterFeed(items, states, ALL_CATEGORIES).map((i) => i.id);
+    expect(ids).toEqual(["run"]);
   });
 
-  it("drops everything sourced when no source is included", () => {
-    const ids = filterFeed(items, "all", new Set()).map((i) => i.id);
-
-    expect(ids).toEqual(["ap", "run", "chat"]);
+  it("filters by category", () => {
+    const cats: ReadonlySet<SessionCategory> = new Set(["channels"]);
+    const ids = filterFeed(items, ALL_STATES, cats).map((i) => i.id);
+    expect(ids).toEqual(["slack"]);
   });
 
-  it("counts running and to-review separately, ignoring approvals", () => {
+  it("AND across facets: state + category must both match", () => {
+    const states: ReadonlySet<FeedState> = new Set(["unread"]);
+    const cats: ReadonlySet<SessionCategory> = new Set(["scheduled"]);
+    const ids = filterFeed(items, states, cats).map((i) => i.id);
+    expect(ids).toEqual(["sched"]);
+  });
+
+  it("counts running and to-review separately", () => {
     expect(feedStats(items)).toEqual({ running: 1, toReview: 3 });
   });
 });
 
+describe("bucketOf", () => {
+  const now = new Date("2026-08-19T14:00:00");
+
+  it("puts today's items in Today", () => {
+    expect(bucketOf("2026-08-19T06:00:00", now)).toBe("Today");
+  });
+
+  it("puts yesterday's items in Yesterday", () => {
+    expect(bucketOf("2026-08-18T23:59:00", now)).toBe("Yesterday");
+  });
+
+  it("puts items from 4 days ago in Last 7 days", () => {
+    expect(bucketOf("2026-08-15T10:00:00", now)).toBe("Last 7 days");
+  });
+
+  it("puts items from 20 days ago in Last 30 days", () => {
+    expect(bucketOf("2026-07-30T10:00:00", now)).toBe("Last 30 days");
+  });
+
+  it("puts items older than 30 days in Older", () => {
+    expect(bucketOf("2026-06-01T10:00:00", now)).toBe("Older");
+  });
+
+  it("handles null as Older", () => {
+    expect(bucketOf(null, now)).toBe("Older");
+  });
+});
+
 describe("emptyStateFor", () => {
-  it("blames the filter before the system when every source is excluded", () => {
-    const state = emptyStateFor("all", {
-      allSourcesExcluded: true,
+  it("blames the filter when all states are excluded", () => {
+    const state = emptyStateFor({
+      allStatesExcluded: true,
+      allCategoriesExcluded: false,
       noRunningAgents: false,
     });
-
     expect(state.tone).toBe("filtered");
   });
 
-  // TEST_SCENARIO: with nothing running, unread is unknowable but approvals are still answerable.
-  it("explains a stopped agent except when the user asked about approvals", () => {
-    const noAgents = { allSourcesExcluded: false, noRunningAgents: true };
-
-    expect(emptyStateFor("unread", noAgents).title).toBe("Nothing running");
-    expect(emptyStateFor("attention", noAgents).title).toBe("All clear");
+  it("blames the filter when all categories are excluded", () => {
+    const state = emptyStateFor({
+      allStatesExcluded: false,
+      allCategoriesExcluded: true,
+      noRunningAgents: false,
+    });
+    expect(state.tone).toBe("filtered");
   });
 
-  // TEST_SCENARIO: a read that failed must never be reported as nothing to do, and must not
-  // TEST_SCENARIO: answer for a filter whose source it does not feed.
-  it("reports a failed read only on the filters it affects", () => {
-    const base = { allSourcesExcluded: false, noRunningAgents: false };
-
-    expect(
-      emptyStateFor("attention", { ...base, approvalsUnreadable: true }).title,
-    ).toBe("Approvals could not be read");
-    expect(
-      emptyStateFor("in-progress", { ...base, approvalsUnreadable: true })
-        .title,
-    ).not.toBe("Approvals could not be read");
-
-    expect(
-      emptyStateFor("unread", { ...base, unreadableAgents: 2 }).title,
-    ).toBe("Some agents did not answer");
-    expect(
-      emptyStateFor("attention", { ...base, unreadableAgents: 2 }).title,
-    ).toBe("All clear");
+  it("reports nothing running when no agents are active", () => {
+    const state = emptyStateFor({
+      allStatesExcluded: false,
+      allCategoriesExcluded: false,
+      noRunningAgents: true,
+    });
+    expect(state.title).toBe("Nothing running");
   });
 
-  // TEST_SCENARIO: the user's own filter outranks a degradation, or the page blames itself for
-  // TEST_SCENARIO: a state the user created.
+  it("reports unreadable agents", () => {
+    const state = emptyStateFor({
+      allStatesExcluded: false,
+      allCategoriesExcluded: false,
+      noRunningAgents: false,
+      unreadableAgents: 2,
+    });
+    expect(state.title).toBe("Some agents did not answer");
+  });
+
   it("blames the filter before a failed read", () => {
-    const state = emptyStateFor("all", {
-      allSourcesExcluded: true,
+    const state = emptyStateFor({
+      allStatesExcluded: true,
+      allCategoriesExcluded: false,
       noRunningAgents: false,
       unreadableAgents: 3,
-      approvalsUnreadable: true,
     });
-
     expect(state.title).toBe("Nothing included");
   });
 });

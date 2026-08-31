@@ -20,6 +20,30 @@ import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
 async function main() {
+  if (import.meta.env.VITE_MOCK) {
+    try {
+      const { worker } = await import("./mock/browser.js");
+      await worker.start({ onUnhandledRequest: "warn" });
+    } catch (err) {
+      console.error("[mock] MSW failed to start:", err);
+    }
+    await loadBrand().then(applyBrand);
+    const { default: App } = await import("./app.js");
+    const { DevChangeIndex } = await import("./components/dev-change-index.js");
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <App />
+            <Toaster />
+            <DevChangeIndex />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    return;
+  }
+
   const publicAgentId = parsePublicAgentPath(window.location.pathname);
   if (publicAgentId !== null) {
     await loadBrand().then(applyBrand);

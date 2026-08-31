@@ -5,13 +5,18 @@ const MAX_KEYS = 300;
 
 export function dismissalKey(item: FeedItem): string | null {
   switch (item.kind) {
-    case "approval":
-      return `approval:${item.approval.id}:${item.approval.createdAt}`;
     case "unread":
       return `session:${item.agentId}:${item.session.sessionId}:${item.at ?? ""}`;
     case "in-progress":
       return null;
   }
+}
+
+export function approvalDismissalKey(approval: {
+  id: string;
+  createdAt: string;
+}): string {
+  return `approval:${approval.id}:${approval.createdAt}`;
 }
 
 export function loadDismissed(): string[] {

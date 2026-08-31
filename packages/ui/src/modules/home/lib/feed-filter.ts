@@ -1,67 +1,48 @@
-import { SessionType } from "api-server-api";
-
+import {
+  SESSION_CATEGORIES,
+  type SessionCategory,
+  sessionCategory,
+} from "../../sessions/lib/session-category.js";
 import type { FeedItem } from "./feed-item.js";
 
-export type FeedStatus = "all" | "attention" | "in-progress" | "unread";
+export type FeedState = "in-progress" | "unread";
 
-export const FEED_STATUSES: readonly FeedStatus[] = [
-  "all",
-  "attention",
-  "in-progress",
-  "unread",
-];
+export const FEED_STATES: readonly FeedState[] = ["in-progress", "unread"];
 
-export const FEED_STATUS_LABELS: Record<FeedStatus, string> = {
-  all: "All",
-  attention: "Needs attention",
+export const FEED_STATE_LABELS: Record<FeedState, string> = {
   "in-progress": "In progress",
   unread: "Unread",
 };
 
-export type FeedSource = "channels" | "schedules";
+export const ALL_STATES: ReadonlySet<FeedState> = new Set(FEED_STATES);
+export const ALL_CATEGORIES: ReadonlySet<SessionCategory> = new Set(
+  SESSION_CATEGORIES,
+);
 
-export const FEED_SOURCES: readonly FeedSource[] = ["channels", "schedules"];
-
-export const FEED_SOURCE_LABELS: Record<FeedSource, string> = {
-  channels: "Channels",
-  schedules: "Schedules",
-};
-
-export function sourceOf(item: FeedItem): FeedSource | null {
-  if (item.kind === "approval") return null;
-  switch (item.session.type) {
-    case SessionType.ChannelSlack:
-    case SessionType.ChannelTelegram:
-      return "channels";
-    case SessionType.ScheduleCron:
-      return "schedules";
-    default:
-      return null;
-  }
+function matchesState(item: FeedItem, states: ReadonlySet<FeedState>): boolean {
+  return states.has(item.kind);
 }
 
-function matchesStatus(item: FeedItem, status: FeedStatus): boolean {
-  switch (status) {
-    case "all":
-      return true;
-    case "attention":
-      return item.kind === "approval";
-    case "in-progress":
-      return item.kind === "in-progress";
-    case "unread":
-      return item.kind === "unread";
-  }
+function matchesCategory(
+  item: FeedItem,
+  categories: ReadonlySet<SessionCategory>,
+): boolean {
+  return categories.has(sessionCategory(item.session));
 }
 
 export function filterFeed(
   items: readonly FeedItem[],
-  status: FeedStatus,
-  includedSources: ReadonlySet<FeedSource>,
+  includedStates: ReadonlySet<FeedState>,
+  includedCategories: ReadonlySet<SessionCategory>,
 ): FeedItem[] {
+  const allStates = includedStates.size === ALL_STATES.size;
+  const allCategories = includedCategories.size === ALL_CATEGORIES.size;
+
   return items.filter((item) => {
-    if (!matchesStatus(item, status)) return false;
-    const source = sourceOf(item);
-    return source === null || includedSources.has(source);
+    if (!allStates && !matchesState(item, includedStates)) return false;
+    if (!allCategories && !matchesCategory(item, includedCategories))
+      return false;
+    return true;
   });
 }
 
@@ -81,30 +62,20 @@ export interface FeedEmpty {
   tone: "clear" | "filtered";
 }
 
-export function emptyStateFor(
-  status: FeedStatus,
-  options: {
-    allSourcesExcluded: boolean;
-    noRunningAgents: boolean;
-    unreadableAgents?: number;
-    approvalsUnreadable?: boolean;
-  },
-): FeedEmpty {
-  if (options.allSourcesExcluded) {
+export function emptyStateFor(options: {
+  allStatesExcluded: boolean;
+  allCategoriesExcluded: boolean;
+  noRunningAgents: boolean;
+  unreadableAgents?: number;
+}): FeedEmpty {
+  if (options.allStatesExcluded || options.allCategoriesExcluded) {
     return {
       title: "Nothing included",
-      message: "Every source is filtered out.",
+      message: "Every filter is off. Turn some on to see activity.",
       tone: "filtered",
     };
   }
-  if (options.approvalsUnreadable && status !== "in-progress") {
-    return {
-      title: "Approvals could not be read",
-      message: "Anything waiting on you is missing here until this recovers.",
-      tone: "filtered",
-    };
-  }
-  if (options.unreadableAgents && status !== "attention") {
+  if (options.unreadableAgents) {
     const one = options.unreadableAgents === 1;
     return {
       title: one ? "One agent did not answer" : "Some agents did not answer",
@@ -114,7 +85,7 @@ export function emptyStateFor(
       tone: "filtered",
     };
   }
-  if (options.noRunningAgents && status !== "attention") {
+  if (options.noRunningAgents) {
     return {
       title: "Nothing running",
       message:
@@ -122,25 +93,9 @@ export function emptyStateFor(
       tone: "clear",
     };
   }
-  switch (status) {
-    case "attention":
-      return {
-        title: "All clear",
-        message: "Nothing needs a decision from you.",
-        tone: "clear",
-      };
-    case "in-progress":
-      return {
-        title: "Nothing running",
-        message: "No agent is working right now.",
-        tone: "clear",
-      };
-    case "unread":
-    case "all":
-      return {
-        title: "All clear",
-        message: "Nothing waiting for review. You're all caught up.",
-        tone: "clear",
-      };
-  }
+  return {
+    title: "All clear",
+    message: "Nothing waiting for review. You're all caught up.",
+    tone: "clear",
+  };
 }

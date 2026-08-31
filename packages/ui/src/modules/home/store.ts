@@ -11,6 +11,7 @@ import type { FeedItem } from "./lib/feed-item.js";
 export interface DismissalsSlice {
   dismissedKeys: ReadonlySet<string>;
   dismissFeedItems: (items: readonly FeedItem[]) => void;
+  dismissByKey: (key: string) => void;
 }
 
 export const createDismissalsSlice: StateCreator<
@@ -26,6 +27,10 @@ export const createDismissalsSlice: StateCreator<
       .filter((key): key is string => key !== null);
     if (added.length === 0) return;
     const merged = new Set([...get().dismissedKeys, ...added]);
+    set({ dismissedKeys: new Set(saveDismissed([...merged])) });
+  },
+  dismissByKey: (key) => {
+    const merged = new Set([...get().dismissedKeys, key]);
     set({ dismissedKeys: new Set(saveDismissed([...merged])) });
   },
 });
