@@ -8,6 +8,7 @@ import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
+import { ChannelsSection } from "../../sandboxes/components/setup/channels-section.js";
 import {
   ConnectionsSetupSection,
   NameSection,
@@ -43,6 +44,9 @@ export function CodingAgentSetupView() {
   const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
     boolean | null
   >(null);
+  const [selectedChannels, setSelectedChannels] = useState<
+    ("slack" | "telegram")[]
+  >([]);
 
   const harnesses = useMemo(
     () =>
@@ -139,6 +143,15 @@ export function CodingAgentSetupView() {
           })
         }
         oauthReturnView={RETURN_PATH}
+      />
+      <ChannelsSection
+        selected={selectedChannels}
+        onToggle={(ch) =>
+          setSelectedChannels((prev) =>
+            prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch],
+          )
+        }
+        defaultKind="coding"
       />
     </SetupPageShell>
   );

@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -5,6 +7,7 @@ import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
+import { ChannelsSection } from "../../sandboxes/components/setup/channels-section.js";
 import {
   ConnectionsSetupSection,
   NameSection,
@@ -20,6 +23,9 @@ import { DEFAULT_KB_TEMPLATE_ID, KB_TEMPLATES } from "../lib/kb-templates.js";
 const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
 
 export function KnowledgeBaseSetupView() {
+  const [selectedChannels, setSelectedChannels] = useState<
+    ("slack" | "telegram")[]
+  >([]);
   const { form, update, reset } = useSetupForm(
     "knowledge-base",
     {
@@ -101,6 +107,15 @@ export function KnowledgeBaseSetupView() {
           })
         }
         oauthReturnView={RETURN_PATH}
+      />
+      <ChannelsSection
+        selected={selectedChannels}
+        onToggle={(ch) =>
+          setSelectedChannels((prev) =>
+            prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch],
+          )
+        }
+        defaultKind="knowledge-base"
       />
     </SetupPageShell>
   );

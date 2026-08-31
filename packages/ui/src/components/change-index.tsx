@@ -21,6 +21,24 @@ export function ChangeIndex() {
       action: () => setView("slack-cards-preview"),
     },
     {
+      label: "Coding Agent Setup",
+      description:
+        "New Channels section — optional Slack/Telegram binding during agent creation.",
+      action: () => setView("coding-agent-new"),
+    },
+    {
+      label: "Knowledge Base Setup",
+      description:
+        "New Channels section — optional Slack/Telegram binding during KB creation.",
+      action: () => setView("knowledge-base-new"),
+    },
+    {
+      label: "Experiment Setup",
+      description:
+        "New Channels section — optional Slack/Telegram binding during experiment creation.",
+      action: () => setView("experiment-new"),
+    },
+    {
       label: "Home View",
       description: "Landing page — check for any Slack-related changes.",
       action: () => setView("home"),

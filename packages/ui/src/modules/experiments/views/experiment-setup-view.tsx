@@ -1,8 +1,11 @@
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
+import { ChannelsSection } from "../../sandboxes/components/setup/channels-section.js";
 import {
   ConnectionsSetupSection,
   NameSection,
@@ -16,6 +19,9 @@ import { useCreateExperimentSandbox } from "../api/mutations.js";
 const RETURN_PATH = routeToPath({ view: "experiment-new" });
 
 export function ExperimentSetupView() {
+  const [selectedChannels, setSelectedChannels] = useState<
+    ("slack" | "telegram")[]
+  >([]);
   const { form, update, reset } = useSetupForm(
     "experiment",
     { templateId: KINDED_HARNESS_TEMPLATE_ID },
@@ -77,6 +83,15 @@ export function ExperimentSetupView() {
           })
         }
         oauthReturnView={RETURN_PATH}
+      />
+      <ChannelsSection
+        selected={selectedChannels}
+        onToggle={(ch) =>
+          setSelectedChannels((prev) =>
+            prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch],
+          )
+        }
+        defaultKind="research"
       />
     </SetupPageShell>
   );
