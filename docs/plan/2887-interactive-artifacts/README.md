@@ -74,12 +74,15 @@ sequenceDiagram
 | 08 | The bridge shim | `platform.ask` injected at render, protocol becomes internal | 06 |
 | 09 | The brief | what the cold Artifact Session needs, asked for at create | 08 |
 | 10 | Conversation binding | a page asks in the chat it belongs to; `own_session` opts out; `session_deleted` | 09 |
-| 07 | Documentation | vocabulary section + four architecture pages | 10 |
+| 11 | Every page is bound | `own_session`, the brief and self-refresh removed; unbound sessionless asks refused | 10 |
+| 07 | Documentation | vocabulary section + four architecture pages | 11 |
 
-Order is linear and runs 01 → 06, 08, 09, 10, 07. 04 is the first slice where the feature is
+Order is linear and runs 01 → 06, 08, 09, 10, 11, 07. 04 is the first slice where the feature is
 visible end to end. 08, 09 and 10 were added after 06 shipped, when using a page by hand showed
-what the protocol was missing, so 07 keeps its number and stays last: it documents what exists,
-and the later slices change what exists.
+what the protocol was missing. 11 was settled in a second grilling after using 10 by hand: the
+Artifact Session was not worth the two slices (06, 09) that existed to patch it, so 11 removes
+all three surfaces. 07 keeps its number and stays last: it documents what exists, and the later
+slices change what exists.
 
 ## Pinned contracts
 
