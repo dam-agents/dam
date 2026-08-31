@@ -39,7 +39,15 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
   const [revealedLink, setRevealedLink] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState<string | null>(null);
 
-  if (status.isPending) return null;
+  if (status.isPending) {
+    return (
+      <div className="rounded-lg border border-border p-4">
+        <p className="text-sm text-muted-foreground">
+          Loading the sharing status…
+        </p>
+      </div>
+    );
+  }
   if (status.isError) {
     return (
       <div className="rounded-lg border border-border p-4">
@@ -136,8 +144,10 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
           <Badge variant="info">Publishing…</Badge>
         ) : view.publishState === "failed" ? (
           <Badge variant="warning">Update failed</Badge>
-        ) : (
+        ) : view.snapshotCreatedAt !== null ? (
           <Badge variant="success">Shared</Badge>
+        ) : (
+          <Badge variant="info">Waiting to publish…</Badge>
         )}
         {view.documentCount !== null && (
           <span className="text-muted-foreground">
@@ -207,6 +217,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
           <>
             <Input
               readOnly
+              aria-label="Share link"
               value={revealedLink}
               size="sm"
               variant="monospace"

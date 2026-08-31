@@ -94,6 +94,7 @@ export function KbShareRootsDialog({
                 }`}
               >
                 <Checkbox
+                  aria-label={`Share ${choice.name}/`}
                   checked={!choice.missing && isSelected(choice.name)}
                   disabled={choice.missing || pending}
                   onCheckedChange={(checked) =>

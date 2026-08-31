@@ -1,3 +1,5 @@
+import type { KbShareView } from "api-server-api";
+
 import { Button } from "@/components/ui/button";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -14,10 +16,17 @@ import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
 
 function shareSubtitleNote(
   subtitle: string,
-  publishState: string | undefined,
+  share: Pick<KbShareView, "publishState" | "snapshotCreatedAt"> | undefined,
 ): string {
-  if (publishState === undefined) return subtitle;
-  const note = publishState === "failed" ? "Share update failed" : "Shared";
+  if (share === undefined) return subtitle;
+  const note =
+    share.publishState === "failed"
+      ? "Share update failed"
+      : share.publishState === "publishing"
+        ? "Share publishing…"
+        : share.snapshotCreatedAt !== null
+          ? "Shared"
+          : "Share waiting to publish";
   return subtitle ? `${subtitle} · ${note}` : note;
 }
 
@@ -25,9 +34,7 @@ export function KnowledgeBasesListView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
   const knowledgeBases = (agentsData?.list ?? []).filter(isKnowledgeBase);
   const shares = useKbShareList(knowledgeBases.length > 0);
-  const shareByAgent = new Map(
-    (shares.data ?? []).map((s) => [s.agentId, s.publishState]),
-  );
+  const shareByAgent = new Map((shares.data ?? []).map((s) => [s.agentId, s]));
 
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);

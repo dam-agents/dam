@@ -10,7 +10,7 @@ import { useConnectKnowledgeBase } from "../hooks/use-connect-knowledge-base.js"
 import { KbLinkForm } from "./kb-link-form.js";
 
 export function ConnectedKnowledgeBases({ agentId }: { agentId: string }) {
-  const connectionsQ = useAppConnections();
+  const connectionsQ = useAppConnections({ fresh: true });
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
   const form = useConnectKnowledgeBase();
@@ -64,7 +64,16 @@ export function ConnectedKnowledgeBases({ agentId }: { agentId: string }) {
         </p>
       )}
 
-      {granted.length === 0 ? (
+      {connectionsQ.isError ? (
+        <p className="text-xs text-warning">
+          Couldn't load the connected knowledge bases — reload to see the
+          current list.
+        </p>
+      ) : connectionsQ.isPending ? (
+        <p className="text-xs text-muted-foreground">
+          Loading connected knowledge bases…
+        </p>
+      ) : granted.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
           No knowledge bases connected yet. Paste a share link above and this
           agent can list, search, and read the shared content.

@@ -29,6 +29,7 @@ export function KbLinkForm({
           className="min-w-64 flex-1"
           size="sm"
           variant="monospace"
+          aria-label="Knowledge base share link"
           placeholder="kbshare_…"
           value={link}
           onChange={(e) => setLink(e.target.value)}

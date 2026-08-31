@@ -12,6 +12,7 @@ export function useKbShareList(enabled: boolean) {
   return useQuery({
     ...trpc.kbShares.list.queryOptions(),
     enabled,
+    meta: { errorToast: "Couldn't load knowledge base shares" },
   });
 }
 

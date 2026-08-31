@@ -16,7 +16,7 @@ export function ConnectedKnowledgeBasesSetup({
   connectionIds,
   onToggle,
 }: Props) {
-  const connectionsQ = useAppConnections();
+  const connectionsQ = useAppConnections({ fresh: true });
   const form = useConnectKnowledgeBase();
 
   const staged = new Set(connectionIds);
@@ -42,6 +42,13 @@ export function ConnectedKnowledgeBasesSetup({
           busy={form.busy}
           onConnect={() => form.connect((id) => onToggle(id, true))}
         />
+
+        {connectionsQ.isError && (
+          <p className="text-xs text-warning">
+            Couldn't load the knowledge bases already added — they stay selected
+            and reappear once the list loads.
+          </p>
+        )}
 
         {connected.length > 0 && (
           <div className="flex flex-col gap-2">
