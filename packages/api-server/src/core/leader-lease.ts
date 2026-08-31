@@ -18,12 +18,15 @@ import type { CoordinationV1Api, V1Lease } from "@kubernetes/client-node";
  * a campaign still awaiting the API server: it moves a generation the campaign
  * re-reads after each await, and waits for in-flight claims before deleting the
  * Lease one of them may just have written. Handler failure is a signal, not a
- * log line. A role that fails to start is rolled back and retried on later
- * ticks while its siblings keep serving, because a role failing for its own
- * reasons is no reason to drop the ones that work; only when no role at all can
- * start does the replica release the Lease and back off, so a broken replica
- * cannot squat on it. A role that fails to stop twice keeps the Lease: work this
- * replica could not prove it stopped must never be handed to another.
+ * log line. The roles start and stop together, all or none: a replica that
+ * cannot bring up everything the Lease stands for rolls back what did start,
+ * releases the Lease and backs off for whole durations, so it cannot squat on
+ * the election while unable to serve. Roles start concurrently, so one that
+ * hangs cannot keep its siblings from starting or a stand-down from running. A
+ * role that fails to stop twice is the one thing that keeps the Lease: work
+ * this replica could not prove it stopped must never be handed to another. Such
+ * a role is recorded as stopped rather than running, so a later start can bring
+ * it back, and the Lease becomes deletable again once some stop of it succeeds.
  */
 export interface LeaderRole {
   name: string;
@@ -64,8 +67,8 @@ export function createLeaderLease(opts: {
   let seen: { holder?: string; renew: string; at: number } | null = null;
   let acquireFailures = 0;
   let backoffUntil = 0;
-  let releaseFailed = false;
   const running = new Set<string>();
+  const stopFailed = new Set<string>();
 
   const read = (): Promise<V1Lease | null> =>
     leases.readNamespacedLease({ name, namespace }).catch((err: unknown) => {
@@ -74,9 +77,9 @@ export function createLeaderLease(opts: {
     });
 
   const releaseLease = async () => {
-    if (releaseFailed) {
+    if (stopFailed.size > 0) {
       log(
-        `ERROR: keeping lease ${name}: a role failed to stop twice, so this replica may still be serving`,
+        `ERROR: keeping lease ${name}: ${[...stopFailed].join(", ")} failed to stop twice, so this replica may still be serving`,
       );
       return;
     }
@@ -97,56 +100,57 @@ export function createLeaderLease(opts: {
   };
 
   const stopRole = async (role: LeaderRole) => {
+    running.delete(role.name);
     try {
       await role.onLost();
-      running.delete(role.name);
+      stopFailed.delete(role.name);
     } catch (err) {
       log(`role ${role.name} failed to stop: ${err}`);
       try {
         await role.onLost();
-        running.delete(role.name);
+        stopFailed.delete(role.name);
       } catch (retryErr) {
         log(`role ${role.name} failed to stop on retry: ${retryErr}`);
-        releaseFailed = true;
+        stopFailed.add(role.name);
       }
     }
   };
 
-  const startRoles = async (): Promise<void> => {
-    for (const role of roles) {
-      if (running.has(role.name)) continue;
-      try {
+  const stopAll = () =>
+    Promise.all(roles.filter((r) => running.has(r.name)).map(stopRole));
+
+  const startAll = async (): Promise<boolean> => {
+    const started = await Promise.allSettled(
+      roles.map(async (role) => {
         await role.onAcquired();
         running.add(role.name);
-      } catch (err) {
-        log(`role ${role.name} failed to start: ${err}`);
-        await stopRole(role);
-      }
-    }
-    if (running.size > 0) {
+      }),
+    );
+    const failed = started.flatMap((r, i) =>
+      r.status === "rejected" ? [`${roles[i]!.name}: ${r.reason}`] : [],
+    );
+    if (failed.length === 0) {
       acquireFailures = 0;
-      return;
+      return true;
     }
-    held = false;
+    log(`roles failed to start (${failed.join("; ")}); standing down`);
+    await Promise.all(roles.map(stopRole));
     acquireFailures += 1;
     backoffUntil = Date.now() + ttlMs * Math.min(acquireFailures, 4);
-    log(
-      `no role could start; standing down for ${backoffUntil - Date.now()}ms`,
-    );
-    await releaseLease();
+    return false;
   };
 
   const transitionTo = (next: boolean) => {
     transition = transition.then(async () => {
-      if (held === next) {
-        if (held) await startRoles();
+      if (held === next) return;
+      held = next;
+      if (!next) {
+        await stopAll();
         return;
       }
-      held = next;
-      if (next) await startRoles();
-      else
-        for (const role of roles)
-          if (running.has(role.name)) await stopRole(role);
+      if (await startAll()) return;
+      held = false;
+      await releaseLease();
     });
     return transition;
   };

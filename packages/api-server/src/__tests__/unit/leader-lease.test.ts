@@ -395,8 +395,8 @@ describe("leader lease", () => {
     expect(leaseApi.store.has(LEASE)).toBe(false);
   });
 
-  // TEST_SCENARIO: one role failing for its own reasons (a DB read under the channel bootstrap) must not take its siblings down with it. The holder keeps the Lease, serves what started, and retries the failed role on later ticks — the same rule the channel workers already follow for one dead transport.
-  it("keeps serving the roles that started when one role fails", async () => {
+  // TEST_SCENARIO: the roles are one unit. A replica that cannot bring up everything the Lease stands for must roll back what did start and let another replica try, rather than hold the election while half-serving.
+  it("rolls every role back and releases when one role cannot start", async () => {
     vi.useFakeTimers();
     try {
       const leaseApi = fakeLeaseApi();
@@ -425,20 +425,61 @@ describe("leader lease", () => {
       });
 
       await lease.start();
+      expect(lease.isLeader()).toBe(false);
+      expect(watchRunning).toBe(false);
+      expect(leaseApi.store.has(LEASE)).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect(channelAttempts).toBe(2);
+      expect(lease.isLeader()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(channelAttempts).toBe(3);
       expect(lease.isLeader()).toBe(true);
       expect(watchRunning).toBe(true);
-      expect(lease.isRunning("channels")).toBe(false);
-      expect(leaseApi.store.has(LEASE)).toBe(true);
-
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(channelAttempts).toBe(3);
       expect(lease.isRunning("channels")).toBe(true);
-      expect(watchRunning).toBe(true);
 
       await lease.stop();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // TEST_SCENARIO: a role whose stop could not be proven leaves the Lease held, but the role must be recorded as stopped rather than running — otherwise a later win skips starting it, reports it running, and no replica can take the work because the Lease is still held.
+  it("can restart a role whose stop failed twice", async () => {
+    const leaseApi = fakeLeaseApi();
+    let starts = 0;
+    let failStop = true;
+    const lease = createLeaderLease({
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
+      roles: [
+        {
+          name: "channels",
+          onAcquired: () => void (starts += 1),
+          onLost: () => {
+            if (failStop) throw new Error("slack gateway will not close");
+          },
+        },
+      ],
+      log: () => {},
+    });
+
+    await lease.start();
+    expect(starts).toBe(1);
+
+    await lease.stop();
+    expect(lease.isRunning("channels")).toBe(false);
+    expect(leaseApi.store.has(LEASE)).toBe(true);
+
+    await lease.start();
+    expect(starts).toBe(2);
+    expect(lease.isRunning("channels")).toBe(true);
+
+    failStop = false;
+    await lease.stop();
+    expect(leaseApi.store.has(LEASE)).toBe(false);
   });
 
   it("stands down when the K8s API is unreachable rather than acting as leader", async () => {
