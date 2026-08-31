@@ -155,7 +155,10 @@ import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
-import { createAgentInformer } from "./modules/agents/infrastructure/k8s.js";
+import {
+  createAgentInformer,
+  createLeaseApi,
+} from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -226,6 +229,7 @@ export async function bootstrap() {
   });
 
   const k8sClient = createK8sClient(api, config.namespace);
+  const leaseApi = createLeaseApi();
   const agentStateCache = startAgentStateCache({
     informer: createAgentInformer(config.namespace),
     live: k8sClient,
@@ -489,8 +493,9 @@ export async function bootstrap() {
   });
   liveEventsModule.start();
   const agentWatchLease = createLeaderLease({
-    redis: sharedRedis,
-    name: "live-events-agent-watch",
+    leases: leaseApi,
+    namespace: config.namespace,
+    name: `${config.releaseName}-live-events-agent-watch`,
     onAcquired: () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
     log: (m) => getLogger().info(`[live-events] ${m}`),
@@ -675,8 +680,9 @@ export async function bootstrap() {
   });
 
   const channelLease = createLeaderLease({
-    redis: sharedRedis,
-    name: "channels",
+    leases: leaseApi,
+    namespace: config.namespace,
+    name: `${config.releaseName}-channels`,
     onAcquired: async () => {
       const channelsByInstance = await listChannelsByOwner(db, "")();
       await channelManager.bootstrap(channelsByInstance);

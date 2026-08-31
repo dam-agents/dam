@@ -71,6 +71,13 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Leader election for the work that must have one holder install-wide (the
+  # channel workers, the live-events agent watch): one Lease per role, created
+  # and renewed by the holder and deleted when it stands down. Same primitive
+  # and namespace the controller elects on.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
   # No persistentvolumeclaims: the controller owns the PVC lifecycle.
   # No pods: reachability is the Agent's Ready condition, a crashed pod is the
   # restart count the controller publishes on that same status, and restarting

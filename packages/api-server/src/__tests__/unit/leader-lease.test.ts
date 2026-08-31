@@ -1,38 +1,76 @@
 import { describe, it, expect, vi } from "vitest";
-import type { Redis } from "ioredis";
+import type { CoordinationV1Api, V1Lease } from "@kubernetes/client-node";
 import { createLeaderLease } from "../../core/leader-lease.js";
 
-function fakeRedis(): Redis & { store: Map<string, string> } {
-  const store = new Map<string, string>();
+type FakeLeaseApi = CoordinationV1Api & { store: Map<string, V1Lease> };
+
+const status = (code: number) =>
+  Object.assign(new Error(`status ${code}`), { code });
+
+function fakeLeaseApi(): FakeLeaseApi {
+  const store = new Map<string, V1Lease>();
+  let revision = 0;
+  const persist = (name: string, body: V1Lease) => {
+    const stored = {
+      ...body,
+      metadata: { ...body.metadata, resourceVersion: String(++revision) },
+    };
+    store.set(name, stored);
+    return structuredClone(stored);
+  };
   return {
     store,
-    async set(
-      key: string,
-      value: string,
-      _px: string,
-      _ttl: number,
-      nx: string,
-    ) {
-      if (nx === "NX" && store.has(key)) return null;
-      store.set(key, value);
-      return "OK";
+    async readNamespacedLease({ name }: { name: string }) {
+      const lease = store.get(name);
+      if (!lease) throw status(404);
+      return structuredClone(lease);
     },
-    async eval(script: string, _n: number, key: string, id: string) {
-      if (store.get(key) !== id) return 0;
-      if (script.includes("DEL")) store.delete(key);
-      return 1;
+    async createNamespacedLease({ body }: { body: V1Lease }) {
+      const name = body.metadata?.name ?? "";
+      if (store.has(name)) throw status(409);
+      return persist(name, body);
     },
-  } as unknown as Redis & { store: Map<string, string> };
+    async replaceNamespacedLease({
+      name,
+      body,
+    }: {
+      name: string;
+      body: V1Lease;
+    }) {
+      const current = store.get(name);
+      if (!current) throw status(404);
+      if (current.metadata?.resourceVersion !== body.metadata?.resourceVersion)
+        throw status(409);
+      return persist(name, body);
+    },
+    async deleteNamespacedLease({
+      name,
+      body,
+    }: {
+      name: string;
+      body?: { preconditions?: { resourceVersion?: string } };
+    }) {
+      const current = store.get(name);
+      if (!current) throw status(404);
+      const expected = body?.preconditions?.resourceVersion;
+      if (expected && current.metadata?.resourceVersion !== expected)
+        throw status(409);
+      store.delete(name);
+    },
+  } as unknown as FakeLeaseApi;
 }
+
+const LEASE = "platform-channels";
 
 describe("leader lease", () => {
   it("elects exactly one holder among replicas campaigning at once", async () => {
-    const redis = fakeRedis();
+    const leaseApi = fakeLeaseApi();
     const acquired: string[] = [];
     const leases = ["a", "b", "c"].map((name) =>
       createLeaderLease({
-        redis,
-        name: "channels",
+        leases: leaseApi,
+        namespace: "platform-agents",
+        name: LEASE,
         onAcquired: () => void acquired.push(name),
         onLost: () => {},
         log: () => {},
@@ -48,12 +86,13 @@ describe("leader lease", () => {
   });
 
   it("hands the lease to another replica when the holder stops", async () => {
-    const redis = fakeRedis();
+    const leaseApi = fakeLeaseApi();
     const events: string[] = [];
     const make = (name: string) =>
       createLeaderLease({
-        redis,
-        name: "channels",
+        leases: leaseApi,
+        namespace: "platform-agents",
+        name: LEASE,
         onAcquired: () => void events.push(`+${name}`),
         onLost: () => void events.push(`-${name}`),
         log: () => {},
@@ -66,7 +105,7 @@ describe("leader lease", () => {
     expect(events).toEqual(["+a"]);
 
     await first.stop();
-    expect(redis.store.has("leader:channels")).toBe(false);
+    expect(leaseApi.store.has(LEASE)).toBe(false);
 
     await second.start();
     expect(events).toEqual(["+a", "-a", "+b"]);
@@ -74,12 +113,51 @@ describe("leader lease", () => {
     await second.stop();
   });
 
+  // TEST_SCENARIO: a challenger must not steal a Lease whose holder is still renewing it, and the wait it applies is measured on its own clock — the holder's renewTime comes from another node, whose clock differs.
+  it("takes over a foreign lease only after a full duration of no renewal", async () => {
+    vi.useFakeTimers();
+    try {
+      const leaseApi = fakeLeaseApi();
+      leaseApi.store.set(LEASE, {
+        metadata: { name: LEASE, resourceVersion: "1" },
+        spec: {
+          holderIdentity: "a-dead-replica",
+          leaseDurationSeconds: 30,
+          renewTime: new Date(),
+        },
+      });
+      const lease = createLeaderLease({
+        leases: leaseApi,
+        namespace: "platform-agents",
+        name: LEASE,
+        onAcquired: () => {},
+        onLost: () => {},
+        log: () => {},
+      });
+
+      await lease.start();
+      expect(lease.isLeader()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(lease.isLeader()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(lease.isLeader()).toBe(true);
+      expect(leaseApi.store.get(LEASE)?.spec?.leaseTransitions).toBe(1);
+
+      await lease.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("releases the lease when onAcquired fails, so another replica can win", async () => {
-    const redis = fakeRedis();
+    const leaseApi = fakeLeaseApi();
     const events: string[] = [];
     const broken = createLeaderLease({
-      redis,
-      name: "channels",
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
       onAcquired: () => {
         events.push("+a");
         throw new Error("slack gateway failed to connect");
@@ -88,8 +166,9 @@ describe("leader lease", () => {
       log: () => {},
     });
     const healthy = createLeaderLease({
-      redis,
-      name: "channels",
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
       onAcquired: () => void events.push("+b"),
       onLost: () => void events.push("-b"),
       log: () => {},
@@ -97,7 +176,7 @@ describe("leader lease", () => {
 
     await broken.start();
     expect(broken.isLeader()).toBe(false);
-    expect(redis.store.has("leader:channels")).toBe(false);
+    expect(leaseApi.store.has(LEASE)).toBe(false);
 
     await healthy.start();
     expect(healthy.isLeader()).toBe(true);
@@ -107,15 +186,15 @@ describe("leader lease", () => {
     await healthy.stop();
   });
 
-  // TEST_SCENARIO: one transient renew error must not cost the install a holder; the second stands down and releases the key so takeover beats the TTL.
+  // TEST_SCENARIO: one transient renew error must not cost the install a holder; the second stands down and deletes the Lease so takeover beats the duration.
   it("tolerates one renew blip, stands down and releases on the second", async () => {
     vi.useFakeTimers();
     try {
-      const redis = fakeRedis();
-      const realEval = redis.eval.bind(redis);
+      const leaseApi = fakeLeaseApi();
       const lease = createLeaderLease({
-        redis,
-        name: "channels",
+        leases: leaseApi,
+        namespace: "platform-agents",
+        name: LEASE,
         onAcquired: () => {},
         onLost: () => {},
         log: () => {},
@@ -123,20 +202,20 @@ describe("leader lease", () => {
       await lease.start();
       expect(lease.isLeader()).toBe(true);
 
-      redis.eval = ((script: string, ...args: unknown[]) => {
-        if (script.includes("PEXPIRE"))
-          return Promise.reject(new Error("ETIMEDOUT"));
-        return realEval(script, ...(args as [number, string, string]));
-      }) as Redis["eval"];
+      const realReplace = leaseApi.replaceNamespacedLease.bind(leaseApi);
+      leaseApi.replaceNamespacedLease = (() =>
+        Promise.reject(
+          new Error("ETIMEDOUT"),
+        )) as CoordinationV1Api["replaceNamespacedLease"];
 
       await vi.advanceTimersByTimeAsync(10_000);
       expect(lease.isLeader()).toBe(true);
 
       await vi.advanceTimersByTimeAsync(10_000);
       expect(lease.isLeader()).toBe(false);
-      expect(redis.store.has("leader:channels")).toBe(false);
+      expect(leaseApi.store.has(LEASE)).toBe(false);
 
-      redis.eval = realEval as Redis["eval"];
+      leaseApi.replaceNamespacedLease = realReplace;
       await lease.stop();
     } finally {
       vi.useRealTimers();
@@ -145,11 +224,12 @@ describe("leader lease", () => {
 
   // TEST_SCENARIO: a failed teardown must not leave the ex-leader's workers running lease-less forever — onLost gets one retry.
   it("retries a failed onLost once", async () => {
-    const redis = fakeRedis();
+    const leaseApi = fakeLeaseApi();
     let lostCalls = 0;
     const lease = createLeaderLease({
-      redis,
-      name: "channels",
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
       onAcquired: () => {},
       onLost: () => {
         lostCalls += 1;
@@ -162,14 +242,15 @@ describe("leader lease", () => {
 
     await lease.stop();
     expect(lostCalls).toBe(2);
-    expect(redis.store.has("leader:channels")).toBe(false);
+    expect(leaseApi.store.has(LEASE)).toBe(false);
   });
 
-  it("stands down when Redis is unreachable rather than acting as leader", async () => {
-    const redis = fakeRedis();
+  it("stands down when the K8s API is unreachable rather than acting as leader", async () => {
+    const leaseApi = fakeLeaseApi();
     const lease = createLeaderLease({
-      redis,
-      name: "channels",
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
       onAcquired: () => {},
       onLost: () => {},
       log: () => {},
@@ -177,7 +258,9 @@ describe("leader lease", () => {
     await lease.start();
     expect(lease.isLeader()).toBe(true);
 
-    vi.spyOn(redis, "eval").mockRejectedValue(new Error("ECONNREFUSED"));
+    vi.spyOn(leaseApi, "readNamespacedLease").mockRejectedValue(
+      new Error("ECONNREFUSED"),
+    );
     await lease.stop();
     expect(lease.isLeader()).toBe(false);
   });
