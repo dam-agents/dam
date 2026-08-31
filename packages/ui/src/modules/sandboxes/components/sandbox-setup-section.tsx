@@ -117,6 +117,8 @@ export function SandboxSetupSection({ f }: Props) {
               valueAsNumber: true,
             })}
             value={f.hibernationTimeoutMin}
+            onModeChange={f.setHibernationTimeout}
+            agentSize={agent.size}
             error={f.errors.hibernationTimeoutMin?.message}
             disabled={f.saving}
           />

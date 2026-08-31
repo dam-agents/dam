@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { HibernationTimeoutField } from "../../sandboxes/components/hibernation-timeout-field.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
@@ -43,6 +46,7 @@ export function CodingAgentSetupView() {
   const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
     boolean | null
   >(null);
+  const [hibernationTimeout, setHibernationTimeout] = useState(60);
 
   const harnesses = useMemo(
     () =>
@@ -140,6 +144,25 @@ export function CodingAgentSetupView() {
         }
         oauthReturnView={RETURN_PATH}
       />
+
+      <section className="mb-8">
+        <SectionLabel spaced>Lifecycle</SectionLabel>
+        <Callout inset>
+          <HibernationTimeoutField
+            register={{
+              name: "hibernationTimeoutMin",
+              onChange: async (e: { target: { value: string } }) => {
+                setHibernationTimeout(Number(e.target.value) || 0);
+              },
+              onBlur: async () => {},
+              ref: () => {},
+            }}
+            value={hibernationTimeout}
+            onModeChange={setHibernationTimeout}
+            agentSize={{ cpu: "2000m", memory: "2Gi" }}
+          />
+        </Callout>
+      </section>
     </SetupPageShell>
   );
 }

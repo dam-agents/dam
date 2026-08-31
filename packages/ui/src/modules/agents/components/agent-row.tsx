@@ -78,6 +78,11 @@ export function AgentRow({
               {kindBadge.label}
             </Badge>
           )}
+          {agent.hibernationTimeoutMin === 0 && display.state === "running" && (
+            <Badge variant="accent" className="shrink-0">
+              Always-on
+            </Badge>
+          )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">

@@ -20,7 +20,8 @@ type ParameterlessView =
   | "experiments"
   | "experiment-new"
   | "knowledge-base-new"
-  | "knowledge-bases";
+  | "knowledge-bases"
+  | "showcase";
 
 export interface NavigationSlice {
   view: View;

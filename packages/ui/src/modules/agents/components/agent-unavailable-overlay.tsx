@@ -1,4 +1,4 @@
-import { Asleep, Play, Renew, Warning } from "@carbon/icons-react";
+import { ArrowLeft, Asleep, Play, Renew, Warning } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,9 @@ import type {
   AgentDisplay,
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
+import { AlwaysOnPrompt } from "./always-on-prompt.js";
 import { OverlayFrame } from "./overlay-frame.js";
+import { StartupLayoutPicker } from "./startup-layout-variants.js";
 import { StartupTip } from "./startup-tip.js";
 
 interface OverlayCopy {
@@ -94,6 +96,23 @@ export function AgentUnavailableOverlay({
       ? agent.error
       : OVERLAY_COPY[state].description;
 
+  if (!Icon && state === "starting") {
+    return (
+      <div className="absolute inset-0 z-overlay flex flex-col bg-background/95 backdrop-blur-sm">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Back"
+          onClick={onBack}
+          className="absolute left-1 top-0 z-50 text-muted-foreground hover:bg-transparent md:hidden"
+        >
+          <ArrowLeft size={14} />
+        </Button>
+        <StartupLayoutPicker agent={agent} state={state} />
+      </div>
+    );
+  }
+
   return (
     <OverlayFrame onBack={onBack}>
       {Icon ? (
@@ -114,9 +133,12 @@ export function AgentUnavailableOverlay({
         </p>
       )}
       {powerAction === "start" && (
-        <Button onClick={() => wake(agent.id)}>
-          <Play size={14} /> Start agent
-        </Button>
+        <>
+          <Button onClick={() => wake(agent.id)}>
+            <Play size={14} /> Start agent
+          </Button>
+          {state === "hibernated" && <AlwaysOnPrompt agentId={agent.id} />}
+        </>
       )}
       {powerAction === "restart" && (
         <Button onClick={() => restart(agent.id)} disabled={restarting}>

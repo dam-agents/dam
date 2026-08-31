@@ -4,6 +4,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -170,13 +171,71 @@ export function ChatInput({
   }, [key, clearDraft, onSend]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (scheduleSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedSuggestion((i) =>
+          i < scheduleSuggestions.length - 1 ? i + 1 : 0,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedSuggestion((i) =>
+          i > 0 ? i - 1 : scheduleSuggestions.length - 1,
+        );
+        return;
+      }
+      if (
+        (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) &&
+        selectedSuggestion >= 0
+      ) {
+        e.preventDefault();
+        const suggestion = scheduleSuggestions[selectedSuggestion];
+        if (key && suggestion) {
+          setDraft(key, { text: suggestion.prompt });
+          setSelectedSuggestion(-1);
+        }
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !isMobile()) {
       e.preventDefault();
       send();
     }
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message...";
+  const IDLE_PLACEHOLDERS = useMemo(
+    () => [
+      "Message...",
+      'Try: "Schedule this to run every morning"',
+      "Message...",
+      'Try: "Run this on a cron at 9am weekdays"',
+      "Message...",
+    ],
+    [],
+  );
+
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  useEffect(() => {
+    if (isComputing || input.length > 0) return;
+    const id = setInterval(
+      () => setPlaceholderIdx((i) => (i + 1) % IDLE_PLACEHOLDERS.length),
+      4000,
+    );
+    return () => clearInterval(id);
+  }, [isComputing, input.length, IDLE_PLACEHOLDERS.length]);
+
+  const placeholder = isComputing
+    ? "Queue a message..."
+    : IDLE_PLACEHOLDERS[placeholderIdx];
+
+  const scheduleSuggestions = useScheduleSuggestions(input);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(-1);
+
+  useEffect(() => {
+    setSelectedSuggestion(-1);
+  }, [scheduleSuggestions.length]);
 
   return (
     <div
@@ -196,6 +255,18 @@ export function ChatInput({
             e.target.value = "";
           }}
         />
+        {scheduleSuggestions.length > 0 && (
+          <ScheduleSuggestionsDropdown
+            suggestions={scheduleSuggestions}
+            selected={selectedSuggestion}
+            onSelect={(prompt) => {
+              if (!key) return;
+              setDraft(key, { text: prompt });
+              setSelectedSuggestion(-1);
+              textareaRef.current?.focus();
+            }}
+          />
+        )}
         <div
           className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
         >
@@ -301,6 +372,105 @@ function AttachmentChip({
       >
         <Close size={10} />
       </Button>
+    </div>
+  );
+}
+
+interface ScheduleSuggestion {
+  label: string;
+  prompt: string;
+  description: string;
+}
+
+const SCHEDULE_COMPLETIONS: ScheduleSuggestion[] = [
+  {
+    label: "Run every morning",
+    prompt: "Schedule this to run every morning at 9am",
+    description: "Daily at 9:00 AM",
+  },
+  {
+    label: "Run on weekdays",
+    prompt: "Schedule this to run every weekday at 8am",
+    description: "Mon–Fri at 8:00 AM",
+  },
+  {
+    label: "Run every hour",
+    prompt: "Schedule this to run every hour",
+    description: "Repeating hourly",
+  },
+  {
+    label: "Run once a week",
+    prompt: "Schedule this to run every Monday at 9am",
+    description: "Weekly on Monday",
+  },
+  {
+    label: "Custom schedule",
+    prompt: "I'd like to set up a custom schedule — ",
+    description: "Describe any cadence in plain language",
+  },
+];
+
+const TRIGGER_PATTERNS = [
+  /\bschedul/i,
+  /\bcron\b/i,
+  /\bevery\s/i,
+  /\bdaily\b/i,
+  /\bweekly\b/i,
+  /\brecurr/i,
+  /\brepeat/i,
+  /\brun\s+(this|it|agent)\b/i,
+  /\bautomat/i,
+];
+
+function useScheduleSuggestions(input: string): ScheduleSuggestion[] {
+  return useMemo(() => {
+    const trimmed = input.trim();
+    if (trimmed.length < 3) return [];
+    if (TRIGGER_PATTERNS.some((p) => p.test(trimmed))) {
+      return SCHEDULE_COMPLETIONS;
+    }
+    return [];
+  }, [input]);
+}
+
+function ScheduleSuggestionsDropdown({
+  suggestions,
+  selected,
+  onSelect,
+}: {
+  suggestions: ScheduleSuggestion[];
+  selected: number;
+  onSelect: (prompt: string) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-background shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-1 duration-150">
+      <div className="px-3 py-2 border-b border-border">
+        <span className="text-xs font-medium text-muted-foreground">
+          Scheduling — describe any cadence, or pick one:
+        </span>
+      </div>
+      <div className="py-1">
+        {suggestions.map((s, i) => (
+          <button
+            key={s.label}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onSelect(s.prompt);
+            }}
+            className={cn(
+              "w-full text-left px-3 py-2 flex items-baseline justify-between gap-3 transition-colors",
+              i === selected
+                ? "bg-accent-light/50 text-foreground"
+                : "text-foreground hover:bg-muted",
+            )}
+          >
+            <span className="text-sm">{s.label}</span>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {s.description}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

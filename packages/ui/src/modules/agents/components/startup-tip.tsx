@@ -1,7 +1,6 @@
 import { Idea } from "@carbon/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
 import { startupTips } from "../startup-tips.js";
@@ -62,35 +61,30 @@ export function StartupTip({ sandbox }: { sandbox: string }) {
   }, [tips.length]);
 
   return (
-    <Callout
+    <div
       className={cn(
-        "w-full max-w-120 min-h-22 p-5 text-left motion-safe:transition-opacity duration-600",
+        "flex w-full max-w-120 min-h-22 items-start gap-3 text-left motion-safe:transition-opacity duration-600",
         revealed ? "opacity-100" : "opacity-0 motion-reduce:opacity-100",
       )}
     >
-      <div className="flex items-start gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <Idea size={16} className="text-foreground" />
-        </span>
-        {}
-        <div className="grid flex-1">
-          {tips.map((tip, i) => (
-            <p
-              key={tip}
-              aria-hidden={i !== index}
-              className={cn(
-                "col-start-1 row-start-1 text-sm leading-relaxed text-muted-foreground motion-safe:transition-opacity",
-                i === index && shown
-                  ? "opacity-100 duration-600"
-                  : "pointer-events-none select-none opacity-0 duration-300",
-                i === index && "motion-reduce:opacity-100",
-              )}
-            >
-              {render(tip)}
-            </p>
-          ))}
-        </div>
+      <Idea size={16} className="mt-0.5 shrink-0 text-muted-foreground/50" />
+      <div className="grid flex-1">
+        {tips.map((tip, i) => (
+          <p
+            key={tip}
+            aria-hidden={i !== index}
+            className={cn(
+              "col-start-1 row-start-1 text-sm leading-relaxed text-muted-foreground motion-safe:transition-opacity",
+              i === index && shown
+                ? "opacity-100 duration-600"
+                : "pointer-events-none select-none opacity-0 duration-300",
+              i === index && "motion-reduce:opacity-100",
+            )}
+          >
+            {render(tip)}
+          </p>
+        ))}
       </div>
-    </Callout>
+    </div>
   );
 }

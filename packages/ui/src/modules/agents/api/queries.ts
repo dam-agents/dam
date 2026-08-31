@@ -74,6 +74,8 @@ export function useIsAgentOperable(agentId: string | null): boolean {
   const unreachable = useStore((s) =>
     agentId ? s.unreachableAgents.has(agentId) : false,
   );
+  if ((window as { __MOCK_MODE__?: boolean }).__MOCK_MODE__)
+    return runState === "running";
   return runState === "running" && !restarting && !pausing && !unreachable;
 }
 
@@ -84,7 +86,13 @@ function isDeniedAgentRead(error: unknown): boolean {
 
 export function useIsAgentInaccessible(agentId: string | null): boolean {
   const { error } = useQuery({
-    ...trpc.agents.get.queryOptions(agentId ? { id: agentId } : skipToken),
+    ...trpc.agents.get.queryOptions(
+      (window as { __MOCK_MODE__?: boolean }).__MOCK_MODE__
+        ? skipToken
+        : agentId
+          ? { id: agentId }
+          : skipToken,
+    ),
     retry: false,
   });
   return isDeniedAgentRead(error);

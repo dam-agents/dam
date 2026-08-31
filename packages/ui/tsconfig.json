@@ -3,13 +3,24 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "allowImportingTsExtensions": true,
     "moduleDetection": "force",
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./src/*"]
-    }
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

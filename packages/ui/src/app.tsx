@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
@@ -14,6 +14,7 @@ import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
+import { ShowcaseView } from "./modules/home/views/showcase-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
@@ -139,6 +140,8 @@ function MainApp() {
                 <KnowledgeBasesListView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
+              ) : view === "showcase" ? (
+                <ShowcaseView />
               ) : (
                 <HomeView />
               )}
@@ -150,6 +153,99 @@ function MainApp() {
       <ConnectionBanner />
       <FloatingApprovalsPill />
       <DocsLauncher />
+      <ChangesIndex />
     </div>
+  );
+}
+
+function ChangesIndex() {
+  const [open, setOpen] = useState(false);
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
+  const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+
+  const items: {
+    label: string;
+    where: string;
+    go: () => void;
+  }[] = [
+    {
+      label: "Always-on badge on agent row",
+      where: "Home — Deploy Bot row",
+      go: () => setView("home"),
+    },
+    {
+      label: "Compute widget — hover/fade + always-on hover card",
+      where: "Home sidebar — hover bar cells or groups; hover lightning bolt",
+      go: () => setView("home"),
+    },
+    {
+      label: "Startup overlay — 2 layout options (A–B toggle)",
+      where: "Click into Code Review agent (starting)",
+      go: () => selectAgent("agent-review"),
+    },
+    {
+      label: "Lifecycle toggle (configure page)",
+      where: "Any agent → overflow menu → Configure → Lifecycle",
+      go: () => navigateToSandboxHome("agent-deploy", "setup"),
+    },
+    {
+      label: "Lifecycle toggle (create flow)",
+      where: "Coding agents → /coding-agents/new → scroll down",
+      go: () => setView("coding-agent-new"),
+    },
+    {
+      label: "Lifecycle toggle (home create flow)",
+      where: "Home → + New agent → Configure step",
+      go: () => setView("home"),
+    },
+    {
+      label: "Card showcase (isolated)",
+      where: "Standalone page",
+      go: () => setView("showcase"),
+    },
+  ];
+
+  if (view === "showcase") return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="fixed right-5 bottom-5 z-50 flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-medium text-muted-foreground shadow-lg transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {open ? "Close" : "Changes index"}
+      </button>
+
+      {open && (
+        <div className="fixed right-5 bottom-16 z-50 w-[360px] rounded-xl border border-border bg-card p-4 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <p className="text-sm font-semibold text-foreground mb-3">
+            Never-hibernate discovery — all changes
+          </p>
+          <div className="space-y-1">
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => {
+                  item.go();
+                  setOpen(false);
+                }}
+                className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted"
+              >
+                <span className="text-sm font-medium text-foreground">
+                  {item.label}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {item.where}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

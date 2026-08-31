@@ -202,6 +202,8 @@ export function useSandboxSettingsForm() {
     egressStaged,
     inheritedEnvs,
     hibernationTimeoutMin,
+    setHibernationTimeout: (min: number) =>
+      setValue("hibernationTimeoutMin", min, { shouldDirty: true }),
     sizeCpuMilli: watch("sizeCpuMilli"),
     sizeMemoryMi: watch("sizeMemoryMi"),
     setSize: (patch: { sizeCpuMilli?: number; sizeMemoryMi?: number }) => {

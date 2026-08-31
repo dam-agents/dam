@@ -11,6 +11,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
 import { rememberReturnPath } from "./lib/return-path.js";
+import { seedMockData } from "./mock-data.js";
 import {
   parsePublicAgentPath,
   routeToPath,
@@ -20,24 +21,74 @@ import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
 async function main() {
-  const publicAgentId = parsePublicAgentPath(window.location.pathname);
-  if (publicAgentId !== null) {
+  if (import.meta.env.VITE_MOCK) {
+    try {
+      const { worker } = await import("./mock/browser.js");
+      await worker.start({ onUnhandledRequest: "warn" });
+    } catch (err) {
+      console.error("[mock] MSW failed to start:", err);
+    }
     await loadBrand().then(applyBrand);
-    const { renderPublicAgentPage } = await import("./public-agent-page.js");
-    await renderPublicAgentPage(publicAgentId);
+    const { default: App } = await import("./app.js");
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <App />
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
     return;
   }
 
-  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
-  if (!user) return;
+  const mockMode = true;
 
-  if (!(await preflightTermsGate())) {
-    rememberReturnPath("terms");
-    window.history.replaceState({}, "", routeToPath({ view: "terms" }));
+  if (!mockMode) {
+    const publicAgentId = parsePublicAgentPath(window.location.pathname);
+    if (publicAgentId !== null) {
+      await loadBrand().then(applyBrand);
+      const { renderPublicAgentPage } = await import("./public-agent-page.js");
+      await renderPublicAgentPage(publicAgentId);
+      return;
+    }
+
+    const [user] = await Promise.all([
+      initAuth(),
+      loadBrand().then(applyBrand),
+    ]);
+    if (!user) return;
+
+    if (!(await preflightTermsGate())) {
+      rememberReturnPath("terms");
+      window.history.replaceState({}, "", routeToPath({ view: "terms" }));
+    }
+
+    startDraftSync(user.profile.sub);
+  } else {
+    (window as { __MOCK_MODE__?: boolean }).__MOCK_MODE__ = true;
+    const brand = await loadBrand();
+    applyBrand(brand);
+    seedMockData();
+    if (window.location.pathname === "/") {
+      window.history.replaceState(null, "", "/");
+    }
   }
 
   useStore.getState().hydrateRoute();
-  startDraftSync(user.profile.sub);
+
+  if (mockMode) {
+    const route = window.location.pathname.match(/^\/chat\/([^/]+)/);
+    if (route) {
+      useStore.setState({
+        selectedAgent: decodeURIComponent(route[1]),
+        view: "chat",
+      });
+    } else {
+      useStore.setState({ view: "home" });
+    }
+  }
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

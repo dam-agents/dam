@@ -1,9 +1,13 @@
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useFeed } from "../api/queries.js";
 import { ComputeWidget } from "../components/compute-widget.js";
+import { CreateAgentFlow } from "../components/create-agent-flow.js";
 import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
 import { FeedFilterBar } from "../components/feed-filter-bar.js";
@@ -47,6 +51,7 @@ export function HomeView() {
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
     () => new Set(FEED_SOURCES),
   );
+  const [creating, setCreating] = useState(false);
 
   if (loadingAgents) {
     return (
@@ -96,7 +101,13 @@ export function HomeView() {
 
   return (
     <div>
-      <HomeGreeting title="Activity" />
+      {creating && <CreateAgentFlow onClose={() => setCreating(false)} />}
+      <div className="flex items-start justify-between">
+        <HomeGreeting title="Activity" />
+        <Button onClick={() => setCreating(true)} className="mt-2">
+          <Add size={16} /> Create agent
+        </Button>
+      </div>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
           <div className="flex w-full items-center justify-between">
