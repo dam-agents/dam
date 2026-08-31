@@ -12,6 +12,7 @@ import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { AgentsView } from "./modules/agents/views/agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
+import { PacksView } from "./modules/packs/views/packs-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
@@ -110,7 +111,9 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
+                view === "home" || view === "packs"
+                  ? "max-w-[1200px]"
+                  : "max-w-[960px]",
               )}
             >
               {view === "home" ? (
@@ -121,6 +124,8 @@ function MainApp() {
                 <SettingsView />
               ) : view === "agents" ? (
                 <AgentsView />
+              ) : view === "packs" ? (
+                <PacksView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (
