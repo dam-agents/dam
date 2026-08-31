@@ -1,0 +1,15 @@
+{
+  "name": "bench",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "commander": "^14.0.0",
+    "dev-config": "workspace:*",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "ws": "^8.18.3"
+  }
+}
