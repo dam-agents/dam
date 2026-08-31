@@ -8,10 +8,6 @@ USER root
 # would go stale on template upgrade); install by name — a bare `mise install`
 # would also preinstall every lazy tool from the base image's /etc/mise/config.toml
 COPY --chown=65532:0 harness-tools.toml /etc/mise/conf.d/harness-tools.toml
-# Installed as the agent user rather than by root with a chown after: mise
-# writes the install dir and the lockfile owned by the runtime user from the
-# start, so a newly pinned tool cannot be left out of a chown list. Everything
-# it writes to — /etc/mise and MISE_DATA_DIR — is agent-owned in the base image.
 USER 65532
 RUN --mount=type=cache,target=/tmp/npm-cache,uid=65532 \
     --mount=type=cache,target=/tmp/mise-cache,uid=65532 \

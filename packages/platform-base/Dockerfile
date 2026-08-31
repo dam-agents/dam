@@ -140,12 +140,6 @@ COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
 # has no execute bit, which is just a different way to break the import.
 COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/platform-python/experiment_sdk.py
 RUN chmod 0755 /usr/local/lib/platform-python
-# These shims sit at the very end of PATH and serve exactly one call per tool:
-# the install they perform fires mise's postinstall hook, which links the real
-# binary into tool-bin at the front of PATH, so every later call resolves there
-# and never reaches this directory again. MISE_AUTO_INSTALL=false keeps that one
-# call to the tool that was asked for, instead of bulk-installing every other
-# configured-but-absent tool.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
     for spec in uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
@@ -153,15 +147,6 @@ RUN set -eu; \
     printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
-# tool-bin is created and handed to the agent user *before* the install: mise's
-# postinstall hook (see mise.toml) links every installed tool's real binary into
-# it — here for the image's own tools, and again whenever the agent installs a
-# tool at runtime. The trailing test fails the build if the hook ever stops
-# firing, which would otherwise show up only as a slow agent.
-# MISE_CACHE_DIR: HOME is /tmp in this image, so mise would otherwise ignore the
-# cache mount and leave a root-owned /tmp/.cache behind — build residue that a
-# derived image's agent-user install then cannot write into. Same for the state
-# dir it tracks configs in; /tmp is an emptyDir at runtime, so both are dropped.
 RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
     mkdir /usr/local/share/tool-bin; chown 65532 /usr/local/share/tool-bin; \
     MISE_CACHE_DIR=/root/.cache/mise mise install jq fd rg gh; \
