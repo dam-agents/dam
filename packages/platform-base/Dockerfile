@@ -140,14 +140,17 @@ COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
 # has no execute bit, which is just a different way to break the import.
 COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/platform-python/experiment_sdk.py
 RUN chmod 0755 /usr/local/lib/platform-python
-# The chmod restores world-readability: mise rewrites the lock 0600, which
-# would lock the runtime agent user out after a root-run install in a derived
-# image build — an unreadable lock degrades every shim call to API lookups.
+# These shims sit at the very end of PATH and serve exactly one call per tool:
+# the install they perform fires mise's postinstall hook, which links the real
+# binary into tool-bin at the front of PATH, so every later call resolves there
+# and never reaches this directory again. MISE_AUTO_INSTALL=false keeps that one
+# call to the tool that was asked for, instead of bulk-installing every other
+# configured-but-absent tool.
 RUN set -eu; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
     for spec in uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nreal=$(mise which %s 2>/dev/null)\n[ -x "$real" ] && exec "$real" "$@"\nexec mise exec %s -- %s "$@"\n' "$tool" "$bin" "$tool" "$bin" > "$bin"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
 # tool-bin is created and handed to the agent user *before* the install: mise's
