@@ -13,8 +13,7 @@ RUN --mount=type=cache,target=/root/.npm \
     chown -R 65532 /etc/mise \
       "$(dirname "$(mise where npm:@earendil-works/pi-coding-agent)")" \
       "$(dirname "$(mise where npm:pi-acp)")" \
-      "$(dirname "$(mise where npm:@zhafron/pi-memory)")" &&\
-    find /etc/mise -name '*.lock' -exec chmod 644 {} +
+      "$(dirname "$(mise where npm:@zhafron/pi-memory)")"
 
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal

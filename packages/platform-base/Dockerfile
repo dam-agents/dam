@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/mise \
     set -eu; \
     mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
     cd /tmp/lockgen; mise trust -q; mise lock; \
-    cp mise.lock /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; rm -r /tmp/lockgen
+    cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
 RUN --mount=type=cache,target=/root/.cache/mise mise install node
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
@@ -162,7 +162,7 @@ RUN --mount=type=cache,target=/root/.cache/mise set -eu; \
     mkdir /usr/local/share/tool-bin; chown 65532 /usr/local/share/tool-bin; \
     mise install jq fd rg gh; \
     for t in jq fd rg gh; do chown -R 65532 "/usr/local/share/mise/installs/$t"; done; \
-    chown 65532 /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; \
+    chown 65532 /etc/mise/mise.lock; \
     test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal

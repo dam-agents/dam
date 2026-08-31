@@ -12,8 +12,7 @@ RUN --mount=type=cache,target=/root/.npm \
     mise install "npm:@openai/codex" "npm:@zed-industries/codex-acp" &&\
     chown -R 65532 /etc/mise \
       "$(dirname "$(mise where npm:@openai/codex)")" \
-      "$(dirname "$(mise where npm:@zed-industries/codex-acp)")" &&\
-    find /etc/mise -name '*.lock' -exec chmod 644 {} +
+      "$(dirname "$(mise where npm:@zed-industries/codex-acp)")"
 
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal

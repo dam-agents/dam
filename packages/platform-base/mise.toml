@@ -27,8 +27,22 @@ oc = "latest"
 # project's pinned versions into this machine-wide dir; the system and the
 # user's global config are still both in scope. Non-executables and the
 # subdirectories some archives unpack next to their binary (fd ships a README
-# and an autocomplete/ dir in its bin path) are filtered out. Best-effort: a
-# link that cannot be written is a startup-latency wart, never a failed install
-# — mise only warns when a hook exits non-zero. `if`, not `[ ... ] && ln`: mise
-# runs the hook under `sh -o errexit`, where a skipped file would end the loop.
-postinstall = 'mkdir -p /usr/local/share/tool-bin && mise bin-paths -C /etc/mise | while read -r d; do for f in "$d"/*; do if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi; done; done'
+# and an autocomplete/ dir in its bin path) are filtered out. `if`, not
+# `[ ... ] && ln`: mise runs the hook under `sh -o errexit`, where a skipped
+# file would end the loop.
+#
+# The chmod is the one place the lockfiles are made world-readable again: mise
+# rewrites them 0600 on every install, and a root-run install — the image
+# builds, a root shell on the VM backend — would otherwise lock the agent user
+# out, degrading its every mise call to a GitHub API lookup. It runs last and
+# swallows its errors, so an install by a user who does not own the lock still
+# gets its binaries linked.
+postinstall = '''
+mkdir -p /usr/local/share/tool-bin
+mise bin-paths -C /etc/mise | while read -r d; do
+  for f in "$d"/*; do
+    if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi
+  done
+done
+find /etc/mise -name '*.lock' -exec chmod 644 {} + 2>/dev/null || true
+'''

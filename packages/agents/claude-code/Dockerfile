@@ -12,8 +12,7 @@ RUN --mount=type=cache,target=/root/.npm \
     npm_config_cache=/root/.npm \
     mise install "npm:@agentclientprotocol/claude-agent-acp" &&\
     chown -R 65532 /etc/mise \
-      "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")" &&\
-    find /etc/mise -name '*.lock' -exec chmod 644 {} +
+      "$(dirname "$(mise where npm:@agentclientprotocol/claude-agent-acp)")"
 
 # Claude Code phones home (usage telemetry to Statsig, error logs to Datadog
 # intake) — traffic the gateway egress chain would surface for approval. The
