@@ -29,6 +29,8 @@ export async function planShare(opts: {
     } catch {
       return err({ code: "root-missing", root });
     }
+    const containedInRoot = (real: string): boolean =>
+      real === rootReal || real.startsWith(`${rootReal}/`);
     const visited = new Set<string>([rootReal]);
     const pending: { abs: string; rel: string; depth: number }[] = [
       { abs: rootAbs, rel: root, depth: 0 },
@@ -61,10 +63,18 @@ export async function planShare(opts: {
           } catch {
             continue;
           }
+          if (!containedInRoot(real)) continue;
           if (visited.has(real)) continue;
           visited.add(real);
           pending.push({ abs: childAbs, rel: childRel, depth: dir.depth + 1 });
         } else if (childStat.isFile() && shouldConsiderFileName(entry.name)) {
+          let real: string;
+          try {
+            real = await realpath(childAbs);
+          } catch {
+            continue;
+          }
+          if (!containedInRoot(real)) continue;
           candidates.push({ abs: childAbs, rel: childRel });
           if (candidates.length > opts.caps.maxFiles) {
             return err({ code: "too-many-files" });

@@ -45,6 +45,18 @@ beforeAll(async () => {
   for (let i = 0; i < 12; i += 1) {
     await writeFile(join(workDir, `crowd/f${i}.md`), `file ${i}\n`);
   }
+
+  await mkdir(join(workDir, "secret"), { recursive: true });
+  await writeFile(join(workDir, "secret/credentials.md"), "s3cr3t\n");
+  await writeFile(join(workDir, "secret/id_rsa.md"), "key material\n");
+  await mkdir(join(workDir, "linked/sub"), { recursive: true });
+  await writeFile(join(workDir, "linked/real.md"), "inside\n");
+  await symlink(
+    join(workDir, "secret/credentials.md"),
+    join(workDir, "linked/leak.md"),
+  );
+  await symlink(join(workDir, "secret"), join(workDir, "linked/sub/outdir"));
+  await symlink(join(workDir, "linked/real.md"), join(workDir, "linked/alias.md"));
 });
 
 afterAll(async () => {
@@ -83,6 +95,17 @@ describe("planShare", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.files.map((f) => f.path)).toEqual(["loop/file.md"]);
+  });
+
+  // TEST_SCENARIO: symlinks pointing outside the share root — a file link and a directory link — are excluded from the plan, while a symlink resolving inside the root is still published.
+  it("confines the plan to the share root across symlinks", async () => {
+    const result = await planShare({ workDir, roots: ["linked"], caps });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.files.map((f) => f.path)).toEqual([
+      "linked/alias.md",
+      "linked/real.md",
+    ]);
   });
 
   // TEST_SCENARIO: nesting past maxWalkDepth is the typed too-deep failure.
