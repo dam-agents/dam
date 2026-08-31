@@ -28,31 +28,18 @@ const scheduleMeta = (scheduleId: string) => ({
   scheduleId,
 });
 
-const artifactMeta = (artifactId: string) => ({
-  type: SessionType.Artifact,
-  mode: SessionMode.Chat,
-  artifactId,
-});
-
 function fakeStateStore(
   bindings: {
     schedules?: Record<string, string>;
-    artifacts?: Record<string, string>;
   } = {},
 ): TriggerStateStore {
   const schedules = { ...bindings.schedules };
-  const artifacts = { ...bindings.artifacts };
   return {
     getSessionForSchedule: (id) => schedules[id],
     setSessionForSchedule: vi.fn((id, sid) => {
       schedules[id] = sid;
     }),
     clearSessionForSchedule: vi.fn(),
-    getSessionForArtifact: (id) => artifacts[id],
-    setSessionForArtifact: vi.fn((id, sid) => {
-      artifacts[id] = sid;
-    }),
-    clearSessionForArtifact: vi.fn(),
   };
 }
 
@@ -110,58 +97,9 @@ describe("trigger plugin", () => {
     expect(stateStore.clearSessionForSchedule).toHaveBeenCalledWith("sch-9");
   });
 
-  it("opens an artifact-tagged session on an artifact's first request", async () => {
+  it("resumes the conversation the page is bound to", async () => {
     const { driver, calls } = fakeDriver();
     const stateStore = fakeStateStore();
-    await handlerFor({ driver, stateStore }, "artifact-request")(
-      { requestId: "req-1", artifactId: "art-1", task: "refresh it" },
-      ctx,
-    );
-    expect(calls[0]?.task).toBe("refresh it");
-    expect(calls[0]?.platformMeta).toEqual(artifactMeta("art-1"));
-    expect(calls[0]?.resumeSessionId).toBeUndefined();
-    expect(stateStore.setSessionForArtifact).toHaveBeenCalledWith(
-      "art-1",
-      "new-session",
-    );
-  });
-
-  it("resumes the same session for a second request on the same artifact", async () => {
-    const { driver, calls } = fakeDriver();
-    const stateStore = fakeStateStore({
-      artifacts: { "art-2": "artifact-session" },
-    });
-    await handlerFor({ driver, stateStore }, "artifact-request")(
-      { requestId: "req-2", artifactId: "art-2", task: "refresh it again" },
-      ctx,
-    );
-    expect(calls[0]?.resumeSessionId).toBe("artifact-session");
-    expect(calls[0]?.platformMeta).toBeUndefined();
-    expect(stateStore.setSessionForArtifact).not.toHaveBeenCalled();
-  });
-
-  it("keeps a different artifact on its own session", async () => {
-    const { driver, calls } = fakeDriver();
-    const stateStore = fakeStateStore({
-      artifacts: { "art-2": "artifact-session" },
-    });
-    await handlerFor({ driver, stateStore }, "artifact-request")(
-      { requestId: "req-3", artifactId: "art-3", task: "refresh it" },
-      ctx,
-    );
-    expect(calls[0]?.resumeSessionId).toBeUndefined();
-    expect(calls[0]?.platformMeta).toEqual(artifactMeta("art-3"));
-    expect(stateStore.setSessionForArtifact).toHaveBeenCalledWith(
-      "art-3",
-      "new-session",
-    );
-  });
-
-  it("resumes the conversation the page is bound to, ignoring its own binding", async () => {
-    const { driver, calls } = fakeDriver();
-    const stateStore = fakeStateStore({
-      artifacts: { "art-4": "artifact-session" },
-    });
     await handlerFor({ driver, stateStore }, "artifact-request")(
       {
         requestId: "req-4",
@@ -171,9 +109,9 @@ describe("trigger plugin", () => {
       },
       ctx,
     );
+    expect(calls[0]?.task).toBe("answer it");
     expect(calls[0]?.resumeSessionId).toBe("chat-session");
     expect(calls[0]?.platformMeta).toBeUndefined();
-    expect(stateStore.setSessionForArtifact).not.toHaveBeenCalled();
   });
 
   it("refuses an event kind it does not handle", () => {

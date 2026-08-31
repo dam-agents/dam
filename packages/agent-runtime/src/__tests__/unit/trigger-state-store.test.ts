@@ -15,43 +15,37 @@ describe("trigger state store", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("keeps a schedule binding and an artifact binding side by side", () => {
+  it("keeps a schedule binding across a restart", () => {
     const store = createTriggerStateStore(dir);
     store.setSessionForSchedule("sch-1", "session-a");
-    store.setSessionForArtifact("art-1", "session-b");
 
     expect(store.getSessionForSchedule("sch-1")).toBe("session-a");
-    expect(store.getSessionForArtifact("art-1")).toBe("session-b");
-    expect(createTriggerStateStore(dir).getSessionForArtifact("art-1")).toBe(
-      "session-b",
+    expect(createTriggerStateStore(dir).getSessionForSchedule("sch-1")).toBe(
+      "session-a",
     );
   });
 
-  it("clears one artifact's binding and leaves the rest alone", () => {
+  it("clears one schedule's binding and leaves the rest alone", () => {
     const store = createTriggerStateStore(dir);
     store.setSessionForSchedule("sch-1", "session-a");
-    store.setSessionForArtifact("art-1", "session-b");
-    store.setSessionForArtifact("art-2", "session-c");
+    store.setSessionForSchedule("sch-2", "session-b");
 
-    store.clearSessionForArtifact("art-1");
+    store.clearSessionForSchedule("sch-1");
 
-    expect(store.getSessionForArtifact("art-1")).toBeUndefined();
-    expect(store.getSessionForArtifact("art-2")).toBe("session-c");
-    expect(store.getSessionForSchedule("sch-1")).toBe("session-a");
+    expect(store.getSessionForSchedule("sch-1")).toBeUndefined();
+    expect(store.getSessionForSchedule("sch-2")).toBe("session-b");
   });
 
-  it("reads a state file written before artifact bindings existed", () => {
+  it("reads a state file that still carries artifact bindings", () => {
     writeFileSync(
       join(dir, "trigger-state.json"),
-      JSON.stringify({ scheduleSessions: { "sch-1": "session-a" } }),
+      JSON.stringify({
+        scheduleSessions: { "sch-1": "session-a" },
+        artifactSessions: { "art-1": "session-b" },
+      }),
     );
     const store = createTriggerStateStore(dir);
 
     expect(store.getSessionForSchedule("sch-1")).toBe("session-a");
-    expect(store.getSessionForArtifact("art-1")).toBeUndefined();
-
-    store.setSessionForArtifact("art-1", "session-b");
-    expect(store.getSessionForSchedule("sch-1")).toBe("session-a");
-    expect(store.getSessionForArtifact("art-1")).toBe("session-b");
   });
 });

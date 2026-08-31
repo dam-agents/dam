@@ -54,7 +54,6 @@ export interface PlatformSessionMeta {
   type?: string;
   scheduleId?: string;
   experimentId?: string;
-  artifactId?: string;
   threadTs?: string;
   createdAt?: string;
 }
@@ -71,7 +70,6 @@ const platformSessionMetaSchema = z.object({
   type: z.string().optional(),
   scheduleId: z.string().optional(),
   experimentId: z.string().optional(),
-  artifactId: z.string().optional(),
   threadTs: z.string().optional(),
   createdAt: z.string().optional(),
 });

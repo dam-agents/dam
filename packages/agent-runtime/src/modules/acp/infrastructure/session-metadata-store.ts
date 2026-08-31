@@ -6,7 +6,6 @@ export const platformSessionMetaSchema = z.object({
   type: z.string().optional(),
   scheduleId: z.string().optional(),
   experimentId: z.string().optional(),
-  artifactId: z.string().optional(),
   threadTs: z.string().optional(),
 });
 

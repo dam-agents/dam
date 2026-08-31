@@ -8,7 +8,7 @@ export interface ArtifactRequestDeliveryInput {
   requestId: string;
   artifactId: string;
   agentId: string;
-  sessionId: string | null;
+  sessionId: string;
   task: string;
 }
 

@@ -115,13 +115,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
 
   const harnessAgentsRepo = createAgentsRepository(k8sClient);
 
-  const artifactRequestsServiceFor = (
-    owner: string,
-    artifactLibrary: ArtifactLibraryServiceImpl,
-  ) =>
+  const artifactRequestsServiceFor = (owner: string) =>
     composeArtifactRequestsForOwner({
       db,
-      artifactLibrary,
       runtimeMutator,
       ensureAgentReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
       listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),

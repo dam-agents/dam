@@ -101,19 +101,14 @@ export function useArtifactRequest(requestId: string | null) {
 
 export function useArtifactSession(artifact: LibraryArtifact | null) {
   const agentId = artifact?.agentId ?? null;
-  const artifactId = artifact?.id ?? null;
   const boundTo = artifact?.sessionId ?? null;
   return useQuery({
-    queryKey: ["artifact-session", agentId, artifactId, boundTo] as const,
+    queryKey: ["artifact-session", agentId, boundTo] as const,
     queryFn:
-      agentId && artifactId
+      agentId && boundTo
         ? async () => {
             const sessions = await listAgentSessions(agentId);
-            const found =
-              boundTo === null
-                ? sessions.find((s) => s.artifactId === artifactId)
-                : sessions.find((s) => s.sessionId === boundTo);
-            return found ?? null;
+            return sessions.find((s) => s.sessionId === boundTo) ?? null;
           }
         : skipToken,
     retry: 0,

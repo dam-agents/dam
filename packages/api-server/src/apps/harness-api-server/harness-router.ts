@@ -29,10 +29,7 @@ export function createHarnessRouter(deps: {
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
-  artifactRequestsServiceFor: (
-    owner: string,
-    artifactLibrary: ArtifactLibraryServiceImpl,
-  ) => ArtifactRequestsServiceImpl;
+  artifactRequestsServiceFor: (owner: string) => ArtifactRequestsServiceImpl;
   featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;

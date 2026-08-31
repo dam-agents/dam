@@ -62,6 +62,13 @@ export function describeFailure(
         nextStep:
           "The page still works, it just has nowhere left to ask. Ask the agent for a fresh page.",
       };
+    case "not_bound":
+      return {
+        reason,
+        message: "This page has no conversation to ask in yet.",
+        nextStep:
+          "Open it in a chat with its agent and ask from there — that chat becomes where the page asks.",
+      };
     case "wake_failed":
       return {
         reason,

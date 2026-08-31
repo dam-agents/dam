@@ -132,7 +132,7 @@ export const artifactRequestEventPayload = z.object({
   requestId: z.string().min(1),
   artifactId: z.string().min(1),
   task: z.string().min(1),
-  sessionId: z.string().min(1).nullish(),
+  sessionId: z.string().min(1),
 });
 export type ArtifactRequestEventPayload = z.infer<
   typeof artifactRequestEventPayload

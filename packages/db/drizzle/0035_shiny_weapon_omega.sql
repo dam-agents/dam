@@ -14,6 +14,12 @@
 -- `artifact_requests_artifact_created_idx` serves the rolling-hour count that
 -- caps how often one artifact may ask.
 -- Rows cascade with their artifact: deleting the page deletes its requests.
+--
+-- `library_artifacts.session_id` is where an interactive page asks: the
+-- conversation it was first asked from, written once and never rewritten, so a
+-- page that was answered in one chat cannot later start driving another. Null
+-- means no ask has yet carried a conversation, and an ask on such a page that
+-- offers none is refused -- there is no other place a page can live.
 CREATE TABLE "artifact_requests" (
 	"id" text PRIMARY KEY NOT NULL,
 	"owner" text NOT NULL,
@@ -22,7 +28,6 @@ CREATE TABLE "artifact_requests" (
 	"seq" integer NOT NULL,
 	"action" text NOT NULL,
 	"payload" jsonb NOT NULL,
-	"trigger" text NOT NULL,
 	"state" text DEFAULT 'pending' NOT NULL,
 	"result" jsonb,
 	"failure_reason" text,
@@ -30,6 +35,7 @@ CREATE TABLE "artifact_requests" (
 	"settled_at" timestamp with time zone
 );
 --> statement-breakpoint
+ALTER TABLE "library_artifacts" ADD COLUMN "session_id" text;--> statement-breakpoint
 ALTER TABLE "artifact_requests" ADD CONSTRAINT "artifact_requests_artifact_id_library_artifacts_id_fk" FOREIGN KEY ("artifact_id") REFERENCES "public"."library_artifacts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "artifact_requests_artifact_created_idx" ON "artifact_requests" USING btree ("artifact_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "artifact_requests_artifact_seq_unique_idx" ON "artifact_requests" USING btree ("artifact_id","seq");--> statement-breakpoint

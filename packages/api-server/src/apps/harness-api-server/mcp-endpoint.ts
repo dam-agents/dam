@@ -849,10 +849,7 @@ export interface MountMcpDeps {
   composeSkills: (owner: string) => SkillsService;
   schedulesServiceFor: (owner: string) => SchedulesService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
-  artifactRequestsServiceFor: (
-    owner: string,
-    artifactLibrary: ArtifactLibraryServiceImpl,
-  ) => ArtifactRequestsServiceImpl;
+  artifactRequestsServiceFor: (owner: string) => ArtifactRequestsServiceImpl;
   featuresServiceFor: (owner: string) => FeaturesService;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
@@ -903,10 +900,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const skills = deps.composeSkills(verified.owner);
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
-    const artifactRequests = deps.artifactRequestsServiceFor(
-      verified.owner,
-      artifactLibrary,
-    );
+    const artifactRequests = deps.artifactRequestsServiceFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
     const experiments = deps.experimentsServiceFor(verified.owner);
     const [supportsUserLookup, supportsMessageReactions, flags] =

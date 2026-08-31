@@ -1,4 +1,3 @@
-import { ARTIFACT_BRIEF_MAX_BYTES } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -105,9 +104,7 @@ function artifactRow(overrides: Partial<ArtifactRow>): ArtifactRow {
     version: 1,
     visibility: "public",
     interactive: false,
-    ownSession: false,
     sessionId: null,
-    brief: null,
     expiresAt: null,
     viewCount: 0,
     createdAt: new Date(),
@@ -667,21 +664,8 @@ describe("library service — interactive is settled at create", () => {
     ).resolves.toMatchObject({ interactive: true, version: 2 });
   });
 
-  // TEST_SCENARIO: A page built to outlive the chat that made it says so at create, because by then the chat may be long gone. It gets its own Artifact Session and never binds to a conversation.
-  it("stores own_session and starts with no bound conversation", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Status board",
-        content: "<!DOCTYPE html><html></html>",
-        interactive: true,
-        ownSession: true,
-      }),
-    ).resolves.toMatchObject({ ownSession: true, sessionId: null });
-  });
-
-  // TEST_SCENARIO: The default is the common case: the page asks in the conversation it belongs to, and nothing is bound until its first ask.
-  it("defaults to a page that asks in the conversation it belongs to", async () => {
+  // TEST_SCENARIO: A page asks in the conversation it is first asked from, and nothing is bound until that first ask.
+  it("starts with no bound conversation", async () => {
     const service = await serviceOver([]);
     await expect(
       service.create({
@@ -689,115 +673,7 @@ describe("library service — interactive is settled at create", () => {
         content: "<!DOCTYPE html><html></html>",
         interactive: true,
       }),
-    ).resolves.toMatchObject({ ownSession: false, sessionId: null });
-  });
-
-  // TEST_SCENARIO: A page that cannot ask its agent never opens a session at all, so owning one is a promise the platform cannot keep — the same reasoning that refuses a brief on such a page.
-  it("refuses own_session on a page that cannot ask its agent", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Report",
-        content: "<!DOCTYPE html><html></html>",
-        ownSession: true,
-      }),
-    ).rejects.toThrow(/session to own/);
-  });
-});
-
-describe("library service — the brief", () => {
-  async function serviceOver(rows: ArtifactRow[]) {
-    const { createArtifactLibraryService } =
-      await import("../../modules/artifact-library/services/artifact-library-service.js");
-    return createArtifactLibraryService({
-      surface: "ui",
-      repo: {
-        ...fakeRepo(rows),
-        insertArtifact: (row) => {
-          const stored: ArtifactRow = {
-            ...row,
-            viewCount: 0,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-          rows.push(stored);
-          return Promise.resolve(stored);
-        },
-      },
-      owner: "o1",
-      shareBaseUrl: "http://share.localhost",
-      artifacts: stubArtifacts({ put: () => Promise.resolve() }),
-    });
-  }
-
-  // TEST_SCENARIO: The brief is what the agent leaves for a session that cannot see this conversation, so it has to be storable in the same call that publishes the page.
-  it("stores a brief written at create", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Interview",
-        content: "<!DOCTYPE html><html></html>",
-        interactive: true,
-        brief: "Ask one question at a time.",
-      }),
-    ).resolves.toMatchObject({ brief: "Ask one question at a time." });
-  });
-
-  // TEST_SCENARIO: A page that cannot ask its agent never causes a request, so nothing would ever read a brief on it. Storing one would be a promise the platform cannot keep.
-  it("refuses a brief on a page that cannot ask its agent", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Report",
-        content: "<!DOCTYPE html><html></html>",
-        brief: "Ask one question at a time.",
-      }),
-    ).rejects.toThrow(/only an interactive artifact has a brief/);
-  });
-
-  // TEST_SCENARIO: The brief is charged to every turn the page ever causes, so an oversized one is a standing cost, not a one-off. The refusal has to name the cap or the agent cannot tell how much to cut.
-  it("refuses a brief over the cap and names it", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Interview",
-        content: "<!DOCTYPE html><html></html>",
-        interactive: true,
-        brief: "x".repeat(ARTIFACT_BRIEF_MAX_BYTES + 1),
-      }),
-    ).rejects.toThrow(/8192 bytes/);
-  });
-
-  // TEST_SCENARIO: Steering the page's session must not reload the page. A version bump reloads the frame and throws away whatever the person typed into it, which is exactly the state the brief exists to serve.
-  it("replaces a brief without publishing a version", async () => {
-    const rows = [artifactRow({ interactive: true, visibility: "private" })];
-    const service = await serviceOver(rows);
-    await expect(
-      service.update("a1", { brief: "Answer in Czech." }),
-    ).resolves.toMatchObject({ brief: "Answer in Czech.", version: 1 });
-  });
-
-  // TEST_SCENARIO: The MCP tool takes a plain string, so a blank one reaches the service. Storing it would put an empty instruction block into every prompt the page ever causes.
-  it("refuses a blank brief", async () => {
-    const service = await serviceOver([]);
-    await expect(
-      service.create({
-        title: "Interview",
-        content: "<!DOCTYPE html><html></html>",
-        interactive: true,
-        brief: "   ",
-      }),
-    ).rejects.toThrow(/empty brief/);
-  });
-
-  // TEST_SCENARIO: The rule is the same on the way in and later on: a non-interactive page has no session to brief, whichever call sets it.
-  it("refuses a later brief on a page that cannot ask its agent", async () => {
-    const rows = [artifactRow({ visibility: "private" })];
-    const service = await serviceOver(rows);
-    await expect(
-      service.update("a1", { brief: "Answer in Czech." }),
-    ).rejects.toThrow(/only an interactive artifact has a brief/);
-    expect(rows[0]!.brief).toBeNull();
+    ).resolves.toMatchObject({ sessionId: null });
   });
 });
 

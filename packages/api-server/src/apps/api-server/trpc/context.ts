@@ -178,7 +178,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { artifactRequests } = composeArtifactRequestsForOwner({
       db,
-      artifactLibrary,
       runtimeMutator,
       ensureAgentReady: (agentId) => agentsRepo.ensureReady(agentId),
       listAgentSessions: (agentId) => makeAcpClient(agentId).listSessions(),

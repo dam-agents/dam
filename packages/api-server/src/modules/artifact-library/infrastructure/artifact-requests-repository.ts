@@ -1,7 +1,6 @@
 import type {
   ArtifactRequestFailureReason,
   ArtifactRequestState,
-  ArtifactRequestTrigger,
 } from "api-server-api";
 import {
   and,
@@ -26,7 +25,6 @@ export interface ArtifactRequestRow {
   seq: number;
   action: string;
   payload: Record<string, unknown>;
-  trigger: ArtifactRequestTrigger;
   state: ArtifactRequestState;
   result: unknown;
   failureReason: ArtifactRequestFailureReason | null;
@@ -41,7 +39,6 @@ export interface ArtifactRequestInsert {
   agentId: string;
   action: string;
   payload: Record<string, unknown>;
-  trigger: ArtifactRequestTrigger;
 }
 
 export interface ArtifactRequestSettlement {
@@ -91,7 +88,6 @@ function toRow(r: typeof requestsTable.$inferSelect): ArtifactRequestRow {
     seq: r.seq,
     action: r.action,
     payload: (r.payload ?? {}) as Record<string, unknown>,
-    trigger: r.trigger as ArtifactRequestTrigger,
     state: r.state as ArtifactRequestState,
     result: r.result,
     failureReason: r.failureReason as ArtifactRequestFailureReason | null,
@@ -134,7 +130,6 @@ export function createArtifactRequestsRepository(
               seq: (high?.seq ?? 0) + 1,
               action: input.action,
               payload: input.payload,
-              trigger: input.trigger,
               state: "pending",
             })
             .returning();

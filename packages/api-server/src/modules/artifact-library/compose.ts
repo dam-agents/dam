@@ -52,7 +52,6 @@ export function composeArtifactLibraryForOwner(
 
 export interface ComposeArtifactRequestsForOwnerOpts {
   db: Db;
-  artifactLibrary: ArtifactLibraryServiceImpl;
   runtimeMutator: RuntimeMutator;
   ensureAgentReady: (agentId: string) => Promise<void>;
   listAgentSessions: (
@@ -76,11 +75,6 @@ export function composeArtifactRequestsForOwner(
         ensureAgentReady: opts.ensureAgentReady,
         listSessions: opts.listAgentSessions,
       }),
-      readPageSource: async (artifactId) => {
-        const content = await opts.artifactLibrary.getContent(artifactId);
-        if (!content || content.binary || content.tooLarge) return null;
-        return content.content;
-      },
       owner: opts.owner,
       surface: opts.surface,
     }),

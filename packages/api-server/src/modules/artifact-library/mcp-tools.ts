@@ -100,19 +100,7 @@ export function registerArtifactLibraryTools(
         .boolean()
         .optional()
         .describe(
-          "HTML only. Set it whenever the page has to give you something back — otherwise the page can only ask the person to copy text into the chat, and you never see what they did on it. Makes the page able to call back to you: a button on it asks you to do something and the answer lands in the page. The page calls `await platform.ask(action, payload)` — `platform` is already there, needs no setup, and the promise resolves with whatever you pass to answer_artifact_request, or rejects with `{ reason, message }` if the ask is refused. `platform.onState(cb)` reports progress ('sent', 'waking', 'queued', 'running') while you work. Write the page against those two calls and nothing else. Every ask is a full turn of yours, so build the page as many small asks — one per step, each rendering its own answer in place — not one form that submits everything at once and makes the person wait for all of it. In exchange the artifact can NEVER be shared — it stays private to its owner, because you run with their credentials. Settled now and unchangeable: no later version can turn it on or off, so publish a separate artifact if you want a shareable copy. By default the page asks right here, in this conversation, so its questions and answers appear in the chat the person is reading — see `own_session` for a page that has to outlive this chat. Every ask reaches a session that already holds the asks before it, so send only what changed in `payload`: a page that replays its whole history in every ask pays for that history again on every turn.",
-        ),
-      own_session: z
-        .boolean()
-        .optional()
-        .describe(
-          "Interactive pages only. Ask yourself one question: does this page have to keep working after this conversation is over? A dashboard, a poll, a status board, anything somebody opens next month — yes, so set this. Then the page gets a conversation of its own, which starts cold on every ask and knows only what its `brief` says, and it can also refresh itself on a timer. Leave it unset for a page that IS this conversation in another shape — an interview, a decision matrix, a form that collects a spec. Then every ask lands right here: you answer with everything said in this thread, and the person watches the answers arrive in the chat they already have open. Settled now and unchangeable, like `interactive`.",
-        ),
-      brief: z
-        .string()
-        .optional()
-        .describe(
-          "Interactive pages only — standing instructions for your future self, prepended to EVERY request this page ever sends you. Load-bearing for an `own_session` page: the session serving it is NOT this conversation, it starts cold, sees only the request, and remembers nothing you were told here, so write down the job the page is doing, the rules you were given for it, where to get the data, and the shape the page expects back. For a page bound to this conversation it is short insurance instead: the asks land here, but a long thread gets compacted, and the brief outlives that. Up to 8 KB, and replaceable later with update_artifact without publishing a new version.",
+          "HTML only. Set it whenever the page has to give you something back — otherwise the page can only ask the person to copy text into the chat, and you never see what they did on it. Makes the page able to call back to you: a button on it asks you to do something and the answer lands in the page. The page calls `await platform.ask(action, payload)` — `platform` is already there, needs no setup, and the promise resolves with whatever you pass to answer_artifact_request, or rejects with `{ reason, message }` if the ask is refused. `platform.onState(cb)` reports progress ('sent', 'waking', 'queued', 'running') while you work. Write the page against those two calls and nothing else. Every ask is a full turn of yours, so build the page as many small asks — one per step, each rendering its own answer in place — not one form that submits everything at once and makes the person wait for all of it. In exchange the artifact can NEVER be shared — it stays private to its owner, because you run with their credentials. Settled now and unchangeable: no later version can turn it on or off, so publish a separate artifact if you want a shareable copy. The page asks in the conversation it is first asked from — usually right here, so its questions and answers appear in the chat the person is reading. Every ask reaches a session that already holds the asks before it, so send only what changed in `payload`: a page that replays its whole history in every ask pays for that history again on every turn.",
         ),
       expires_in_hours: z
         .number()
@@ -138,8 +126,6 @@ export function registerArtifactLibraryTools(
       folder_id,
       visibility,
       interactive,
-      own_session,
-      brief,
       expires_in_hours,
       experiment_id,
     }) =>
@@ -154,8 +140,6 @@ export function registerArtifactLibraryTools(
             folderId: folder_id,
             visibility,
             interactive,
-            ownSession: own_session,
-            brief,
             expiresInHours: expires_in_hours ?? null,
           },
           { agentId: deps.agentId },
@@ -296,14 +280,8 @@ export function registerArtifactLibraryTools(
           "Renames the artifact — every version downloads under this name. Does not change its type.",
         ),
       folder_id: folderIdInput,
-      brief: z
-        .string()
-        .optional()
-        .describe(
-          "Replaces the brief, the standing instructions prepended to every request this interactive page sends you. Changing it alone publishes NO new version, so an open page keeps whatever the person typed into it — this is how you steer the page after you learn something new, without reloading it under them.",
-        ),
     },
-    ({ id, title, content, upload_ref, file_name, folder_id, brief }) =>
+    ({ id, title, content, upload_ref, file_name, folder_id }) =>
       run(async () => {
         const artifact = await lib.update(id, {
           title,
@@ -311,7 +289,6 @@ export function registerArtifactLibraryTools(
           uploadRef: upload_ref,
           fileName: file_name,
           folderId: folder_id === "" ? null : folder_id,
-          brief,
         });
         return json(withInternalLink(artifact));
       }),

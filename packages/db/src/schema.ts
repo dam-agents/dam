@@ -593,9 +593,7 @@ export const libraryArtifacts = pgTable(
     version: integer("version").notNull().default(1),
     visibility: text("visibility").notNull().default("private"),
     interactive: boolean("interactive").notNull().default(false),
-    ownSession: boolean("own_session").notNull().default(false),
     sessionId: text("session_id"),
-    brief: text("brief"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     viewCount: integer("view_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -645,7 +643,6 @@ export const artifactRequests = pgTable(
     seq: integer("seq").notNull(),
     action: text("action").notNull(),
     payload: jsonb("payload").notNull(),
-    trigger: text("trigger").notNull(),
     state: text("state").notNull().default("pending"),
     result: jsonb("result"),
     failureReason: text("failure_reason"),
