@@ -77,7 +77,11 @@ export function createScheduleQueue(
 
 export interface StartScheduleWorkerOpts {
   connection: ConnectionOptions;
-  handler: (scheduleId: string, fireAt: Date) => Promise<void>;
+  handler: (
+    scheduleId: string,
+    fireAt: Date,
+    lastAttempt: boolean,
+  ) => Promise<void>;
   log: (msg: string) => void;
 }
 
@@ -94,6 +98,7 @@ export function startScheduleWorker(
       opts.handler(
         job.data.scheduleId,
         new Date(job.data.fireAtMs ?? job.timestamp),
+        job.attemptsStarted >= (job.opts.attempts ?? 1),
       ),
     {
       connection: opts.connection,

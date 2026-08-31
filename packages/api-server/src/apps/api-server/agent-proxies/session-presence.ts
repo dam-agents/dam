@@ -122,7 +122,10 @@ export function createSessionPresence(
         if (await anyReplicaHolds(agentId)) continue;
         missingNow.add(agentId);
         if (missingLastTick.has(agentId)) {
-          await chain(agentId, () => set(agentId, false));
+          await chain(agentId, async () => {
+            if (open.has(agentId) || (await anyReplicaHolds(agentId))) return;
+            await set(agentId, false);
+          });
         }
       }
       missingLastTick = missingNow;

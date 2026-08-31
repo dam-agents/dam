@@ -177,6 +177,20 @@ export const channelRpcRequestSchema = z.object({
 });
 export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
 
+const forInstance = z.tuple([z.string(), z.enum(ChannelType)]);
+const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
+  listConversations: forInstance,
+  postMessage: forInstance.rest(z.unknown()),
+  reply: forInstance.rest(z.unknown()),
+  react: forInstance.rest(z.unknown()),
+  declineTurn: forInstance,
+  handOffTurn: forInstance.rest(z.unknown()),
+  describeUsers: forInstance.rest(z.unknown()),
+  supportsUserLookup: z.tuple([]),
+  describeMessageReactions: forInstance.rest(z.unknown()),
+  supportsMessageReactions: z.tuple([]),
+};
+
 const TRANSPORT_RETRY_MS = 60_000;
 
 const okOrErrorSchema = z.union([
@@ -294,7 +308,12 @@ export function createChannelManager(deps: {
     retryTimer = null;
     stopServing?.();
     stopServing = null;
-    await Promise.all(workers.map((w) => w.stopAll()));
+    const stopped = await Promise.allSettled(workers.map((w) => w.stopAll()));
+    const failed = stopped.flatMap((r) =>
+      r.status === "rejected" ? [r.reason] : [],
+    );
+    if (failed.length)
+      throw new Error(`channel workers failed to stop: ${failed.join("; ")}`);
   }
 
   async function dispatch<T>(
@@ -488,7 +507,9 @@ export function createChannelManager(deps: {
             | undefined;
           if (!handler)
             throw new Error(`unknown channel rpc method ${req.method}`);
-          return handler(...req.args);
+          return handler(
+            ...(rpcArgSchemas[req.method].parse(req.args) as unknown[]),
+          );
         });
       }
 

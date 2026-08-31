@@ -16,7 +16,11 @@ import type { CoordinationV1Api, V1Lease } from "@kubernetes/client-node";
  * consumers. `stop()` cannot be outrun by a campaign that is still awaiting the
  * API server: it moves a generation the campaign re-reads after its await, so a
  * late win starts nothing, and it waits for that campaign before deleting the
- * Lease the campaign may just have written.
+ * Lease the campaign may just have written. Handler failure is a signal, not a
+ * log line: a replica whose start handler keeps throwing backs off for whole
+ * durations instead of re-taking the Lease three times a duration and starving
+ * a healthy replica, and a stop handler that fails twice keeps the Lease, since
+ * transports this replica could not prove it stopped must not be handed on.
  */
 export interface LeaderLease {
   isLeader(): boolean;
@@ -49,6 +53,9 @@ export function createLeaderLease(opts: {
   let timer: NodeJS.Timeout | null = null;
   let transition: Promise<void> = Promise.resolve();
   let seen: { holder?: string; renew: string; at: number } | null = null;
+  let acquireFailures = 0;
+  let backoffUntil = 0;
+  let releaseFailed = false;
 
   const read = (): Promise<V1Lease | null> =>
     leases.readNamespacedLease({ name, namespace }).catch((err: unknown) => {
@@ -57,6 +64,12 @@ export function createLeaderLease(opts: {
     });
 
   const releaseLease = async () => {
+    if (releaseFailed) {
+      log(
+        `ERROR: keeping lease ${name}: the release handler failed twice, so this replica may still be serving`,
+      );
+      return;
+    }
     const current = await read().catch(() => null);
     if (current?.spec?.holderIdentity !== identity) return;
     await leases
@@ -79,14 +92,18 @@ export function createLeaderLease(opts: {
       held = next;
       try {
         await (next ? opts.onAcquired() : opts.onLost());
+        if (next) acquireFailures = 0;
       } catch (err) {
         log(`${next ? "acquire" : "release"} handler failed: ${err}`);
         if (next) {
           held = false;
+          acquireFailures += 1;
+          backoffUntil = Date.now() + ttlMs * Math.min(acquireFailures, 4);
           try {
             await opts.onLost();
           } catch (lostErr) {
             log(`release handler failed: ${lostErr}`);
+            releaseFailed = true;
           }
           await releaseLease();
         } else {
@@ -94,6 +111,7 @@ export function createLeaderLease(opts: {
             await opts.onLost();
           } catch (retryErr) {
             log(`release handler retry failed: ${retryErr}`);
+            releaseFailed = true;
           }
         }
       }
@@ -156,12 +174,14 @@ export function createLeaderLease(opts: {
   }
 
   let campaignFailures = 0;
-  let inFlight: Promise<boolean> | null = null;
+  const inFlight = new Set<Promise<boolean>>();
 
   async function campaign(generationAtStart: number): Promise<void> {
+    if (Date.now() < backoffUntil) return;
+    const claiming = claim();
+    inFlight.add(claiming);
     try {
-      inFlight = claim();
-      const won = await inFlight;
+      const won = await claiming;
       if (generationAtStart !== generation) return;
       campaignFailures = 0;
       if (won !== held) log(`lease ${name} ${won ? "acquired" : "lost"}`);
@@ -174,6 +194,8 @@ export function createLeaderLease(opts: {
         await transitionTo(false);
         await releaseLease();
       }
+    } finally {
+      inFlight.delete(claiming);
     }
   }
 
@@ -183,6 +205,7 @@ export function createLeaderLease(opts: {
     async start() {
       const generationAtStart = generation;
       await campaign(generationAtStart);
+      if (generationAtStart !== generation) return;
       timer = setInterval(
         () => void campaign(generationAtStart),
         Math.floor(ttlMs / 3),
@@ -194,7 +217,7 @@ export function createLeaderLease(opts: {
       generation += 1;
       if (timer) clearInterval(timer);
       timer = null;
-      await inFlight?.catch(() => false);
+      await Promise.allSettled([...inFlight]);
       await transitionTo(false);
       await releaseLease();
     },

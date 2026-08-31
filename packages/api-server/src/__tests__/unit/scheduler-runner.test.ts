@@ -4,6 +4,12 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import {
+  events$,
+  ofType,
+  EventType,
+  type ScheduleFired,
+} from "../../events.js";
 
 const AGENT_ID = "agent-1";
 const SCHEDULE_ID = "sched-1";
@@ -123,14 +129,18 @@ describe("scheduler-runner fire", () => {
     );
   });
 
-  // TEST_SCENARIO: a failed fire must rethrow before any re-arm bookkeeping — a retry then repeats only the delivery attempt, and nextRun stays on the due occurrence so the reconcile sweep keeps retrying it after the queue's attempts run out.
+  // TEST_SCENARIO: a failed fire with BullMQ attempts left must rethrow before any re-arm bookkeeping — the retry then repeats only the delivery attempt, and nextRun stays on the due occurrence so the retry and the reconcile sweep both target that same occurrence.
   it("records a failed fire against its own occurrence and rethrows without re-arming", async () => {
     const { runner, calls, fires, enqueued } = makeDeps({
       wakeError: new Error("k8s api unreachable"),
     });
 
     await expect(
-      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+      runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+        false,
+      ),
     ).rejects.toThrow("k8s api unreachable");
 
     expect(calls).toContain(`bump:${AGENT_ID}`);
@@ -138,6 +148,47 @@ describe("scheduler-runner fire", () => {
     expect(fires[0]!.result).toContain("k8s api unreachable");
     expect(fires[0]!.nextRun?.toISOString()).toBe("2026-06-12T10:30:00.000Z");
     expect(enqueued).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: once BullMQ's attempts are spent, the schedule must move on. Leaving nextRun on the dead occurrence makes the reconcile sweep revive the same failed job forever, so an hourly schedule whose agent was deleted never reaches 11:00 and looks enabled while being silently dead.
+  it("advances to the next occurrence when the last attempt fails", async () => {
+    const { runner, fires, enqueued } = makeDeps({
+      wakeError: new Error("agent is gone"),
+    });
+
+    await expect(
+      runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:00:00Z"),
+        true,
+      ),
+    ).rejects.toThrow("agent is gone");
+
+    expect(fires[0]!.result).toContain("agent is gone");
+    expect(fires[0]!.nextRun?.toISOString()).toBe("2026-06-12T11:00:00.000Z");
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.toISOString()).toBe("2026-06-12T11:00:00.000Z");
+  });
+
+  // TEST_SCENARIO: BullMQ runs a failing fire up to three times; the owner must get one failure record, not one per attempt.
+  it("emits ScheduleFired(failure) once, on the terminal attempt", async () => {
+    const seen: string[] = [];
+    const sub = events$()
+      .pipe(ofType<ScheduleFired>(EventType.ScheduleFired))
+      .subscribe((event) => seen.push(event.outcome));
+    try {
+      const { runner } = makeDeps({ wakeError: new Error("agent is gone") });
+      const fire = runner.buildFireHandler();
+      const at = new Date("2026-06-12T10:00:00Z");
+
+      await expect(fire(SCHEDULE_ID, at, false)).rejects.toThrow();
+      await expect(fire(SCHEDULE_ID, at, false)).rejects.toThrow();
+      await expect(fire(SCHEDULE_ID, at, true)).rejects.toThrow();
+
+      expect(seen).toEqual(["failure"]);
+    } finally {
+      sub.unsubscribe();
+    }
   });
 
   // TEST_SCENARIO: a successful fire re-arms the next occurrence exactly once.

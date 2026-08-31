@@ -2937,9 +2937,9 @@ export function createSlackWorker(
       serving = false;
       if (gatewayStarting) await gatewayStarting.catch(() => null);
       const gw = gateway;
-      gateway = null;
       gatewayFailed = false;
       if (gw) await gw.stop();
+      gateway = null;
     },
 
     async listConversations(instanceName: string) {

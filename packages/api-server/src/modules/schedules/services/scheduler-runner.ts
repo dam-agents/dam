@@ -5,7 +5,11 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { emit, EventType } from "../../../events.js";
 
 export interface SchedulerRunner {
-  buildFireHandler(): (scheduleId: string, fireAt: Date) => Promise<void>;
+  buildFireHandler(): (
+    scheduleId: string,
+    fireAt: Date,
+    lastAttempt?: boolean,
+  ) => Promise<void>;
   sync(scheduleId: string): Promise<void>;
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
@@ -29,7 +33,11 @@ export function createSchedulerRunner(
   const now = deps.now ?? (() => new Date());
   const ttlSec = deps.triggerTtlSeconds ?? 3600;
 
-  async function fire(scheduleId: string, fireAt: Date): Promise<void> {
+  async function fire(
+    scheduleId: string,
+    fireAt: Date,
+    lastAttempt = true,
+  ): Promise<void> {
     const sched = await deps.repo.getById(scheduleId);
     if (!sched) {
       log(`fire: schedule ${scheduleId} not found; dropping`);
@@ -77,8 +85,12 @@ export function createSchedulerRunner(
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
-      await deps.repo.recordFire(scheduleId, result, fireAt).catch(() => {});
-      await emitFired("failure");
+      const after = lastAttempt ? nextFireAt(sched.spec, now()) : fireAt;
+      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      if (lastAttempt) {
+        if (after) await deps.queue.enqueue(scheduleId, after, now());
+        await emitFired("failure");
+      }
       throw err;
     }
 

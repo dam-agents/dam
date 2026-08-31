@@ -258,6 +258,7 @@ describe("leader lease", () => {
 
   // TEST_SCENARIO: stop() lands while a campaign is still awaiting the API server. The late win must start nothing — the renew timer is already gone, so work started here would run forever on a Lease nobody renews — and the Lease that campaign wrote must not outlive the stop.
   it("does not take leadership from a campaign that resolves after stop", async () => {
+    vi.useFakeTimers();
     const leaseApi = fakeLeaseApi();
     let admit: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
@@ -286,9 +287,74 @@ describe("leader lease", () => {
     admit();
     await Promise.all([starting, stopping]);
 
-    expect(acquisitions).toBe(0);
+    try {
+      expect(acquisitions).toBe(0);
+      expect(lease.isLeader()).toBe(false);
+      expect(leaseApi.store.has(LEASE)).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(leaseApi.store.has(LEASE)).toBe(false);
+      expect(acquisitions).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: the start handler keeps throwing — a DB outage under channelManager.bootstrap. Re-taking the Lease three times a duration would keep rewriting renewTime, so a healthy replica never sees the silence it needs to take over. The failing replica must back off instead.
+  it("backs off instead of monopolizing the lease when onAcquired keeps failing", async () => {
+    vi.useFakeTimers();
+    try {
+      const leaseApi = fakeLeaseApi();
+      let attempts = 0;
+      const lease = createLeaderLease({
+        leases: leaseApi,
+        namespace: "platform-agents",
+        name: LEASE,
+        onAcquired: () => {
+          attempts += 1;
+          throw new Error("database is down");
+        },
+        onLost: () => {},
+        log: () => {},
+      });
+
+      await lease.start();
+      expect(attempts).toBe(1);
+      expect(leaseApi.store.has(LEASE)).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(attempts).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(attempts).toBe(2);
+
+      await lease.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TEST_SCENARIO: the release handler failed twice, so this replica cannot prove its Slack socket is closed. Deleting the Lease would invite a second consumer, so the Lease stays until this pod is gone and it expires.
+  it("keeps the lease when the release handler fails twice", async () => {
+    const leaseApi = fakeLeaseApi();
+    const lease = createLeaderLease({
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
+      onAcquired: () => {},
+      onLost: () => {
+        throw new Error("slack gateway will not close");
+      },
+      log: () => {},
+    });
+
+    await lease.start();
+    expect(leaseApi.store.has(LEASE)).toBe(true);
+
+    await lease.stop();
+
     expect(lease.isLeader()).toBe(false);
-    expect(leaseApi.store.has(LEASE)).toBe(false);
+    expect(leaseApi.store.get(LEASE)?.spec?.holderIdentity).toBeTruthy();
   });
 
   // TEST_SCENARIO: an operator deleting the Lease between the holder's read and its renew must cost nothing — the holder recreates it in the same campaign instead of standing the channel workers down until the next tick.

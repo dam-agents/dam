@@ -550,11 +550,13 @@ export function createTelegramWorker(deps: {
 
     async start() {
       if (bot) return;
+      let adapter: ReturnType<typeof createTelegramAdapter> | null = null;
       try {
-        const adapter = createTelegramAdapter({ botToken, mode: "polling" });
+        const polling = createTelegramAdapter({ botToken, mode: "polling" });
+        adapter = polling;
         const chat = new Chat({
           userName: "platform",
-          adapters: { telegram: adapter },
+          adapters: { telegram: polling },
           state: deps.state,
         });
 
@@ -563,7 +565,7 @@ export function createTelegramWorker(deps: {
           isChatAdmin:
             deps.isChatAdmin ??
             ((chatId, userId) => isTelegramChatAdmin(botToken, chatId, userId)),
-          decodeChatId: (threadId) => adapter.decodeThreadId(threadId).chatId,
+          decodeChatId: (threadId) => polling.decodeThreadId(threadId).chatId,
           fetchChatTitle: (chatId) => fetchTelegramChatTitle(botToken, chatId),
           oauthConfig: deps.oauthConfig,
           pendingOAuthFlows: deps.pendingOAuthFlows,
@@ -584,14 +586,15 @@ export function createTelegramWorker(deps: {
         );
 
         await chat.initialize();
-        await adapter.startPolling();
-        bot = { chat, adapter };
+        await polling.startPolling();
+        bot = { chat, adapter: polling };
         if (!username)
           username = await fetchTelegramBotUsername(botToken).catch(() => null);
         process.stderr.write(
           `[telegram] platform bot started${username ? ` (@${username})` : ""}\n`,
         );
       } catch (err) {
+        if (!bot && adapter) await adapter.stopPolling().catch(() => {});
         process.stderr.write(
           `[telegram] failed to start platform bot: ${err instanceof Error ? err.message : String(err)}\n`,
         );
