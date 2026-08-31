@@ -356,7 +356,8 @@ export function createKbSharePublishGate(
         previous?.files.map((f) => [f.path, f.contentHash] as const) ?? [],
       );
       const previousSearch =
-        previous && previous.search &&
+        previous &&
+        previous.search &&
         previous.search.formatVersion === INDEX_FORMAT_VERSION
           ? previous.search
           : null;
@@ -529,9 +530,7 @@ export function createKbSharePublishGate(
     try {
       if (report.drifted.length > 0) {
         await cleanupKeys(entry.mintedKeys);
-        await deps.repo
-          .releasePublishClaim(agentId, ticket)
-          .catch(() => {});
+        await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
         return { outcome: "retry" };
       }
 

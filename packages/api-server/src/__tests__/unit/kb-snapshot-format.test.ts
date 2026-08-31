@@ -103,9 +103,7 @@ describe("segmentContentId", () => {
     ];
     const reversed = [...members].reverse();
     expect(segmentContentId(members, 4)).toBe(segmentContentId(reversed, 4));
-    expect(segmentContentId(members, 4)).not.toBe(
-      segmentContentId(members, 8),
-    );
+    expect(segmentContentId(members, 4)).not.toBe(segmentContentId(members, 8));
     expect(segmentContentId(members, 4)).not.toBe(
       segmentContentId([{ path: "a.md", contentHash: "h9" }, members[1]!], 4),
     );

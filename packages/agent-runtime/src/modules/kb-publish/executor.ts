@@ -43,7 +43,7 @@ async function putObject(
     try {
       const res = await fetch(url, {
         method: "PUT",
-        body,
+        body: typeof body === "string" ? body : new Uint8Array(body),
         headers: { "content-type": contentType },
       });
       await res.text().catch(() => "");

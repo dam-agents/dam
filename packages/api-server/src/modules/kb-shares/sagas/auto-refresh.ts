@@ -25,7 +25,9 @@ export interface KbShareSyncSaga {
  * wakes a pod and swallows unreachable or old runtimes — the flusher's
  * PVC-persisted state makes delivery best-effort, not load-bearing.
  */
-export function startKbShareSyncSaga(deps: KbShareSyncSagaDeps): KbShareSyncSaga {
+export function startKbShareSyncSaga(
+  deps: KbShareSyncSagaDeps,
+): KbShareSyncSaga {
   const subscription: Subscription = events$()
     .pipe(
       ofType<AgentWoken>(EventType.AgentWoken),
