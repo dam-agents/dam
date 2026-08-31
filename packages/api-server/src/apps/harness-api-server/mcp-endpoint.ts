@@ -804,6 +804,7 @@ export function createMcpSession(
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
+    interactiveArtifacts: deps.interactiveArtifacts,
     attachToExperiment: (artifactId, experimentId) =>
       deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
