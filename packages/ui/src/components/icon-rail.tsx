@@ -1,7 +1,5 @@
 import {
-  Book,
   type CarbonIconType,
-  Chemistry,
   ChevronLeft,
   ChevronRight,
   ContainerSoftware,
@@ -36,9 +34,6 @@ export function IconRail({
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const navigateToExperiments = useStore((s) => s.navigateToExperiments);
-  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
-
   const sandboxes: Destination = {
     label: "Home",
     icon: Home,
@@ -46,29 +41,12 @@ export function IconRail({
     badge: 0,
     navigate: () => setView("home"),
   };
-  const codingAgents: Destination = {
-    label: "Coding agents",
+  const agents: Destination = {
+    label: "Agents",
     icon: ContainerSoftware,
-    active: view === "coding-agents",
+    active: view === "agents" || view === "agent-new",
     badge: 0,
-    navigate: () => setView("coding-agents"),
-  };
-  const experiments: Destination = {
-    label: "Experiments",
-    icon: Chemistry,
-    active: view === "experiments",
-    badge: 0,
-    navigate: navigateToExperiments,
-  };
-  const knowledgeBases: Destination = {
-    label: "Knowledge bases",
-    icon: Book,
-    active:
-      view === "knowledge-bases" ||
-      view === "knowledge-base-chat" ||
-      view === "knowledge-base-config",
-    badge: 0,
-    navigate: navigateToKnowledgeBases,
+    navigate: () => setView("agents"),
   };
   const artifacts: Destination = {
     label: "Artifacts",
@@ -144,9 +122,7 @@ export function IconRail({
         </div>
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
-          <RailItem {...codingAgents} expanded={expandedNav} />
-          <RailItem {...experiments} expanded={expandedNav} />
-          <RailItem {...knowledgeBases} expanded={expandedNav} />
+          <RailItem {...agents} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
         <div className="mb-2 flex flex-col gap-px">
@@ -157,14 +133,7 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[
-            sandboxes,
-            codingAgents,
-            experiments,
-            knowledgeBases,
-            artifacts,
-            settings,
-          ].map((destination) => (
+          {[sandboxes, agents, artifacts, settings].map((destination) => (
             <BottomBarItem key={destination.label} {...destination} />
           ))}
         </nav>

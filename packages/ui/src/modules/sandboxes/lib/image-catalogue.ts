@@ -4,6 +4,7 @@ export const KINDED_HARNESS_TEMPLATE_ID = "claude-code";
 
 interface Catalogue {
   harnesses: TemplateView[];
+  preconfigured: TemplateView[];
 }
 
 export function imageCatalogue(
@@ -11,5 +12,8 @@ export function imageCatalogue(
   { vmFeatureEnabled }: { vmFeatureEnabled: boolean },
 ): Catalogue {
   const visible = vmFeatureEnabled ? templates : templates.filter((t) => !t.vm);
-  return { harnesses: visible.filter((t) => t.category === "harness") };
+  return {
+    harnesses: visible.filter((t) => t.category === "harness"),
+    preconfigured: visible.filter((t) => t.category === "preconfigured"),
+  };
 }

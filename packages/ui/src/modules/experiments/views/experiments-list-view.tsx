@@ -32,7 +32,7 @@ export function ExperimentsListView() {
     isExperimentSandbox,
   );
   const initialLoaded = summaries !== undefined && agentsData !== undefined;
-  const createExperimentSandbox = () => setView("experiment-new");
+  const createExperimentSandbox = () => setView("agent-new");
 
   return (
     <div>

@@ -34,6 +34,7 @@ async function poll() {
 }
 
 export function onFetchError() {
+  if ((window as { __MOCK_MODE__?: boolean }).__MOCK_MODE__) return;
   if (!navigator.onLine) return;
   failureCount++;
   sync();

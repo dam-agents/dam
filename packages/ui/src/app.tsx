@@ -8,15 +8,11 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
-import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
+import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
+import { AgentsView } from "./modules/agents/views/agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
-import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
-import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
-import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
@@ -55,11 +51,7 @@ export default function App() {
   return <MainApp />;
 }
 
-const SETUP_VIEWS = new Set<Route["view"]>([
-  "coding-agent-new",
-  "experiment-new",
-  "knowledge-base-new",
-]);
+const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
@@ -123,20 +115,12 @@ function MainApp() {
             >
               {view === "home" ? (
                 <HomeView />
-              ) : view === "coding-agent-new" ? (
-                <CodingAgentSetupView />
+              ) : view === "agent-new" ? (
+                <AgentSetupView />
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "coding-agents" ? (
-                <CodingAgentsView />
-              ) : view === "experiments" ? (
-                <ExperimentsListView />
-              ) : view === "experiment-new" ? (
-                <ExperimentSetupView />
-              ) : view === "knowledge-base-new" ? (
-                <KnowledgeBaseSetupView />
-              ) : view === "knowledge-bases" ? (
-                <KnowledgeBasesListView />
+              ) : view === "agents" ? (
+                <AgentsView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

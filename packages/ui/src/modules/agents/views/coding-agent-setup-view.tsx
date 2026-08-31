@@ -28,7 +28,7 @@ import {
   isCodingAgentSetupComplete,
 } from "../lib/create-agent-input.js";
 
-const RETURN_PATH = routeToPath({ view: "coding-agent-new" });
+const RETURN_PATH = routeToPath({ view: "agent-new" });
 
 export function CodingAgentSetupView() {
   const { form, update, reset } = useSetupForm("coding-agent", {}, RETURN_PATH);

@@ -11,6 +11,8 @@ export function setupProviderPolicy(flow: SetupFlow): {
   allow?: readonly ProviderPresetType[];
   recommended?: ProviderPresetType;
 } {
-  if (flow === "coding-agent") return { recommended: "ibm-litellm" };
+  if (flow === "coding-agent" || flow === "assistant")
+    return { recommended: "ibm-litellm" };
+  if (flow === "research") return { recommended: "ibm-litellm" };
   return { allow: KINDED_PROVIDERS, recommended: "ibm-litellm" };
 }

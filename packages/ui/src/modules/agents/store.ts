@@ -137,12 +137,12 @@ export const createAgentsSlice: StateCreator<
     history.pushState(
       null,
       "",
-      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "home" }),
+      routeToPath({ view: fromKnowledgeBase ? "agents" : "home" }),
     );
     get().resetChatContext();
     set({
       selectedAgent: null,
-      view: fromKnowledgeBase ? "knowledge-bases" : "home",
+      view: fromKnowledgeBase ? "agents" : "home",
     });
   },
 });

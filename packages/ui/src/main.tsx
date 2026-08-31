@@ -20,6 +20,30 @@ import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
 async function main() {
+  if (import.meta.env.VITE_MOCK) {
+    try {
+      const { worker } = await import("./mock/browser.js");
+      await worker.start({ onUnhandledRequest: "warn" });
+    } catch (err) {
+      console.error("[mock] MSW failed to start:", err);
+    }
+    await loadBrand().then(applyBrand);
+    const { default: App } = await import("./app.js");
+    const { MockStateBar } = await import("./mock/state-bar.js");
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <MockStateBar />
+            <App />
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    return;
+  }
+
   const publicAgentId = parsePublicAgentPath(window.location.pathname);
   if (publicAgentId !== null) {
     await loadBrand().then(applyBrand);
@@ -28,7 +52,10 @@ async function main() {
     return;
   }
 
-  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
+  const [user] = await Promise.all([
+    initAuth(),
+    loadBrand().then(applyBrand),
+  ]);
   if (!user) return;
 
   if (!(await preflightTermsGate())) {
@@ -36,8 +63,9 @@ async function main() {
     window.history.replaceState({}, "", routeToPath({ view: "terms" }));
   }
 
-  useStore.getState().hydrateRoute();
   startDraftSync(user.profile.sub);
+
+  useStore.getState().hydrateRoute();
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

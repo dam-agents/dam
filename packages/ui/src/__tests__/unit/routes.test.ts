@@ -13,12 +13,8 @@ const canonicalPaths = [
   "/slack/bind",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
-  "/coding-agents",
-  "/coding-agents/new",
-  "/experiments",
-  "/experiments/new",
-  "/knowledge-bases",
-  "/knowledge-bases/new",
+  "/agents",
+  "/agents/new",
   "/knowledge-bases/kb-1",
   "/knowledge-bases/kb-1/settings",
   "/artifacts",
@@ -30,14 +26,26 @@ describe("route round-trip", () => {
   });
 
   it.each(["/sandboxes", "/sandboxes/", "/sandboxes/new", "/inbox"])(
-    "sends the retired %s to Home",
+    "sends the retired %s to Agents",
     (path) => {
-      expect(parseRoute(path).view).toBe("home");
+      expect(parseRoute(path).view).toBe("agents");
     },
   );
 
-  it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
-    expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");
+  it.each([
+    "/coding-agents",
+    "/coding-agents/new",
+    "/experiments",
+    "/experiments/new",
+    "/knowledge-bases/new",
+  ])("sends the retired %s to Agents", (path) => {
+    expect(parseRoute(path).view).toBe("agents");
+  });
+
+  it("parses /knowledge-bases/:id as KB chat, not a redirect", () => {
+    expect(parseRoute("/knowledge-bases/kb-1").view).toBe(
+      "knowledge-base-chat",
+    );
   });
 });
 

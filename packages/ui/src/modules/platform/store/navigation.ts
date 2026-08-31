@@ -15,12 +15,8 @@ type ParameterlessView =
   | "home"
   | "terms"
   | "artifacts"
-  | "coding-agents"
-  | "coding-agent-new"
-  | "experiments"
-  | "experiment-new"
-  | "knowledge-base-new"
-  | "knowledge-bases";
+  | "agents"
+  | "agent-new";
 
 export interface NavigationSlice {
   view: View;
@@ -31,8 +27,6 @@ export interface NavigationSlice {
   setView: (v: ParameterlessView) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
-  navigateToExperiments: () => void;
-  navigateToKnowledgeBases: () => void;
   navigateToKnowledgeBaseConfig: (agentId: string) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
@@ -86,14 +80,6 @@ export const createNavigationSlice: StateCreator<
       routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
     );
     set({ view: "sandbox-home", agentId, sandboxSection: section });
-  },
-  navigateToExperiments: () => {
-    history.pushState(null, "", routeToPath({ view: "experiments" }));
-    set({ view: "experiments", agentId: null });
-  },
-  navigateToKnowledgeBases: () => {
-    history.pushState(null, "", routeToPath({ view: "knowledge-bases" }));
-    set({ view: "knowledge-bases", agentId: null });
   },
   navigateToKnowledgeBaseConfig: (agentId) => {
     history.pushState(

@@ -72,7 +72,6 @@ export function HomeView() {
   if (!hasAgents) {
     return (
       <div>
-        <HomeGreeting title="Welcome" />
         <WelcomeEntryPoints />
       </div>
     );
