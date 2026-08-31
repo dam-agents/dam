@@ -248,6 +248,7 @@ export function createChannelManager(deps: {
   const subscriptions: Subscription[] = [];
   let stopServing: (() => void) | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: A transport that fails to start does not cost
@@ -255,9 +256,12 @@ export function createChannelManager(deps: {
    * the lease on would only ping-pong it between replicas that fail the same
    * way — while the transports that did come up go down with each handover.
    * The holder keeps the lease, serves whatever started, and retries the rest
-   * on a timer until it stands down.
+   * on a timer until it stands down. Both the retry and the start itself carry
+   * the generation they began in: a stand-down moves it, so a start still in
+   * flight neither re-arms the timer nor keeps serving on an ex-leader.
    */
-  async function startTransports(): Promise<void> {
+  async function startTransports(generationAtStart: number): Promise<void> {
+    if (generationAtStart !== generation) return;
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
     const attempts: [string, () => Promise<unknown>][] = [];
@@ -265,6 +269,7 @@ export function createChannelManager(deps: {
       attempts.push(["telegram", () => telegramWorker.start()]);
     if (slackWorker) attempts.push(["slack", () => slackWorker.connect()]);
     const results = await Promise.allSettled(attempts.map(([, go]) => go()));
+    if (generationAtStart !== generation) return;
     const failed = results.flatMap((r, i) =>
       r.status === "rejected"
         ? [{ name: attempts[i]![0], reason: r.reason }]
@@ -276,11 +281,15 @@ export function createChannelManager(deps: {
       );
     }
     if (failed.length === 0) return;
-    retryTimer = setTimeout(() => void startTransports(), TRANSPORT_RETRY_MS);
+    retryTimer = setTimeout(
+      () => void startTransports(generationAtStart),
+      TRANSPORT_RETRY_MS,
+    );
     retryTimer.unref?.();
   }
 
   async function standDown() {
+    generation += 1;
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
     stopServing?.();
@@ -470,6 +479,7 @@ export function createChannelManager(deps: {
     },
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
+      const generationAtStart = generation;
       if (rpc) {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
@@ -482,10 +492,11 @@ export function createChannelManager(deps: {
         });
       }
 
-      await startTransports();
+      await startTransports(generationAtStart);
 
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
+          if (generationAtStart !== generation) return;
           if (channel.type === ChannelType.Slack && slackWorker) {
             await slackWorker.start(agentId, channel);
           }

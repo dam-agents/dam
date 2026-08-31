@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-08-20
+Last verified: 2026-08-31
 
 ## Overview
 

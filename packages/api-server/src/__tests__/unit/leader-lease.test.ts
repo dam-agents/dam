@@ -256,6 +256,74 @@ describe("leader lease", () => {
     expect(leaseApi.store.has(LEASE)).toBe(false);
   });
 
+  // TEST_SCENARIO: stop() lands while a campaign is still awaiting the API server. The late win must start nothing — the renew timer is already gone, so work started here would run forever on a Lease nobody renews — and the Lease that campaign wrote must not outlive the stop.
+  it("does not take leadership from a campaign that resolves after stop", async () => {
+    const leaseApi = fakeLeaseApi();
+    let admit: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      admit = resolve;
+    });
+    const realRead = leaseApi.readNamespacedLease.bind(leaseApi);
+    leaseApi.readNamespacedLease = (async (
+      args: Parameters<CoordinationV1Api["readNamespacedLease"]>[0],
+    ) => {
+      await gate;
+      return realRead(args);
+    }) as CoordinationV1Api["readNamespacedLease"];
+
+    let acquisitions = 0;
+    const lease = createLeaderLease({
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
+      onAcquired: () => void (acquisitions += 1),
+      onLost: () => {},
+      log: () => {},
+    });
+
+    const starting = lease.start();
+    const stopping = lease.stop();
+    admit();
+    await Promise.all([starting, stopping]);
+
+    expect(acquisitions).toBe(0);
+    expect(lease.isLeader()).toBe(false);
+    expect(leaseApi.store.has(LEASE)).toBe(false);
+  });
+
+  // TEST_SCENARIO: an operator deleting the Lease between the holder's read and its renew must cost nothing — the holder recreates it in the same campaign instead of standing the channel workers down until the next tick.
+  it("recreates a lease deleted between the read and the renew", async () => {
+    const leaseApi = fakeLeaseApi();
+    const lease = createLeaderLease({
+      leases: leaseApi,
+      namespace: "platform-agents",
+      name: LEASE,
+      onAcquired: () => {},
+      onLost: () => {},
+      log: () => {},
+    });
+    await lease.start();
+
+    const realReplace = leaseApi.replaceNamespacedLease.bind(leaseApi);
+    leaseApi.replaceNamespacedLease = ((
+      args: Parameters<CoordinationV1Api["replaceNamespacedLease"]>[0],
+    ) => {
+      leaseApi.store.delete(args.name);
+      leaseApi.replaceNamespacedLease = realReplace;
+      return realReplace(args);
+    }) as CoordinationV1Api["replaceNamespacedLease"];
+
+    vi.useFakeTimers();
+    try {
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(lease.isLeader()).toBe(true);
+      expect(leaseApi.store.has(LEASE)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    await lease.stop();
+  });
+
   it("stands down when the K8s API is unreachable rather than acting as leader", async () => {
     const leaseApi = fakeLeaseApi();
     const lease = createLeaderLease({

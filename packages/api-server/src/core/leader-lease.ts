@@ -13,7 +13,10 @@ import type { CoordinationV1Api, V1Lease } from "@kubernetes/client-node";
  * Lease has stood unchanged for a full duration measured on its own clock. Two
  * failed campaigns in a row stand the holder down — running the Slack socket
  * without a Lease it can still renew is how one install ends up with two
- * consumers.
+ * consumers. `stop()` cannot be outrun by a campaign that is still awaiting the
+ * API server: it moves a generation the campaign re-reads after its await, so a
+ * late win starts nothing, and it waits for that campaign before deleting the
+ * Lease the campaign may just have written.
  */
 export interface LeaderLease {
   isLeader(): boolean;
@@ -42,6 +45,7 @@ export function createLeaderLease(opts: {
     opts.log ?? ((m: string) => process.stderr.write(`[leader-lease] ${m}\n`));
 
   let held = false;
+  let generation = 0;
   let timer: NodeJS.Timeout | null = null;
   let transition: Promise<void> = Promise.resolve();
   let seen: { holder?: string; renew: string; at: number } | null = null;
@@ -97,7 +101,7 @@ export function createLeaderLease(opts: {
     return transition;
   };
 
-  async function claim(): Promise<boolean> {
+  async function claim(recreate = true): Promise<boolean> {
     const spec = () => ({
       holderIdentity: identity,
       leaseDurationSeconds: Math.ceil(ttlMs / 1000),
@@ -145,20 +149,25 @@ export function createLeaderLease(opts: {
       });
       return true;
     } catch (err) {
+      if (isStatus(err, 404) && recreate) return claim(false);
       if (isStatus(err, 409) || isStatus(err, 404)) return false;
       throw err;
     }
   }
 
   let campaignFailures = 0;
+  let inFlight: Promise<boolean> | null = null;
 
-  async function campaign(): Promise<void> {
+  async function campaign(generationAtStart: number): Promise<void> {
     try {
-      const won = await claim();
+      inFlight = claim();
+      const won = await inFlight;
+      if (generationAtStart !== generation) return;
       campaignFailures = 0;
       if (won !== held) log(`lease ${name} ${won ? "acquired" : "lost"}`);
       await transitionTo(won);
     } catch (err) {
+      if (generationAtStart !== generation) return;
       campaignFailures += 1;
       log(`campaign failed: ${err}`);
       if (held && campaignFailures >= 2) {
@@ -172,17 +181,22 @@ export function createLeaderLease(opts: {
     isLeader: () => held,
 
     async start() {
-      await campaign();
-      timer = setInterval(() => void campaign(), Math.floor(ttlMs / 3));
+      const generationAtStart = generation;
+      await campaign(generationAtStart);
+      timer = setInterval(
+        () => void campaign(generationAtStart),
+        Math.floor(ttlMs / 3),
+      );
       timer.unref?.();
     },
 
     async stop() {
+      generation += 1;
       if (timer) clearInterval(timer);
       timer = null;
-      const wasHeld = held;
+      await inFlight?.catch(() => false);
       await transitionTo(false);
-      if (wasHeld) await releaseLease();
+      await releaseLease();
     },
   };
 }

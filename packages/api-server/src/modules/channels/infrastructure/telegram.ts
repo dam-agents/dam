@@ -586,7 +586,8 @@ export function createTelegramWorker(deps: {
         await chat.initialize();
         await adapter.startPolling();
         bot = { chat, adapter };
-        if (!username) username = await fetchTelegramBotUsername(botToken);
+        if (!username)
+          username = await fetchTelegramBotUsername(botToken).catch(() => null);
         process.stderr.write(
           `[telegram] platform bot started${username ? ` (@${username})` : ""}\n`,
         );
