@@ -193,6 +193,7 @@ export type {
   KbShareStringResult,
   KbSharesService,
   KbShareView,
+  KbShareWorkspaceListing,
 } from "./modules/kb-shares/types.js";
 export {
   KB_SHARE_STRING_PREFIX,

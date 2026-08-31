@@ -11,6 +11,7 @@ import type {
   KbShareSetNameInput,
   KbShareStringResult,
   KbShareView,
+  KbShareWorkspaceListing,
 } from "api-server-api";
 import { isUniqueViolation } from "../../../core/db-errors.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -130,12 +131,13 @@ export function createKbSharesService(
 
     async defaults(agentId: string): Promise<KbShareDefaults> {
       const agent = await requireOwnedKnowledgeBase(agentId);
-      const availableRoots = await deps
+      const workspace: KbShareWorkspaceListing = await deps
         .listWorkspaceRoots(agentId)
-        .catch(() => [] as string[]);
+        .then((roots): KbShareWorkspaceListing => ({ state: "listed", roots }))
+        .catch((): KbShareWorkspaceListing => ({ state: "unreachable" }));
       return {
         roots: deps.defaultRootsForKbTemplate(agent.kbTemplateId),
-        availableRoots,
+        workspace,
       };
     },
 

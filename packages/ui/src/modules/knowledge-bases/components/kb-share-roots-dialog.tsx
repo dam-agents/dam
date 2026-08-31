@@ -28,7 +28,8 @@ export function KbShareRootsDialog({
     () => defaults.data?.roots ?? [],
     [defaults.data],
   );
-  const available = defaults.data?.availableRoots;
+  const workspace = defaults.data?.workspace;
+  const available = workspace?.state === "listed" ? workspace.roots : undefined;
   const [overrides, setOverrides] = useState<Record<string, boolean>>({});
 
   const choices = useMemo(() => {
@@ -69,18 +70,22 @@ export function KbShareRootsDialog({
             )}
             {defaults.isError && (
               <p className="text-xs text-warning">
+                Couldn't load the sharing options — close this dialog and try
+                again.
+              </p>
+            )}
+            {workspace?.state === "unreachable" && (
+              <p className="text-xs text-warning">
                 Couldn't list the workspace folders — the knowledge base may be
                 asleep. Wake it to browse, or share the default folders below.
               </p>
             )}
-            {!defaults.isError &&
-              available !== undefined &&
-              available.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  This knowledge base has no folders in its workspace yet — add
-                  content before sharing.
-                </p>
-              )}
+            {workspace?.state === "listed" && workspace.roots.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                This knowledge base has no folders in its workspace yet — add
+                content before sharing.
+              </p>
+            )}
             {choices.map((choice) => (
               <label
                 key={choice.name}
