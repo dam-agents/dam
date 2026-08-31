@@ -21,7 +21,8 @@ oc = "latest"
 [hooks]
 postinstall = '''
 mkdir -p /usr/local/share/tool-bin
-bin_paths=$(mise bin-paths -C /etc/mise)
+just=$(printf '%s' "${MISE_INSTALLED_TOOLS:-}" | sed 's/},{/}\n{/g' | sed -n 's/.*"name":"\([^"]*\)".*"version":"\([^"]*\)".*/\1@\2/p')
+bin_paths=$(mise bin-paths -C /etc/mise; { [ -z "$just" ] || mise bin-paths $just; } || true)
 for d in $bin_paths; do
   for f in "$d"/*; do
     if [ -f "$f" ] && [ -x "$f" ]; then ln -sf "$f" /usr/local/share/tool-bin/; fi
