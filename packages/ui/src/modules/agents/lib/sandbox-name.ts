@@ -1,9 +1,16 @@
-export type SandboxNameKind = "coding-agent" | "experiment" | "knowledge-base";
+export type SandboxNameKind =
+  | "coding-agent"
+  | "experiment"
+  | "knowledge-base"
+  | "research"
+  | "assistant";
 
 const PREFIX: Record<SandboxNameKind, string> = {
   "coding-agent": "codingagent",
   experiment: "experiment",
   "knowledge-base": "knowledgebase",
+  research: "research",
+  assistant: "assistant",
 };
 
 export function nextSandboxName(

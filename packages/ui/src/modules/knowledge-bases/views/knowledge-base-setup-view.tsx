@@ -17,7 +17,7 @@ import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
 import { DEFAULT_KB_TEMPLATE_ID, KB_TEMPLATES } from "../lib/kb-templates.js";
 
-const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
+const RETURN_PATH = routeToPath({ view: "agent-new" });
 
 export function KnowledgeBaseSetupView() {
   const { form, update, reset } = useSetupForm(

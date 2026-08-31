@@ -24,7 +24,7 @@ export function CodingAgentsView() {
   });
 
   const setView = useStore((s) => s.setView);
-  const createCodingAgent = () => setView("coding-agent-new");
+  const createCodingAgent = () => setView("agent-new");
 
   return (
     <div>

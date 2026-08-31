@@ -157,7 +157,6 @@ export function ChatView() {
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
   );
-  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
   const setView = useStore((s) => s.setView);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
@@ -451,7 +450,7 @@ export function ChatView() {
         );
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
-    if (isKnowledgeBaseView) navigateToKnowledgeBases();
+    if (isKnowledgeBaseView) setView("agents");
     else setView("home");
   }, [
     selectedAgent,
@@ -459,7 +458,6 @@ export function ChatView() {
     isKnowledgeBaseView,
     showConfirm,
     deleteAgent,
-    navigateToKnowledgeBases,
     setView,
   ]);
 

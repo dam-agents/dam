@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
+import type { AgentView } from "../../../types.js";
 import { useAgents } from "../api/queries.js";
 import { nextSandboxName, type SandboxNameKind } from "../lib/sandbox-name.js";
 import {
@@ -8,11 +9,13 @@ import {
   isKnowledgeBase,
 } from "../utils/agent-kind.js";
 
-const MATCHES_KIND = {
+const MATCHES_KIND: Record<SandboxNameKind, (a: AgentView) => boolean> = {
   "coding-agent": isCodingAgent,
   experiment: isExperimentSandbox,
   "knowledge-base": isKnowledgeBase,
-} as const;
+  research: isExperimentSandbox,
+  assistant: isCodingAgent,
+};
 
 function useDefaultSandboxName(kind: SandboxNameKind): string {
   const { data } = useAgents();

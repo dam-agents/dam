@@ -13,7 +13,7 @@ import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/image-catalogue.
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateExperimentSandbox } from "../api/mutations.js";
 
-const RETURN_PATH = routeToPath({ view: "experiment-new" });
+const RETURN_PATH = routeToPath({ view: "agent-new" });
 
 export function ExperimentSetupView() {
   const { form, update, reset } = useSetupForm(

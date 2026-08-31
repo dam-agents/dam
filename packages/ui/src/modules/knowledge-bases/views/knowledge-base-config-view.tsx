@@ -21,7 +21,8 @@ import { confirmDeleteKnowledgeBase } from "../lib/confirm-delete.js";
 export function KnowledgeBaseConfigView() {
   const f = useSandboxSettingsForm();
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
-  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
+  const setView = useStore((s) => s.setView);
+  const navigateToKnowledgeBases = () => setView("agents");
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteAgent = useDeleteAgent();
   const display = useResolvedAgentDisplay(f.agent);

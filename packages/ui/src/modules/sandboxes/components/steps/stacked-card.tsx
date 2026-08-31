@@ -17,6 +17,7 @@ interface Props {
   description?: string;
   badge?: ReactNode;
   trailing?: ReactNode;
+  footer?: ReactNode;
   selected: boolean;
   onSelect: () => void;
   testId?: string;
@@ -28,6 +29,7 @@ export function StackedCard({
   description,
   badge,
   trailing,
+  footer,
   selected,
   onSelect,
   testId,
@@ -56,6 +58,7 @@ export function StackedCard({
             <p className="text-sm text-muted-foreground">{description}</p>
           )}
         </div>
+        {footer}
       </div>
     </SelectableCard>
   );
