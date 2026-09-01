@@ -58,6 +58,7 @@ COPY --from=agent /usr/local/sbin/ /usr/local/sbin/
 COPY --from=agent /usr/local/lib/ /usr/local/lib/
 COPY --from=agent /usr/local/share/mise/ /usr/local/share/mise/
 COPY --from=agent /usr/local/share/lazy-tools/ /usr/local/share/lazy-tools/
+COPY --from=agent /usr/local/share/tool-bin/ /usr/local/share/tool-bin/
 COPY --from=agent /etc/mise/ /etc/mise/
 COPY --from=agent /etc/AGENTS.md /etc/AGENTS.md
 # Managed settings carry the Stop/SubagentStop background-work hooks — without

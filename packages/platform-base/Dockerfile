@@ -26,21 +26,23 @@ COPY packages/platform-base/mise.toml /etc/mise/config.toml
 RUN --mount=type=cache,target=/root/.cache/mise \
     --mount=type=secret,id=GITHUB_TOKEN,env=GITHUB_TOKEN \
     set -eu; \
+    export MISE_CACHE_DIR=/root/.cache/mise; \
     mkdir /tmp/lockgen; cp /etc/mise/config.toml /tmp/lockgen/mise.toml; \
     cd /tmp/lockgen; mise trust -q; mise lock; \
-    cp mise.lock /etc/mise/mise.lock; chmod 644 /etc/mise/mise.lock; rm -r /tmp/lockgen
-RUN --mount=type=cache,target=/root/.cache/mise mise install node
+    cp mise.lock /etc/mise/mise.lock; rm -r /tmp/lockgen
+RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install node
 # Python is eager, not a lazy shim: the experiment SDK (#2942) runs loop
 # scripts with python3, and a first-use CPython download would ride the
 # egress gateway mid-experiment (slow at best, policy-blocked at worst).
-RUN --mount=type=cache,target=/root/.cache/mise mise install python
+RUN --mount=type=cache,target=/root/.cache/mise MISE_CACHE_DIR=/root/.cache/mise mise install python
 # mise's CPython bundles pip 26.0.1 (CVE-2026-3219, CVE-2026-8643); self-upgrade
 # until a python release bundles pip >= 26.1.2.
 RUN mise exec python -- python -m pip install --upgrade pip==26.1.2
-# node 24.18.0's bundled npm 11.16.0 ships vulnerable undici 6.26.0
-# (CVE-2026-12151) and tar 7.5.15 (CVE-2026-53655); self-upgrade until a
-# node release bundles npm >= 11.17.0.
-RUN mise exec node -- npm install -g npm@11.18.0
+# node 24.19.0's bundled npm ships vulnerable brace-expansion 5.0.7, ip-address
+# 10.2.0, tar 7.5.19 and undici 6.27.0; self-upgrade until a node release
+# bundles npm >= 11.19.1. Not npm 12: 12.0.2 predates the 11.19.1 dep bumps and
+# still carries all four.
+RUN mise exec node -- npm install -g npm@11.19.1
 
 FROM registry.access.redhat.com/hi/core-runtime:latest-builder AS sysroot
 USER root
@@ -111,7 +113,8 @@ FROM registry.access.redhat.com/hi/core-runtime:latest AS runner
 USER root
 WORKDIR /app
 # MISE_PROVENANCE_API_FAILURES_FATAL: the lazy-tools shims (below) run `mise
-# install` on every jq/fd/rg/gh call. mise re-verifies each tool's GitHub
+# install` until the tool is resolved — uv, uvx, kubectl, oc and gws, the tiers
+# that stayed lazy. mise re-verifies each tool's GitHub
 # artifact attestation against api.github.com, and a long-lived agent doing
 # this thousands of times/hr exhausts the per-token rate limit — every call
 # then loops on 429s (observed on dev: one agent driving ~1k 429/hr). Keeping
@@ -122,7 +125,7 @@ WORKDIR /app
 ENV MISE_DATA_DIR=/usr/local/share/mise \
     MISE_PROVENANCE_API_FAILURES_FATAL=false \
     MISE_NODE_VERIFY=false \
-    PATH="/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
+    PATH="/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:$PATH:/usr/local/share/lazy-tools"
 
 COPY --from=sysroot /sysroot/usr/ /usr/
 COPY --from=sysroot /sysroot/etc/ssh/ /etc/ssh/
@@ -138,16 +141,29 @@ COPY --from=base --chown=65532:0 /etc/mise/ /etc/mise/
 # has no execute bit, which is just a different way to break the import.
 COPY --chmod=0644 packages/experiment-sdk/src/experiment_sdk.py /usr/local/lib/platform-python/experiment_sdk.py
 RUN chmod 0755 /usr/local/lib/platform-python
-# The chmod restores world-readability: mise rewrites the lock 0600, which
-# would lock the runtime agent user out after a root-run install in a derived
-# image build — an unreadable lock degrades every shim call to API lookups.
 RUN set -eu; \
+    install -d -o 65532 /usr/local/share/tool-bin; \
     mkdir /usr/local/share/lazy-tools; cd /usr/local/share/lazy-tools; \
-    for spec in jq fd rg gh uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
+    for spec in uv uv=uvx python python=python3 kubectl oc 'npm:@googleworkspace/cli=gws'; do \
     tool="${spec%%=*}"; bin="${spec##*=}"; \
-    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nchmod 644 /etc/mise/mise.lock 2>/dev/null\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
+    printf '#!/bin/sh\nexport MISE_AUTO_INSTALL=false\nmise install %s 1>&2\nexec mise exec %s -- %s "$@"\n' "$tool" "$tool" "$bin" > "$bin"; \
     chmod 755 "$bin"; \
     done
+RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
+    chown 65532 /app &&\
+    chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /home/agent &&\
+    ldconfig &&\
+    echo 'sshd:x:74:' >> /etc/group &&\
+    echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd &&\
+    sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
+    echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
+
+USER 65532
+RUN --mount=type=cache,target=/tmp/mise-cache,uid=65532 set -eu; \
+    MISE_CACHE_DIR=/tmp/mise-cache mise install jq fd rg gh; \
+    rm -rf /tmp/.local; \
+    test -x /usr/local/share/tool-bin/jq && test -x /usr/local/share/tool-bin/node
+
 COPY --chmod=755 packages/platform-base/harness-chat.sh /usr/local/bin/harness-chat
 COPY --chmod=755 packages/platform-base/harness-terminal.sh /usr/local/bin/harness-terminal
 COPY --chmod=755 packages/platform-base/dam-run.mjs /usr/local/bin/dam-run
@@ -158,21 +174,10 @@ COPY --chown=65532:0 packages/platform-base/working-dir/.claude/settings.json /a
 COPY --chown=65532:0 packages/platform-base/runtime-manifest.yaml /app/runtime-manifest.yaml
 COPY --chown=65532:0 packages/platform-base/AGENTS.md /etc/AGENTS.md
 
-RUN mkdir -p /home/agent /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs &&\
-    chown 65532 /app &&\
-    chown -R 65532 /etc/pki/ca-trust/source/anchors /etc/pki/ca-trust/extracted /etc/pki/tls/certs /home/agent &&\
-    ldconfig &&\
-    echo 'sshd:x:74:' >> /etc/group &&\
-    echo 'sshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/usr/sbin/nologin' >> /etc/passwd &&\
-    sed -i -E '/^[^:]*:[^:]*:65532:/d' /etc/passwd &&\
-    echo 'agent:x:65532:0:Agent User:/home/agent:/bin/bash' >> /etc/passwd
-
 COPY --from=builder --chown=65532:0 /deploy/package.json ./
 COPY --from=builder --chown=65532:0 /deploy/node_modules ./node_modules
 COPY --from=builder --chown=65532:0 /app/packages/agent-runtime/dist/ ./dist/
 COPY --from=builder /app/packages/driver-sdk/dist/driver-sdk.mjs /usr/local/lib/driver-sdk.mjs
-
-USER 65532
 
 # Python's TLS clients skip the system trust store the entrypoint installs the
 # platform CA into (httpx/certifi honor SSL_CERT_FILE, requests honors
