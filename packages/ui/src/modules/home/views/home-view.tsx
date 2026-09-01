@@ -79,12 +79,6 @@ export function HomeView() {
           <div className="space-y-3 lg:col-start-1 lg:row-start-2">
             <FeedCardSkeleton rows={3} />
           </div>
-          {openArtifact && (
-            <ArtifactPreviewDialog
-              artifact={openArtifact}
-              onClose={() => setOpenArtifactId(null)}
-            />
-          )}
           <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
             <WidgetSkeleton rows={2} />
             <WidgetSkeleton rows={3} />
@@ -194,6 +188,12 @@ export function HomeView() {
             </>
           )}
         </div>
+        {openArtifact && (
+          <ArtifactPreviewDialog
+            artifact={openArtifact}
+            onClose={() => setOpenArtifactId(null)}
+          />
+        )}
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
           <ComputeWidget
             runningAgents={runningAgents}
