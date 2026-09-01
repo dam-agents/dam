@@ -69,7 +69,7 @@ export interface OutboxRepo {
     maxAttempts?: number,
   ): Promise<ApplyTransitions>;
   listRetryable(maxAttempts: number, limit: number): Promise<OutboxRow[]>;
-  seedingAgentIds(agentIds: string[]): Promise<Set<string>>;
+  preparingWorkspaceAgentIds(agentIds: string[]): Promise<Set<string>>;
   deleteExpiredEvents(): Promise<number>;
   insertEvent(
     input: PendingEventRow & { createdAt?: Date },
@@ -260,7 +260,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       return rows;
     },
 
-    async seedingAgentIds(agentIds): Promise<Set<string>> {
+    async preparingWorkspaceAgentIds(agentIds): Promise<Set<string>> {
       if (agentIds.length === 0) return new Set();
       const rows = (await db
         .select({ agentId: runtimeEvents.agentId })
@@ -268,7 +268,10 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .where(
           and(
             inArray(runtimeEvents.agentId, agentIds),
-            eq(runtimeEvents.kind, "workspace-seed"),
+            inArray(runtimeEvents.kind, [
+              "workspace-seed",
+              "workspace-command",
+            ]),
             isNull(runtimeEvents.dispatchedAt),
             sql`${runtimeEvents.expiresAt} > now()`,
           ),

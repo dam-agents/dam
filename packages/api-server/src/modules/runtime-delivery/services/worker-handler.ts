@@ -20,8 +20,14 @@ export interface WorkerHandlerDeps {
   agentRunningPort: IsAgentRunning;
   snapshotWriter: HarnessConfigSnapshotWriter;
   clientFor(agentId: string): AgentRuntimeClient;
+  resolveOwner: (agentId: string) => Promise<string | null>;
   log: (msg: string) => void;
 }
+
+const WORKSPACE_MUTATION_KINDS = new Set([
+  "workspace-seed",
+  "workspace-command",
+]);
 
 export type WorkerHandler = (
   agentId: string,
@@ -114,6 +120,23 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
 
     const { newlyFailed, recovered, gaveUp } =
       await deps.outboxRepo.recordOutcome(agentId, row.version, settle);
+
+    const settledIds = new Set(settle.settledEventIds);
+    const workspaceMutationSettled = payload.events.some(
+      (e) => settledIds.has(e.id) && WORKSPACE_MUTATION_KINDS.has(e.kind),
+    );
+    if (workspaceMutationSettled) {
+      try {
+        const ownerSub = await deps.resolveOwner(agentId);
+        if (ownerSub) {
+          emit({ type: EventType.WorkspaceMutationSettled, agentId, ownerSub });
+        }
+      } catch (err) {
+        deps.log(
+          `[runtime-worker] ${agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
+        );
+      }
+    }
 
     if (reported) {
       try {
