@@ -39,7 +39,9 @@ export function useDemoState() {
 }
 
 export function DemoStrip() {
-  const captureMode = new URLSearchParams(window.location.search).get("capture");
+  const captureMode = new URLSearchParams(window.location.search).get(
+    "capture",
+  );
   const { state, setState, setShowWelcome } = useDemoState();
 
   if (captureMode) return null;

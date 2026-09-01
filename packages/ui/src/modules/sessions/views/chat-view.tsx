@@ -70,6 +70,16 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
+import { DemoBadge } from "../../packs/components/demo-badge.js";
+import {
+  useDemoPackId,
+  useIsDemoAgent,
+} from "../../packs/hooks/use-is-demo-agent.js";
+import {
+  backToPacks,
+  makeThisMine,
+  walkAway,
+} from "../../packs/lib/demo-exit-actions.js";
 import {
   getDefaultExamples,
   useRotatingPlaceholder,
@@ -110,6 +120,9 @@ export function ChatView() {
     selectedAgent,
     agentInaccessible,
   );
+
+  const isDemo = useIsDemoAgent(selectedAgent);
+  const demoPackId = useDemoPackId(selectedAgent);
 
   useSessionUrlSync(selectedAgent);
 
@@ -508,6 +521,7 @@ export function ChatView() {
           <h1 className="text-sm font-bold text-foreground truncate">
             {selectedAgentName}
           </h1>
+          {isDemo && <DemoBadge />}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -544,6 +558,32 @@ export function ChatView() {
           />
         </div>
       </header>
+
+      {isDemo && demoPackId && (
+        <div className="flex items-center gap-3 px-6 py-2 border-b border-border bg-warning/5">
+          <p className="flex-1 text-sm text-muted-foreground">
+            This is a demo agent. Explore the chat and settings to see how it
+            works.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => makeThisMine(demoPackId)}
+          >
+            Make this mine
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => backToPacks()}>
+            Back to packs
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => walkAway(demoPackId)}
+          >
+            Walk away
+          </Button>
+        </div>
+      )}
 
       {}
       <div className="flex flex-1 min-h-0">
@@ -822,7 +862,7 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
+      ) : selectedAgent && !agentInaccessible && !agentOperable && !isDemo ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

@@ -14,6 +14,7 @@ import {
   createDismissalsSlice,
   type DismissalsSlice,
 } from "./modules/home/store.js";
+import { createPacksSlice, type PacksSlice } from "./modules/packs/store.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -62,7 +63,8 @@ export type PlatformStore = DialogSlice &
   FilesSlice &
   ArtifactsSlice &
   DismissalsSlice &
-  PermissionsSlice;
+  PermissionsSlice &
+  PacksSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -76,6 +78,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createArtifactsSlice(...a),
   ...createDismissalsSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createPacksSlice(...a),
 }));
 
 let draftSyncStarted = false;

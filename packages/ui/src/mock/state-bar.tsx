@@ -108,9 +108,7 @@ export function MockStateBar() {
                   onClick={s.go}
                   className={cn(
                     "rounded-md px-3 py-2 text-left transition-colors",
-                    active
-                      ? "bg-muted"
-                      : "hover:bg-muted/50",
+                    active ? "bg-muted" : "hover:bg-muted/50",
                   )}
                 >
                   <span className="flex items-center gap-2">
