@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-26
+Last verified: 2026-08-31
 
 ## Overview
 
@@ -149,6 +149,8 @@ Three Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 The HTML report is rendered server-side as a single static page — no JavaScript, escaped, dark-mode aware. There is no visible UI affordance; the UI exposes a `window.platformUsage.openReport()` function registered at bootstrap that inspectors call from the browser devtools console. The function fetches with the Bearer token, wraps the response in a Blob URL, and opens it in a new tab (a plain `<a href>` cannot send the Bearer token); the Blob is revoked a minute after open.
 
 When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
+
+A `_7d` or `_30d` suffix in a view name is a contract about whole days: the window spans complete UTC days and closes at today's UTC midnight, so a 7-day view read on a Monday morning covers the previous Monday through Sunday. Today sits outside every window by design. A day still in progress placed beside finished ones reads as a fall in usage rather than as a bar not yet filled, and closing on a day boundary is also what makes a windowed view reproducible — read twice in the same day it answers the same question, and a past week can be re-derived. The cost is that the newest day takes up to 24 hours to surface; views with no suffix are unbounded and show it immediately.
 
 ### Source passthrough views
 
