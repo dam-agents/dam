@@ -3,8 +3,8 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ARG BOBSHELL_VERSION=2.0.0
-ARG BOBSHELL_SHA256=de2d773e7e7a79cddf671d1019c8852f58b4c4472f96eccf4a23b9feac620812
+ARG BOBSHELL_VERSION=2.0.2
+ARG BOBSHELL_SHA256=ffaf815f518434b3d77c2101182832d73f0537707c28be6044fa1968410801a7
 RUN --mount=type=cache,target=/root/.npm \
     curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOBSHELL_VERSION}.tgz" -o /tmp/bobshell.tgz &&\
     echo "${BOBSHELL_SHA256} /tmp/bobshell.tgz" | sha256sum -c - &&\
@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/root/.npm \
     mise reshim &&\
     chown -R 65532:0 /app
 
-COPY bob-acp-shim.mjs /app/bob-acp-shim.mjs
+COPY bob-settings.mjs /app/bob-settings.mjs
 COPY harness-chat.sh /usr/local/bin/harness-chat
 COPY harness-terminal.sh /usr/local/bin/harness-terminal
 # 2.0's RuleLoader reads <workspace>/.bob/rules/ (every file appended to the

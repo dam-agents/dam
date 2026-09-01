@@ -1,16 +1,39 @@
 # Bob Agent
 
-Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Built on the platform-base image with an ACP translation shim and a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
+Platform agent running [Bob Shell](https://internal.bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant. Built on the platform-base image, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
 
 ## Stack
 
 | Component | Source | Purpose |
 |---|---|---|
-| Harness | `bobshell` 2.x (installed from the `bob-shell` COS bucket tarball) | Bob CLI: `bob run --format stream-json` for chat turns + `bob chat` TUI for terminal |
-| ACP bridge | `bob-acp-shim.mjs` | ACP agent for agent-runtime; spawns one `bob run` per prompt turn and translates its stream-json events into `session/update` frames; serves `session/list` + `session/load` from Bob's task DB; continues tasks with the native `--resume <task-id>` |
+| Harness | `bobshell` 2.0.2 (installed from the `bob-shell` COS bucket tarball) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
+| Settings bootstrap | `bob-settings.mjs` | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` and re-asserts the platform instructions rules link; runs before either surface starts |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
 
-Bob 2.0 removed the `--experimental-acp` mode the previous shim bridged, so the shim is now itself the ACP endpoint rather than a frame-by-frame translator. The headless contract it builds on: `bob run --format stream-json` emits `message` (with `isReasoning` separating thoughts from answers), `tool_use`, `tool_result`, `result` (whose `stats.task_id` names the created/resumed task), and `error` events.
+## ACP
+
+`bob acp` is a first-class ACP server over stdio, so agent-runtime spawns it directly — there is no translation shim. What it advertises on `initialize`:
+
+```
+loadSession: true
+sessionCapabilities: { list, delete, resume, close }
+promptCapabilities: { embeddedContext, image }
+mcpCapabilities: { http, sse }
+authMethods: [{ id: "sso" }]
+```
+
+Consequences for the platform:
+
+- **Session ids are Bob task ids.** `session/new` returns `taskState.rootTaskId`, so the platform's session id and Bob's task id are the same string — nothing to map or persist.
+- **History is native.** `session/list` (paged, `cwd`-filtered), `session/load` (full replay including tool calls, diffs and the last plan state) and `session/resume` (no replay) come straight from Bob's task store.
+- **`cwd` must be absolute.** `session/list` rejects a relative `cwd` outright. The platform's clients all send `cwd: "."`, but agent-runtime rewrites every `cwd` in a frame to the pod's work dir before it reaches the harness, so Bob only ever sees an absolute path. That rewrite is load-bearing for this agent.
+- **Attachments and images ride the prompt.** `embeddedContext` and `image` are supported, so nothing has to be staged into the workspace first.
+- **Extra updates are ignored, not fatal.** Bob emits `plan` and `available_commands_update` frames the UI's projection drops on its `default` branch.
+- **The replay arrives after the load response.** Bob answers `session/load` first and streams the conversation afterwards, the reverse of what the runtime's cold fill expects: the first load of an old session answers empty and its history lands a beat later as live updates, which the transcript keeps. This is why agent-runtime re-attaches a cold session with `session/resume` (which Bob advertises and which replays nothing) rather than `session/load` — a load there would replay the whole task into a transcript that already holds it.
+
+The one ACP capability Bob does not implement is `session/set_model` — model selection goes through settings (below), modes through `session/set_mode`.
+
+MCP servers still arrive the platform way, as a runtime-channel contribution written to `~/.bob/settings/mcp.json` (see [`runtime-manifest.yaml`](runtime-manifest.yaml)), not through `session/new.mcpServers`.
 
 ## Authentication
 
@@ -22,21 +45,27 @@ Bob expects `BOBSHELL_API_KEY` in the pod env (2.0 renamed it to `BOB_API_KEY`, 
 
 The flow per request: Bob's `fetch()` sets `Authorization: Apikey dummy-placeholder` and tunnels through `HTTPS_PROXY` → Envoy terminates TLS using the platform CA → `credential_injector` rewrites the header to `Apikey bob_prod_…` from the K8s Secret → upstream sees the valid token. See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md).
 
+With the API key present Bob never asks to authenticate, so the `sso` auth method it advertises is dead weight here — an agent whose secret was never granted fails `session/new` with `auth_required` instead.
+
 ### Endpoints that read the key from the URL
 
 Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query parameter. The provider preset's `extraInjections` automatically creates a second "twin" K8s Secret on the same host with `queryParamName: key`; the platform-side service cascades grants/updates/deletes onto it. See [ADR-044](../../../docs/adrs/044-provider-twin-secrets.md) for the twin-secret pattern and [ADR-033 §Credential injection](../../../docs/adrs/033-envoy-credential-gateway.md#credential-injection) for the Envoy URL-rewrite path.
 
 ## Autonomy posture
 
-`bob run` (headless) has no per-tool prompt channel and no `--auto-approve` flag — approvals ride the settings file. The shim merge-writes `~/.bob/settings/settings.json` on startup with the platform posture: `approval.autoApprovalEnabled: true`, all permission groups (`read`, `edit`, `execute`, `browser`, `mcp`) allowed, a wildcard `execute_command` allowlist, and `outsideWorkspaceAllowed: true`. This is the 2.x equivalent of 1.x `--yolo`; there is no per-tool HITL in either surface.
+Both surfaces run `--trust --accept-license`, because Bob refuses to open a session in an untrusted workspace and the platform's workspace arrives as a plain `cwd`, with no one to answer a trust prompt.
 
-The same settings apply to the terminal TUI (`bob chat`), so terminal sessions auto-approve too — unlike 1.x, where the TUI ran in `auto_edit` and asked before risky tools. Approval granularity is a Bob-side concern; the trust boundary is the platform's, not Bob's: every outbound HTTP request goes through the per-instance Envoy egress sidecar (ADR-033/038) with `ext_authz` / egress-rules enforcement, the agent container has no SA token, no Secret volume mounts, and no Envoy config it can rewrite.
+**Chat asks.** Bob's ACP requests permission per tool call (allow once / always allow / reject / always reject, an "always" remembered per tool name for the session), and the harness deliberately does *not* pass `--auto-approve`, so those requests reach the client like any other agent's: read-only tools run unprompted, everything else surfaces as an approval. This is the change 2.0.2 bought — the old bridge drove a batch mode with no way to ask mid-turn, so Bob was the one agent that never asked.
 
-Bob's own guardrail that remains active: `session.maxTurns` (Bob default 100) ends a runaway task, and `--max-cost` (below) caps spend per task.
+It follows that an unattended session behaves like other agents too: a permission request with no engaged viewer expires against agent-runtime's TTL and the tool call aborts. A scheduled or channel-triggered Bob task that edits files needs someone to answer it, or the platform-wide approval posture to change — this is not Bob-specific.
+
+**Terminal auto-approves**, as it did before this change: `bob chat --auto-approve` keeps the TUI from stopping on every tool.
+
+Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate ahead of any approval decision (the settings bootstrap opens it, or Bob would refuse every tool touching `$HOME` — skills, rules), `session.maxTurns` (Bob default 100) ends a runaway task, and `session.maxCost` caps spend per task.
 
 ## Configuration
 
-Bob 2.x accepts settings from `~/.bob/settings/settings.json` (merged by the shim from the env vars below) and CLI flags (translated by the harness scripts). The Bob Shell provider preset pins the most common ones; the rest stay free-form in **Configure Agent → Env**.
+`bob acp` parses only `--trust`, `--auto-approve`, `--accept-license`, `--log-level` and `--disable-{mcp,subagents}` — model, mode and cost have no flag on that surface, so they ride `~/.bob/settings/settings.json`, which `bob-settings.mjs` merge-writes from the env before either surface starts. The Bob Shell provider preset pins the most common ones; the rest stay free-form in **Configure Agent → Env**.
 
 ### Pinned via the Bob Shell provider (Settings → Providers → Bob Shell → Advanced)
 
@@ -45,11 +74,11 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 | Env var | Translated to | Effect |
 |---|---|---|
 | `BOBSHELL_API_KEY` | n/a (env-only) | API key the Envoy sidecar swaps to the real value on the wire. Always emitted. |
-| `BOB_SHELL_MODEL` | `session.model` in settings | Default model for new tasks. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
-| `BOB_INSTANCE_ID` | `bob chat --instance-id` (terminal only) | IBM tenant scoping. `bob run` has no instance flag in 2.x — headless instance selection goes through Bob profiles, so this pin does not apply to chat-mode sessions. |
-| `BOB_TEAM_ID` | `--team-id` | Team ID for `general`-type API keys. |
-| `BOB_MAX_COINS` | `--max-cost` + `session.maxCost` | Per-task cost cap — Bob stops the task when exceeded. |
-| `BOB_CHAT_MODE` | `--mode` | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Sets the default mode for new sessions. |
+| `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
+| `BOB_CHAT_MODE` | `session.defaultMode` | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions — clients switch it live over `session/set_mode`. |
+| `BOB_MAX_COINS` | `session.maxCost` | Per-task cost cap — Bob stops the task when exceeded. |
+| `BOB_INSTANCE_ID` | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles. |
+| `BOB_TEAM_ID` | `bob chat --team-id` (terminal only) | Team ID for `general`-type API keys. Terminal-only for the same reason. |
 
 Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin.
 
@@ -59,28 +88,25 @@ Less common toggles, not surfaced on the provider card.
 
 | Env var | Effect |
 |---|---|
-| `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. |
+| `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
 | `IBM_TELEMETRY_ENABLED` | Set to `false` to opt out of Bob's telemetry. |
-| `BOB_SHIM_TRACE` | Set to `1` to log every shim frame (client↔shim↔bob) to the pod log. |
 
-Gone in 2.0 (silently ignored if set): `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there), `BOB_RESUME_MAX_MESSAGES` (resume is native now).
+Gone in 2.0 (silently ignored if set): `BOBSHELL_HIDE_ENVS`, `BOB_SHELL_PRE_CHECK_AUTO_APPROVED`, `BOB_SHELL_SYSTEM_MD` (custom instructions now ride the `.bob/rules/` directory — the image links the platform instructions there).
+
+The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins the version, and a self-update inside the pod would both fail against the egress rules and print onto stdout.
 
 ## Harness scripts
 
 | Script | Behavior |
 |---|---|
-| `harness-chat.sh` | `exec`s `node /app/bob-acp-shim.mjs`. The shim merge-writes the settings posture, serves ACP, and spawns `bob run --format stream-json` per prompt turn. |
-| `harness-terminal.sh` | Writes the settings posture (`--settings-only`), translates the `BOB_*` env into `bob chat` flags, then `exec`s the TUI. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
+| `harness-chat.sh` | Runs `bob-settings.mjs`, then `exec`s `bob acp`. |
+| `harness-terminal.sh` | Runs `bob-settings.mjs`, translates the tenant-scoping env into `bob chat` flags, then `exec`s the TUI. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
 
 ## Session history
 
-Bob 2.0 persists every task to SQLite on the PVC (`~/.bob/db/bob.db`, tables `tasks` + `messages`), and the shim serves ACP history straight from it:
+Bob persists every task to SQLite on the PVC (`~/.bob/db/bob.db`) and serves ACP history from it, so the platform's sidebar, replay and resume are all native reads — see [ACP](#acp) above. Terminal-mode tasks land in the same store and therefore also appear in the session list.
 
-- **`session/list`** — one entry per non-archived task (title from the task row, `_meta.platform.mode: chat`).
-- **`session/load`** — replays the task's stored messages as `user_message_chunk` / `agent_message_chunk` updates.
-- **Resume (prompt into a loaded task)** — native: the shim runs `bob run --resume <task-id> -- <prompt>` (the prompt is positional). No transcript re-injection; Bob reloads its own context. The stream carries only the new turn — `--resume` does not re-emit stored history, verified against tasks with several assistant turns — so nothing needs filtering beyond the prompt echo. The turn must run in the task's own workspace or Bob rejects the task outright.
-
-ACP session ids issued by `session/new` are shim-generated (`bob-<uuid>`); the sessionId↔taskId binding is learned from the first turn's `result.stats.task_id` and persisted to `~/.bob/platform-shim-sessions.json` so loaded sessions stay resumable across pod restarts.
+Chat sessions created before 2.0.2 are not reachable: their ids were minted by the old translation shim (`bob-<uuid>`) and mean nothing to Bob, so `session/load` answers `resourceNotFound`. Their Bob-side tasks survive and can still be resumed from the terminal with `bob -r`.
 
 ## Persistence
 
