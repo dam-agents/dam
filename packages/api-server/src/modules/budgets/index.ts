@@ -1,2 +1,7 @@
-export { composeBudgetsModule } from "./compose.js";
-export type { BudgetedAgent, ResizeGate } from "./services/budgets-service.js";
+export { composeBudgetsModule, composeSpawnSizeGate } from "./compose.js";
+export {
+  SizeNeverFitsError,
+  type BudgetedAgent,
+  type ResizeGate,
+  type SpawnSizeGate,
+} from "./services/budgets-service.js";

@@ -33,6 +33,7 @@ type AgentReconciler struct {
 	budgetMu    sync.Mutex
 	ownerLocks  map[string]*sync.Mutex
 	deniedWakes map[string]string
+	parkedRetry map[string]struct{}
 	busyProbe   func(ctx context.Context, agentName string) bool
 }
 
@@ -172,6 +173,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		}
 	}
 
+	if parked && autoRetry {
+		r.recordParkedRetry(name)
+	} else {
+		r.clearParkedRetry(name)
+	}
+
 	rollRev := agent.Annotations[annRollRev]
 
 	gatewaySS := BuildGatewayStatefulSet(name, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
@@ -218,10 +225,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 		}
 	}
+	timer.mark("agentStatefulSet")
 	if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 	}
-	timer.mark("agentStatefulSet")
+	timer.mark("agentService")
 
 	if agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != "" {
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {
@@ -264,12 +272,19 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
 	ready := agentReady && gatewayReady
 
+	var agentPod *corev1.Pod
+	if !agent.Spec.IsVM() {
+		agentPod = r.getPod(ctx, name)
+	}
+
 	agentFailReason, agentFailMsg := "PodNotReady", ""
-	if !agentReady && !agent.Spec.IsVM() {
-		if reason, msg, ok := terminationReason(r.getPod(ctx, name)); ok {
+	if !agentReady {
+		if reason, msg, ok := terminationReason(agentPod); ok {
 			agentFailReason, agentFailMsg = reason, msg
 		}
 	}
+
+	agentRestarts, agentRestartReason := podRestarts(agentPod)
 
 	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
 	if !gatewayReady {
@@ -281,6 +296,8 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, gatewayReady, "PodReady", gatewayFailReason, gatewayFailMsg, gen)
 		setStatusCondition(s, apiv1.ConditionReady, ready, "AllPodsReady", "PodsNotReady", "", gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
+		s.AgentPodRestarts = agentRestarts
+		s.AgentPodRestartReason = agentRestartReason
 		s.ObservedGeneration = gen
 	})
 }
@@ -377,6 +394,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name string) {
 	r.deletePVCs(ctx, name)
 
 	r.clearDeniedWake(name)
+	r.clearParkedRetry(name)
 }
 
 func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) {

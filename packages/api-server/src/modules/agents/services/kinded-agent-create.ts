@@ -1,12 +1,14 @@
 import type { Agent, AgentCreateInput, AgentsService } from "api-server-api";
 
 import { securityLog } from "../../../core/security-log.js";
+import { emit, EventType } from "../../../events.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 
 const INSTALL_EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface KindedAgentCreateDeps {
   owner: string;
+  surface: string;
   agents: Pick<AgentsService, "create" | "delete">;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
@@ -50,6 +52,13 @@ export async function createKindedAgent(
     actorKind: "user",
     agentId: agent.id,
     result: "success",
+  });
+  emit({
+    type: EventType.KindedAgentCreated,
+    agentId: agent.id,
+    actorSub: deps.owner,
+    surface: deps.surface,
+    kind: args.createInput.kind ?? "unknown",
   });
   return agent;
 }

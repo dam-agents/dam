@@ -45,6 +45,8 @@ const TRPC_CODE: Record<ScanFailureCode, TRPCError["code"]> = {
   needs_sandbox: "PRECONDITION_FAILED",
   repo_unreachable: "FORBIDDEN",
   agent_unreachable: "INTERNAL_SERVER_ERROR",
+  source_path_not_found: "BAD_REQUEST",
+  source_path_empty: "BAD_REQUEST",
   other: "INTERNAL_SERVER_ERROR",
 };
 

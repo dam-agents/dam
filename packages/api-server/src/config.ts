@@ -1,4 +1,4 @@
-import { brandSchema } from "api-server-api";
+import { brandSchema, linksSchema } from "api-server-api";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { durationToMinutesStrict } from "./duration.js";
@@ -65,7 +65,6 @@ const configSchema = z.object({
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
   keycloakInspectorRole: z.string().optional(),
-  agentHome: z.string().default("/home/agent"),
   agentIdleTimeoutMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
@@ -110,6 +109,7 @@ const configSchema = z.object({
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
   experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   brand: brandSchema,
+  links: linksSchema,
   terms: z.object({
     version: z.string().min(1, "terms.version must be set"),
     text: z.string().min(1, "terms.text must be set"),
@@ -174,7 +174,6 @@ export function loadConfig(): Config {
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
-    agentHome: process.env.AGENT_HOME,
     agentIdleTimeoutMinutes: durationToMinutesStrict(
       process.env.AGENT_IDLE_TIMEOUT ?? "1h",
     ),
@@ -220,6 +219,7 @@ export function loadConfig(): Config {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",
       title: process.env.BRAND_TITLE ?? "",
+      vendor: process.env.BRAND_VENDOR ?? "",
       theme: {
         light: {
           accent: process.env.BRAND_THEME_LIGHT_ACCENT ?? "#0F62FE",
@@ -232,6 +232,9 @@ export function loadConfig(): Config {
           accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },
+    },
+    links: {
+      computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
     },
     terms: {
       version: process.env.TERMS_VERSION,

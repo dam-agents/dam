@@ -201,7 +201,7 @@ export function AddSkillSetsModal({
           </p>
         ) : sets.length === 0 ? (
           <p className="px-5 py-4 text-sm text-muted-foreground md:px-7">
-            No saved skill sets yet — save one from this sandbox first.
+            No saved skill sets yet — save one from this agent first.
           </p>
         ) : (
           <div className="divide-y divide-border border-y border-border">

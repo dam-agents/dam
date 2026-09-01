@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
 import {
   type AgentsService,
@@ -11,6 +12,7 @@ import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.j
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import { invocationTargetName } from "../domain/target-name.js";
 import type { DriverResolution } from "./driver-resolution.js";
+import type { TargetAdmission } from "./target-admission.js";
 import type {
   InvocationsRepository,
   InvocationStatus,
@@ -100,6 +102,7 @@ export function createInvocationsService(deps: {
     experimentId: string,
     driverAgentId: string,
   ) => Promise<boolean>;
+  targetAdmission?: TargetAdmission;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
@@ -132,6 +135,13 @@ export function createInvocationsService(deps: {
 
       compileSchema(input.schema);
 
+      if (deps.targetAdmission) {
+        await deps.targetAdmission.assertCanEverFit({
+          ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(input.size ? { size: input.size } : {}),
+        });
+      }
+
       if (input.experimentSpanId && deps.isExperimentRunning) {
         const experimentId = input.experimentSpanId.split("/", 1)[0]!;
         if (
@@ -160,7 +170,6 @@ export function createInvocationsService(deps: {
         expiresAt,
         experimentSpanId: input.experimentSpanId ?? null,
       });
-
       let agent;
       try {
         agent = await deps.agents.create({
@@ -180,6 +189,12 @@ export function createInvocationsService(deps: {
         await deps.repo.delete(targetId).catch(() => {});
         throw err;
       }
+      emit({
+        type: EventType.InvocationSpawned,
+        targetAgentId: targetId,
+        driverAgentId: input.driverAgentId,
+        ownerSub: deps.owner,
+      });
 
       const task = buildInvocationPrompt({
         prompt: input.prompt,
@@ -206,7 +221,11 @@ export function createInvocationsService(deps: {
     async get(invocationId, driverAgentId) {
       const row = await deps.repo.get(invocationId);
       if (!row || row.driverAgentId !== driverAgentId) return null;
-      return { status: row.status, result: row.result };
+      return {
+        status: row.status,
+        result: row.result,
+        errorReason: row.errorReason ?? undefined,
+      };
     },
 
     async recordResult(invocationId, result) {

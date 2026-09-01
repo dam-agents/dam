@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -38,6 +39,7 @@ import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
+  useAgentLacksLiveUpdates,
   useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
@@ -45,19 +47,21 @@ import {
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
-import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
+import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
+import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { EgressApprovalToasts } from "../../approvals/components/egress-approval-toasts.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
+import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
@@ -88,6 +92,7 @@ import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
+import { useSessionWatch } from "../hooks/use-session-watch.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -95,11 +100,17 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
+  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
+  const leavingForPublicPage = usePublicAgentFallback(
+    selectedAgent,
+    agentInaccessible,
+  );
 
   useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
-  useAgentReachabilityProbe(selectedAgent);
+  useAgentReachability(selectedAgent);
+  useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
@@ -185,6 +196,7 @@ export function ChatView() {
   const {
     resetSession,
     resumeSession,
+    loadOlderMessages,
     sendPrompt,
     stopAgent,
     busy,
@@ -230,6 +242,42 @@ export function ChatView() {
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  const pendingPrependRef = useRef<{
+    height: number;
+    before: string;
+  } | null>(null);
+
+  const loadOlderKeepingScroll = useCallback(
+    async (before: string): Promise<"paged" | "reloaded" | "noop"> => {
+      const el = messagesRef.current;
+      if (el) {
+        pendingPrependRef.current = { height: el.scrollHeight, before };
+        el.style.overflowAnchor = "none";
+      }
+      const outcome = await loadOlderMessages(before);
+      if (outcome !== "paged") {
+        pendingPrependRef.current = null;
+        if (el) el.style.overflowAnchor = "";
+        if (outcome === "reloaded") scrollToBottom();
+      }
+      return outcome;
+    },
+    [loadOlderMessages, scrollToBottom],
+  );
+
+  useLayoutEffect(() => {
+    const pending = pendingPrependRef.current;
+    const el = messagesRef.current;
+    if (!pending || !el) return;
+    if (messages.some((m) => m.loadOlderBefore === pending.before)) {
+      pending.height = el.scrollHeight;
+      return;
+    }
+    pendingPrependRef.current = null;
+    el.scrollTop += el.scrollHeight - pending.height;
+    el.style.overflowAnchor = "";
+  }, [messages]);
+
   useEffect(() => {
     const el = messagesRef.current;
     if (!el) return;
@@ -266,6 +314,15 @@ export function ChatView() {
       setShowJump(false);
     }
   }, [messages.length]);
+
+  useLayoutEffect(() => {
+    if (loadingSession) return;
+    const el = messagesRef.current;
+    if (!el) return;
+    stickRef.current = true;
+    setShowJump(false);
+    el.scrollTop = el.scrollHeight;
+  }, [loadingSession, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -361,11 +418,11 @@ export function ChatView() {
         modelSettings: null,
       }
     : {
-        actionsAria: "Sandbox actions",
-        configure: "Configure sandbox",
-        delete: "Delete Sandbox",
-        modelSubject: "sandbox",
-        modelSettings: "Sandbox Setup",
+        actionsAria: "Agent actions",
+        configure: "Configure agent",
+        delete: "Delete Agent",
+        modelSubject: "agent",
+        modelSettings: "Agent Setup",
       };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -388,14 +445,14 @@ export function ChatView() {
     const ok = isKnowledgeBaseView
       ? await confirmDeleteKnowledgeBase(showConfirm, selectedAgentName ?? "")
       : await showConfirm(
-          "Delete this sandbox? This also deletes all persistent data and cannot be undone.",
-          "Delete Sandbox",
+          "Delete this agent? This also deletes all persistent data and cannot be undone.",
+          "Delete Agent",
           { kind: "destructive" },
         );
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
     if (isKnowledgeBaseView) navigateToKnowledgeBases();
-    else setView("list");
+    else setView("home");
   }, [
     selectedAgent,
     selectedAgentName,
@@ -492,6 +549,7 @@ export function ChatView() {
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
+          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <SessionsSidebar
             open={sessionsOpen}
             onToggle={() => setSessionsOpen((o) => !o)}
@@ -637,6 +695,7 @@ export function ChatView() {
                         hasPendingPermission={hasPendingPermission}
                         onRetry={sendPrompt}
                         onFileClick={openFileHandler}
+                        onLoadOlder={loadOlderKeepingScroll}
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}
@@ -655,6 +714,13 @@ export function ChatView() {
               </div>
 
               <div className="pb-4">
+                {agentView && isExperimentSandbox(agentView) && (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
+                    </ChatColumn>
+                  </div>
+                )}
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -725,7 +791,7 @@ export function ChatView() {
                   onClose={() => setOpenArtifactId(null)}
                 />
               ) : openArtifactId ? (
-                <DockedArtifactPanel />
+                <DockedArtifactPanel key={openArtifactId} />
               ) : dockedExperiment ? (
                 <ExperimentDockPanel
                   experiment={dockedExperiment}
@@ -738,12 +804,9 @@ export function ChatView() {
         )}
       </div>
 
-      <EgressApprovalToasts agentId={selectedAgent} />
-
-      {}
-      {selectedAgent && agentInaccessible ? (
+      {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentOperable ? (
+      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { emit, EventType } from "../../../events.js";
 import { TRPCError } from "@trpc/server";
 import {
   CUSTOM_DATA_MAX_BYTES,
@@ -73,6 +74,7 @@ export class CustomDataTooLargeError extends Error {
 
 export interface ExperimentsServiceDeps {
   owner: string;
+  surface: string;
   repo: ExperimentsRepository;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocationsForExperiment: (
@@ -85,6 +87,7 @@ export interface ExperimentsServiceDeps {
   cancelInvocations?: (
     driverAgentId: string,
     experimentId: string,
+    reason: string,
   ) => Promise<void>;
   pin?: {
     set(driverAgentId: string): Promise<void>;
@@ -147,6 +150,19 @@ export function createExperimentsService(
   deps: ExperimentsServiceDeps,
 ): ExperimentsService {
   const { owner, repo, artifactLibrary } = deps;
+
+  const emitChanged = (
+    experimentId: string,
+    agentId: string,
+    action?: "started" | "stopped" | "deleted",
+  ) =>
+    emit({
+      type: EventType.ExperimentChanged,
+      experimentId,
+      agentId,
+      ownerSub: owner,
+      ...(action ? { action, actorSub: owner, surface: deps.surface } : {}),
+    });
   const now = deps.now ?? (() => new Date());
 
   async function lineageFolderId(name: string): Promise<string> {
@@ -182,7 +198,10 @@ export function createExperimentsService(
     }
   }
 
-  async function launchRun(id: string): Promise<Experiment> {
+  async function launchRun(
+    id: string,
+    action?: "started" | "stopped" | "deleted",
+  ): Promise<Experiment> {
     const row = await repo.get(id, owner);
     if (!row) throw new TRPCError({ code: "NOT_FOUND" });
     await deps.pin?.set(row.driverAgentId);
@@ -201,6 +220,7 @@ export function createExperimentsService(
         finishedAt: now(),
         error: `launch failed: ${err instanceof Error ? err.message : err}`,
       });
+      emitChanged(id, row.driverAgentId);
       await releasePin(row.driverAgentId);
       await snapshotDashboard(id);
       throw new TRPCError({
@@ -208,6 +228,7 @@ export function createExperimentsService(
         message: "the experiment could not be launched",
       });
     }
+    emitChanged(id, row.driverAgentId, action);
     return toView((await repo.get(id, owner))!);
   }
 
@@ -322,7 +343,7 @@ export function createExperimentsService(
               kind: current.kind,
               ...(folderId ? { folderId } : {}),
             },
-            { agentId: source.driverAgentId },
+            { agentId: source.driverAgentId, internal: true },
           );
           return clone.id;
         } catch {
@@ -355,7 +376,7 @@ export function createExperimentsService(
         executedAt: now(),
         lastActivityAt: now(),
       });
-      return launchRun(runId);
+      return launchRun(runId, "started");
     },
 
     async stop(id) {
@@ -371,12 +392,17 @@ export function createExperimentsService(
         });
       }
       try {
-        await deps.cancelInvocations?.(row.driverAgentId, id);
+        await deps.cancelInvocations?.(
+          row.driverAgentId,
+          id,
+          "experiment stopped",
+        );
       } catch (err) {
         process.stderr.write(
           `[experiments] invocation cancel for ${id} failed: ${err instanceof Error ? err.message : err}\n`,
         );
       }
+      emitChanged(id, row.driverAgentId, "stopped");
       await releasePin(row.driverAgentId);
       await snapshotDashboard(id);
       return toView((await repo.get(id, owner))!);
@@ -392,6 +418,7 @@ export function createExperimentsService(
         });
       }
       await repo.delete(id, owner);
+      emitChanged(id, row.driverAgentId, "deleted");
     },
 
     async planRegister(driverAgentId, input: PlanRegisterInput) {
@@ -421,7 +448,7 @@ export function createExperimentsService(
             kind: "html",
             ...(captureFolderId ? { folderId: captureFolderId } : {}),
           },
-          { agentId: driverAgentId },
+          { agentId: driverAgentId, internal: true },
         );
         return dashboard.id;
       };
@@ -477,6 +504,7 @@ export function createExperimentsService(
           scriptVersion: version,
           dashboardArtifactId,
         });
+        emitChanged(draft.id, driverAgentId);
         return { experimentId: draft.id };
       }
 
@@ -488,7 +516,7 @@ export function createExperimentsService(
           fileName,
           folderId,
         },
-        { agentId: driverAgentId },
+        { agentId: driverAgentId, internal: true },
       );
       const scriptArtifactId = scriptArtifact.id;
       const scriptVersion = scriptArtifact.version;
@@ -531,7 +559,7 @@ export function createExperimentsService(
               kind: "html",
               folderId,
             },
-            { agentId: driverAgentId },
+            { agentId: driverAgentId, internal: true },
           );
           dashboardArtifactId = dashboard.id;
         } catch {}
@@ -549,6 +577,7 @@ export function createExperimentsService(
         scriptVersion,
         dashboardArtifactId,
       });
+      emitChanged(id, driverAgentId);
       return { experimentId: id };
     },
 
@@ -648,6 +677,7 @@ export function createExperimentsService(
         ]);
       }
       await repo.bumpActivity(experimentId, now());
+      emitChanged(experimentId, driverAgentId);
       return { accepted: events.length };
     },
 
@@ -672,6 +702,18 @@ export function createExperimentsService(
         const current = await repo.get(experimentId, owner);
         throw new ExperimentClosedError(current?.status ?? "unknown");
       }
+      try {
+        await deps.cancelInvocations?.(
+          experiment.driverAgentId,
+          experimentId,
+          `experiment ${input.status}`,
+        );
+      } catch (err) {
+        process.stderr.write(
+          `[experiments] invocation cancel for ${experimentId} failed: ${err instanceof Error ? err.message : err}\n`,
+        );
+      }
+      emitChanged(experimentId, experiment.driverAgentId);
       await releasePin(experiment.driverAgentId);
       await snapshotDashboard(experimentId);
     },
@@ -694,6 +736,7 @@ export function createExperimentsService(
           ...row.attachedArtifactIds,
           artifactId,
         ]);
+        emitChanged(row.id, row.driverAgentId);
       }
       return { experimentId: row.id };
     },

@@ -22,6 +22,7 @@ import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
 import { composeApprovalsService } from "../../../modules/approvals/compose.js";
+import { composeUsageForOwner } from "../../../modules/usage/compose.js";
 import {
   composeEgressRulesModule,
   createAgentL7HostsPort,
@@ -51,7 +52,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     agentCleanupHooks,
     secretStores,
     runtimeMutator,
-    contributionsSettled,
+    contributionsProgress,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -65,9 +66,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     reposService,
     connectionsBoot,
     apiKeysModule,
+    liveEvents,
+    podSessions,
   } = boot;
 
-  return (user: UserIdentity): ApiContext => {
+  return (user: UserIdentity, surface: string): ApiContext => {
     const { templates, readSpec: readTemplateSpec } =
       composeTemplatesModule(templatesRepo);
     const connections = composeConnectionsForOwner({
@@ -94,6 +97,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
+      agentStateCache: boot.agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
@@ -131,7 +135,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator,
-      contributionsSettled,
+      contributionsProgress,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({
@@ -147,6 +151,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
       owner: user.sub,
+      agentBinding: user.agentIds,
       agentExists: async (agentId) => (await agents.get(agentId)) !== null,
     });
     const invocationsQuery = composeInvocationsQueryForOwner({
@@ -155,6 +160,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { knowledgeBases } = composeKnowledgeBasesForOwner({
       owner: user.sub,
+      surface,
       agents,
       runtimeMutator,
       wakeAgent: async (agentId) => {
@@ -162,6 +168,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       },
     });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
+      surface,
       db,
       artifacts,
       owner: user.sub,
@@ -170,6 +177,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { experiments } = composeExperimentsForOwner({
       db,
       owner: user.sub,
+      surface,
       artifactLibrary,
       agents,
       pin: {
@@ -183,8 +191,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         await agentsRepo.wakeIfHibernated(agentId);
       },
     });
-    const { features } = composeFeaturesForOwner({ db, owner: user.sub });
+    const { features } = composeFeaturesForOwner({
+      db,
+      owner: user.sub,
+      surface,
+    });
     const skills = composeSkillsModule({
+      agentStateCache: boot.agentStateCache,
+      surface,
       api,
       namespace: config.namespace,
       owner: user.sub,
@@ -193,7 +207,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       runtimeMutator,
       templatesRepo,
-      runtimeSettled: contributionsSettled,
+      runtimeProgress: contributionsProgress,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agents.get(agentId)) !== null && ownerSub === user.sub;
@@ -216,15 +230,26 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
-    const files = composeFilesModule(api, config.namespace, user.sub);
-    const apiKeys = apiKeysModule.createService({ ownerSub: user.sub });
+    const files = composeFilesModule(
+      api,
+      config.namespace,
+      user.sub,
+      surface,
+      boot.agentStateCache,
+    );
+    const apiKeys = apiKeysModule.createService({
+      ownerSub: user.sub,
+      surface,
+    });
     const { service: harnessConfig } = composeHarnessConfigModule({
       db,
+      ownerSub: user.sub,
+      surface,
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
       isSettled: (agentId) =>
-        contributionsSettled.status(agentId).then((s) => s.settled),
+        contributionsProgress.progress(agentId).then((p) => p.settled),
     });
     const metrics = metricsReader
       ? createMetricsService({
@@ -266,8 +291,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       features,
       files,
       harnessConfig,
+      links: config.links,
+      liveEvents,
+      podSessions,
       metrics,
       terms,
+      usage: composeUsageForOwner(user.sub),
       e2e,
       apiKeys,
       budgets,

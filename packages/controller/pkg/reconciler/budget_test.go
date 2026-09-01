@@ -105,7 +105,7 @@ func TestBudgetOverCeilingParksWithFigures(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason)
 	assert.Contains(t, cond.Message, "CPU")
-	assert.Contains(t, cond.Message, "stop a running sandbox")
+	assert.Contains(t, cond.Message, "stop a running agent")
 }
 
 func TestBudgetDeniesOnMemoryDimensionAlone(t *testing.T) {
@@ -550,4 +550,48 @@ func TestResizeUnchangedAgentNeverRecheckedOnCeilingDrop(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, int32(1), agentSSReplicas(t, r, "my-agent"))
+}
+
+func TestBudgetParkedExemptAgentIsTrackedForRetry(t *testing.T) {
+	peer, peerSS := runningPeer("peer", "3900m", "1Gi")
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+	agent.Annotations = map[string]string{
+		"agent-platform.ai/last-activity": time.Now().UTC().Format(time.RFC3339),
+		"agent-platform.ai/sweepable":     "true",
+	}
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+
+	r, client := setupReconciler(t, agent, peerSS)
+	ctx := context.Background()
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Contains(t, r.ParkedForRetry(), "my-agent")
+
+	zero := int32(0)
+	peerSS.Spec.Replicas = &zero
+	_, err = client.AppsV1().StatefulSets("test-agents").Update(ctx, peerSS, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.NotContains(t, r.ParkedForRetry(), "my-agent")
+}
+
+func TestBudgetMemoParkedAgentIsNotTrackedForRetry(t *testing.T) {
+	peer, peerSS := runningPeer("peer", "3900m", "1Gi")
+	agent := ownedAgentCR("my-agent", "250m", "512Mi")
+	agent.Annotations = map[string]string{
+		"agent-platform.ai/last-activity": time.Now().UTC().Format(time.RFC3339),
+	}
+	peerU, err := agentToUnstructured(peer)
+	require.NoError(t, err)
+
+	r, _ := setupReconciler(t, agent, peerSS)
+	ctx := context.Background()
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, peerU, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Empty(t, r.ParkedForRetry())
 }

@@ -69,8 +69,14 @@ async function startFixture(opts: {
   };
 
   const invocationsQuery = { listTargets: async () => [] };
+  const terms = { isAccepted: async () => true };
   const ctx = new Proxy(
-    { agents, invocationsQuery, user: FIXTURE_USER } as Record<string, unknown>,
+    {
+      agents,
+      invocationsQuery,
+      terms,
+      user: FIXTURE_USER,
+    } as Record<string, unknown>,
     {
       get(target, prop) {
         if (prop in target) return target[prop as string];
@@ -154,6 +160,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     },
     state: "running",
     effectiveHibernationTimeoutMin: 60,
+    features: { liveUpdates: true },
     stopRequested: false,
     overBudget: false,
     contributionFailures: [],

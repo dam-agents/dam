@@ -38,7 +38,12 @@ function makeDeps(current: Schedule) {
     },
   } as unknown as SchedulesRepository;
   const runner = { async sync() {} } as unknown as SchedulerRunner;
-  const service = createSchedulesService({ repo, runner, owner: OWNER });
+  const service = createSchedulesService({
+    repo,
+    runner,
+    owner: OWNER,
+    agentBinding: "*",
+  });
   return { service, getSavedSpec: () => savedSpec };
 }
 
@@ -91,7 +96,12 @@ describe("createRRule createdBy", () => {
       },
     } as unknown as SchedulesRepository;
     const runner = { async sync() {} } as unknown as SchedulerRunner;
-    const service = createSchedulesService({ repo, runner, owner: OWNER });
+    const service = createSchedulesService({
+      repo,
+      runner,
+      owner: OWNER,
+      agentBinding: "*",
+    });
     return { service, getCreated: () => created };
   }
 
@@ -117,5 +127,61 @@ describe("createRRule createdBy", () => {
     await service.createRRule(baseCreate, "agent");
 
     expect(getCreated()?.spec.createdBy).toBe("agent");
+  });
+});
+
+describe("listForOwner", () => {
+  interface SeenOpts {
+    limit?: number;
+    agentIds?: readonly string[];
+  }
+
+  function makeListDeps(agentBinding: readonly string[] | "*") {
+    const seen: { owner: string; opts?: SeenOpts }[] = [];
+    const repo = {
+      async listForOwner(owner: string, opts?: SeenOpts) {
+        seen.push({ owner, opts });
+        return [];
+      },
+    } as unknown as SchedulesRepository;
+    const runner = { async sync() {} } as unknown as SchedulerRunner;
+    return {
+      service: createSchedulesService({
+        repo,
+        runner,
+        owner: OWNER,
+        agentBinding,
+      }),
+      seen,
+    };
+  }
+
+  // TEST_SCENARIO: an owner-wide read is an authorization boundary a smoke test cannot cover.
+  it("asks the repository only for the caller's own schedules", async () => {
+    const { service, seen } = makeListDeps("*");
+
+    await service.listForOwner();
+    await service.listForOwner(5);
+
+    expect(seen).toEqual([
+      { owner: OWNER, opts: {} },
+      { owner: OWNER, opts: { limit: 5 } },
+    ]);
+  });
+
+  // TEST_SCENARIO: an agent-bound API key must not read schedules for agents it is refused on.
+  // TEST_SCENARIO: the binding has to reach the query, or a limit applied first can hide the
+  // TEST_SCENARIO: caller's own rows behind rows it is not allowed to see.
+  it("narrows the query itself to an agent-bound caller's binding", async () => {
+    const bound = makeListDeps(["agent-1"]);
+    const unbound = makeListDeps("*");
+
+    await bound.service.listForOwner(5);
+    await unbound.service.listForOwner(5);
+
+    expect(bound.seen).toEqual([
+      { owner: OWNER, opts: { limit: 5, agentIds: ["agent-1"] } },
+    ]);
+    expect(unbound.seen).toEqual([{ owner: OWNER, opts: { limit: 5 } }]);
   });
 });

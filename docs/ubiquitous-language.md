@@ -1,6 +1,36 @@
 # Ubiquitous Language
 
-Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate vocabulary below.
+Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate and Live Updates vocabulary below.
+
+Two registers live in this file. The **domain vocabulary** (from [Substrate](#substrate) down) is the language code and docs use. [User-Facing Terminology](#user-facing-terminology) is the language the GUI uses. They are deliberately not the same list: a domain term is not automatically a word users read, and several domain terms are never shown.
+
+## User-Facing Terminology
+
+The words the GUI puts in front of users, decided in #3216. Copy follows this table; code keeps its own names from the domain sections below.
+
+Two rules govern the whole set:
+
+1. **Agent is the default word.** Use it unless it makes the sentence technically wrong.
+2. **Harness only buys specificity.** Use it where "agent" would be inaccurate — harness model selection is the clear case — and keep it in subtext rather than headers, so only users digging into the technical side meet it.
+
+### Words users read
+
+| Word | What it means to a user | Domain term behind it | Where it is correct — and where it is not |
+|------|------------------------|-----------------------|-------------------------------------------|
+| agent / agents | The thing you create, run, chat with, connect, schedule, and pay for | Agent ([Agents](#agents-bounded-context)) | The default everywhere: destinations, headers, buttons, confirm dialogs, toasts, empty states, tooltips, accessible names. Not for the harness process or its model settings, where it would be inaccurate |
+| temporary agent | A short-lived agent the platform starts for one piece of work and discards afterwards | Sweepable Agent ([Agents](#agents-bounded-context)), typically an [Invocation](#invocations-bounded-context--proposed-in-flight-pr-2816) target | Wherever spawned short-lived agents surface — the agents list groups them behind their driver. Never offered as something a user creates |
+| harness | The coding-agent program running inside the agent (Claude Code, Codex, Gemini CLI) | Harness Lease and Session ([Agents](#agents-bounded-context)) | Only where "agent" would be wrong: harness model selection, harness config. Subtext and advanced surfaces, never a top-level header |
+| sandbox | The isolated container an agent runs in | Sandbox ([Agents](#agents-bounded-context)) | Only when the copy is *about* the container — "runs in its own isolated sandbox", "inside the sandbox", "sandbox image", "VM sandboxes". Never as the name of the thing a user owns; that is an agent |
+
+### Retired words — say this, not that
+
+| Do not say | Say instead | Why |
+|-----------|-------------|-----|
+| sandbox / sandboxes, for the thing a user owns and runs | agent / agents | Users own agents; the container is something they only ever act on through the agent. "Sandbox" survives for the container sense above and nowhere else — reversing the #892 rename |
+| image | agent — or harness, where the choice really is which harness program runs | The create flow asked users to pick an "image" when what they were choosing was which agent to run. The image is how the platform delivers it, not a distinction users act on |
+| shell | agent | A terminal in the agent is not an SSH login shell, and users never have to make that distinction |
+
+The retirement list is what stops a struck word from creeping back: a surface that wants one of the left-hand words needs a decision on this table first, not a local exception.
 
 ## Substrate
 
@@ -16,6 +46,21 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Claim (verb) | To assign a Spare to a newly created Agent: the controller relabels the Spare to that Agent in one atomic update, and the Agent mounts it as its Workspace Volume. A claimed Spare becomes an ordinary owned Workspace Volume — destroyed on Agent deletion, never returned to the pool. Distinct from the Kubernetes noun *PersistentVolumeClaim*. |
 | Storage Migration | The controller's one-time, interrupt-safe drain of legacy shared-writable (RWX) Workspace Volumes onto ReadWriteOnce storage: force the Agent down, copy onto a fresh volume in a checksum-verified Job, re-point the Agent, delete the old volume, restore the prior run state. A no-op once no RWX volume remains; removed with the transitional window. |
 
+## Live Updates
+
+Eventing and cache-freshness vocabulary shared by every bounded context. Three words that sound interchangeable are not — each names one delivery guarantee, and using the wrong one hides which guarantee a reader gets. See [`docs/architecture/platform-topology.md`](architecture/platform-topology.md) for the layering.
+
+| Term | Definition |
+|------|-----------|
+| Domain Event | An in-process, synchronous, at-most-once, non-durable announcement a service emits after its write commits. Its only consumers are Sagas running in the emitting process. Never crosses a process boundary, and nothing may depend on one arriving |
+| Saga | An in-process consumer of Domain Events — the audit trail, usage rollups, per-agent cleanups. A Saga that must reach another replica forwards a Signal; it never forwards the Domain Event itself |
+| Signal | A thin cross-replica message on the shared Redis bus — an id and a topic, never entity state. The consumer re-reads truth from the store on receipt. Reserved for this meaning: an in-process announcement is a Domain Event, and a browser-bound invalidation notice is a Live Event |
+| Live Event | The per-owner invalidation notice a browser tab receives on its live-events subscription: a Topic plus ids, **never entity state**. Means "re-read this over the query path", never "here is the new value". Schema-parsed on receipt and dropped on mismatch, so replicas on different versions cannot poison a stream |
+| Topic | The family a Live Event names, which the client maps to a query family. Coarse by design — a Topic invalidates whole families rather than splicing individual entities |
+| Sync | The Live Event every (re)subscribed stream opens with, meaning "re-read everything you map". The loss bound for the whole mechanism: reconnects heal by refetch rather than replay, so no Live Event needs delivery guarantees. Also what an overflowing queue collapses to, since by contract it is the full recovery |
+| Watch | A pod-side observer of pod-owned truth (the session list, watched workspace directories, the open file) that emits Live Events for changes only the pod can see. Its lifetime **is** the subscription: an unobserved Agent has no Watch and produces no traffic. Coalesces under load, and how it detects change — filesystem notifications or an internal diff — is private to the pod |
+| Snapshot | Pod-owned truth kept server-side as display state, so a surface still renders while its Agent is hibernated. Carries the moment it was captured and whether a pod confirmed it or it is merely what an apply asserted. Never re-asserted onto the pod, and the live read always wins when the Agent is up. The harness-config snapshot on the `agents` row is the reference implementation |
+
 ## Agents (bounded context)
 
 `Instance` is retired; the merged `Agent` carries definition, runtime state, and lifecycle.
@@ -23,24 +68,30 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Term | Definition |
 |------|-----------|
 | Template | A read-only catalog blueprint that defines the base image, mounts, env, and resources for creating an agent |
-| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
-| Sandbox | The user-facing name for an Agent across the redesigned UI (#892); "Agent" remains the domain/code term |
-| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain sandboxes. The Sandboxes list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
-| Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment sandbox copies in its authoring skill from a path staged in the image |
+| Agent | The durable, owned, runnable resource — definition, runtime state, and lifecycle. The primary user-facing word too — see [User-Facing Terminology](#user-facing-terminology). A custom resource whose `spec` (api-server writer) carries image, mounts, env, and secret refs, and whose `status` (controller writer) carries observed state. Optionally derived from a Template at create-time |
+| Sandbox | The isolated container an Agent runs in. In user-facing copy "sandbox" appears only where the copy describes that container — isolation, images, inside/outside boundaries; everywhere else the word is **agent**. See [User-Facing Terminology](#user-facing-terminology) for the rule and the retirement it reverses (#3216, reversing the #892 rename) |
+| Agent Kind | A durable category marker on an Agent (create-time annotation, immutable) naming which first-class surface it also belongs to — `knowledge-base` or `experiment`. Absent on plain agents. The Home agents list shows every Agent regardless, badged with its Kind; the Knowledge Bases and Experiments destinations are filtered views onto the same agents, not exclusive homes. Declared intent, not a capability the platform enforces: what a marked agent gets is its Install Command's setup |
+| Install Command | The one-shot shell command run in a Kinded Agent's workspace at create, delivered over the `workspace-command` rail. No agent turn — a workspace mutation, run once (sentinel-guarded), retried until it succeeds or the event's TTL lapses. Each Kind composes its own: a Knowledge Base bootstraps knowledge tooling from an external installer, an experiment agent copies in its authoring skill from a path staged in the image |
 | workspace-command | A one-shot runtime-channel event (sibling of `workspace-seed`) that runs a platform-composed shell command once in the agent's work dir, in the pod's environment. Server-composed, never user free text |
 | Backend | *(proposed, VM-sandbox proposal)* The isolation substrate an Agent's workload runs on, selected per-template as `spec.backend` — a discriminated union (`type: container \| vm`, default `container`, variant props in a sub-block named after the variant). `container` reconciles the agent StatefulSet (optionally Kata via `runtimeClassName`); `vm` reconciles a KubeVirt VirtualMachine. Not "Sandbox" (retired domain term) and distinct from `runtimeClassName`, which selects among *container* runtimes and is rejected on the `vm` backend |
 | Session | One conversation with the agent harness, with its own lifecycle and metadata |
+| Session Transcript | The in-memory record of one Session's messages, kept by agent-runtime. It has a size cap: when full, the oldest lines are dropped and readers are warned. Each attached channel remembers how far it has read, so it only receives what it missed. Not saved to disk — dies with the harness process. Distinct from the harness's own on-disk JSONL history (under `~/.claude/projects/…`), which outlives the process and backs `--resume`; this term never means that file |
+| Prompt Scheduler | The agent-runtime module that runs each Session one turn at a time. A prompt arriving mid-turn is queued (up to a cap, then refused with a structured error) and promoted when the turn ahead ends; the scheduler tells the sender each prompt's fate — accepted, queued, started — over the sender's own channel. Queued prompts are a scheduling convenience, not a durable buffer: a leaver's go with them, and none survive the harness process |
+| Harness Lease | The agent-runtime module that holds the harness child process on loan. It spawns the process when the first client needs it, holds early clients back until the env is ready at boot (bounded by a timeout), and recycles the process when the env changes — right away when idle, after work drains when busy, or after a grace period when forced. Every way the process goes down runs the same teardown with one reason: agent-exited, env-recycle, or shutdown. A crash is final for the pod; only an env recycle respawns |
+| Session Bootstrap | The agent-runtime module that answers session/load and session/resume from the Session Transcript when it already holds the session. When the transcript is cold (first attach after a pod restart), at most one session/load per session goes to the harness and every other caller parks as a waiter; the replay fills the transcript, reaching only a client load's initiator, and the response serves all waiters from memory. Resume never reaches the harness, which hides harnesses that cannot resume |
+| Pending Agent Requests | The agent-runtime module that holds each agent-initiated request (typically a permission prompt) open until a client answers. A new request fans out to the session's engaged channels; a channel that engages later is asked again on arrival; the first answer wins and later answers are dropped. A session-scoped request with no engaged channel expires after a TTL, answering the agent with a structured error so the tool call aborts cleanly. A request with no session broadcasts to every channel and never expires. Tearing a session down drops its requests the same way, since the session id is reused |
 | Schedule | A time-triggered task attached to an Agent — either cron-based or heartbeat |
 | Desired State | The target lifecycle state of an Agent: running or hibernated |
 | Wake | Transitioning an Agent from hibernated to running |
 | Hard Stop | User-initiated scale-to-zero of a running Agent (the `stop-requested` annotation), freeing its Reserved compute. Sticky against background activity — background polls cannot resurrect it — and cleared only by an explicit Wake or a Schedule fire (the UI warns at stop time when schedules exist) |
 | Pause | User-initiated immediate hibernation: a Hard Stop whose stamp the api-server clears once the Agent settles Hibernated. Sticky only during the scale-down window (which is what prevents poll-resurrection mid-descent); afterwards the Agent wakes on any deliberate touch, back through the budget gate |
-| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Set on ephemeral agents (Invocation targets now; the intended home for inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
+| Sweepable | *(proposed, PR #2816)* An Agent flagged for automatic deletion by the Agent Sweep. Surfaced to users as a **temporary agent** — see [User-Facing Terminology](#user-facing-terminology). Set on ephemeral agents (Invocation targets now; the intended home for inherited channel agents later); durable owned Agents are never Sweepable. Radek's "annotation that marks an agent sweepable" |
 | Agent Lifetime | *(proposed, PR #2816)* Optional grace period a Sweepable Agent may stay hibernated before the Agent Sweep deletes it. Default zero — deleted as soon as it hibernates. The knob that later lets an inherited channel agent linger warm (Radek's "2 days") while an Invocation target dies on hibernate. Distinct from the per-Invocation Liveness Deadline, which bounds one result, not the agent |
 | Agent Sweep | *(proposed, PR #2816)* The owner-agnostic api-server GC that deletes a Sweepable Agent once it hibernates (after its Lifetime grace, if any) — the generic successor to the retired sandbox sweeper, keyed off Agent state, never the Invocations table. A terminal Invocation (done *or* failed) reaps its spawned target eagerly via `agents.delete`; the Sweep is the backstop for agents no Invocation reaps |
 | Heartbeat | A recurring schedule type attached to an Agent, defined by interval and internally converted to cron |
 | Reserved ID Prefix (agent-) | `agent-` — the prefix the controller mints onto every Agent ID; the api-server forbids Agent names that begin with it at create-time, and the CLI uses it as the ID-vs-name syntactic split signal |
-| Keycloak User Directory | Infrastructure port resolving between user emails and Keycloak `sub` identifiers; backed by the Keycloak admin API |
+| Keycloak User Directory | Infrastructure port resolving a Keycloak `sub` to a user's display name or email, and an email back to a `sub`; backed by the Keycloak admin API |
+| Public Agent Page | The unauthenticated page a non-owner reaches from an Agent's Agent Footer. Names the Agent and its owner and pitches the install; follows the User-Facing Terminology rule, so it says *agent* throughout. Exists only for an Agent holding at least one Channel Binding; every other id — unknown, unbound, deleted, or one whose read failed — renders the same agent-less generic page, so neither the body nor the status confirms which Agents exist. Served from a Postgres projection owned by the Agents context, never a read-through to the K8s API |
 
 ## Channels (bounded context)
 
@@ -51,6 +102,7 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Channel Worker | A long-running process that bridges an external service to an Agent |
 | Thread | A Slack conversation thread identified by its `thread_ts` timestamp; maps 1:1 to at most one Session per Agent |
 | Shared Access | The one access model (per-person access modes are retired): the binding is the authorization — the Agent owner consents to a conversation surface, and anyone the messenger admits there may drive the Agent under the Agent's own credentials. No identity link; turns attributed by messenger-native sender id |
+| Agent Footer | The context block appended to every Agent post in a Slack conversation, linking to that Agent's Public Agent Page. Two separable parts: the **Agent id in the URL** is the wire format — parsed back out of channel history to attribute each line to the Agent that wrote it — and the **link label** is presentation, free for product to reword. Attribution never reads the label; a display name is resolved from the id at label time |
 
 ## Invocations (bounded context) — proposed, in-flight (PR #2816)
 
@@ -102,14 +154,14 @@ Pod-side operational view of skills. Distinct from the api-server's Skills conte
 | Term | Definition |
 |------|-----------|
 | Approval | A user-pending decision that gates either a credentialed egress request (ext_authz) or a harness tool call (acp_native); persisted in the `pending_approvals` table |
-| Pending Approval | An approval whose verdict has not yet been decided; lives in the inbox |
-| Inbox | The user-facing surface listing pending approvals — top-level page, sidebar bell with badge, and per-Agent tray |
+| Pending Approval | An approval whose verdict has not yet been decided; surfaces on Home |
+| Home | The landing page and the user-facing surface for pending approvals — an activity feed, a floating pill on every other page, and the per-Agent session tray |
 | Verdict | The user's decision on a pending approval: `allow_once`, `allow`, `deny_once`, or `deny`. The `*_once` verdicts resolve only the held call (no rule written); `allow` / `deny` also write a permanent egress rule for ext_authz |
 | Action Outcome | What an approval mutation reports back to the caller: `applied` (pending row settled), `rule_written_expired` (ext_authz hold already expired but the durable rule was written for future retries), or `not_actionable` (unknown, foreign, or already-settled id — deliberately indistinguishable), plus the egress `rule` that was written (`{host, method, pathPattern, verdict}`, or `null` when none) |
-| Synth Frame | A synthetic ACP `session/request_permission` frame the relay injects into an attached client WS for an ext_authz approval; the synthetic session id has the `_egress:` prefix so the UI dispatches it to the inbox rather than the in-session permission queue |
+| Synth Frame | A synthetic ACP `session/request_permission` frame the relay injects into an attached client WS for an ext_authz approval; the synthetic session id has the `_egress:` prefix so the UI dispatches it to Home rather than the in-session permission queue |
 | Held Call | An ext_authz request blocking on the API Server while it waits for a verdict, up to `approvalHoldSeconds` (default 30 minutes); durable pending row outlives the hold |
 | ext_authz Gate | The application service that runs Envoy's HTTP ext_authz check: rule lookup, pending-row creation, synth-frame fan-out, synchronous hold, wake-up, expiry |
-| Wrapper Response | A JSON-RPC response frame the inbox publishes when resolving an acp_native row; whichever replica holds the upstream WS for the Agent forwards it to the wrapper |
+| Wrapper Response | A JSON-RPC response frame the API Server publishes when resolving an acp_native row; whichever replica holds the upstream WS for the Agent forwards it to the wrapper |
 | Approvals Relay Service | Server-internal port the ACP relay consumes for mirror writes (record / resolve acp-native pending) and stream subscriptions (synth frames, wrapper responses) |
 
 ## Egress Rules (bounded context)
@@ -147,7 +199,7 @@ An Experiment is *one execution of a driver Agent's loop script* — a design→
 | Term | Definition |
 |------|-----------|
 | Experiment | Building and running are separate lifecycles sharing one table. The **draft** (plan registered) is source: it persists, re-registrations update it. A **run** is an immutable capture started from the draft: its own row (`running` → `completed`/`failed`/`stopped`) with the draft's declaration and its own cloned artifacts. A draft never becomes a run; a run never reopens |
-| Driver Agent | The Agent an Experiment runs on. Usually one created as an experiment sandbox (the `experiment` Agent Kind), which is what installs the authoring skill — but the marker is intent, not a gate: Plan Registration is keyed only on the calling agent's identity, so any Agent that registers a plan is a Driver Agent too. The Experiments destination therefore lists both — marked sandboxes (even with no experiments yet) and unmarked agents that registered one |
+| Driver Agent | The Agent an Experiment runs on. Usually one created as an experiment agent (the `experiment` Agent Kind), which is what installs the authoring skill — but the marker is intent, not a gate: Plan Registration is keyed only on the calling agent's identity, so any Agent that registers a plan is a Driver Agent too. The Experiments destination therefore lists both — marked agents (even with no experiments yet) and unmarked agents that registered one |
 | Skeleton | The stage/loop/fork structure the script declares upfront, registered before execution. Lenient: a span naming an undeclared stage grows the graph and is marked as drift, never an error |
 | Stage / Span | Stage = one declared skeleton node (produce, eval, select, …). Span = one execution of a stage, iteration-keyed, carrying status, timings, an optional numeric Score (captured, plotted, never normalized — the old bet survives), Artifact references, and an opaque `attrs` JSON bag |
 | Trace | The append-only stream of spans plus attached Invocations for one Experiment, held by the platform (SDK reports over the per-agent HTTP surface; the browser being closed never pauses a run) |
@@ -196,7 +248,10 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 
 | Term | Definition |
 |------|-----------|
-| Activity Event | An append-only `activity_events` row capturing one semantically-meaningful interaction — auth, channel turn, schedule fire, OAuth connection lifecycle, file import. Carries actor, agent, surface, outcome, and event-type-specific payload |
+| Activity Event | An append-only `activity_events` row capturing one semantically-meaningful interaction — arriving (auth), working with an agent (turns, relay attach, schedule fire, file import, invocation), setting one up (connections, skills, harness config, Kinded Agent create), sharing what came out (artifact publish, share-link view), and the account surfaces around it (experiment runs, feature flags, API keys). Carries actor, agent, surface, outcome, and event-type-specific payload |
+| Session Turn | One prompt a user sent directly at an Agent's Session — the browser chat and `dam chat` both reach the agent through the same relay, so both produce one. The direct-path counterpart of a Channel Turn. Counted when the prompt is sent rather than when the reply lands, so the count does not depend on the transport surviving the turn and is not skewed by network or provider failures |
+| Relay Attach | A user opening a live channel onto an Agent's pod — a prompt channel or an interactive shell. For a shell it is the only thing recorded: what happens inside is never inspected, so "was this surface used, and by whom" is the strongest question it can answer. Collapsed to one row per user, agent, relay kind and day, because the relay reconnects on a timer and the raw stream counts handshakes rather than people |
+| Surface | Where an interaction came from. For a user action it is the client, derived once from the authenticated party (`ui`, `cli`, `other`) and stamped on every Activity Event rather than only on the auth fact, so a turn's surface and a login's surface mean the same thing. The column is wider than that: it also carries a Channel's own name, the originating machinery for events no client drove (`scheduler`, `share-host`, `mcp`), a Connection's category on connection rows, and null where none applies. Read it as the origin of the row, and compare client surfaces only within event types that have one |
 | Actor Sub | The pseudonymized identifier of the user who triggered an Activity Event — `HMAC-SHA256(ACTIVITY_HMAC_KEY, keycloak_sub)` rendered as hex. Joinable across `activity_events`, `actor_roles`, and `agents.owner_sub` because the same key is used everywhere |
 | Sub Pseudonymizer | The repository-boundary helper that applies the HMAC to every `sub` before it reaches Postgres — single chokepoint, raw subs stay in-process only |
 | Activity Outcome | A `success` / `failure` Postgres enum on every Activity Event — no default, so a missing outcome surfaces as a constraint violation rather than silently miscounting |
@@ -225,7 +280,7 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 | Budget | A per-user ceiling on concurrently Reserved compute (CPU and memory) across that user's Agents. Constrains *starting* an Agent, never *running* one — no eviction on ceiling changes |
 | Ceiling | The limit side of a Budget: the operator-set maximum Reserved compute for one user. Resolved as the user's UserBudget override, else the chart-wide default |
 | Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents. Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-command Run pods |
-| Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/1Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
+| Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/2Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
 | UserBudget | The record of one user's Ceiling override: a namespaced CR (platform namespace, like Agent) named `budget-<sub>` whose `spec.owner` carries the exact plaintext Keycloak sub (name↔owner pinned by schema validation). Absence means the chart default applies |
 | Over Budget | The parked state of an Agent whose start would push its owner's Reserved past their Ceiling: pods stay at zero, `Ready=False/OverBudget`. Parked Agents never start by themselves — a new deliberate start (Start button, opening it, a Schedule fire) retries the gate; never-hibernate Agents are the exception and auto-start when room frees. The activity window lapsing reverts it to plain hibernation |
 

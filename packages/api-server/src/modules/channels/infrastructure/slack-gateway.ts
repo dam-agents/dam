@@ -6,6 +6,13 @@ export interface SlackImageFile {
   size: number;
 }
 
+export class FileTooLargeError extends Error {
+  constructor(public readonly maxBytes: number) {
+    super(`file is larger than ${maxBytes} bytes`);
+    this.name = "FileTooLargeError";
+  }
+}
+
 export interface SlackMentionEvent {
   user?: string;
   channel: string;
@@ -33,6 +40,20 @@ export interface SlackGatewayHandlers {
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A thread read together with whether the messenger
+ * had more to give. Callers that record how far they have read must not infer
+ * that from the row count: Slack returns the thread parent in every page, so a
+ * count reads one high, and a full page is not proof of a full window either.
+ * The adapter reports it from the messenger's own paging signal instead.
+ */
+export interface SlackThreadRead {
+  messages: SlackMessage[];
+  hasMore: boolean;
+}
+
+export const THREAD_TAIL_MAX_PAGES = 20;
 
 export interface SlackMessage {
   ts?: string;
@@ -139,13 +160,20 @@ export interface SlackGateway {
     channel: string;
     threadTs: string;
     limit: number;
-  }): Promise<SlackMessage[]>;
+    oldest?: string;
+  }): Promise<SlackThreadRead>;
+  getThreadTail(args: {
+    channel: string;
+    threadTs: string;
+    limit: number;
+    maxPages?: number;
+  }): Promise<SlackThreadRead>;
   getChannelHistory(args: {
     channel: string;
     limit: number;
   }): Promise<SlackMessage[]>;
   uploadFile(args: SlackUpload): Promise<void>;
-  downloadFile(urlPrivate: string): Promise<ArrayBuffer>;
+  downloadFile(urlPrivate: string, maxBytes: number): Promise<ArrayBuffer>;
   listBotChannels(): Promise<SlackChannelInfo[]>;
   getConversationInfo(channelId: string): Promise<{ isMember: boolean } | null>;
   getUserInfo(userId: string): Promise<SlackUserInfo | null>;
@@ -156,4 +184,5 @@ export interface SlackGateway {
   openDirectMessage(userId: string): Promise<string>;
   getPermalink(channel: string, ts: string): Promise<string | null>;
   getGrantedScopes(): Promise<Set<string> | null>;
+  getBotUserId(): Promise<string | null>;
 }

@@ -1,3 +1,4 @@
+import type { EntryPointChoice } from "api-server-api";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
@@ -14,6 +15,8 @@ export enum EventType {
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
   ChannelTurnRelayed = "ChannelTurnRelayed",
+  SessionTurnRelayed = "SessionTurnRelayed",
+  AgentRelayAttached = "AgentRelayAttached",
   ScheduleFired = "ScheduleFired",
   ConnectionCreated = "ConnectionCreated",
   ConnectionRemoved = "ConnectionRemoved",
@@ -21,6 +24,30 @@ export enum EventType {
   ContributionApplyFailed = "ContributionApplyFailed",
   ContributionRecovered = "ContributionRecovered",
   ContributionApplyGaveUp = "ContributionApplyGaveUp",
+  RuntimeHelloReceived = "RuntimeHelloReceived",
+  ApprovalRequested = "ApprovalRequested",
+  ApprovalResolved = "ApprovalResolved",
+  ScheduleCreated = "ScheduleCreated",
+  ScheduleUpdated = "ScheduleUpdated",
+  ScheduleDeleted = "ScheduleDeleted",
+  HarnessConfigChanged = "HarnessConfigChanged",
+  ArtifactCreated = "ArtifactCreated",
+  ArtifactUpdated = "ArtifactUpdated",
+  ArtifactDeleted = "ArtifactDeleted",
+  ArtifactFolderChanged = "ArtifactFolderChanged",
+  ExperimentChanged = "ExperimentChanged",
+  ArtifactPublished = "ArtifactPublished",
+  ArtifactShared = "ArtifactShared",
+  ArtifactViewed = "ArtifactViewed",
+  AgentSkillChanged = "AgentSkillChanged",
+  SkillPublished = "SkillPublished",
+  SkillSetSaved = "SkillSetSaved",
+  SkillSetDeleted = "SkillSetDeleted",
+  KindedAgentCreated = "KindedAgentCreated",
+  InvocationSpawned = "InvocationSpawned",
+  FeatureFlagChanged = "FeatureFlagChanged",
+  ApiKeyChanged = "ApiKeyChanged",
+  EntryPointChosen = "EntryPointChosen",
 }
 
 export type UserAuthenticated = {
@@ -84,7 +111,6 @@ export type ScheduleFired = {
   agentId: string;
   ownerSub: string;
   mode: "fresh" | "continuous";
-  sessionId: string | null;
   outcome: TurnOutcome;
 };
 
@@ -94,6 +120,7 @@ export type ConnectionCreated = {
   type: EventType.ConnectionCreated;
   actorSub: string;
   connectionKey: string;
+  templateId: string;
   kind: ConnectionKind;
 };
 
@@ -101,6 +128,7 @@ export type ConnectionRemoved = {
   type: EventType.ConnectionRemoved;
   actorSub: string;
   connectionKey: string;
+  templateId: string;
   kind: ConnectionKind;
 };
 
@@ -108,6 +136,7 @@ export type FilesImported = {
   type: EventType.FilesImported;
   actorSub: string;
   agentId: string;
+  surface: string;
   outcome: TurnOutcome;
   bytes: number;
 };
@@ -132,6 +161,205 @@ export type ContributionApplyGaveUp = {
   message: string;
 };
 
+export type RuntimeHelloReceived = {
+  type: EventType.RuntimeHelloReceived;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ApprovalRequested = {
+  type: EventType.ApprovalRequested;
+  approvalId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ApprovalResolved = {
+  type: EventType.ApprovalResolved;
+  approvalId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ScheduleCreated = {
+  type: EventType.ScheduleCreated;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ScheduleUpdated = {
+  type: EventType.ScheduleUpdated;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type ScheduleDeleted = {
+  type: EventType.ScheduleDeleted;
+  scheduleId: string;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type HarnessConfigChanged = {
+  type: EventType.HarnessConfigChanged;
+  agentId: string;
+  ownerSub: string;
+  actorSub?: string;
+  surface?: string;
+};
+
+export type ArtifactCreated = {
+  type: EventType.ArtifactCreated;
+  artifactId: string;
+  ownerSub: string;
+  agentId?: string;
+};
+
+export type ArtifactUpdated = {
+  type: EventType.ArtifactUpdated;
+  artifactId: string;
+  ownerSub: string;
+  agentId?: string;
+};
+
+export type ArtifactDeleted = {
+  type: EventType.ArtifactDeleted;
+  artifactId: string;
+  ownerSub: string;
+  agentId?: string;
+  actorSub?: string;
+  surface?: string;
+};
+
+export type ArtifactFolderChanged = {
+  type: EventType.ArtifactFolderChanged;
+  folderId: string;
+  ownerSub: string;
+};
+
+export type ExperimentChanged = {
+  type: EventType.ExperimentChanged;
+  experimentId: string;
+  agentId: string;
+  ownerSub: string;
+  action?: "started" | "stopped" | "deleted";
+  actorSub?: string;
+  surface?: string;
+};
+
+export type SessionTurnRelayed = {
+  type: EventType.SessionTurnRelayed;
+  agentId: string;
+  actorSub: string;
+  surface: string;
+};
+
+export type AgentRelayAttached = {
+  type: EventType.AgentRelayAttached;
+  agentId: string;
+  actorSub: string;
+  surface: string;
+  relay: string;
+};
+
+export type ArtifactPublished = {
+  type: EventType.ArtifactPublished;
+  actorSub: string;
+  artifactId: string;
+  agentId: string | null;
+  kind: string;
+  visibility: string;
+  surface: string;
+};
+
+export type ArtifactShared = {
+  type: EventType.ArtifactShared;
+  actorSub: string;
+  artifactId: string;
+  visibility: string;
+  surface: string;
+};
+
+export type ArtifactViewed = {
+  type: EventType.ArtifactViewed;
+  artifactId: string;
+  ownerSub: string;
+};
+
+export type SkillOrigin = "source" | "local";
+
+export type SkillChangeAction = "installed" | "uninstalled";
+
+export type AgentSkillChanged = {
+  type: EventType.AgentSkillChanged;
+  action: SkillChangeAction;
+  agentId: string;
+  actorSub: string;
+  surface: string;
+  origin: SkillOrigin;
+  name: string;
+  source?: string;
+};
+
+export type SkillPublished = {
+  type: EventType.SkillPublished;
+  agentId: string;
+  actorSub: string;
+  surface: string;
+  name: string;
+};
+
+export type SkillSetSaved = {
+  type: EventType.SkillSetSaved;
+  actorSub: string;
+  surface: string;
+  skillCount: number;
+};
+
+export type SkillSetDeleted = {
+  type: EventType.SkillSetDeleted;
+  actorSub: string;
+  surface: string;
+};
+
+export type KindedAgentCreated = {
+  type: EventType.KindedAgentCreated;
+  agentId: string;
+  actorSub: string;
+  surface: string;
+  kind: string;
+};
+
+export type InvocationSpawned = {
+  type: EventType.InvocationSpawned;
+  targetAgentId: string;
+  driverAgentId: string;
+  ownerSub: string;
+};
+
+export type FeatureFlagChanged = {
+  type: EventType.FeatureFlagChanged;
+  actorSub: string;
+  surface: string;
+  feature: string;
+  enabled: boolean;
+};
+
+export type ApiKeyChanged = {
+  type: EventType.ApiKeyChanged;
+  action: "created" | "revoked";
+  actorSub: string;
+  surface: string;
+};
+
+export type EntryPointChosen = {
+  type: EventType.EntryPointChosen;
+  actorSub: string;
+  choice: EntryPointChoice;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -148,7 +376,33 @@ export type DomainEvent =
   | FilesImported
   | ContributionApplyFailed
   | ContributionRecovered
-  | ContributionApplyGaveUp;
+  | ContributionApplyGaveUp
+  | RuntimeHelloReceived
+  | ApprovalRequested
+  | ApprovalResolved
+  | ScheduleCreated
+  | ScheduleUpdated
+  | ScheduleDeleted
+  | HarnessConfigChanged
+  | ArtifactCreated
+  | ArtifactUpdated
+  | ArtifactDeleted
+  | ArtifactFolderChanged
+  | ExperimentChanged
+  | SessionTurnRelayed
+  | AgentRelayAttached
+  | ArtifactPublished
+  | ArtifactShared
+  | ArtifactViewed
+  | AgentSkillChanged
+  | SkillPublished
+  | SkillSetSaved
+  | SkillSetDeleted
+  | KindedAgentCreated
+  | InvocationSpawned
+  | FeatureFlagChanged
+  | ApiKeyChanged
+  | EntryPointChosen;
 
 const bus$ = new Subject<DomainEvent>();
 

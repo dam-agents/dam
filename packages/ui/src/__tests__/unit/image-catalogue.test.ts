@@ -28,15 +28,14 @@ const CATALOGUE = [
 
 describe("imageCatalogue", () => {
   it("hides VM-backed templates entirely when the feature is off", () => {
-    const { harnesses, preconfigured } = imageCatalogue(CATALOGUE, {
+    const { harnesses } = imageCatalogue(CATALOGUE, {
       vmFeatureEnabled: false,
     });
     expect(harnesses.map((t) => t.id)).toEqual(["claude-code", "codex"]);
-    expect(preconfigured.map((t) => t.id)).toEqual(["nous"]);
   });
 
   it("mixes VM-backed templates in alongside container ones when on", () => {
-    const { harnesses, preconfigured } = imageCatalogue(CATALOGUE, {
+    const { harnesses } = imageCatalogue(CATALOGUE, {
       vmFeatureEnabled: true,
     });
     expect(harnesses.map((t) => t.id)).toEqual([
@@ -44,7 +43,11 @@ describe("imageCatalogue", () => {
       "codex",
       "claude-code-vm",
     ]);
-    expect(preconfigured.map((t) => t.id)).toEqual(["nous", "nous-vm"]);
+  });
+
+  it("leaves specialized images out of the only list it offers", () => {
+    const { harnesses } = imageCatalogue(CATALOGUE, { vmFeatureEnabled: true });
+    expect(harnesses.every((t) => t.category === "harness")).toBe(true);
   });
 
   it("is a no-op on an install that ships no VM templates", () => {

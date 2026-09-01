@@ -14,9 +14,15 @@ import {
   pickOptionId,
 } from "../infrastructure/wrapper-response-frames.js";
 import { securityLog } from "../../../core/security-log.js";
+import { emit, EventType } from "../../../events.js";
 
-export interface ApprovalsNotifier {
-  notifyResolved(approvalId: string): Promise<void>;
+function emitResolved(row: PendingApprovalRow): void {
+  emit({
+    type: EventType.ApprovalResolved,
+    approvalId: row.id,
+    agentId: row.agentId,
+    ownerSub: row.ownerSub,
+  });
 }
 
 export interface WrittenEgressRule {
@@ -54,7 +60,6 @@ export interface WrapperFrameSender {
 export interface CreateApprovalsServiceDeps {
   repo: ApprovalsRepository;
   egressRuleWriter: EgressRuleWriter;
-  notifier: ApprovalsNotifier;
   wrapperFrameSender: WrapperFrameSender;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
@@ -199,7 +204,7 @@ export function createApprovalsService(
           "allow_once",
           deps.ownerSub,
         );
-        await deps.notifier.notifyResolved(id);
+        if (casWon) emitResolved(row);
         auditVerdict(deps, row, "allow", {
           verdict: "allow_once",
           ruleWritten: false,
@@ -245,8 +250,10 @@ export function createApprovalsService(
           "allow",
           deps.ownerSub,
         );
-        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
-        await deps.notifier.notifyResolved(id);
+        const expiredFlipped = casWon
+          ? false
+          : await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
+        if (casWon || expiredFlipped) emitResolved(row);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
           ...auditRuleFields(written),
@@ -291,8 +298,10 @@ export function createApprovalsService(
           "allow",
           deps.ownerSub,
         );
-        if (!casWon) await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
-        await deps.notifier.notifyResolved(id);
+        const expiredFlipped = casWon
+          ? false
+          : await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
+        if (casWon || expiredFlipped) emitResolved(row);
         auditVerdict(deps, row, "allow", {
           verdict: "allow",
           ...auditRuleFields(written),
@@ -340,8 +349,10 @@ export function createApprovalsService(
           "deny",
           deps.ownerSub,
         );
-        if (!casWon) await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
-        await deps.notifier.notifyResolved(id);
+        const expiredFlipped = casWon
+          ? false
+          : await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
+        if (casWon || expiredFlipped) emitResolved(row);
         auditVerdict(deps, row, "deny", {
           verdict: "deny",
           ...auditRuleFields(written),
@@ -364,7 +375,7 @@ export function createApprovalsService(
           "deny_once",
           deps.ownerSub,
         );
-        await deps.notifier.notifyResolved(id);
+        if (casWon) emitResolved(row);
         auditVerdict(deps, row, "deny", {
           verdict: "deny_once",
           ruleWritten: false,
@@ -384,6 +395,7 @@ async function resolveAndDeliverAcpNative(
 ): Promise<boolean> {
   if (row.payload.kind !== "acp_native") return false;
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+  if (casWon) emitResolved(row);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,
     native: true,

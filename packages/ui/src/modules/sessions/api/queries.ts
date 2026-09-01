@@ -6,9 +6,9 @@ import {
 } from "api-server-api";
 
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
+import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
 import { listAgentSessions } from "./acp-session-ops.js";
-
-const STATUS_POLL_MS = 5_000;
 
 export interface SessionListInclude {
   channels: boolean;
@@ -92,12 +92,20 @@ export function useAcpSessions(
     activeSessionId?: string | null;
   },
 ) {
+  const compat = useAgentLacksLiveUpdates(agentId);
   const live = !!agentId && (options?.enabled ?? true);
   return useQuery({
     queryKey: acpSessionsKeys.list(agentId, include),
     queryFn: live
       ? async () => {
           const sessions = await listAgentSessions(agentId);
+          const store = useStore.getState();
+          if (store.selectedAgent === agentId) {
+            store.pruneDrafts(
+              agentId,
+              sessions.map((s) => s.sessionId),
+            );
+          }
           const allowed: string[] = [
             SessionType.Regular,
             SessionType.ExperimentExecute,
@@ -117,8 +125,8 @@ export function useAcpSessions(
         }
       : skipToken,
     refetchOnMount: "always",
-    refetchInterval: live ? STATUS_POLL_MS : false,
-    staleTime: STATUS_POLL_MS,
+    refetchInterval: live && compat ? 5_000 : false,
+    staleTime: 5_000,
     meta: { errorToast: "Couldn't refresh session list" },
   });
 }

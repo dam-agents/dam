@@ -32,6 +32,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     name: agent.name,
     templateId: agent.templateId ?? null,
     templateUpdate: agent.templateUpdate ?? null,
+    features: agent.features,
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,
@@ -156,13 +157,13 @@ export const agentsRouter = t.router({
         case "TemplateNotFound":
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "No template to upgrade from",
+            message: "No template to update from",
           });
         case "TemplateMoved":
           throw new TRPCError({
             code: "CONFLICT",
             message:
-              "The template changed since you reviewed the upgrade — check the new version and retry",
+              "The template changed since you reviewed the update — check the new version and retry",
           });
       }
     }),
@@ -187,7 +188,7 @@ export const agentsRouter = t.router({
         case "ChannelAlreadyBound":
           throw new TRPCError({
             code: "CONFLICT",
-            message: "Slack channel already bound",
+            message: "This agent is already connected to that Slack channel",
           });
       }
     }),
@@ -228,7 +229,7 @@ export const agentsRouter = t.router({
         case "ChannelAlreadyBound":
           throw new TRPCError({
             code: "CONFLICT",
-            message: "This channel is already connected to an agent",
+            message: "That agent is already connected to this channel",
           });
       }
     }),

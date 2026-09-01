@@ -1,4 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
+import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelMessageEvent,
   SlackGateway,
@@ -28,12 +30,58 @@ export interface FakeSlackGateway extends SlackGateway {
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
   setGrantedScopes(scopes: string[] | null): void;
+  setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
   setMessageReactions(
     channel: string,
     ts: string,
     reactions: SlackMessageReaction[],
   ): void;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One page and the cursor that follows it. The
+ * paging signal is page state — whether a next cursor exists — never a count of
+ * the messages handed back, which the gateway contract forbids inferring from
+ * because the thread parent rides along in every page. That repeat is modelled
+ * on every page but the first, since a caller folding pages together has to
+ * cope with it and would not see the need from a fake that tidied it away.
+ */
+function pageOf(
+  window: SlackMessage[],
+  cursor: number,
+  limit: number,
+): { messages: SlackMessage[]; nextCursor: number | null } {
+  const parent = window[0];
+  const repeatParent = cursor > 0 && parent !== undefined;
+  const room = repeatParent ? limit - 1 : limit;
+  const slice = window.slice(cursor, cursor + room);
+  const consumed = cursor + slice.length;
+  return {
+    messages: repeatParent ? [parent, ...slice] : slice,
+    nextCursor: consumed < window.length ? consumed : null,
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Models Slack's thread read, including the parts a
+ * caller can get wrong. The thread parent comes back in every page whatever the
+ * anchor, because the real API includes it, and an anchored read is a filter
+ * over the rest rather than a fresh window.
+ */
+function threadWindowOf(
+  history: SlackMessage[],
+  oldest: string | undefined,
+): SlackMessage[] {
+  if (oldest === undefined) return [...history];
+  return history.filter((m, i) => {
+    if (i === 0) return true;
+    if (m.ts === undefined) return true;
+    const at = Number(m.ts);
+    const floor = Number(oldest);
+    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
+    return at >= floor;
+  });
 }
 
 export function createFakeSlackGateway(): FakeSlackGateway {
@@ -45,6 +93,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const userLookups: string[] = [];
   let nextStreamTs = 1;
   let grantedScopes: Set<string> | null = null;
+  let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const fileBytes = new Map<string, Buffer>();
 
@@ -143,8 +192,28 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async getThreadReplies() {
-      return [...history];
+    async getThreadReplies(args) {
+      const page = pageOf(threadWindowOf(history, args.oldest), 0, args.limit);
+      return { messages: page.messages, hasMore: page.nextCursor !== null };
+    },
+
+    async getThreadTail(args) {
+      const all = threadWindowOf(history, undefined);
+      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
+      let fold = emptyTailFold<SlackMessage>();
+      let cursor: number | null = 0;
+      let stoppedShort = false;
+      for (let read = 0; ; read += 1) {
+        if (read >= maxPages) {
+          stoppedShort = true;
+          break;
+        }
+        const page = pageOf(all, cursor, args.limit);
+        fold = foldTailPage(fold, page.messages, args.limit);
+        cursor = page.nextCursor;
+        if (cursor === null) break;
+      }
+      return { messages: fold.window, hasMore: stoppedShort };
     },
 
     async getChannelHistory() {
@@ -159,9 +228,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       });
     },
 
-    async downloadFile(urlPrivate) {
+    async downloadFile(urlPrivate, maxBytes) {
       const bytes = fileBytes.get(urlPrivate);
       if (!bytes) throw new Error(`HTTP 404`);
+      if (bytes.byteLength > maxBytes) {
+        throw new FileTooLargeError(maxBytes);
+      }
       return bytes.buffer.slice(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength,
@@ -248,8 +320,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       return grantedScopes;
     },
 
+    async getBotUserId() {
+      return botUserId;
+    },
+
     setGrantedScopes(scopes) {
       grantedScopes = scopes ? new Set(scopes) : null;
+    },
+
+    setBotUserId(id) {
+      botUserId = id;
     },
 
     setMessageReactions(channel, ts, reactions) {

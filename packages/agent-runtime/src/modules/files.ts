@@ -21,6 +21,8 @@ import type {
 import { err, ok } from "agent-runtime-api";
 
 import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
+import { noticeStream } from "../core/notice-stream.js";
+import { createFilesWatcher } from "./files-watch.js";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -32,13 +34,13 @@ function hasNullBytes(buf: Buffer): boolean {
   return false;
 }
 
-function safePath(workingDir: string, rel: string): string | null {
+export function safePath(workingDir: string, rel: string): string | null {
   const resolved = resolve(workingDir, rel);
   if (!resolved.startsWith(resolve(workingDir))) return null;
   return resolved;
 }
 
-function touchesReserved(rel: string): boolean {
+export function touchesReserved(rel: string): boolean {
   if (!rel) return false;
   return rel.split("/").some((seg) => RESERVED.has(seg));
 }
@@ -94,6 +96,7 @@ async function listDir(
 }
 
 export function createFilesService(workingDir: string): FilesService {
+  const watcher = createFilesWatcher(workingDir);
   const toAbs = (rel: string): string | null => safePath(workingDir, rel);
   const toWritableAbs = (rel: string): string | null => {
     if (!isWritablePath(rel)) return null;
@@ -102,6 +105,18 @@ export function createFilesService(workingDir: string): FilesService {
 
   return {
     listDirs: (paths) => Promise.all(paths.map((p) => listDir(workingDir, p))),
+    watchDirs: (paths, signal) =>
+      noticeStream(
+        { topic: "workspace" } as const,
+        (onChange) => watcher.watchDirs(paths, onChange),
+        signal,
+      ),
+    watchFile: (path, signal) =>
+      noticeStream(
+        { topic: "file", path } as const,
+        (onChange) => watcher.watchFile(path, onChange),
+        signal,
+      ),
     readFileSafe: async (
       rel,
     ): Promise<Result<FileReadResult, FilesDomainError>> => {

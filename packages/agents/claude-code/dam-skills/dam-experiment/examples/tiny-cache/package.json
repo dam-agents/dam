@@ -1,0 +1,15 @@
+{
+  "name": "tiny-cache",
+  "version": "1.0.0",
+  "description": "A minimal in-memory key/value cache with TTL, bounded capacity, and sorted key listing.",
+  "type": "module",
+  "main": "src/tiny-cache.js",
+  "scripts": {
+    "test": "node --test",
+    "bench": "node bench/bench.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

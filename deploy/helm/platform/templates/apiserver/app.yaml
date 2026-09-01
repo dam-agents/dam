@@ -253,8 +253,6 @@ spec:
               value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
-            - name: AGENT_HOME
-              value: {{ .Values.controller.agent.templateDefaults.agentHome | quote }}
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
@@ -384,6 +382,8 @@ spec:
               value: {{ .Values.brand.short | quote }}
             - name: BRAND_TITLE
               value: {{ .Values.brand.title | quote }}
+            - name: BRAND_VENDOR
+              value: {{ .Values.brand.vendor | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT
               value: {{ .Values.brand.theme.light.accent | quote }}
             - name: BRAND_THEME_LIGHT_ACCENT_HOVER
@@ -404,6 +404,10 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            {{- if .Values.links.computeRequest }}
+            - name: LINKS_COMPUTE_REQUEST
+              value: {{ .Values.links.computeRequest | quote }}
+            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # The api-server's own operational telemetry (request traces,
             # per-procedure metrics, logs) exports OTLP straight to the
@@ -442,18 +446,31 @@ spec:
           # serving until this pod can verify tokens. Liveness stays on the
           # static health route — an unreachable Keycloak must degrade, not
           # restart the pod.
+          # Both probes set an explicit timeout: Kubernetes defaults
+          # `timeoutSeconds` to 1, which under CPU pressure the event loop
+          # cannot meet even on a static route. A missed readiness check pulls
+          # the pod from the harness Service, and the waypoint answers the
+          # drivers polling through it with a 503 ("upstream connect error ...
+          # connection termination"); a missed liveness check restarts the
+          # container and kills every in-flight mesh connection at once. Both
+          # read as an api-server outage to an experiment loop, which has no
+          # retry. Slow must degrade, not restart — same intent as the Keycloak
+          # note above, which a 1s timeout silently defeats.
           readinessProbe:
             httpGet:
               path: /api/ready
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /api/health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           {{- end }}
           resources:
             {{- toYaml .Values.apiServer.resources | nindent 12 }}

@@ -1,6 +1,7 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentState, AgentView } from "../../../types.js";
@@ -20,7 +21,6 @@ export function useAgents() {
       ]);
       return { list, availableChannels };
     },
-    refetchInterval: 5000,
     staleTime: 5000,
     meta: { errorToast: "Can't reach the server — agent list may be stale" },
   });
@@ -31,6 +31,21 @@ const EMPTY_AGENTS: readonly AgentView[] = Object.freeze([]);
 export function useAgentsList(): readonly AgentView[] {
   const { data } = useAgents();
   return data?.list ?? EMPTY_AGENTS;
+}
+
+export function useAgentLacksLiveUpdates(agentId: string | null): boolean {
+  const agents = useAgentsList();
+  if (!agentId) return false;
+  const agent = agents.find((a) => a.id === agentId);
+  return agent ? !agent.features.liveUpdates : false;
+}
+
+export function agentLacksLiveUpdates(agentId: string): boolean {
+  const data = queryClient.getQueryData<{ list: readonly AgentView[] }>(
+    agentsKeys.listWithChannels(),
+  );
+  const agent = data?.list.find((a) => a.id === agentId);
+  return agent ? !agent.features.liveUpdates : false;
 }
 
 export function useAgentRunState(

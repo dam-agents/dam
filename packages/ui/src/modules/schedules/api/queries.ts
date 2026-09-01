@@ -20,9 +20,18 @@ export function fetchSchedulesForAgent(agentId: string) {
 export function useSchedules(agentId: string | null) {
   return useQuery({
     ...trpc.schedules.list.queryOptions(agentId ? { agentId } : skipToken),
-    refetchInterval: 5000,
     staleTime: 5000,
     meta: { errorToast: "Couldn't refresh schedules" },
+  });
+}
+
+export function useOwnerSchedules(limit?: number) {
+  return useQuery({
+    ...trpc.schedules.listForOwner.queryOptions(
+      limit === undefined ? undefined : { limit },
+    ),
+    staleTime: 5000,
+    retry: false,
   });
 }
 

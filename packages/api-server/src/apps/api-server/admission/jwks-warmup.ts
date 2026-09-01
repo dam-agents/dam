@@ -27,9 +27,11 @@ export function startJwksWarmup(
           return false;
         },
       ),
-    opts.initialMs ?? JWKS_WARM_INITIAL_MS,
-    opts.maxMs ?? JWKS_WARM_MAX_MS,
-    opts.timeoutMs ?? JWKS_WARM_TIMEOUT_MS,
+    {
+      initialMs: opts.initialMs ?? JWKS_WARM_INITIAL_MS,
+      maxMs: opts.maxMs ?? JWKS_WARM_MAX_MS,
+      timeoutMs: opts.timeoutMs ?? JWKS_WARM_TIMEOUT_MS,
+    },
   ).then((ok) => {
     ready = true;
     if (ok) {

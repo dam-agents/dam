@@ -13,10 +13,11 @@ import { type ProviderRef, providerRef } from "./provider-item.js";
 
 interface Props {
   selected: ProviderRef | null;
-  onSelect: (ref: ProviderRef) => void;
+  onSelect: (ref: ProviderRef | null) => void;
   confirmSwitch?: () => Promise<boolean>;
   autoSelectFirst?: boolean;
   disabled?: boolean;
+  required?: boolean;
   allow?: readonly ProviderPresetType[];
   recommended?: ProviderPresetType;
 }
@@ -27,10 +28,12 @@ export function ProviderSelect({
   confirmSwitch,
   autoSelectFirst = false,
   disabled = false,
+  required = false,
   allow,
   recommended,
 }: Props) {
-  const { itemByType, typeByConnectionId, isPending } = useProviderItems();
+  const { itemByType, typeByConnectionId, isPending, isSuccess } =
+    useProviderItems();
   const [connecting, setConnecting] = useState<ProviderPresetType | null>(null);
   const [connected, setConnected] = useState<{
     id: string;
@@ -41,16 +44,31 @@ export function ProviderSelect({
     [allow, recommended],
   );
 
-  const selectedType = selected
+  const resolvedType = selected
     ? (typeByConnectionId.get(selected.id) ??
       (connected?.id === selected.id ? connected.type : null))
     : null;
+  const selectedType =
+    resolvedType && rows.some((row) => row.type === resolvedType)
+      ? resolvedType
+      : null;
+
+  const autoSelectTarget = useMemo(
+    () =>
+      autoSelectFirst
+        ? rows.map((r) => itemByType.get(r.type)).find(Boolean)
+        : undefined,
+    [autoSelectFirst, rows, itemByType],
+  );
 
   useEffect(() => {
-    if (!autoSelectFirst || selected) return;
-    const first = rows.map((r) => itemByType.get(r.type)).find(Boolean);
-    if (first) onSelect(providerRef(first));
-  }, [autoSelectFirst, selected, itemByType, rows, onSelect]);
+    if (!isSuccess || selectedType) return;
+    if (autoSelectTarget) {
+      onSelect(providerRef(autoSelectTarget));
+    } else if (selected) {
+      onSelect(null);
+    }
+  }, [isSuccess, selectedType, autoSelectTarget, selected, onSelect]);
 
   const pick = async (type: ProviderPresetType) => {
     if (type === selectedType) return;
@@ -93,6 +111,7 @@ export function ProviderSelect({
         placeholder="Select a provider"
         ariaLabel="Provider"
         disabled={disabled}
+        invalid={required && isSuccess && !selectedType && !autoSelectTarget}
         testId="provider-select"
       />
       {connecting && (

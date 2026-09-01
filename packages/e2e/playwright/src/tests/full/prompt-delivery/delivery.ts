@@ -11,6 +11,7 @@ import {
 } from "../../../lib/agents.js";
 import type { ApiClient } from "../../../lib/api-client.js";
 import { acceptTerms, loginViaUi } from "../../../lib/auth.js";
+import { baseUrl } from "../../../config.js";
 import { harnessName } from "../../../lib/fixtures.js";
 
 const agentName = "e2e-delivery";
@@ -41,6 +42,7 @@ export async function openMockAgentChat(
   await ensureAgentExists(api, agentName, harnessName);
   const agentId = await waitForAgentRunning(api, agentName);
   await loginViaUi(page);
+  await page.goto(`${baseUrl}/coding-agents`);
   await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
   await gotoAgentChat(page, agentName, agentId);
   await expect(chatInput(page)).toBeVisible();

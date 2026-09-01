@@ -69,8 +69,11 @@ For contributors working on the DAM platform itself.
 ### Prerequisites
 
 - [mise](https://mise.jdx.dev)
-- Docker-compatible runtime (Docker Desktop, Rancher Desktop, etc.)
+- Docker-compatible runtime (Docker Desktop, Rancher Desktop, Colima, etc.) -- note that Podman is _not_ supported
 - macOS or Linux
+- on Linux, either:
+  - install QEMU if you want to run k3s in a VM (default), or
+  - set environment variable `IS_SANDBOX=1` if you want to operate directly in the current OS, typically if it is already a VM
 
 ### Local Setup
 

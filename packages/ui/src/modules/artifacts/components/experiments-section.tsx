@@ -4,7 +4,6 @@ import type {
   Experiment,
   LibraryArtifact,
 } from "api-server-api";
-import { EXPERIMENT_FOLDER_PREFIX } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -14,6 +13,8 @@ import {
 } from "@/components/ui/disclosure";
 
 import { useExperimentsAmbient } from "../../experiments/api/queries.js";
+import type { FolderDropCallbacks } from "../hooks/use-artifact-row-drag.js";
+import { folderDisplayName } from "../lib/folders.js";
 import type { ArtifactRowActions } from "./artifact-row.js";
 import {
   FolderGroup,
@@ -25,6 +26,8 @@ interface Props extends ArtifactRowActions, FolderGroupActions {
   folders: ArtifactFolder[];
   byFolder: Map<string | null, LibraryArtifact[]>;
   searching: boolean;
+  drop?: FolderDropCallbacks;
+  hotFolderId?: string | null;
 }
 
 interface Cluster {
@@ -94,6 +97,8 @@ export function ExperimentsSection({
   folders,
   byFolder,
   searching,
+  drop,
+  hotFolderId,
   ...actions
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -151,9 +156,11 @@ export function ExperimentsSection({
               nested
               defaultCollapsed={!searching}
               folder={folder}
-              displayName={folder.name.slice(EXPERIMENT_FOLDER_PREFIX.length)}
+              displayName={folderDisplayName(folder)}
               artifacts={artifacts}
               sections={partition(artifacts, clusters)}
+              drop={drop}
+              dropActive={hotFolderId === folder.id}
               {...actions}
             />
           );

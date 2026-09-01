@@ -10,21 +10,12 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useCopy } from "@/hooks/use-copy";
 import { emitToast } from "@/lib/toast";
 
 import { useSetArtifactSharing } from "../api/mutations.js";
-
-const EXPIRY_OPTIONS = [
-  { value: "keep", label: "Keep current expiry" },
-  { value: "never", label: "Never expires" },
-  { value: "1", label: "1 hour" },
-  { value: "24", label: "1 day" },
-  { value: "168", label: "7 days" },
-  { value: "720", label: "30 days" },
-] as const;
+import { toastCopyOutcome } from "../lib/share-link.js";
 
 interface Props {
   artifact: LibraryArtifact;
@@ -32,57 +23,30 @@ interface Props {
 }
 
 export function ShareDialog({ artifact, onClose }: Props) {
-  const [isPublic, setIsPublic] = useState(artifact.visibility === "public");
-  const [expiry, setExpiry] = useState<string>(
-    artifact.expiresAt === null ? "never" : "keep",
-  );
-  const shareUrl = artifact.shareUrl;
+  const [committed, setCommitted] = useState({
+    isPublic: artifact.visibility === "public",
+    shareUrl: artifact.shareUrl,
+  });
+  const [isPublic, setIsPublic] = useState(committed.isPublic);
   const { copy, copied } = useCopy();
   const sharing = useSetArtifactSharing();
+  const shareUrl = committed.shareUrl;
+  const unsaved = isPublic !== committed.isPublic;
 
   const save = () => {
     sharing.mutate(
+      { id: artifact.id, visibility: isPublic ? "public" : "private" },
       {
-        id: artifact.id,
-        visibility: isPublic ? "public" : "private",
-        ...(expiry === "keep"
-          ? {}
-          : { expiresInHours: expiry === "never" ? null : Number(expiry) }),
-      },
-      {
-        onSuccess: ({ shareUrl: savedUrl }) => {
-          emitToast(
-            savedUrl
-              ? {
-                  kind: "success",
-                  message: "Sharing updated — the public link is live.",
-                  action: {
-                    label: "Copy link",
-                    onClick: () => {
-                      void navigator.clipboard
-                        .writeText(savedUrl)
-                        .then(() =>
-                          emitToast({
-                            kind: "success",
-                            message: "Link copied.",
-                          }),
-                        )
-                        .catch(() =>
-                          emitToast({
-                            kind: "error",
-                            message:
-                              "Couldn't copy the link — use “Copy share link” on the artifact row.",
-                          }),
-                        );
-                    },
-                  },
-                }
-              : {
-                  kind: "success",
-                  message: "Sharing updated — the artifact is now private.",
-                },
-          );
-          onClose();
+        onSuccess: ({ visibility, shareUrl: savedUrl }) => {
+          const nowPublic = visibility === "public";
+          setCommitted({ isPublic: nowPublic, shareUrl: savedUrl });
+          emitToast({
+            kind: "success",
+            message: nowPublic
+              ? "Sharing updated — the public link is live."
+              : "Sharing updated — the artifact is now private.",
+          });
+          if (!nowPublic) onClose();
         },
       },
     );
@@ -106,7 +70,11 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 Anyone with the link can view — no platform account needed.
               </span>
             </span>
-            <Switch checked={isPublic} onCheckedChange={setIsPublic} />
+            <Switch
+              checked={isPublic}
+              onCheckedChange={setIsPublic}
+              disabled={sharing.isPending}
+            />
           </label>
 
           {isPublic && shareUrl && (
@@ -123,7 +91,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
                 size="icon-sm"
                 aria-label="Copy link"
                 tooltip="Copy link"
-                onClick={() => void copy(shareUrl)}
+                onClick={() => void copy(shareUrl).then(toastCopyOutcome)}
               >
                 {copied ? (
                   <Checkmark size={14} className="text-success" />
@@ -131,30 +99,6 @@ export function ShareDialog({ artifact, onClose }: Props) {
                   <Copy size={14} />
                 )}
               </Button>
-            </div>
-          )}
-
-          {isPublic && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">
-                Expiry
-              </span>
-              <Select
-                value={expiry}
-                onChange={(e) => setExpiry(e.target.value)}
-              >
-                {EXPIRY_OPTIONS.filter(
-                  (o) => o.value !== "keep" || artifact.expiresAt !== null,
-                ).map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-              <span className="text-xs text-muted-foreground">
-                An expired artifact is permanently deleted after a 7-day grace
-                period — even if it was made private again.
-              </span>
             </div>
           )}
         </div>
@@ -166,6 +110,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
         pendingLabel="Saving…"
         pending={sharing.isPending}
         cancelDisabled={sharing.isPending}
+        disabled={!unsaved}
         onSubmit={save}
       />
     </Modal>

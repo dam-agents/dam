@@ -5,6 +5,11 @@ import {
 } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import {
+  createExecHistoryProvider,
+  createWorkerHistoryProvider,
+  type HistoryProvider,
+} from "./infrastructure/history-provider.js";
+import {
   createSessionMetadataStore,
   type SessionMetadataStore,
 } from "./infrastructure/session-metadata-store.js";
@@ -20,15 +25,50 @@ import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
+import type { SessionsService } from "agent-runtime-api";
+import {
+  createSessionChanges,
+  notifyingSessionMetadataStore,
+  type SessionChanges,
+} from "./services/session-changes.js";
+import { createInProcessCaller } from "./infrastructure/in-process-request.js";
+import { createSessionsService } from "./services/sessions-service.js";
 
 export interface ComposeAcpOptions {
   command: string[];
   workingDir: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
+  sessionHistory?: {
+    module?: string;
+    exportName?: string;
+    command?: string[];
+  };
   isTerminalSessionActive?: (sessionId: string) => boolean;
   backgroundWorkHolds?: boolean;
   log?: (msg: string) => void;
+}
+
+function historyProviderOf(
+  opts: ComposeAcpOptions,
+): HistoryProvider | undefined {
+  const declared = opts.sessionHistory;
+  const log = (msg: string): void => opts.log?.(msg);
+  if (declared?.module !== undefined) {
+    return createWorkerHistoryProvider({
+      modulePath: declared.module,
+      exportName: declared.exportName,
+      log,
+    });
+  }
+  if (declared?.command !== undefined) {
+    return createExecHistoryProvider({
+      command: declared.command,
+      cwd: opts.workingDir,
+      log,
+    });
+  }
+  return undefined;
 }
 
 export function composeAcp(opts: ComposeAcpOptions): {
@@ -36,8 +76,14 @@ export function composeAcp(opts: ComposeAcpOptions): {
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
+  sessions: SessionsService;
+  sessionChanges: SessionChanges;
 } {
-  const sessionMetadata = createSessionMetadataStore(opts.stateBackend);
+  const sessionChanges = createSessionChanges();
+  const sessionMetadata = notifyingSessionMetadataStore(
+    createSessionMetadataStore(opts.stateBackend),
+    sessionChanges,
+  );
   const backgroundWork = createBackgroundWorkRegistry({
     enabled: opts.backgroundWorkHolds,
     log: opts.log,
@@ -53,10 +99,28 @@ export function composeAcp(opts: ComposeAcpOptions): {
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
+    historyProvider: historyProviderOf(opts),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     idleReapDelayMs: 3_000,
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
-  return { runtime, triggerDriver, sessionMetadata, backgroundWork };
+  const sessions = createSessionsService({
+    openCaller: () =>
+      createInProcessCaller((channel) =>
+        runtime.attach(channel, { viewer: false }),
+      ),
+    sessionMetadata,
+    isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
+    changes: sessionChanges,
+  });
+
+  return {
+    runtime,
+    triggerDriver,
+    sessionMetadata,
+    backgroundWork,
+    sessions,
+    sessionChanges,
+  };
 }

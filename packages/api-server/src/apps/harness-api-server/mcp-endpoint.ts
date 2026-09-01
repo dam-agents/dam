@@ -3,7 +3,11 @@ import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
-import type { AppRouter } from "agent-runtime-api";
+import {
+  AGENT_HOME_DIR,
+  AGENT_WORK_DIR,
+  type AppRouter,
+} from "agent-runtime-api";
 import type { ExperimentsService } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -27,8 +31,9 @@ import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
-function resolveWorkspacePath(input: string, agentHome: string): string {
-  const workDir = `${agentHome}/work`;
+function resolveWorkspacePath(input: string): string {
+  const agentHome = AGENT_HOME_DIR;
+  const workDir = AGENT_WORK_DIR;
   if (input.startsWith("/")) {
     return input.startsWith(`${agentHome}/`)
       ? input.slice(agentHome.length + 1)
@@ -104,7 +109,6 @@ export interface McpSessionDeps {
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
   experiments: ExperimentsService;
-  agentHome: string;
   supportsUserLookup: boolean;
   supportsMessageReactions: boolean;
 }
@@ -113,7 +117,8 @@ export function createMcpSession(
   agentId: string,
   deps: McpSessionDeps,
 ): McpSession {
-  const { agentHome, schedules } = deps;
+  const { schedules } = deps;
+  const agentHome = AGENT_HOME_DIR;
   const server = new McpServer({
     name: `platform-${agentId}`,
     version: "1.0.0",
@@ -142,7 +147,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 10 MiB cap.`,
+    `Send a message to a connected channel (slack or telegram) for this agent. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
@@ -178,7 +183,7 @@ export function createMcpSession(
       let resolved: ChannelAttachment | undefined;
       let attachmentAudit: Record<string, unknown> | undefined;
       if (attachment) {
-        const resolvedPath = resolveWorkspacePath(attachment.path, agentHome);
+        const resolvedPath = resolveWorkspacePath(attachment.path);
         let file: { content: string; binary: boolean; mimeType?: string };
         try {
           file = await runtimeClient.files.read.query({ path: resolvedPath });
@@ -191,7 +196,7 @@ export function createMcpSession(
             }
             if (err.data?.code === "PAYLOAD_TOO_LARGE") {
               return errorResult(
-                `attachment ${attachment.path} exceeds the 10 MB per-file cap`,
+                `attachment ${attachment.path} exceeds the 50 MB per-file cap`,
               );
             }
           }
@@ -450,6 +455,50 @@ export function createMcpSession(
   );
 
   server.tool(
+    "hand_off_to_agent",
+    "Hand the Slack message you are answering to another agent connected to the same conversation, when it is better placed to answer than you are. Name the agent as it appears in the conversation. It picks the message up as its own turn and replies in the thread itself, so you post nothing and your turn ends here — do not also reply. Only works while you are answering a Slack message, and only for an agent connected to that same conversation. A message handed to you cannot be handed on again.",
+    {
+      agent: z
+        .string()
+        .describe(
+          "Name of the agent to hand this to, as it appears in this conversation.",
+        ),
+      note: z
+        .string()
+        .optional()
+        .describe(
+          "Short note to the receiving agent on why you are handing it over. Shown to that agent, not posted in the channel.",
+        ),
+    },
+    async ({ agent, note }) => {
+      const result = await deps.channelManager.handOffTurn(
+        agentId,
+        ChannelType.Slack,
+        agent,
+        note,
+      );
+      const failed = "error" in result;
+      securityLog(failed ? "warn" : "info", "channel.outbound", {
+        category: "channel",
+        actor: agentId,
+        actorKind: "agent",
+        surface: ChannelType.Slack,
+        agentId,
+        result: failed ? "failure" : "success",
+        detail: {
+          action: "hand_off_to_agent",
+          requested: agent,
+          ...(failed ? {} : { handedTo: result.agent }),
+        },
+      });
+      if ("error" in result) return errorResult(result.error);
+      return textResult(
+        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
+      );
+    },
+  );
+
+  server.tool(
     "no_reply_needed",
     "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
     {
@@ -460,7 +509,10 @@ export function createMcpSession(
           "Optional short note on why no reply was needed (not posted).",
         ),
     },
-    async () => textResult("No reply sent."),
+    async () => {
+      await deps.channelManager.declineTurn(agentId, ChannelType.Slack);
+      return textResult("No reply sent.");
+    },
   );
 
   server.tool(
@@ -783,7 +835,6 @@ export interface MountMcpDeps {
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
-  agentHome: string;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -845,7 +896,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       artifactLibrary,
       invocations,
       experiments,
-      agentHome: deps.agentHome,
       supportsUserLookup,
       supportsMessageReactions,
     });

@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { emit, EventType } from "../../../events.js";
 import type {
   SkillPublishInput,
   SkillPublishResult,
@@ -18,6 +19,7 @@ import { securityLog } from "../../../core/security-log.js";
 
 export interface PublishServiceDeps {
   owner: string;
+  surface: string;
   resolveSource: (id: string) => Promise<SkillSource | null>;
   agentSkills: AgentSkillsRepository;
   agents: AgentsRepository;
@@ -109,6 +111,13 @@ export async function publishSkill(
       repo: `${host.owner}/${host.repo}`,
       prUrl: result.prUrl,
     },
+  });
+  emit({
+    type: EventType.SkillPublished,
+    agentId: input.agentId,
+    actorSub: deps.owner,
+    surface: deps.surface,
+    name: input.name,
   });
 
   return result;

@@ -73,7 +73,6 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 			},
 		},
 		AgentTemplateDefaults: config.AgentTemplateDefaults{
-			AgentHome:       "/home/agent",
 			ImagePullPolicy: "IfNotPresent",
 			StorageSize:     "10Gi",
 		},

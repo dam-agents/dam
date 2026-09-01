@@ -44,7 +44,6 @@ export function assembleSpecFromTemplate(
     image: tmplSpec.image,
     description: opts.description ?? tmplSpec.description,
     mounts: tmplSpec.mounts,
-    init: tmplSpec.init,
     env: tmplSpec.env,
     resources: concreteResources(tmplSpec.resources, opts.size, defaultLimits),
     imagePullPolicy: tmplSpec.imagePullPolicy,

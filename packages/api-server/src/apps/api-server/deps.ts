@@ -4,6 +4,8 @@ import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type {
   E2eService,
+  LiveEventsService,
+  PodSessionsService,
   ReposService,
   TermsService,
   UserIdentity,
@@ -13,10 +15,12 @@ import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentsRepository,
-  ContributionsSettledPort,
+  ContributionsProgressPort,
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
+import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type {
   AgentCleanupHook,
   PresetSeeder,
@@ -51,6 +55,9 @@ import type {
 } from "./admission/index.js";
 import type { SessionPresence } from "./agent-proxies/index.js";
 
+import type { ApiVariables } from "../../core/http-context.js";
+export type { ApiVariables };
+
 export interface ApiServerDeps {
   config: Config;
   periodicJobs: PeriodicJobs;
@@ -72,20 +79,21 @@ export interface ApiServerDeps {
   agentCleanupHooks: readonly AgentCleanupHook[];
   secretStores: SecretStoreRegistry;
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;
   schedulesBoot: SchedulesBoot;
-  mountUsageRoutes: (
-    app: Hono<{ Variables: { user: UserIdentity; roles: string[] } }>,
-  ) => void;
+  mountUsageRoutes: (app: Hono<{ Variables: ApiVariables }>) => void;
   listRegisteredAgentIds: (rawSub: string) => Promise<string[]>;
   metricsReader: MetricsReader | null;
   terms: TermsService;
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
   artifacts: ArtifactService;
+  liveEvents: LiveEventsService;
+  podSessions: PodSessionsService;
 
   k8sClient: K8sClient;
+  agentStateCache: AgentStateCache;
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
@@ -97,5 +105,6 @@ export interface ApiServerDeps {
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
+  publicAgentPageService: PublicAgentPageService;
   sessionPresence: SessionPresence;
 }

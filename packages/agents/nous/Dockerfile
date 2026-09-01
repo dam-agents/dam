@@ -25,10 +25,15 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 # Python 3.11 + Nous (and its claude-agent-sdk dependency) from GitHub, in a
 # dedicated venv. The repo is public, so the install needs no credentials.
 RUN uv python install 3.11 &&\
+    # The standalone interpreter's own site-packages ships setuptools 82.0.1
+    # (CVE-2026-59890) — the venv floor below does not reach it, and uv marks
+    # the install externally managed, hence --break-system-packages.
+    uv pip install --python "$(uv python find 3.11)" --break-system-packages "setuptools>=83.0.0" &&\
     uv venv --python 3.11 "$NOUS_VENV" &&\
     uv pip install --python "$NOUS_VENV/bin/python" \
       "git+https://github.com/AI-native-Systems-Research/agentic-strategy-evolution.git@${NOUS_REF}" \
-      "setuptools>=83.0.0" &&\
+      "setuptools>=83.0.0" \
+      "msgpack>=1.2.1" &&\
     chown -R 65532:0 /opt/nous-venv /opt/uv
 
 # Patch the installed campaign schema so `channels:` validates (Nous issue #296).

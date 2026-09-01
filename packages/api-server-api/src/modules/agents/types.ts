@@ -1,3 +1,4 @@
+import type { RuntimeFeatures } from "agent-runtime-api";
 import type { z } from "zod";
 import { ChannelType } from "../shared.js";
 import type { AgentSpecCR } from "../../crd-types.gen.js";
@@ -23,6 +24,7 @@ export interface SlackChannel extends Channel {
   type: ChannelType.Slack;
   slackChannelId: string;
   ambient?: boolean;
+  default?: boolean;
 }
 
 export type ChannelConfig = SlackChannel;
@@ -60,6 +62,7 @@ export interface Agent {
   channels: ChannelConfig[];
   kind?: AgentKind;
   kbTemplateId?: string;
+  features: RuntimeFeatures;
 }
 
 export type AgentKind = z.infer<typeof agentKindSchema>;

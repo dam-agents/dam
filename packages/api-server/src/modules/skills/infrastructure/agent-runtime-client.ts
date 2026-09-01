@@ -1,5 +1,6 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
-import type { AppRouter } from "agent-runtime-api";
+import type { AppRouter, SourcePathReason } from "agent-runtime-api";
+import { SOURCE_PATH_REASONS } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 import type { PrDisposition } from "../domain/pr-state.js";
@@ -73,6 +74,17 @@ export class AgentRuntimeConflictError extends Error {
   }
 }
 
+export class AgentRuntimeSourcePathError extends Error {
+  constructor(
+    label: string,
+    readonly reason: SourcePathReason,
+    readonly version?: string,
+  ) {
+    super(`${label}: skill source path ${reason}`);
+    this.name = "AgentRuntimeSourcePathError";
+  }
+}
+
 const PASSTHROUGH_CODES = new Set([
   "NOT_FOUND",
   "PAYLOAD_TOO_LARGE",
@@ -109,6 +121,24 @@ function isUpstreamGatewayError(value: unknown): value is UpstreamGatewayError {
   );
 }
 
+function isSourcePathReason(value: unknown): value is SourcePathReason {
+  return SOURCE_PATH_REASONS.includes(value as SourcePathReason);
+}
+
+function readSourcePath(
+  value: unknown,
+): { reason: SourcePathReason; version?: string } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { reason, version } = value as { reason?: unknown; version?: unknown };
+  if (!isSourcePathReason(reason)) return null;
+  return {
+    reason,
+    ...(typeof version === "string" && /^[0-9a-f]{7,40}$/.test(version)
+      ? { version }
+      : {}),
+  };
+}
+
 async function runWithUpstreamMapping<T>(
   label: string,
   fn: () => Promise<T>,
@@ -118,12 +148,24 @@ async function runWithUpstreamMapping<T>(
   } catch (e) {
     if (e instanceof TRPCClientError) {
       const data =
-        (e.data as { upstream?: unknown; code?: unknown } | null) ?? null;
+        (e.data as {
+          upstream?: unknown;
+          sourcePath?: unknown;
+          code?: unknown;
+        } | null) ?? null;
       if (data === null) {
         throw new AgentRuntimeUnreachableError(`${label}: ${e.message}`);
       }
       if (data.code === "CONFLICT") {
         throw new AgentRuntimeConflictError(e.message);
+      }
+      const sourcePath = readSourcePath(data.sourcePath);
+      if (sourcePath) {
+        throw new AgentRuntimeSourcePathError(
+          label,
+          sourcePath.reason,
+          sourcePath.version,
+        );
       }
       if (typeof data.code === "string" && PASSTHROUGH_CODES.has(data.code)) {
         throw new AgentRuntimeClientError(

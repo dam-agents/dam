@@ -1,4 +1,5 @@
 import { type K8sClient } from "./k8s.js";
+import type { AgentStateCache } from "./agent-state-cache.js";
 import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
@@ -66,7 +67,10 @@ export interface AgentsRepository {
   ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
 }
 
-export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
+export function createAgentsRepository(
+  k8s: K8sClient,
+  cache: AgentStateCache,
+): AgentsRepository {
   const inflight = new Map<string, Promise<void>>();
 
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
@@ -81,13 +85,12 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
 
   const repo: AgentsRepository = {
     async list(owner?) {
-      const selector = owner ? `${LABEL_OWNER}=${owner}` : undefined;
-      const objs = await k8s.listCustomObjects(AGENTS_PLURAL, selector);
+      const objs = await cache.list(owner);
       return objs.map((o) => parseInfraAgent(o));
     },
 
     async get(id, owner?) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await cache.get(id);
       if (!obj) return null;
       if (owner && !agentIsOwnedBy(obj, owner)) return null;
       return parseInfraAgent(obj);
@@ -182,9 +185,12 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       void (async () => {
         const settled = await pollUntilReady(
           async () => (await repo.get(id))?.hibernated ?? true,
-          PAUSE_SETTLE_POLL_MS,
-          PAUSE_SETTLE_POLL_MS,
-          PAUSE_SETTLE_TIMEOUT_MS,
+          {
+            initialMs: PAUSE_SETTLE_POLL_MS,
+            maxMs: PAUSE_SETTLE_POLL_MS,
+            timeoutMs: PAUSE_SETTLE_TIMEOUT_MS,
+            wakeOn: () => cache.whenChanged(id),
+          },
         );
         if (!settled) {
           getLogger().warn(
@@ -214,17 +220,17 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     },
 
     async isOwnedBy(id, owner) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await cache.get(id);
       return obj !== null && agentIsOwnedBy(obj, owner);
     },
 
     async getOwner(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await cache.get(id);
       return obj ? (agentOwner(obj) ?? null) : null;
     },
 
     async resolveIdentity(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await cache.get(id);
       if (!obj) return null;
       const owner = agentOwner(obj);
       if (!owner) return null;
@@ -238,7 +244,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     },
 
     async listAgentIdsWithAnnotation(key, value) {
-      const objs = await k8s.listCustomObjects(AGENTS_PLURAL);
+      const objs = await cache.list();
       const ids: string[] = [];
       for (const o of objs) {
         const id = o.metadata?.name;
@@ -262,7 +268,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
     },
 
     async isReady(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      const obj = await cache.get(id);
       return obj !== null && readyConditionStatus(obj) === "True";
     },
 
@@ -274,7 +280,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
       }
 
       const work = (async () => {
-        const current = await k8s.getCustomObject(AGENTS_PLURAL, id);
+        const current = await cache.get(id);
         if (!current) {
           throw new AgentWakeTimeoutError({
             agentId: id,
@@ -309,7 +315,7 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
         let sawNotOverBudget = false;
         const ready = await pollUntilReady(
           async () => {
-            const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+            const obj = await cache.get(id);
             if (!obj) return false;
             if (obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
               throw new AgentStoppedError(id);
@@ -335,9 +341,12 @@ export function createAgentsRepository(k8s: K8sClient): AgentsRepository {
             sawNotOverBudget = true;
             return infra.ready;
           },
-          WAKE_POLL_INITIAL_MS,
-          WAKE_POLL_MAX_MS,
-          WAKE_TIMEOUT_MS,
+          {
+            initialMs: WAKE_POLL_INITIAL_MS,
+            maxMs: WAKE_POLL_MAX_MS,
+            timeoutMs: WAKE_TIMEOUT_MS,
+            wakeOn: () => cache.whenChanged(id),
+          },
         );
         const durationMs = Date.now() - startedAt;
         if (!ready) {

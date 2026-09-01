@@ -8,8 +8,8 @@ export function SnapshotNote({ capturedAt }: { capturedAt: string }) {
     <p className="pb-3 text-[11px] leading-snug text-muted-foreground">
       Last known configuration, captured{" "}
       <span title={formatTimestamp(capturedAt)}>{timeAgo(capturedAt)}</span> —
-      the sandbox is stopped, so this is a snapshot rather than live state.
-      Start the sandbox to change these settings.
+      the agent is stopped, so this is a snapshot rather than live state. Start
+      the agent to change these settings.
     </p>
   );
 }
@@ -19,7 +19,7 @@ export function StaleModelCallout({ model }: { model: string }) {
     <Callout tone="warning" size="sm" className="mb-3 flex gap-2.5">
       <WarningAlt size={16} className="mt-px shrink-0 text-warning" />
       <p className="text-sm leading-snug">
-        The saved model isn&rsquo;t offered by the provider this sandbox last
+        The saved model isn&rsquo;t offered by the provider this agent last
         reached. It&rsquo;s set to{" "}
         <span className="font-mono text-[13px]">{model}</span>. Chatting will
         fail until it&rsquo;s changed.

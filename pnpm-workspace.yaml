@@ -6,12 +6,10 @@ packages:
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
-  # security fix for CVE-2026-18446, published 2026-07-31; remove after 2026-08-07
-  - "fast-uri@3.1.5"
-  # security fix for CVE-2026-69207, published 2026-08-03; remove after 2026-08-10
-  - "hono@4.12.34"
-  # security fix for CVE-2026-67213/67214, published 2026-08-03; remove after 2026-08-10
-  - "nanoid@3.3.17"
+  # qs@6.16.0 (2026-08-29) is the only release fixing CVE-2026-82417 and
+  # CVE-2026-82562, and it is younger than the 7-day floor. Drop this entry
+  # once the release ages past the floor.
+  - "qs@6.16.0"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
@@ -38,23 +36,6 @@ trustPolicyExclude:
   # and re-resolves to latest. Normal pnpm install pins 1.1.1 via the
   # lockfile and is unaffected.
   - "tinyexec@1.2.2"
-  # @mariozechner/clipboard 0.3.6 (2026-05-16) dropped OIDC provenance that
-  # 0.3.0–0.3.5 had — same upstream (mariozechner), benign publisher-side
-  # workflow change. Pulled in transitively by @earendil-works/pi-coding-agent
-  # via the pi-dynamic-providers extension; the platform-specific subpackages
-  # below ride the same version. Re-evaluate when clipboard restores
-  # provenance.
-  - "@mariozechner/clipboard@0.3.6"
-  - "@mariozechner/clipboard-darwin-arm64@0.3.6"
-  - "@mariozechner/clipboard-darwin-x64@0.3.6"
-  - "@mariozechner/clipboard-darwin-universal@0.3.6"
-  - "@mariozechner/clipboard-linux-arm64-gnu@0.3.6"
-  - "@mariozechner/clipboard-linux-arm64-musl@0.3.6"
-  - "@mariozechner/clipboard-linux-riscv64-gnu@0.3.6"
-  - "@mariozechner/clipboard-linux-x64-gnu@0.3.6"
-  - "@mariozechner/clipboard-linux-x64-musl@0.3.6"
-  - "@mariozechner/clipboard-win32-arm64-msvc@0.3.6"
-  - "@mariozechner/clipboard-win32-x64-msvc@0.3.6"
 allowBuilds:
   # argon2 (node-argon2) resolves its prebuilt native binding in install;
   # without it, artifact-library password hashing fails at require time.

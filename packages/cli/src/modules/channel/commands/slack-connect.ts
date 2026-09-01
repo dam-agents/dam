@@ -87,7 +87,7 @@ export function buildSlackConnectCommand(deps: {
         if (!res.ok) {
           if (res.error.kind === "channel-conflict") {
             process.stderr.write(
-              "error: Slack channel already bound to another agent\n",
+              "error: this agent is already connected to that Slack channel\n",
             );
             process.exit(EXIT_INVALID_INPUT);
           }
@@ -125,7 +125,7 @@ export function buildSlackConnectCommand(deps: {
           );
           if (opts.ambient) {
             process.stderr.write(
-              "note: the agent reads along in this channel and may chime in without being mentioned; the channel gets a visible notice\n",
+              "note: the agent reads along in this channel and may chime in without being mentioned; ambient is per agent, so others connected here are unaffected\n",
             );
           }
           process.stderr.write(

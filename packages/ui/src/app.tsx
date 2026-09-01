@@ -3,20 +3,24 @@ import { useEffect } from "react";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
+import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
+import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { ListView } from "./modules/agents/views/list-view.js";
-import { InboxView } from "./modules/approvals/views/inbox-view.js";
+import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
+import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
+import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
+import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
+import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
-import { parseRoute } from "./modules/platform/lib/routes.js";
-import { useFirstRunRedirect } from "./modules/sandboxes/hooks/use-first-run-redirect.js";
+import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
-import { SandboxWizardView } from "./modules/sandboxes/views/sandbox-wizard-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -51,15 +55,21 @@ export default function App() {
   return <MainApp />;
 }
 
+const SETUP_VIEWS = new Set<Route["view"]>([
+  "coding-agent-new",
+  "experiment-new",
+  "knowledge-base-new",
+]);
+
 function MainApp() {
   const view = useStore((s) => s.view);
 
+  useLiveEvents();
   useAgentCrashToasts();
-  useFirstRunRedirect();
 
   useEffect(() => {
     const path = window.location.pathname;
-    if (parseRoute(path).view === "sandbox-new") return;
+    if (SETUP_VIEWS.has(parseRoute(path).view)) return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -90,6 +100,7 @@ function MainApp() {
         </div>
         <DialogOverlay />
         <ConnectionBanner />
+        <FloatingApprovalsPill />
         <DocsLauncher />
       </>
     );
@@ -99,26 +110,37 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
-          {view === "sandbox-new" ? (
-            <SandboxWizardView />
-          ) : view === "sandbox-home" ? (
+          {view === "sandbox-home" ? (
             <SandboxHomeView />
           ) : view === "knowledge-base-config" ? (
             <KnowledgeBaseConfigView />
           ) : (
-            <div className="mx-auto w-full max-w-[960px] px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10">
-              {view === "settings" ? (
+            <div
+              className={cn(
+                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
+                view === "home" ? "max-w-[1200px]" : "max-w-[960px]",
+              )}
+            >
+              {view === "home" ? (
+                <HomeView />
+              ) : view === "coding-agent-new" ? (
+                <CodingAgentSetupView />
+              ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "inbox" ? (
-                <InboxView />
+              ) : view === "coding-agents" ? (
+                <CodingAgentsView />
               ) : view === "experiments" ? (
                 <ExperimentsListView />
+              ) : view === "experiment-new" ? (
+                <ExperimentSetupView />
+              ) : view === "knowledge-base-new" ? (
+                <KnowledgeBaseSetupView />
               ) : view === "knowledge-bases" ? (
                 <KnowledgeBasesListView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (
-                <ListView />
+                <HomeView />
               )}
             </div>
           )}
@@ -126,6 +148,7 @@ function MainApp() {
       </div>
       <DialogOverlay />
       <ConnectionBanner />
+      <FloatingApprovalsPill />
       <DocsLauncher />
     </div>
   );

@@ -99,8 +99,7 @@ function ConnectedChannel({ slackChannelId }: { slackChannelId: string }) {
       </p>
       <p className="text-sm text-muted-foreground">
         A connected channel can't be swapped for another one. To reach this
-        sandbox from somewhere else, connect that channel and disconnect this
-        one.
+        agent from somewhere else, connect that channel and disconnect this one.
       </p>
     </div>
   );
@@ -121,9 +120,9 @@ function AmbientRow({
         </span>
         <span className="text-sm text-muted-foreground">
           The agent reads along in the channel and may chime in without being
-          mentioned when it can clearly help. The channel is notified when this
-          changes, and it can be turned off anytime — here or with the in-chat
-          ambient command.
+          mentioned when it can clearly help. It is set per agent, so other
+          agents in the channel are unaffected, and it can be turned off anytime
+          — here or with the in-chat ambient command.
         </span>
       </span>
       <Switch

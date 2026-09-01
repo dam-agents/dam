@@ -1,13 +1,14 @@
 import type * as k8s from "@kubernetes/client-node";
 import type { Db } from "db";
 import type { SkillsService } from "api-server-api";
-import type { RuntimeSettledPort } from "../agents/index.js";
+import type { RuntimeProgressPort } from "../agents/index.js";
 import {
   createAgentsRepository,
   type AgentsRepository,
 } from "../agents/infrastructure/agents-repository.js";
 import type { TemplatesRepository } from "../templates/infrastructure/templates-repository.js";
 import { createK8sClient } from "../agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
 import { createConnectionsRepository } from "../connections/index.js";
 import { createAgentRuntimeSkillsClient } from "./infrastructure/agent-runtime-client.js";
 import { createGithubCredentialPort } from "./infrastructure/github-credential-port.js";
@@ -28,6 +29,7 @@ import {
   type PrStateResolver,
 } from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import { createUnitOfWork } from "../../core/unit-of-work.js";
 
 const sharedScanCache = createScanCache();
 
@@ -53,20 +55,23 @@ export function composeSkillsModule(deps: {
   api: k8s.CoreV1Api;
   namespace: string;
   owner: string;
+  surface: string;
   db: Db;
   seedSources: SkillSourceSeed[];
   brandName: string;
   runtimeMutator: RuntimeMutator;
   templatesRepo: TemplatesRepository;
-  runtimeSettled: RuntimeSettledPort;
+  runtimeProgress: RuntimeProgressPort;
+  agentStateCache: AgentStateCache;
 }): SkillsService {
   const { db, namespace, seedSources } = deps;
   const k8sClient = createK8sClient(deps.api, namespace);
   return createSkillsService({
+    surface: deps.surface,
     repo: createSkillsRepository(db, seedSources),
     skillSetsRepo: createSkillSetsRepository(db),
     agentSkillsRepo: createAgentSkillsRepository(db),
-    agentsRepo: createAgentsRepository(k8sClient),
+    agentsRepo: createAgentsRepository(k8sClient, deps.agentStateCache),
     templatesRepo: deps.templatesRepo,
     seedSources,
     runtimeClient: createAgentRuntimeSkillsClient(namespace),
@@ -74,7 +79,8 @@ export function composeSkillsModule(deps: {
       createConnectionsRepository(db),
     ),
     runtimeMutator: deps.runtimeMutator,
-    runtimeSettled: deps.runtimeSettled,
+    runtimeProgress: deps.runtimeProgress,
+    unitOfWork: createUnitOfWork(db),
     owner: deps.owner,
     scanSource: sharedScanCache.scan,
     invalidateScan: sharedScanCache.invalidate,

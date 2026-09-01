@@ -1,15 +1,16 @@
+import { ARTIFACT_RESTORE_WINDOW_DAYS } from "api-server-api";
+
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
 import type {
   ArtifactLibraryRepository,
   ArtifactRow,
   FolderRow,
 } from "../infrastructure/artifact-library-repository.js";
-
-export const EXPIRATION_GRACE_PERIOD_DAYS = 7;
+import { emit, EventType } from "../../../events.js";
 
 export type SharedResolution =
   | { state: "not-found" }
-  | { state: "expired"; withinGrace: boolean; expiredAt: Date }
+  | { state: "expired"; withinGrace: boolean }
   | { state: "ok"; artifact: ArtifactRow };
 
 export type FolderResolution =
@@ -41,7 +42,7 @@ export interface ShareViewerService {
     sizeBytes: number;
   } | null>;
   versionCount(artifactId: string): Promise<number>;
-  recordView(artifactId: string): void;
+  recordView(artifact: ArtifactRow): void;
 }
 
 export function createShareViewerService(deps: {
@@ -56,7 +57,7 @@ export function createShareViewerService(deps: {
     if (!row.expiresAt || row.expiresAt.getTime() > Date.now())
       return { expired: false };
     const graceEnd =
-      row.expiresAt.getTime() + EXPIRATION_GRACE_PERIOD_DAYS * 86_400_000;
+      row.expiresAt.getTime() + ARTIFACT_RESTORE_WINDOW_DAYS * 86_400_000;
     return { expired: true, withinGrace: Date.now() < graceEnd };
   }
 
@@ -84,11 +85,7 @@ export function createShareViewerService(deps: {
       if (!row || row.visibility !== "public") return { state: "not-found" };
       const expiry = expiryState(row);
       if (expiry.expired) {
-        return {
-          state: "expired",
-          withinGrace: expiry.withinGrace,
-          expiredAt: row.expiresAt!,
-        };
+        return { state: "expired", withinGrace: expiry.withinGrace };
       }
       return { state: "ok", artifact: row };
     },
@@ -134,8 +131,13 @@ export function createShareViewerService(deps: {
       return prior.length + 1;
     },
 
-    recordView(artifactId) {
-      void repo.incrementViewCount(artifactId).catch(() => {});
+    recordView(artifact) {
+      void repo.incrementViewCount(artifact.id).catch(() => {});
+      emit({
+        type: EventType.ArtifactViewed,
+        artifactId: artifact.id,
+        ownerSub: artifact.owner,
+      });
     },
   };
 }

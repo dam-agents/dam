@@ -3,6 +3,14 @@ export type { ApiContext, UserIdentity } from "./context.js";
 
 export { ChannelType, envVarSchema, type EnvVar } from "./modules/shared.js";
 
+export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
+export type {
+  LiveEventsService,
+  PodSessionsNotice,
+  PodSessionsService,
+} from "./modules/events/types.js";
+export { podSessionsNoticeSchema } from "./modules/events/schemas.js";
+
 export { SPEC_VERSION } from "./modules/templates/types.js";
 export {
   mountSchema,
@@ -192,10 +200,12 @@ export type {
 export {
   artifactKindSchema,
   artifactVisibilitySchema,
+  ARTIFACT_TITLE_MAX_LENGTH,
   INLINE_CONTENT_MAX_BYTES,
 } from "./modules/artifact-library/schemas.js";
 export {
   ARTIFACT_INTERNAL_LINK_PREFIX,
+  ARTIFACT_RESTORE_WINDOW_DAYS,
   artifactInternalLink,
 } from "./modules/artifact-library/types.js";
 export type {
@@ -460,6 +470,7 @@ export {
   egressRuleApplyPresetInputSchema,
   egressRuleCreateInputSchema,
   egressRuleCurrentPresetInputSchema,
+  egressRuleGetInputSchema,
   egressRuleListForAgentInputSchema,
   egressRuleRevokeInputSchema,
   egressRuleUpdateInputSchema,
@@ -469,6 +480,16 @@ export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
+export type {
+  GatewayRestartImpact,
+  GatewayRestartImpactInput,
+  PromotionRule,
+} from "./modules/egress-rules/promotion.js";
+export {
+  gatewayRestartImpact,
+  needsL7Promotion,
+  promotedHosts,
+} from "./modules/egress-rules/promotion.js";
 
 export {
   platformTurnEndedNotificationSchema,
@@ -480,6 +501,7 @@ export {
   platformPromptStartedNotificationSchema,
   platformPromptStartedParamsSchema,
   buildPlatformPromptStartedNotification,
+  platformClippedReplayMetaSchema,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
@@ -490,10 +512,23 @@ export type {
   PlatformPromptAcceptedParams,
   PlatformPromptStartedNotification,
   PlatformPromptStartedParams,
+  PlatformClippedReplayMeta,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";
 export type { Brand } from "./modules/brand/types.js";
+
+export { linksSchema } from "./modules/links/types.js";
+export type { Links } from "./modules/links/types.js";
+
+export {
+  publicAgentViewSchema,
+  publicAgentResponseSchema,
+} from "./modules/agents/public-agent.js";
+export type {
+  PublicAgentView,
+  PublicAgentResponse,
+} from "./modules/agents/public-agent.js";
 
 export type {
   TermsCurrent,
@@ -509,6 +544,13 @@ export {
   termsDocumentSchema,
   termsLatestAcceptanceSchema,
 } from "./modules/terms/schemas.js";
+export { PRE_TERMS_PROCEDURES } from "./modules/terms/pre-terms-procedures.js";
+
+export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
+export {
+  entryPointChoiceSchema,
+  entryPointChosenInputSchema,
+} from "./modules/usage/schemas.js";
 
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";

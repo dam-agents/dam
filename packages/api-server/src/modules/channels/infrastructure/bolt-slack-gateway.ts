@@ -1,5 +1,7 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
+import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
+import { emptyTailFold, foldTailPage } from "../domain/thread-catch-up.js";
 import type {
   SlackChannelInfo,
   SlackGateway,
@@ -24,11 +26,45 @@ export interface BoltSlackGatewayDeps {
   commandName: string;
 }
 
+function toSlackMessage(m: {
+  ts?: string;
+  user?: string;
+  text?: string;
+  blocks?: unknown;
+  edited?: unknown;
+}): SlackMessage {
+  return {
+    ts: m.ts,
+    user: m.user,
+    text: m.text,
+    blocks: m.blocks as SlackMessage["blocks"],
+    ...(m.edited ? { edited: true } : {}),
+  };
+}
+
 export function createBoltSlackGateway(
   deps: BoltSlackGatewayDeps,
 ): SlackGateway {
   let app: BoltApp | null = null;
   let grantedScopes: Set<string> | null = null;
+  let botUserId: string | null = null;
+
+  let authTested: Promise<void> | null = null;
+
+  async function authTest() {
+    if (!app) return;
+    authTested ??= (async () => {
+      try {
+        const result = await app!.client.auth.test();
+        const scopes = result.response_metadata?.scopes;
+        if (scopes) grantedScopes = new Set(scopes);
+        if (typeof result.user_id === "string") botUserId = result.user_id;
+      } catch {
+        authTested = null;
+      }
+    })();
+    await authTested;
+  }
 
   return {
     async start(handlers: SlackGatewayHandlers): Promise<boolean> {
@@ -42,6 +78,7 @@ export function createBoltSlackGateway(
       });
 
       bolt.event("app_mention", async ({ event, context }) => {
+        botUserId ??= context.botUserId ?? null;
         await handlers.onMention({
           user: event.user,
           channel: event.channel,
@@ -55,6 +92,7 @@ export function createBoltSlackGateway(
       });
 
       bolt.event("message", async ({ event, context }) => {
+        botUserId ??= context.botUserId ?? null;
         const msg = event as {
           channel: string;
           channel_type?: string;
@@ -81,7 +119,6 @@ export function createBoltSlackGateway(
           await handlers.onDirectMessage(payload);
           return;
         }
-        const botUserId = context.botUserId;
         if (botUserId && (msg.text ?? "").includes(`<@${botUserId}>`)) return;
         if (msg.channel_type === "channel" || msg.channel_type === "group") {
           await handlers.onMessage(payload);
@@ -122,6 +159,8 @@ export function createBoltSlackGateway(
         await app.stop();
         app = null;
         grantedScopes = null;
+        botUserId = null;
+        authTested = null;
       }
     },
 
@@ -200,20 +239,48 @@ export function createBoltSlackGateway(
       });
     },
 
-    async getThreadReplies(args): Promise<SlackMessage[]> {
-      if (!app) return [];
+    async getThreadReplies(args) {
+      if (!app) return { messages: [], hasMore: false };
       const replies = await app.client.conversations.replies({
         channel: args.channel,
         ts: args.threadTs,
         limit: args.limit,
+        ...(args.oldest ? { oldest: args.oldest } : {}),
       });
-      return (replies.messages ?? []).map((m) => ({
-        ts: m.ts,
-        user: m.user,
-        text: m.text,
-        blocks: m.blocks as SlackMessage["blocks"],
-        ...(m.edited ? { edited: true } : {}),
-      }));
+      return {
+        messages: (replies.messages ?? []).map(toSlackMessage),
+        hasMore: Boolean(
+          replies.has_more || replies.response_metadata?.next_cursor,
+        ),
+      };
+    },
+
+    async getThreadTail(args) {
+      if (!app) return { messages: [], hasMore: false };
+      const maxPages = args.maxPages ?? THREAD_TAIL_MAX_PAGES;
+      let cursor: string | undefined;
+      let fold = emptyTailFold<SlackMessage>();
+      let stoppedShort = false;
+      for (let page = 0; ; page += 1) {
+        if (page >= maxPages) {
+          stoppedShort = true;
+          break;
+        }
+        const replies = await app.client.conversations.replies({
+          channel: args.channel,
+          ts: args.threadTs,
+          limit: args.limit,
+          ...(cursor ? { cursor } : {}),
+        });
+        fold = foldTailPage(
+          fold,
+          (replies.messages ?? []).map(toSlackMessage),
+          args.limit,
+        );
+        cursor = replies.response_metadata?.next_cursor || undefined;
+        if (!cursor) break;
+      }
+      return { messages: fold.window, hasMore: stoppedShort };
     },
 
     async getChannelHistory(args): Promise<SlackMessage[]> {
@@ -242,12 +309,50 @@ export function createBoltSlackGateway(
       });
     },
 
-    async downloadFile(urlPrivate: string): Promise<ArrayBuffer> {
+    async downloadFile(
+      urlPrivate: string,
+      maxBytes: number,
+    ): Promise<ArrayBuffer> {
       const res = await fetch(urlPrivate, {
         headers: { Authorization: `Bearer ${deps.botToken}` },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.arrayBuffer();
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        await res.body?.cancel().catch(() => {});
+        throw new FileTooLargeError(maxBytes);
+      }
+      const body = res.body;
+      if (!body) return new ArrayBuffer(0);
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const reader = body.getReader();
+      let overBudget = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > maxBytes) {
+            overBudget = true;
+            throw new FileTooLargeError(maxBytes);
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+        if (overBudget) await body.cancel().catch(() => {});
+      }
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return out.buffer;
     },
 
     async listBotChannels(): Promise<SlackChannelInfo[]> {
@@ -361,14 +466,15 @@ export function createBoltSlackGateway(
     async getGrantedScopes(): Promise<Set<string> | null> {
       if (!app) return null;
       if (grantedScopes) return grantedScopes;
-      try {
-        const result = await app.client.auth.test();
-        const scopes = result.response_metadata?.scopes;
-        if (scopes) grantedScopes = new Set(scopes);
-        return grantedScopes;
-      } catch {
-        return null;
-      }
+      await authTest();
+      return grantedScopes;
+    },
+
+    async getBotUserId(): Promise<string | null> {
+      if (botUserId) return botUserId;
+      if (!app) return null;
+      await authTest();
+      return botUserId;
     },
   };
 }

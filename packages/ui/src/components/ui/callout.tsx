@@ -9,6 +9,7 @@ const calloutVariants = cva("rounded-lg border", {
     tone: {
       default: "border-border",
       muted: "border-border bg-muted/40",
+      gradient: "border-border bg-gradient-to-br from-muted/60 to-card",
       info: "border-callout-border bg-callout",
       warning: "border-warning bg-warning-light",
       danger: "border-danger bg-danger-light",

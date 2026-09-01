@@ -36,6 +36,17 @@ export function listChannelsByAgent(db: Db, owner: string) {
   };
 }
 
+export function hasAnyBinding(db: Db) {
+  return async (agentId: string): Promise<boolean> => {
+    const rows = await db
+      .select({ agentId: channels.agentId })
+      .from(channels)
+      .where(eq(channels.agentId, agentId))
+      .limit(1);
+    return rows.length > 0;
+  };
+}
+
 async function upsertSlackChannel(
   runner: Db | Tx,
   owner: string,
@@ -45,7 +56,10 @@ async function upsertSlackChannel(
   const { type, ...config } = channel;
   const updated = await runner
     .update(channels)
-    .set({ owner, config })
+    .set({
+      owner,
+      config: sql`(${channels.config} - 'ambient') || ${JSON.stringify(config)}::jsonb`,
+    })
     .where(
       and(
         eq(channels.agentId, agentId),
@@ -124,40 +138,47 @@ export function allChannelAgentIds(db: Db) {
   };
 }
 
-export function findBySlackChannelId(db: Db) {
-  return async (
-    slackChannelId: string,
-  ): Promise<{
-    agentId: string;
-    owner: string;
-    ambient?: boolean;
-  } | null> => {
+export interface SlackBindingRow {
+  agentId: string;
+  owner: string;
+  ambient: boolean;
+  isDefault: boolean;
+}
+
+const slackChannelIs = (slackChannelId: string) =>
+  and(
+    eq(channels.type, ChannelType.Slack),
+    sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
+  );
+
+export function findSlackBindingsByChannelId(db: Db) {
+  return async (slackChannelId: string): Promise<SlackBindingRow[]> => {
     const rows = await db
       .select({
         agentId: channels.agentId,
         owner: channels.owner,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
+        isDefault: sql<string | null>`${channels.config}->>'default'`,
+        createdAt: channels.createdAt,
       })
       .from(channels)
-      .where(
-        and(
-          eq(channels.type, ChannelType.Slack),
-          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    if (!row) return null;
-    return {
+      .where(slackChannelIs(slackChannelId))
+      .orderBy(channels.createdAt, channels.agentId);
+    return rows.map((row) => ({
       agentId: row.agentId,
       owner: row.owner,
-      ...(row.ambient === "true" ? { ambient: true } : {}),
-    };
+      ambient: row.ambient === "true",
+      isDefault: row.isDefault === "true",
+    }));
   };
 }
 
 export function setSlackChannelAmbient(db: Db) {
-  return async (slackChannelId: string, ambient: boolean): Promise<void> => {
+  return async (
+    agentId: string,
+    slackChannelId: string,
+    ambient: boolean,
+  ): Promise<void> => {
     await db
       .update(channels)
       .set({
@@ -166,28 +187,94 @@ export function setSlackChannelAmbient(db: Db) {
           : sql`${channels.config} - 'ambient'`,
       })
       .where(
-        and(
-          eq(channels.type, ChannelType.Slack),
-          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
-        ),
+        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
       );
   };
 }
 
 export function isSlackChannelUniqueViolation(e: unknown): boolean {
-  return isUniqueViolation(e, "channels_slack_channel_unique_idx");
+  return isUniqueViolation(e, "channels_slack_agent_channel_idx");
 }
 
 export function deleteSlackChannelBinding(db: Db) {
-  return async (slackChannelId: string): Promise<void> => {
+  return async (agentId: string, slackChannelId: string): Promise<void> => {
     await db
       .delete(channels)
       .where(
-        and(
-          eq(channels.type, ChannelType.Slack),
-          sql`${channels.config}->>'slackChannelId' = ${slackChannelId}`,
-        ),
+        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
       );
+  };
+}
+
+const noDefaultYet = (slackChannelId: string) =>
+  sql`NOT EXISTS (SELECT 1 FROM ${channels} d WHERE d.${sql.raw(channels.type.name)} = ${ChannelType.Slack} AND d.${sql.raw(channels.config.name)}->>'slackChannelId' = ${slackChannelId} AND d.${sql.raw(channels.config.name)}->>'default' = 'true')`;
+
+const MARK_DEFAULT = sql`${channels.config} || '{"default": true}'::jsonb`;
+
+export function isSlackDefaultUniqueViolation(e: unknown): boolean {
+  return isUniqueViolation(e, "channels_slack_default_agent_idx");
+}
+
+async function claimDefault(
+  runner: Db | Tx,
+  owner: string,
+  agentId: string,
+  slackChannelId: string,
+): Promise<boolean> {
+  try {
+    const claimed = await runner
+      .update(channels)
+      .set({ config: MARK_DEFAULT })
+      .where(
+        and(
+          eq(channels.agentId, agentId),
+          eq(channels.owner, owner),
+          slackChannelIs(slackChannelId),
+          noDefaultYet(slackChannelId),
+        ),
+      )
+      .returning({ agentId: channels.agentId });
+    return claimed.length > 0;
+  } catch (e) {
+    if (isSlackDefaultUniqueViolation(e)) return false;
+    throw e;
+  }
+}
+
+export function claimSlackDefaultIfVacantTx(
+  tx: Tx,
+  owner: string,
+  agentId: string,
+  slackChannelId: string,
+): Promise<boolean> {
+  return claimDefault(tx, owner, agentId, slackChannelId);
+}
+
+class NoSuchBinding extends Error {}
+
+export function setSlackChannelDefault(db: Db) {
+  return async (agentId: string, slackChannelId: string): Promise<boolean> => {
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(channels)
+          .set({ config: sql`${channels.config} - 'default'` })
+          .where(slackChannelIs(slackChannelId));
+        const marked = await tx
+          .update(channels)
+          .set({ config: MARK_DEFAULT })
+          .where(
+            and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
+          )
+          .returning({ agentId: channels.agentId });
+        if (marked.length === 0) throw new NoSuchBinding();
+      });
+      return true;
+    } catch (e) {
+      if (e instanceof NoSuchBinding || isSlackDefaultUniqueViolation(e))
+        return false;
+      throw e;
+    }
   };
 }
 

@@ -1,8 +1,10 @@
 import type * as k8s from "@kubernetes/client-node";
+import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
+import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
@@ -15,22 +17,42 @@ import {
   createAgentsService,
   type AgentCleanupHook,
   type PresetSeeder,
-  type ContributionsSettledPort,
+  type ContributionsProgressPort,
   type ResizeGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
 } from "./services/agents-service.js";
 import {
+  hasAnyBinding,
   listChannelsByOwner,
   listChannelsByAgent,
   upsertChannel,
   deleteChannelByType,
   deleteSlackChannelByAgent,
   deleteChannelsByAgentIds,
-  findBySlackChannelId,
+  findSlackBindingsByChannelId,
+  claimSlackDefaultIfVacantTx,
   upsertChannelTx,
   listChannelsByAgentTx,
 } from "./infrastructure/channel-bindings-repository.js";
+import {
+  getProfile,
+  upsertProfile,
+  tombstoneProfile,
+  retireProfile,
+  listProfileIdsForReconcile,
+} from "./infrastructure/public-agent-profile-repository.js";
+import {
+  createPublicAgentPageService,
+  type PublicAgentIdentity,
+  type PublicAgentPageService,
+} from "./services/public-agent-page-service.js";
+import {
+  createPublicAgentProfileReconcileService,
+  type PublicAgentProfileReconcileService,
+} from "./services/public-agent-profile-reconcile-service.js";
+import { startPersistPublicAgentProfileSaga } from "./sagas/persist-public-agent-profile.js";
+import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 import type { ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -41,6 +63,7 @@ export type {
 
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
+  agentStateCache: AgentStateCache;
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
@@ -52,7 +75,7 @@ export function composeAgentsModule(deps: {
   presetSeeder?: PresetSeeder;
   cleanupHooks?: readonly AgentCleanupHook[];
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
   grantProvisioner?: {
@@ -70,7 +93,7 @@ export function composeAgentsModule(deps: {
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
-  const repo = createAgentsRepository(k8s);
+  const repo = createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   const owner = deps.owner ?? "";
@@ -89,7 +112,7 @@ export function composeAgentsModule(deps: {
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
       runtimeMutator: deps.runtimeMutator,
-      contributionsSettled: deps.contributionsSettled,
+      contributionsProgress: deps.contributionsProgress,
       podStatus: createPodStatusClient(deps.namespace),
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
@@ -103,13 +126,67 @@ export function composeAgentsModule(deps: {
         upsertChannel: (tx, agentId, channel) =>
           upsertChannelTx(tx, owner, agentId, channel),
         listByAgent: (tx, agentId) => listChannelsByAgentTx(tx, owner, agentId),
+        claimDefaultIfVacant: (tx, agentId, slackChannelId) =>
+          claimSlackDefaultIfVacantTx(tx, owner, agentId, slackChannelId),
       },
-      findSlackChannelBinding: findBySlackChannelId(deps.db),
+      findSlackBindings: findSlackBindingsByChannelId(deps.db),
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
     }),
     repo,
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
+  };
+}
+
+export function composePublicAgentPage(deps: {
+  db: Db;
+  repo: AgentsRepository;
+  userDirectory: KeycloakUserDirectory;
+  log: (message: string) => void;
+}): {
+  service: PublicAgentPageService;
+  startSaga: () => Subscription;
+  reconcileService: PublicAgentProfileReconcileService;
+} {
+  const readAgent = async (
+    agentId: string,
+  ): Promise<PublicAgentIdentity | null> => {
+    const agent = await deps.repo.get(agentId);
+    if (!agent?.owner) return null;
+    return { name: agent.name, ownerSub: agent.owner };
+  };
+  const upsert = upsertProfile(deps.db);
+  const tombstone = tombstoneProfile(deps.db);
+  const retire = retireProfile(deps.db);
+  const bound = hasAnyBinding(deps.db);
+
+  return {
+    service: createPublicAgentPageService({
+      hasAnyBinding: bound,
+      getProfile: getProfile(deps.db),
+      upsertProfile: upsert,
+      tombstoneProfile: tombstone,
+      readAgent,
+      resolveOwnerName: (ownerSub) =>
+        deps.userDirectory.resolveDisplayNameBySub(ownerSub),
+      log: deps.log,
+    }),
+    startSaga: () =>
+      startPersistPublicAgentProfileSaga({
+        hasAnyBinding: bound,
+        readAgent,
+        upsertProfile: upsert,
+        tombstoneProfile: tombstone,
+        retireProfile: retire,
+        log: deps.log,
+      }),
+    reconcileService: createPublicAgentProfileReconcileService({
+      listProfileIds: listProfileIdsForReconcile(deps.db),
+      readAgent,
+      upsertProfile: upsert,
+      retireProfile: retire,
+      log: deps.log,
+    }),
   };
 }

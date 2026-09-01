@@ -4,6 +4,7 @@ import { FormField } from "@/components/form-field";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
+import { READ_ONLY_FIELD } from "@/components/ui/read-only-field";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
@@ -14,10 +15,6 @@ import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
-import { TemplateUpdateNotice } from "./template-update-notice.js";
-
-export const READ_ONLY_FIELD =
-  "flex h-10 w-full items-center rounded-md border border-input bg-muted/40 px-4 text-sm text-muted-foreground";
 
 type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
 
@@ -39,7 +36,7 @@ export function SandboxSetupSection({ f }: Props) {
         working and can interrupt tasks in progress. The switch applies when you
         save.
       </p>,
-      "Switch this sandbox's provider?",
+      "Switch this agent's provider?",
       { confirmLabel: "Switch provider" },
     );
 
@@ -59,13 +56,12 @@ export function SandboxSetupSection({ f }: Props) {
         currentSize={f.sizeRestartsAgent ? agent.size : undefined}
         restartNote={
           f.sizeRestartsAgent
-            ? "Changing the size restarts the sandbox on save."
-            : "The new size applies when the sandbox next starts."
+            ? "Changing the size restarts the agent on save."
+            : "The new size applies when the agent next starts."
         }
       />
 
       <section className="mb-8">
-        {}
         <FormField
           label="Image"
           hint={
@@ -80,7 +76,6 @@ export function SandboxSetupSection({ f }: Props) {
             </span>
           </div>
         </FormField>
-        <TemplateUpdateNotice agent={agent} />
       </section>
 
       <section className="mb-8">
@@ -91,10 +86,11 @@ export function SandboxSetupSection({ f }: Props) {
             onSelect={f.selectProvider}
             confirmSwitch={confirmSwitch}
             disabled={f.saving}
+            required={f.formReady}
           />
         </Inset>
         <p className="mt-3 text-xs text-muted-foreground">
-          Changing the provider swaps this sandbox's model credential. A
+          Changing the provider swaps this agent's model credential. A
           cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
           break the agent and may need a restart.
         </p>

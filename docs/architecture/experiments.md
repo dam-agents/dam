@@ -1,13 +1,14 @@
 # Experiments
 
-Last verified: 2026-07-28
+Last verified: 2026-08-28
 
 ## Overview
 
 An **Experiment** is one execution of a loop script a **driver Agent** authors
 in Python — a design→build→test→learn loop written as ordinary code over the
 [Invocation](platform-topology.md) primitive — **observed live** by the
-platform. The script declares its **Skeleton** (stages, loops) upfront, then
+platform. The script declares its **Skeleton** (stages, loops, each optionally carrying
+a one-sentence human description the live graph displays) upfront, then
 emits stage-tagged **Spans** (status, an opaque numeric score, Artifact
 references) as it runs; Invocations spawned inside a span attach to it. The
 platform's founding bet survives from the first design: it **never runs the
@@ -34,35 +35,42 @@ straitjacket: a span naming an undeclared stage grows the graph and is flagged
 as **drift**, never an error. Agent-authored scripts must not fail hours into
 a run over a declaration mismatch; drift is signal for the human, not a fault.
 
-## The experiment sandbox
+## The experiment agent
 
 Nothing about an Experiment requires a special Agent — Plan Registration is keyed
 only on the calling agent's waypoint identity, so any Agent with the SDK can
 register one. But an agent has to *know how*, and until it does the Experiments
 destination has nothing to show and the user has nothing to click.
 
-So creating one is a first-class flow: an **experiment sandbox** is an Agent
+So creating one is a first-class flow: an **experiment agent** is an Agent
 carrying the `experiment` [Agent Kind](knowledge-bases.md) whose Install Command
 copies the `dam-experiment` authoring skill and an `/experiment-onboard` command
-out of a path staged in the image. It rides the same kinded-create rail as a
+out of a path staged in the image, and appends a purpose note to the
+pod's user-level AGENTS.md so every session — not only the greeted first one —
+opens knowing that "experiment" means a platform Experiment. AGENTS.md is the
+source of truth and a symlink makes Claude Code read it, mirroring the image's
+`/etc/AGENTS.md` pattern at `$HOME` level. The note rides a shared append
+primitive in the agents module that skips sections already present, so a
+replayed install or a later writer composes instead of duplicating or
+clobbering. It rides the same kinded-create rail as a
 Knowledge Base, differing only in the marker and the command; nothing is fetched
 over the network, because the kit ships with the image. The skill used to be baked
-into every Claude Code sandbox's seeded workspace — moving it behind the marker is
-what makes the two things distinguishable. Sandboxes seeded before the move keep
+into every Claude Code agent's seeded workspace — moving it behind the marker is
+what makes the two things distinguishable. Agents seeded before the move keep
 their copy: the marker is not retroactive, and nothing is migrated.
 
-**The marker is declared intent, not a capability gate.** It records that a
-sandbox was made to run loops; it does not stop any other agent from registering a
+**The marker is declared intent, not a capability gate.** It records that an
+agent was made to run loops; it does not stop any other agent from registering a
 plan. Both populations therefore belong on the destination, which lists **marked
-sandboxes ∪ agents with at least one Experiment row** — a marked sandbox with
-nothing in it yet is an empty container, and an unmarked agent that registered a
-plan earns a container too. There is no backfill and nothing disappears.
+agents ∪ agents with at least one Experiment row** — a marked agent with
+nothing in it yet is an empty group, and an unmarked agent that registered a
+plan earns a group too. There is no backfill and nothing disappears.
 
-Opening a fresh experiment sandbox **greets the user**: the UI hidden-sends
+Opening a fresh experiment agent **greets the user**: the UI hidden-sends
 `/experiment-onboard` so the agent opens by asking what to optimize. It waits until the
-sandbox reports that skill among its installed skills, so it never runs a command
-the Install Command has not delivered yet — the copy installs the command before
-the skill precisely so the skill's presence implies both.
+agent reports that skill among its installed skills, so it never runs a command
+the Install Command has not delivered yet — the skill is copied last precisely so
+its presence implies the command and the purpose note both landed.
 
 ## Resources
 
@@ -82,11 +90,14 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
   normalized or ranked), Artifact Library references, and an opaque attrs bag.
 - **Script Artifact** — the script source, versioned in the Artifact Library.
   Everything platform-managed for a lineage — draft script + dashboard,
-  every run's script clone and results page — lives in the lineage's folder
-  (`Experiments / <name>`), keeping the library root free of stock
-  artifacts. Postgres never stores source; every run records the exact
-  version it executed, and a `run-start` announcing a changed sha publishes
-  the next version — divergence is visible history.
+  every run's script clone and results page — is published into the lineage's
+  folder (`Experiments / <name>`), keeping the library root free of stock
+  artifacts. That folder is a filing convenience, not the record: the
+  experiment names the artifacts it owns, so an owner may move one out or file
+  an unrelated one in without changing what a run consists of. Postgres never
+  stores source; every run records the exact version it executed, and a
+  `run-start` announcing a changed sha publishes the next version — divergence
+  is visible history.
 - **Dashboard Artifact** — the HTML renderer of the Trace Feed: a
   platform-shipped stock dashboard auto-published at plan registration, or a
   bespoke one the agent generated. Rendered in the sealed in-app iframe; data
@@ -99,8 +110,8 @@ field-level shapes in the [contract](../../packages/api-server-api/src/modules/e
   plus a baked replay of the final feed over the same message contract — so
   the finished result is self-contained and shareable without any bridge.
   The Experiments destination groups lineages (status, runs, live invocations,
-  per-run artifacts) under the sandbox running them and routes into that chat —
-  the sandbox is the container because one holds many lineages, so there is no
+  per-run artifacts) under the agent running them and routes into that chat —
+  the agent is the grouping because one holds many lineages, so there is no
   per-experiment page to route to.
 - **Trace Feed** — the bounded JSON projection (per-stage aggregates,
   downsampled score series, recent spans, attached invocations) served over
@@ -122,7 +133,7 @@ sequenceDiagram
   API->>H: runtime-channel event → launch prompt
   H->>S: python exp.py (background process)
   S->>API: run-start, span events (batched), spawns tagged with span ids
-  U->>API: poll Trace Feed (only while running)
+  API-->>U: live hint per event batch → UI refetches Trace Feed
   S->>API: finish (completed | failed)
 ```
 
@@ -145,14 +156,72 @@ missing experiment reads as unknown. Events append only while the experiment
 is `running` — Stop closes the trace, so a stopped loop dies on its next
 call. Every accepted batch bumps the liveness clock.
 
-**Stop has teeth.** Closing the trace alone would let a loop parked inside a
-`spawn()` poll run to the invocation deadline, so Stop also fails the
-experiment's running Invocations (eagerly reaping their targets) — which
-unblocks waiting `spawn()` calls at once — and new spawns stamped with a
-non-running experiment's span are rejected, so a loop that catches the
-failure and retries dies too. A loop doing pure local compute exits at its
-next report; the released pin lets the idle checker reclaim a truly silent
-one.
+**Every terminal transition has teeth.** Closing the trace alone would let a
+loop parked inside a `spawn()` poll run to the invocation deadline, so going
+terminal also fails the experiment's running Invocations (eagerly reaping
+their targets) — which unblocks waiting `spawn()` calls at once — and new
+spawns stamped with a non-running experiment's span are rejected, so a loop
+that catches the failure and retries dies too. A loop doing pure local compute
+exits at its next report; the released pin lets the idle checker reclaim a
+truly silent one.
+
+This applies to **all three** terminal paths — Stop, the script's own `finish`
+(`completed` *and* `failed`), and the inactivity sweep — not Stop alone. The
+ledger is closed in every case, so a surviving target can no longer report into
+the run; leaving it alive only holds its pod and its owner's budget until the
+invocation TTL, which is hours for a long campaign. `completed` is included
+deliberately: a loop that returns without awaiting a spawn orphans its target
+exactly like one that died mid-poll. The Agent Sweep is not a backstop here —
+it reclaims a Sweepable target only once that target hibernates, and a template
+may disable hibernation outright (the `nous` catalogue entry pins
+`hibernationTimeout: "0s"` so a detached campaign is not killed mid-run),
+leaving the invocation liveness deadline as the sole remaining bound. The reap
+is best-effort on every path: a failed cancel never blocks the transition.
+
+**The worker image is a design-time choice.** Which image a loop spawns decides
+what the experiment can do, so the platform makes the catalogue part of
+designing one rather than something the author must already know: the
+`dam-experiment` skill requires reading `GET /images` (the same catalogue the
+one-shot spawn flow offers) and presenting it to the human before any loop is
+written, and forbids installing a framework inside a worker when a curated
+image already ships it. The catalogue is read before the human is even greeted
+in a fresh sandbox, so the images offered are the ones this deployment actually
+carries. Being in the catalogue is necessary but not sufficient: an image also
+has to be validated as an unattended worker, since every purpose-built image is
+a conversational workload whose goal normally arrives in chat, and the skill
+carries that supported subset — the catalogue answers what exists, not what a
+loop should spawn. Approval covers the whole envelope, not just the image: the
+connections each worker is granted, the iteration counts, and the deadline
+derived from them are agreed before the script is authored, because a run
+commits hours of compute and a wrong choice surfaces as an empty result at the
+end rather than an error at review. Concurrency is part of that envelope: the
+driver reads the owner's [budget](budgets.md) — ceiling and current
+reservation — over the same per-agent surface, and the catalogue names each
+worker's cost (its effective Size), so the design states how many workers run
+at once before the human approves. Fan-out past that number queues rather than
+fails, but the wait burns each invocation's deadline, so the deadline is sized
+with the queue in mind.
+
+Two checks keep a wrong id from surfacing as an empty
+result hours in: `require_image()` resolves the id against the catalogue during
+the declaration section, so plan mode fails while the human is still reviewing
+the design, and the spawn route rejects an unknown `templateId` with a `400`
+naming the ids that exist — the lenient-skeleton rule is about *stage* drift and
+does not extend to naming an image that isn't there. The route applies the same
+fail-fast to a worker sized past the owner's budget Ceiling: such a target could
+never be admitted and would otherwise park until its deadline, so the first
+spawn fails with the figures instead. A worker that fits the Ceiling but not the
+room currently free is not an error — it queues and starts when room frees
+([budgets](budgets.md)), so a loop wider than the Ceiling runs slower, not dead.
+
+**A failed spawn says why.** Polling an invocation returns its status and, once
+the target reports, the schema-validated result. A `failed` row additionally
+carries the platform's own reason — deadline exceeded, target pod restarted
+mid-turn, stopped with the run — because it is the one line of diagnosis the
+platform holds and the loop cannot reconstruct: the target is already gone by
+the time the driver sees the failure. A loop that only ever read a bare
+`failed` would have to guess whether to retry, back off, or shrink its
+workload.
 
 **Span ↔ spawn attach.** A spawn made inside a span carries
 `experimentSpanId` ("experimentId/spanId") on the invocation request; the
@@ -169,10 +238,27 @@ span-referenced rollup, so the run panel and the baked results page list
 them. Only the run's driver may attach explicitly (foreign ids read as
 unknown), and drafts refuse attachment — results belong to runs.
 
+**Reporting survives an outage; the run does not pay for it.** Reports are
+observability, so a transient api-server outage costs latency, never the
+loop. The SDK retries the writes that are idempotent on the server — event
+batches (spans upsert by id), `finish`, and plan registration — and never
+retries `spawn`, where a duplicated POST is a second worker rather than a
+duplicate row. A rejected batch stays buffered for the next attempt instead
+of being dropped, and the buffer is bounded to the batch size the events
+route accepts: an unbounded retained batch would eventually outgrow that cap
+and then be rejected on every later attempt, wedging reporting for the rest
+of the run. Once a flush fails, further attempts park for a back-off window,
+so a long outage costs one retry ladder per window rather than one per
+reported event. Overflow past the bound drops the oldest events and says so
+in the driver's log — a bounded, visible loss instead of a silent wedge.
+
 ## Completion and liveness
 
 Starting a run stamps `executedAt`; the script's `finish` (or an unhandled exception
-reported by the SDK) flips `running → completed | failed`. In run mode the
+reported by the SDK) flips `running → completed | failed` — unless the run is
+already terminal, in which case `finish` is a no-op: the server answers `409`
+and the SDK treats a user Stop and a retried finish whose first attempt
+landed as the same observable state. In run mode the
 SDK also runs a **heartbeat**: a daemon thread with its own request path
 posts a no-op `heartbeat` event (~60 s) so a healthy loop that is quiet —
 blocked in a `spawn()`, deep in a local computation — keeps its activity
@@ -190,6 +276,24 @@ driver Agent against the idle checker's hibernation (the
 `agent-platform.ai/experiment-active` annotation, subordinate to a user hard
 stop); reaching any terminal state releases the pin — the sweep is therefore
 also what un-pins a crashed run's driver.
+
+## Domain events
+
+Every change to an experiment raises a single event type on the in-process
+bus — plan registrations, span batches, terminal transitions and sweep reaps
+alike. It is advisory and non-durable, and its everyday consumer is the live
+hint that keeps an open browser's Trace Feed current without polling.
+
+Start, Stop, and Delete are different: each is a person choosing to use the
+feature, so exactly those three carry the acting person and the action, and
+are recorded as [Activity Events](usage-tracking.md). Everything the loop or
+the platform raises on its own — the script's reports, a failed launch, the
+inactivity sweep's reaps — names no actor, and the usage subscriber ignores
+anything without one. A run the sweep failed and a run the script finished
+look the same here: neither is a person doing something, and neither reaches
+the activity log. The lineage's platform-written artifacts (dashboard, script
+clone, results) are marked internal on publish, so they never count as
+publishes either — [artifact-library](artifact-library.md) owns that rule.
 
 ## Where the code lives
 

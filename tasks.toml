@@ -109,6 +109,14 @@ fi
 # e2e:install, shared with e2e:loop so the two never drift.
 E2E_VM_NAME="$VM_NAME" mise run e2e:install
 
+# Wipe data to the specs' expected clean slate. On lima/CI the cluster is
+# brand new and this is a fast no-op; in a sandbox the cluster persists
+# between runs and still carries the previous run's data (the specs'
+# clean-slate assertions fail on it). Re-gate afterwards — the reset
+# bounces the apiserver.
+E2E_VM_NAME="$VM_NAME" mise run e2e:reset
+E2E_VM_NAME="$VM_NAME" mise run e2e:gate
+
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
   mise run "$PLAYWRIGHT_TASK"
@@ -160,6 +168,56 @@ mise run cluster:install -- "${INSTALL_ARGS[@]}"
 # breaks Playwright's first asset fetch — leave them alone.
 kubectl --kubeconfig="$KUBECONFIG" rollout restart deployment platform-apiserver
 kubectl --kubeconfig="$KUBECONFIG" rollout status deployment platform-apiserver --timeout=5m
+
+# Readiness gate — shared task, see e2e:gate.
+mise run e2e:gate
+'''
+
+["e2e:gate"]
+hide = true
+description = "Wait until the e2e cluster stably serves UI + Keycloak on :5555. Shared by `e2e` (via e2e:install) and `e2e:loop`'s warm path."
+dir = "{{config_root}}"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+VM_NAME="${E2E_VM_NAME:-platform-k3s-test}"
+if [ -n "${IS_SANDBOX:-}" ]; then
+  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+else
+  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$VM_NAME/copied-from-guest/kubeconfig.yaml"
+fi
+
+# The install (or a warm --rebuild) rolls traefik, keycloak, and the
+# apiserver, and their routes come up at different moments — a single lucky
+# 200 on the UI root is not "serving". Require the UI root AND the keycloak
+# realm to answer on three consecutive ticks before any spec dials in;
+# otherwise the auth specs die at ERR_CONNECTION_REFUSED mid-login-redirect.
+echo "Waiting for the cluster to serve UI + Keycloak on :5555 ..."
+STREAK=0
+for _ in $(seq 1 100); do
+  if curl -fsS -o /dev/null --max-time 3 http://localhost:5555/ 2>/dev/null &&
+     curl -fsS -o /dev/null --max-time 3 http://keycloak.localhost:5555/realms/platform 2>/dev/null; then
+    STREAK=$((STREAK + 1))
+    [ "$STREAK" -ge 3 ] && break
+  else
+    STREAK=0
+  fi
+  sleep 3
+done
+if [ "$STREAK" -lt 3 ]; then
+  echo "ERROR: e2e cluster is up but not stably routing on :5555 (UI + keycloak)." >&2
+  echo "It does not auto-heal — reprovision with 'mise run e2e', or check" >&2
+  echo "'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
+  # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
+  # keep the regex in sync. Turns the generic advice above into a verdict.
+  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
+      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
+    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs', then rerun." >&2
+  fi
+  exit 1
+fi
 '''
 
 ["e2e:reset"]
@@ -298,30 +356,9 @@ fi
 # 3. Wipe data to the specs' expected preconditions.
 mise run e2e:reset
 
-# 3b. Readiness gate. The warm cluster must actually serve on :5555 (Traefik /
-# ingress up) or the specs fail with an opaque ERR_CONNECTION_REFUSED. Poll
-# briefly — covers a just-bootstrapped Traefik still coming up or a UI rebuild
-# blip — then fail loud rather than auto-heal a wedged cluster.
-echo "Waiting for the cluster to serve on http://localhost:5555 ..."
-READY=false
-for _ in $(seq 1 30); do
-  if curl -fsS -o /dev/null --max-time 3 http://localhost:5555/ 2>/dev/null; then
-    READY=true; break
-  fi
-  sleep 3
-done
-if [ "$READY" != true ]; then
-  echo "ERROR: warm e2e cluster is up but not routing on http://localhost:5555." >&2
-  echo "Traefik/ingress likely failed to install. e2e:loop does not auto-heal —" >&2
-  echo "reprovision with 'mise run e2e', or check 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs'." >&2
-  # Same signature the ztunnel-cert-watchdog keys on (deploy/tasks.toml);
-  # keep the regex in sync. Turns the generic advice above into a verdict.
-  if kubectl --kubeconfig="$KUBECONFIG" -n istio-system logs -l app=ztunnel --since=6h --tail=5000 2>/dev/null \
-      | grep -qiE 'certificate expired|AlertReceived\(CertificateExpired\)'; then
-    echo "Detected expired mesh certs — run 'LIMA_INSTANCE=$VM_NAME mise run cluster:fix-certs', then rerun e2e:loop." >&2
-  fi
-  exit 1
-fi
+# 3b. Readiness gate — shared with the fresh-install path (see e2e:gate), so
+# a warm --rebuild of keycloak/traefik gets the same stability check.
+E2E_VM_NAME="$VM_NAME" mise run e2e:gate
 
 # 4. Run the specs against the warm cluster. No teardown — the cluster stays up
 # for the next loop. The filter rides after `--` so mise appends it to the
@@ -422,6 +459,13 @@ description = "Static security analysis for GitHub Actions workflows"
 dir = "{{config_root}}"
 run = "zizmor --min-confidence medium .github/workflows/"
 
+["common:check:pinact"]
+description = "Every GitHub Actions `uses:` must be pinned to a full commit SHA"
+dir = "{{config_root}}"
+# -no-api keeps this purely syntactic: upstream retagging a release must
+# never fail a build that did not change. Bump pins with `pinact run -u`.
+run = "pinact run -fix=false -no-api"
+
 ["common:check:resolve-image"]
 description = "Assert the image dependency graph in scripts/resolve-image.sh (build-vs-reuse logic)"
 dir = "{{config_root}}"
@@ -491,6 +535,23 @@ echo "OK: version $version"
 
 ["docs:check"]
 depends = ["docs:check:*"]
+
+# Regenerate docs/activity-events.md from the event registry. The table is a
+# projection of what the code emits, never hand-maintained — the ticket that
+# asked for it (#3259) requires a reader to answer "is this action captured?"
+# without reading code, and a hand-written list would drift the first time an
+# event moved.
+["docs:generate:activity-events"]
+dir = "{{config_root}}/packages/api-server"
+depends = ["common:setup:pnpm"]
+run = "node scripts/event-coverage.mjs --doc"
+
+# Guard: the committed table must match regeneration. Same fail-closed shape as
+# docs:check:adr-index.
+["docs:check:activity-events"]
+dir = "{{config_root}}/packages/api-server"
+depends = ["common:setup:pnpm"]
+run = "node scripts/event-coverage.mjs --check-doc"
 
 # Regenerate docs/adrs/index.md from ADR frontmatter. The index is a projection
 # of the ADR log, never hand-maintained: edit an ADR, run this, commit both.

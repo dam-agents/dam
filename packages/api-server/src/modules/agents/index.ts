@@ -1,9 +1,10 @@
-export { composeAgentsModule } from "./compose.js";
+export { composeAgentsModule, composePublicAgentPage } from "./compose.js";
 export type {
   AgentCleanupHook,
   PresetSeeder,
-  ContributionsSettledPort,
-  RuntimeSettledPort,
+  ContributionsProgressPort,
+  ContributionsProgress,
+  RuntimeProgressPort,
 } from "./services/agents-service.js";
 export {
   createAgentsRepository,
@@ -39,12 +40,28 @@ export {
   AgentStoppedError,
   isAgentStoppedError,
 } from "./domain/agent-stopped.js";
+export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
+export {
+  agentStreamable,
+  type AgentStreamability,
+} from "./domain/streamable.js";
+export { type PublicAgentPageService } from "./services/public-agent-page-service.js";
+export {
+  createPublicAgentRoutes,
+  type PublicAgentRoutesDeps,
+} from "./infrastructure/public-agent-routes.js";
+export {
+  concreteResources,
+  type DefaultResourceLimits,
+} from "./domain/spec-assembly.js";
 export {
   deleteChannelsByAgent,
   listChannelsByOwner,
-  findBySlackChannelId,
+  findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
   deleteSlackChannelByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelDefault,
+  type SlackBindingRow,
 } from "./infrastructure/channel-bindings-repository.js";

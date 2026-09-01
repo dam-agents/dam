@@ -5,6 +5,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.ge
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -36,6 +37,7 @@ function harness(opts: {
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
       prompts.push(prompt);
@@ -55,13 +57,27 @@ function harness(opts: {
     { authUrl: "http://kc", clientId: "c" } as never,
     createMemoryTtlStore(600_000),
     async () => OWNER,
-    { resolveSlackBinding: async () => opts.binding } as never,
+    {
+      resolveSlackBindings: async () =>
+        opts.binding
+          ? [
+              {
+                instanceName: opts.binding.instanceName,
+                owner: opts.binding.owner,
+                ambient: false,
+                isDefault: true,
+              },
+            ]
+          : [],
+    } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 

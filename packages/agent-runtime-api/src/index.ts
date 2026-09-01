@@ -1,6 +1,30 @@
 export type { AppRouter } from "./router.js";
 export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
+export type {
+  FileContentNotice,
+  WorkspaceNotice,
+} from "./modules/files/types.js";
+export {
+  fileContentNoticeSchema,
+  workspaceNoticeSchema,
+} from "./modules/files/schemas.js";
+export type {
+  PodSession,
+  PodSessionList,
+  PodSessionMode,
+  PodSessionNotice,
+  PodSessionType,
+  SessionsService,
+} from "./modules/sessions/types.js";
+export {
+  podSessionListSchema,
+  podSessionModeSchema,
+  podSessionNoticeSchema,
+  podSessionSchema,
+  podSessionTypeSchema,
+} from "./modules/sessions/schemas.js";
+
 export { ok, err } from "./result.js";
 export type {
   DirEntry,
@@ -43,7 +67,9 @@ export type {
   SkillsService,
   SkillUninstallInput,
   SkillWriteLocalInput,
+  SourcePathReason,
 } from "./modules/skills/types.js";
+export { SOURCE_PATH_REASONS } from "./modules/skills/types.js";
 export {
   skillDeleteLocalInputSchema,
   skillInstallInputSchema,
@@ -61,6 +87,7 @@ export {
   STAGED_SKILLS_DIR,
   dedupeByName,
 } from "./modules/skills/source-roots.js";
+export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 export type { DedupeByNameResult } from "./modules/skills/source-roots.js";
 export type { SshDomainError, SshService } from "./modules/ssh/types.js";
 export type {
@@ -85,6 +112,8 @@ export {
   event,
   eventKind,
   capabilities,
+  runtimeFeaturesOf,
+  type RuntimeFeatures,
   harnessConfigChoice,
   harnessConfigOptionGroup,
   harnessConfigCatalog,

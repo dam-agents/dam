@@ -71,6 +71,29 @@ def test_plan_mode_registers_and_exits(stub, tmp_path):
     assert body["script"]["content"] == raw.decode()
 
 
+def test_plan_carries_stage_and_loop_descriptions(stub, tmp_path):
+    """Descriptions declared on loops/stages ride the skeleton to the plan, so
+    the live graph can show what each node means; nodes without one stay bare."""
+    script = write_script(tmp_path, "loop body never runs\n")
+    stub.routes[("POST", "/experiments/plan")] = (201, {"experimentId": "exp-1"})
+
+    exp = x.Experiment("evolver", script_path=script)
+    loop = exp.loop("rounds", description="one optimization attempt per round")
+    produce = loop.stage("produce", description="a worker rewrites the source")
+    loop.stage("eval", after=produce)
+
+    with pytest.raises(SystemExit):
+        next(exp.iterations(loop))
+
+    _method, _path, body = stub.requests[-1]
+    stages = body["skeleton"]["stages"]
+    assert stages[0]["description"] == "a worker rewrites the source"
+    assert "description" not in stages[1]
+    assert body["skeleton"]["loops"][0]["description"] == (
+        "one optimization attempt per round"
+    )
+
+
 # ---- run mode --------------------------------------------------------------------
 
 
@@ -243,3 +266,237 @@ def test_spawn_without_span_or_experiment(stub):
     body = stub.requests[0][2]
     assert "experimentSpanId" not in body
     assert body["image"] == "some/image:1"
+
+
+def test_spawn_failure_surfaces_the_platform_reason(stub):
+    # The platform's errorReason (deadline, pod crash, stop) is the only
+    # diagnosis that survives the target being reaped — it must reach the
+    # exception text, not just the row.
+    stub.routes[("POST", "/invocations")] = (201, {"id": "inv-3"})
+    stub.routes[("GET", "/invocations/inv-3")] = (
+        200,
+        {
+            "status": "failed",
+            "errorReason": "target pod restarted (OutOfMemory); one-shot turn cannot resume",
+        },
+    )
+
+    with pytest.raises(x.InvocationFailed) as exc:
+        x.spawn("do it", "integer", image="some/image:1", poll_seconds=0.01)
+
+    assert "OutOfMemory" in str(exc.value)
+    assert exc.value.reason is not None
+
+
+def test_spawn_failure_without_a_reason_stays_bare(stub):
+    # An older api-server (no errorReason on the view) must not render
+    # "failed: None".
+    stub.routes[("POST", "/invocations")] = (201, {"id": "inv-4"})
+    stub.routes[("GET", "/invocations/inv-4")] = (200, {"status": "failed"})
+
+    with pytest.raises(x.InvocationFailed) as exc:
+        x.spawn("do it", "integer", image="some/image:1", poll_seconds=0.01)
+
+    assert str(exc.value).endswith("failed")
+    assert exc.value.reason is None
+
+
+# ---- image choice ----------------------------------------------------------------
+
+CATALOG = (
+    200,
+    {
+        "images": [
+            {"id": "claude-code", "name": "Claude Code", "description": "general"},
+            {"id": "nous", "name": "NOUS", "description": "campaigns"},
+        ]
+    },
+)
+
+
+def test_require_image_returns_the_id_when_the_catalog_has_it(stub):
+    stub.routes[("GET", "/images")] = CATALOG
+
+    assert x.require_image("nous") == "nous"
+
+
+def test_require_image_rejects_an_unknown_id_and_names_the_real_ones(stub):
+    stub.routes[("GET", "/images")] = CATALOG
+
+    with pytest.raises(x.UnknownImage) as caught:
+        x.require_image("nous-agent")
+
+    assert caught.value.template_id == "nous-agent"
+    assert caught.value.available == ["claude-code", "nous"]
+    assert "claude-code, nous" in str(caught.value)
+
+
+def test_budget_reads_the_owner_figures(stub):
+    stub.routes[("GET", "/budget")] = (
+        200,
+        {
+            "cpu": {"reservedMilli": 3000, "ceilingMilli": 6000},
+            "memory": {
+                "reservedBytes": 4 * 1024**3,
+                "ceilingBytes": 14 * 1024**3,
+            },
+            "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
+        },
+    )
+
+    figures = x.budget()
+
+    assert figures["cpu"]["ceilingMilli"] == 6000
+    assert figures["memory"]["reservedBytes"] == 4 * 1024**3
+    assert figures["defaultWorkerSize"] == {"cpu": "1", "memory": "1Gi"}
+
+
+def test_event_report_outage_is_survived_and_events_redeliver(
+    stub, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/finish")] = (200, {"ok": True})
+    outage = {"on": False}
+
+    def events_route(body):
+        if outage["on"]:
+            return (500, {"error": "db restarting"})
+        return (200, {"accepted": len(body["events"])})
+
+    stub.routes[("POST", "/events")] = events_route
+
+    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
+        stage = exp.stage("eval")
+        exp.ready()
+        outage["on"] = True
+        with stage.run() as span:
+            span.score = 1.0
+        outage["on"] = False
+        # A failed flush parks the next attempts; clearing the gate stands in
+        # for that window elapsing, so this still asserts redelivery.
+        exp._flush_blocked_until = 0.0
+        with stage.run() as span:
+            span.score = 2.0
+
+    batches = [
+        body["events"]
+        for method, path, body in stub.requests
+        if method == "POST"
+        and path.endswith("/events")
+        and any(e["type"] != "heartbeat" for e in body["events"])
+    ]
+    redelivery = [
+        b
+        for b in batches
+        if [e["type"] for e in b] == ["span-start", "span-end", "span-start"]
+    ]
+    assert len(redelivery) == 1
+    assert redelivery[0][1]["score"] == 1.0
+    _method, path, body = stub.requests[-1]
+    assert path.endswith("/finish") and body == {"status": "completed"}
+
+
+def test_finish_retries_a_transient_failure(stub, tmp_path, monkeypatch):
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/events")] = (200, {"accepted": 1})
+    finish_calls = []
+
+    def finish_route(body):
+        finish_calls.append(body)
+        if len(finish_calls) == 1:
+            return (503, {"error": "blip"})
+        return (200, {"ok": True})
+
+    stub.routes[("POST", "/finish")] = finish_route
+
+    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
+        exp.ready()
+
+    assert len(finish_calls) == 2
+    assert finish_calls[-1] == {"status": "completed"}
+
+
+def test_finish_treats_409_as_already_closed(stub, tmp_path, monkeypatch):
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    stub.routes[("POST", "/events")] = (200, {"accepted": 1})
+    stub.routes[("POST", "/finish")] = (409, {"error": "stopped"})
+
+    with x.Experiment("evolver", script_path=write_script(tmp_path)) as exp:
+        exp.ready()
+
+    finishes = [r for r in stub.requests if r[1].endswith("/finish")]
+    assert len(finishes) == 1
+
+
+def test_long_outage_keeps_the_retained_batch_within_the_server_cap(
+    stub, tmp_path, monkeypatch
+):
+    """A retained batch that outgrew the server's 500-event cap used to be
+    rejected on every later attempt, wedging reporting for the rest of the
+    run. The buffer is bounded, so what is held back stays deliverable."""
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/finish")] = (200, {"ok": True})
+
+    def events_route(body):
+        if len(body["events"]) > x._EVENT_BATCH_MAX:
+            return (400, {"error": "too many events"})
+        return (200, {"accepted": len(body["events"])})
+
+    stub.routes[("POST", "/events")] = events_route
+
+    exp = x.Experiment("evolver", script_path=write_script(tmp_path))
+    exp.stage("eval")
+    exp.ready()
+    exp._flush_blocked_until = 0.0
+    exp._buffer = []
+    for i in range(x._EVENT_BATCH_MAX * 3):
+        exp._emit({"type": "custom-data", "data": {"i": i}})
+        assert len(exp._buffer) <= x._EVENT_BATCH_MAX
+
+    exp._flush_blocked_until = 0.0
+    exp._flush(force=True, ignore_backoff=True)
+    assert exp._buffer == []
+    assert all(
+        len(body["events"]) <= x._EVENT_BATCH_MAX
+        for method, path, body in stub.requests
+        if method == "POST" and path.endswith("/events")
+    )
+
+
+def test_outage_costs_one_retry_ladder_per_window_not_one_per_emit(
+    stub, tmp_path, monkeypatch
+):
+    """Without the back-off gate every emit during an outage paid the full
+    four-attempt ladder, charging reporting latency to the loop."""
+    monkeypatch.setenv("PLATFORM_EXPERIMENT_ID", "exp-9")
+    monkeypatch.setattr(x.time, "sleep", lambda _s: None)
+    stub.routes[("POST", "/finish")] = (200, {"ok": True})
+    stub.routes[("POST", "/events")] = (500, {"error": "db restarting"})
+
+    exp = x.Experiment("evolver", script_path=write_script(tmp_path))
+    exp.stage("eval")
+    exp.ready()
+
+    # ready() already failed a flush and armed the gate; open it so the loop
+    # below measures exactly one back-off window.
+    exp._flush_blocked_until = 0.0
+    before = sum(
+        1
+        for method, path, _b in stub.requests
+        if method == "POST" and path.endswith("/events")
+    )
+    for i in range(25):
+        exp._emit({"type": "custom-data", "data": {"i": i}}, flush=True)
+    attempts = (
+        sum(
+            1
+            for method, path, _b in stub.requests
+            if method == "POST" and path.endswith("/events")
+        )
+        - before
+    )
+    # One ladder (_RETRY_ATTEMPTS posts), not one per emit.
+    assert attempts == x._RETRY_ATTEMPTS

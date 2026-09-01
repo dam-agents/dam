@@ -16,6 +16,7 @@ import {
   validateTimezone,
 } from "../domain/recurrences.js";
 import { securityLog } from "../../../core/security-log.js";
+import { emit, EventType } from "../../../events.js";
 
 function asBadRequest(fn: () => void): void {
   try {
@@ -32,8 +33,10 @@ export function createSchedulesService(deps: {
   repo: SchedulesRepository;
   runner: SchedulerRunner;
   owner: string;
+  agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
 }): SchedulesService {
+  const binding = deps.agentBinding;
   async function ensureAgent(agentId: string): Promise<void> {
     if (!deps.agentExists) return;
     const ok = await deps.agentExists(agentId);
@@ -42,6 +45,11 @@ export function createSchedulesService(deps: {
 
   return {
     list: (agentId) => deps.repo.list(agentId, deps.owner),
+    listForOwner: (limit) =>
+      deps.repo.listForOwner(deps.owner, {
+        ...(limit === undefined ? {} : { limit }),
+        ...(binding === "*" ? {} : { agentIds: binding }),
+      }),
     get: (id) => deps.repo.get(id, deps.owner),
 
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
@@ -63,6 +71,12 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
+      emit({
+        type: EventType.ScheduleCreated,
+        scheduleId: schedule.id,
+        agentId: input.agentId,
+        ownerSub: deps.owner,
+      });
       securityLog("info", "schedule.create", {
         category: "privileged",
         actor: deps.owner,
@@ -107,6 +121,12 @@ export function createSchedulesService(deps: {
         spec,
       });
       await deps.runner.sync(schedule.id);
+      emit({
+        type: EventType.ScheduleCreated,
+        scheduleId: schedule.id,
+        agentId: input.agentId,
+        ownerSub: deps.owner,
+      });
       securityLog("info", "schedule.create", {
         category: "privileged",
         actor: deps.owner,
@@ -143,13 +163,30 @@ export function createSchedulesService(deps: {
       else delete spec.sessionMode;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
-      if (updated) await deps.runner.sync(updated.id);
+      if (updated) {
+        await deps.runner.sync(updated.id);
+        emit({
+          type: EventType.ScheduleUpdated,
+          scheduleId: updated.id,
+          agentId: updated.agentId,
+          ownerSub: deps.owner,
+        });
+      }
       return updated;
     },
 
     async delete(id) {
+      const current = await deps.repo.get(id, deps.owner);
       await deps.runner.cancel(id);
       await deps.repo.delete(id, deps.owner);
+      if (current) {
+        emit({
+          type: EventType.ScheduleDeleted,
+          scheduleId: id,
+          agentId: current.agentId,
+          ownerSub: deps.owner,
+        });
+      }
       securityLog("info", "schedule.delete", {
         category: "privileged",
         actor: deps.owner,
@@ -167,6 +204,12 @@ export function createSchedulesService(deps: {
       } else {
         await deps.runner.cancel(id);
       }
+      emit({
+        type: EventType.ScheduleUpdated,
+        scheduleId: id,
+        agentId: next.agentId,
+        ownerSub: deps.owner,
+      });
       securityLog("info", "schedule.toggle", {
         category: "privileged",
         actor: deps.owner,

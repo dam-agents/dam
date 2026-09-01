@@ -4,6 +4,7 @@ import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import type { DomainEvent } from "../../events.js";
 import { EventType } from "../../events.js";
@@ -27,6 +28,7 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async () => "the answer",
     triggerSession: () => Promise.reject(new Error("unused")),
@@ -44,17 +46,23 @@ function harness(ensureReady: AgentsService["ensureReady"]) {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: async () => ({
-        instanceName: "agent-1",
-        owner: OWNER,
-      }),
+      resolveSlackBindings: async () => [
+        {
+          instanceName: "agent-1",
+          owner: OWNER,
+          ambient: false,
+          isDefault: true,
+        },
+      ],
     } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 

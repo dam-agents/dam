@@ -4,6 +4,7 @@ import { slackThreadKey, type AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
@@ -26,6 +27,7 @@ function harness(opts?: {
   const freshKeys: string[] = [];
   const resumed: string[] = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => opts?.sessions ?? [],
     sendPrompt: async (_prompt: unknown, sendOpts: SendPromptOpts) => {
       if ("resumeSessionId" in sendOpts) resumed.push(sendOpts.resumeSessionId);
@@ -45,18 +47,24 @@ function harness(opts?: {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: async () => ({
-        instanceName: "agent-1",
-        owner: OWNER,
-      }),
+      resolveSlackBindings: async () => [
+        {
+          instanceName: "agent-1",
+          owner: OWNER,
+          ambient: false,
+          isDefault: true,
+        },
+      ],
       resolveSlackChannelsByInstance: async () => [C_ONE, C_TWO],
     },
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     () => {},
   );
 

@@ -6,6 +6,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { api } from "../../../api.js";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
+import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
@@ -104,6 +105,12 @@ export function useCreateAgent() {
 export function useDeleteAgent() {
   return useMutation({
     ...trpc.agents.delete.mutationOptions(),
+    onMutate: (variables): undefined => {
+      useStore.getState().markAgentDeleted(variables.id);
+    },
+    onSuccess: (_data, variables) => {
+      useStore.getState().clearAgentDrafts(variables.id);
+    },
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Failed to delete agent",
@@ -136,7 +143,7 @@ export function usePauseAgent() {
     ...trpc.agents.pause.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to pause sandbox",
+      errorToast: "Failed to pause agent",
     },
   });
 }
@@ -146,7 +153,7 @@ export function useStopAgent() {
     ...trpc.agents.stop.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to stop sandbox",
+      errorToast: "Failed to stop agent",
     },
   });
 }
@@ -161,12 +168,14 @@ export function useRestartAgentMutation() {
   });
 }
 
-export function useUpgradeAgentMutation() {
+export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to upgrade sandbox",
+      ...(opts?.silent
+        ? { suppressErrorToast: true }
+        : { errorToast: "Failed to update agent" }),
     },
   });
 }

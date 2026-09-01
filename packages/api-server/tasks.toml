@@ -19,6 +19,15 @@ depends = ["common:setup:pnpm"]
 run = "pnpm exec prettier --check 'src/**/*.ts' '!src/proto-gen/**'"
 sources = ["src/**/*.ts", "../../.prettierrc"]
 
+# Guards the write-side event registry: every type in src/events.ts must have
+# an emit site and a subscriber. Both halves drift silently past tsc and lint,
+# because a declared-but-unsubscribed event is perfectly well-typed.
+["api-server:check:events"]
+dir = "{{config_root}}/packages/api-server"
+depends = ["common:setup:pnpm"]
+run = "node scripts/event-coverage.mjs"
+sources = ["src/**/*.ts", "tsconfig.json", "scripts/event-coverage.mjs"]
+
 ["api-server:fix"]
 depends = ["api-server:fix:*"]
 

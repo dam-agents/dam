@@ -22,12 +22,13 @@ ADRs (`docs/adrs/`) are human-first decision history; the agent-facing source of
 
 Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
 
+## Code rules
+
+Language-level coding rules are indexed in [`docs/guidelines/code/index.md`](docs/guidelines/code/index.md), one page per rule with its trigger. Scan the index when writing or reviewing code; open a rule page when its trigger matches the code in front of you.
+
 ## Code comments
 
-- No code comments are allowed.
-- Exception: typed comments, prefixed with a registered type (registry: `COMMENT_TYPES` in [`scripts/strip-comments.mjs`](scripts/strip-comments.mjs)):
-  - `TEST_OVERVIEW:` — top of a spec file, the feature under test.
-  - `TEST_SCENARIO:` — above an `it()`, why the scenario exists.
+- Before writing any code comment, follow [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md).
 - Tool directives (`@ts-expect-error`, `eslint-disable`, `//go:`, `// +kubebuilder`, …) are not comments.
 - Always run `mise run common:check:comment-types` after changing code.
 

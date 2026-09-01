@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import {
   clientIp,
+  clientSurface,
   emitUserAuthenticated,
   type Authenticate,
   type SurfaceAttribution,
@@ -30,6 +31,7 @@ export function createAuthMiddleware(
     const { user, roles } = admitted.principal;
     c.set("user", user);
     c.set("roles", roles);
+    c.set("surface", clientSurface(admitted.principal, attribution));
     emitUserAuthenticated(admitted.principal, attribution);
     return next();
   };

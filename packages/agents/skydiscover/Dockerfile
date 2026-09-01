@@ -29,11 +29,16 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
 # minutes on each fresh pod; the rest of the heavy `math` extra (torch, jax,
 # …) stays runtime-installed per run when a task actually needs it.
 RUN uv python install 3.11 &&\
+    # The standalone interpreter's own site-packages ships setuptools 82.0.1
+    # (CVE-2026-59890) — the venv floor below does not reach it, and uv marks
+    # the install externally managed, hence --break-system-packages.
+    uv pip install --python "$(uv python find 3.11)" --break-system-packages "setuptools>=83.0.0" &&\
     uv venv --python 3.11 "$SKYDISCOVER_VENV" &&\
     uv pip install --python "$SKYDISCOVER_VENV/bin/python" \
       "skydiscover @ git+https://github.com/skydiscover-ai/skydiscover@${SKYDISCOVER_REF}" \
       scipy \
-      "setuptools>=83.0.0" &&\
+      "setuptools>=83.0.0" \
+      "msgpack>=1.2.1" &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/skydiscover-venv /opt/uv
 

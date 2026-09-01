@@ -1,5 +1,6 @@
 import { Information } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -9,6 +10,7 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -18,8 +20,14 @@ import { HintTooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
+import { emitToast } from "../../../lib/toast.js";
+import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
-import { useCreateSchedule, useUpdateSchedule } from "../api/mutations.js";
+import {
+  useCreateSchedule,
+  useDeleteSchedule,
+  useUpdateSchedule,
+} from "../api/mutations.js";
 import {
   formatTime12,
   RUN_OPTIONS,
@@ -48,7 +56,8 @@ const SESSION_TOOLTIP =
   "Fresh starts a new session each run. Continuous resumes one ongoing session, keeping context across runs.";
 
 interface Props {
-  agentId: string;
+  agentId?: string;
+  agentChoices?: readonly { id: string; name: string }[];
   existing?: Schedule;
   onClose: () => void;
   onSaved: () => void;
@@ -56,13 +65,30 @@ interface Props {
 
 export function ScheduleFormModal({
   agentId,
+  agentChoices,
   existing,
   onClose,
   onSaved,
 }: Props) {
+  const [chosenAgent, setChosenAgent] = useState(agentId ?? "");
+  const targetAgentId = existing?.agentId ?? agentId ?? chosenAgent;
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const deleteSchedule = useDeleteSchedule();
+  const showConfirm = useStore((state) => state.showConfirm);
   const mutation = existing ? updateSchedule : createSchedule;
+
+  const handleDelete = async () => {
+    if (!existing) return;
+    const confirmed = await showConfirm(
+      "Are you sure you want to delete this schedule?",
+      `Delete ${existing.name}?`,
+      { kind: "destructive", confirmLabel: "Delete Schedule" },
+    );
+    if (!confirmed) return;
+    deleteSchedule.mutate({ id: existing.id });
+    onClose();
+  };
 
   const { control, register, handleSubmit, watch, formState } =
     useForm<ScheduleFormValues>({
@@ -94,13 +120,22 @@ export function ScheduleFormModal({
       sessionMode: v.sessionMode,
     };
     const onSuccess = () => {
+      emitToast({
+        kind: "success",
+        message: existing
+          ? `Schedule "${v.name}" saved`
+          : `Schedule "${v.name}" added`,
+      });
       onSaved();
       onClose();
     };
     if (existing) {
       updateSchedule.mutate({ id: existing.id, ...common }, { onSuccess });
     } else {
-      createSchedule.mutate({ agentId, ...common }, { onSuccess });
+      createSchedule.mutate(
+        { agentId: targetAgentId, ...common },
+        { onSuccess },
+      );
     }
   });
 
@@ -113,6 +148,24 @@ export function ScheduleFormModal({
         />
 
         <DialogBody className="flex flex-col gap-4">
+          {!existing && agentChoices && (
+            <FormField label="Agent" disableInset>
+              <Select
+                className="h-10"
+                value={chosenAgent}
+                onChange={(event) => setChosenAgent(event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose an agent
+                </option>
+                {agentChoices.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
           <FormField label="Name" error={errors.name?.message} disableInset>
             <Input
               className="h-10"
@@ -296,10 +349,25 @@ export function ScheduleFormModal({
         </DialogBody>
 
         <DialogActions
+          leading={
+            existing ? (
+              <Button
+                type="button"
+                variant="ghost"
+                tone="danger"
+                className="text-danger"
+                disabled={deleteSchedule.isPending}
+                onClick={() => void handleDelete()}
+              >
+                Delete
+              </Button>
+            ) : undefined
+          }
           onCancel={onClose}
           label={existing ? "Save" : "Create"}
           pendingLabel={existing ? "Saving…" : "Creating…"}
           pending={mutation.isPending}
+          disabled={!targetAgentId}
         />
       </form>
     </Modal>

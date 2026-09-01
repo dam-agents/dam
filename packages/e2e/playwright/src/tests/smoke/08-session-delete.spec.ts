@@ -29,7 +29,7 @@ test("deleting the active session clears it and lets a fresh session start (#108
   await setMockAgentReply(api, agentId, scriptedReply);
 
   await test.step("open the agent chat and start an active session", async () => {
-    await page.goto(baseUrl);
+    await page.goto(`${baseUrl}/coding-agents`);
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await expect(agentCardStatus(page, agentName, "Running")).toBeVisible();
     await gotoAgentChat(page, agentName, agentId);

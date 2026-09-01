@@ -4,6 +4,15 @@
 # never Claude's `default` alias — that resolves to a model the account can't reach.
 manifestVersion: 1
 
+# Cold session/load fills the runtime's transcript from Claude Code's on-disk
+# session store without spawning the claude subprocess; the harness itself is
+# loaded lazily on the first prompt. The module is hosted in a persistent
+# runtime worker. To dump a session's replay by hand, call the lib's
+# loadHistory from a node one-liner in the pod.
+sessionHistory:
+  module: "/usr/local/lib/harness-history-lib.mjs"
+  exportName: "loadHistory"
+
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
@@ -23,7 +32,7 @@ drivers:
               name: "Fable"
               description: "Fable 5 · Most capable for the hardest, longest-running tasks"
             - value: opus
-              name: "Opus (recommended)"
+              name: "Opus"
               description: "Opus 5 · Best for everyday, complex tasks"
             - value: sonnet
               name: "Sonnet"
@@ -40,8 +49,8 @@ drivers:
               name: "Auto"
               description: "Use a model classifier to approve/deny permission prompts"
             - value: default
-              name: "Default"
-              description: "Standard behavior, prompts for dangerous operations"
+              name: "Ask for approvals"
+              description: "Ask for permission before dangerous operations"
             - value: acceptEdits
               name: "Accept Edits"
               description: "Auto-accept file edit operations"

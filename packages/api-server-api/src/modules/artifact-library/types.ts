@@ -1,5 +1,7 @@
 export const ARTIFACT_INTERNAL_LINK_PREFIX = "platform://artifacts/";
 
+export const ARTIFACT_RESTORE_WINDOW_DAYS = 7;
+
 export function artifactInternalLink(id: string): string {
   return `${ARTIFACT_INTERNAL_LINK_PREFIX}${id}`;
 }
@@ -109,7 +111,7 @@ export interface ArtifactLibraryService {
   listVersions(id: string): Promise<ArtifactVersionInfo[]>;
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string },
+    attribution?: { agentId: string; internal?: boolean },
   ): Promise<LibraryArtifact>;
   update(id: string, input: ArtifactUpdateInput): Promise<LibraryArtifact>;
   setSharing(id: string, input: ArtifactSharingInput): Promise<LibraryArtifact>;

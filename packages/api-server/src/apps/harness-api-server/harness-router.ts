@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type {
+  BudgetsService,
   ConnectionsService,
   ExperimentsService,
   SchedulesService,
@@ -7,6 +8,7 @@ import type {
   RuntimeDeliveryService,
   TemplatesService,
 } from "api-server-api";
+import type { DefaultResourceLimits } from "../../modules/agents/index.js";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
@@ -20,13 +22,14 @@ export function createHarnessRouter(deps: {
   channelManager: ChannelManager;
   k8s: K8sClient;
   composeSkills: (owner: string) => SkillsService;
-  agentHome: string;
   schedulesServiceFor: (owner: string) => SchedulesService;
   experimentsServiceFor: (owner: string) => ExperimentsService;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
+  budgetsFor: (owner: string) => BudgetsService;
+  defaultLimits: DefaultResourceLimits;
   runtimeHello: RuntimeDeliveryService;
 }) {
   const app = new Hono();
@@ -35,7 +38,6 @@ export function createHarnessRouter(deps: {
     channelManager: deps.channelManager,
     k8s: deps.k8s,
     composeSkills: deps.composeSkills,
-    agentHome: deps.agentHome,
     schedulesServiceFor: deps.schedulesServiceFor,
     artifactLibraryFor: deps.artifactLibraryFor,
     invocationsServiceFor: deps.invocationsServiceFor,
@@ -46,6 +48,8 @@ export function createHarnessRouter(deps: {
     invocationsServiceFor: deps.invocationsServiceFor,
     connectionsServiceFor: deps.connectionsServiceFor,
     templates: deps.templates,
+    budgetsFor: deps.budgetsFor,
+    defaultLimits: deps.defaultLimits,
   });
   mountExperimentRoutes(app, {
     k8s: deps.k8s,

@@ -49,6 +49,7 @@ import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-s
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -57,15 +58,23 @@ export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  features: RuntimeFeatures;
 }
 
-export interface ContributionsSettledPort {
+export interface ContributionsProgress {
+  version: number;
+  settled: boolean;
+  applied: boolean;
+  failures: DriverFailure[];
+}
+
+export interface ContributionsProgressPort {
   status(agentId: string): Promise<ContributionsStatus>;
   statusMany(agentIds: string[]): Promise<Map<string, ContributionsStatus>>;
-  isSettled(agentId: string): Promise<boolean>;
+  progress(agentId: string): Promise<ContributionsProgress>;
 }
 
-export type RuntimeSettledPort = Pick<ContributionsSettledPort, "isSettled">;
+export type RuntimeProgressPort = Pick<ContributionsProgressPort, "progress">;
 
 export interface PresetSeeder {
   seed(agentId: string, preset: EgressPreset, decidedBy: string): Promise<void>;
@@ -263,9 +272,9 @@ export interface SlackBindingPort {
 export function executeSlackBind(deps: {
   owner: string | undefined;
   getAgent: (agentId: string) => Promise<{ id: string; name: string } | null>;
-  findChannelBinding: (
+  findChannelBindings: (
     slackChannelId: string,
-  ) => Promise<{ agentId: string } | null>;
+  ) => Promise<{ agentId: string }[]>;
   connectShared: (
     agentId: string,
     slackChannelId: string,
@@ -294,8 +303,9 @@ export function executeSlackBind(deps: {
     const agent = await deps.getAgent(agentId);
     if (!agent) return err({ type: "AgentNotFound" as const });
 
-    const existing = await deps.findChannelBinding(flow.slackChannelId);
-    if (existing) return err({ type: "ChannelAlreadyBound" as const });
+    const existing = await deps.findChannelBindings(flow.slackChannelId);
+    if (existing.some((b) => b.agentId === agentId))
+      return err({ type: "ChannelAlreadyBound" as const });
 
     const connected = await deps.connectShared(agentId, flow.slackChannelId);
     if (!connected.ok) {
@@ -318,12 +328,16 @@ export function executeSlackBind(deps: {
     });
 
     const isDm = flow.slackChannelId.startsWith("D");
+    const alongside =
+      existing.length === 1 ? "one agent" : `${existing.length} agents`;
     const post = await deps.binding.postMessage(
       agentId,
       flow.slackChannelId,
       isDm
         ? `This DM is now connected to ${agent.name}. Message it here; run the unbind command to disconnect.`
-        : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
+        : existing.length > 0
+          ? `${agent.name} is now connected to this channel, alongside ${alongside} already here. Start a mention with an agent's name to reach that one; a mention with no name goes to the channel's default agent. Run the unbind command to disconnect.`
+          : `This channel is now connected to ${agent.name}. Everyone here can use it; run the unbind command to disconnect.`,
     );
     if ("error" in post) {
       securityLog("warn", "channel.chat_bound.notify_failed", {
@@ -420,7 +434,7 @@ export function createAgentsService(deps: {
   cleanupHooks?: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
   runtimeMutator: RuntimeMutator;
-  contributionsSettled: ContributionsSettledPort;
+  contributionsProgress: ContributionsProgressPort;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
   virtualizationEnabled?: boolean;
@@ -452,19 +466,33 @@ export function createAgentsService(deps: {
       channel: ChannelConfig,
     ) => Promise<void>;
     listByAgent: (tx: Tx, agentId: string) => Promise<ChannelConfig[]>;
+    claimDefaultIfVacant: (
+      tx: Tx,
+      agentId: string,
+      slackChannelId: string,
+    ) => Promise<boolean>;
   };
-  findSlackChannelBinding: (slackChannelId: string) => Promise<{
-    agentId: string;
-    ambient?: boolean;
-  } | null>;
+  findSlackBindings: (slackChannelId: string) => Promise<
+    {
+      agentId: string;
+      owner: string;
+      ambient: boolean;
+      isDefault: boolean;
+    }[]
+  >;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
 }): AgentsService {
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
-      return await deps.contributionsSettled.status(id);
+      return await deps.contributionsProgress.status(id);
     } catch {
-      return { settled: true, failures: [], preparingWorkspace: false };
+      return {
+        settled: true,
+        failures: [],
+        preparingWorkspace: false,
+        features: runtimeFeaturesOf(null),
+      };
     }
   }
 
@@ -493,6 +521,7 @@ export function createAgentsService(deps: {
       deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
       templateUpdate,
+      status.features,
     );
   }
 
@@ -504,9 +533,9 @@ export function createAgentsService(deps: {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
 
-    const existing = await deps.findSlackChannelBinding(slackChannelId);
-    if (existing && existing.agentId !== id)
-      return err({ type: "ChannelAlreadyBound" as const });
+    const existing = (await deps.findSlackBindings(slackChannelId)).find(
+      (b) => b.agentId === id,
+    );
 
     const requestedAmbient = ambient === true;
 
@@ -523,11 +552,30 @@ export function createAgentsService(deps: {
         }
         throw e;
       }
+      const claimedDefault = existing
+        ? false
+        : await deps.channelsTxRepo.claimDefaultIfVacant(
+            tx,
+            id,
+            slackChannelId,
+          );
       const channels = await deps.channelsTxRepo.listByAgent(tx, id);
-      return ok({ channels });
+      return ok({ channels, claimedDefault });
     });
 
     if (!txResult.ok) return txResult;
+
+    if (txResult.value.claimedDefault) {
+      securityLog("info", "channel.default_changed", {
+        category: "authz-list",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, basis: "first-connect" },
+      });
+    }
 
     emit({
       type: EventType.SlackConnected,
@@ -557,6 +605,7 @@ export function createAgentsService(deps: {
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
         await templateUpdateFor(infra),
+        status.features,
       ),
     );
   };
@@ -584,7 +633,7 @@ export function createAgentsService(deps: {
       }
 
       const [failuresMap, envMap] = await Promise.all([
-        deps.contributionsSettled
+        deps.contributionsProgress
           .statusMany([...infraIds])
           .catch(() => new Map<string, ContributionsStatus>()),
         deps.agentEnvRepo.listMany([...infraIds]),
@@ -615,6 +664,7 @@ export function createAgentsService(deps: {
           templateImage
             ? templateImageUpdate(infra.spec.image, templateImage)
             : undefined,
+          status?.features ?? runtimeFeaturesOf(null),
         );
       });
     },
@@ -781,6 +831,9 @@ export function createAgentsService(deps: {
         [],
         [],
         deps.agentIdleTimeoutMinutes,
+        false,
+        undefined,
+        runtimeFeaturesOf(null),
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1104,7 +1157,7 @@ export function createAgentsService(deps: {
           const infra = await deps.repo.get(id, deps.owner);
           return infra ? { id: infra.id, name: infra.name } : null;
         },
-        findChannelBinding: deps.findSlackChannelBinding,
+        findChannelBindings: deps.findSlackBindings,
         connectShared: (id, slackChannelId) =>
           connectSlackImpl(id, slackChannelId),
         binding,

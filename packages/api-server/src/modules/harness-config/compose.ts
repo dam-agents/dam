@@ -6,15 +6,19 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 export function composeHarnessConfigModule(deps: {
   db: Db;
+  surface: string;
   runtimeMutator: RuntimeMutator;
+  ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
   return {
     service: createHarnessConfigService({
+      surface: deps.surface,
       runtimeMutator: deps.runtimeMutator,
       snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+      ownerSub: deps.ownerSub,
       isOwnedAgent: deps.isOwnedAgent,
       getCapabilities: deps.getCapabilities,
       isSettled: deps.isSettled,

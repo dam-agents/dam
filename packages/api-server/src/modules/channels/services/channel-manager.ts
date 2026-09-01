@@ -91,6 +91,12 @@ interface Worker {
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  declineTurn?(instanceName: string): Promise<{ ok: true } | { error: string }>;
+  handOffTurn?(
+    instanceName: string,
+    targetName: string,
+    note?: string,
+  ): Promise<{ ok: true; agent: string } | { error: string }>;
   describeUsers?(
     instanceName: string,
     userIds: string[],
@@ -129,6 +135,16 @@ export interface ChannelManager {
     channelType: ChannelType,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
+  declineTurn(
+    instanceName: string,
+    channelType: ChannelType,
+  ): Promise<{ ok: true } | { error: string }>;
+  handOffTurn(
+    instanceName: string,
+    channelType: ChannelType,
+    targetName: string,
+    note?: string,
+  ): Promise<{ ok: true; agent: string } | { error: string }>;
   describeUsers(
     instanceName: string,
     channelType: ChannelType,
@@ -149,6 +165,8 @@ export type ChannelRpcRequest = {
     | "postMessage"
     | "reply"
     | "react"
+    | "declineTurn"
+    | "handOffTurn"
     | "describeUsers"
     | "supportsUserLookup"
     | "describeMessageReactions"
@@ -254,6 +272,27 @@ export function createChannelManager(deps: {
           error: `reactions not supported on ${channelType}`,
         });
       return worker.react(instanceName, reaction);
+    },
+    declineTurn: (instanceName: string, channelType: ChannelType) => {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.declineTurn)
+        return Promise.resolve({
+          error: `declining a turn is not supported on ${channelType}`,
+        });
+      return worker.declineTurn(instanceName);
+    },
+    handOffTurn: (
+      instanceName: string,
+      channelType: ChannelType,
+      targetName: string,
+      note?: string,
+    ) => {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.handOffTurn)
+        return Promise.resolve({
+          error: `handing a turn to another agent is not supported on ${channelType}`,
+        });
+      return worker.handOffTurn(instanceName, targetName, note);
     },
     describeUsers: (
       instanceName: string,
@@ -412,6 +451,26 @@ export function createChannelManager(deps: {
         "react",
         [instanceName, channelType, reaction],
         () => localHandlers.react(instanceName, channelType, reaction),
+      );
+    },
+
+    declineTurn(instanceName, channelType) {
+      return dispatchResult("declineTurn", [instanceName, channelType], () =>
+        localHandlers.declineTurn(instanceName, channelType),
+      );
+    },
+
+    handOffTurn(instanceName, channelType, targetName, note) {
+      return dispatchResult(
+        "handOffTurn",
+        [instanceName, channelType, targetName, note],
+        () =>
+          localHandlers.handOffTurn(
+            instanceName,
+            channelType,
+            targetName,
+            note,
+          ),
       );
     },
 

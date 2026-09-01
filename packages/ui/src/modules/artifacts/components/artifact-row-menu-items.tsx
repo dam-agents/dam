@@ -10,15 +10,27 @@ import { downloadArtifact } from "../lib/transfer.js";
 
 export function ArtifactRowMenuItems({
   artifact,
+  onRename,
+  onMove,
   onShare,
+  onSetRetention,
 }: {
   artifact: LibraryArtifact;
+  onRename: (artifact: LibraryArtifact) => void;
+  onMove: (artifact: LibraryArtifact) => void;
   onShare: (artifact: LibraryArtifact) => void;
+  onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
   const deleteArtifact = useArtifactDeletion();
 
   return (
     <>
+      <DropdownMenuItem onSelect={() => onRename(artifact)}>
+        Rename
+      </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => onMove(artifact)}>
+        Move to folder…
+      </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => onShare(artifact)}>
         Share
       </DropdownMenuItem>
@@ -26,6 +38,9 @@ export function ArtifactRowMenuItems({
         Download
       </DropdownMenuItem>
       <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => onSetRetention(artifact)}>
+        Delete after…
+      </DropdownMenuItem>
       <DropdownMenuItem
         tone="danger"
         onSelect={() => void deleteArtifact(artifact)}

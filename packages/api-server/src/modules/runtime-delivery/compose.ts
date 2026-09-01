@@ -1,4 +1,5 @@
 import type { ConnectionOptions } from "bullmq";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { Db } from "db";
 import type { DriverFailure, RuntimeDeliveryService } from "api-server-api";
 import { getLogger } from "../../core/logger.js";
@@ -34,6 +35,10 @@ import {
   createRuntimeMutator,
   type RuntimeMutator,
 } from "./services/runtime-mutator.js";
+import {
+  progressOf,
+  type ContributionsProgress,
+} from "./domain/outbox-progress.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -46,15 +51,20 @@ export interface RuntimeDeliveryComposition {
   stateBuilder: StateBuilder;
   builtin: BuiltinContributions;
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
+  runtimeFeaturesMany(
+    agentIds: string[],
+  ): Promise<Map<string, RuntimeFeatures>>;
   contributionsStatusMany(
     agentIds: string[],
   ): Promise<Map<string, ContributionsStatus>>;
+  contributionsProgress(agentId: string): Promise<ContributionsProgress>;
 }
 
 export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  features: RuntimeFeatures;
 }
 
 export interface ComposeRuntimeDeliveryOpts {
@@ -64,6 +74,7 @@ export interface ComposeRuntimeDeliveryOpts {
   agentRunningPort: IsAgentRunning;
   snapshotWriter: HarnessConfigSnapshotWriter;
   harnessServerUrl: string;
+  resolveOwner: (agentId: string) => Promise<string | null>;
   log?: (msg: string) => void;
 }
 
@@ -99,13 +110,19 @@ export function composeRuntimeDelivery(
     log,
   });
 
-  const sweep = createCronSweep({ outboxRepo, queue, log });
+  const sweep = createCronSweep({
+    outboxRepo,
+    queue,
+    agentRunningPort: opts.agentRunningPort,
+    log,
+  });
 
   const hello = createHelloHandler({
     outboxRepo,
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
     queue,
+    resolveOwner: opts.resolveOwner,
     log,
   });
 
@@ -126,17 +143,29 @@ export function composeRuntimeDelivery(
     stateBuilder,
     builtin,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
-      const [row, seeding] = await Promise.all([
+      const [row, seeding, features] = await Promise.all([
         outboxRepo.getRow(agentId),
         outboxRepo.seedingAgentIds([agentId]),
+        outboxRepo.runtimeFeaturesMany([agentId]),
       ]);
-      const preparingWorkspace = seeding.has(agentId);
-      if (!row) return { settled: true, failures: [], preparingWorkspace };
+      const { settled, failures } = progressOf(row);
       return {
-        settled: row.lastSettledVersion >= row.version,
-        failures: row.applyFailures,
-        preparingWorkspace,
+        settled,
+        failures,
+        preparingWorkspace: seeding.has(agentId),
+        features: features.get(agentId) ?? runtimeFeaturesOf(null),
       };
+    },
+
+    async runtimeFeaturesMany(agentIds): Promise<Map<string, RuntimeFeatures>> {
+      const features = await outboxRepo.runtimeFeaturesMany(agentIds);
+      return new Map(
+        agentIds.map((id) => [id, features.get(id) ?? runtimeFeaturesOf(null)]),
+      );
+    },
+
+    async contributionsProgress(agentId): Promise<ContributionsProgress> {
+      return progressOf(await outboxRepo.getRow(agentId));
     },
 
     async contributionsStatusMany(
@@ -144,24 +173,20 @@ export function composeRuntimeDelivery(
     ): Promise<Map<string, ContributionsStatus>> {
       const result = new Map<string, ContributionsStatus>();
       if (agentIds.length === 0) return result;
-      const [rows, seeding] = await Promise.all([
+      const [rows, seeding, features] = await Promise.all([
         outboxRepo.getRows(agentIds),
         outboxRepo.seedingAgentIds(agentIds),
+        outboxRepo.runtimeFeaturesMany(agentIds),
       ]);
       const byId = new Map(rows.map((r) => [r.agentId, r]));
       for (const id of agentIds) {
-        const row = byId.get(id);
-        const preparingWorkspace = seeding.has(id);
-        result.set(
-          id,
-          row
-            ? {
-                settled: row.lastSettledVersion >= row.version,
-                failures: row.applyFailures,
-                preparingWorkspace,
-              }
-            : { settled: true, failures: [], preparingWorkspace },
-        );
+        const { settled, failures } = progressOf(byId.get(id) ?? null);
+        result.set(id, {
+          settled,
+          failures,
+          preparingWorkspace: seeding.has(id),
+          features: features.get(id) ?? runtimeFeaturesOf(null),
+        });
       }
       return result;
     },

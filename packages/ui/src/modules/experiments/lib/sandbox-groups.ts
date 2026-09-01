@@ -86,7 +86,7 @@ export function toSandboxGroups(
     groups.set("__deleted__", {
       agentId: "__deleted__",
       agent: null,
-      name: "Deleted sandboxes",
+      name: "Deleted agents",
       lineages: deletedLineages,
       rollup: null,
     });

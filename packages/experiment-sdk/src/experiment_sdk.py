@@ -3,9 +3,9 @@
 The full driver surface for experiment scripts, stdlib-only by design (it is
 baked into every agent image; a dependency would have to be baked too):
 
-- ``spawn`` / ``list_images`` / ``list_connections`` — the Invocation
-  primitive, ported from the JS driver-sdk. Works standalone, no Experiment
-  required.
+- ``spawn`` / ``list_images`` / ``list_connections`` / ``require_image`` — the
+  Invocation primitive, ported from the JS driver-sdk. Works standalone, no
+  Experiment required.
 - ``Experiment`` / ``Stage`` / ``Span`` — declare a skeleton, run the loop,
   report stage-tagged spans (status, score, artifact refs). A ``spawn`` made
   inside a span is attached to it automatically (contextvars).
@@ -47,8 +47,10 @@ __all__ = [
     "Loop",
     "Span",
     "Stage",
+    "UnknownImage",
     "list_connections",
     "list_images",
+    "require_image",
     "s",
     "spawn",
 ]
@@ -57,6 +59,12 @@ SCRIPT_CONTENT_MAX_BYTES = 256 * 1024
 DASHBOARD_CONTENT_MAX_BYTES = 512 * 1024
 _EVENT_FLUSH_MAX = 100
 _EVENT_FLUSH_SECONDS = 2.0
+# Mirrors the server's `appendEventsRequestSchema` cap. The buffer retains at
+# most this many events, so a batch held back by a failed flush is still a
+# batch the server will accept once it returns.
+_EVENT_BATCH_MAX = 500
+# One outage costs one retry ladder, not one ladder per emit.
+_EVENT_RETRY_BACKOFF_S = 30.0
 _DEFAULT_POLL_SECONDS = 5.0
 # Mirrors the server's ttl clamp (~1min..6h) plus a poll of slack.
 _DEFAULT_SPAWN_TIMEOUT_S = 6 * 60 * 60 + 60
@@ -67,13 +75,30 @@ class ExperimentClosed(Exception):
     (stopped, finished, or reaped). The loop should exit promptly."""
 
 
+class UnknownImage(Exception):
+    """``require_image`` was given a template id the catalog doesn't have.
+    Raised at declaration time so ``--plan`` fails while the human is still
+    reviewing the design, not hours into a run's first spawn."""
+
+    def __init__(self, template_id: str, available: list[str]):
+        super().__init__(
+            f'unknown image "{template_id}" — available: {", ".join(sorted(available))}'
+        )
+        self.template_id = template_id
+        self.available = available
+
+
 class InvocationFailed(Exception):
     """A spawned invocation reported ``failed`` (silent exit past its
-    liveness deadline, or an internal error)."""
+    liveness deadline, a target pod crash, or an internal error). ``reason``
+    carries the platform's explanation when it has one — surface it: it is
+    the only diagnosis that survives the target being reaped."""
 
-    def __init__(self, invocation_id: str, label: str):
-        super().__init__(f"invocation {label} ({invocation_id}) failed")
+    def __init__(self, invocation_id: str, label: str, reason: str | None = None):
+        detail = f": {reason}" if reason else ""
+        super().__init__(f"invocation {label} ({invocation_id}) failed{detail}")
         self.invocation_id = invocation_id
+        self.reason = reason
 
 
 def _log(msg: str) -> None:
@@ -99,24 +124,59 @@ def _config() -> tuple[str, str]:
     return f"{base}/api/agents/{agent_id}", agent_id
 
 
-def _request(method: str, path: str, body: Any | None = None) -> Any:
+# 500 is transient here too: the api-server returns it while its own
+# dependencies (postgres, redis) restart under it, which is exactly the
+# outage the retry exists to ride out.
+_TRANSIENT_HTTP = {500, 502, 503, 504}
+_RETRY_ATTEMPTS = 4
+_RETRY_BASE_DELAY_S = 1.0
+
+
+def _request(
+    method: str, path: str, body: Any | None = None, *, retry: bool | None = None
+) -> Any:
+    """One platform API call. GETs retry transient failures (5xx from a mesh
+    hop or a mid-restart api-server, a reset connection) with exponential
+    backoff: a long run polls the API thousands of times, and without the
+    retry a single blip on any poll kills every remaining round. Non-GETs
+    default to a single attempt and opt in per call site (``retry=True``):
+    event reports, finish, and plan registration are idempotent on the
+    server (spans upsert by id, a repeated finish answers 409), so they
+    retry; ``spawn`` never does — a duplicated POST /invocations is a
+    second worker, not a dup."""
     root, _ = _config()
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(
-        f"{root}{path}",
-        data=data,
-        method=method,
-        headers={"content-type": "application/json"} if data else {},
-    )
-    try:
-        with urllib.request.urlopen(req) as res:
-            text = res.read().decode("utf-8")
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", errors="replace")
-        if err.code == 409:
-            raise ExperimentClosed(detail) from None
-        raise RuntimeError(f"{method} {path} -> {err.code}: {detail}") from None
-    return json.loads(text) if text else None
+    if retry is None:
+        retry = method == "GET"
+    attempts = _RETRY_ATTEMPTS if retry else 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(_RETRY_BASE_DELAY_S * (2 ** (attempt - 1)))
+        req = urllib.request.Request(
+            f"{root}{path}",
+            data=data,
+            method=method,
+            headers={"content-type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(req) as res:
+                text = res.read().decode("utf-8")
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            if err.code == 409:
+                raise ExperimentClosed(detail) from None
+            last_error = RuntimeError(f"{method} {path} -> {err.code}: {detail}")
+            if err.code in _TRANSIENT_HTTP and attempt + 1 < attempts:
+                continue
+            raise last_error from None
+        except urllib.error.URLError as err:
+            last_error = RuntimeError(f"{method} {path} failed: {err.reason}")
+            if attempt + 1 < attempts:
+                continue
+            raise last_error from None
+        return json.loads(text) if text else None
+    raise last_error if last_error else RuntimeError(f"{method} {path} failed")
 
 
 # ---- schema shorthand --------------------------------------------------------
@@ -189,9 +249,48 @@ def list_images() -> list[dict[str, Any]]:
     return _request("GET", "/images")["images"]
 
 
+def require_image(template_id: str) -> str:
+    """Assert the catalog offers ``template_id`` and return it, for use as
+    ``spawn(template=...)``.
+
+    Call this in the declaration section, next to ``list_connections()``: the
+    worker image is the loop's most consequential choice, and in plan mode the
+    loop body never runs, so an id that doesn't exist would otherwise go
+    unnoticed until a run's first spawn. Raises ``UnknownImage`` naming the ids
+    that do exist.
+
+        template = x.require_image("nous")
+    """
+    available = [str(i["id"]) for i in list_images()]
+    if template_id not in available:
+        raise UnknownImage(template_id, available)
+    return template_id
+
+
 def list_connections() -> list[dict[str, Any]]:
     """This driver's own connection grants — the spawnable subset."""
     return _request("GET", "/connections")["connections"]
+
+
+def budget() -> dict[str, Any]:
+    """The owner's compute budget, read live::
+
+        {
+          "cpu":    {"reservedMilli": 3000, "ceilingMilli": 6000},
+          "memory": {"reservedBytes": ..., "ceilingBytes": ...},
+          "defaultWorkerSize": {"cpu": "1", "memory": "1Gi"},
+        }
+
+    The ceiling caps the summed sizes of the owner's *running* agents —
+    this driver included. Each catalog entry from ``list_images()`` carries
+    its worker's ``size``; a raw ``image=`` spawn costs ``defaultWorkerSize``
+    unless ``cpu=``/``memory=`` say otherwise. Use it while designing:
+    ``(ceiling - reserved) / worker size``, floored over both dimensions,
+    is how many workers run at once — further spawns queue for freed room
+    (their wait burns the invocation TTL), and a single worker sized past
+    the ceiling is rejected at ``spawn`` because it could never start.
+    """
+    return _request("GET", "/budget")
 
 
 def spawn(
@@ -221,7 +320,13 @@ def spawn(
     When the owner's resource budget is full, the target queues and starts
     automatically as room frees (e.g. earlier invocations completing) —
     the wait counts against the invocation's TTL, so over-budget fan-out
-    degrades to sequential execution rather than failing."""
+    degrades to sequential execution rather than failing.
+
+    ``ttl_ms`` is a kill deadline, not pacing: the platform reaps the
+    target the moment it lapses, even if the target is mid-work. Size it
+    at the worst plausible round plus generous slack (target pod cold
+    start alone takes minutes) — a generous TTL costs nothing when the
+    round finishes early, a tight one destroys a working round."""
     if (template is None) == (image is None):
         raise ValueError("pass exactly one of template= or image=")
     name = label or template or image or "invocation"
@@ -259,7 +364,7 @@ def spawn(
             _log(f"{name} ({invocation_id}) done")
             return view.get("result")
         if status == "failed":
-            raise InvocationFailed(invocation_id, name)
+            raise InvocationFailed(invocation_id, name, view.get("errorReason"))
         if time.monotonic() > deadline:
             raise InvocationFailed(invocation_id, f"{name} (client timeout)")
         time.sleep(poll_seconds)
@@ -287,13 +392,21 @@ class Stage:
 
 
 class Loop:
-    def __init__(self, experiment: "Experiment", loop_id: str):
+    def __init__(
+        self,
+        experiment: "Experiment",
+        loop_id: str,
+        description: str | None = None,
+    ):
         self.id = loop_id
+        self.description = description
         self.experiment = experiment
         self.stage_ids: list[str] = []
 
-    def stage(self, stage_id: str, after: Any = None) -> Stage:
-        stage = self.experiment.stage(stage_id, after=after)
+    def stage(
+        self, stage_id: str, after: Any = None, description: str | None = None
+    ) -> Stage:
+        stage = self.experiment.stage(stage_id, after=after, description=description)
         self.stage_ids.append(stage_id)
         return stage
 
@@ -369,15 +482,22 @@ class Experiment:
         self._heartbeat_stop: threading.Event | None = None
         self._buffer: list[dict[str, Any]] = []
         self._last_flush = time.monotonic()
+        self._flush_blocked_until = 0.0
+        self._dropped_events = 0
 
     # -- declaration ------------------------------------------------------------
 
-    def loop(self, loop_id: str) -> Loop:
-        loop = Loop(self, loop_id)
+    def loop(self, loop_id: str, description: str | None = None) -> Loop:
+        loop = Loop(self, loop_id, description)
         self._loops.append(loop)
         return loop
 
-    def stage(self, stage_id: str, after: Any = None) -> Stage:
+    def stage(
+        self, stage_id: str, after: Any = None, description: str | None = None
+    ) -> Stage:
+        """Declare a stage. ``description`` is one human sentence — what
+        happens in this stage and what it reports — shown on the stage's node
+        in the live graph, so a reviewer can read the design off the UI."""
         if after is None:
             after_ids: list[str] = []
         elif isinstance(after, (list, tuple)):
@@ -386,7 +506,10 @@ class Experiment:
             after_ids = [after.id if isinstance(after, Stage) else str(after)]
         if stage_id not in self._declared:
             self._declared.add(stage_id)
-            self._stages.append({"id": stage_id, "after": after_ids})
+            entry: dict[str, Any] = {"id": stage_id, "after": after_ids}
+            if description:
+                entry["description"] = description
+            self._stages.append(entry)
         return Stage(self, stage_id)
 
     def _skeleton(self) -> dict[str, Any]:
@@ -394,6 +517,7 @@ class Experiment:
             "stages": self._stages,
             "loops": [
                 {"id": loop.id, "stages": loop.stage_ids}
+                | ({"description": loop.description} if loop.description else {})
                 for loop in self._loops
                 if loop.stage_ids
             ],
@@ -451,7 +575,7 @@ class Experiment:
                     f"{DASHBOARD_CONTENT_MAX_BYTES // 1024} KiB capture cap"
                 )
             plan["dashboard"] = {"content": raw.decode("utf-8", errors="replace")}
-        response = _request("POST", "/experiments/plan", plan)
+        response = _request("POST", "/experiments/plan", plan, retry=True)
         _log(
             f'plan registered for "{self.name}" ({response["experimentId"]}) — press "Start a new run" in the UI to run it'
         )
@@ -551,11 +675,19 @@ class Experiment:
         self._finished = True
         if self._heartbeat_stop is not None:
             self._heartbeat_stop.set()
-        self._flush(force=True)
         body: dict[str, Any] = {"status": status}
         if error:
             body["error"] = error[:2000]
-        _request("POST", f"/experiments/{self._experiment_id}/finish", body)
+        try:
+            self._flush(force=True, ignore_backoff=True)
+            _request(
+                "POST", f"/experiments/{self._experiment_id}/finish", body, retry=True
+            )
+        except ExperimentClosed:
+            # Already terminal on the platform (stopped by the user, or a
+            # retried finish whose first attempt landed) — nothing to report.
+            _log(f'experiment "{self.name}" was already closed on the platform')
+            return
         _log(f'experiment "{self.name}" finished: {status}')
 
     def __enter__(self) -> "Experiment":
@@ -576,19 +708,57 @@ class Experiment:
 
     def _emit(self, event: dict[str, Any], flush: bool = False) -> None:
         self._buffer.append(event)
+        if len(self._buffer) > _EVENT_BATCH_MAX:
+            self._buffer = self._buffer[-_EVENT_BATCH_MAX:]
+            self._dropped_events += 1
         stale = time.monotonic() - self._last_flush > _EVENT_FLUSH_SECONDS
         if flush or stale or len(self._buffer) >= _EVENT_FLUSH_MAX:
             self._flush(force=True)
 
-    def _flush(self, force: bool = False) -> None:
+    def _flush(self, force: bool = False, ignore_backoff: bool = False) -> None:
+        """Report buffered events; the buffer is drained only once the POST
+        lands. Reports are observability, so a transient outage costs
+        latency, never the run: on failure the events stay buffered (the next
+        emit retries them) and the caller — often ``Span.__exit__`` — is not
+        killed. ``ExperimentClosed`` still propagates: the run was stopped on
+        the platform and the loop should exit promptly.
+
+        An outage is bounded on both axes. The buffer retains only the newest
+        ``_EVENT_BATCH_MAX`` events, so what is held back stays a payload the
+        server accepts — an unbounded retained batch would pass the server's
+        cap and then be rejected on every future attempt, wedging reporting
+        for the rest of the run. A failed flush also parks the next attempts
+        for ``_EVENT_RETRY_BACKOFF_S``, so a long outage costs one retry
+        ladder per window instead of one per emit. ``finish`` passes
+        ``ignore_backoff`` to buy the tail one last honest attempt."""
         if not self._buffer or self._experiment_id is None:
             return
         if not force and len(self._buffer) < _EVENT_FLUSH_MAX:
             return
-        events, self._buffer = self._buffer, []
-        _request(
-            "POST",
-            f"/experiments/{self._experiment_id}/events",
-            {"events": events},
-        )
+        if not ignore_backoff and time.monotonic() < self._flush_blocked_until:
+            return
+        events = self._buffer[:_EVENT_BATCH_MAX]
+        try:
+            _request(
+                "POST",
+                f"/experiments/{self._experiment_id}/events",
+                {"events": events},
+                retry=True,
+            )
+        except ExperimentClosed:
+            raise
+        except Exception as err:  # noqa: BLE001 — kept buffered; next emit retries
+            self._flush_blocked_until = time.monotonic() + _EVENT_RETRY_BACKOFF_S
+            dropped = (
+                f", {self._dropped_events} dropped so far"
+                if self._dropped_events
+                else ""
+            )
+            _log(
+                f"event report failed, {len(self._buffer)} event(s) kept for "
+                f"retry{dropped}: {err}"
+            )
+            return
+        self._flush_blocked_until = 0.0
+        self._buffer = self._buffer[len(events) :]
         self._last_flush = time.monotonic()

@@ -330,17 +330,22 @@ export function renderDownloadInner(input: {
 </html>`;
 }
 
-export function renderExpired(input: {
-  withinGrace: boolean;
-  expiredAt: Date;
-}): string {
-  const detail = input.withinGrace
-    ? "It expired recently — its owner can still renew it from the artifact library."
-    : "It has expired and its content is no longer available.";
+export function renderExpired(input: { withinGrace: boolean }): string {
+  const { heading, detail } = input.withinGrace
+    ? {
+        heading: "This artifact is scheduled for deletion",
+        detail:
+          "Its retention date has passed. The owner can still restore it from their artifact library for a short time.",
+      }
+    : {
+        heading: "This artifact has been deleted",
+        detail:
+          "Its retention date passed and its content is no longer available.",
+      };
   return chromePage(
-    "410 — expired",
+    `410 — ${input.withinGrace ? "scheduled for deletion" : "deleted"}`,
     `<div class="center-card"><div class="card">
-      <h1>This link has expired</h1>
+      <h1>${heading}</h1>
       <p>${detail}</p>
     </div></div>`,
   );
@@ -378,7 +383,7 @@ export function renderFolderPage(input: {
       return `<a class="row${expired ? " expired" : ""}" href="/a/${escapeHtml(a.slug)}">
         <span class="kind">${escapeHtml(a.kind.toUpperCase())}</span>
         <span class="rtitle">${escapeHtml(a.title)}</span>
-        <span class="meta">${a.version > 1 ? `v${a.version} · ` : ""}${a.viewCount} views${expired ? " · expired" : ""}</span>
+        <span class="meta">${a.version > 1 ? `v${a.version} · ` : ""}${a.viewCount} views${expired ? " · unavailable" : ""}</span>
       </a>`;
     })
     .join("\n");

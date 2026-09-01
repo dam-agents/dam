@@ -1,5 +1,4 @@
 import { serve } from "@hono/node-server";
-import type { UserIdentity } from "api-server-api";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
 import {
@@ -12,6 +11,7 @@ import {
 } from "./admission/index.js";
 import {
   createAcpRelay,
+  createAgentTrpcRelay,
   createAgentTrpcProxy,
   createImportProxy,
   createRelayAdmission,
@@ -21,7 +21,7 @@ import {
   relayRoute,
   selfAuthenticated,
 } from "./agent-proxies/index.js";
-import type { ApiServerDeps } from "./deps.js";
+import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
 import {
   createApiContextFactory,
@@ -46,6 +46,7 @@ const PUBLIC_PATHS = [
   "/api/auth/config",
   "/api/brand",
   "/api/brand/*",
+  "/api/public/*",
   "/api/oauth/callback",
   "/api/slack/oauth/callback",
   "/api/telegram/oauth/callback",
@@ -63,9 +64,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     authenticatePrincipal(deps.auth.verify, token, site);
   const termsGate = createTermsGate({ terms: deps.terms });
 
-  const app = new Hono<{
-    Variables: { user: UserIdentity; roles: string[] };
-  }>();
+  const app = new Hono<{ Variables: ApiVariables }>();
 
   app.use("*", deps.shareHostGate);
   app.use("*", securityHeaders);
@@ -78,7 +77,10 @@ export function startApiServerApp(deps: ApiServerDeps) {
   );
   app.use(
     "/api/*",
-    except((c) => isTermsOnlyTrpcCall(c.req.path), termsGate.middleware),
+    except(
+      (c) => isTermsOnlyTrpcCall(new URL(c.req.raw.url).pathname),
+      termsGate.middleware,
+    ),
   );
   mountRoutes(app, deps);
   app.all("/api/trpc/*", createTrpcHttpHandler({ composeApiContext }));
@@ -119,13 +121,13 @@ export function startApiServerApp(deps: ApiServerDeps) {
   const trpcWs = createTrpcWsEndpoint({
     authenticate,
     surfaceAttribution: deps.surfaceAttribution,
-    isTermsAccepted: deps.isTermsAccepted,
     composeApiContext,
   });
   const relayAdmission = createRelayAdmission({
     authenticate,
     verifyOwner,
     isTermsAccepted: deps.isTermsAccepted,
+    surfaceAttribution: deps.surfaceAttribution,
   });
   const acpRelay = createAcpRelay(
     config.namespace,
@@ -143,6 +145,10 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
     deps.sessionPresence,
   );
+  const agentTrpcRelay = createAgentTrpcRelay(
+    config.namespace,
+    deps.agentsRepo,
+  );
 
   server.on(
     "upgrade",
@@ -155,6 +161,11 @@ export function startApiServerApp(deps: ApiServerDeps) {
         "terminal",
       ),
       "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+      "/api/agents/:id/trpc-ws": relayRoute(
+        relayAdmission,
+        agentTrpcRelay,
+        "trpc",
+      ),
     }),
   );
 

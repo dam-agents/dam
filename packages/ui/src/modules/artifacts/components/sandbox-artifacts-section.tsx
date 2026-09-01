@@ -9,6 +9,9 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "./artifact-preview-dialog.js";
 import { ArtifactRow } from "./artifact-row.js";
+import { MoveArtifactDialog } from "./move-artifact-dialog.js";
+import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
+import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 
 function ToolChip({ name }: { name: string }) {
@@ -21,7 +24,13 @@ function ToolChip({ name }: { name: string }) {
 
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
+  const [renameTarget, setRenameTarget] = useState<LibraryArtifact | null>(
+    null,
+  );
+  const [moveTarget, setMoveTarget] = useState<LibraryArtifact | null>(null);
   const [shareTarget, setShareTarget] = useState<LibraryArtifact | null>(null);
+  const [retentionTarget, setRetentionTarget] =
+    useState<LibraryArtifact | null>(null);
   const [previewTarget, setPreviewTarget] = useState<LibraryArtifact | null>(
     null,
   );
@@ -68,17 +77,38 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
                 artifact={artifact}
                 showAgent={false}
                 onPreview={setPreviewTarget}
+                onRename={setRenameTarget}
+                onMove={setMoveTarget}
                 onShare={setShareTarget}
+                onSetRetention={setRetentionTarget}
               />
             ))}
           </div>
         </Card>
       )}
 
+      {renameTarget && (
+        <RenameArtifactDialog
+          artifact={renameTarget}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {moveTarget && (
+        <MoveArtifactDialog
+          artifact={moveTarget}
+          onClose={() => setMoveTarget(null)}
+        />
+      )}
       {shareTarget && (
         <ShareDialog
           artifact={shareTarget}
           onClose={() => setShareTarget(null)}
+        />
+      )}
+      {retentionTarget && (
+        <RetentionDialog
+          artifact={retentionTarget}
+          onClose={() => setRetentionTarget(null)}
         />
       )}
       {previewTarget && (

@@ -6,8 +6,9 @@ import type {
   RuntimeDeliveryService,
 } from "api-server-api";
 import type { Db } from "db";
-import type { RuntimeSettledPort } from "../../modules/agents/index.js";
+import type { RuntimeProgressPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
@@ -16,7 +17,14 @@ import {
 } from "../../modules/schedules/index.js";
 import { composeArtifactLibraryForOwner } from "../../modules/artifact-library/index.js";
 import { composeExperimentsForOwner } from "../../modules/experiments/index.js";
-import { composeInvocationsForOwner } from "../../modules/invocations/index.js";
+import {
+  composeInvocationsForOwner,
+  createTargetAdmission,
+} from "../../modules/invocations/index.js";
+import {
+  composeBudgetsModule,
+  composeSpawnSizeGate,
+} from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
@@ -28,6 +36,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface HarnessApiServerAppDeps {
+  agentStateCache: AgentStateCache;
   config: Config;
   api: CoreV1Api;
   db: Db;
@@ -40,7 +49,7 @@ export interface HarnessApiServerAppDeps {
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   wakeAgent: (agentId: string) => Promise<void>;
-  runtimeSettled: RuntimeSettledPort;
+  runtimeProgress: RuntimeProgressPort;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -57,7 +66,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     agentsServiceFor,
     connectionsServiceFor,
     wakeAgent,
-    runtimeSettled,
+    runtimeProgress,
   } = deps;
 
   const k8sClient = createK8sClient(api, config.namespace);
@@ -71,6 +80,22 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       agents: agentsServiceFor(owner),
       runtimeMutator,
       wakeAgent,
+      targetAdmission: createTargetAdmission({
+        readTemplateResources: async (templateId) =>
+          (await templatesRepo.readSpec(templateId))?.spec.resources,
+        defaultLimits: {
+          cpu: config.agentDefaultCpuLimit,
+          memory: config.agentDefaultMemoryLimit,
+        },
+        gate: composeSpawnSizeGate({
+          k8s: k8sClient,
+          owner,
+          defaultCeiling: {
+            cpu: config.defaultUserCpuBudget,
+            memory: config.defaultUserMemoryBudget,
+          },
+        }),
+      }),
     });
 
   const artifactLibraryFor = (owner: string) =>
@@ -78,10 +103,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       db,
       artifacts,
       owner,
+      surface: "mcp",
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary;
 
-  const harnessAgentsRepo = createAgentsRepository(k8sClient);
+  const harnessAgentsRepo = createAgentsRepository(
+    k8sClient,
+    deps.agentStateCache,
+  );
   const experimentPin = {
     set: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
@@ -92,10 +121,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
-    agentHome: config.agentHome,
     runtimeHello,
     composeSkills: (owner) =>
       composeSkillsModule({
+        agentStateCache: deps.agentStateCache,
+        surface: "mcp",
         api,
         namespace: config.namespace,
         owner,
@@ -104,21 +134,41 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         brandName: config.brand.name,
         runtimeMutator,
         templatesRepo,
-        runtimeSettled,
+        runtimeProgress,
       }),
     schedulesServiceFor: (owner) =>
-      composeSchedulesForOwner({ boot: schedulesBoot, owner }).schedules,
+      composeSchedulesForOwner({
+        boot: schedulesBoot,
+        owner,
+        agentBinding: "*",
+      }).schedules,
     experimentsServiceFor: (owner) =>
       composeExperimentsForOwner({
         db,
         owner,
+        surface: "mcp",
         artifactLibrary: artifactLibraryFor(owner),
         pin: experimentPin,
+        agents: agentsServiceFor(owner),
       }).experiments,
     artifactLibraryFor,
     invocationsServiceFor,
     connectionsServiceFor,
     templates,
+    budgetsFor: (owner) =>
+      composeBudgetsModule({
+        k8s: k8sClient,
+        owner,
+        listAgents: () => harnessAgentsRepo.list(owner),
+        defaultCeiling: {
+          cpu: config.defaultUserCpuBudget,
+          memory: config.defaultUserMemoryBudget,
+        },
+      }).budgets,
+    defaultLimits: {
+      cpu: config.agentDefaultCpuLimit,
+      memory: config.agentDefaultMemoryLimit,
+    },
   });
 
   const server = serve(

@@ -5,6 +5,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.ge
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -42,8 +43,24 @@ function harness(opts: {
   const events: DomainEvent[] = [];
   const prompts: Array<string | ContentBlock[]> = [];
   const sendOpts: SendPromptOpts[] = [];
-  const ambientCalls: Array<{ channelId: string; ambient: boolean }> = [];
+  const ambientCalls: Array<{
+    agentId: string;
+    channelId: string;
+    ambient: boolean;
+  }> = [];
+  const toRoster = (b: Binding) =>
+    b
+      ? [
+          {
+            instanceName: b.instanceName,
+            owner: b.owner,
+            ambient: b.ambient === true,
+            isDefault: true,
+          },
+        ]
+      : [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt, o) => {
       prompts.push(prompt);
@@ -65,17 +82,22 @@ function harness(opts: {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: opts.resolveBinding ?? (async () => opts.binding),
+      resolveSlackBindings: async () =>
+        toRoster(
+          opts.resolveBinding ? await opts.resolveBinding() : opts.binding,
+        ),
       resolveSlackChannelsByInstance: async () => ["C1"],
     } as never,
     async () => {},
-    async (channelId, ambient) => {
-      ambientCalls.push({ channelId, ambient });
+    async (agentId: string, channelId: string, ambient: boolean) => {
+      ambientCalls.push({ agentId, channelId, ambient });
     },
+    async () => true,
     { name: "DAM", short: "dam" },
     async (sub) => opts.termsAccepted?.(sub) ?? true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 
@@ -585,15 +607,52 @@ describe("slack ambient inbound", () => {
     expect(drainFailures).toHaveLength(1);
   });
 
+  /**
+   * TEST_SCENARIO: An ambient thread's session has already been told to stay
+   * silent when in doubt, and a mention resumes that same session — so the
+   * addressed framing has to be stated, not left to the absence of a block.
+   */
   it("mentions in an ambient channel keep the addressed-turn treatment", async () => {
     const h = harness({ binding: ambient });
     await h.mention(STRANGER);
 
     expect(h.prompts).toHaveLength(1);
-    expect(String(h.prompts[0])).not.toContain("<reading-along>");
-    expect(String(h.prompts[0])).toContain("<how-to-respond>");
+    const prompt = String(h.prompts[0]);
+    expect(prompt).not.toContain("<reading-along>");
+    expect(prompt).toContain("<how-to-respond>");
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("You were @-mentioned");
+    expect(prompt).toContain("Slack user id U-BOT");
     expect(h.reactions()).toHaveLength(0);
     expect(h.messages()).toHaveLength(0);
+  });
+
+  /**
+   * TEST_SCENARIO: a plain message reaches the agent only where the binding is
+   * ambient (or in a DM), so the contract states the untagged-name form there
+   * and nowhere else — a prompt must not promise an inbound path the router
+   * drops.
+   */
+  it("states the untagged-name form where a plain message is actually delivered", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "anyone around?", { ts: "9.1" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("People address you three ways");
+    expect(prompt).toContain('by typing "dam" with no tag');
+    expect(prompt).not.toContain("only a tag reaches you");
+  });
+
+  it("read-along turns are framed as read-along, never as addressed", async () => {
+    const h = harness({ binding: ambient });
+    await h.message(STRANGER, "just chatting", { ts: "8.8" });
+    await h.settled(() => h.turnEvents().length === 1);
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("<reading-along>");
+    expect(prompt).not.toContain("<addressed-to-you>");
+    expect(prompt).toContain("Slack user id U-BOT");
   });
 });
 
@@ -634,8 +693,10 @@ describe("slack ambient command", () => {
 
     expect(ack).toContain("turned on");
     expect(ack).toContain("reads along");
-    expect(ack).toContain("/dam ambient off");
-    expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: true }]);
+    expect(ack).toContain("/dam ambient agent-1 off");
+    expect(h.ambientCalls).toEqual([
+      { agentId: "agent-1", channelId: "C1", ambient: true },
+    ]);
     expect(h.messages()).toHaveLength(0);
 
     const toggles = h
@@ -651,7 +712,9 @@ describe("slack ambient command", () => {
 
     expect(ack).toContain("turned off");
     expect(ack).toContain("only responds when mentioned");
-    expect(h.ambientCalls).toEqual([{ channelId: "C1", ambient: false }]);
+    expect(h.ambientCalls).toEqual([
+      { agentId: "agent-1", channelId: "C1", ambient: false },
+    ]);
     expect(h.messages()).toHaveLength(0);
   });
 

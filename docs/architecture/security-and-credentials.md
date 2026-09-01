@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-10
+Last verified: 2026-08-25
 
 ## Overview
 
@@ -378,29 +378,28 @@ dynamically-minted registry tokens (e.g. ECR) are out of scope.
 The credentials above are *upstream* secrets the platform injects on behalf of
 agents. The platform's own backing store has a separate credential boundary: the
 bundled Postgres splits application connection identities from DBA authority.
-Three roles, not one:
+Three login roles, not one:
 
 - **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of
   the `platform` and `keycloak` databases respectively, each the only role its
-  service connects as. `CONNECT` is revoked from `PUBLIC` and granted only to
-  the owning role, so a leaked api-server credential can neither read Keycloak's
+  service connects as. `CONNECT` is revoked from `PUBLIC` and granted back only
+  to that owner, plus the credential-less `usage_readers` group on `platform`
+  ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked
+  api-server credential can neither read Keycloak's
   database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) —
   it can only do DDL/DML within the `platform` database it already owns.
 - **`platform`** — the lone `SUPERUSER`, used only for DBA work. It is the
   image's bootstrap superuser, because Postgres forbids demoting that role and
   so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
   An existing single-role cluster already bootstrapped under this name, so it is
-  kept in place rather than renamed (the bootstrap role can be neither demoted
-  nor renamed while connected as itself). A `log_statement = 'all'` per-role
-  default puts every statement an admin session issues into the pod log for the
-  cluster collector, while routine app traffic stays out of the audit stream
-  (the global default is `ddl`). The admin role name is configurable
-  (`postgres.adminUser`).
+  kept in place rather than renamed — Postgres forbids renaming the role you
+  are connected as. A per-role `log_statement` default puts every
+  admin-session statement into the audit trail, and every role and grant
+  change is audited whoever issues it ([persistence](persistence.md)).
 
 The admin credential lives in the same `platform-postgres-secrets` Secret and
 must be treated as high-value. The statement audit is best-effort, not enforced
-— a superuser session can `SET log_statement` mid-session. Operational details
-(fresh install, existing-cluster migration) are in the
+— a superuser session can `SET log_statement` mid-session. Operational details are in the
 [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
@@ -442,20 +441,23 @@ passthrough chains.
 port is invisible to the L4 catch-all (it sees only SNI), so the rule's
 host must be *promoted* onto a TLS-terminating chain to be enforceable
 over HTTPS. The promotion signal is the Agent resource's `l7Hosts` spec
-list (#2865). It is per-agent intent, exactly like connection grants:
-promoting a host on one agent re-renders and rolls only that agent's
-gateway, never a sibling's (#2867). Promoted hosts get an uncredentialed
-L7 chain (gate sees method/path; nothing is injected) and extend the leaf
-certificate's SAN list.
+list. It is per-agent intent, exactly like connection grants: promoting a
+host on one agent re-renders and rolls only that agent's gateway, never a
+sibling's. Promoted hosts get an uncredentialed L7 chain (gate sees
+method/path; nothing is injected) and extend the leaf certificate's SAN
+list.
 
 `l7Hosts` is a pure projection of the agent's active rules: the api-server
 recomputes it from the rule set after every create, edit, and revoke and
 writes it wholesale, so a host is demoted (dropped from interception) as
-soon as its last narrowing rule is gone. Connection-derived rules are
-excluded — their host is already TLS-terminated by the connection's own
-credential chain. Because each entry is interpolated into the gateway's
-Envoy bootstrap and cert SANs, the CRD constrains list items to DNS
-hostnames, so a rule host cannot inject config into the owner's gateway.
+soon as its last narrowing rule is gone. A roll follows any change to that
+set and nothing else, so the projection ships in the contract package:
+clients predict an interruption with the server's own rule, not the rule's
+shape. Connection-derived rules are excluded — their host is already
+TLS-terminated by the connection's own credential chain. Because each
+entry is interpolated into the gateway's Envoy bootstrap and cert SANs,
+the CRD constrains list items to DNS hostnames, so a rule host cannot
+inject config into the owner's gateway.
 That projection is a second write to the Agent CR that cannot share a
 transaction with the rule write, so a per-agent periodic reconcile
 re-derives it from the rules — converging a host whose patch failed, or
@@ -496,10 +498,9 @@ Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/i
   443) and the upstream sees a `host:port` authority. Only L7 chains honor
   ports: the SNI-miss L4 catch-all always dials 443, because a CONNECT's
   authority port is not recoverable after the tunnel handoff (SNI carries
-  no port). Port-scoped egress rules therefore promote their host onto the
-  L7 path, same as path-scoped rules. Allow-only (uncredentialed) chains
-  need no pinned port — they forward via the dynamic forward proxy, which
-  honors the inner request's own `Host:port`.
+  no port). Allow-only (uncredentialed) chains need no pinned port — they
+  forward via the dynamic forward proxy, which honors the inner request's
+  own `Host:port`.
 - **Upgrade tunneling** — chains that opt in tunnel HTTP Upgrade flows
   (WebSocket, and SPDY/3.1 for older Kubernetes clients) instead of
   rejecting them, so `kubectl exec` / `port-forward` / `logs -f` work
@@ -536,9 +537,9 @@ ALLOWs only the matching SA principal, so by the time a Check arrives
 the calling Agent is already proven cryptographically. The handler
 parses the Agent ID from the gRPC `:authority`, looks up the matching
 egress rule, and either allows the request, denies it, or holds it open
-while the user makes a verdict in the inbox.
+while the user makes a verdict on Home.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets
-403, no inbox prompt. The pod-IP resolver and the `x-platform-agent`
+403, no approval prompt. The pod-IP resolver and the `x-platform-agent`
 header are gone.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network
@@ -552,7 +553,7 @@ owner — so a hold raised by such a turn would occupy the entire window
 and deny anyway, with the turn silent throughout. So when the gate sees
 a channel turn open on the agent and no interactive session attached to
 answer for it, it records the request and denies at once. The record is
-the point: it stays actionable in the inbox, a permanent verdict there
+the point: it stays actionable on Home, a permanent verdict there
 writes the rule the agent's next attempt consumes, and retries reuse
 that one row instead of filing a copy each time. No in-session prompt
 is published on this path — the only consumers are the relay clients
@@ -587,10 +588,13 @@ chat — lends the Agent, credentials included, to everyone the
 messenger admits there ([channels](channels.md)). Every channel turn
 relays to the main agent pod and runs under the Agent's own
 credential set, gated by the owner's egress rules exactly like any
-other turn; no per-speaker credential selection happens. What such a
-turn cannot do is raise a *hold* — the decision has nowhere to be made
-from a messenger, so an unmatched request is refused rather than
-waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
+other turn; no per-speaker credential selection happens. Such a turn can also place a file in the
+Agent's workspace: an attachment sent in the conversation is written
+there for the agent to open, so a speaker with no platform
+identity is a writer to persistent state ([persistence](persistence.md)).
+What such a turn cannot do is raise a *hold* — the decision has nowhere
+to be made from a messenger, so an unmatched request is refused rather
+than waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
 — the terms bind the party whose credentials run it — and the
 security log attributes the allow to the messenger-native sender id
 with basis *place*.

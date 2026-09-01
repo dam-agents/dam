@@ -281,6 +281,7 @@ describe("library service — getPreviewHtml", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      surface: "ui",
       repo: fakeRepo([row]),
       owner: row.owner,
       shareBaseUrl: "http://share.localhost",
@@ -325,6 +326,7 @@ describe("library service — the kind cannot move", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      surface: "ui",
       repo: {
         ...fakeRepo(rows),
         advanceVersion: (id, owner, _snapshot, patch) => {
@@ -394,6 +396,7 @@ describe("library service — createAgentDownloadUrl", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      surface: "ui",
       repo: {
         ...fakeRepo(rows),
         ...(opts?.getVersion ? { getVersion: opts.getVersion } : {}),
@@ -469,6 +472,7 @@ describe("library service — owner scoping", () => {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
+      surface: "ui",
       repo: fakeRepo(rows),
       owner: "intruder",
       shareBaseUrl: "http://share.localhost",

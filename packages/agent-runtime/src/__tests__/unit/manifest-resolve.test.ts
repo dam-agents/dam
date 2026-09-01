@@ -117,6 +117,32 @@ describe("resolveDrivers", () => {
   });
 });
 
+describe("sessionHistory declaration", () => {
+  it("rejects declaring both module and command — the loser would be silently ignored", () => {
+    const result = runtimeManifestSchema.safeParse({
+      manifestVersion: 1,
+      sessionHistory: {
+        module: "/usr/local/lib/history.mjs",
+        command: ["history-cmd"],
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts exactly one of module or command", () => {
+    for (const sessionHistory of [
+      { module: "/usr/local/lib/history.mjs" },
+      { command: ["history-cmd"] },
+    ]) {
+      const result = runtimeManifestSchema.safeParse({
+        manifestVersion: 1,
+        sessionHistory,
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+});
+
 describe("shipped agent manifests resolve", () => {
   it("claude-code declares harness-config and inherits the built-ins", () => {
     const r = resolveDrivers(

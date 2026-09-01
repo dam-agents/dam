@@ -21,6 +21,17 @@ concurrency:
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
+  # Layer digests must depend on content alone. A rebuilt step stamps files with
+  # the build time, so byte-identical content lands on a new digest and every
+  # node re-pulls it; rewrite-timestamp on the image outputs normalizes them to
+  # this instant. It is deliberately a constant rather than the commit time —
+  # a per-commit stamp would make every release differ again (#3495).
+  SOURCE_DATE_EPOCH: "1735689600"
+  # Pin mise so the lockfile (mise.lock) stays deterministic. Unpinned,
+  # mise-action installs latest and each new release rewrites platform entries
+  # and the generated header, churning mise.lock on unrelated PRs. Bump this in
+  # lockstep with a `mise run … lock` regeneration commit.
+  MISE_VERSION: "2026.7.15"
 
 jobs:
   check:
@@ -35,6 +46,8 @@ jobs:
           # latest v* tag, crd-schema-generation vs the origin/main merge-base.
           fetch-depth: 0
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run check
 
@@ -48,6 +61,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run test
 
@@ -156,6 +171,8 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
       - if: matrix.component == 'keycloak'
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
         run: mise run setup && mise run keycloak-theme:build
       - id: build
@@ -164,9 +181,11 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -251,9 +270,11 @@ jobs:
           context: .
           file: packages/platform-base/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=platform-base-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=platform-base-${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
+            type=gha,scope=platform-base-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || format('type=gha,mode=max,scope=platform-base-{0}', matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -337,11 +358,13 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -432,11 +455,13 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -573,8 +598,10 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: type=gha,scope=mock
-          cache-to: type=gha,mode=max,scope=mock
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
+            type=gha,scope=mock
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || 'type=gha,mode=max,scope=mock' }}
 
   e2e:
     name: mise e2e
@@ -616,6 +643,8 @@ jobs:
             docker tag "$IMAGE_PREFIX/$c:$SHA" "platform-$c:latest"
           done
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run e2e
         env:
@@ -632,14 +661,17 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Releases wait for every image the chart names. A v* chart pins content tags
+  # and is immutable once pushed, so it must never reference a tag that was
+  # never built. merge-workloads is spelled out rather than left to the implicit
+  # success() (see e2e); on a tag it always runs, so the skipped branch is only
+  # defensive.
   publish:
+    name: publish release
     needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
-    # merge-workloads skips on main pushes where every workload was reused —
-    # the implicit success() would skip publish with it, so spell out all the
-    # direct needs (see e2e). A failed workload build must still block the
-    # chart: it would pin a source-sha tag that was never pushed.
     if: >-
-      ${{ github.event_name == 'push' && !cancelled() &&
+      ${{ github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/tags/v') && !cancelled() &&
           needs.changes.result == 'success' &&
           needs.appversion.result == 'success' &&
           needs.merge-images.result == 'success' &&
@@ -656,6 +688,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
+          version: ${{ env.MISE_VERSION }}
           cache: false
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
       - name: Log in to Helm OCI registry
@@ -676,34 +709,74 @@ jobs:
       - name: Build Helm chart dependencies
         run: mise run helm:deps
 
-      # Pin content-tagged images (source sha, pushed by merge-images /
-      # merge-workloads) so the chart only moves a tag — and only rolls the
-      # Keycloak pod or rebuilds a workload — when the image inputs actually
-      # changed. The repo default stays `""` (appVersion fallback) for charts
-      # rendered from git.
       - name: Pin content-tagged image tags
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: |
-          set -euo pipefail
-          for comp in keycloak $(scripts/resolve-image.sh list-workloads); do
-            tag="$(jq -re --arg c "$comp" '.[$c]' <<< "$SOURCE_SHAS")"
-            sed -i "s|^\\(\\s*\\)tag: \"\" # @ci-pin ${comp}-image-tag$|\\1tag: \"$tag\"|" deploy/helm/platform/values.yaml
-          done
-          # every marker must have been consumed — a leftover means the
-          # component list and the values.yaml markers drifted apart
-          ! grep -n '@ci-pin .*-image-tag' deploy/helm/platform/values.yaml
+        run: scripts/pin-image-tags.sh "$SOURCE_SHAS"
 
-      - name: Push Helm chart (release)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Push Helm chart
         env:
           VERSION: ${{ steps.version.outputs.version }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
         run: |
           helm package deploy/helm/platform --version "$VERSION" --app-version "$COMPOSITE"
           helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
-      - name: Push Helm chart (main)
-        if: github.ref == 'refs/heads/main'
+
+      - name: Publish CLI to npm
+        env:
+          NPM_TAG: ${{ steps.version.outputs.npmTag }}
+        run: |
+          mise run setup
+          mise run cli:build
+          pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
+
+  # Dev charts don't wait for the agent image chain — that wait is most of the
+  # time between a merge and a usable chart. `needs` is static, so publishing
+  # early requires a job that doesn't list those merges at all; hence the split
+  # from `publish` above.
+  #
+  # The tradeoff: between this job and merge-agents the 0.0.0-main chart names
+  # agent images whose tags aren't pushed yet, so creating or upgrading an agent
+  # fails to pull and recovers on its own once the tags land. If an agent build
+  # fails outright, that window lasts until the next green main run. Acceptable
+  # on the dev channel only — releases keep the strict gate.
+  publish-dev:
+    name: publish dev chart
+    needs: [changes, merge-images, appversion]
+    if: >-
+      ${{ github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' && !cancelled() &&
+          needs.changes.result == 'success' &&
+          needs.appversion.result == 'success' &&
+          needs.merge-images.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
+          cache: false
+      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+      - name: Log in to Helm OCI registry
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
+
+      - name: Build Helm chart dependencies
+        run: mise run helm:deps
+
+      - name: Pin content-tagged image tags
+        env:
+          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
+        run: scripts/pin-image-tags.sh "$SOURCE_SHAS"
+
+      - name: Push Helm chart
         env:
           RUN_NUMBER: ${{ github.run_number }}
           COMPOSITE: ${{ needs.appversion.outputs.composite }}
@@ -712,15 +785,6 @@ jobs:
           helm push "platform-0.0.0-main.${RUN_NUMBER}.tgz" oci://quay.io/dam-agents/charts
           helm package deploy/helm/platform --version 0.0.0-main --app-version "$COMPOSITE"
           helm push platform-0.0.0-main.tgz oci://quay.io/dam-agents/charts
-
-      - name: Publish CLI to npm
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          NPM_TAG: ${{ steps.version.outputs.npmTag }}
-        run: |
-          mise run setup
-          mise run cli:build
-          pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
   go-vuln:
     name: mise controller:scan:govulncheck
@@ -734,6 +798,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run controller:setup
 
       - name: Detect vulnerabilities
@@ -774,6 +840,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run common:setup:pnpm
       - name: Detect vulnerabilities
         run: |
@@ -861,6 +929,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - id: list
         run: |
           set -euo pipefail
@@ -894,6 +964,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
 
       - name: Detect vulnerabilities
         id: scan

@@ -18,6 +18,8 @@ import (
 
 const AgentContainerName = "agent"
 
+const agentHomeDir = "/home/agent"
+
 func portInt32(p int) int32 {
 	if p < 0 || p > 65535 {
 		panic(fmt.Sprintf("port out of range: %d (must be 0..65535)", p))
@@ -85,10 +87,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	if pullPolicy == "" {
 		pullPolicy = defaults.ImagePullPolicy
 	}
-	agentHome := agentSpec.AgentHome
-	if agentHome == "" {
-		agentHome = defaults.AgentHome
-	}
+	agentHome := agentHomeDir
 	specMounts := resolveSpecMounts(agentSpec, defaults)
 	specEnv := configEnvToTypes(defaults.Env)
 
@@ -206,26 +205,12 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		resourceReqs.Requests = nil
 	}
 
-	initScript := agentSpec.Init
-	if initScript == "" {
-		initScript = defaults.Init
-	}
 	var initContainers []corev1.Container
 	if ic := buildIptablesInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
 	}
 	if ic := buildNPGateInitContainer(cfg, gatewayClusterIP); ic != nil {
 		initContainers = append(initContainers, *ic)
-	}
-	if initScript != "" {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init",
-			Image:           agentSpec.Image,
-			ImagePullPolicy: corev1.PullPolicy(pullPolicy),
-			Command:         []string{"sh", "-c", initScript},
-			Env:             []corev1.EnvVar{{Name: "HOME", Value: agentHome}},
-			VolumeMounts:    volumeMounts,
-		})
 	}
 
 	var pullSecrets []corev1.LocalObjectReference
@@ -251,7 +236,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 			ProbeHandler:     corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/healthz", Port: intstr.FromString("acp")}},
 			PeriodSeconds:    10,
 			TimeoutSeconds:   5,
-			FailureThreshold: 3,
+			FailureThreshold: 12,
 		}
 	}
 

@@ -4,7 +4,7 @@ import {
   type EgressRuleView,
   formatEgressRuleSource,
 } from "api-server-api";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +15,19 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import {
   useApplyEgressPreset,
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../api/mutations.js";
 import { useEgressRulesForAgent, useTrustedHosts } from "../api/queries.js";
+import {
+  confirmStagedGatewayRestart,
+  describeGatewayRestart,
+  stagedGatewayRestart,
+  toPromotionRule,
+} from "../gateway-restart.js";
 import { formatHostPort, splitHostPort } from "../host-port.js";
 
 const EMPTY: EgressRuleView[] = [];
@@ -85,27 +92,31 @@ export function AgentEgressEditor({
   );
 
   const stagedMode = staged !== undefined;
+  const showConfirm = useStore((s) => s.showConfirm);
 
-  const draftNeedsMitm =
-    draft.method !== "*" ||
-    draft.pathPattern.trim() !== "*" ||
-    splitHostPort(draft.host.trim()).port != null;
-  const draftRequiresGatewayRestart =
-    draft.host.trim().length > 0 &&
-    draftNeedsMitm &&
-    !serverRules.some(
-      (r) =>
-        r.host === draft.host.trim() &&
-        (r.method !== "*" || r.pathPattern !== "*"),
-    );
-
-  const canAdd =
+  const draftIsComplete =
     draft.host.trim().length > 0 &&
     draft.method.trim().length > 0 &&
-    draft.pathPattern.trim().length > 0 &&
-    !createRule.isPending;
+    draft.pathPattern.trim().length > 0;
+  const canAdd = draftIsComplete && !createRule.isPending;
 
-  const onAddRule = () => {
+  const stagedAdds = staged?.pendingAdds;
+  const stagedDeletes = staged?.pendingDeletes;
+  const pendingRestart = useMemo(
+    () =>
+      stagedGatewayRestart({
+        current: serverRules,
+        adds: [
+          ...(stagedAdds?.map(toPromotionRule) ?? []),
+          ...(draftIsComplete ? [toPromotionRule(draft)] : []),
+        ],
+        removeIds: stagedDeletes ? [...stagedDeletes] : [],
+      }),
+    [serverRules, stagedAdds, stagedDeletes, draft, draftIsComplete],
+  );
+  const demotedByStagedDeletes = new Set(pendingRestart.demotedByRemovals);
+
+  const onAddRule = async () => {
     if (!canAdd) return;
     const next: AddRuleDraft = {
       host: draft.host.trim(),
@@ -119,10 +130,12 @@ export function AgentEgressEditor({
       return;
     }
     if (
-      draftRequiresGatewayRestart &&
-      !window.confirm(
-        `This rule needs a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted. Continue?`,
-      )
+      !(await confirmStagedGatewayRestart(
+        showConfirm,
+        agentId,
+        { adds: [toPromotionRule(next)] },
+        "Add & restart",
+      ))
     )
       return;
     createRule.mutate(
@@ -134,7 +147,7 @@ export function AgentEgressEditor({
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      onAddRule();
+      void onAddRule();
     }
   };
 
@@ -157,12 +170,21 @@ export function AgentEgressEditor({
     applyPreset.mutate({ agentId, preset: livePreset });
   };
 
-  const onRowDeleteClick = (rule: EgressRuleView) => {
+  const onRowDeleteClick = async (rule: EgressRuleView) => {
     if (stagedMode) {
       staged.togglePendingDelete(rule.id);
-    } else {
-      revokeRule.mutate({ id: rule.id });
+      return;
     }
+    if (
+      !(await confirmStagedGatewayRestart(
+        showConfirm,
+        agentId,
+        { removeIds: [rule.id] },
+        "Revoke & restart",
+      ))
+    )
+      return;
+    revokeRule.mutate({ id: rule.id });
   };
 
   const dropdownValue = stagedMode
@@ -195,7 +217,7 @@ export function AgentEgressEditor({
         Rules decide which outbound HTTP requests this agent can make. The
         most-specific rule wins; <code>*</code> in <em>method</em> or
         <em>path</em> matches any value. Without a matching rule, the request
-        goes to the inbox for your approval.
+        needs your approval on Home.
       </p>
 
       <Card className="px-3 py-3 flex flex-wrap items-end gap-2">
@@ -296,17 +318,15 @@ export function AgentEgressEditor({
             type="button"
             size="sm"
             className="h-7 text-[11px]"
-            onClick={onAddRule}
+            onClick={() => void onAddRule()}
             disabled={!canAdd}
             variant="outline"
           >
             <Add size={11} /> Add rule
           </Button>
-          {draftRequiresGatewayRestart && (
+          {pendingRestart.willRestart && (
             <p className="basis-full text-[11px] text-warning">
-              Saving will restart the network gateway (~5–15s) — this rule
-              requires inspecting requests to this host. The agent keeps
-              running.
+              {describeGatewayRestart(pendingRestart)}
             </p>
           )}
         </div>
@@ -317,7 +337,7 @@ export function AgentEgressEditor({
           stagedAddCount === 0 &&
           previewRows.length === 0 ? (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            No rules yet. Every outbound request will surface in the inbox.
+            No rules yet. Every outbound request will need your approval.
           </p>
         ) : (
           <ul className="flex flex-col">
@@ -344,8 +364,9 @@ export function AgentEgressEditor({
                   rule={r}
                   sourceLabelOverride={sourceLabelOverride}
                   pendingDelete={userDelete || presetSweep || connectionSweep}
+                  demotesHost={userDelete && demotedByStagedDeletes.has(r.host)}
                   hideAction={(presetSweep || connectionSweep) && !userDelete}
-                  onAction={() => onRowDeleteClick(r)}
+                  onAction={() => void onRowDeleteClick(r)}
                   disabled={!stagedMode && revokeRule.isPending}
                 />
               );
@@ -404,6 +425,7 @@ function RuleRow({
   rule,
   sourceLabelOverride,
   pendingDelete,
+  demotesHost,
   hideAction,
   onAction,
   disabled,
@@ -411,6 +433,7 @@ function RuleRow({
   rule: EgressRuleView;
   sourceLabelOverride?: string | null;
   pendingDelete: boolean;
+  demotesHost?: boolean;
   hideAction?: boolean;
   onAction: () => void;
   disabled: boolean;
@@ -433,6 +456,15 @@ function RuleRow({
       </span>
       {sourceLabel && (
         <SourceTag label={sourceLabel} hint={`source: ${rule.source}`} />
+      )}
+      {demotesHost && (
+        <Badge
+          size="sm"
+          variant="warning"
+          title={`Saving stops request inspection for ${rule.host}, which restarts the network gateway (~5–15s). The agent keeps running.`}
+        >
+          restarts gateway
+        </Badge>
       )}
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}

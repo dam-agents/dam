@@ -22,6 +22,26 @@ controller:
   agent:
     templateDefaults:
       imagePullPolicy: IfNotPresent
+  # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
+  # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
+  # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
+  # stay inside what the lima VM can schedule — a too-small ceiling once parked
+  # the nous target in OverBudget for hours (the deadline clock kept running),
+  # but the fix here is the VM's capacity, not the stock default.
+  #
+  # Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml) with
+  # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
+  # admitted workers drove the load average past 20 — kubelet probes timed
+  # out, the node flapped NotReady, Keycloak crash-looped on liveness kills
+  # and the UI lost auth. 6 of the VM's 10 CPUs caps agent burst so k3s,
+  # Istio, Keycloak and the api-server always keep ~4; 14Gi + the ~5Gi
+  # platform stack stays inside the VM's 20Gi. Spawns that fit this ceiling
+  # but not the currently-free room queue (sweepable targets auto-start when
+  # room frees); a worker sized past the ceiling is rejected at the spawn
+  # route instead of parking until its deadline.
+  userBudgets:
+    defaultCpu: "6"
+    defaultMemory: "14Gi"
 
 # Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
 # upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
@@ -73,6 +93,25 @@ agentTemplates:
     image:
       repository: platform-nous
       tag: latest
+    # A campaign's measurement phase can run several target-system daemons at
+    # once (a pm2 benchmark held three ~1 GiB daemons simultaneously) — the
+    # catalog's 4Gi limit OOM-killed the container mid-iteration. Sized so one
+    # heavy campaign fits; the campaign prompt should still bound its own
+    # parallelism (serial arms) so memory pressure doesn't skew latency numbers.
+    #
+    # The CPU ceiling is deliberately half the memory-driven sizing: at 4 the
+    # worker's boot burst (a ~13 MB upstream fetch plus a dozen concurrent
+    # egress dials) could take half the 8-core VM and starve ztunnel, which
+    # terminated the driver's in-flight status poll through the waypoint and
+    # killed the run with a synthesized 503. Memory is the resource nous
+    # actually runs out of; CPU only needs to be enough not to crowd the mesh.
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
 
   openevolve:
     enabled: false
@@ -91,6 +130,13 @@ agentTemplates:
     image:
       repository: platform-gepa
       tag: latest
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi"
 
   # Both presets share the one locally-built skydiscover image.
   adaevolve:

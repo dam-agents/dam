@@ -21,6 +21,7 @@ import {
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
+import { UpdateAvailableAction } from "./update-available-action.js";
 
 interface Props {
   agent: AgentView;
@@ -28,7 +29,10 @@ interface Props {
   subtitle: string;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
+  updatePending: boolean;
+  updateBusy: boolean;
   onSelect: () => void;
+  onUpdate: () => void;
   onConfigure: () => void;
   configureLabel: string;
   onWake: () => void;
@@ -44,7 +48,10 @@ export function AgentRow({
   subtitle,
   temporaryDraw,
   deletePending,
+  updatePending,
+  updateBusy,
   onSelect,
+  onUpdate,
   onConfigure,
   configureLabel,
   onWake,
@@ -80,8 +87,8 @@ export function AgentRow({
           <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
             <Chemistry size={12} className="shrink-0 text-accent" />
             <span className="truncate">
-              {temporaryDraw.count} temporary sandbox
-              {temporaryDraw.count === 1 ? "" : "es"} running
+              {temporaryDraw.count} temporary agent
+              {temporaryDraw.count === 1 ? "" : "s"} running
               {formatTemporaryDraw(temporaryDraw) &&
                 ` · ${formatTemporaryDraw(temporaryDraw)}`}{" "}
               ·{" "}
@@ -93,7 +100,12 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {}
+        <UpdateAvailableAction
+          agent={agent}
+          pending={updatePending}
+          busy={updateBusy}
+          onUpdate={onUpdate}
+        />
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage
@@ -110,7 +122,7 @@ export function AgentRow({
         <span onClick={(e) => e.stopPropagation()}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Sandbox actions">
+              <Button variant="ghost" size="icon" aria-label="Agent actions">
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>
@@ -148,7 +160,7 @@ export function AgentRow({
                 disabled={deletePending}
                 onSelect={onDelete}
               >
-                Delete sandbox
+                Delete agent
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

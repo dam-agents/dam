@@ -35,6 +35,7 @@ import type {
   FolderRow,
 } from "../infrastructure/artifact-library-repository.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
+import { emit, EventType } from "../../../events.js";
 
 const LIST_LIMIT = 500;
 const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
@@ -51,7 +52,7 @@ export interface ArtifactAgentDownloadTicket {
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
-    attribution?: { agentId: string },
+    attribution?: { agentId: string; internal?: boolean },
   ): Promise<LibraryArtifact>;
   resolveContentRef(
     id: string,
@@ -73,6 +74,7 @@ export interface ArtifactLibraryDeps {
   repo: ArtifactLibraryRepository;
   artifacts: ArtifactService;
   owner: string;
+  surface: string;
   shareBaseUrl: string;
 }
 
@@ -128,7 +130,7 @@ function expiresAtFrom(expiresInHours: number | null | undefined): Date | null {
 export function createArtifactLibraryService(
   deps: ArtifactLibraryDeps,
 ): ArtifactLibraryServiceImpl {
-  const { repo, artifacts, owner, shareBaseUrl } = deps;
+  const { repo, artifacts, owner, shareBaseUrl, surface } = deps;
 
   async function requireOwnedFolder(folderId: string): Promise<FolderRow> {
     const folder = await repo.getFolder(folderId, owner);
@@ -326,6 +328,23 @@ export function createArtifactLibraryService(
         visibility: input.visibility ?? "private",
         expiresAt: expiresAtFrom(input.expiresInHours),
       });
+      emit({
+        type: EventType.ArtifactCreated,
+        artifactId: id,
+        ownerSub: owner,
+        ...(attribution?.agentId ? { agentId: attribution.agentId } : {}),
+      });
+      if (!attribution?.internal) {
+        emit({
+          type: EventType.ArtifactPublished,
+          actorSub: owner,
+          artifactId: row.id,
+          agentId: attribution?.agentId ?? null,
+          kind: row.kind,
+          visibility: row.visibility,
+          surface,
+        });
+      }
       return toLibraryArtifact(row, shareBaseUrl);
     },
 
@@ -367,6 +386,12 @@ export function createArtifactLibraryService(
           patch,
         );
         if (!advanced) throw new TRPCError({ code: "NOT_FOUND" });
+        emit({
+          type: EventType.ArtifactUpdated,
+          artifactId: id,
+          ownerSub: owner,
+          ...(row.agentId ? { agentId: row.agentId } : {}),
+        });
         return toLibraryArtifact(advanced, shareBaseUrl);
       } else {
         if (input.fileName !== undefined) patch.fileName = input.fileName;
@@ -376,23 +401,54 @@ export function createArtifactLibraryService(
 
       const updated = await repo.updateArtifact(id, owner, patch);
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      emit({
+        type: EventType.ArtifactUpdated,
+        artifactId: id,
+        ownerSub: owner,
+        ...(updated.agentId ? { agentId: updated.agentId } : {}),
+      });
       return toLibraryArtifact(updated, shareBaseUrl);
     },
 
     async setSharing(id, input: ArtifactSharingInput) {
-      await requireArtifact(id);
+      const before = await requireArtifact(id);
       const patch: Parameters<typeof repo.updateArtifact>[2] = {};
       if (input.visibility !== undefined) patch.visibility = input.visibility;
       if (input.expiresInHours !== undefined)
         patch.expiresAt = expiresAtFrom(input.expiresInHours);
       const updated = await repo.updateArtifact(id, owner, patch);
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      emit({
+        type: EventType.ArtifactUpdated,
+        artifactId: id,
+        ownerSub: owner,
+        ...(updated.agentId ? { agentId: updated.agentId } : {}),
+      });
+      if (updated.visibility === "public" && before.visibility !== "public") {
+        emit({
+          type: EventType.ArtifactShared,
+          actorSub: owner,
+          artifactId: id,
+          visibility: updated.visibility,
+          surface,
+        });
+      }
       return toLibraryArtifact(updated, shareBaseUrl);
     },
 
     async delete(id) {
       const deleted = await repo.deleteArtifactWithVersions(id, owner);
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND" });
+      emit({
+        type: EventType.ArtifactDeleted,
+        artifactId: id,
+        ownerSub: owner,
+        ...(deleted.artifact.agentId
+          ? { agentId: deleted.artifact.agentId }
+          : {}),
+        actorSub: owner,
+        surface,
+      });
       await Promise.allSettled(
         [
           deleted.artifact.storageRef,
@@ -431,6 +487,11 @@ export function createArtifactLibraryService(
         name,
         slug: generateSlug(),
       });
+      emit({
+        type: EventType.ArtifactFolderChanged,
+        folderId: row.id,
+        ownerSub: owner,
+      });
       return toFolder({ ...row, artifactCount: 0 });
     },
 
@@ -440,6 +501,11 @@ export function createArtifactLibraryService(
       if (input.name !== undefined) patch.name = input.name;
       const updated = await repo.updateFolder(id, owner, patch);
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
+      emit({
+        type: EventType.ArtifactFolderChanged,
+        folderId: id,
+        ownerSub: owner,
+      });
       const count = await repo.countSharedInFolder(id);
       return toFolder({ ...updated, artifactCount: count });
     },
@@ -447,6 +513,11 @@ export function createArtifactLibraryService(
     async deleteFolder(id) {
       const deleted = await repo.deleteFolder(id, owner);
       if (!deleted) throw new TRPCError({ code: "NOT_FOUND" });
+      emit({
+        type: EventType.ArtifactFolderChanged,
+        folderId: id,
+        ownerSub: owner,
+      });
     },
 
     async folderShareUrl(id) {

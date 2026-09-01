@@ -5,6 +5,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.ge
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import {
   agentContextBlock,
   formatSlackTs,
@@ -17,10 +18,13 @@ configureLogger({ level: "error", write: () => {} });
 
 const OWNER = "kc|owner-1";
 
+const FOOTER_LABEL = "Powered by DAM";
+
 function harness(boundChannelId = "C1") {
   const gw = createFakeSlackGateway();
   const prompts: Array<string | ContentBlock[]> = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
       prompts.push(prompt);
@@ -28,8 +32,14 @@ function harness(boundChannelId = "C1") {
     },
     triggerSession: () => Promise.reject(new Error("unused")),
   };
+  const AGENT_NAMES: Record<string, string> = {
+    "agent-1": "Helper",
+    "agent-99": "Ops",
+  };
   const agents = {
     ensureReady: async () => {},
+    get: async (id: string) =>
+      AGENT_NAMES[id] ? { id, name: AGENT_NAMES[id] } : null,
   } as unknown as AgentsService;
 
   const worker = createSlackWorker(
@@ -41,18 +51,24 @@ function harness(boundChannelId = "C1") {
     createMemoryTtlStore(600_000),
     async () => OWNER,
     {
-      resolveSlackBinding: async () => ({
-        instanceName: "agent-1",
-        owner: OWNER,
-      }),
+      resolveSlackBindings: async () => [
+        {
+          instanceName: "agent-1",
+          owner: OWNER,
+          ambient: false,
+          isDefault: true,
+        },
+      ],
       resolveSlackChannelsByInstance: async () => [boundChannelId],
     } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     () => {},
   );
 
@@ -71,7 +87,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            agentName: "Helper",
+            label: FOOTER_LABEL,
           }),
         ],
       },
@@ -83,7 +99,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-99",
-            agentName: "Ops",
+            label: FOOTER_LABEL,
           }),
         ],
       },
@@ -113,6 +129,83 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).not.toContain("agent-99");
   });
 
+  /**
+   * TEST_SCENARIO: Every post made before the footer moved to /a/ still sits in
+   * channel history, carrying a /chat/ or /sandboxes/ URL. Attribution reaches
+   * back through all of it, and a legacy footer that stops parsing fails
+   * silently — the line just reattributes to the bare bot id. So each retired
+   * form has to attribute by name from injected history, not only from a parse.
+   */
+  it.each([
+    ["chat", "http://ui/chat/agent-99"],
+    ["chat with a session path", "http://ui/chat/agent-99/sess-42"],
+    ["sandboxes", "http://ui/sandboxes/agent-99"],
+  ])("names an agent behind a legacy %s footer", async (_form, url) => {
+    const h = harness();
+    h.gw.setHistory([
+      {
+        ts: "0.1",
+        user: "U-BOT",
+        text: "I ran the deploy",
+        blocks: [
+          {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: `<${url}|Ops>` }],
+          },
+        ],
+      },
+    ]);
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(
+      `Ops (another agent) [${formatSlackTs("0.1")}]: I ran the deploy`,
+    );
+    expect(prompt).not.toContain("U-BOT [");
+  });
+
+  /**
+   * TEST_SCENARIO: Platform notices (wake failures, the still-starting note) come
+   * from the install-wide bot with no footer to credit. Left as a bare Slack id
+   * they read as a human — and, because the contract tells the agent that id is
+   * how it gets tagged, as the agent itself.
+   */
+  it("names a footer-less bot post as the bot, not as the reading agent or a human", async () => {
+    const h = harness();
+    h.gw.setHistory([
+      {
+        ts: "0.1",
+        user: "U-BOT",
+        text: "The agent is still starting — hang on",
+      },
+      { ts: "0.2", user: "U999", text: "ok" },
+    ]);
+
+    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.gw.fireMention({
+      user: "U999",
+      channel: "C1",
+      ts: "1.1",
+      text: "hey agent",
+    });
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain(
+      `the DAM bot (unattributed) [${formatSlackTs("0.1")}]: The agent is still starting`,
+    );
+    expect(prompt).not.toContain("U-BOT [");
+    expect(prompt).not.toContain("you (this agent) [");
+    expect(prompt).toContain('A line prefixed "the DAM bot (unattributed):"');
+    expect(prompt).toContain("not yours unless you recognise it as your own");
+  });
+
   it("omits the legend when history has no agent-authored messages", async () => {
     const h = harness();
     h.gw.setHistory([{ ts: "0.1", user: "U999", text: "just humans here" }]);
@@ -129,7 +222,8 @@ describe("slack cross-agent history attribution", () => {
     expect(prompt).toContain(
       `U999 [${formatSlackTs("0.1")}]: just humans here`,
     );
-    expect(prompt).not.toContain("(this agent)");
+    expect(prompt).not.toContain("In the conversation history below");
+    expect(prompt).not.toContain("(this agent):");
     expect(prompt).not.toContain("(another agent)");
   });
 
@@ -144,7 +238,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            agentName: "Helper",
+            label: FOOTER_LABEL,
           }),
         ],
       },
@@ -160,10 +254,10 @@ describe("slack cross-agent history attribution", () => {
 
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain(
-      "call describe_channel_users to find out who they are",
+      "call mcp__platform-outbound__describe_channel_users to find out who they are",
     );
     expect(prompt).toContain(
-      'call describe_channel_users with channel="slack"',
+      'call mcp__platform-outbound__describe_channel_users with channel="slack"',
     );
   });
 
@@ -179,7 +273,7 @@ describe("slack cross-agent history attribution", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            agentName: "Helper",
+            label: FOOTER_LABEL,
           }),
         ],
       },

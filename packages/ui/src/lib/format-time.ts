@@ -30,10 +30,10 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-export function timeAgo(value: DateInput): string {
+export function timeAgo(value: DateInput, now: Date = new Date()): string {
   const d = toDate(value);
   if (!d) return "—";
-  const delta = Date.now() - d.getTime();
+  const delta = now.getTime() - d.getTime();
   if (delta < 60_000) return "just now";
   return `${largestUnit(delta)} ago`;
 }
@@ -75,4 +75,13 @@ export function formatDateTime(
   options?: Intl.DateTimeFormatOptions,
 ): string {
   return toDate(value)?.toLocaleString(undefined, options) ?? "—";
+}
+
+export function formatDurationMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

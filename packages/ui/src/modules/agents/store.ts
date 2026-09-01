@@ -22,6 +22,8 @@ export interface AgentsSlice {
   unreachableAgents: ReadonlySet<string>;
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
+  deletedAgents: ReadonlySet<string>;
+  markAgentDeleted: (id: string) => void;
   selectAgent: (id: string) => void;
   openKnowledgeBase: (id: string) => void;
   openAgentSession: (agentId: string, sessionId: string) => void;
@@ -82,6 +84,15 @@ export const createAgentsSlice: StateCreator<
       return { unreachableAgents: next };
     }),
 
+  deletedAgents: new Set(),
+  markAgentDeleted: (id) =>
+    set((s) => {
+      if (s.deletedAgents.has(id)) return {};
+      const next = new Set(s.deletedAgents);
+      next.add(id);
+      return { deletedAgents: next };
+    }),
+
   selectAgent: (id) => {
     history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
     get().resetChatContext();
@@ -126,12 +137,12 @@ export const createAgentsSlice: StateCreator<
     history.pushState(
       null,
       "",
-      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "list" }),
+      routeToPath({ view: fromKnowledgeBase ? "knowledge-bases" : "home" }),
     );
     get().resetChatContext();
     set({
       selectedAgent: null,
-      view: fromKnowledgeBase ? "knowledge-bases" : "list",
+      view: fromKnowledgeBase ? "knowledge-bases" : "home",
     });
   },
 });

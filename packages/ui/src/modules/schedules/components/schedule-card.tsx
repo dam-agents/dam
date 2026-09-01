@@ -25,10 +25,9 @@ import {
   useResetScheduleSession,
   useToggleSchedule,
 } from "../api/mutations.js";
+import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
 import { scheduleCadenceText } from "../lib/schedule-format.js";
-import { scheduleLock } from "../lib/schedule-lock.js";
 import { ScheduleDetails } from "./schedule-details.js";
-import { scheduleLockNotice } from "./schedule-lock-notice.js";
 
 interface Props {
   schedule: Schedule;
@@ -47,35 +46,17 @@ export function ScheduleCard({
 }: Props) {
   const { id, name, enabled, sessionMode, status } = schedule;
   const showConfirm = useStore((s) => s.showConfirm);
-  const showAlert = useStore((s) => s.showAlert);
-  const selectAgent = useStore((s) => s.selectAgent);
   const sandboxName = useAgentDisplayName(schedule.agentId);
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
 
-  const lock = scheduleLock(schedule);
+  const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
 
-  const handleEdit = async () => {
-    if (!lock) {
-      onEdit();
-      return;
-    }
-    const { title, body, action } = scheduleLockNotice(lock, sandboxName);
-    if (!action) {
-      await showAlert(body, title, { kind: "info", confirmLabel: "Close" });
-      return;
-    }
-    const confirmed = await showConfirm(body, title, {
-      kind: "info",
-      confirmLabel: action,
-      cancelLabel: "Close",
-    });
-    if (confirmed) selectAgent(schedule.agentId);
-  };
+  const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
   const handleDelete = async () => {
     if (

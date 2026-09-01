@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { emit, EventType } from "../../../events.js";
 import {
   harnessConfigCatalog,
   type HarnessConfigCatalog,
@@ -15,8 +16,10 @@ import { getLogger } from "../../../core/logger.js";
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createHarnessConfigService(deps: {
+  surface: string;
   runtimeMutator: RuntimeMutator;
   snapshotRepo: HarnessConfigSnapshotRepo;
+  ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
   isSettled: (agentId: string) => Promise<boolean>;
@@ -66,6 +69,13 @@ export function createHarnessConfigService(deps: {
         },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
+      emit({
+        type: EventType.HarnessConfigChanged,
+        agentId,
+        ownerSub: deps.ownerSub,
+        actorSub: deps.ownerSub,
+        surface: deps.surface,
+      });
       try {
         await deps.snapshotRepo.merge(
           agentId,

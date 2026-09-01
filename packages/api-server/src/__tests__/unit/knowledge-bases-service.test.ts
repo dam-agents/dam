@@ -13,6 +13,7 @@ function fakeAgent(id: string): Agent {
     stopRequested: false,
     overBudget: false,
     contributionFailures: [],
+    features: { liveUpdates: false },
     channels: [],
     kind: "knowledge-base",
   };
@@ -36,6 +37,7 @@ function makeHarness() {
   };
   const service = createKnowledgeBasesService({
     owner: "user-1",
+    surface: "ui",
     agents: {
       async create(input) {
         calls.createInputs.push(input);

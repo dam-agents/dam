@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useStore } from "../../../store.js";
 import {
   parseRoute,
+  RETIRED_PATHS,
   type Route,
   routeToNavigationState,
   type View,
@@ -19,6 +20,9 @@ const isChatRoute = (
 export function useBrowserHistory(): void {
   useEffect(() => {
     const applyRoute = () => {
+      if (RETIRED_PATHS.has(window.location.pathname)) {
+        window.history.replaceState({}, "", "/");
+      }
       const route = parseRoute(window.location.pathname);
       const wasChat = isChatView(useStore.getState().view);
 

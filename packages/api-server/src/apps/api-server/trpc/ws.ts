@@ -5,15 +5,14 @@ import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import type { ApiContext, UserIdentity } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { IsAcceptedPort } from "../../../modules/terms/index.js";
 import {
+  clientSurface,
   emitUserAuthenticated,
   logWsAttach,
   upgradeSourceIp,
   type Authenticate,
   type SurfaceAttribution,
 } from "../admission/auth.js";
-import { checkWsTermsAccepted } from "../admission/terms.js";
 import { trpcDenial } from "./mappers.js";
 
 const API_KEY_REAUTH_MS = 5 * 60_000;
@@ -24,8 +23,7 @@ const CLOSE_CREDENTIAL_EXPIRED = 4401;
 export interface TrpcWsDeps {
   authenticate: Authenticate;
   surfaceAttribution: SurfaceAttribution;
-  isTermsAccepted: IsAcceptedPort;
-  composeApiContext: (user: UserIdentity) => ApiContext;
+  composeApiContext: (user: UserIdentity, surface: string) => ApiContext;
 }
 
 export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
@@ -74,19 +72,13 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       }
       const { user } = admitted.principal;
 
-      const termsDenied = await checkWsTermsAccepted(
-        deps.isTermsAccepted,
-        user.sub,
-        site,
-      );
-      if (termsDenied) {
-        throw new TRPCError(trpcDenial[termsDenied]);
-      }
-
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);
       attachCredentialLifecycle(res, admitted.principal.expiresAt);
-      return deps.composeApiContext(user);
+      return deps.composeApiContext(
+        user,
+        clientSurface(admitted.principal, deps.surfaceAttribution),
+      );
     },
   });
 

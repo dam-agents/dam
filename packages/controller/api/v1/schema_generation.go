@@ -4,6 +4,6 @@ package v1
 const (
 	SchemaGenerationAnnotation = "agent-platform.ai/crd-schema-generation"
 
-	AgentSchemaGeneration      = 7
+	AgentSchemaGeneration      = 8
 	UserBudgetSchemaGeneration = 1
 )

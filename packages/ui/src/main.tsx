@@ -11,12 +11,23 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { initAuth } from "./auth.js";
 import { applyBrand, loadBrand } from "./brand.js";
 import { rememberReturnPath } from "./lib/return-path.js";
-import { routeToPath } from "./modules/platform/lib/routes.js";
+import {
+  parsePublicAgentPath,
+  routeToPath,
+} from "./modules/platform/lib/routes.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
 import { queryClient } from "./query-client.js";
-import { useStore } from "./store.js";
+import { startDraftSync, useStore } from "./store.js";
 
 async function main() {
+  const publicAgentId = parsePublicAgentPath(window.location.pathname);
+  if (publicAgentId !== null) {
+    await loadBrand().then(applyBrand);
+    const { renderPublicAgentPage } = await import("./public-agent-page.js");
+    await renderPublicAgentPage(publicAgentId);
+    return;
+  }
+
   const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return;
 
@@ -26,6 +37,7 @@ async function main() {
   }
 
   useStore.getState().hydrateRoute();
+  startDraftSync(user.profile.sub);
 
   const { default: App } = await import("./app.js");
   createRoot(document.getElementById("root")!).render(

@@ -14,6 +14,7 @@ function fakeAgent(id: string): Agent {
     stopRequested: false,
     overBudget: false,
     contributionFailures: [],
+    features: { liveUpdates: false },
     channels: [],
     kind: "experiment",
   };
@@ -38,6 +39,7 @@ function makeHarness() {
   };
   const deps = {
     owner: "user-1",
+    surface: "ui",
     agents: {
       async create(input: AgentCreateInput) {
         calls.createInputs.push(input);

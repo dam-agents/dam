@@ -8,6 +8,7 @@ import {
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
+import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import {
@@ -38,6 +39,7 @@ function harness(opts: { binding: Binding }) {
   const { store: pending, map: pendingMap } =
     createInspectableTtlStore<SlackOAuthPending>();
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
       prompts.push(prompt);
@@ -63,13 +65,27 @@ function harness(opts: { binding: Binding }) {
     } as never,
     pending,
     async () => OWNER,
-    { resolveSlackBinding: async () => opts.binding } as never,
+    {
+      resolveSlackBindings: async () =>
+        opts.binding
+          ? [
+              {
+                instanceName: opts.binding.instanceName,
+                owner: opts.binding.owner,
+                ambient: false,
+                isDefault: true,
+              },
+            ]
+          : [],
+    } as never,
     async () => {},
     async () => {},
+    async () => true,
     { name: "DAM", short: "dam" },
     async () => true,
     "http://ui",
     stubTurnAttendance(),
+    stubWorkspaceFiles(),
     (e) => events.push(e),
   );
 
@@ -141,6 +157,19 @@ describe("slack 1:1 DM", () => {
     const prompt = String(h.prompts[0]);
     expect(prompt).toContain("hello privately");
     expect(prompt).not.toContain("<@");
+  });
+
+  it("frames a DM as addressed to the agent, without claiming a mention", async () => {
+    const h = harness({ binding: boundDm });
+    await h.directMessage("hello privately");
+
+    const prompt = String(h.prompts[0]);
+    expect(prompt).toContain("<addressed-to-you>");
+    expect(prompt).toContain("every message here is addressed to you");
+    expect(prompt).not.toContain("You were @-mentioned");
+    expect(prompt).toContain("Slack user id U-BOT");
+    expect(prompt).toContain('by typing "dam" with no tag');
+    expect(prompt).not.toContain("only a tag reaches you");
   });
 
   it("logs a basis:'place' allow keyed on the DM conversation", async () => {

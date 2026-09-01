@@ -1,11 +1,8 @@
 import * as k8s from "@kubernetes/client-node";
+import { AGENTS_PLURAL } from "./labels.js";
 
 export interface K8sClient {
   readonly namespace: string;
-
-  readAgentPodRestart(
-    agentId: string,
-  ): Promise<{ restarts: number; reason: string | null } | null>;
 
   listSecrets(labelSelector: string): Promise<k8s.V1Secret[]>;
   getSecret(name: string): Promise<k8s.V1Secret | null>;
@@ -25,6 +22,11 @@ export interface K8sClient {
     body: object,
   ): Promise<KubeObject>;
   deleteCustomObject(plural: string, name: string): Promise<void>;
+  watchCustomObjects(
+    plural: string,
+    onEvent: (phase: string, obj: KubeObject) => void,
+    onEnd: (err?: unknown) => void,
+  ): () => void;
 }
 
 export interface KubeObject {
@@ -53,13 +55,23 @@ function isStatus(err: unknown, code: number): boolean {
 }
 const is404 = (err: unknown) => isStatus(err, 404);
 
+let cachedKubeConfig: k8s.KubeConfig | undefined;
+
+function loadKubeConfig(): k8s.KubeConfig {
+  if (!cachedKubeConfig) {
+    cachedKubeConfig = new k8s.KubeConfig();
+    cachedKubeConfig.loadFromDefault();
+  }
+  return cachedKubeConfig;
+}
+
 export function createK8sClient(
   api: k8s.CoreV1Api,
   namespace: string,
 ): K8sClient {
-  const kc = new k8s.KubeConfig();
-  kc.loadFromDefault();
+  const kc = loadKubeConfig();
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
+  const watcher = new k8s.Watch(kc);
   const crArgs = (plural: string) => ({
     group: CR_GROUP,
     version: CR_VERSION,
@@ -69,27 +81,6 @@ export function createK8sClient(
 
   return {
     namespace,
-
-    async readAgentPodRestart(agentId) {
-      const res = await api.listNamespacedPod({
-        namespace,
-        labelSelector: `agent-platform.ai/pair=${agentId},agent-platform.ai/role=agent`,
-      });
-      const pods = res.items ?? [];
-      if (pods.length === 0) return null;
-      let restarts = 0;
-      let reason: string | null = null;
-      for (const pod of pods) {
-        for (const cs of pod.status?.containerStatuses ?? []) {
-          const count = cs.restartCount ?? 0;
-          if (count > restarts) {
-            restarts = count;
-            reason = cs.lastState?.terminated?.reason ?? null;
-          }
-        }
-      }
-      return { restarts, reason };
-    },
 
     async listSecrets(labelSelector) {
       const res = await api.listNamespacedSecret({ namespace, labelSelector });
@@ -171,6 +162,33 @@ export function createK8sClient(
         throw err;
       }
     },
+
+    watchCustomObjects(plural, onEvent, onEnd) {
+      let stopped = false;
+      let connection: AbortController | null = null;
+      watcher
+        .watch(
+          `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${plural}`,
+          {},
+          (phase, obj) => {
+            if (!stopped) onEvent(phase, obj as KubeObject);
+          },
+          (err) => {
+            if (!stopped) onEnd(err ?? undefined);
+          },
+        )
+        .then((c) => {
+          if (stopped) c.abort();
+          else connection = c;
+        })
+        .catch((err) => {
+          if (!stopped) onEnd(err);
+        });
+      return () => {
+        stopped = true;
+        connection?.abort();
+      };
+    },
   };
 }
 
@@ -179,10 +197,27 @@ export function podBaseUrl(agentId: string, namespace: string): string {
 }
 
 export function createApi(namespace: string) {
-  const kc = new k8s.KubeConfig();
-  kc.loadFromDefault();
+  const kc = loadKubeConfig();
   return {
     api: kc.makeApiClient(k8s.CoreV1Api),
     namespace,
   };
+}
+
+export type AgentInformer = k8s.Informer<KubeObject> &
+  k8s.ObjectCache<KubeObject>;
+
+export function createAgentInformer(namespace: string): AgentInformer {
+  const kc = loadKubeConfig();
+  const co = kc.makeApiClient(k8s.CustomObjectsApi);
+  const path = `/apis/${CR_GROUP}/${CR_VERSION}/namespaces/${namespace}/${AGENTS_PLURAL}`;
+  return k8s.makeInformer<KubeObject>(kc, path, async () => {
+    const res = (await co.listNamespacedCustomObject({
+      group: CR_GROUP,
+      version: CR_VERSION,
+      namespace,
+      plural: AGENTS_PLURAL,
+    })) as k8s.KubernetesListObject<KubeObject>;
+    return res;
+  });
 }

@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-08-04
+Last verified: 2026-08-18
 
 ## Overview
 
@@ -57,7 +57,17 @@ Harnesses produce telemetry by exporting it themselves over OTLP — the platfor
 The platform's own services emit their operational telemetry through an in-process OpenTelemetry SDK apiece. Enabling the backend sets the standard OTLP endpoint environment on each deployment, pointing straight at the bundled collector over plain HTTP inside the mesh (ztunnel supplies mTLS, and the collector's authorization policy already admits the release namespace); without that endpoint the SDK never activates. Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
-- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), and its structured logs with trace correlation. Health-probe requests are not traced. The primary Postgres pool is not yet instrumented (no driver instrumentation exists for it); that gap is tracked as follow-up work.
+- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **turn counter** below, and its structured logs with trace correlation. Health-probe requests are not traced. The primary Postgres pool is not yet instrumented (no driver instrumentation exists for it); that gap is tracked as follow-up work.
+
+### Turn counter
+
+This is a **deliberate second sink** on the turn events [usage-tracking](usage-tracking.md) persists: that subsystem owns the durable, per-user record and its SQL read surface, while this counter serves the operational read — a rate on a dashboard, reachable without SQL and without that subsystem's reader role. Both are fed from the same events, so the definition of a turn is shared rather than reimplemented. It is a subscriber on the same turn events that subsystem persists, so both sinks answer to one definition of a turn rather than each counting their own way. They are not guaranteed to agree in practice: each is separately enabled — the counter needs the SDK active, the log needs activity tracking on — and each fails independently, so treat a divergence as a sink being off or dropping, not as two different notions of a turn.
+
+Its one dimension is the **surface** that carried the turn, taken from the event — for a relay turn the surface the upgrade resolved from the caller's own credential, and for a channel turn its messenger. A failed turn counts like any other, because the counter measures what was asked rather than what came back.
+
+Two limits are worth knowing before charting it. A read-along turn is indistinguishable from one that addressed the agent, since the channel turn event carries no such marker, so a channel with read-along enabled reads higher than the attention it actually received. And terminal-mode sessions never appear at all: a PTY is an opaque keystroke stream with no message boundary, which is also how the CLI chats.
+
+Outcome and agent identity are deliberately absent. Outcome is known only on the channel side, and a dimension present on some surfaces and not others makes any filter on it silently drop the rest; per-turn outcomes stay in the activity log's channel views. Agent identity would multiply series by the fleet size for a question that does not need it — and were it ever added it must not reuse the trusted agent attribution attribute, whose **absence** is what marks a signal as platform telemetry rather than agent telemetry.
 
 ## Trusted attribution
 
@@ -75,10 +85,10 @@ The telemetry store is a **fourth durable substrate** beyond the three in [persi
 
 ## Relationship to logging and usage-tracking
 
-This subsystem is distinct from two neighbours and does not overlap them:
+This subsystem is distinct from two neighbours, and overlaps one of them on purpose:
 
 - [logging](logging.md) owns structured operational logs and the real-identity security audit trail, emitted to stdout.
-- [usage-tracking](usage-tracking.md) owns pseudonymized usage analytics in Postgres — an append-only activity log read through SQL views.
+- [usage-tracking](usage-tracking.md) owns pseudonymized usage analytics in Postgres — an append-only activity log read through SQL views. The [turn counter](#turn-counter) above is a **second sink on that subsystem's turn events**: the same fact, read operationally as a time series rather than analytically through SQL. Turn *volume* is therefore answerable from either side, and the split is by read pattern, not by what is counted.
 
 Telemetry here is the OpenTelemetry-native, explorable signal pipeline: a different store (columnar, not Postgres), a different shape (OTLP logs/traces/metrics), and a different read surface (the exploration UI). Postgres remains the right home for coarse usage analytics; it cannot serve high-volume telemetry, which is the reason this subsystem exists at all.
 

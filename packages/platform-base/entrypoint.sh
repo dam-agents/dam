@@ -14,13 +14,45 @@ set -eu
 
 mitm_ca=/etc/platform/ca/ca.crt
 anchor=/etc/pki/ca-trust/source/anchors/platform-mitm-ca.crt
+extracted=/etc/pki/ca-trust/extracted
+
+extract_trust_store() (
+	export P11_KIT_NO_USER_CONFIG=1
+	trust extract --format=openssl-bundle --filter=certificates --overwrite --comment "$extracted/openssl/ca-bundle.trust.crt" &&
+		trust extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose server-auth "$extracted/pem/tls-ca-bundle.pem" &&
+		trust extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose email "$extracted/pem/email-ca-bundle.pem" &&
+		trust extract --format=pem-bundle --filter=ca-anchors --overwrite --comment --purpose code-signing "$extracted/pem/objsign-ca-bundle.pem" &&
+		trust extract --format=java-cacerts --filter=ca-anchors --overwrite --purpose server-auth "$extracted/java/cacerts" &&
+		trust extract --format=edk2-cacerts --filter=ca-anchors --overwrite --purpose=server-auth "$extracted/edk2/cacerts.bin" &&
+		trust extract --format=pem-directory-hash --filter=ca-anchors --overwrite --purpose server-auth "$extracted/pem/directory-hash" ||
+		exit 1
+	for link in "$extracted"/pem/directory-hash/*.0; do
+		[ -h "$link" ] || continue
+		name=${link##*/}
+		[ -e "/etc/pki/tls/certs/$name" ] ||
+			ln -sf "$(readlink -f "$link")" "/etc/pki/tls/certs/$name" ||
+			exit 1
+	done
+)
 
 # No CA file mounted means the gateway never intercepts this agent's traffic, so
 # every host returns its real public certificate, which the public CAs cover.
 if [ -s "$mitm_ca" ]; then
-	cp "$mitm_ca" "$anchor" && /usr/sbin/update-ca-trust extract \
-		|| echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	trust_t0=$(date +%s)
+	if cp "$mitm_ca" "$anchor" && { extract_trust_store || /usr/sbin/update-ca-trust extract; }; then
+		echo "agent-entrypoint: platform CA trusted in $(($(date +%s) - trust_t0))s"
+	else
+		echo "agent-entrypoint: WARNING: could not trust the platform CA; intercepted hosts may fail TLS" >&2
+	fi
 fi
+
+home="${HOME:-/home/agent}"
+if [ ! -f "$home/.initialized" ]; then
+	cp -rn /app/working-dir/. "$home/" 2>/dev/null || true
+	touch "$home/.initialized"
+	echo "agent-entrypoint: seeded home from image workspace"
+fi
+mkdir -p "$home/work"
 
 # $HOME is a shared RWX network volume; cache traffic (mise, uv, npm, ...)
 # would hammer it, so ~/.cache points at pod-local disk (/tmp is an emptyDir)
@@ -29,7 +61,6 @@ fi
 # swap idempotent when the owner pod and a fork pod boot the volume together.
 # The symlink persists on the volume but /tmp is fresh every pod, so the
 # target is (re)created each boot to keep the link from dangling.
-home="${HOME:-/home/agent}"
 mkdir -p /tmp/agent-cache
 # On the VM backend $HOME is unprivileged virtiofs, where a non-root caller
 # cannot create symlinks (virtiofsd lacks CAP_CHOWN, the guest kernel returns
@@ -59,16 +90,26 @@ fi
 # boot, hence the `|| true`s.
 user_mise_cfg="$home/.config/mise/config.toml"
 user_mise_lock="$home/.config/mise/mise.lock"
+# Retired pins are the other half of the same hazard: once the image stops
+# listing a tool, the loop below stops naming it, and a workspace copy seeded
+# before retirement survives forever. It is not inert — a later `mise install`
+# honors that pin, installs the package without its postinstall, and the shim
+# it creates shadows the real binary on PATH. Each entry carries the date it was
+# retired; drop it once every agent has booted since then.
+retired_harness_tools="npm:@anthropic-ai/claude-code" # retired 2026-08-27
 if [ -f "$user_mise_cfg" ]; then
-	for conf in /etc/mise/conf.d/*.toml; do
-		[ -e "$conf" ] || continue
-		# keys of the [tools] entries, quoted or bare (see the format
-		# contract in harness-tools.toml)
-		sed -n \
-			-e 's/^"\([^"]\{1,\}\)"[[:space:]]*=.*/\1/p' \
-			-e 's/^\([^"#[:space:]][^=[:space:]]*\)[[:space:]]*=.*/\1/p' \
-			"$conf"
-	done | while IFS= read -r tool; do
+	{
+		printf '%s\n' $retired_harness_tools
+		for conf in /etc/mise/conf.d/*.toml; do
+			[ -e "$conf" ] || continue
+			# keys of the [tools] entries, quoted or bare (see the format
+			# contract in harness-tools.toml)
+			sed -n \
+				-e 's/^"\([^"]\{1,\}\)"[[:space:]]*=.*/\1/p' \
+				-e 's/^\([^"#[:space:]][^=[:space:]]*\)[[:space:]]*=.*/\1/p' \
+				"$conf"
+		done
+	} | while IFS= read -r tool; do
 		esc=$(printf '%s' "$tool" | sed 's/\./\\./g')
 		sed -i "\%^\"\{0,1\}${esc}\"\{0,1\}[[:space:]]*=%d" "$user_mise_cfg" || true
 		if [ -f "$user_mise_lock" ]; then

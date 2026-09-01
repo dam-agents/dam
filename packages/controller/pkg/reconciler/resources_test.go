@@ -31,7 +31,6 @@ var testConfig = &config.Config{
 		},
 	},
 	AgentTemplateDefaults: config.AgentTemplateDefaults{
-		AgentHome:       "/home/agent",
 		ImagePullPolicy: "IfNotPresent",
 		StorageSize:     "10Gi",
 	},
@@ -121,6 +120,12 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	assert.Equal(t, int32(1), c.StartupProbe.PeriodSeconds)
 	assert.Equal(t, int32(120), c.StartupProbe.FailureThreshold)
 
+	assert.Equal(t, "/healthz", c.LivenessProbe.HTTPGet.Path)
+	assert.Equal(t, int32(10), c.LivenessProbe.PeriodSeconds)
+	assert.Equal(t, int32(5), c.LivenessProbe.TimeoutSeconds)
+	assert.Equal(t, int32(12), c.LivenessProbe.FailureThreshold,
+		"liveness must tolerate ~2 min of stall: a 30s kill window destroyed an in-container experiment run when the dev host starved the VM's vCPUs; truly dead agents are still reaped by invocation deadlines and the experiment inactivity sweep")
+
 	envMap := envToMap(c.Env)
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTPS_PROXY"])
 	assert.Equal(t, "http://10.96.42.42:10000", envMap["HTTP_PROXY"])
@@ -205,19 +210,8 @@ func TestBuildAgentStatefulSet_DefaultsToRunningReplicas(t *testing.T) {
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
 }
 
-func TestBuildAgentStatefulSet_InitContainer(t *testing.T) {
+func TestBuildAgentStatefulSet_IgnoresSpecInit(t *testing.T) {
 	ss := BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "")
-	require.Len(t, ss.Spec.Template.Spec.InitContainers, 1, "only the user-defined init runs")
-	ic := ss.Spec.Template.Spec.InitContainers[0]
-	assert.Equal(t, "init", ic.Name)
-	assert.Equal(t, "ghcr.io/myorg/agent:latest", ic.Image)
-	assert.Equal(t, []string{"sh", "-c", testAgent.Init}, ic.Command)
-}
-
-func TestBuildAgentStatefulSet_NoUserInitWhenEmpty(t *testing.T) {
-	agent := *testAgent
-	agent.Init = ""
-	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "")
 	assert.Empty(t, ss.Spec.Template.Spec.InitContainers)
 }
 

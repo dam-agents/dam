@@ -67,10 +67,7 @@ const vmAgentUID = 65532
 
 func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP, caCrt string) (*corev1.Secret, error) {
 	defaults := cfg.AgentTemplateDefaults
-	agentHome := agentSpec.AgentHome
-	if agentHome == "" {
-		agentHome = defaults.AgentHome
-	}
+	agentHome := agentHomeDir
 
 	envFile := ""
 	for _, e := range agentPlatformEnv(name, cfg, agentHome, agentProxyAddr(cfg, gatewayClusterIP)) {
@@ -118,14 +115,9 @@ func BuildVMCloudInitSecret(name string, agentSpec *types.AgentSpec, cfg *config
 		"mkdir -p /tmp/agent-cache && chown %[1]d:%[1]d /tmp/agent-cache && { [ -L %[2]s/.cache ] || rm -rf %[2]s/.cache; } && ln -sfn /tmp/agent-cache %[2]s/.cache || true",
 		vmAgentUID, shellQuote(agentHome),
 	)})
-
-	initScript := agentSpec.Init
-	if initScript == "" {
-		initScript = defaults.Init
-	}
-	if initScript != "" {
-		cc.BootCmd = append(cc.BootCmd, []string{"env", "HOME=" + agentHome, "bash", "-c", initScript})
-	}
+	cc.BootCmd = append(cc.BootCmd, []string{"env", "HOME=" + agentHome, "sh", "-c",
+		`[ -f "$HOME/.initialized" ] || { cp -rn /app/working-dir/. "$HOME/" 2>/dev/null || true; touch "$HOME/.initialized"; }; mkdir -p "$HOME/work"`,
+	})
 
 	body, err := yaml.Marshal(cc)
 	if err != nil {

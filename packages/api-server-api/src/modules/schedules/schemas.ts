@@ -12,6 +12,10 @@ export const quietWindowSchema = z
     message: "startTime and endTime must differ",
   });
 
+export const scheduleListForOwnerInputSchema = z
+  .object({ limit: z.number().int().positive().max(200).optional() })
+  .optional();
+
 export const scheduleListInputSchema = z.object({
   agentId: z.string().min(1),
 });

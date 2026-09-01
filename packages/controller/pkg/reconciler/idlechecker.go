@@ -80,11 +80,16 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 	now := time.Now().UTC()
 	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
+	atZero := c.agentsAtZero(ctx)
 	hibernated := 0
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
 		if shouldRun(agent.GetAnnotations(), effectiveIdleTimeout(hibernationOverride(agent), timeout), now) {
+			continue
+		}
+
+		if atZero[name] && hibernationPublished(agent) {
 			continue
 		}
 
@@ -102,6 +107,51 @@ func (c *IdleChecker) check(ctx context.Context) {
 	}
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+func hibernationPublished(agent *unstructured.Unstructured) bool {
+	conds, found, err := unstructured.NestedSlice(agent.Object, "status", "conditions")
+	if err != nil || !found {
+		return false
+	}
+	for _, raw := range conds {
+		cond, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if cond["type"] == apiv1.ConditionReady && cond["reason"] == apiv1.ReasonHibernated {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
+	sss, err := c.client.AppsV1().
+		StatefulSets(c.config.Namespace).
+		List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.ErrorContext(ctx, "idle checker: listing statefulsets", "error", err)
+		return nil
+	}
+	scaledUp := map[string]bool{}
+	seen := map[string]bool{}
+	for i := range sss.Items {
+		ss := &sss.Items[i]
+		name := ss.Labels[LabelAgent]
+		if name == "" {
+			continue
+		}
+		seen[name] = true
+		if ss.Spec.Replicas == nil || *ss.Spec.Replicas != 0 {
+			scaledUp[name] = true
+		}
+	}
+	atZero := map[string]bool{}
+	for name := range seen {
+		atZero[name] = !scaledUp[name]
+	}
+	return atZero
 }
 
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
@@ -162,6 +212,8 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
+		s.AgentPodRestarts = 0
+		s.AgentPodRestartReason = ""
 	})
 }
 

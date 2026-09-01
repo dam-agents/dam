@@ -4,8 +4,8 @@ import type { HarnessConfigCurrent } from "agent-runtime-api";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
-import { createAgentTrpc } from "../agent-trpc.js";
-import { useIsAgentOperable } from "./queries.js";
+import { agentTrpc, agentTrpcHttp } from "../agent-trpc.js";
+import { useAgentLacksLiveUpdates, useIsAgentOperable } from "./queries.js";
 
 export function useHarnessConfigStatus(agentId: string | null) {
   return useQuery({
@@ -13,24 +13,7 @@ export function useHarnessConfigStatus(agentId: string | null) {
       agentId ? { agentId } : skipToken,
     ),
     retry: false,
-    refetchInterval: (query) => {
-      const d = query.state.data;
-      return d?.supported && !d.catalog ? 5000 : false;
-    },
   });
-}
-
-const currentClientCache = new Map<
-  string,
-  ReturnType<typeof createAgentTrpc>
->();
-function agentTrpcFor(agentId: string) {
-  let client = currentClientCache.get(agentId);
-  if (!client) {
-    client = createAgentTrpc(agentId);
-    currentClientCache.set(agentId, client);
-  }
-  return client;
 }
 
 export const harnessConfigCurrentKey = (agentId: string) =>
@@ -38,11 +21,16 @@ export const harnessConfigCurrentKey = (agentId: string) =>
 
 export function useHarnessConfigCurrent(agentId: string | null) {
   const operable = useIsAgentOperable(agentId);
+  const compat = useAgentLacksLiveUpdates(agentId);
   return useQuery({
     queryKey: agentId ? harnessConfigCurrentKey(agentId) : ["hcc-disabled"],
     queryFn:
       agentId && operable
-        ? () => agentTrpcFor(agentId).harnessConfig.current.query()
+        ? () =>
+            (compat
+              ? agentTrpcHttp(agentId)
+              : agentTrpc(agentId)
+            ).harnessConfig.current.query()
         : skipToken,
     retry: false,
   });

@@ -1,7 +1,4 @@
 import { Hono, type Context, type Next } from "hono";
-import type { UserIdentity } from "api-server-api";
-
-type AppEnv = { Variables: { user: UserIdentity; roles: string[] } };
 import {
   isViewName,
   REPORTABLE_VIEW_NAMES,
@@ -11,6 +8,11 @@ import {
 } from "./services/report-service.js";
 import { renderHtmlReport, type ViewResult } from "./html-report.js";
 import { securityLog } from "../../core/security-log.js";
+import type { ApiVariables } from "../../core/http-context.js";
+
+type AppEnv = {
+  Variables: ApiVariables;
+};
 
 export type UsageRoutesDeps = {
   service: ReportService;
@@ -18,9 +20,7 @@ export type UsageRoutesDeps = {
 };
 
 export function createUsageRoutes(deps: UsageRoutesDeps) {
-  const routes = new Hono<{
-    Variables: { user: UserIdentity; roles: string[] };
-  }>();
+  const routes = new Hono<AppEnv>();
 
   const inspectorOnly = async (c: Context<AppEnv>, next: Next) => {
     const roles = c.get("roles") ?? [];

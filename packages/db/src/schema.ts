@@ -26,12 +26,20 @@ export const channels = pgTable(
     owner: text("owner").notNull(),
     type: text("type").notNull(),
     config: jsonb("config").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("channels_agent_type_idx").on(table.agentId, table.type),
-    uniqueIndex("channels_slack_channel_unique_idx")
-      .on(sql`(${table.config}->>'slackChannelId')`)
+    uniqueIndex("channels_slack_agent_channel_idx")
+      .on(table.agentId, sql`(${table.config}->>'slackChannelId')`)
       .where(sql`${table.type} = 'slack'`),
+    uniqueIndex("channels_slack_default_agent_idx")
+      .on(sql`(${table.config}->>'slackChannelId')`)
+      .where(
+        sql`${table.type} = 'slack' AND ${table.config}->>'default' = 'true'`,
+      ),
   ],
 );
 
@@ -206,6 +214,17 @@ export const activityEvents = pgTable(
         sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
       )
       .where(sql`${table.type} = 'auth'`),
+    uniqueIndex("activity_events_relay_dedup_idx")
+      .on(
+        table.actorSub,
+        table.agentId,
+        sql`(${table.payload} ->> 'relay')`,
+        sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
+      )
+      .where(sql`${table.type} = 'relay_attached'`),
+    uniqueIndex("activity_events_entry_point_dedup_idx")
+      .on(table.actorSub, table.type)
+      .where(sql`${table.type} = 'entry_point_chosen'`),
   ],
 );
 
@@ -250,6 +269,16 @@ export const agentEnv = pgTable(
     index("agent_env_agent_idx").on(table.agentId),
   ],
 );
+
+export const agentPublicProfiles = pgTable("agent_public_profiles", {
+  agentId: text("agent_id").primaryKey(),
+  name: text("name").notNull(),
+  ownerSub: text("owner_sub").notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const termsAcceptances = pgTable(
   "terms_acceptances",

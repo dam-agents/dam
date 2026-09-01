@@ -35,6 +35,7 @@ function makeFakeRepo(): FakeRepo {
         status: "pending",
         deliveredAt: null,
       });
+      return true;
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async ({ agentId, host, method, path }) => {
@@ -54,7 +55,7 @@ function makeFakeRepo(): FakeRepo {
     listPendingForOwner: async () => [],
     listPendingForInstance: async () => [],
     resolvePending: async () => true,
-    resolveExpired: async () => {},
+    resolveExpired: async () => false,
     markDelivered: async () => {},
     listResolvedUndelivered: async () => [],
     expirePending: async (id) => {

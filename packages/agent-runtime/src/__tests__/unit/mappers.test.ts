@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   rewriteAuthError,
   rewriteCwd,
-} from "../../modules/acp/infrastructure/mappers.js";
+} from "../../modules/acp/domain/mappers.js";
 
 describe("rewriteAuthError", () => {
   it("prepends hint when error.message contains authentication_error", () => {

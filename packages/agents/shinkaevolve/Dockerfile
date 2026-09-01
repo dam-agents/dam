@@ -34,9 +34,21 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
     SHINKA_VENV=/opt/shinka-venv
 
 RUN uv python install 3.11 &&\
+    # The standalone interpreter's own site-packages ships setuptools 82.0.1
+    # (CVE-2026-59890) — the venv floor below does not reach it, and uv marks
+    # the install externally managed, hence --break-system-packages.
+    uv pip install --python "$(uv python find 3.11)" --break-system-packages "setuptools>=83.0.0" &&\
     uv venv --python 3.11 "$SHINKA_VENV" &&\
     # pillow floor: CVE-2026-25990, -40192, -42308..11, -54058..60
-    uv pip install --python "$SHINKA_VENV/bin/python" "shinka-evolve==${SHINKA_VERSION}" "pillow>=12.3.0" "setuptools>=83.0.0" &&\
+    # hydra-core floor (CVE-2026-68508) has to be an --override, not a plain
+    # requirement: shinka-evolve hard-pins hydra-core==1.3.2, so a floor is an
+    # unsatisfiable conflict. Stays on the 1.3 line, which is API-compatible;
+    # the import check below is what proves it.
+    printf 'hydra-core>=1.3.4,<1.4\n' > /tmp/overrides.txt &&\
+    uv pip install --python "$SHINKA_VENV/bin/python" --override /tmp/overrides.txt \
+      "shinka-evolve==${SHINKA_VERSION}" "pillow>=12.3.0" "setuptools>=83.0.0" "msgpack>=1.2.1" &&\
+    rm /tmp/overrides.txt &&\
+    "$SHINKA_VENV/bin/python" -c 'import shinka, hydra' &&\
     uv cache clean &&\
     chown -R 65532:0 /opt/shinka-venv /opt/uv
 

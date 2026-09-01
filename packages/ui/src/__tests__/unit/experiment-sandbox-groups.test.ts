@@ -10,6 +10,7 @@ const agent = (id: string, kind?: AgentView["kind"]): AgentView => ({
   name: id,
   templateId: null,
   templateUpdate: null,
+  features: { liveUpdates: true },
   kbTemplateId: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
@@ -94,7 +95,7 @@ describe("toSandboxGroups", () => {
     expect(groups[0]).toMatchObject({
       agentId: "__deleted__",
       agent: null,
-      name: "Deleted sandboxes",
+      name: "Deleted agents",
     });
     expect(groups[0]?.lineages).toHaveLength(2);
   });

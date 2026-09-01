@@ -75,6 +75,7 @@ export interface Message {
   promptId?: string;
   retryWith?: RetryPayload;
   notice?: boolean;
+  loadOlderBefore?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
@@ -92,6 +93,7 @@ export interface TemplateView {
   category: "harness" | "preconfigured";
   tags?: string[];
   docsUrl?: string;
+  releaseNotesUrl?: string;
   setupNote?: { title: string; body: string };
   experimental: boolean;
   vm: boolean;
@@ -112,6 +114,7 @@ export interface AgentView {
   name: string;
   templateId: string | null;
   templateUpdate: { fromImage: string; toImage: string } | null;
+  features: { liveUpdates: boolean };
   image: string;
   description?: string;
   env?: EnvVar[];
@@ -131,6 +134,7 @@ export interface AgentView {
         type: "slack";
         slackChannelId: string;
         ambient?: boolean;
+        default?: boolean;
       }
     | { type: "telegram" }
   )[];

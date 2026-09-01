@@ -17,6 +17,10 @@ import {
   useCreateEgressRule,
   useRevokeEgressRule,
 } from "../../egress-rules/api/mutations.js";
+import {
+  confirmStagedGatewayRestart,
+  toPromotionRule,
+} from "../../egress-rules/gateway-restart.js";
 import { splitHostPort } from "../../egress-rules/host-port.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
 import type { SettingsValues } from "./sandbox-settings-schema.js";
@@ -58,20 +62,15 @@ export function useSandboxSettingsSave({
 
   return handleSubmit(async (values) => {
     if (!agentId || !dirty) return;
-    const gatewayRestartHosts = net.pendingAdds
-      .filter(
-        (a) =>
-          a.method !== "*" ||
-          a.pathPattern !== "*" ||
-          splitHostPort(a.host).port != null,
-      )
-      .map((a) => a.host);
     if (
-      gatewayRestartHosts.length > 0 &&
-      !(await showConfirm(
-        `Rule changes for ${gatewayRestartHosts.length === 1 ? `"${gatewayRestartHosts[0]}"` : `${gatewayRestartHosts.length} hosts`} need a gateway restart (~5–15s). The agent keeps running — outbound requests are briefly interrupted.`,
-        "Restart network gateway?",
-        { confirmLabel: "Save & restart" },
+      !(await confirmStagedGatewayRestart(
+        showConfirm,
+        agentId,
+        {
+          adds: net.pendingAdds.map(toPromotionRule),
+          removeIds: [...net.pendingDeletes],
+        },
+        "Save & restart",
       ))
     ) {
       return;
@@ -93,8 +92,8 @@ export function useSandboxSettingsSave({
       agent &&
       !(agent.state === "hibernated" || agent.overBudget) &&
       !(await showConfirm(
-        "Saving will restart the sandbox to apply its new size — in-flight work is interrupted.",
-        "Restart sandbox?",
+        "Saving will restart the agent to apply its new size — in-flight work is interrupted.",
+        "Restart agent?",
         { confirmLabel: "Save & restart" },
       ))
     ) {

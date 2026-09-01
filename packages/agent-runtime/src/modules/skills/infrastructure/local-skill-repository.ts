@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -9,8 +8,10 @@ import type {
   Result,
   SkillOrigin,
   SkillsDomainError,
+  SourcePathReason,
 } from "agent-runtime-api";
 import { err, ok, SKILL_SOURCE_ROOTS } from "agent-runtime-api";
+import { describeFailure, runOnce } from "../../../core/run-once.js";
 import { parseFrontmatter } from "../domain/frontmatter.js";
 import type { SkillName } from "../domain/skill-name.js";
 import { judgeOrigin } from "../domain/skill-origin.js";
@@ -20,6 +21,10 @@ const FRONTMATTER_READ_BYTES = 8 * 1024;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_SKILL_BYTES = 5 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 60_000;
+
+export type CloneScanOutcome =
+  | { kind: "found"; dirs: string[] }
+  | { kind: SourcePathReason; subPath: string };
 
 export interface LocalSkillRepository {
   listLocal: (
@@ -64,7 +69,7 @@ export interface LocalSkillRepository {
   findSkillDirsInClone: (
     repoDir: string,
     subPath?: string,
-  ) => Promise<string[]>;
+  ) => Promise<CloneScanOutcome>;
   resolveSkillDirInClone: (
     repoDir: string,
     name: SkillName,
@@ -344,13 +349,26 @@ async function write(
   for (const targetRoot of skillPaths) {
     await fs.mkdir(targetRoot, { recursive: true });
     const dst = path.join(targetRoot, name);
-    await fs.rm(dst, { recursive: true, force: true });
-    await fs.cp(srcDir, dst, { recursive: true });
+    const staged = path.join(targetRoot, `.${name}.staging`);
+    const previous = path.join(targetRoot, `.${name}.previous`);
+    let published = false;
     try {
-      await assertNoSymlinks(dst);
-    } catch (e) {
-      await fs.rm(dst, { recursive: true, force: true });
-      throw e;
+      await fs.rm(staged, { recursive: true, force: true });
+      await fs.rm(previous, { recursive: true, force: true });
+      await fs.cp(srcDir, staged, { recursive: true });
+      await assertNoSymlinks(staged);
+      await fs.rename(dst, previous).catch(ignoreMissing);
+      await fs.rename(staged, dst);
+      published = true;
+    } finally {
+      await fs.rm(staged, { recursive: true, force: true }).catch(leaveSidecar);
+      if (published) {
+        await fs
+          .rm(previous, { recursive: true, force: true })
+          .catch(leaveSidecar);
+      } else {
+        await fs.rename(previous, dst).catch(leaveSidecar);
+      }
     }
   }
   const firstTarget = path.join(skillPaths[0], name);
@@ -437,20 +455,38 @@ export function subPathEscapes(subPath: string): boolean {
   return subPath.startsWith("/") || subPath.split("/").includes("..");
 }
 
+function isMissingDir(err: unknown): boolean {
+  const code = (err as { code?: string }).code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
 async function findSkillDirsInClone(
   repoDir: string,
   subPath?: string,
-): Promise<string[]> {
+): Promise<CloneScanOutcome> {
   if (subPath && subPathEscapes(subPath)) {
     throw new Error(`skill source path rejected: ${subPath}`);
   }
-  if (subPath) return skillDirsUnder(repoDir, path.join(repoDir, subPath));
+  if (subPath) {
+    const root = path.join(repoDir, subPath);
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch (err) {
+      if (isMissingDir(err)) return { kind: "path-missing", subPath };
+      throw err;
+    }
+    const dirs = await skillDirsIn(repoDir, root, entries);
+    return dirs.length > 0
+      ? { kind: "found", dirs }
+      : { kind: "path-empty", subPath };
+  }
   const found: string[] = [];
   for (const root of SKILL_SOURCE_ROOTS) {
     found.push(...(await skillDirsUnder(repoDir, path.join(repoDir, root))));
   }
-  if (found.length > 0) return found;
-  return skillDirsUnder(repoDir, repoDir);
+  if (found.length > 0) return { kind: "found", dirs: found };
+  return { kind: "found", dirs: await skillDirsUnder(repoDir, repoDir) };
 }
 
 async function skillDirsUnder(
@@ -463,6 +499,14 @@ async function skillDirsUnder(
   } catch {
     return [];
   }
+  return skillDirsIn(repoDir, root, entries);
+}
+
+async function skillDirsIn(
+  repoDir: string,
+  root: string,
+  entries: import("node:fs").Dirent[],
+): Promise<string[]> {
   const out: string[] = [];
   for (const ent of entries) {
     if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
@@ -518,6 +562,12 @@ async function hashSkillDir(absDir: string): Promise<string> {
   return h.digest("hex");
 }
 
+function ignoreMissing(err: unknown): void {
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+}
+
+function leaveSidecar(): void {}
+
 async function assertNoSymlinks(root: string): Promise<void> {
   const stack = [root];
   while (stack.length > 0) {
@@ -567,36 +617,9 @@ function hasNullBytes(buf: Buffer): boolean {
 }
 
 async function runProc(cmd: string, args: string[]): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
-    const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
-      reject(
-        new Error(
-          `${cmd} ${args.join(" ")} timed out after ${COMMAND_TIMEOUT_MS}ms`,
-        ),
-      );
-    }, COMMAND_TIMEOUT_MS);
-    proc.stdout?.on("data", (c: Buffer) => stdoutChunks.push(c));
-    proc.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
-    proc.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve(Buffer.concat(stdoutChunks).toString("utf8"));
-        return;
-      }
-      const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
-      reject(
-        new Error(
-          `${cmd} ${args.join(" ")} exited ${code}${stderr ? `: ${stderr}` : ""}`,
-        ),
-      );
-    });
-  });
+  const command = [cmd, ...args];
+  const result = await runOnce({ command, timeoutMs: COMMAND_TIMEOUT_MS });
+  if (!result.ok)
+    throw new Error(describeFailure(command.join(" "), result.error));
+  return result.value.stdout;
 }

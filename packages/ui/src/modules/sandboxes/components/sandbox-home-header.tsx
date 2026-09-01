@@ -1,6 +1,5 @@
 import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,8 +15,10 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
+import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
+import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
@@ -35,6 +36,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
+  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
 
   const onStop = async () => {
     const schedules = await fetchSchedulesForAgent(agent.id);
@@ -42,52 +44,45 @@ export function SandboxHomeHeader({ agent, display }: Props) {
       schedules.length > 0 ? (
         <>
           {" "}
-          This sandbox has <strong>{schedules.length} schedule(s)</strong> — the
+          This agent has <strong>{schedules.length} schedule(s)</strong> — the
           next fire will start it again.
         </>
       ) : null;
     const msg = (
       <>
-        Stop sandbox <strong className="text-foreground">"{agent.name}"</strong>
-        ? It stays stopped until you start it.{scheduleNote}
+        Stop agent <strong className="text-foreground">"{agent.name}"</strong>?
+        It stays stopped until you start it.{scheduleNote}
       </>
     );
-    if (!(await showConfirm(msg, "Stop Sandbox"))) return;
+    if (!(await showConfirm(msg, "Stop Agent"))) return;
     suspend.stop(agent.id);
   };
 
   const onDelete = async () => {
     const msg = (
       <>
-        Delete sandbox{" "}
-        <strong className="text-foreground">"{agent.name}"</strong>? This will
-        also delete <strong>all persistent data</strong> and cannot be undone.
+        Delete agent <strong className="text-foreground">"{agent.name}"</strong>
+        ? This will also delete <strong>all persistent data</strong> and cannot
+        be undone.
       </>
     );
-    if (!(await showConfirm(msg, "Delete Sandbox", { kind: "destructive" })))
+    if (!(await showConfirm(msg, "Delete Agent", { kind: "destructive" })))
       return;
-    deleteAgent.mutate({ id: agent.id }, { onSuccess: () => setView("list") });
+    deleteAgent.mutate({ id: agent.id }, { onSuccess: () => setView("home") });
   };
 
   return (
     <PageHeader
       title={agent.name}
-      adornment={
-        <>
-          <StatusBadge state={display.state} />
-          {agent.templateUpdate && (
-            <Badge
-              variant="accent"
-              className="shrink-0"
-              title={`Template update available: ${agent.templateUpdate.toImage}`}
-            >
-              Update available
-            </Badge>
-          )}
-        </>
-      }
+      adornment={<StatusBadge state={display.state} />}
       actions={
         <>
+          <UpdateAvailableAction
+            agent={agent}
+            pending={updatingId === agent.id}
+            busy={updatingId !== null || updatingAll}
+            onUpdate={() => void updateOne(agent)}
+          />
           <Tooltip content="Open chat">
             <Button
               size="icon"
@@ -100,11 +95,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
           </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Sandbox actions"
-              >
+              <Button variant="outline" size="icon" aria-label="Agent actions">
                 <OverflowMenuVertical />
               </Button>
             </DropdownMenuTrigger>
@@ -137,7 +128,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
                 disabled={deleteAgent.isPending}
                 onSelect={() => void onDelete()}
               >
-                Delete Sandbox
+                Delete Agent
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

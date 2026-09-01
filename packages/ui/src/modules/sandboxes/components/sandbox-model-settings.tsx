@@ -6,6 +6,10 @@ import {
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
 import { ModelSettingsPanel } from "../../sessions/components/model-settings-panel.js";
+import {
+  OptionField,
+  ReadOnlyOptionFace,
+} from "../../sessions/components/option-field.js";
 import type { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
 import { useOperableState, WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
@@ -27,14 +31,14 @@ export function SandboxModelSettings({
   if (!operable && !hasRun) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        This sandbox hasn&rsquo;t run yet — its model settings are resolved
-        inside the sandbox, so there&rsquo;s nothing recorded to show. Start it
-        once and this page fills in.
+        This agent hasn&rsquo;t run yet — its model settings are resolved when
+        it starts, so there&rsquo;s nothing recorded to show. Start it once and
+        this page fills in.
       </Fallback>
     );
   }
 
-  if (!operable && (!hasCatalog || origin === "none")) {
+  if (!operable && !hasCatalog) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
         Start the agent to load and edit its model settings.
@@ -42,10 +46,22 @@ export function SandboxModelSettings({
     );
   }
 
+  if (!operable && origin === "none") {
+    return (
+      <Section agentId={agentId} comingUp={comingUp}>
+        {status?.catalog?.options.map((group) => (
+          <OptionField key={group.id} title={group.name}>
+            <ReadOnlyOptionFace label="Unknown" hint="Start agent to view" />
+          </OptionField>
+        ))}
+      </Section>
+    );
+  }
+
   if (operable && !hasCatalog && status?.supported === true) {
     return (
       <Fallback agentId={agentId} comingUp={comingUp}>
-        Waiting for the sandbox to report which model settings it offers.
+        Waiting for the agent to report which model settings it offers.
       </Fallback>
     );
   }
@@ -90,7 +106,7 @@ function ModelSettingsSkeleton() {
   );
 }
 
-function Fallback({
+function Section({
   agentId,
   comingUp,
   children,
@@ -105,9 +121,23 @@ function Fallback({
         <SectionLabel>Model settings</SectionLabel>
         <WakeToEditButton agentId={agentId} comingUp={comingUp} />
       </div>
-      <Callout inset>
-        <p className="text-sm text-muted-foreground">{children}</p>
-      </Callout>
+      <Callout inset>{children}</Callout>
     </section>
+  );
+}
+
+function Fallback({
+  agentId,
+  comingUp,
+  children,
+}: {
+  agentId: string;
+  comingUp: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Section agentId={agentId} comingUp={comingUp}>
+      <p className="text-sm text-muted-foreground">{children}</p>
+    </Section>
   );
 }

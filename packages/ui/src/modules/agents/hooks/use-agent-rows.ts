@@ -17,6 +17,7 @@ import {
   useSyncRestartingAgents,
 } from "./use-restart-agent.js";
 import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
+import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
 
 const NO_TEMPLATES: TemplateView[] = [];
@@ -36,6 +37,7 @@ export function useAgentRows() {
   const suspend = useSuspendAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
+  const update = useUpdateSandbox();
 
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -76,6 +78,9 @@ export function useAgentRows() {
     }),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
+    updatePending: update.updatingId === agent.id,
+    updateBusy: update.updatingId !== null || update.updatingAll,
+    onUpdate: () => void update.updateOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
     onPause: () => suspend.pause(agent.id),
@@ -88,5 +93,6 @@ export function useAgentRows() {
     rowProps,
     deleteAgent,
     suspend,
+    update,
   };
 }

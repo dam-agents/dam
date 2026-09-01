@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import type {
-  EgressPreset,
-  EgressRuleCreateInput,
-  EgressRuleUpdateInput,
-  EgressRuleView,
-  EgressRulesService,
+import {
+  promotedHosts,
+  type EgressPreset,
+  type EgressRuleCreateInput,
+  type EgressRuleUpdateInput,
+  type EgressRuleView,
+  type EgressRulesService,
 } from "api-server-api";
 import type { EgressRulesRepository } from "../infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../domain/types.js";
-import { promotedHosts } from "../domain/l7-promotion.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -52,6 +52,28 @@ export function createEgressRulesService(
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) return [];
       const rows = await deps.repo.listForAgent(agentId);
       return rows.map(toView);
+    },
+
+    async get(id) {
+      const rule = await deps.repo.getById(id);
+      if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
+        if (rule) {
+          securityLog("warn", "authz.owner_mismatch", {
+            category: "authz",
+            actor: deps.ownerSub,
+            actorKind: "user",
+            agentId: rule.agentId,
+            decision: "deny",
+            reason: "not-owner",
+            detail: { surface: "egress-rule.get", ruleId: id },
+          });
+        }
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "egress rule not found",
+        });
+      }
+      return toView(rule);
     },
 
     async currentPreset(agentId) {

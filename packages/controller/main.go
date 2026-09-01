@@ -9,6 +9,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
@@ -155,7 +156,10 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
-		UpdateFunc: func(_, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if !resourceVersionChanged(oldObj, newObj) {
+				return
+			}
 			enqueueObjectName(newObj, agentQueue)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -169,7 +173,10 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		AddFunc: func(obj interface{}) {
 			enqueuePodOwner(obj, agentQueue)
 		},
-		UpdateFunc: func(_, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if !resourceVersionChanged(oldObj, newObj) {
+				return
+			}
 			enqueuePodOwner(newObj, agentQueue)
 		},
 		DeleteFunc: func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
@@ -182,6 +189,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		return
 	}
 	slog.Info("informer caches synced")
+
+	go runDriftSweep(ctx, agentInformer.Informer().GetStore(), agentQueue, 5*time.Minute)
+	go runParkedRetry(ctx, agentReconciler, agentQueue, 30*time.Second)
 
 	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
 }
@@ -229,6 +239,59 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 func enqueueObjectName(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
 	if u := unstructuredFrom(obj); u != nil {
 		queue.Add(u.GetName())
+	}
+}
+
+func resourceVersionChanged(oldObj, newObj interface{}) bool {
+	oldMeta, err := meta.Accessor(oldObj)
+	if err != nil {
+		return true
+	}
+	newMeta, err := meta.Accessor(newObj)
+	if err != nil {
+		return true
+	}
+	return oldMeta.GetResourceVersion() != newMeta.GetResourceVersion()
+}
+
+func enqueueStoreObjects(store cache.Store, queue workqueue.TypedRateLimitingInterface[string]) int {
+	items := store.List()
+	for _, obj := range items {
+		enqueueObjectName(obj, queue)
+	}
+	return len(items)
+}
+
+func runParkedRetry(ctx context.Context, r *reconciler.AgentReconciler, queue workqueue.TypedRateLimitingInterface[string], interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			parked := r.ParkedForRetry()
+			for _, name := range parked {
+				queue.Add(name)
+			}
+			if len(parked) > 0 {
+				slog.DebugContext(ctx, "parked-retry re-enqueued agents", "count", len(parked))
+			}
+		}
+	}
+}
+
+func runDriftSweep(ctx context.Context, store cache.Store, queue workqueue.TypedRateLimitingInterface[string], interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			n := enqueueStoreObjects(store, queue)
+			slog.DebugContext(ctx, "drift sweep enqueued agents", "count", n)
+		}
 	}
 }
 

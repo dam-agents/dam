@@ -10,9 +10,9 @@ import { Select } from "@/components/ui/select";
 import type { AgentView } from "../../../types.js";
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
-import { generateSandboxName } from "../../sandboxes/lib/sandbox-name.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
+import { usePrefilledSandboxName } from "../hooks/use-default-sandbox-name.js";
 import {
   buildCreateAgentInput,
   type CreateAgentDraft,
@@ -26,9 +26,10 @@ interface Props {
 export function CreateAgentInline({ onCreated }: Props) {
   const { data: templates = [], isLoading } = useTemplates();
   const createAgent = useCreateAgent();
-  const [name, setName] = useState(generateSandboxName);
+  const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [providerRef, setProviderRef] = useState<ProviderRef | null>(null);
+  usePrefilledSandboxName("coding-agent", name, setName);
 
   const selectedTemplateId =
     templateId ??
@@ -82,6 +83,7 @@ export function CreateAgentInline({ onCreated }: Props) {
           selected={providerRef}
           onSelect={setProviderRef}
           autoSelectFirst
+          required
         />
       </div>
 

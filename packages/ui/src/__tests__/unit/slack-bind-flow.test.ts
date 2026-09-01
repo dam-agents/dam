@@ -26,8 +26,10 @@ describe("slack bind flow helpers", () => {
 
   it("maps bind mutation error codes to brand-aware copy", () => {
     expect(bindErrorCopy("BAD_REQUEST", BRAND).terminal).toBe(true);
-    expect(bindErrorCopy("CONFLICT", BRAND).terminal).toBe(true);
-    expect(bindErrorCopy("CONFLICT", BRAND).hint).toContain(`/${BRAND} unbind`);
+    expect(bindErrorCopy("CONFLICT", BRAND).terminal).toBe(false);
+    expect(bindErrorCopy("CONFLICT", BRAND).hint).toContain(
+      "Pick a different agent",
+    );
     expect(bindErrorCopy("NOT_FOUND", BRAND).terminal).toBe(false);
     expect(bindErrorCopy(undefined, BRAND).terminal).toBe(false);
   });

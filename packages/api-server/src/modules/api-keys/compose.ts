@@ -26,7 +26,10 @@ export function composeApiKeysModule(deps: {
 }): {
   validator: ApiKeyValidator;
   verifyOwnerActive: (sub: string) => Promise<boolean>;
-  createService: (perRequest: { ownerSub: string }) => ApiKeysService;
+  createService: (perRequest: {
+    ownerSub: string;
+    surface: string;
+  }) => ApiKeysService;
 } {
   const { db, hmacKey, isAgentOwnedBy } = deps;
   const codec = createApiKeyTokenCodec(hmacKey);
@@ -45,9 +48,10 @@ export function composeApiKeysModule(deps: {
     verifyOwnerActive: createOwnerActiveProbe({
       directory: deps.ownerDirectory,
     }),
-    createService: ({ ownerSub }) =>
+    createService: ({ ownerSub, surface }) =>
       createApiKeysService({
         ownerSub,
+        surface,
         list,
         insert,
         revoke,

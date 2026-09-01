@@ -52,9 +52,9 @@ export function bindErrorCopy(
       };
     case "CONFLICT":
       return {
-        title: "This channel is already connected to an agent",
-        hint: `Run \`/${brandShort} unbind\` in the channel first, then \`/${brandShort} bind\` again.`,
-        terminal: true,
+        title: "That agent is already connected to this channel",
+        hint: "Pick a different agent — a channel can hold several, but each only once.",
+        terminal: false,
       };
     case "NOT_FOUND":
       return {

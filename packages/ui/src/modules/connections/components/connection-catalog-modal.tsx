@@ -92,7 +92,7 @@ export function ConnectionCatalogModal({
     emitToast({
       kind: "success",
       message: sandbox
-        ? "Connection added to this sandbox."
+        ? "Connection added to this agent."
         : "Connection created.",
     });
     onClose();
@@ -117,7 +117,7 @@ export function ConnectionCatalogModal({
     <Modal widthClass="w-[860px] max-w-full h-[85vh]">
       <DialogHeader
         title="Connection catalogue"
-        subtitle="Manage and create new connections your sandboxes can use"
+        subtitle="Manage and create new connections your agents can use"
         onClose={onClose}
         closeTestId="catalog-close"
       />

@@ -9,6 +9,7 @@ import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type {
   AuthRequiredError,
+  RuleLookupUnsupportedError,
   RuleNotFoundError,
   TransportError,
 } from "../domain/errors.js";
@@ -18,6 +19,17 @@ export interface EgressService {
     agentId: string,
   ): Promise<
     Result<readonly EgressRuleView[], TransportError | AuthRequiredError>
+  >;
+  get(
+    id: string,
+  ): Promise<
+    Result<
+      EgressRuleView,
+      | TransportError
+      | AuthRequiredError
+      | RuleNotFoundError
+      | RuleLookupUnsupportedError
+    >
   >;
   currentPreset(
     agentId: string,
@@ -49,6 +61,20 @@ export function createEgressService(deps: { trpc: TrpcClient }): EgressService {
       return trpcCall(() =>
         deps.trpc.egressRules.listForAgent.query({ agentId }),
       );
+    },
+    async get(id) {
+      try {
+        const view = await deps.trpc.egressRules.get.query({ id });
+        return ok(view);
+      } catch (e) {
+        if ((e as { data?: { code?: string } })?.data?.code === "NOT_FOUND") {
+          const reason = e instanceof Error ? e.message : String(e);
+          return /egress rule not found/i.test(reason)
+            ? err({ kind: "rule-not-found", id })
+            : err({ kind: "rule-lookup-unsupported", reason });
+        }
+        return classifyTrpcError(e);
+      }
     },
     async currentPreset(agentId) {
       return trpcCall(() =>

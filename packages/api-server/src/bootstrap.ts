@@ -7,6 +7,7 @@ import {
 } from "./modules/agents/infrastructure/labels.js";
 import {
   composeAgentsModule,
+  composePublicAgentPage,
   createAgentsRepository,
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
@@ -14,10 +15,11 @@ import {
   startChannelCleanupSaga,
   deleteChannelsByAgent,
   listChannelsByOwner,
-  findBySlackChannelId,
+  findSlackBindingsByChannelId,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelDefault,
   createAgentSweep,
 } from "./modules/agents/index.js";
 import {
@@ -34,6 +36,8 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
+import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
+import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
@@ -63,7 +67,7 @@ import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
-import { createHarnessConfigSnapshotRepo } from "./modules/harness-config/index.js";
+import { createHarnessConfigSnapshotWriter } from "./modules/harness-config/index.js";
 import { composeSchedulesAtBoot } from "./modules/schedules/index.js";
 import {
   createKubernetesSecretStore,
@@ -73,10 +77,16 @@ import { composeUsageModule } from "./modules/usage/compose.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
 import { composeMetricsReader } from "./modules/metrics/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
+import { composeLiveEventsModule } from "./modules/live-events/index.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
+import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
+import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
+import { metrics } from "@opentelemetry/api";
+import { createTurnMetrics } from "./core/turn-metrics.js";
+import { startTurnMetricsSaga } from "./sagas/turn-metrics.js";
 import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
@@ -139,6 +149,11 @@ import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
 import { createLeaderLease } from "./core/leader-lease.js";
+import {
+  startAgentStateCache,
+  createLiveAgentStateCache,
+} from "./modules/agents/infrastructure/agent-state-cache.js";
+import { createAgentInformer } from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -159,6 +174,7 @@ export async function bootstrap() {
   };
   await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
   const { db, sql } = createDb(config.databaseUrl, dbTls);
+  reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
@@ -207,7 +223,17 @@ export async function bootstrap() {
   });
 
   const k8sClient = createK8sClient(api, config.namespace);
-  const agentsRepo = createAgentsRepository(k8sClient);
+  const agentStateCache = startAgentStateCache({
+    informer: createAgentInformer(config.namespace),
+    live: k8sClient,
+    namespace: config.namespace,
+    log: (m) => getLogger().warn(`[agents] ${m}`),
+  });
+  const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  const liveAgentsRepo = createAgentsRepository(
+    k8sClient,
+    createLiveAgentStateCache(k8sClient),
+  );
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -254,7 +280,7 @@ export async function bootstrap() {
       uiBaseUrl: config.uiBaseUrl,
     }),
   );
-  const sessionPresence = createSessionPresence(agentsRepo, sharedRedis);
+  const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
     sessionPresence.reconcile(),
   );
@@ -274,6 +300,9 @@ export async function bootstrap() {
     },
   );
 
+  const resolveAgentOwner = async (agentId: string) =>
+    (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
+
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
@@ -281,17 +310,20 @@ export async function bootstrap() {
     agentRunningPort: {
       isRunning: (agentId) => agentsRepo.isReady(agentId),
     },
-    snapshotWriter: createHarnessConfigSnapshotRepo(db),
+    snapshotWriter: createHarnessConfigSnapshotWriter({
+      db,
+      resolveOwner: resolveAgentOwner,
+    }),
     harnessServerUrl: config.harnessServerUrl,
+    resolveOwner: resolveAgentOwner,
   });
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
   );
-  const contributionsSettledPort = {
+  const contributionsProgressPort = {
     status: runtimeDelivery.contributionsStatus,
     statusMany: runtimeDelivery.contributionsStatusMany,
-    isSettled: async (agentId: string) =>
-      (await runtimeDelivery.contributionsStatus(agentId)).settled,
+    progress: runtimeDelivery.contributionsProgress,
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
@@ -389,8 +421,31 @@ export async function bootstrap() {
     deleteChannelsByAgent(db),
     deleteConversationsByAgent(db),
   );
+  const publicAgentPage = composePublicAgentPage({
+    db,
+    repo: agentsRepo,
+    userDirectory,
+    log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
+  });
+  const publicAgentProfileSub = publicAgentPage.startSaga();
+  const publicAgentPageService = publicAgentPage.service;
+  await periodicJobs.register(
+    "public-agent-profile-reconcile",
+    60 * 60_000,
+    async () => {
+      const { deleted, failed } =
+        await publicAgentPage.reconcileService.reconcile();
+      if (deleted > 0 || failed > 0)
+        getLogger().info(
+          `[public-agent-profile] marked ${deleted} profile(s) deleted, ${failed} failed`,
+        );
+    },
+  );
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
+  );
+  const turnMetricsSub = startTurnMetricsSaga(
+    createTurnMetrics(metrics.getMeter("platform-apiserver")),
   );
   const seedSources = parseSeedSources(config.skillSourcesSeed);
 
@@ -414,8 +469,26 @@ export async function bootstrap() {
   const audit = composeAuditModule();
   audit.start();
 
+  const liveEventsModule = composeLiveEventsModule({
+    bus: redisBus,
+    log: (m) => getLogger().warn(`[live-events] ${m}`),
+    k8s: k8sClient,
+    namespace: config.namespace,
+    agentsRepo,
+    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
+  });
+  liveEventsModule.start();
+  const agentWatchLease = createLeaderLease({
+    redis: sharedRedis,
+    name: "live-events-agent-watch",
+    onAcquired: () => liveEventsModule.startAgentWatch(),
+    onLost: () => liveEventsModule.stopAgentWatch(),
+    log: (m) => getLogger().info(`[live-events] ${m}`),
+  });
+
   const { agents: systemAgents } = composeAgentsModule({
     api,
+    agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
@@ -426,7 +499,7 @@ export async function bootstrap() {
     db,
     readTemplateSpec: async () => null,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    contributionsSettled: contributionsSettledPort,
+    contributionsProgress: contributionsProgressPort,
   });
 
   const identityLinkService = createIdentityLinkService({
@@ -470,14 +543,14 @@ export async function bootstrap() {
     : undefined;
 
   const channelRegistry: ChannelRegistry = {
-    resolveSlackBinding: async (slackChannelId) => {
-      const row = await findBySlackChannelId(db)(slackChannelId);
-      if (!row) return null;
-      return {
+    resolveSlackBindings: async (slackChannelId) => {
+      const rows = await findSlackBindingsByChannelId(db)(slackChannelId);
+      return rows.map((row) => ({
         instanceName: row.agentId,
         owner: row.owner,
-        ...(row.ambient ? { ambient: true } : {}),
-      };
+        ambient: row.ambient,
+        isDefault: row.isDefault,
+      }));
     },
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
@@ -524,10 +597,17 @@ export async function bootstrap() {
         channelRegistry,
         deleteSlackChannelBinding(db),
         setSlackChannelAmbient(db),
+        setSlackChannelDefault(db),
         { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
         config.uiBaseUrl,
         turnAttendance,
+        (agentId) =>
+          createAgentWorkspaceFiles(
+            `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
+          ),
+        undefined,
+        DEFAULT_SETTLE_MS,
       )
     : undefined;
 
@@ -558,6 +638,7 @@ export async function bootstrap() {
           brandShort: config.brand.short,
           brandName: config.brand.name,
           attendance: turnAttendance,
+          settleMs: DEFAULT_SETTLE_MS,
         })
       : undefined;
 
@@ -606,6 +687,7 @@ export async function bootstrap() {
     relay: approvalsRelay,
     gate: extAuthzGate,
     sweeper: deliverySweeper,
+    wakeSaga: approvalsWakeSaga,
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
@@ -714,8 +796,10 @@ export async function bootstrap() {
         db,
         artifacts,
         owner,
+        surface: "system",
         shareBaseUrl: config.shareBaseUrl,
       }).artifactLibrary,
+    agentsFor: (owner) => harnessAgentsServiceFor(owner),
   });
   await periodicJobs.register(
     "experiment-inactivity-sweep",
@@ -788,6 +872,7 @@ export async function bootstrap() {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
       api,
+      agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       virtualizationEnabled: config.virtualizationEnabled,
@@ -801,7 +886,7 @@ export async function bootstrap() {
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
-      contributionsSettled: contributionsSettledPort,
+      contributionsProgress: contributionsProgressPort,
       grantProvisioner: {
         resolveSpecGrants(sel) {
           return Promise.resolve({
@@ -819,7 +904,15 @@ export async function bootstrap() {
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
     agentsFor: harnessAgentsServiceFor,
-    k8s: k8sClient,
+    readTargetRestart: async (agentId) => {
+      const agent = await agentsRepo.get(agentId);
+      return agent
+        ? {
+            podRestarts: agent.podRestarts,
+            podRestartReason: agent.podRestartReason,
+          }
+        : null;
+    },
     batchSize: 200,
   });
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
@@ -827,12 +920,13 @@ export async function bootstrap() {
   );
 
   const agentSweep = createAgentSweep({
-    listAgents: () => agentsRepo.list(),
+    listAgents: () => liveAgentsRepo.list(),
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
   const apiServerDeps: ApiServerDeps = {
+    agentStateCache,
     periodicJobs,
     sharedRedis,
     config,
@@ -853,7 +947,7 @@ export async function bootstrap() {
     agentCleanupHooks,
     secretStores,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    contributionsSettled: contributionsSettledPort,
+    contributionsProgress: contributionsProgressPort,
     getAgentCapabilities: (agentId) =>
       runtimeDelivery.agentsRuntimeRepo
         .get(agentId)
@@ -866,6 +960,8 @@ export async function bootstrap() {
     isTermsAccepted,
     e2e: e2eService,
     artifacts,
+    liveEvents: liveEventsModule.liveEvents,
+    podSessions: liveEventsModule.podSessions,
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -878,9 +974,11 @@ export async function bootstrap() {
     surfaceAttribution,
     slackOauthCallbackUrl,
     shareHostGate,
+    publicAgentPageService,
     sessionPresence,
   };
   const harnessDeps = {
+    agentStateCache,
     config,
     api,
     db,
@@ -889,7 +987,7 @@ export async function bootstrap() {
     runtimeHello: runtimeDelivery.hello,
     schedulesBoot,
     runtimeMutator: runtimeDelivery.runtimeMutator,
-    runtimeSettled: contributionsSettledPort,
+    runtimeProgress: contributionsProgressPort,
     artifacts,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
@@ -904,12 +1002,19 @@ export async function bootstrap() {
 
   void telegramWorker?.resolveIdentity();
   void channelLease.start();
+  void agentWatchLease.start();
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
+    publicAgentProfileSub.unsubscribe();
+    turnMetricsSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
+    approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
+    await agentStateCache.stop();
+    await agentWatchLease.stop();
+    liveEventsModule.stop();
     await periodicJobs.close();
     await channelLease.stop();
     channelRpc.close();

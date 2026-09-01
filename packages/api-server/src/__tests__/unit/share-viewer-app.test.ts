@@ -98,11 +98,7 @@ describe("share viewer app", () => {
     const expiredApp = appWith(
       fakeViewer({
         resolveArtifact: () =>
-          Promise.resolve({
-            state: "expired",
-            withinGrace: true,
-            expiredAt: new Date(),
-          }),
+          Promise.resolve({ state: "expired", withinGrace: true }),
       }),
     );
     expect((await expiredApp.request("/a/slug-a")).status).toBe(410);

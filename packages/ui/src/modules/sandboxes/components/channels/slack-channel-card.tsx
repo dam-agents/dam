@@ -1,6 +1,7 @@
 import { Add, OverflowMenuHorizontal } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { getBrand } from "../../../../brand.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDisconnectSlack } from "../../../agents/api/mutations.js";
@@ -40,7 +42,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         ) : (
           <p className="text-sm text-muted-foreground">
             No channels connected yet. Mentions of the bot in a connected
-            channel drive this sandbox.
+            channel drive this agent.
           </p>
         )}
         <Button
@@ -77,10 +79,23 @@ function SlackChannelRow({
   const showConfirm = useStore((s) => s.showConfirm);
   const disconnectSlack = useDisconnectSlack();
 
+  const brandShort = getBrand().short;
+
   const handleDisconnect = async () => {
     if (
       await showConfirm(
-        `Mentions in ${channel.slackChannelId} will stop reaching this sandbox.`,
+        <p>
+          Mentions in <strong>{channel.slackChannelId}</strong> will stop
+          reaching this agent.
+          {channel.default ? (
+            <>
+              {" "}
+              It is that channel&apos;s default agent, so mentions with no agent
+              name will reach no one until an agent&apos;s owner runs{" "}
+              <code>/{brandShort} default &lt;agent&gt;</code> in Slack.
+            </>
+          ) : null}
+        </p>,
         "Disconnect Slack channel?",
         { kind: "destructive", confirmLabel: "Disconnect" },
       )
@@ -94,9 +109,16 @@ function SlackChannelRow({
   return (
     <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] text-foreground">
-          {channel.slackChannelId}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="truncate text-[15px] text-foreground">
+            {channel.slackChannelId}
+          </p>
+          {channel.default && (
+            <Badge variant="muted" className="shrink-0">
+              Default
+            </Badge>
+          )}
+        </div>
         <p className="truncate text-sm text-muted-foreground">
           {channel.ambient ? "Ambient on" : "Ambient off"}
         </p>

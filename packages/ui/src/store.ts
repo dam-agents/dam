@@ -11,6 +11,10 @@ import {
 } from "./modules/experiments/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import {
+  createDismissalsSlice,
+  type DismissalsSlice,
+} from "./modules/home/store.js";
+import {
   createDialogSlice,
   type DialogSlice,
 } from "./modules/platform/store/dialog.js";
@@ -19,9 +23,18 @@ import {
   type NavigationSlice,
 } from "./modules/platform/store/navigation.js";
 import {
+  createSidebarSlice,
+  type SidebarSlice,
+} from "./modules/platform/store/sidebar.js";
+import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
+import {
+  claimDraftsFor,
+  flushDraftsOnHide,
+  onForeignDraftChange,
+} from "./modules/sessions/lib/draft-snapshot.js";
 import {
   createPermissionsSlice,
   type PermissionsSlice,
@@ -42,21 +55,37 @@ export type { SessionError } from "./modules/sessions/store/sessions.js";
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
+  SidebarSlice &
   AgentsSlice &
   SessionsSlice &
   ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
+  DismissalsSlice &
   PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
+  ...createSidebarSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
+  ...createDismissalsSlice(...a),
   ...createPermissionsSlice(...a),
 }));
+
+let draftSyncStarted = false;
+
+export function startDraftSync(ownerId: string): void {
+  if (draftSyncStarted) return;
+  draftSyncStarted = true;
+  if (claimDraftsFor(ownerId)) useStore.setState({ drafts: {} });
+  onForeignDraftChange((key, draft) =>
+    useStore.getState().applyForeignDraft(key, draft),
+  );
+  flushDraftsOnHide();
+}

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-07-29
+Last verified: 2026-08-24
 
 ## Overview
 
@@ -66,7 +66,7 @@ The CLI is at parity with the web UI across these groups. Each concept's depth l
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
-- **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL inbox of prompts that did appear. Both owned by [security-and-credentials.md](security-and-credentials.md).
+- **`network`** — per-agent egress pre-approval rules; **`approval`** — the HITL queue of prompts that did appear. Both owned by [security-and-credentials.md](security-and-credentials.md).
 - **`connection`** — stored credentials and MCP contributions an agent uses, owned by [connections.md](connections.md).
 - **`channel`** — Slack channel bindings, owned by [channels.md](channels.md). Slack connect binds a channel (optionally ambient-on); the channel listing shows each binding's ambient state. An ambient connect against a server that doesn't understand ambient fails loud rather than silently landing mentions-only. Telegram binds in-chat (`/platform bind`), so it has no CLI verb.
 - **`skill`** — git-based skill sources, install/uninstall, and publish, owned by [skills.md](skills.md).

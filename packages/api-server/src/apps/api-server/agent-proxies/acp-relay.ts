@@ -6,8 +6,10 @@ import type { AgentsRepository } from "../../../modules/agents/infrastructure/ag
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { LAST_ACTIVITY_KEY } from "../../../modules/agents/infrastructure/labels.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
-import type { SessionPresence } from "./session-presence.js";
 import { acpNativeRowId } from "../../../modules/approvals/domain/ids.js";
+import type { SessionPresence } from "./session-presence.js";
+import type { RelayActor } from "./upgrade.js";
+import { emit, EventType } from "../../../events.js";
 
 const DEBOUNCE_MS = 30_000;
 
@@ -19,6 +21,7 @@ interface JsonRpcRequest {
     sessionId?: string;
     options?: { optionId: string; kind?: string }[];
     toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown };
+    _meta?: { platform?: { initiator?: string } };
   };
 }
 
@@ -47,6 +50,15 @@ function isRequest(msg: unknown): msg is JsonRpcRequest {
 
 function isPermissionRequest(msg: unknown): msg is JsonRpcRequest {
   return isRequest(msg) && msg.method === "session/request_permission";
+}
+
+function isPrompt(msg: unknown): msg is JsonRpcRequest {
+  return isRequest(msg) && msg.method === "session/prompt";
+}
+
+function hasPermissionOutcome(msg: JsonRpcResponse): boolean {
+  const result = msg.result as { outcome?: { outcome?: unknown } } | undefined;
+  return typeof result?.outcome?.outcome === "string";
 }
 
 function isResponse(msg: unknown): msg is JsonRpcResponse {
@@ -112,6 +124,7 @@ export function createAcpRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
@@ -127,10 +140,15 @@ export function createAcpRelay(
 
       let identity: { ownerSub: string; agentId: string } | null = null;
 
+      const mirroredRows = new Map<string, string>();
+
       const unsubInjects = approvals.subscribeFrameInjects(agentId, (frame) => {
         if (client.readyState === WebSocket.OPEN) client.send(frame);
       });
-      client.once("close", () => unsubInjects());
+      client.once("close", () => {
+        unsubInjects();
+        mirroredRows.clear();
+      });
 
       function mirrorPermissionRequest(msg: JsonRpcRequest): void {
         const sessionId = msg.params?.sessionId;
@@ -146,6 +164,11 @@ export function createAcpRelay(
             | "reject_always"
             | undefined,
         }));
+        const key = String(msg.id);
+        mirroredRows.set(
+          key,
+          acpNativeRowId(identity.agentId, sessionId, msg.id),
+        );
         approvals
           .recordAcpNativePending({
             agentId: identity.agentId,
@@ -156,12 +179,35 @@ export function createAcpRelay(
             args: tc.rawInput,
             options,
           })
-          .catch(() => {});
+          .then((recorded) => {
+            if (!recorded) mirroredRows.delete(key);
+          })
+          .catch(() => mirroredRows.delete(key));
+      }
+
+      function trackIfPrompt(parsed: unknown): void {
+        if (!isPrompt(parsed)) return;
+        if (
+          actor.surface === "ui" &&
+          parsed.params?._meta?.platform?.initiator === "system"
+        )
+          return;
+        emit({
+          type: EventType.SessionTurnRelayed,
+          agentId,
+          actorSub: actor.sub,
+          surface: actor.surface,
+        });
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
-        const rowId = acpNativeRowId(agentId, msg.id);
-        approvals.resolveAcpNativeFromInSession(rowId).catch(() => {});
+        const key = String(msg.id);
+        const rowId = mirroredRows.get(key);
+        if (!rowId || !hasPermissionOutcome(msg)) return;
+        approvals
+          .resolveAcpNativeFromInSession(rowId)
+          .then(() => mirroredRows.delete(key))
+          .catch(() => {});
       }
 
       const release = passive ? () => {} : presence.acquire(agentId);
@@ -209,6 +255,7 @@ export function createAcpRelay(
           }
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
+              if (!msg.isBinary) trackIfPrompt(tryParse(msg.data));
               upstream.send(msg.data, { binary: msg.isBinary });
             }
           }
@@ -217,6 +264,9 @@ export function createAcpRelay(
           client.removeAllListeners("message");
           client.on("message", (data, isBinary) => {
             if (upstream.readyState !== WebSocket.OPEN) return;
+
+            const parsed = isBinary ? null : tryParse(data);
+            if (parsed !== null) trackIfPrompt(parsed);
 
             if (!passive && shouldUpdateActivity(agentId)) {
               repo
@@ -232,8 +282,6 @@ export function createAcpRelay(
               upstream.send(data, { binary: true });
               return;
             }
-
-            const parsed = tryParse(data);
 
             upstream.send(data, { binary: false });
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);

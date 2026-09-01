@@ -17,6 +17,10 @@ brand:
   # per-environment variant here (e.g. "IBM Research DAM - Staging"). Empty
   # string falls back to `name`.
   title: "IBM Research DAM"
+  # Organisation that runs this install. The Public Agent Page uses it to tell
+  # a visitor arriving from Slack that the platform is open to them. Empty
+  # string drops that sentence.
+  vendor: "IBM Research"
   # UI theme — applied at runtime as CSS custom properties so a brand
   # change requires no UI rebuild.
   theme:
@@ -46,6 +50,14 @@ terms:
   # Free-form re-prompt trigger (e.g. "2026-05-25", "v1"). Operator
   # judgment — whitespace edits don't bump this.
   version: ""
+
+# -- Outbound links surfaced in the UI, changeable per install without a
+# rebuild (the api-server serves them over `links.all`).
+links:
+  # Where "Request more" next to the compute meter points — a chat channel,
+  # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
+  # default.
+  computeRequest: ""
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -172,9 +184,14 @@ postgres:
   podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
 
-  # -- Three Postgres roles: one per service plus a dedicated SUPERUSER for
-  # DBA work. The two app roles are NOSUPERUSER and own only their own
+  # -- Three Postgres login roles: one per service plus a dedicated SUPERUSER
+  # for DBA work. The two app roles are NOSUPERUSER and own only their own
   # database, so a leaked app credential is bounded to one service's data.
+  # A fourth role, `usage_readers`, is a credential-less NOLOGIN group: it
+  # holds SELECT on the usage_src_* source passthrough views and grants
+  # nobody anything until an operator adds a member. The api-server
+  # reconciles those grants after every migration run, naming this role, so
+  # the name is fixed rather than configurable.
   # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
   # DBA sessions are statement-logged by default. Passwords are
   # auto-generated on first install if left null.
@@ -280,13 +297,16 @@ seaweedfs:
   secretAccessKey: null
   storage: 10Gi
   storageClass: ""
+  # Measured at 283Mi idle on a store holding little content, so the old 128Mi
+  # request under-accounted it by more than half and left it high on the
+  # kubelet's eviction order. The footprint grows with what the library holds.
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 320Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 1Gi
 
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
 # chart installed out-of-band first (deploy/tasks.toml). See docs/architecture/observability.md.
@@ -304,13 +324,18 @@ clickstack:
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
     ttl: 720h
+    # The memory_limiter processor refuses OTLP ingest above its soft limit,
+    # which upstream defines as limit_percentage minus spike_limit_percentage
+    # of this limit — 55% with the values in templates/clickstack/collector.yaml.
+    # At 512Mi that put refusal at 281Mi with the collector idling at 387Mi,
+    # which is how it accumulated 99 SIGKILLs. At 1Gi the soft limit is 563Mi.
     resources:
       requests:
         cpu: 100m
-        memory: 256Mi
+        memory: 448Mi
       limits:
         cpu: "1"
-        memory: 512Mi
+        memory: 1Gi
 
   # --- forwarded to the clickstack subchart ---
   # Third-party images pinned to the quay.io/dam-agents mirror (mirror these by hand):
@@ -500,13 +525,18 @@ keycloak:
     # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
     caCert: ""
 
+  # Idles at 623Mi, above the old 512Mi request, which put it high on the
+  # kubelet's eviction order. No explicit heap size is set, so the JVM sizes
+  # its heap as a percentage of the limit and non-heap has to fit in what is
+  # left — at a 1Gi limit a filled heap leaves too little for metaspace,
+  # threads and code cache.
   resources:
     requests:
       cpu: 200m
-      memory: 512Mi
+      memory: 768Mi
     limits:
       cpu: "1"
-      memory: 1Gi
+      memory: 1536Mi
 
 # -- Ingress (hostnames derived from `domain` and `urls` values above)
 #
@@ -803,13 +833,17 @@ apiServer:
     # -- Path-style addressing, needed by SeaweedFS and most self-hosted
     # stores. Set false for AWS S3.
     forcePathStyle: true
+  # Every session stream, agent status poll and driver request funnels through
+  # this one pod, so it is sized as a control plane and not as a chat backend.
+  # Half a core let the event loop miss its health probe under load, and the
+  # kubelet restart took every in-flight request with it.
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
+      cpu: "500m"
       memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
 
 # -- Controller (Go reconciler + scheduler)
 controller:
@@ -834,8 +868,7 @@ controller:
   #                           can override (template wins when set).
   #   3. agentTemplates.*   — per-template values (further down).
   # Use the literal string `$HOME` in mount paths; the chart substitutes
-  # it at render time with the template's `agentHome` if set, else
-  # `templateDefaults.agentHome`.
+  # it at render time with the fixed agent home (/home/agent).
   agent:
     base:
       # Cluster details (immutable per-agent)
@@ -930,13 +963,8 @@ controller:
       # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     templateDefaults:
-      # HOME inside agent containers — set as the `HOME` env var and used at
-      # chart render time to substitute any literal `$HOME` in mount paths.
-      # Per-template `agentTemplates[i].agentHome` overrides
-      # this for that template's agents. Must match the image's user
-      # HOME or pod-files materialization breaks silently. Also plumbed to
-      # api-server for pod-files producers (currently one global value).
-      agentHome: /home/agent
+      # (agentHome is retired: the agent home is fixed at /home/agent; a value
+      # still set here is ignored with a startup warning.)
 
       # Left unset so Kubernetes applies its native, tag-based pull policy:
       # `Always` for a mutable `:latest` (so a repushed tag is actually
@@ -954,17 +982,19 @@ controller:
       # a template) overrides the derivation — an operator escape hatch, not
       # a user concept.
       #
-      # UPGRADE NOTE (#1900): this default is smaller than the pre-Sizes one
-      # (limits were 1 CPU / 2Gi, requests 250m / 512Mi). It applies to NEW
-      # sandboxes only — existing ones are backfilled at `legacyAgentSize`
-      # below — but the derived default CPU request is 500m (limit × 0.5)
-      # where it used to be 250m, so a packed cluster fits fewer default-size
-      # agents. Tune `requestsFromLimits.fraction` if density matters more
-      # than burst headroom.
+      # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
+      # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
+      # an existing sandbox — NEW sandboxes get it directly, existing ones are
+      # backfilled at the identical `legacyAgentSize` below. One thing still
+      # changed from the pre-Sizes chart: the derived default CPU request is
+      # 500m (limit × 0.5) where it used to be an explicit 250m, so a packed
+      # cluster fits fewer default-size agents. Tune
+      # `requestsFromLimits.fraction` if density matters more than burst
+      # headroom.
       resources:
         limits:
           cpu: "1"
-          memory: "1Gi"
+          memory: "2Gi"
       mounts:
         - path: $HOME
           persist: true
@@ -975,16 +1005,6 @@ controller:
       # set unconditionally by the controller.
       env: []
       skillSources: []
-      # Shell-expanded at runtime — HOME is set on the init container.
-      # Templates that need extras (e.g. pip install) REPLACE this entirely.
-      init: |
-        #!/bin/bash
-        # Seed home from image on first boot
-        if [ ! -f $HOME/.initialized ]; then
-          cp -rn /app/working-dir/. $HOME/ 2>/dev/null || true
-          touch $HOME/.initialized
-        fi
-        mkdir -p $HOME/work
 
     # -- Size the controller materializes into any Agent spec that lacks a
     # limits dimension (#1900): fill-if-absent on reconcile, never touching
@@ -1009,8 +1029,8 @@ controller:
   # another. Raise (or lower) per user with a UserBudget CR named
   # `budget-<keycloak-sub>` in the agent namespace.
   userBudgets:
-    defaultCpu: "4"
-    defaultMemory: "8Gi"
+    defaultCpu: "8"
+    defaultMemory: "16Gi"
 
   # -- How pod requests are derived from an agent's limits (#1900). Requests
   # are scheduling internals, never a user concept: the scheduler packs on
@@ -1185,10 +1205,12 @@ controller:
 # non-image drift (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time
 # using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
-# `category` groups the entry in the creation wizard's Step 1: "harness"
-# (base coding harnesses; the default when omitted) or "preconfigured"
-# (curated workload images, e.g. Bugstone). `experimental: true` badges the
-# image as alpha in the wizard.
+# `category` sorts the entry: "harness" (base coding harnesses; the default when
+# omitted) or "preconfigured" (curated workload images, e.g. Bugstone). Only
+# harnesses are offered in the UI today — a "preconfigured" entry is installed
+# but reachable from no creation flow, pending the specialized-sandbox redesign,
+# so an entry users must be able to pick should take the default category.
+# `experimental: true` badges the image as alpha.
 #
 # To predefine an *experimental external agent* (a private-registry image users
 # just pick from the template list, with no manual "Private registry" entry),
@@ -1196,7 +1218,6 @@ controller:
 #
 #   bugstone:
 #     enabled: true
-#     category: preconfigured
 #     experimental: true
 #     description: "Experimental DAM bug-hunting agent"
 #     image:
@@ -1221,6 +1242,7 @@ agentTemplates:
     enabled: true
     displayName: "Claude Code"
     description: "Default Claude Code agent"
+    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     telemetry: true
     tags: ["Anthropic"]
     image:
@@ -1236,6 +1258,7 @@ agentTemplates:
     enabled: true
     displayName: "Claude Code VM"
     description: "Claude Code in a full VM — docker + k3s inside the sandbox"
+    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
     experimental: true
     tags: ["Anthropic", "VM"]
     backend:
@@ -1249,6 +1272,7 @@ agentTemplates:
     enabled: true
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
+    releaseNotesUrl: "https://github.com/openai/codex/releases"
     tags: ["OpenAI"]
     image:
       repository: quay.io/dam-agents/codex
@@ -1269,6 +1293,7 @@ agentTemplates:
     enabled: true
     displayName: "IBM Bob"
     description: "Bob shell agent"
+    releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
       repository: quay.io/dam-agents/bob

@@ -10,6 +10,7 @@ import {
   scheduleCreateRRuleInputSchema,
   scheduleDeleteInputSchema,
   scheduleGetInputSchema,
+  scheduleListForOwnerInputSchema,
   scheduleListInputSchema,
   scheduleResetSessionInputSchema,
   scheduleToggleInputSchema,
@@ -53,6 +54,13 @@ export const schedulesRouter = t.router({
     .query(async ({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       const schedules = await ctx.schedules.list(input.agentId);
+      return schedules.map(toView);
+    }),
+
+  listForOwner: readAgentProcedure
+    .input(scheduleListForOwnerInputSchema)
+    .query(async ({ ctx, input }) => {
+      const schedules = await ctx.schedules.listForOwner(input?.limit);
       return schedules.map(toView);
     }),
 
