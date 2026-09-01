@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 export const contentHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const wirePathSchema = z.string().min(1).max(4096);
 
 export const kbPublishInventoryFileSchema = z.object({
-  path: z.string().min(1),
+  path: wirePathSchema,
   sizeBytes: z.number().int().nonnegative(),
   contentHash: contentHashSchema,
 });
@@ -29,7 +30,7 @@ export const kbPublishCompleteInputSchema = z.object({
     uploadedBlobs: z
       .array(
         z.object({
-          path: z.string().min(1),
+          path: wirePathSchema,
           contentHash: contentHashSchema,
           sizeBytes: z.number().int().nonnegative(),
         }),
@@ -45,7 +46,7 @@ export const kbPublishCompleteInputSchema = z.object({
         }),
       )
       .max(512),
-    drifted: z.array(z.string()).max(20_000),
+    drifted: z.array(wirePathSchema).max(20_000),
   }),
 });
 

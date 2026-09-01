@@ -656,6 +656,7 @@ export {
   scopeSchema,
 } from "./modules/api-keys/schemas.js";
 export {
+  contentHashSchema,
   kbPublishCompleteInputSchema,
   kbPublishInventoryFileSchema,
   kbPublishRequestInputSchema,

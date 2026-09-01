@@ -1,13 +1,14 @@
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
-import type {
-  KbPublishCompleteReport,
-  KbPublishCompleteResult,
-  KbPublishGate,
-  KbPublishInventoryFile,
-  KbPublishRequestInput,
-  KbPublishRequestResult,
-  KbPublishWorkOrder,
+import {
+  contentHashSchema,
+  type KbPublishCompleteReport,
+  type KbPublishCompleteResult,
+  type KbPublishGate,
+  type KbPublishInventoryFile,
+  type KbPublishRequestInput,
+  type KbPublishRequestResult,
+  type KbPublishWorkOrder,
 } from "api-server-api";
 import {
   INDEX_FORMAT_VERSION,
@@ -46,7 +47,15 @@ const RUNTIME_UNSUPPORTED_MESSAGE =
   "the knowledge base agent's runtime does not support publishing — apply the pending agent update, then refresh the share";
 const UPLOAD_VERIFY_FAILED_MESSAGE =
   "publishing could not upload the snapshot — retry shortly";
-const CONTENT_HASH_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: thrown when a plan references roots the claim
+ * does not hold — the signature of a pod that planned before a roots change
+ * synced to it, not of a hostile plan. It resolves as busy (release the
+ * claim, let the pod retry with synced roots) instead of recording an
+ * owner-visible failure for a self-healing race.
+ */
+class StalePlanError extends Error {}
 
 export { RUNTIME_UNSUPPORTED_MESSAGE };
 
@@ -179,14 +188,18 @@ export function createKbSharePublishGate(
         segments.length < 2 ||
         segments.includes("") ||
         segments.includes("..") ||
-        segments.includes(".") ||
-        !rootSet.has(segments[0]!)
+        segments.includes(".")
       ) {
         throw new PublishFailure(
           "publish failed: the agent reported an invalid document path",
         );
       }
-      if (!CONTENT_HASH_RE.test(file.contentHash)) {
+      if (!rootSet.has(segments[0]!)) {
+        throw new StalePlanError(
+          `plan references unclaimed root "${segments[0]!}"`,
+        );
+      }
+      if (!contentHashSchema.safeParse(file.contentHash).success) {
         throw new PublishFailure(
           "publish failed: the agent reported an invalid content hash",
         );
@@ -222,9 +235,12 @@ export function createKbSharePublishGate(
   /**
    * UNIT_BOUNDARY_DESCRIPTION: reachability spans every manifest a reader can
    * still hold — the current snapshot plus all in-grace stale entries — not
-   * the current snapshot alone; the in-use set is built fully (all reads)
-   * before the first delete, so a failed manifest read aborts the pass with
-   * nothing removed and the entries retry on the next publish.
+   * the current snapshot alone. The in-use set is built fully (all reads)
+   * before the first delete, and an in-grace manifest that exists but does
+   * not parse (e.g. a future format during a rolling deploy) aborts the pass
+   * with nothing removed; a manifest object that is gone protects nothing,
+   * because no reader can load it. Malformed grace stamps fail safe: the
+   * entry is kept, never expired.
    */
   async function gcStaleSnapshots(
     rowId: string,
@@ -235,9 +251,9 @@ export function createKbSharePublishGate(
     const expired: StaleSnapshotEntry[] = [];
     const nowMs = now().getTime();
     for (const entry of stale) {
-      const inGrace =
-        nowMs - Date.parse(entry.replacedAt) < STALE_SNAPSHOT_GRACE_MS;
-      (inGrace ? keep : expired).push(entry);
+      const ageMs = nowMs - Date.parse(entry.replacedAt);
+      const expiredNow = ageMs >= STALE_SNAPSHOT_GRACE_MS;
+      (expiredNow ? expired : keep).push(entry);
     }
     if (expired.length > 0) {
       const keysInUse = new Set(currentKeys);
@@ -253,16 +269,32 @@ export function createKbSharePublishGate(
     }
   }
 
+  function runStaleGc(
+    agentId: string,
+    rowId: string,
+    stale: readonly StaleSnapshotEntry[],
+    currentKeys: ReadonlySet<string>,
+  ): Promise<void> {
+    return gcStaleSnapshots(rowId, stale, currentKeys).catch((err: unknown) => {
+      process.stderr.write(
+        `[kb-share-publish] snapshot gc failed for ${agentId}: ${err}\n`,
+      );
+    });
+  }
+
   async function collectManifestKeys(
     snapshotManifestKey: string,
     into: Set<string>,
   ): Promise<void> {
     into.add(snapshotManifestKey);
     const stored = await deps.store.get(snapshotManifestKey);
-    const manifest = stored
-      ? parseManifest(stored.content.toString("utf8"))
-      : null;
-    if (!manifest) return;
+    if (!stored) return;
+    const manifest = parseManifest(stored.content.toString("utf8"));
+    if (!manifest) {
+      throw new Error(
+        `in-grace manifest ${snapshotManifestKey} is unreadable — aborting gc rather than deleting keys it may reference`,
+      );
+    }
     for (const file of manifest.files) into.add(file.key);
     if (manifest.version === 1) {
       if (manifest.searchIndexKey) into.add(manifest.searchIndexKey);
@@ -309,9 +341,12 @@ export function createKbSharePublishGate(
    * UNIT_BOUNDARY_DESCRIPTION: a failed or lost publish attempt may delete
    * only its own manifest — blob and segment keys are content-addressed and
    * shared across attempts and snapshots (a concurrent taken-over publish
-   * adopts any object that already exists), so those are reclaimed
-   * exclusively by the reference-aware stale-snapshot GC or a whole-share
-   * purge.
+   * adopts any object that already exists), so a loser deleting them would
+   * break a winner's live manifest. Objects a manifest references are
+   * reclaimed by the stale-snapshot GC or a whole-share purge; uploads from
+   * an attempt that never commits are an accepted bounded leak — the store
+   * has no enumeration API to sweep them, and a later publish of identical
+   * content adopts them instead of re-uploading.
    */
   async function dropAttemptManifest(entry: {
     shareId: string;
@@ -365,9 +400,7 @@ export function createKbSharePublishGate(
     for (const [ticket, entry] of pending) {
       if (entry.createdAtMs >= cutoff) continue;
       pending.delete(ticket);
-      void deps.repo
-        .releasePublishClaim(entry.agentId, ticket)
-        .catch(() => {});
+      void deps.repo.releasePublishClaim(entry.agentId, ticket).catch(() => {});
     }
   }
 
@@ -464,7 +497,7 @@ export function createKbSharePublishGate(
       for (const [bucket, members] of membersByBucket) {
         const contentId = segmentContentId(members, bucketCount);
         const carried = previousSegments.get(contentId);
-        if (carried) {
+        if (carried && (await deps.store.stat(carried.key))) {
           carriedSegments.push({ ...carried, bucket });
           continue;
         }
@@ -508,6 +541,19 @@ export function createKbSharePublishGate(
             agentId,
             ownerSub: claimed.owner,
           });
+          const currentKeys = new Set(previous.files.map((f) => f.key));
+          if (previous.search) {
+            for (const segment of previous.search.segments) {
+              currentKeys.add(segment.key);
+            }
+          }
+          currentKeys.add(claimed.snapshotManifestKey);
+          await runStaleGc(
+            agentId,
+            claimed.id,
+            claimed.staleSnapshots,
+            currentKeys,
+          );
         }
         return { outcome: "up-to-date" };
       }
@@ -565,6 +611,10 @@ export function createKbSharePublishGate(
       });
       return { outcome: "work", order };
     } catch (err) {
+      if (err instanceof StalePlanError) {
+        await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
+        return { outcome: "busy" };
+      }
       const reason =
         err instanceof PublishFailure
           ? err.message
@@ -574,6 +624,112 @@ export function createKbSharePublishGate(
     }
   }
 
+  interface PreparedSnapshot {
+    files: SnapshotManifestFile[];
+    manifestSegments: SnapshotSearchSegment[];
+    snapshotManifestKey: string;
+    staleSnapshots: StaleSnapshotEntry[];
+    createdAt: Date;
+  }
+
+  async function prepareSnapshot(
+    entry: PendingPublish,
+    report: KbPublishCompleteReport,
+  ): Promise<PreparedSnapshot> {
+    const manifestSegments: SnapshotSearchSegment[] = [
+      ...entry.carriedSegments,
+    ];
+    const reportedByBucket = new Map(
+      report.segments.map((s) => [s.bucket, s] as const),
+    );
+    for (const plan of entry.segmentPlans) {
+      const reported = reportedByBucket.get(plan.bucket);
+      if (!reported) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
+      manifestSegments.push({
+        bucket: plan.bucket,
+        key: plan.key,
+        contentId: plan.contentId,
+        docCount: reported.docCount,
+        sizeBytes: reported.sizeBytes,
+        degraded: reported.degraded,
+      });
+    }
+    manifestSegments.sort((a, b) => a.bucket - b.bucket);
+
+    const expectedSizeByKey = new Map(entry.blobSizeByKey);
+    for (const plan of entry.segmentPlans) {
+      const reported = reportedByBucket.get(plan.bucket);
+      if (reported) expectedSizeByKey.set(plan.key, reported.sizeBytes);
+    }
+    for (const key of entry.mintedKeys) {
+      const stat = await deps.store.stat(key);
+      if (!stat) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
+      const expected = expectedSizeByKey.get(key);
+      if (expected !== undefined && stat.sizeBytes !== expected) {
+        throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
+      }
+    }
+
+    const createdAt = now();
+    const files: SnapshotManifestFile[] = entry.planFiles.map((f) => ({
+      path: f.path,
+      sizeBytes: f.sizeBytes,
+      contentHash: f.contentHash,
+      key: blobKey(entry.shareId, f.contentHash),
+    }));
+    const manifest: SnapshotManifest = {
+      version: 2,
+      snapshotId: entry.snapshotId,
+      createdAt: createdAt.toISOString(),
+      roots: entry.roots,
+      files,
+      documentCount: files.length,
+      totalSizeBytes: entry.totalSizeBytes,
+      search:
+        manifestSegments.length > 0
+          ? {
+              formatVersion: INDEX_FORMAT_VERSION,
+              bucketCount: entry.bucketCount,
+              segments: manifestSegments,
+            }
+          : null,
+    };
+    const snapshotManifestKey = manifestKey(entry.shareId, entry.snapshotId);
+    await deps.store.put({
+      key: snapshotManifestKey,
+      content: Buffer.from(JSON.stringify(manifest), "utf8"),
+      contentType: "application/json",
+    });
+    const staleSnapshots: StaleSnapshotEntry[] =
+      entry.previousSnapshotId && entry.previousManifestKey
+        ? [
+            ...entry.previousStale,
+            {
+              snapshotId: entry.previousSnapshotId,
+              manifestKey: entry.previousManifestKey,
+              replacedAt: createdAt.toISOString(),
+            },
+          ]
+        : [...entry.previousStale];
+    return {
+      files,
+      manifestSegments,
+      snapshotManifestKey,
+      staleSnapshots,
+      createdAt,
+    };
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: completion is three phases with distinct
+   * failure semantics — prepare (verify uploads, write the attempt's
+   * manifest; a failure is pre-commit: drop the attempt manifest and record
+   * the failure), commit (a thrown pointer swap leaves the outcome unknown:
+   * delete nothing and let the pod retry — the next request short-circuits
+   * if the swap landed), and post-commit bookkeeping (log/emit/GC), which
+   * may fail loudly but must never un-publish the snapshot the row now
+   * points at.
+   */
   async function complete(
     agentId: string,
     ticket: string,
@@ -586,127 +742,14 @@ export function createKbSharePublishGate(
     }
     pending.delete(ticket);
 
+    if (report.drifted.length > 0) {
+      await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
+      return { outcome: "retry" };
+    }
+
+    let prepared: PreparedSnapshot;
     try {
-      if (report.drifted.length > 0) {
-        await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
-        return { outcome: "retry" };
-      }
-
-      const manifestSegments: SnapshotSearchSegment[] = [
-        ...entry.carriedSegments,
-      ];
-      const reportedByBucket = new Map(
-        report.segments.map((s) => [s.bucket, s] as const),
-      );
-      for (const plan of entry.segmentPlans) {
-        const reported = reportedByBucket.get(plan.bucket);
-        if (!reported) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
-        manifestSegments.push({
-          bucket: plan.bucket,
-          key: plan.key,
-          contentId: plan.contentId,
-          docCount: reported.docCount,
-          sizeBytes: reported.sizeBytes,
-          degraded: reported.degraded,
-        });
-      }
-      manifestSegments.sort((a, b) => a.bucket - b.bucket);
-
-      for (const key of entry.mintedKeys) {
-        const stat = await deps.store.stat(key);
-        if (!stat) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
-        const expected = entry.blobSizeByKey.get(key);
-        if (expected !== undefined && stat.sizeBytes !== expected) {
-          throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
-        }
-      }
-
-      const createdAt = now();
-      const files: SnapshotManifestFile[] = entry.planFiles.map((f) => ({
-        path: f.path,
-        sizeBytes: f.sizeBytes,
-        contentHash: f.contentHash,
-        key: blobKey(entry.shareId, f.contentHash),
-      }));
-      const manifest: SnapshotManifest = {
-        version: 2,
-        snapshotId: entry.snapshotId,
-        createdAt: createdAt.toISOString(),
-        roots: entry.roots,
-        files,
-        documentCount: files.length,
-        totalSizeBytes: entry.totalSizeBytes,
-        search:
-          manifestSegments.length > 0
-            ? {
-                formatVersion: INDEX_FORMAT_VERSION,
-                bucketCount: entry.bucketCount,
-                segments: manifestSegments,
-              }
-            : null,
-      };
-      const snapshotManifestKey = manifestKey(entry.shareId, entry.snapshotId);
-      await deps.store.put({
-        key: snapshotManifestKey,
-        content: Buffer.from(JSON.stringify(manifest), "utf8"),
-        contentType: "application/json",
-      });
-      const staleSnapshots: StaleSnapshotEntry[] =
-        entry.previousSnapshotId && entry.previousManifestKey
-          ? [
-              ...entry.previousStale,
-              {
-                snapshotId: entry.previousSnapshotId,
-                manifestKey: entry.previousManifestKey,
-                replacedAt: createdAt.toISOString(),
-              },
-            ]
-          : [...entry.previousStale];
-      const won = await deps.repo.finishPublishSuccess(
-        agentId,
-        {
-          snapshotId: entry.snapshotId,
-          snapshotManifestKey,
-          snapshotCreatedAt: createdAt,
-          documentCount: files.length,
-          totalSizeBytes: entry.totalSizeBytes,
-          staleSnapshots,
-        },
-        ticket,
-        entry.claimedAt,
-      );
-      if (!won) {
-        await dropAttemptManifest(entry);
-        return { outcome: "retry" };
-      }
-      securityLog("info", "kb_share.published", {
-        category: "resource",
-        actor: entry.owner,
-        actorKind: "user",
-        agentId,
-        result: "success",
-        detail: {
-          snapshotId: entry.snapshotId,
-          documentCount: files.length,
-          totalSizeBytes: entry.totalSizeBytes,
-        },
-      });
-      emit({
-        type: EventType.KbSharePublished,
-        agentId,
-        ownerSub: entry.owner,
-      });
-      try {
-        const currentKeys = new Set(files.map((f) => f.key));
-        for (const segment of manifestSegments) currentKeys.add(segment.key);
-        currentKeys.add(snapshotManifestKey);
-        await gcStaleSnapshots(entry.rowId, staleSnapshots, currentKeys);
-      } catch (err) {
-        process.stderr.write(
-          `[kb-share-publish] snapshot gc failed for ${agentId}: ${err}\n`,
-        );
-      }
-      return { outcome: "committed" };
+      prepared = await prepareSnapshot(entry, report);
     } catch (err) {
       await dropAttemptManifest(entry);
       const reason =
@@ -716,6 +759,68 @@ export function createKbSharePublishGate(
       reportFailure(entry, ticket, reason);
       return { outcome: "failed" };
     }
+
+    let won: boolean;
+    try {
+      won = await deps.repo.finishPublishSuccess(
+        agentId,
+        {
+          snapshotId: entry.snapshotId,
+          snapshotManifestKey: prepared.snapshotManifestKey,
+          snapshotCreatedAt: prepared.createdAt,
+          documentCount: prepared.files.length,
+          totalSizeBytes: entry.totalSizeBytes,
+          staleSnapshots: prepared.staleSnapshots,
+        },
+        ticket,
+        entry.claimedAt,
+      );
+    } catch (err) {
+      process.stderr.write(
+        `[kb-share-publish] commit outcome unknown for ${agentId}: ${err}\n`,
+      );
+      return { outcome: "retry" };
+    }
+    if (!won) {
+      await dropAttemptManifest(entry);
+      return { outcome: "retry" };
+    }
+
+    try {
+      securityLog("info", "kb_share.published", {
+        category: "resource",
+        actor: entry.owner,
+        actorKind: "user",
+        agentId,
+        result: "success",
+        detail: {
+          snapshotId: entry.snapshotId,
+          documentCount: prepared.files.length,
+          totalSizeBytes: entry.totalSizeBytes,
+        },
+      });
+      emit({
+        type: EventType.KbSharePublished,
+        agentId,
+        ownerSub: entry.owner,
+      });
+    } catch (err) {
+      process.stderr.write(
+        `[kb-share-publish] post-commit hooks failed for ${agentId}: ${err}\n`,
+      );
+    }
+    const currentKeys = new Set(prepared.files.map((f) => f.key));
+    for (const segment of prepared.manifestSegments) {
+      currentKeys.add(segment.key);
+    }
+    currentKeys.add(prepared.snapshotManifestKey);
+    await runStaleGc(
+      agentId,
+      entry.rowId,
+      prepared.staleSnapshots,
+      currentKeys,
+    );
+    return { outcome: "committed" };
   }
 
   return {
