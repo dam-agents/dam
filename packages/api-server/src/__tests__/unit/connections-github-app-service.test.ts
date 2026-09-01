@@ -39,6 +39,7 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
+    updateInputs: async () => {},
     delete: async (id) => {
       rows.delete(id);
     },
