@@ -13,7 +13,7 @@ import {
   type SearchIndex,
 } from "../domain/legacy-search-index.js";
 
-const MANIFEST_CACHE_BUDGET_BYTES = 16 * 1024 * 1024;
+const MANIFEST_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 const GUIDE_FILE_NAME = "USAGE_GUIDE.md";
 const GUIDE_MAX_CHARS = 8000;
 export const READ_DEFAULT_MAX_CHARS = 200_000;
@@ -77,6 +77,13 @@ function estimateRetainedBytes(value: unknown): number {
   return 16;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: every cache key is the object-store key of the
+ * value it holds (prefixed by kind), never a content-derived id — storage
+ * keys embed the share, so an entry can only be recalled for the exact
+ * object it was parsed from and no share can poison another share's reads
+ * with content it uploaded itself.
+ */
 export function createSnapshotReader(
   store: Pick<ArtifactService, "get">,
 ): SnapshotReader {
@@ -86,8 +93,11 @@ export function createSnapshotReader(
   function remember(cacheKey: string, value: CachedEntry["value"]): void {
     const entry: CachedEntry = { value, bytes: estimateRetainedBytes(value) };
     const prev = cache.get(cacheKey);
-    if (prev) cachedBytes -= prev.bytes;
-    cache.delete(cacheKey);
+    if (prev) {
+      cachedBytes -= prev.bytes;
+      cache.delete(cacheKey);
+    }
+    if (entry.bytes > MANIFEST_CACHE_BUDGET_BYTES) return;
     cache.set(cacheKey, entry);
     cachedBytes += entry.bytes;
     for (const [key, evicted] of cache) {
@@ -120,25 +130,25 @@ export function createSnapshotReader(
     manifest: LegacySnapshotManifestV1,
   ): Promise<LoadedSearch> {
     if (!manifest.searchIndexKey) return { kind: "none" };
-    const cached = recall(`i:${manifest.snapshotId}`);
+    const cached = recall(`i:${manifest.searchIndexKey}`);
     if (cached) return { kind: "legacy", index: cached as SearchIndex };
     const stored = await store.get(manifest.searchIndexKey);
     if (!stored) return { kind: "none" };
     const index = parseSearchIndex(stored.content.toString("utf8"));
     if (!index) return { kind: "none" };
-    remember(`i:${manifest.snapshotId}`, index);
+    remember(`i:${manifest.searchIndexKey}`, index);
     return { kind: "legacy", index };
   }
 
   return {
     async getManifest(manifestKey, snapshotId) {
-      const cached = recall(`m:${snapshotId}`);
+      const cached = recall(`m:${manifestKey}`);
       if (cached) return cached as AnySnapshotManifest;
       const stored = await store.get(manifestKey);
       if (!stored) return null;
       const manifest = parseManifest(stored.content.toString("utf8"));
       if (!manifest || manifest.snapshotId !== snapshotId) return null;
-      remember(`m:${snapshotId}`, manifest);
+      remember(`m:${manifestKey}`, manifest);
       return manifest;
     },
 
@@ -151,7 +161,7 @@ export function createSnapshotReader(
       }
       const segments: IndexSegment[] = [];
       for (const entry of search.segments) {
-        const cached = recall(`s:${entry.contentId}`);
+        const cached = recall(`s:${entry.key}`);
         if (cached) {
           segments.push(cached as IndexSegment);
           continue;
@@ -164,7 +174,7 @@ export function createSnapshotReader(
         if (!segment) {
           return { kind: "unreadable", formatVersion: search.formatVersion };
         }
-        remember(`s:${entry.contentId}`, segment);
+        remember(`s:${entry.key}`, segment);
         segments.push(segment);
       }
       const degraded = search.segments.some((s) => s.degraded);
