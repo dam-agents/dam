@@ -13,7 +13,6 @@ import {
   artifactFolders as foldersTable,
   libraryArtifacts as artifactsTable,
   libraryArtifactVersions as versionsTable,
-  sessionArtifactTouches as touchesTable,
 } from "db";
 
 export interface ArtifactRow {
@@ -115,13 +114,12 @@ export interface ArtifactLibraryRepository {
     owner: string,
   ): Promise<{ artifact: ArtifactRow; versions: VersionRow[] } | null>;
   incrementViewCount(id: string): Promise<void>;
-  recordTouch(row: {
+  attributeVersion(row: {
     artifactId: string;
     version: number;
     owner: string;
-    agentId: string;
     sessionId: string;
-  }): Promise<void>;
+  }): Promise<boolean>;
   listTouches(query: {
     owner: string;
     agentId: string;
@@ -296,40 +294,62 @@ export function createArtifactLibraryRepository(
         .where(eq(artifactsTable.id, id));
     },
 
-    async recordTouch(row) {
-      await db
-        .insert(touchesTable)
-        .values({
-          artifactId: row.artifactId,
-          version: row.version,
-          owner: row.owner,
-          agentId: row.agentId,
-          sessionId: row.sessionId,
-        })
-        .onConflictDoNothing();
+    async attributeVersion({ artifactId, version, owner, sessionId }) {
+      const updated = await db
+        .update(versionsTable)
+        .set({ sessionId })
+        .where(
+          and(
+            eq(versionsTable.artifactId, artifactId),
+            eq(versionsTable.version, version),
+            inArray(
+              versionsTable.artifactId,
+              db
+                .select({ id: artifactsTable.id })
+                .from(artifactsTable)
+                .where(
+                  and(
+                    eq(artifactsTable.id, artifactId),
+                    eq(artifactsTable.owner, owner),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ artifactId: versionsTable.artifactId });
+      return updated.length > 0;
     },
 
     async listTouches({ owner, agentId, sessionIds, limit }) {
       if (sessionIds.length === 0) return [];
       const rows = await db
         .select({
-          artifactId: touchesTable.artifactId,
-          version: touchesTable.version,
-          agentId: touchesTable.agentId,
-          sessionId: touchesTable.sessionId,
-          touchedAt: touchesTable.touchedAt,
+          artifactId: versionsTable.artifactId,
+          version: versionsTable.version,
+          sessionId: versionsTable.sessionId,
+          touchedAt: versionsTable.createdAt,
         })
-        .from(touchesTable)
+        .from(versionsTable)
+        .innerJoin(
+          artifactsTable,
+          eq(artifactsTable.id, versionsTable.artifactId),
+        )
         .where(
           and(
-            eq(touchesTable.owner, owner),
-            eq(touchesTable.agentId, agentId),
-            inArray(touchesTable.sessionId, [...sessionIds]),
+            eq(artifactsTable.owner, owner),
+            eq(artifactsTable.agentId, agentId),
+            inArray(versionsTable.sessionId, [...sessionIds]),
           ),
         )
-        .orderBy(desc(touchesTable.touchedAt))
+        .orderBy(desc(versionsTable.createdAt))
         .limit(clampTouchLimit(limit));
-      return rows;
+      return rows.map((row) => ({
+        artifactId: row.artifactId,
+        version: row.version,
+        agentId,
+        sessionId: row.sessionId ?? "",
+        touchedAt: row.touchedAt,
+      }));
     },
 
     async advanceVersion(id, owner, snapshot, patch) {

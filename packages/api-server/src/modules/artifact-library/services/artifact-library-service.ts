@@ -580,14 +580,7 @@ export function createArtifactLibraryService(
     async recordTouch({ agentId, sessionId, artifactId, version }) {
       const artifact = await repo.getArtifact(artifactId, owner);
       if (!artifact || artifact.agentId !== agentId) return false;
-      await repo.recordTouch({
-        artifactId,
-        version,
-        owner,
-        agentId,
-        sessionId,
-      });
-      return true;
+      return repo.attributeVersion({ artifactId, version, owner, sessionId });
     },
 
     listTouches: ({ agentId, sessionIds, limit }) =>

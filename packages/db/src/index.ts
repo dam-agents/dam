@@ -28,7 +28,6 @@ export {
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
-  sessionArtifactTouches,
   invocations,
 } from "./schema.js";
 export {
