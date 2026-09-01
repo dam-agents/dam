@@ -67,7 +67,7 @@ export function composeKbPublish(opts: {
   let watchHandles: WatchHandle[] = [];
   let timer: NodeJS.Timeout | undefined;
   let flushing = false;
-  let rearmAfterFlush = false;
+  let rearmDelayMs: number | undefined;
   let generation = 0;
 
   async function persist(): Promise<void> {
@@ -95,7 +95,7 @@ export function composeKbPublish(opts: {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      void runFlush();
+      void runFlush(delayMs);
     }, delayMs);
     timer.unref?.();
   }
@@ -123,9 +123,9 @@ export function composeKbPublish(opts: {
     }
   }
 
-  async function runFlush(): Promise<void> {
+  async function runFlush(requestedDelayMs = DEBOUNCE_MS): Promise<void> {
     if (flushing) {
-      rearmAfterFlush = true;
+      rearmDelayMs = Math.min(rearmDelayMs ?? Infinity, requestedDelayMs);
       return;
     }
     if (!state.roots || !state.caps || !state.dirty) return;
@@ -150,9 +150,14 @@ export function composeKbPublish(opts: {
       });
       switch (result.outcome) {
         case "not-shared":
+          if (generation !== generationAtPlan) {
+            arm(DEBOUNCE_MS);
+            return;
+          }
           state = { ...state, roots: null, dirty: false };
           stopWatching();
           disarm();
+          rearmDelayMs = undefined;
           await persist();
           return;
         case "busy":
@@ -198,9 +203,9 @@ export function composeKbPublish(opts: {
       arm(RETRY_MS);
     } finally {
       flushing = false;
-      if (rearmAfterFlush) {
-        rearmAfterFlush = false;
-        arm(DEBOUNCE_MS);
+      if (rearmDelayMs !== undefined) {
+        arm(rearmDelayMs);
+        rearmDelayMs = undefined;
       }
     }
   }
@@ -213,6 +218,7 @@ export function composeKbPublish(opts: {
       state = { roots: null, caps: input.caps, dirty: false };
       stopWatching();
       disarm();
+      rearmDelayMs = undefined;
       await persist();
       return { ok: true };
     }
