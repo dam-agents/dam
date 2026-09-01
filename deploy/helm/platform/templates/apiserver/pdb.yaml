@@ -1,0 +1,19 @@
+# Without this, a node drain may evict every api-server replica at once and
+# the RollingUpdate guarantees buy nothing against planned disruptions.
+# Rendered unconditionally so scaling outside Helm (kubectl scale, a future
+# HPA) is still covered; maxUnavailable:1 never blocks a single-replica drain
+# the way minAvailable:1 would.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: apiserver
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: apiserver
+      app.kubernetes.io/instance: {{ .Release.Name }}

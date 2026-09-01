@@ -28,6 +28,7 @@ import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import { runTimeLabel } from "../lib/run-time.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
@@ -111,6 +112,7 @@ export function SessionRow({
       : "font-normal text-foreground";
 
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const runTime = scheduled ? runTimeLabel(s) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const channel =
     s.type === SessionType.ChannelSlack ||
@@ -152,11 +154,17 @@ export function SessionRow({
             backgroundWork={backgroundWork}
           />
         </div>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground truncate">
           {slackKind
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
             : ""}
           {formatTimestamp(s.updatedAt ?? s.createdAt)}
+          {runTime && (
+            <span data-testid="session-run-time">
+              {" · "}
+              {runTime}
+            </span>
+          )}
           {cost && (
             <span
               className="tabular-nums"
@@ -276,7 +284,6 @@ function SessionIndicators({
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
-      {}
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"

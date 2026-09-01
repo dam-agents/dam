@@ -277,6 +277,10 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           }
         }
 
+        if (prev.lastSettledVersion > settledVersion) {
+          return { newlyFailed: [], recovered: [], gaveUp: [], eventsGaveUp };
+        }
+
         if (!clean) {
           const nextAttempts = prev.applyAttempts + 1;
           await tx
@@ -321,16 +325,10 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               lt(runtimeStateOutbox.applyAttempts, maxAttempts),
             ),
             sql`EXISTS (
-              SELECT 1 FROM ${runtimeEvents}
-              WHERE ${runtimeEvents.agentId} = ${runtimeStateOutbox.agentId}
-                AND ${runtimeEvents.kind} IN (${sql.join(
-                  WORKSPACE_MUTATION_EVENT_KINDS.map((k) => sql`${k}`),
-                  sql`, `,
-                )})
-                AND ${runtimeEvents.dispatchedAt} IS NULL
-                AND ${runtimeEvents.expiresAt} > now()
-                AND ${runtimeEvents.attempts} >= 1
-                AND ${runtimeEvents.attempts} < ${maxAttempts}
+              SELECT 1 FROM runtime_events re
+              WHERE re.agent_id = ${runtimeStateOutbox.agentId}
+                AND re.dispatched_at IS NULL
+                AND re.expires_at > now()
             )`,
           ),
         )
@@ -388,14 +386,17 @@ export function createOutboxRepo(db: Db): OutboxRepo {
     },
 
     async insertEvent(input, tx = db): Promise<void> {
-      await tx.insert(runtimeEvents).values({
-        id: input.id,
-        agentId: input.agentId,
-        kind: input.kind,
-        payload: input.payload as object,
-        version: input.version,
-        expiresAt: input.expiresAt,
-      });
+      await tx
+        .insert(runtimeEvents)
+        .values({
+          id: input.id,
+          agentId: input.agentId,
+          kind: input.kind,
+          payload: input.payload as object,
+          version: input.version,
+          expiresAt: input.expiresAt,
+        })
+        .onConflictDoNothing();
     },
   };
 }

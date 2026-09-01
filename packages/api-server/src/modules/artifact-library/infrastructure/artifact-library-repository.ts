@@ -271,7 +271,11 @@ export function createArtifactLibraryRepository(
           .update(artifactsTable)
           .set({ ...patch, updatedAt: new Date() })
           .where(
-            and(eq(artifactsTable.id, id), eq(artifactsTable.owner, owner)),
+            and(
+              eq(artifactsTable.id, id),
+              eq(artifactsTable.owner, owner),
+              eq(artifactsTable.version, snapshot.version),
+            ),
           )
           .returning(artifactColumns);
         if (!row) return null;

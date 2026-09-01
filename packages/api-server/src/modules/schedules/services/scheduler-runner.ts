@@ -5,7 +5,11 @@ import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { emit, EventType } from "../../../events.js";
 
 export interface SchedulerRunner {
-  buildFireHandler(): (scheduleId: string) => Promise<void>;
+  buildFireHandler(): (
+    scheduleId: string,
+    fireAt: Date,
+    lastAttempt?: boolean,
+  ) => Promise<void>;
   sync(scheduleId: string): Promise<void>;
   cancel(scheduleId: string): Promise<void>;
   resetSession(scheduleId: string): Promise<void>;
@@ -29,7 +33,11 @@ export function createSchedulerRunner(
   const now = deps.now ?? (() => new Date());
   const ttlSec = deps.triggerTtlSeconds ?? 3600;
 
-  async function fire(scheduleId: string): Promise<void> {
+  async function fire(
+    scheduleId: string,
+    fireAt: Date,
+    lastAttempt = true,
+  ): Promise<void> {
     const sched = await deps.repo.getById(scheduleId);
     if (!sched) {
       log(`fire: schedule ${scheduleId} not found; dropping`);
@@ -40,7 +48,7 @@ export function createSchedulerRunner(
       return;
     }
 
-    const eventId = `${scheduleId}:${now().getTime()}`;
+    const eventId = `${scheduleId}:${fireAt.getTime()}`;
     const expiresAt = new Date(now().getTime() + ttlSec * 1000);
     const payload: Record<string, unknown> = {
       scheduleId,
@@ -48,37 +56,48 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
 
-    let result: string;
-    let outcome: "success" | "failure";
+    const emitFired = async (outcome: "success" | "failure") => {
+      try {
+        const ownerSub = await deps.repo.getOwnerById(scheduleId);
+        if (ownerSub) {
+          emit({
+            type: EventType.ScheduleFired,
+            scheduleId,
+            agentId: sched.agentId,
+            ownerSub,
+            mode: sched.spec.sessionMode ?? "fresh",
+            outcome,
+          });
+        }
+      } catch (err) {
+        log(
+          `fire: schedule ${scheduleId} emit failed: ${(err as Error).message}`,
+        );
+      }
+    };
+
     try {
       await deps.runtimeMutator.bump(sched.agentId, [
         { id: eventId, kind: "trigger", payload, expiresAt },
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
       await deps.wakeAgent(sched.agentId);
-      result = "success";
-      outcome = "success";
     } catch (err) {
-      result = (err as Error).message ?? String(err);
-      outcome = "failure";
+      const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
-    }
-
-    const ownerSub = await deps.repo.getOwnerById(scheduleId);
-    if (ownerSub) {
-      emit({
-        type: EventType.ScheduleFired,
-        scheduleId,
-        agentId: sched.agentId,
-        ownerSub,
-        mode: sched.spec.sessionMode ?? "fresh",
-        outcome,
-      });
+      const after = lastAttempt ? nextFireAt(sched.spec, now()) : fireAt;
+      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      if (lastAttempt) {
+        if (after) await deps.queue.enqueue(scheduleId, after, now());
+        await emitFired("failure");
+      }
+      throw err;
     }
 
     const next = nextFireAt(sched.spec, now());
-    await deps.repo.recordFire(scheduleId, result, next);
+    await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
+    await emitFired("success");
   }
 
   return {
@@ -121,9 +140,10 @@ export function createSchedulerRunner(
     async restoreAll(): Promise<void> {
       const enabled = await deps.repo.listAllEnabled();
       for (const s of enabled) {
-        const next = nextFireAt(s.spec, now());
-        await deps.repo.setNextRun(s.id, next);
-        if (next) await deps.queue.enqueue(s.id, next, now());
+        const stored = s.status?.nextRun ? new Date(s.status.nextRun) : null;
+        const next = stored ?? nextFireAt(s.spec, now());
+        if (!stored) await deps.repo.setNextRun(s.id, next);
+        if (next) await deps.queue.ensure(s.id, next, now());
       }
       log(`restored ${enabled.length} schedules`);
     },

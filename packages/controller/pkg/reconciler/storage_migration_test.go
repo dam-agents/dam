@@ -136,6 +136,33 @@ func TestStorageMigration_WaitsForQuiescence(t *testing.T) {
 	assert.Len(t, pvcs.Items, 1, "no target PVC while the agent pod is up")
 }
 
+func TestStorageMigration_TargetNameNeverStacksPrefixes(t *testing.T) {
+	assert.Equal(t, "mig-home-agent-my-agent-0", migrationTargetName("home-agent-my-agent-0"))
+	assert.Equal(t, "home-agent-my-agent-0", migrationTargetName("mig-home-agent-my-agent-0"))
+	assert.Equal(t, "home-agent-my-agent-0", migrationTargetName("mig-mig-mig-home-agent-my-agent-0"))
+
+	long := "ws-" + strings.Repeat("a", 60)
+	require.Len(t, long, 63)
+	assert.LessOrEqual(t, len(migrationTargetName(long)), 63)
+	assert.NotEqual(t, long, migrationTargetName(long))
+}
+
+func TestStorageMigration_PrefixedSourceMigratesOntoNormalizedName(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{
+		annStorageMigration:           "migrating",
+		annStorageMigrationWasRunning: "false",
+	}
+	m, client := migrationManager(t, agent, rwxPVC("mig-home-agent-my-agent-0", "my-agent", "home-agent"))
+
+	m.Reconcile(context.Background())
+
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", target.Labels[LabelMigrationFor])
+	assert.Equal(t, "home-agent", target.Labels[LabelMount])
+}
+
 func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
 	agent := agentCR()
 	agent.Annotations = map[string]string{

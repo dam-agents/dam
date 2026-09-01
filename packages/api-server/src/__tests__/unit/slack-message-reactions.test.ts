@@ -12,7 +12,6 @@ import {
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
@@ -76,7 +75,7 @@ function harness(opts: {
     async describeReactions(
       query: Parameters<typeof worker.describeMessageReactions>[1],
     ) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect().catch(() => {});
       return worker.describeMessageReactions("agent-1", query);
     },
   };
@@ -179,7 +178,7 @@ describe("slack message reactions", () => {
 describe("slack supportsMessageReactions", () => {
   it("is true when the scope is unknown (no probe has run yet)", async () => {
     const h = harness({ boundChannelId: BOUND });
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     expect(await h.worker.supportsMessageReactions()).toBe(true);
   });
@@ -187,7 +186,7 @@ describe("slack supportsMessageReactions", () => {
   it("is true once reactions:read is confirmed granted", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "reactions:read"]);
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     expect(await h.worker.supportsMessageReactions()).toBe(true);
   });
@@ -195,7 +194,7 @@ describe("slack supportsMessageReactions", () => {
   it("is false once reactions:read is confirmed missing", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     expect(await h.worker.supportsMessageReactions()).toBe(false);
   });
@@ -211,7 +210,7 @@ describe("missing optional scopes never fail the gate", () => {
   it("both scopes withheld: each check resolves false, neither rejects", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     await expect(
       Promise.all([
@@ -226,7 +225,7 @@ describe("missing optional scopes never fail the gate", () => {
     h.gw.getGrantedScopes = async () => {
       throw new Error("ratelimited");
     };
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     await expect(
       Promise.all([
@@ -239,7 +238,7 @@ describe("missing optional scopes never fail the gate", () => {
   it("the aggregate keeps working through the channel manager with both withheld", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
     const manager = createChannelManager({ slackWorker: h.worker });
 
     await expect(

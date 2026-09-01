@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-08-19
+Last verified: 2026-08-31
 
 ## Overview
 
@@ -11,7 +11,9 @@ the platform. An **Artifact** is owner-scoped like every other resource, is
 attributed to the Agent that published it (or to the user, for manual
 uploads), and outlives both the sandbox and the agent that produced it.
 Publishing a new revision keeps the same identity and share link and appends
-to a per-artifact **version history** viewers can flip through.
+to a per-artifact **version history** viewers can flip through. Concurrent
+revision publishes are detected — one wins, the other is refused with a
+conflict and leaves no partial version behind.
 
 An artifact's **kind is settled when it is created** and no revision can move
 it — neither by declaring one nor by renaming into another extension. The

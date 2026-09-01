@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import type {
   ArtifactContent,
@@ -361,7 +362,13 @@ export function createArtifactLibraryService(
         const fileName = input.fileName ?? row.fileName;
         const contentType = input.contentType ?? DEFAULT_CONTENT_TYPE[kind];
         const nextVersion = row.version + 1;
-        const key = versionKey(owner, id, nextVersion, fileName);
+        const key = versionKey(
+          owner,
+          id,
+          nextVersion,
+          fileName,
+          randomBytes(4).toString("hex"),
+        );
         const stored = await ingestBytes({
           content: input.content,
           uploadRef: input.uploadRef,
@@ -385,7 +392,13 @@ export function createArtifactLibraryService(
           },
           patch,
         );
-        if (!advanced) throw new TRPCError({ code: "NOT_FOUND" });
+        if (!advanced) {
+          await artifacts.delete(stored.storageRef).catch(() => {});
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "The artifact was updated concurrently. Retry the update.",
+          });
+        }
         emit({
           type: EventType.ArtifactUpdated,
           artifactId: id,
