@@ -217,12 +217,17 @@ export function createKbShareResolver(
 ): (
   shareId: string,
   presentedSecret: string | null,
-) => Promise<{ name: string | null; reachable: boolean } | null> {
+) => Promise<{
+  agentId: string;
+  name: string | null;
+  reachable: boolean;
+} | null> {
   const findActiveById = findActiveShareById(db);
   return async (shareId, presentedSecret) => {
     const row = await findActiveById(kbShareRowId(shareId));
     if (!row) return null;
     return {
+      agentId: row.agentId,
       name: row.publicName ?? null,
       reachable:
         presentedSecret !== null && secretsEqual(row.secret, presentedSecret),

@@ -12,16 +12,22 @@ import type { SecretStore } from "../../modules/secret-store/index.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 
 /**
- * TEST_OVERVIEW: the consumer side of a shared knowledge base outliving its
- * share — the owner's public name is only readable while the share resolves,
- * so it is remembered on the connection and still shown once the share is
- * revoked, beside the expired status that explains why it stopped working.
+ * TEST_OVERVIEW: the consumer side of a shared knowledge base outliving the
+ * share link it was connected through — one entry per knowledge base, so
+ * re-sharing re-points the row it already has instead of adding a second one,
+ * and the owner's public name (readable only while a share resolves) is
+ * remembered so a row that stopped working still says which knowledge base it
+ * was, beside the expired status that explains it.
  */
 
 const OWNER = "owner-sub";
+const AGENT = "agent-wiki";
 const SHARE_ID = "831359c58153";
+const RESHARE_ID = "9f2c41ab7710";
 const SECRET = "s".repeat(43);
+const RESHARE_SECRET = "r".repeat(43);
 const SHARE_STRING = `kbshare_${SHARE_ID}_${SECRET}`;
+const RESHARE_STRING = `kbshare_${RESHARE_ID}_${RESHARE_SECRET}`;
 const SLUG = `kb-${SHARE_ID}`;
 
 function makeRepoFake() {
@@ -85,7 +91,7 @@ function makeSecretStoreFake(): SecretStore {
 }
 
 function makeService(
-  share: { name: string | null; reachable?: boolean } | null,
+  share: { name: string | null; reachable?: boolean; agentId?: string } | null,
 ) {
   const { repo, rows } = makeRepoFake();
   const state = { share };
@@ -115,17 +121,24 @@ function makeService(
     resolveKbShare: async () =>
       state.share === null
         ? null
-        : { name: state.share.name, reachable: state.share.reachable ?? true },
+        : {
+            agentId: state.share.agentId ?? AGENT,
+            name: state.share.name,
+            reachable: state.share.reachable ?? true,
+          },
   });
   return { svc, rows, state };
 }
 
-async function connect(svc: ReturnType<typeof makeService>["svc"]) {
+async function connect(
+  svc: ReturnType<typeof makeService>["svc"],
+  value = SHARE_STRING,
+) {
   return svc.createFromTemplate({
     templateId: "shared-knowledge-base",
-    name: SLUG,
+    name: `kb-${value.slice(8, 20)}`,
     authKind: "header",
-    value: SHARE_STRING,
+    value,
   });
 }
 
@@ -164,26 +177,37 @@ describe("shared knowledge base connection naming", () => {
     expect(view?.name).toBe("Platform Wiki");
   });
 
-  // TEST_SCENARIO: an unshared knowledge base is unrecoverable — its id is retired, so re-sharing mints a new one and the old entry can only be removed, never reconnected.
-  it("marks an unshared knowledge base unrecoverable", async () => {
-    const { svc, state } = makeService({ name: "Team Wiki" });
-    await connect(svc);
+  // TEST_SCENARIO: unsharing and re-sharing mints a new share id for the same knowledge base — connecting the new link re-points the existing row rather than adding a second entry for the same knowledge base.
+  it("reuses the entry when the same knowledge base is shared again", async () => {
+    const { svc, rows, state } = makeService({ name: "Team Wiki" });
+    const first = await connect(svc);
     await svc.listConnections();
 
     state.share = null;
-    const [view] = await svc.listConnections();
-    expect(view?.unrecoverable).toBe(true);
+    await svc.listConnections();
+
+    state.share = { name: "Team Wiki" };
+    const second = await connect(svc, RESHARE_STRING);
+    expect(second).toBe(first);
+
+    const views = await svc.listConnections();
+    expect(views).toHaveLength(1);
+    expect(views[0]?.name).toBe("Team Wiki");
+    expect(views[0]?.status).not.toBe("expired");
+    const row = rows.get(first);
+    expect(row?.auth.kind === "header" ? row.auth.headerName : null).toBe(
+      `x-kb-token-${RESHARE_ID}`,
+    );
   });
 
-  // TEST_SCENARIO: a merely rotated link stays recoverable — the share still exists, so pasting the owner's current link repairs this same entry.
-  it("leaves a rotated link recoverable", async () => {
+  // TEST_SCENARIO: two different knowledge bases stay two entries — the reuse keys on the knowledge base, not on the template.
+  it("keeps separate entries for different knowledge bases", async () => {
     const { svc, state } = makeService({ name: "Team Wiki" });
     await connect(svc);
 
-    state.share = { name: "Team Wiki", reachable: false };
-    const [view] = await svc.listConnections();
-    expect(view?.status).toBe("expired");
-    expect(view?.unrecoverable).toBeUndefined();
+    state.share = { name: "Other Wiki", agentId: "agent-other" };
+    await connect(svc, RESHARE_STRING);
+    expect(await svc.listConnections()).toHaveLength(2);
   });
 
   // TEST_SCENARIO: a share that never resolved (no name was ever seen) falls back to the stored slug instead of rendering an empty name.

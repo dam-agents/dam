@@ -92,25 +92,12 @@ export function ConnectedKnowledgeBases({ agentId }: { agentId: string }) {
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-medium text-foreground">
                     {connection.name}
-                    {connection.unrecoverable && (
-                      <span className="ml-1.5 font-normal text-muted-foreground">
-                        (no longer shared)
-                      </span>
-                    )}
                   </span>
-                  {connection.unrecoverable ? (
+                  {unreachable && (
                     <span className="text-xs text-warning">
-                      The owner stopped sharing this knowledge base — this link
-                      is gone for good. Remove it; a new share link from the
-                      same owner connects as its own entry.
+                      Link rotated or revoked — paste the owner's current link
+                      above to reconnect.
                     </span>
-                  ) : (
-                    unreachable && (
-                      <span className="text-xs text-warning">
-                        Link rotated — paste the owner's current link above to
-                        reconnect.
-                      </span>
-                    )
                   )}
                 </div>
                 <Button
