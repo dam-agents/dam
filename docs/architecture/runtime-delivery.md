@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-08-31
+Last verified: 2026-09-01
 
 ## Overview
 
@@ -43,7 +43,11 @@ State changes write to the outbox, the worker reads and dispatches a fresh paylo
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` (stable across redeliveries — the dedupe key), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh), **schedule-reset** (clear a schedule's state), **workspace-seed** (clone a repo into the workspace), **workspace-command** (run a one-shot shell command in the workspace, e.g. a kinded agent's install bootstrap), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+
+While a workspace-mutating event (`workspace-seed`, `workspace-command`) is pending for an agent, the agent surfaces as *preparing workspace* rather than running, so chat — including the hidden greeting turn — waits for the mutation to settle instead of racing it. Because the settle is a Postgres stamp with no Agent-resource change behind it, the worker announces it as an agent change, so watching UIs re-read the agent promptly rather than on their next incidental refresh.
+
+Because a pending workspace mutation blocks the agent, its delivery is bounded rather than open-ended: each delivery the agent answers without settling the event counts against a per-event attempt budget, the cron sweep keeps re-enqueuing the agent while the budget lasts, and when it is exhausted the worker stamps the event dispatched with a recorded error. A workspace-mutating kind the agent's runtime does not advertise is stamped the same way at dispatch time — capability filtering would drop it from every payload, so it could never settle. Both exits announce the same agent change as a clean settle, so the agent leaves *preparing workspace* instead of sitting there until the event's TTL; the mutation itself did not happen, which the event row's error records.
 
 `harness-config` is the model/mode/config-defaults mechanism: a user action in the Config panel fires one event, the agent-runtime writes the mapped keys into the harness's own config file once, and — like `workspace-seed` — never re-asserts, so the file stays the user's to edit (a hand-edit via the Files panel or SSH is never reconciled away). The Config panel is driven entirely outbound, not over an ACP session: the agent's manifest declares a `harness-config` driver entry carrying both the field → file-keyPath mapping and an option **catalog** (the available model/mode/config choices and their per-model validity), and the agent advertises that catalog on `hello` (alongside a `harnessConfig` capability flag) for the api-server to serve to the UI; the *current* values are read back live from the config file via the agent-runtime `harnessConfig.current` query. A manifest may instead declare a `modelDiscovery` source, in which case that same read fills the model list live from the provider rather than from the static catalog. Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section.
 
@@ -126,7 +130,7 @@ Each event kind has a built-in handler inside the agent-runtime's event loop. Th
 
 - The handler receives the event's `payload`; the loop owns `id`-based dedupe before the handler is ever invoked — a per-key last-run timestamp in the agent's local state store, and nothing else. An id the loop cannot read a timestamp out of settles without running: a malformed id is unrunnable, and failing closed beats re-firing it on every poll.
 - It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
-- A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires.
+- A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires. For workspace-mutating kinds the redelivery is bounded: the worker counts each answered-but-unsettled delivery on the event row, and past the attempt budget it stamps the event dispatched-with-error instead of redelivering.
 
 The worker is the only writer to `runtime_events.dispatched_at` (it stamps in the apply-ack transaction). Splitting responsibilities this way means a new event kind adds an agent-side handler and doesn't have to know about the outbox at all.
 
@@ -175,7 +179,7 @@ One outbox surface in Postgres, plus the events table that feeds the payload:
 | Table | Shape | Why |
 |---|---|---|
 | `runtime_state_outbox` | One row per agent | Delivery is per-agent and last-write-wins. Coalesce-by-agent. Carries the desired version and two cursors: the version the agent last **answered** for, and the one it last **applied cleanly**. |
-| `runtime_events` | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, and a dispatched marker. The state-builder reads the live ones into `events[]`. |
+| `runtime_events` | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, a dispatched marker, and — for the bounded workspace-mutating kinds — an attempt counter plus the error recorded when delivery gives up. The state-builder reads the live ones into `events[]`. |
 
 ### Mutation transaction
 
@@ -220,7 +224,7 @@ BullMQ retries cover transport failures (network blip, agent crash mid-call) and
 
 A scheduled job runs every minute and does two things:
 
-1. **Outbox staleness check.** Scan for the rows an agent is behind on — the desired version is not settled yet, an earlier apply left driver failures still under their attempt budget, or the agent holds an event that is neither dispatched nor expired — least-attempted first and capped at a batch size. That third branch is what recovers a fire whose in-pod dispatch threw: the version settles, so neither of the first two sees it, and without it the event would sit until its TTL ran out. Re-enqueue a dispatch for each one whose agent is currently running. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth.
+1. **Outbox staleness check.** Scan for the rows an agent is behind on — the desired version is not settled yet, an earlier apply left driver failures still under their attempt budget, or the agent holds an event that is neither dispatched nor expired — least-attempted first and capped at a batch size. That third branch is what recovers a fire whose in-pod dispatch threw: the version settles, so neither of the first two sees it, and without it the event would sit until its TTL ran out. For a workspace-mutating event the retry it drives is bounded by the per-event attempt budget — exhausting it stamps the event dispatched-with-error, which takes the row out of this branch. Re-enqueue a dispatch for each one whose agent is currently running. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth.
 
    **A row whose agent is not running is left where it is.** A stopped agent has nothing to apply the state, so re-attempting delivery buys nothing and never terminates — the row stays behind for as long as the agent stays down, which makes an unconditional re-enqueue a fixed-cadence livelock with no ceiling. Catch-up is already covered from the other side: `hello` re-enqueues on boot or wake, and once the agent is running again the next tick picks the row up regardless.
 
@@ -299,7 +303,7 @@ Newer agent on older server is rare (images are pinned). The agent calls `runtim
 
 ### Capability negotiation
 
-The agent's `hello` declares which Contribution kinds and which Event kinds it supports. The api-server filters outbound payloads: unsupported items are dropped at send time (logged + counted with a `dropped-unsupported` metric).
+The agent's `hello` declares which Contribution kinds and which Event kinds it supports. The api-server filters outbound payloads: unsupported items are dropped at send time (logged + counted with a `dropped-unsupported` metric). A dropped workspace-mutating event is additionally stamped dispatched-with-error right there — it can never settle on this runtime, and leaving it pending would hold the agent in *preparing workspace* until its TTL.
 
 The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent that doesn't support `skill-ref` shows "Agent doesn't support skills; this connection grants envs + hosts but not skill installation."
 

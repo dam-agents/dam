@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-08-24
+Last verified: 2026-09-01
 
 ## Overview
 
@@ -27,7 +27,7 @@ Knowledge Bases is a feature-gated destination ([features](features.md)) with a 
 
 Opening a KB that has no sessions yet **greets the user**: the UI runs `/wiki-onboard` as a hidden first turn (reaches the agent, renders no user bubble, surfaces no error — a greeting that breaks before it says anything leaves no trace, while one interrupted mid-stream keeps what it already said), so a fresh KB opens with the agent introducing itself rather than an empty chat. This is why every template's bootstrap installs that command. The greeting mechanism is shared with experiments.
 
-One known gap: the greeting races the bootstrap. It fires once the agent is running, but the Install Command lands after Ready, so a very fast open can run `/wiki-onboard` before it exists. Experiments close this by waiting for their authoring skill to be reported present; a KB has nothing equivalent to probe, because its onboarding artifact is a *command* and that read covers only skills.
+The greeting cannot race the bootstrap: a pending Install Command holds the agent in the same preparing-workspace state a pending workspace seed does, and the agent reports running — the greeting's gate — only once the install has settled. The same gate covers the pod not being up yet, a wake that arrives late, and a failed install retrying under the runtime channel's per-event attempt budget ([runtime-delivery](runtime-delivery.md)). The hold is bounded, not absolute: an install that exhausts its budget, or lands on a runtime that cannot run it, is stamped settled-with-error, so the agent surfaces as running again and the greeting fires against a KB whose `/wiki-onboard` may be missing — that greeting breaks silently by design, rather than the agent staying unusable until the install event's TTL.
 
 The create itself is compensated rather than transactional: the marker is stamped by the agent create while the install event is enqueued after it, and a failed enqueue deletes the fresh agent and surfaces the failure — so a marked agent whose setup never ran can only arise if that compensating delete itself fails.
 

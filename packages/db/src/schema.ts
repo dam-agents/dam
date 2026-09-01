@@ -404,6 +404,8 @@ export const runtimeEvents = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
   },
   (table) => [
     index("runtime_events_agent_pending_idx")
