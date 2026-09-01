@@ -51,6 +51,8 @@ type AgentSpec struct {
 	// literals in Mounts are already resolved against it at write
 	// time, so the controller never sees $HOME.
 	// +optional
+	StorageClass string `json:"storageClass,omitempty"`
+	// +optional
 	AgentHome string `json:"agentHome,omitempty"`
 
 	// RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
@@ -252,7 +254,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=8
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=9
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

@@ -47,8 +47,7 @@ func BuildVMWorkspacePVCs(name string, agentSpec *types.AgentSpec, cfg *config.C
 				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(effectiveMountSize(m, agentSpec, defaults))},
 			},
 		}
-		if base.StorageClass != "" {
-			sc := base.StorageClass
+		if sc := effectiveStorageClass(agentSpec, base); sc != "" {
 			spec.StorageClassName = &sc
 		}
 		pvcs = append(pvcs, &corev1.PersistentVolumeClaim{
