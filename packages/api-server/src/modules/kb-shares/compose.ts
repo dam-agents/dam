@@ -212,9 +212,7 @@ export function createShareStringVerifier(
   };
 }
 
-export function createKbShareResolver(
-  db: Db,
-): (
+export function createKbShareResolver(db: Db): (
   shareId: string,
   presentedSecret: string | null,
 ) => Promise<{
