@@ -13,12 +13,26 @@ import {
 
 import { readTextFile } from "./read-text.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the walk is the share's confinement boundary —
+ * every emitted path, the root itself included, must realpath-resolve inside
+ * the workspace and inside its root, so no symlink (a child, or the shared
+ * directory itself being one) can publish files outside what the owner
+ * selected; candidates are read through their resolved paths so a link
+ * retargeted after the check cannot redirect the read.
+ */
 export async function planShare(opts: {
   workDir: string;
   roots: readonly string[];
   caps: KbPublishCaps;
 }): Promise<Result<KbPublishPlan, KbPublishFailure>> {
   const candidates: { abs: string; rel: string }[] = [];
+  let workReal: string;
+  try {
+    workReal = await realpath(opts.workDir);
+  } catch {
+    return err({ code: "root-missing", root: opts.roots[0] ?? "" });
+  }
   for (const root of opts.roots) {
     const rootAbs = join(opts.workDir, root);
     let rootReal: string;
@@ -29,11 +43,14 @@ export async function planShare(opts: {
     } catch {
       return err({ code: "root-missing", root });
     }
+    if (!rootReal.startsWith(`${workReal}/`)) {
+      return err({ code: "root-missing", root });
+    }
     const containedInRoot = (real: string): boolean =>
       real === rootReal || real.startsWith(`${rootReal}/`);
     const visited = new Set<string>([rootReal]);
     const pending: { abs: string; rel: string; depth: number }[] = [
-      { abs: rootAbs, rel: root, depth: 0 },
+      { abs: rootReal, rel: root, depth: 0 },
     ];
     while (pending.length > 0) {
       const dir = pending.shift()!;
@@ -66,7 +83,7 @@ export async function planShare(opts: {
           if (!containedInRoot(real)) continue;
           if (visited.has(real)) continue;
           visited.add(real);
-          pending.push({ abs: childAbs, rel: childRel, depth: dir.depth + 1 });
+          pending.push({ abs: real, rel: childRel, depth: dir.depth + 1 });
         } else if (childStat.isFile() && shouldConsiderFileName(entry.name)) {
           let real: string;
           try {
@@ -75,7 +92,7 @@ export async function planShare(opts: {
             continue;
           }
           if (!containedInRoot(real)) continue;
-          candidates.push({ abs: childAbs, rel: childRel });
+          candidates.push({ abs: real, rel: childRel });
           if (candidates.length > opts.caps.maxFiles) {
             return err({ code: "too-many-files" });
           }

@@ -22,6 +22,7 @@ const caps = {
 };
 
 let workDir = "";
+let outsideDir = "";
 
 beforeAll(async () => {
   workDir = await mkdtemp(join(tmpdir(), "kb-publish-walker-"));
@@ -56,11 +57,19 @@ beforeAll(async () => {
     join(workDir, "linked/leak.md"),
   );
   await symlink(join(workDir, "secret"), join(workDir, "linked/sub/outdir"));
-  await symlink(join(workDir, "linked/real.md"), join(workDir, "linked/alias.md"));
+  await symlink(
+    join(workDir, "linked/real.md"),
+    join(workDir, "linked/alias.md"),
+  );
+
+  outsideDir = await mkdtemp(join(tmpdir(), "kb-publish-outside-"));
+  await writeFile(join(outsideDir, "creds.md"), "outside\n");
+  await symlink(outsideDir, join(workDir, "escape"));
 });
 
 afterAll(async () => {
   await rm(workDir, { recursive: true, force: true });
+  await rm(outsideDir, { recursive: true, force: true });
 });
 
 describe("planShare", () => {
@@ -106,6 +115,15 @@ describe("planShare", () => {
       "linked/alias.md",
       "linked/real.md",
     ]);
+  });
+
+  // TEST_SCENARIO: a share root that is itself a symlink resolving outside the workspace is rejected as root-missing instead of publishing the link target.
+  it("rejects a root that is a symlink out of the workspace", async () => {
+    const result = await planShare({ workDir, roots: ["escape"], caps });
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "root-missing", root: "escape" },
+    });
   });
 
   // TEST_SCENARIO: nesting past maxWalkDepth is the typed too-deep failure.
