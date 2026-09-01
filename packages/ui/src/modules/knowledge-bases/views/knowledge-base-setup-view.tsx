@@ -5,7 +5,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import { PostCreateBindModal } from "../../sandboxes/components/channels/post-create-bind-modal.js";
+import { openBindModal } from "../../sandboxes/components/channels/bind-modal-state.js";
 import {
   DestinationSection,
   type Destination,
@@ -29,9 +29,6 @@ const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
 
 export function KnowledgeBaseSetupView() {
   const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
-  const [bindModalChannels, setBindModalChannels] = useState<
-    ("slack" | "telegram")[] | null
-  >(null);
 
   const { form, update, reset } = useSetupForm(
     "knowledge-base",
@@ -86,78 +83,68 @@ export function KnowledgeBaseSetupView() {
         (d): d is "slack" | "telegram" => d !== "platform",
       );
 
+      openKnowledgeBase(agent.id);
+
       if (messengerChannels.length > 0) {
         for (const kind of messengerChannels) {
           markChannelIntent(agent.id, kind);
         }
-        openKnowledgeBase(agent.id);
-        setBindModalChannels(messengerChannels);
-      } else {
-        openKnowledgeBase(agent.id);
+        openBindModal(messengerChannels);
       }
     } catch {}
   };
 
   return (
-    <>
-      <SetupPageShell
-        title="Setup your knowledge base"
-        subtitle="Name your knowledge base, choose a template, and add connections."
-        footer={
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            {createKnowledgeBase.isPending
-              ? "Creating…"
-              : "Create knowledge base"}
-          </Button>
+    <SetupPageShell
+      title="Setup your knowledge base"
+      subtitle="Name your knowledge base, choose a template, and add connections."
+      footer={
+        <Button onClick={() => void create()} disabled={!canCreate}>
+          {createKnowledgeBase.isPending
+            ? "Creating…"
+            : "Create knowledge base"}
+        </Button>
+      }
+    >
+      <NameSection
+        value={form.name}
+        onChange={(name) => update({ name })}
+      />
+
+      <section className="mb-8">
+        <SectionLabel spaced>Template</SectionLabel>
+        <CardGrid>
+          {KB_TEMPLATES.map((template) => (
+            <KbTemplateCard
+              key={template.id}
+              template={template}
+              selected={form.kbTemplateId === template.id}
+              onSelect={() => update({ kbTemplateId: template.id })}
+            />
+          ))}
+        </CardGrid>
+      </section>
+
+      <ProviderSection
+        selected={form.providerRef}
+        onSelect={(providerRef) => update({ providerRef })}
+        policy={setupProviderPolicy("knowledge-base")}
+      />
+      <ConnectionsSetupSection
+        connectionIds={form.connectionIds}
+        onToggle={(id, granted) =>
+          update({
+            connectionIds: granted
+              ? [...new Set([...form.connectionIds, id])]
+              : form.connectionIds.filter((x) => x !== id),
+          })
         }
-      >
-        <NameSection
-          value={form.name}
-          onChange={(name) => update({ name })}
-        />
-
-        <section className="mb-8">
-          <SectionLabel spaced>Template</SectionLabel>
-          <CardGrid>
-            {KB_TEMPLATES.map((template) => (
-              <KbTemplateCard
-                key={template.id}
-                template={template}
-                selected={form.kbTemplateId === template.id}
-                onSelect={() => update({ kbTemplateId: template.id })}
-              />
-            ))}
-          </CardGrid>
-        </section>
-
-        <ProviderSection
-          selected={form.providerRef}
-          onSelect={(providerRef) => update({ providerRef })}
-          policy={setupProviderPolicy("knowledge-base")}
-        />
-        <ConnectionsSetupSection
-          connectionIds={form.connectionIds}
-          onToggle={(id, granted) =>
-            update({
-              connectionIds: granted
-                ? [...new Set([...form.connectionIds, id])]
-                : form.connectionIds.filter((x) => x !== id),
-            })
-          }
-          oauthReturnView={RETURN_PATH}
-        />
-        <DestinationSection
-          selected={destinations}
-          onToggle={handleDestinationToggle}
-        />
-      </SetupPageShell>
-
-      {bindModalChannels && (
-        <PostCreateBindModal
-          channels={bindModalChannels}
-          onClose={() => setBindModalChannels(null)}
-        />
-      )}
-    </>
+        oauthReturnView={RETURN_PATH}
+      />
+      <DestinationSection
+        selected={destinations}
+        onToggle={handleDestinationToggle}
+      />
+    </SetupPageShell>
   );
 }

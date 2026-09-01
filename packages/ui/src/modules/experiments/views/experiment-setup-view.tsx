@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import { PostCreateBindModal } from "../../sandboxes/components/channels/post-create-bind-modal.js";
+import { openBindModal } from "../../sandboxes/components/channels/bind-modal-state.js";
 import {
   DestinationSection,
   type Destination,
@@ -25,9 +25,6 @@ const RETURN_PATH = routeToPath({ view: "experiment-new" });
 
 export function ExperimentSetupView() {
   const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
-  const [bindModalChannels, setBindModalChannels] = useState<
-    ("slack" | "telegram")[] | null
-  >(null);
 
   const { form, update, reset } = useSetupForm(
     "experiment",
@@ -77,63 +74,53 @@ export function ExperimentSetupView() {
         (d): d is "slack" | "telegram" => d !== "platform",
       );
 
+      selectAgent(agent.id);
+
       if (messengerChannels.length > 0) {
         for (const kind of messengerChannels) {
           markChannelIntent(agent.id, kind);
         }
-        selectAgent(agent.id);
-        setBindModalChannels(messengerChannels);
-      } else {
-        selectAgent(agent.id);
+        openBindModal(messengerChannels);
       }
     } catch {}
   };
 
   return (
-    <>
-      <SetupPageShell
-        title="Setup your experiment"
-        subtitle="Name your experiment, choose a provider, and add connections."
-        footer={
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            {createExperimentSandbox.isPending
-              ? "Creating…"
-              : "Create experiment"}
-          </Button>
+    <SetupPageShell
+      title="Setup your experiment"
+      subtitle="Name your experiment, choose a provider, and add connections."
+      footer={
+        <Button onClick={() => void create()} disabled={!canCreate}>
+          {createExperimentSandbox.isPending
+            ? "Creating…"
+            : "Create experiment"}
+        </Button>
+      }
+    >
+      <NameSection
+        value={form.name}
+        onChange={(name) => update({ name })}
+      />
+      <ProviderSection
+        selected={form.providerRef}
+        onSelect={(providerRef) => update({ providerRef })}
+        policy={setupProviderPolicy("experiment")}
+      />
+      <ConnectionsSetupSection
+        connectionIds={form.connectionIds}
+        onToggle={(id, granted) =>
+          update({
+            connectionIds: granted
+              ? [...new Set([...form.connectionIds, id])]
+              : form.connectionIds.filter((x) => x !== id),
+          })
         }
-      >
-        <NameSection
-          value={form.name}
-          onChange={(name) => update({ name })}
-        />
-        <ProviderSection
-          selected={form.providerRef}
-          onSelect={(providerRef) => update({ providerRef })}
-          policy={setupProviderPolicy("experiment")}
-        />
-        <ConnectionsSetupSection
-          connectionIds={form.connectionIds}
-          onToggle={(id, granted) =>
-            update({
-              connectionIds: granted
-                ? [...new Set([...form.connectionIds, id])]
-                : form.connectionIds.filter((x) => x !== id),
-            })
-          }
-          oauthReturnView={RETURN_PATH}
-        />
-        <DestinationSection
-          selected={destinations}
-          onToggle={handleDestinationToggle}
-        />
-      </SetupPageShell>
-
-      {bindModalChannels && (
-        <PostCreateBindModal
-          channels={bindModalChannels}
-          onClose={() => setBindModalChannels(null)}
-        />
-      )}
-    </>
+        oauthReturnView={RETURN_PATH}
+      />
+      <DestinationSection
+        selected={destinations}
+        onToggle={handleDestinationToggle}
+      />
+    </SetupPageShell>
   );
 }

@@ -2,6 +2,11 @@ import { useEffect } from "react";
 
 import { ChangeIndex } from "./components/change-index.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
+import {
+  closeBindModal,
+  useBindModalState,
+} from "./modules/sandboxes/components/channels/bind-modal-state.js";
+import { PostCreateBindModal } from "./modules/sandboxes/components/channels/post-create-bind-modal.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
 import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
@@ -67,6 +72,7 @@ export default function App() {
     <>
       <MainApp />
       <ChangeIndex />
+      <GlobalBindModal />
     </>
   );
 }
@@ -168,5 +174,11 @@ function MainApp() {
       <DocsLauncher />
     </div>
   );
+}
+
+function GlobalBindModal() {
+  const { channels } = useBindModalState();
+  if (!channels) return null;
+  return <PostCreateBindModal channels={channels} onClose={closeBindModal} />;
 }
 
