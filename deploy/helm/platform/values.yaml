@@ -626,8 +626,8 @@ apiServer:
   # refresh backoff, terminal supersede, and a Redis lease that elects the one
   # replica running the Slack/Telegram channel workers (their transports admit
   # a single consumer per install; other replicas marshal outbound channel
-  # calls to the holder). Agent MCP sessions are held in-process and pinned to
-  # a replica by the harness DestinationRule's source-IP hash.
+  # calls to the holder). The per-agent MCP endpoint is stateless, so any
+  # replica serves any harness call.
   replicas: 1
   # -- Minimum severity emitted by the structured logger
   # (`error`|`warn`|`info`|`debug`). The security audit trail is logged at

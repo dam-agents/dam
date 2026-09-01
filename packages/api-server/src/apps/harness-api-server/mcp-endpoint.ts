@@ -29,8 +29,6 @@ import { securityLog } from "../../core/security-log.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 
-const SESSION_TTL_MS = 30 * 60 * 1000;
-
 function resolveWorkspacePath(input: string): string {
   const agentHome = AGENT_HOME_DIR;
   const workDir = AGENT_WORK_DIR;
@@ -46,8 +44,6 @@ function resolveWorkspacePath(input: string): string {
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
-  agentId: string;
-  lastActivity: number;
 }
 
 export interface ToolContent {
@@ -87,19 +83,6 @@ export async function textTool<T>(
     return errorResult(errMessage(err, fallback));
   }
 }
-
-const sessions = new Map<string, McpSession>();
-
-const sweepInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [id, session] of sessions) {
-    if (now - session.lastActivity > SESSION_TTL_MS) {
-      session.transport.close?.();
-      sessions.delete(id);
-    }
-  }
-}, 5 * 60_000);
-sweepInterval.unref();
 
 export interface McpSessionDeps {
   channelManager: ChannelManager;
@@ -809,22 +792,10 @@ export function createMcpSession(
   );
 
   const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: () => crypto.randomUUID(),
-    onsessioninitialized: (sessionId: string) => {
-      sessions.set(sessionId, session);
-    },
-    onsessionclosed: (sessionId: string) => {
-      sessions.delete(sessionId);
-    },
+    sessionIdGenerator: undefined,
   });
 
-  const session: McpSession = {
-    transport,
-    server,
-    agentId,
-    lastActivity: Date.now(),
-  };
-  return session;
+  return { transport, server };
 }
 
 export interface MountMcpDeps {
@@ -852,31 +823,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         reason: "agent-unresolved",
       });
       return c.json({ error: "not found" }, 404);
-    }
-
-    const sessionId = c.req.header("mcp-session-id");
-
-    if (sessionId && sessions.has(sessionId)) {
-      const session = sessions.get(sessionId)!;
-      if (session.agentId !== agentId) {
-        securityLog("warn", "mcp.session_mismatch", {
-          category: "authn",
-          actor: agentId,
-          actorKind: "agent",
-          surface: "mcp",
-          agentId,
-          decision: "deny",
-          reason: "session-agent-mismatch",
-          detail: { sessionAgentId: session.agentId },
-        });
-        return c.json({ error: "not found" }, 404);
-      }
-      session.lastActivity = Date.now();
-      return session.transport.handleRequest(c.req.raw);
-    }
-
-    if (sessionId) {
-      return c.json({ error: "session not found" }, 404);
     }
 
     const skills = deps.composeSkills(verified.owner);
