@@ -184,5 +184,4 @@ export type {
   KbPublishPlanFile,
   KbPublishSegmentReport,
   KbPublishService,
-  KbPublishUploadedBlob,
 } from "./modules/kb-publish/types.js";

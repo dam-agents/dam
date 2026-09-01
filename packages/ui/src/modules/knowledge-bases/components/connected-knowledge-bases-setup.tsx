@@ -43,12 +43,16 @@ export function ConnectedKnowledgeBasesSetup({
           onConnect={() => form.connect((id) => onToggle(id, true))}
         />
 
-        {connectionsQ.isError && (
+        {connectionsQ.isError ? (
           <p className="text-xs text-warning">
             Couldn't load the knowledge bases already added — they stay selected
             and reappear once the list loads.
           </p>
-        )}
+        ) : connectionsQ.isPending && connectionIds.length > 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Loading the knowledge bases already added…
+          </p>
+        ) : null}
 
         {connected.length > 0 && (
           <div className="flex flex-col gap-2">

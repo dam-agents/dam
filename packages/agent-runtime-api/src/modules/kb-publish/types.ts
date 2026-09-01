@@ -10,12 +10,6 @@ export interface KbPublishPlan {
   files: KbPublishPlanFile[];
 }
 
-export interface KbPublishUploadedBlob {
-  path: string;
-  contentHash: string;
-  sizeBytes: number;
-}
-
 export interface KbPublishSegmentReport {
   bucket: number;
   docCount: number;
@@ -24,7 +18,6 @@ export interface KbPublishSegmentReport {
 }
 
 export interface KbPublishExecuteReport {
-  uploadedBlobs: KbPublishUploadedBlob[];
   segments: KbPublishSegmentReport[];
   drifted: string[];
 }

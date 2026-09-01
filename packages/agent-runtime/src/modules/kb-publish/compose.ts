@@ -174,18 +174,19 @@ export function composeKbPublish(opts: {
             work: result.order,
             log: opts.log,
           });
-          const report = executed.ok
-            ? executed.value
-            : { uploadedBlobs: [], segments: [], drifted: [] };
-          const completion = await opts.harness.kbPublish.complete.mutate({
-            ticket: result.order.ticket,
-            report,
-          });
           if (!executed.ok) {
             opts.log(`upload failed: ${executed.error.code}`);
+            await opts.harness.kbPublish.complete.mutate({
+              ticket: result.order.ticket,
+              report: { aborted: true, segments: [], drifted: [] },
+            });
             arm(RETRY_MS);
             return;
           }
+          const completion = await opts.harness.kbPublish.complete.mutate({
+            ticket: result.order.ticket,
+            report: executed.value,
+          });
           switch (completion.outcome) {
             case "committed":
               await settle(generationAtPlan);
@@ -230,8 +231,10 @@ export function composeKbPublish(opts: {
     };
     await persist();
     if (rootsChanged) startWatching();
-    if (input.flush) arm(0);
-    else if (rootsChanged) arm(DEBOUNCE_MS);
+    if (input.flush) {
+      disarm();
+      void runFlush(0);
+    } else if (rootsChanged) arm(DEBOUNCE_MS);
     return { ok: true };
   }
 

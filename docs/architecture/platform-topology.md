@@ -99,6 +99,7 @@ Continuing such a conversation here makes a session outlive the surface it start
 | api-server → agent-runtime | HTTP (status read) | Passive read of the pod's status surface for session-reported background work; never wakes a pod or defers hibernation |
 | ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
 | agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello`, and the knowledge-base publish handshake — the pod requests a publish (work order out) and reports completion |
+| agent-runtime → object store (via paired gateway) | HTTPS (presigned PUT) | Knowledge-base snapshot uploads. The pod holds no object-store credential: it can only write the specific keys the api-server signed for it, and only until those links expire |
 | gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
 | controller → K8s API | watch / list / write | Resource reconciliation and status writes |
 | api-server → K8s API | REST + watch | Resource CRUD, spec writes, pod wake; a watch per replica keeps the Agent read cache current ([agent-lifecycle](agent-lifecycle.md)) |

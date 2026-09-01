@@ -27,15 +27,7 @@ export const kbPublishRequestInputSchema = z.discriminatedUnion("kind", [
 export const kbPublishCompleteInputSchema = z.object({
   ticket: z.string().min(1),
   report: z.object({
-    uploadedBlobs: z
-      .array(
-        z.object({
-          path: wirePathSchema,
-          contentHash: contentHashSchema,
-          sizeBytes: z.number().int().nonnegative(),
-        }),
-      )
-      .max(20_000),
+    aborted: z.boolean().optional(),
     segments: z
       .array(
         z.object({

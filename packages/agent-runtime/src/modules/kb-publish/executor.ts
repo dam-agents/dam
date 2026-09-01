@@ -5,7 +5,6 @@ import { err, ok, type Result } from "agent-runtime-api";
 import type {
   KbPublishExecuteReport,
   KbPublishSegmentReport,
-  KbPublishUploadedBlob,
 } from "agent-runtime-api";
 import type { KbPublishWorkOrder } from "api-server-api";
 import {
@@ -65,7 +64,6 @@ export async function executeWork(opts: {
 }): Promise<Result<KbPublishExecuteReport, KbPublishFailure>> {
   const { work } = opts;
   const drifted = new Set<string>();
-  const uploadedBlobs: KbPublishUploadedBlob[] = [];
 
   const readVerified = async (
     path: string,
@@ -92,11 +90,6 @@ export async function executeWork(opts: {
     if (failure !== null) {
       return err({ code: "upload-failed", detail: `${blob.path}: ${failure}` });
     }
-    uploadedBlobs.push({
-      path: blob.path,
-      contentHash: blob.expectedHash,
-      sizeBytes: buf.byteLength,
-    });
     await yieldToLoop();
   }
 
@@ -132,5 +125,5 @@ export async function executeWork(opts: {
     });
     await yieldToLoop();
   }
-  return ok({ uploadedBlobs, segments, drifted: [...drifted].sort() });
+  return ok({ segments, drifted: [...drifted].sort() });
 }

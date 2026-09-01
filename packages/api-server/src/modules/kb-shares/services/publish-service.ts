@@ -91,10 +91,6 @@ export interface KbSharePublishGateDeps {
       agentId: string,
       expectedToken: string,
     ): Promise<boolean>;
-    updateStaleSnapshots(
-      rowId: string,
-      entries: readonly StaleSnapshotEntry[],
-    ): Promise<void>;
     clearSnapshotPointer(rowId: string): Promise<void>;
   };
   findActiveByAgent(agentId: string): Promise<KbShareRow | null>;
@@ -121,7 +117,6 @@ interface SegmentBuildPlan {
 
 interface PendingPublish {
   agentId: string;
-  rowId: string;
   owner: string;
   roots: readonly string[];
   ticket: string;
@@ -135,6 +130,7 @@ interface PendingPublish {
   carriedSegments: SnapshotSearchSegment[];
   segmentPlans: SegmentBuildPlan[];
   blobSizeByKey: Map<string, number>;
+  adoptedSizeByKey: Map<string, number>;
   mintedKeys: Set<string>;
   previousSnapshotId: string | null;
   previousManifestKey: string | null;
@@ -233,52 +229,70 @@ export function createKbSharePublishGate(
   }
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: reachability spans every manifest a reader can
-   * still hold — the current snapshot plus all in-grace stale entries — not
-   * the current snapshot alone. The in-use set is built fully (all reads)
-   * before the first delete, and an in-grace manifest that exists but does
-   * not parse (e.g. a future format during a rolling deploy) aborts the pass
-   * with nothing removed; a manifest object that is gone protects nothing,
-   * because no reader can load it. Malformed grace stamps fail safe: the
-   * entry is kept, never expired.
+   * UNIT_BOUNDARY_DESCRIPTION: reclaims snapshots past the grace hold and
+   * returns the surviving ledger for the caller's token-guarded commit to
+   * write — the ledger is never written blind, so a slow pass cannot clobber
+   * a newer publish's list. Deleting is gated on still holding the claim
+   * (re-read immediately before the first delete): a publisher that lost it
+   * may be racing a successor that already adopted the same content-addressed
+   * keys, and skipping the sweep only defers it to the next publish.
+   * Reachability spans every manifest a reader can still hold — the current
+   * snapshot plus all in-grace entries. The in-use set is built fully before
+   * the first delete, and an in-grace manifest that exists but does not parse
+   * (e.g. a future format during a rolling deploy) aborts the pass with
+   * nothing removed; a manifest object that is gone protects nothing, because
+   * no reader can load it. Malformed grace stamps fail safe: the entry is
+   * kept, never expired.
    */
-  async function gcStaleSnapshots(
-    rowId: string,
-    stale: readonly StaleSnapshotEntry[],
-    currentKeys: ReadonlySet<string>,
-  ): Promise<void> {
+  async function reapStaleSnapshots(opts: {
+    agentId: string;
+    ticket: string;
+    stale: readonly StaleSnapshotEntry[];
+    currentKeys: ReadonlySet<string>;
+  }): Promise<readonly StaleSnapshotEntry[]> {
     const keep: StaleSnapshotEntry[] = [];
     const expired: StaleSnapshotEntry[] = [];
     const nowMs = now().getTime();
-    for (const entry of stale) {
+    for (const entry of opts.stale) {
       const ageMs = nowMs - Date.parse(entry.replacedAt);
       const expiredNow = ageMs >= STALE_SNAPSHOT_GRACE_MS;
       (expiredNow ? expired : keep).push(entry);
     }
-    if (expired.length > 0) {
-      const keysInUse = new Set(currentKeys);
-      for (const entry of keep) {
-        await collectManifestKeys(entry.manifestKey, keysInUse);
-      }
-      for (const entry of expired) {
-        await deleteSnapshotObjects(entry.manifestKey, keysInUse);
-      }
+    if (expired.length === 0) return opts.stale;
+    if (!(await stillHoldsClaim(opts.agentId, opts.ticket))) return opts.stale;
+    const keysInUse = new Set(opts.currentKeys);
+    for (const entry of keep) {
+      await collectManifestKeys(entry.manifestKey, keysInUse);
     }
-    if (keep.length !== stale.length) {
-      await deps.repo.updateStaleSnapshots(rowId, keep);
+    for (const entry of expired) {
+      await deleteSnapshotObjects(entry.manifestKey, keysInUse);
     }
+    return keep;
   }
 
-  function runStaleGc(
+  async function stillHoldsClaim(
     agentId: string,
-    rowId: string,
-    stale: readonly StaleSnapshotEntry[],
-    currentKeys: ReadonlySet<string>,
-  ): Promise<void> {
-    return gcStaleSnapshots(rowId, stale, currentKeys).catch((err: unknown) => {
+    ticket: string,
+  ): Promise<boolean> {
+    const row = await deps.findActiveByAgent(agentId);
+    return (
+      row !== null &&
+      row.publishState === "publishing" &&
+      row.publishToken === ticket
+    );
+  }
+
+  function reapStaleSnapshotsSafely(opts: {
+    agentId: string;
+    ticket: string;
+    stale: readonly StaleSnapshotEntry[];
+    currentKeys: ReadonlySet<string>;
+  }): Promise<readonly StaleSnapshotEntry[]> {
+    return reapStaleSnapshots(opts).catch((err: unknown) => {
       process.stderr.write(
-        `[kb-share-publish] snapshot gc failed for ${agentId}: ${err}\n`,
+        `[kb-share-publish] snapshot gc failed for ${opts.agentId}: ${err}\n`,
       );
+      return opts.stale;
     });
   }
 
@@ -461,13 +475,17 @@ export function createKbSharePublishGate(
         key: string;
       }[] = [];
       const plannedHashes = new Set<string>();
+      const adoptedSizeByKey = new Map<string, number>();
       for (const file of planFiles) {
         if (previousHashes.has(file.contentHash)) continue;
         if (plannedHashes.has(file.contentHash)) continue;
         plannedHashes.add(file.contentHash);
         const key = blobKey(shareId, file.contentHash);
         const existing = await deps.store.stat(key);
-        if (existing && existing.sizeBytes === file.sizeBytes) continue;
+        if (existing && existing.sizeBytes === file.sizeBytes) {
+          adoptedSizeByKey.set(key, file.sizeBytes);
+          continue;
+        }
         blobPlans.push({
           path: file.path,
           expectedHash: file.contentHash,
@@ -522,6 +540,19 @@ export function createKbSharePublishGate(
         previous.roots.length === claimed.roots.length &&
         previous.roots.every((root, i) => root === claimed.roots[i])
       ) {
+        const currentKeys = new Set(previous.files.map((f) => f.key));
+        if (previous.search) {
+          for (const segment of previous.search.segments) {
+            currentKeys.add(segment.key);
+          }
+        }
+        currentKeys.add(claimed.snapshotManifestKey);
+        const staleSnapshots = await reapStaleSnapshotsSafely({
+          agentId,
+          ticket,
+          stale: claimed.staleSnapshots,
+          currentKeys,
+        });
         const won = await deps.repo.finishPublishSuccess(
           agentId,
           {
@@ -530,7 +561,7 @@ export function createKbSharePublishGate(
             snapshotCreatedAt: claimed.snapshotCreatedAt ?? now(),
             documentCount: planFiles.length,
             totalSizeBytes,
-            staleSnapshots: [...claimed.staleSnapshots],
+            staleSnapshots,
           },
           ticket,
           claimedAt,
@@ -541,19 +572,6 @@ export function createKbSharePublishGate(
             agentId,
             ownerSub: claimed.owner,
           });
-          const currentKeys = new Set(previous.files.map((f) => f.key));
-          if (previous.search) {
-            for (const segment of previous.search.segments) {
-              currentKeys.add(segment.key);
-            }
-          }
-          currentKeys.add(claimed.snapshotManifestKey);
-          await runStaleGc(
-            agentId,
-            claimed.id,
-            claimed.staleSnapshots,
-            currentKeys,
-          );
         }
         return { outcome: "up-to-date" };
       }
@@ -590,7 +608,6 @@ export function createKbSharePublishGate(
 
       pending.set(ticket, {
         agentId,
-        rowId: claimed.id,
         owner: claimed.owner,
         roots: claimed.roots,
         ticket,
@@ -604,6 +621,7 @@ export function createKbSharePublishGate(
         carriedSegments,
         segmentPlans,
         blobSizeByKey: new Map(blobPlans.map((b) => [b.key, b.sizeBytes])),
+        adoptedSizeByKey,
         mintedKeys,
         previousSnapshotId: claimed.snapshotId,
         previousManifestKey: claimed.snapshotManifestKey,
@@ -656,12 +674,15 @@ export function createKbSharePublishGate(
     }
     manifestSegments.sort((a, b) => a.bucket - b.bucket);
 
-    const expectedSizeByKey = new Map(entry.blobSizeByKey);
+    const expectedSizeByKey = new Map([
+      ...entry.blobSizeByKey,
+      ...entry.adoptedSizeByKey,
+    ]);
     for (const plan of entry.segmentPlans) {
       const reported = reportedByBucket.get(plan.bucket);
       if (reported) expectedSizeByKey.set(plan.key, reported.sizeBytes);
     }
-    for (const key of entry.mintedKeys) {
+    for (const key of [...entry.mintedKeys, ...entry.adoptedSizeByKey.keys()]) {
       const stat = await deps.store.stat(key);
       if (!stat) throw new PublishFailure(UPLOAD_VERIFY_FAILED_MESSAGE);
       const expected = expectedSizeByKey.get(key);
@@ -722,13 +743,15 @@ export function createKbSharePublishGate(
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: completion is three phases with distinct
-   * failure semantics — prepare (verify uploads, write the attempt's
-   * manifest; a failure is pre-commit: drop the attempt manifest and record
-   * the failure), commit (a thrown pointer swap leaves the outcome unknown:
-   * delete nothing and let the pod retry — the next request short-circuits
-   * if the swap landed), and post-commit bookkeeping (log/emit/GC), which
-   * may fail loudly but must never un-publish the snapshot the row now
-   * points at.
+   * failure semantics — prepare (verify every object the manifest will
+   * reference, write the attempt's manifest; a failure is pre-commit: drop
+   * that manifest and record the failure), commit (reap expired snapshots
+   * while the claim is still held, then swap the pointer and the surviving
+   * ledger in one token-guarded update; a thrown swap leaves the outcome
+   * unknown, so delete nothing and let the pod retry — the next request
+   * short-circuits if it landed), and post-commit bookkeeping (log, emit),
+   * which may fail loudly but must never un-publish what the row now points
+   * at.
    */
   async function complete(
     agentId: string,
@@ -742,7 +765,7 @@ export function createKbSharePublishGate(
     }
     pending.delete(ticket);
 
-    if (report.drifted.length > 0) {
+    if (report.aborted === true || report.drifted.length > 0) {
       await deps.repo.releasePublishClaim(agentId, ticket).catch(() => {});
       return { outcome: "retry" };
     }
@@ -760,6 +783,18 @@ export function createKbSharePublishGate(
       return { outcome: "failed" };
     }
 
+    const currentKeys = new Set(prepared.files.map((f) => f.key));
+    for (const segment of prepared.manifestSegments) {
+      currentKeys.add(segment.key);
+    }
+    currentKeys.add(prepared.snapshotManifestKey);
+    const staleSnapshots = await reapStaleSnapshotsSafely({
+      agentId,
+      ticket,
+      stale: prepared.staleSnapshots,
+      currentKeys,
+    });
+
     let won: boolean;
     try {
       won = await deps.repo.finishPublishSuccess(
@@ -770,7 +805,7 @@ export function createKbSharePublishGate(
           snapshotCreatedAt: prepared.createdAt,
           documentCount: prepared.files.length,
           totalSizeBytes: entry.totalSizeBytes,
-          staleSnapshots: prepared.staleSnapshots,
+          staleSnapshots,
         },
         ticket,
         entry.claimedAt,
@@ -809,17 +844,6 @@ export function createKbSharePublishGate(
         `[kb-share-publish] post-commit hooks failed for ${agentId}: ${err}\n`,
       );
     }
-    const currentKeys = new Set(prepared.files.map((f) => f.key));
-    for (const segment of prepared.manifestSegments) {
-      currentKeys.add(segment.key);
-    }
-    currentKeys.add(prepared.snapshotManifestKey);
-    await runStaleGc(
-      agentId,
-      entry.rowId,
-      prepared.staleSnapshots,
-      currentKeys,
-    );
     return { outcome: "committed" };
   }
 

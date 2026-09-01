@@ -290,21 +290,6 @@ export function releasePublishClaim(db: Db) {
   };
 }
 
-export function updateStaleSnapshots(db: Db) {
-  return async (
-    rowId: string,
-    entries: readonly StaleSnapshotEntry[],
-  ): Promise<void> => {
-    await db
-      .update(kbShares)
-      .set({
-        staleSnapshots: entries as StaleSnapshotEntry[],
-        updatedAt: new Date(),
-      })
-      .where(eq(kbShares.id, rowId));
-  };
-}
-
 export function clearSnapshotPointer(db: Db) {
   return async (rowId: string): Promise<void> => {
     await db

@@ -38,7 +38,6 @@ import {
   updateSharePublicName,
   updateShareRoots,
   updateShareSecret,
-  updateStaleSnapshots,
 } from "./infrastructure/kb-shares-repository.js";
 import {
   startKbShareSyncSaga,
@@ -86,7 +85,6 @@ export function composeKbPublishGate(opts: {
       finishPublishSuccess: finishPublishSuccess(opts.db),
       finishPublishFailure: finishPublishFailure(opts.db),
       releasePublishClaim: releasePublishClaim(opts.db),
-      updateStaleSnapshots: updateStaleSnapshots(opts.db),
       clearSnapshotPointer: clearSnapshotPointer(opts.db),
     },
     findActiveByAgent: findActiveShareByAgent(opts.db),
