@@ -7,15 +7,7 @@ import {
 
 vi.mock("../../core/security-log.js", () => ({ securityLog: () => {} }));
 
-// TEST_OVERVIEW: The per-agent MCP endpoint must be stateless, so that every
-// api-server replica can serve every harness call. The api-server runs at more
-// than one replica, and the waypoint in front of it load-balances each request
-// on its own. An endpoint that kept streamable-HTTP sessions in process would
-// answer only the requests that happened to reach the replica holding the
-// session, and the harness would lose its outbound tools — a Slack turn then
-// runs to the end and posts nothing, because a reply needs the `reply` tool.
-// Each mounted app here stands for one replica: `mountMcpRoutes` carries
-// whatever per-process state the endpoint keeps.
+// TEST_OVERVIEW: the per-agent MCP endpoint must be stateless, so that any api-server replica can serve any harness call. The waypoint in front of the api-server load-balances every request on its own, so an endpoint holding streamable-HTTP sessions in process answers only the requests that happen to reach the replica holding the session; the harness then comes up without its outbound tools, and a Slack turn runs to the end and posts nothing, because a reply reaches Slack only through the reply tool. Each mounted app here stands for one replica — mountMcpRoutes carries whatever per-process state the endpoint keeps.
 
 const AGENT = "agent-1";
 const URL_ = `http://harness/api/agents/${AGENT}/mcp`;
@@ -71,8 +63,7 @@ const INIT = {
 };
 
 describe("per-agent MCP endpoint — stateless across replicas", () => {
-  // TEST_SCENARIO: A minted session id is what would bind a harness to the one
-  // replica that minted it, so the endpoint must not mint one.
+  // TEST_SCENARIO: a minted session id is the thing that would bind a harness to the single replica that minted it, so the endpoint must mint none.
   it("mints no session id, so nothing binds a harness to one replica", async () => {
     const { status, sessionId } = await rpc(replica(), "initialize", INIT);
 
@@ -80,9 +71,7 @@ describe("per-agent MCP endpoint — stateless across replicas", () => {
     expect(sessionId).toBeNull();
   });
 
-  // TEST_SCENARIO: The waypoint routes each request independently, so an
-  // agent's tool call regularly reaches a replica that never saw its
-  // initialize. That call must still be served.
+  // TEST_SCENARIO: the waypoint routes each request on its own, so an agent's tool call regularly lands on a replica that never saw its initialize; that call must still be served.
   it("serves a call on a replica that never saw the initialize", async () => {
     const [a, b] = [replica(), replica()];
     await rpc(a, "initialize", INIT);
