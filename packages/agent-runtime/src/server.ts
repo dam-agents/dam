@@ -549,8 +549,11 @@ applyWSSHandler({
   createContext: createTrpcContext,
 });
 
-acpWss.on("connection", (ws) => {
-  acpRuntime.attach(createWebSocketChannel(ws));
+acpWss.on("connection", (ws, req: http.IncomingMessage) => {
+  const passive =
+    new URL(req.url ?? "", "http://localhost").searchParams.get("passive") ===
+    "1";
+  acpRuntime.attach(createWebSocketChannel(ws), { viewer: !passive });
 });
 
 server.on("upgrade", (req, socket, head) => {

@@ -240,7 +240,9 @@ export function createAcpRelay(
         pending.length = 0;
       });
 
-      const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp`;
+      const upstreamUrl = `ws://${podBaseUrl(agentId, namespace)}/api/acp${
+        passive ? "?passive=1" : ""
+      }`;
 
       resolveIdentity(agentId)
         .then((resolved) => {
