@@ -1,4 +1,5 @@
 import type { AgentView } from "../../types.js";
+import { allFixtureAgents } from "./agent-card-fixtures.js";
 
 const AGENT_IDS = {
   codexResearch: "a1b2c3d4-0001-4000-8000-000000000001",
@@ -264,4 +265,5 @@ export const agents: AgentView[] = [
     kbTemplateId: null,
     features: { liveUpdates: true },
   },
+  ...allFixtureAgents,
 ];

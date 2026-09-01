@@ -1,3 +1,4 @@
+import { fixtureSchedules } from "./agent-card-fixtures.js";
 import { AGENT_IDS } from "./agents.js";
 
 export const schedules = [
@@ -39,4 +40,5 @@ export const schedules = [
       lastResult: "agent exceeded timeout after 45m",
     },
   },
+  ...fixtureSchedules,
 ];

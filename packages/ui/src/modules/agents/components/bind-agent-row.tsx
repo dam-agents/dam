@@ -1,7 +1,9 @@
+import { Badge } from "@/components/ui/badge";
 import { CardButton } from "@/components/ui/card-button";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { agentKindBadge } from "../utils/agent-kind.js";
 
 interface Props {
   agent: AgentView;
@@ -18,6 +20,8 @@ export function BindAgentRow({
   pending,
   onPick,
 }: Props) {
+  const kindBadge = agentKindBadge(agent);
+
   return (
     <CardButton
       disabled={disabled}
@@ -27,17 +31,19 @@ export function BindAgentRow({
         highlighted && "border-foreground",
       )}
     >
-      <span className="text-sm font-semibold text-foreground">
-        {pending ? `Connecting ${agent.name}…` : agent.name}
+      <span className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-foreground">
+          {pending ? `Connecting ${agent.name}…` : agent.name}
+        </span>
+        {kindBadge && (
+          <Badge variant={kindBadge.variant} className="shrink-0">
+            {kindBadge.label}
+          </Badge>
+        )}
       </span>
       {agent.description && (
         <span className="text-xs text-muted-foreground">
           {agent.description}
-        </span>
-      )}
-      {agent.templateId && (
-        <span className="text-[11px] font-mono text-muted-foreground">
-          {agent.templateId}
         </span>
       )}
     </CardButton>

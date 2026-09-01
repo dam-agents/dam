@@ -52,6 +52,7 @@ function getFixtures(): Record<string, unknown> {
     "experiments.list": empty ? [] : experiments,
     "experiments.driverSummaries": empty ? [] : driverSummaries,
     "schedules.list": schedules,
+    "schedules.listForOwner": schedules,
     "knowledgeBases.list": empty ? [] : knowledgeBases,
     "egressRules.list": [
       {

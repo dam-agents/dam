@@ -12,23 +12,53 @@ interface ReviewScreen {
   go: () => void;
 }
 
+let showCardGallery: (() => void) | null = null;
+let hideCardGallery: (() => void) | null = null;
+
+export function useCardGalleryOverride(): {
+  active: boolean;
+  show: () => void;
+  hide: () => void;
+} {
+  const [active, setActive] = useState(false);
+  showCardGallery = () => setActive(true);
+  hideCardGallery = () => setActive(false);
+  return { active, show: () => setActive(true), hide: () => setActive(false) };
+}
+
 function useReviewScreens(): ReviewScreen[] {
   const setView = useStore((s) => s.setView);
   return [
     {
       label: "Home",
       note: "Empty: welcome + agent type cards. Populated: activity feed.",
-      go: () => setView("home"),
+      go: () => {
+        hideCardGallery?.();
+        setView("home");
+      },
     },
     {
       label: "Agents list",
       note: "Empty: agent type cards. Populated: agent rows + Create button.",
-      go: () => setView("agents"),
+      go: () => {
+        hideCardGallery?.();
+        setView("agents");
+      },
     },
     {
       label: "Agent setup",
       note: "Page 1: name + type. Page 2: type-specific config (image/framework/wiki), provider, connections.",
-      go: () => setView("agent-new"),
+      go: () => {
+        hideCardGallery?.();
+        setView("agent-new");
+      },
+    },
+    {
+      label: "Card gallery",
+      note: "All §5 agent card states, rendered side by side.",
+      go: () => {
+        showCardGallery?.();
+      },
     },
   ];
 }
@@ -108,9 +138,7 @@ export function MockStateBar() {
                   onClick={s.go}
                   className={cn(
                     "rounded-md px-3 py-2 text-left transition-colors",
-                    active
-                      ? "bg-muted"
-                      : "hover:bg-muted/50",
+                    active ? "bg-muted" : "hover:bg-muted/50",
                   )}
                 >
                   <span className="flex items-center gap-2">

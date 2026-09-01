@@ -1,9 +1,11 @@
+import { providerTypeForTemplateId } from "api-server-api";
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
 import type { AgentView, TemplateView } from "../../../types.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useDriverSummaries } from "../../experiments/api/queries.js";
+import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
@@ -28,6 +30,7 @@ export function useAgentRows() {
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
   const { data: driverSummaries } = useDriverSummaries({ silent: true });
+  const { data: ownerSchedules } = useOwnerSchedules();
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);
@@ -58,6 +61,15 @@ export function useAgentRows() {
     );
   }, [driverSummaries]);
 
+  const scheduleCountByAgent = useMemo(() => {
+    if (!ownerSchedules) return new Map<string, number>();
+    const counts = new Map<string, number>();
+    for (const s of ownerSchedules) {
+      counts.set(s.agentId, (counts.get(s.agentId) ?? 0) + 1);
+    }
+    return counts;
+  }, [ownerSchedules]);
+
   const subtitleLookup = useMemo<SandboxSubtitleLookup>(
     () => ({
       templateNameById: new Map(templates.map((t) => [t.id, t.name])),
@@ -68,6 +80,16 @@ export function useAgentRows() {
     [templates, connections.data],
   );
 
+  const nonProviderConnectionCount = (agent: AgentView): number => {
+    let count = 0;
+    for (const cid of agent.grantedConnectionIds) {
+      const tid = subtitleLookup.connectionTemplateIdById.get(cid);
+      if (tid && providerTypeForTemplateId(tid)) continue;
+      count += 1;
+    }
+    return count;
+  };
+
   const rowProps = (agent: AgentView) => ({
     agent,
     display: resolveAgentDisplay(agent, restartingIds, pausingIds),
@@ -76,6 +98,8 @@ export function useAgentRows() {
         ? (experimentCountByDriver.get(agent.id) ?? 0)
         : undefined,
     }),
+    connectionCount: nonProviderConnectionCount(agent),
+    scheduleCount: scheduleCountByAgent.get(agent.id) ?? 0,
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,

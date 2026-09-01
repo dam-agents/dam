@@ -29,13 +29,14 @@ async function main() {
     }
     await loadBrand().then(applyBrand);
     const { default: App } = await import("./app.js");
-    const { MockStateBar } = await import("./mock/state-bar.js");
+    const { MockAppWrapper } = await import("./mock/mock-app-wrapper.js");
     createRoot(document.getElementById("root")!).render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={200}>
-            <MockStateBar />
-            <App />
+            <MockAppWrapper>
+              <App />
+            </MockAppWrapper>
             <Toaster />
           </TooltipProvider>
         </QueryClientProvider>
@@ -52,10 +53,7 @@ async function main() {
     return;
   }
 
-  const [user] = await Promise.all([
-    initAuth(),
-    loadBrand().then(applyBrand),
-  ]);
+  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return;
 
   if (!(await preflightTermsGate())) {
