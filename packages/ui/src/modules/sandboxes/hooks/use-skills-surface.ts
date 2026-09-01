@@ -140,6 +140,13 @@ export function useSkillsSurface(
   const supersedeInFlightPolls = useCallback(() => {
     localWriteEpochRef.current += 1;
   }, []);
+  const commitInstalled = useCallback(
+    (next: SkillRef[]) => {
+      supersedeInFlightPolls();
+      setInstalled(next);
+    },
+    [supersedeInFlightPolls],
+  );
 
   useEffect(() => {
     if (!stateLoaded) return;
@@ -275,13 +282,10 @@ export function useSkillsSurface(
               }),
         `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
       );
-      if (result !== ACTION_FAILED) {
-        supersedeInFlightPolls();
-        setInstalled(result);
-      }
+      if (result !== ACTION_FAILED) commitInstalled(result);
       setBusyKey(null);
     },
-    [agentId, isError, readOnly, installedRef, supersedeInFlightPolls],
+    [agentId, isError, readOnly, installedRef, commitInstalled],
   );
 
   const update = useCallback(
@@ -300,14 +304,11 @@ export function useSkillsSurface(
           }),
         `Failed to update ${skill.name}`,
       );
-      if (result !== ACTION_FAILED) {
-        supersedeInFlightPolls();
-        setInstalled(result);
-      }
+      if (result !== ACTION_FAILED) commitInstalled(result);
       setBusyKey(null);
       return result !== ACTION_FAILED;
     },
-    [agentId, isError, readOnly, supersedeInFlightPolls],
+    [agentId, isError, readOnly, commitInstalled],
   );
 
   const toggleSource = useCallback(
@@ -336,13 +337,10 @@ export function useSkillsSurface(
           }),
         `Failed to ${on ? "enable" : "disable"} all skills`,
       );
-      if (result !== ACTION_FAILED) {
-        supersedeInFlightPolls();
-        setInstalled(result);
-      }
+      if (result !== ACTION_FAILED) commitInstalled(result);
       setBusySourceId(null);
     },
-    [agentId, isError, readOnly, installedRef, supersedeInFlightPolls],
+    [agentId, isError, readOnly, installedRef, commitInstalled],
   );
 
   const updateAll = useCallback(
@@ -363,13 +361,10 @@ export function useSkillsSurface(
           }),
         "Failed to update all skills",
       );
-      if (result !== ACTION_FAILED) {
-        supersedeInFlightPolls();
-        setInstalled(result);
-      }
+      if (result !== ACTION_FAILED) commitInstalled(result);
       setUpdatingAll(false);
     },
-    [agentId, isError, readOnly, supersedeInFlightPolls],
+    [agentId, isError, readOnly, commitInstalled],
   );
 
   useEffect(() => {
@@ -429,8 +424,7 @@ export function useSkillsSurface(
       );
       setApplyingSets(false);
       if (result === ACTION_FAILED) return false;
-      supersedeInFlightPolls();
-      setInstalled(result.installed);
+      commitInstalled(result.installed);
 
       const { added } = result;
       const skipped = result.skipped.length;
@@ -453,7 +447,7 @@ export function useSkillsSurface(
       });
       return true;
     },
-    [agentId, isError, readOnly, supersedeInFlightPolls],
+    [agentId, isError, readOnly, commitInstalled],
   );
 
   const createSource = useCallback(

@@ -35,10 +35,11 @@ describe("resolveSkillDirInClone with symlinked source roots", () => {
       skillMd("grill-me"),
       "utf8",
     );
-    await fs.mkdir(path.join(clone, ".claude", "skills"), { recursive: true });
+    const aliasRoot = path.join(clone, ".claude", "skills");
+    await fs.mkdir(aliasRoot, { recursive: true });
     await fs.symlink(
-      "../../.agents/skills/grill-me",
-      path.join(clone, ".claude", "skills", "grill-me"),
+      path.relative(aliasRoot, realDir),
+      path.join(aliasRoot, "grill-me"),
     );
   });
 
