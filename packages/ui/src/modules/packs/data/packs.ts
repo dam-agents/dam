@@ -40,6 +40,8 @@ export interface PackSlot {
   description: string;
   templateId?: string;
   demoValue?: string;
+  connectionTemplateId?: string;
+  starterRepoUrl?: string;
 }
 
 export const PACK_CATEGORIES = [
@@ -104,6 +106,7 @@ export const PACKS: Pack[] = [
         label: "GitHub",
         description: "Read issues, PRs, and repo files",
         templateId: "github",
+        connectionTemplateId: "conn-tpl-github",
         demoValue: "acme-org/design-system",
       },
       {
@@ -154,6 +157,7 @@ export const PACKS: Pack[] = [
         label: "GitHub",
         description: "Read PRs, diffs, and CI status",
         templateId: "github",
+        connectionTemplateId: "conn-tpl-github",
       },
       {
         kind: "knowledge-base",
@@ -190,6 +194,7 @@ export const PACKS: Pack[] = [
         label: "GitHub",
         description: "Read repository files and history",
         templateId: "github",
+        connectionTemplateId: "conn-tpl-github",
       },
       {
         kind: "knowledge-base",
@@ -244,6 +249,7 @@ export const PACKS: Pack[] = [
         label: "GitHub",
         description: "Store scan results and configuration",
         templateId: "github",
+        connectionTemplateId: "conn-tpl-github",
       },
       {
         kind: "channel",

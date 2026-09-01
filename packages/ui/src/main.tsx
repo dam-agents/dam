@@ -52,10 +52,7 @@ async function main() {
     return;
   }
 
-  const [user] = await Promise.all([
-    initAuth(),
-    loadBrand().then(applyBrand),
-  ]);
+  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return;
 
   if (!(await preflightTermsGate())) {

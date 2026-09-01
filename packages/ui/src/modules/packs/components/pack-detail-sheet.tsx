@@ -40,24 +40,50 @@ const INGREDIENT_ICONS: Record<PackIngredientKind, CarbonIconType> = {
 interface Props {
   pack: Pack | null;
   onClose: () => void;
+  onCreateFromPack: (pack: Pack) => void;
+  onTryIt: (pack: Pack) => void;
 }
 
-export function PackDetailSheet({ pack, onClose }: Props) {
+export function PackDetailSheet({
+  pack,
+  onClose,
+  onCreateFromPack,
+  onTryIt,
+}: Props) {
   if (!pack) return null;
+
+  const Icon = pack.icon;
 
   return (
     <Modal widthClass="w-[960px]">
-      <DialogHeader
-        title={pack.name}
-        subtitle={pack.tagline}
-        onClose={onClose}
-        divided={false}
-        titleAccessory={
-          <Badge variant="muted" size="sm">
-            {pack.category}
-          </Badge>
-        }
-      />
+      <DialogHeader onClose={onClose} divided>
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
+            <Icon size={16} className="text-foreground" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-lg font-semibold text-foreground">
+                {pack.name}
+              </h2>
+              <Badge variant="muted" size="sm">
+                {pack.category}
+              </Badge>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {pack.tagline}
+            </p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+          {pack.description}
+        </p>
+        <div className="mt-3 flex items-center gap-3 text-[14px] text-muted-foreground">
+          <span>{pack.included.length} included</span>
+          <span className="text-border">|</span>
+          <span>{pack.required.length} to set up</span>
+        </div>
+      </DialogHeader>
 
       <DialogBody>
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
@@ -84,7 +110,7 @@ export function PackDetailSheet({ pack, onClose }: Props) {
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex aspect-[9/14] w-full flex-col items-center justify-center rounded-xl border border-border bg-muted">
+            <div className="flex aspect-[4/5] w-full flex-col items-center justify-center rounded-xl border border-border bg-muted">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-foreground/10">
                 <Play size={16} className="ml-0.5 text-muted-foreground" />
               </div>
@@ -97,17 +123,16 @@ export function PackDetailSheet({ pack, onClose }: Props) {
             </div>
           </div>
         </div>
-
-        <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
-          {pack.description}
-        </p>
       </DialogBody>
 
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           Close
         </Button>
-        <Button>Create agent with this pack</Button>
+        <Button variant="outline" onClick={() => onTryIt(pack)}>
+          Try it
+        </Button>
+        <Button onClick={() => onCreateFromPack(pack)}>Create agent</Button>
       </DialogFooter>
     </Modal>
   );
