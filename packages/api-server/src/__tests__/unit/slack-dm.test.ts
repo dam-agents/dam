@@ -16,7 +16,6 @@ import {
   type ChannelTurnRelayed,
   type DomainEvent,
 } from "../../events.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const USER = "U-DM-USER";
@@ -96,7 +95,7 @@ function harness(opts: { binding: Binding }) {
     pending,
     pendingMap,
     async start() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
     },
     async directMessage(text: string, channel = "D-USER") {
       await this.start();

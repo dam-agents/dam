@@ -210,6 +210,10 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             );
         }
 
+        if (prev.lastSettledVersion > settledVersion) {
+          return { newlyFailed: [], recovered: [], gaveUp: [] };
+        }
+
         if (!clean) {
           const nextAttempts = prev.applyAttempts + 1;
           await tx
@@ -253,6 +257,12 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               sql`${runtimeStateOutbox.applyFailures} <> '[]'::jsonb`,
               lt(runtimeStateOutbox.applyAttempts, maxAttempts),
             ),
+            sql`EXISTS (
+              SELECT 1 FROM runtime_events re
+              WHERE re.agent_id = ${runtimeStateOutbox.agentId}
+                AND re.dispatched_at IS NULL
+                AND re.expires_at > now()
+            )`,
           ),
         )
         .orderBy(asc(runtimeStateOutbox.applyAttempts))
@@ -290,14 +300,17 @@ export function createOutboxRepo(db: Db): OutboxRepo {
     },
 
     async insertEvent(input, tx = db): Promise<void> {
-      await tx.insert(runtimeEvents).values({
-        id: input.id,
-        agentId: input.agentId,
-        kind: input.kind,
-        payload: input.payload as object,
-        version: input.version,
-        expiresAt: input.expiresAt,
-      });
+      await tx
+        .insert(runtimeEvents)
+        .values({
+          id: input.id,
+          agentId: input.agentId,
+          kind: input.kind,
+          payload: input.payload as object,
+          version: input.version,
+          expiresAt: input.expiresAt,
+        })
+        .onConflictDoNothing();
     },
   };
 }

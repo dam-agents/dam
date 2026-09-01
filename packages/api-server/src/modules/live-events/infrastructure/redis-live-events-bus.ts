@@ -13,7 +13,7 @@ export function createRedisLiveEventsBus(
       void bus.publish(channelOf(ownerSub), JSON.stringify(event));
     },
     subscribe(ownerSub, listener) {
-      return bus.subscribe(channelOf(ownerSub), (payload) => {
+      const unsubscribe = bus.subscribe(channelOf(ownerSub), (payload) => {
         let raw: unknown;
         try {
           raw = JSON.parse(payload);
@@ -28,6 +28,13 @@ export function createRedisLiveEventsBus(
         }
         listener(parsed.data);
       });
+      const unsubscribeReconnect = bus.onReconnect?.(() =>
+        listener({ topic: "sync" }),
+      );
+      return () => {
+        unsubscribe();
+        unsubscribeReconnect?.();
+      };
     },
   };
 }

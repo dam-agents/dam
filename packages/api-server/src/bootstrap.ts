@@ -24,6 +24,7 @@ import {
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
+  connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
@@ -43,6 +44,7 @@ import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-s
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
+  channelRpcRequestSchema,
   type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
@@ -148,12 +150,15 @@ import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
-import { createLeaderLease } from "./core/leader-lease.js";
+import { createLeaderLease, type LeaderRole } from "./core/leader-lease.js";
 import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
-import { createAgentInformer } from "./modules/agents/infrastructure/k8s.js";
+import {
+  createAgentInformer,
+  createLeaseApi,
+} from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -216,6 +221,7 @@ export async function bootstrap() {
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
+  connectScanCacheBus(redisBus);
 
   const periodicJobs = createPeriodicJobs({
     connection: bullConnection,
@@ -223,6 +229,7 @@ export async function bootstrap() {
   });
 
   const k8sClient = createK8sClient(api, config.namespace);
+  const leaseApi = createLeaseApi();
   const agentStateCache = startAgentStateCache({
     informer: createAgentInformer(config.namespace),
     live: k8sClient,
@@ -465,6 +472,13 @@ export async function bootstrap() {
     },
   });
   usage.start();
+  if (config.activityTrackingEnabled) {
+    await periodicJobs.register(
+      "activity-retention",
+      7 * 24 * 60 * 60 * 1000,
+      () => usage.retentionTick(),
+    );
+  }
 
   const audit = composeAuditModule();
   audit.start();
@@ -478,13 +492,11 @@ export async function bootstrap() {
     runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
   });
   liveEventsModule.start();
-  const agentWatchLease = createLeaderLease({
-    redis: sharedRedis,
+  const agentWatchRole: LeaderRole = {
     name: "live-events-agent-watch",
     onAcquired: () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
-    log: (m) => getLogger().info(`[live-events] ${m}`),
-  });
+  };
 
   const { agents: systemAgents } = composeAgentsModule({
     api,
@@ -645,6 +657,7 @@ export async function bootstrap() {
   const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
     bus: redisBus,
     service: "channels",
+    requestSchema: channelRpcRequestSchema,
     claim: async (id) =>
       (await sharedRedis.set(
         `rpc:claim:channels:${id}`,
@@ -660,17 +673,25 @@ export async function bootstrap() {
     telegramWorker,
     rpc: channelRpc,
     blobs: createRedisBlobHandoff(sharedRedis),
-    isLeader: () => channelLease.isLeader(),
+    isLeader: () => leaderLease.isRunning("channels"),
   });
 
-  const channelLease = createLeaderLease({
-    redis: sharedRedis,
-    name: "channels",
-    onAcquired: async () => {
-      const channelsByInstance = await listChannelsByOwner(db, "")();
-      await channelManager.bootstrap(channelsByInstance);
-    },
-    onLost: () => channelManager.standDown(),
+  const leaderLease = createLeaderLease({
+    leases: leaseApi,
+    namespace: config.namespace,
+    name: `${config.releaseName}-apiserver`,
+    roles: [
+      {
+        name: "channels",
+        onAcquired: async () => {
+          const channelsByInstance = await listChannelsByOwner(db, "")();
+          await channelManager.bootstrap(channelsByInstance);
+        },
+        onLost: () => channelManager.standDown(),
+      },
+      agentWatchRole,
+    ],
+    log: (m) => getLogger().info(`[leader] ${m}`),
   });
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
@@ -862,6 +883,9 @@ export async function bootstrap() {
       `[schedules] restoreAll failed: ${(err as Error).message}\n`,
     );
   });
+  await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
+    schedulesBoot.runner.restoreAll(),
+  );
 
   const { readSpec: harnessReadTemplateSpec } =
     composeTemplatesModule(templatesRepo);
@@ -1001,8 +1025,7 @@ export async function bootstrap() {
   };
 
   void telegramWorker?.resolveIdentity();
-  void channelLease.start();
-  void agentWatchLease.start();
+  void leaderLease.start();
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
@@ -1013,10 +1036,9 @@ export async function bootstrap() {
     usage.stop();
     audit.stop();
     await agentStateCache.stop();
-    await agentWatchLease.stop();
+    await leaderLease.stop();
     liveEventsModule.stop();
     await periodicJobs.close();
-    await channelLease.stop();
     channelRpc.close();
     await channelManager.stopAll();
     await runtimeDelivery.worker.close();
@@ -1024,6 +1046,7 @@ export async function bootstrap() {
     await schedulesBoot.close();
     await redisBus.close();
     turnAttendance.close();
+    await chatSdkState?.disconnect().catch(() => {});
     await sharedRedis.quit().catch(() => {});
     await sql.end();
   };

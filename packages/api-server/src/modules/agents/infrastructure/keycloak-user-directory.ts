@@ -1,3 +1,5 @@
+import { boundedSet } from "../../../core/bounded-map.js";
+
 export interface KeycloakUserDirectory {
   resolveByEmail(email: string): Promise<string | null>;
   resolveBySub(sub: string): Promise<string | null>;
@@ -120,11 +122,14 @@ export function createKeycloakUserDirectory(
         process.stderr.write(
           `[keycloak-user-directory] user lookup ${sub} failed: ${res.status}\n`,
         );
-        subCache.set(sub, { user: null, expiresAt: now + LOOKUP_TTL_MS });
+        boundedSet(subCache, sub, {
+          user: null,
+          expiresAt: now + LOOKUP_TTL_MS,
+        });
         return null;
       }
       const user = toDirectoryUser((await res.json()) as KeycloakUserRecord);
-      subCache.set(sub, { user, expiresAt: now + LOOKUP_TTL_MS });
+      boundedSet(subCache, sub, { user, expiresAt: now + LOOKUP_TTL_MS });
       return user;
     } catch (err) {
       process.stderr.write(
@@ -154,14 +159,14 @@ export function createKeycloakUserDirectory(
       const sub =
         users.find((u) => u.email?.toLowerCase() === email.toLowerCase())?.id ??
         null;
-      emailToSubCache.set(email, {
+      boundedSet(emailToSubCache, email, {
         email: sub,
         expiresAt: now + LOOKUP_TTL_MS,
       });
       if (sub) {
         const lookedUp = users.find((u) => u.id === sub);
         if (lookedUp) {
-          subCache.set(sub, {
+          boundedSet(subCache, sub, {
             user: toDirectoryUser(lookedUp),
             expiresAt: now + LOOKUP_TTL_MS,
           });

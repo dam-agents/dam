@@ -30,8 +30,18 @@ import {
 } from "./services/resolve-pr-state.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
+import type { RedisBus } from "../../core/redis-bus.js";
+import { wireScanCacheBus } from "./infrastructure/scan-cache.js";
 
 const sharedScanCache = createScanCache();
+
+let broadcastScanInvalidation:
+  | ((gitUrl: string, path?: string) => void)
+  | null = null;
+
+export function connectScanCacheBus(bus: RedisBus): void {
+  broadcastScanInvalidation = wireScanCacheBus(sharedScanCache, bus);
+}
 
 export function composePrStateResolver(deps: {
   db: Db;
@@ -83,7 +93,10 @@ export function composeSkillsModule(deps: {
     unitOfWork: createUnitOfWork(db),
     owner: deps.owner,
     scanSource: sharedScanCache.scan,
-    invalidateScan: sharedScanCache.invalidate,
+    invalidateScan: (gitUrl, path) => {
+      sharedScanCache.invalidate(gitUrl, path);
+      broadcastScanInvalidation?.(gitUrl, path);
+    },
     scanPublic: scanPublicGithubArchive,
     readPublicSkillFile: readPublicGithubSkillFile,
     brandName: deps.brandName,

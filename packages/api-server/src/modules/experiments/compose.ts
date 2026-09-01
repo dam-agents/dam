@@ -190,8 +190,8 @@ export async function reconcileExperimentPins(opts: {
   pin: ExperimentPinPort;
 }): Promise<{ set: number; cleared: number }> {
   const repo = createExperimentsRepository(opts.db);
-  const running = new Set(await repo.listRunningDrivers());
   const pinned = new Set(await opts.listPinnedAgentIds());
+  const running = new Set(await repo.listRunningDrivers());
   let set = 0;
   let cleared = 0;
   for (const id of running) {
@@ -201,7 +201,7 @@ export async function reconcileExperimentPins(opts: {
     }
   }
   for (const id of pinned) {
-    if (!running.has(id)) {
+    if (!running.has(id) && !(await repo.hasRunningForDriver(id))) {
       await opts.pin.clear(id);
       cleared++;
     }

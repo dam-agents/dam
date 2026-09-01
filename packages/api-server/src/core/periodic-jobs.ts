@@ -12,6 +12,8 @@ export interface PeriodicJobs {
   close(): Promise<void>;
 }
 
+const RESCHEDULE_EVERY_MS = 10 * 60 * 1000;
+
 export function createPeriodicJobs(opts: {
   connection: ConnectionOptions;
   log: (msg: string) => void;
@@ -20,22 +22,36 @@ export function createPeriodicJobs(opts: {
   const workers: Worker[] = [];
   let started = false;
 
+  const upsert = (queue: Queue, name: string, everyMs: number) =>
+    queue.upsertJobScheduler(
+      name,
+      { every: everyMs },
+      {
+        name,
+        opts: {
+          removeOnComplete: { age: 3600, count: 24 },
+          removeOnFail: { age: 86_400, count: 50 },
+        },
+      },
+    );
+
+  const reupserts: (() => Promise<unknown>)[] = [];
+  const rescheduler = setInterval(() => {
+    for (const reupsert of reupserts) {
+      void reupsert().catch((err) =>
+        opts.log(`scheduler re-upsert failed: ${err}`),
+      );
+    }
+  }, RESCHEDULE_EVERY_MS);
+  rescheduler.unref?.();
+
   return {
     async register(name, everyMs, tick) {
       const queueName = `${PERIODIC_QUEUE_PREFIX}${name}`;
       const queue = new Queue(queueName, { connection: opts.connection });
       queues.push(queue);
-      await queue.upsertJobScheduler(
-        name,
-        { every: everyMs },
-        {
-          name,
-          opts: {
-            removeOnComplete: { age: 3600, count: 24 },
-            removeOnFail: { age: 86_400, count: 50 },
-          },
-        },
-      );
+      await upsert(queue, name, everyMs);
+      reupserts.push(() => upsert(queue, name, everyMs));
       const worker = new Worker(queueName, async () => tick(), {
         connection: opts.connection,
         concurrency: 1,
@@ -54,6 +70,7 @@ export function createPeriodicJobs(opts: {
     },
 
     async close() {
+      clearInterval(rescheduler);
       await Promise.all(workers.map((w) => w.close()));
       await Promise.all(queues.map((q) => q.close()));
     },
