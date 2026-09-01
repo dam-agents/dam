@@ -43,17 +43,6 @@ metadata:
     istio.io/use-waypoint: {{ .Values.istio.waypointName | quote }}
 spec:
   type: ClusterIP
-  # MCP streamable-HTTP sessions are held in-process per replica; pin each
-  # caller (a per-agent gateway pod, stable IP) to one replica so a session's
-  # follow-up requests land where the session lives.
-  #
-  # This setting alone does NOT achieve that here: it is a kube-proxy feature,
-  # and this Service is waypoint-fronted (`istio.io/use-waypoint` above), so
-  # the waypoint's Envoy load-balances the traffic and never consults it. The
-  # pinning that actually applies is the consistent-hash DestinationRule in
-  # harness-affinity.yaml. Kept for the non-waypoint path and as the declared
-  # intent — remove both or neither.
-  sessionAffinity: ClientIP
   ports:
     - port: {{ .Values.apiServer.harnessServerPort }}
       targetPort: harness
