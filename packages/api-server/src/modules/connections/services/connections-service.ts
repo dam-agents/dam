@@ -372,6 +372,11 @@ export function createConnectionsService(deps: {
             if (!share || !share.reachable) {
               view.status = "expired";
             }
+            if (!share) {
+              // A share id is never reused: unsharing retires it and re-sharing
+              // mints a fresh one, so this connection can only be removed.
+              view.unrecoverable = true;
+            }
             if (!share?.name) return;
             view.name = share.name;
             if (share.name !== remembered) {

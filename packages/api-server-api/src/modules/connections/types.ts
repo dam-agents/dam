@@ -125,6 +125,7 @@ export const connectionView = z.object({
   contributions: z.array(contribution),
   connectedAt: z.string().optional(),
   hosts: z.array(z.string()),
+  unrecoverable: z.boolean().optional(),
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
   hasClientSecret: z.boolean().optional(),

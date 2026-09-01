@@ -84,7 +84,9 @@ function makeSecretStoreFake(): SecretStore {
   };
 }
 
-function makeService(share: { name: string | null } | null) {
+function makeService(
+  share: { name: string | null; reachable?: boolean } | null,
+) {
   const { repo, rows } = makeRepoFake();
   const state = { share };
   const oauthFlow: OAuthFlowService = {
@@ -113,7 +115,7 @@ function makeService(share: { name: string | null } | null) {
     resolveKbShare: async () =>
       state.share === null
         ? null
-        : { name: state.share.name, reachable: true },
+        : { name: state.share.name, reachable: state.share.reachable ?? true },
   });
   return { svc, rows, state };
 }
@@ -160,6 +162,28 @@ describe("shared knowledge base connection naming", () => {
     state.share = null;
     const [view] = await svc.listConnections();
     expect(view?.name).toBe("Platform Wiki");
+  });
+
+  // TEST_SCENARIO: an unshared knowledge base is unrecoverable — its id is retired, so re-sharing mints a new one and the old entry can only be removed, never reconnected.
+  it("marks an unshared knowledge base unrecoverable", async () => {
+    const { svc, state } = makeService({ name: "Team Wiki" });
+    await connect(svc);
+    await svc.listConnections();
+
+    state.share = null;
+    const [view] = await svc.listConnections();
+    expect(view?.unrecoverable).toBe(true);
+  });
+
+  // TEST_SCENARIO: a merely rotated link stays recoverable — the share still exists, so pasting the owner's current link repairs this same entry.
+  it("leaves a rotated link recoverable", async () => {
+    const { svc, state } = makeService({ name: "Team Wiki" });
+    await connect(svc);
+
+    state.share = { name: "Team Wiki", reachable: false };
+    const [view] = await svc.listConnections();
+    expect(view?.status).toBe("expired");
+    expect(view?.unrecoverable).toBeUndefined();
   });
 
   // TEST_SCENARIO: a share that never resolved (no name was ever seen) falls back to the stored slug instead of rendering an empty name.
