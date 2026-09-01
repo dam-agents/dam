@@ -50,7 +50,12 @@ export function FeedCard({
             {icon}
             <span className="truncate">{agentName}</span>
           </div>
-          <p className="text-[15px] leading-snug font-semibold text-foreground">
+          <p
+            className={cn(
+              "text-[15px] leading-snug text-foreground",
+              unread || working ? "font-semibold" : "font-normal",
+            )}
+          >
             {title}
             {working && (
               <WorkingDots

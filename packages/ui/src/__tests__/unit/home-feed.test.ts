@@ -36,7 +36,12 @@ function unread(
     id,
     agentId: "a-1",
     at,
-    session: session({ sessionId: id, type }),
+    session: session({
+      sessionId: id,
+      type,
+      seenAt: "2026-08-19T07:00:00Z",
+      updatedAt: at ?? "2026-08-19T10:00:00Z",
+    }),
   };
 }
 
