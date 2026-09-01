@@ -23,12 +23,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
-import { HintTooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
-import { formatDuration, formatTimestamp } from "@/lib/format-time";
+import { formatTimestamp } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import { runTimeLabel } from "../lib/run-time.js";
 import { slackSessionKind } from "../lib/session-category.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
@@ -112,6 +112,7 @@ export function SessionRow({
       : "font-normal text-foreground";
 
   const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const runTime = scheduled ? runTimeLabel(s) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const channel =
     s.type === SessionType.ChannelSlack ||
@@ -149,16 +150,21 @@ export function SessionRow({
             ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
-            session={s}
             draft={draft}
             backgroundWork={backgroundWork}
           />
         </div>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground truncate">
           {slackKind
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
             : ""}
           {formatTimestamp(s.updatedAt ?? s.createdAt)}
+          {runTime && (
+            <span data-testid="session-run-time">
+              {" · "}
+              {runTime}
+            </span>
+          )}
           {cost && (
             <span
               className="tabular-nums"
@@ -226,7 +232,6 @@ function SessionIndicators({
   ambient,
   needsApproval,
   working,
-  session,
   draft,
   backgroundWork,
 }: {
@@ -236,7 +241,6 @@ function SessionIndicators({
   ambient: boolean;
   needsApproval: boolean;
   working: boolean;
-  session: SessionView;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
 }) {
@@ -251,7 +255,6 @@ function SessionIndicators({
     !draft
   )
     return null;
-  const runTime = scheduled ? runTimeLabel(session) : null;
   return (
     <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
       {terminal && (
@@ -278,18 +281,9 @@ function SessionIndicators({
             aria-label="Channel session"
           />
         ))}
-      {scheduled &&
-        (runTime ? (
-          <HintTooltip
-            label="Scheduled"
-            content={runTime}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Time size={16} className="text-foreground" />
-          </HintTooltip>
-        ) : (
-          <Time size={16} className="text-foreground" aria-label="Scheduled" />
-        ))}
+      {scheduled && (
+        <Time size={16} className="text-foreground" aria-label="Scheduled" />
+      )}
       {needsApproval ? (
         <span
           data-testid="session-approval-dot"
@@ -319,12 +313,3 @@ function SessionIndicators({
   );
 }
 
-function runTimeLabel(s: SessionView): string | null {
-  const runs = s.runCount ?? 0;
-  const total = formatDuration(s.runTotalMs ?? 0);
-  const counted = `${runs} ${runs === 1 ? "run" : "runs"}`;
-  if (s.runStartedAt)
-    return runs ? `Running now · ${counted} finished, ${total}` : "Running now";
-  if (!runs) return null;
-  return runs === 1 ? `Ran ${total}` : `Ran ${total} across ${counted}`;
-}
