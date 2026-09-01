@@ -26,6 +26,9 @@ export interface NavigationSlice {
   sandboxSection: SandboxSection;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
+  /** Set when the packs page was opened from an agent, so a pack applies to it. */
+  applyPackTo: { id: string; name: string } | null;
+  browsePacksFor: (agent: { id: string; name: string } | null) => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToKnowledgeBaseConfig: (agentId: string) => void;
@@ -65,9 +68,17 @@ export const createNavigationSlice: StateCreator<
   ...routeToNavigationState(parseRoute(initialPath())),
   hydrateRoute: () =>
     set(routeToNavigationState(parseRoute(window.location.pathname))),
+  applyPackTo: null,
   setView: (v) => {
     history.pushState(null, "", routeToPath({ view: v }));
-    set(routeToNavigationState({ view: v }));
+    set({ ...routeToNavigationState({ view: v }), applyPackTo: null });
+  },
+  browsePacksFor: (agent) => {
+    history.pushState(null, "", routeToPath({ view: "packs" }));
+    set({
+      ...routeToNavigationState({ view: "packs" }),
+      applyPackTo: agent,
+    });
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";

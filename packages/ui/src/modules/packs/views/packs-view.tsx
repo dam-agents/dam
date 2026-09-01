@@ -1,183 +1,248 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { cn } from "@/lib/utils";
+import { ListSkeleton } from "@/components/list-skeleton";
+import { PageEmptyState } from "@/components/ui/page-empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { Tabs } from "@/components/ui/tabs";
 
+import { useAppConnections } from "../../connections/api/queries.js";
+import { CardIconTile } from "../../sandboxes/components/steps/stacked-card.js";
+import {
+  type ApplyResult,
+  ApplyPackModal,
+} from "../components/apply-pack-modal.js";
+import { MakeMineModal } from "../components/make-mine-modal.js";
+import { PackDemoView } from "../components/pack-demo-view.js";
 import { PackDetailSheet } from "../components/pack-detail-sheet.js";
-import { type Pack, PACK_CATEGORIES, PACKS } from "../data/packs.js";
+import {
+  ingredientCounts,
+  INGREDIENT_ICON,
+  type Pack,
+  PACK_FACETS,
+  type PackFacet,
+  PACKS,
+} from "../data/packs.js";
 
-const ACCENT_TEXT: Record<Pack["accent"], string> = {
-  blue: "text-blue-400",
-  violet: "text-violet-400",
-  amber: "text-amber-400",
-  emerald: "text-emerald-400",
-  rose: "text-rose-400",
-  cyan: "text-cyan-400",
-};
+type Filter = PackFacet | "All";
 
-function ReqPills({ pack }: { pack: Pack }) {
-  const conns = pack.requirements.filter((r) => r.type === "connection").length;
-  const skills = pack.requirements.filter((r) => r.type === "skill").length;
-  const kbs = pack.requirements.filter(
-    (r) => r.type === "knowledge-base",
-  ).length;
+/**
+ * Applying is additive, so the preview splits the pack three ways: what lands on
+ * the agent, what is left alone because the agent already has it, and the slots
+ * the user fills in. A slot is never "added" — applying cannot pick a repo or a
+ * channel for someone — and an unfilled slot never blocks applying.
+ *
+ * Which *included* ingredients collide is a server answer. Here the first one
+ * stands in for a collision, so that state is reachable in the prototype.
+ */
+function previewApply(
+  pack: Pack,
+  connectedTemplateIds: ReadonlySet<string>,
+): ApplyResult {
+  const collision = pack.included[0];
+  const added: ApplyResult["added"] = pack.included
+    .slice(1)
+    .map((item) => ({ kind: item.kind, name: item.name }));
+  const skipped: ApplyResult["skipped"] = collision
+    ? [
+        {
+          kind: collision.kind,
+          name: collision.name,
+          skip: "already-on-agent" as const,
+        },
+      ]
+    : [];
+
+  const toFill: ApplyResult["toFill"] = pack.slots.map((slot) => ({
+    kind: slot.kind,
+    name: slot.label,
+    note:
+      slot.templateIds?.some((id) => connectedTemplateIds.has(id)) === true
+        ? "You have one of these — pick it on the agent"
+        : undefined,
+  }));
+
+  return { added, skipped, toFill };
+}
+
+function IngredientCounts({ pack }: { pack: Pack }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-      {conns > 0 && (
-        <span className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
-          {conns} conn
-        </span>
-      )}
-      {skills > 0 && (
-        <span className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
-          {skills} skill
-        </span>
-      )}
-      {kbs > 0 && (
-        <span className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          {kbs} KB
-        </span>
-      )}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {ingredientCounts(pack).map(({ kind, count, label }) => {
+        const Icon = INGREDIENT_ICON[kind];
+        return (
+          <span key={kind} className="flex items-center gap-1">
+            <Icon className="size-3.5" />
+            {count} {label}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
-function ImagePlaceholder({ className }: { className?: string }) {
-  return <div className={cn("rounded-xl bg-muted", className)} />;
-}
-
-function SpotlightLayout({
+function PackGrid({
   packs,
   onSelect,
 }: {
   packs: Pack[];
-  onSelect: (p: Pack) => void;
+  onSelect: (pack: Pack) => void;
 }) {
-  if (packs.length === 0) {
-    return (
-      <p className="py-16 text-center text-sm text-muted-foreground">
-        No packs in this category yet.
-      </p>
-    );
-  }
-
-  const [hero, ...rest] = packs;
-
   return (
-    <div className="flex flex-col gap-4">
-      <button
-        type="button"
-        onClick={() => onSelect(hero!)}
-        className="group grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
-      >
-        <ImagePlaceholder className="min-h-[280px]" />
-        <div className="flex flex-col justify-center p-10">
-          <p
-            className={cn(
-              "text-xs font-semibold uppercase tracking-wider",
-              ACCENT_TEXT[hero!.accent],
-            )}
+    <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @5xl:grid-cols-3">
+      {packs.map((pack) => {
+        const Icon = pack.icon;
+        return (
+          <button
+            key={pack.id}
+            type="button"
+            onClick={() => onSelect(pack)}
+            aria-label={pack.name}
+            className="flex flex-col rounded-xl border border-border bg-card p-5 text-left transition-colors hover:border-foreground/20"
           >
-            Featured
-          </p>
-          <h3 className="mt-2 text-2xl font-bold tracking-tight text-foreground">
-            {hero!.name}
-          </h3>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            {hero!.description}
-          </p>
-          <div className="mt-5">
-            <ReqPills pack={hero!} />
-          </div>
-        </div>
-      </button>
-
-      {rest.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
-          {rest.map((pack) => (
-            <button
-              key={pack.id}
-              type="button"
-              onClick={() => onSelect(pack)}
-              className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
-            >
-              <ImagePlaceholder className="h-36 w-full" />
-              <div className="flex flex-1 flex-col p-5">
-                <p
-                  className={cn(
-                    "text-xs font-semibold uppercase tracking-wider",
-                    ACCENT_TEXT[pack.accent],
-                  )}
-                >
-                  {pack.category}
-                </p>
-                <h4 className="mt-1.5 text-base font-bold text-foreground">
-                  {pack.name}
-                </h4>
-                <p className="mt-1.5 flex-1 text-sm leading-relaxed text-muted-foreground">
-                  {pack.tagline}
-                </p>
-                <div className="mt-4">
-                  <ReqPills pack={pack} />
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+            <CardIconTile icon={Icon} />
+            <h3 className="mt-4 text-base font-semibold text-foreground">
+              {pack.name}
+            </h3>
+            <p className="mt-1.5 flex-1 text-sm leading-relaxed text-muted-foreground">
+              {pack.tagline}
+            </p>
+            <div className="mt-4">
+              <IngredientCounts pack={pack} />
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-export function PacksView() {
-  const [activeCategory, setActiveCategory] = useState<
-    (typeof PACK_CATEGORIES)[number] | "All"
-  >("All");
-  const [selectedPack, setSelectedPack] = useState<Pack | null>(null);
+interface Props {
+  /** Packs are static today. The prop exists so the empty and loading states are reachable. */
+  packs?: Pack[];
+  loading?: boolean;
+  onCreate?: (pack: Pack) => void;
+  /** When set, a pack can be applied to this agent instead of creating one. */
+  applyTo?: { id: string; name: string };
+}
+
+export function PacksView({
+  packs = PACKS,
+  loading = false,
+  onCreate,
+  applyTo,
+}: Props) {
+  const connectionsQ = useAppConnections();
+  const connectedTemplateIds = useMemo(
+    () =>
+      new Set(
+        (connectionsQ.data ?? [])
+          .filter((c) => c.status === "active")
+          .map((c) => c.templateId),
+      ),
+    [connectionsQ.data],
+  );
+
+  const [filter, setFilter] = useState<Filter>("All");
+  const [selected, setSelected] = useState<Pack | null>(null);
+  const [demo, setDemo] = useState<Pack | null>(null);
+  const [applying, setApplying] = useState<Pack | null>(null);
+  const [makingMine, setMakingMine] = useState<Pack | null>(null);
+
+  if (demo) {
+    return (
+      <>
+        <PackDemoView
+          pack={demo}
+          onBack={() => setDemo(null)}
+          onMakeMine={setMakingMine}
+        />
+        {makingMine && (
+          <MakeMineModal
+            pack={makingMine}
+            onClose={() => setMakingMine(null)}
+            onConfirm={() => {
+              setMakingMine(null);
+              setDemo(null);
+              onCreate?.(makingMine);
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   const filtered =
-    activeCategory === "All"
-      ? PACKS
-      : PACKS.filter((p) => p.category === activeCategory);
+    filter === "All" ? packs : packs.filter((pack) => pack.facet === filter);
+
+  const tabs = (["All", ...PACK_FACETS] as const).map((value) => ({
+    value,
+    label: value,
+  }));
 
   return (
-    <>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Packs
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pre-configured agent setups — connections, skills, and knowledge bases
-          bundled and ready to use.
-        </p>
-      </div>
+    <div className="@container">
+      <PageHeader
+        title="Packs"
+        description="Ready-made agent setups. Start from one, or apply it to an agent you already have."
+      />
 
-      <div className="mb-6 flex gap-1 rounded-lg border border-border bg-muted/50 p-1">
-        {(["All", ...PACK_CATEGORIES] as const).map((cat) => (
-          <button
-            key={cat}
-            type="button"
-            onClick={() => setActiveCategory(cat)}
-            className={cn(
-              "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
-              activeCategory === cat
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      <SpotlightLayout packs={filtered} onSelect={setSelectedPack} />
+      {loading ? (
+        <ListSkeleton
+          rowHeight={208}
+          rows={6}
+          className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @5xl:grid-cols-3"
+        />
+      ) : packs.length === 0 ? (
+        <PageEmptyState
+          title="No packs yet"
+          message="Packs bundle the skills, schedules and connections that make an agent useful. None are available on this platform yet."
+          actionLabel="Create agent"
+          onAction={() => onCreate?.(PACKS[0]!)}
+        />
+      ) : (
+        <>
+          <Tabs
+            tabs={tabs}
+            value={filter}
+            onValueChange={setFilter}
+            variant="pill"
+            ariaLabel="Filter packs"
+            className="mb-6"
+          />
+          {filtered.length === 0 ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              No {filter.toLowerCase()} packs yet.
+            </p>
+          ) : (
+            <PackGrid packs={filtered} onSelect={setSelected} />
+          )}
+        </>
+      )}
 
       <PackDetailSheet
-        pack={selectedPack}
-        onClose={() => setSelectedPack(null)}
+        pack={selected}
+        applyToName={applyTo?.name}
+        connectedTemplateIds={connectedTemplateIds}
+        onClose={() => setSelected(null)}
+        onCreate={(pack) => {
+          setSelected(null);
+          if (applyTo) setApplying(pack);
+          else onCreate?.(pack);
+        }}
+        onTry={(pack) => {
+          setSelected(null);
+          setDemo(pack);
+        }}
       />
-    </>
+
+      {applying && applyTo && (
+        <ApplyPackModal
+          pack={applying}
+          agentName={applyTo.name}
+          preview={previewApply(applying, connectedTemplateIds)}
+          onClose={() => setApplying(null)}
+        />
+      )}
+    </div>
   );
 }

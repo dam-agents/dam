@@ -1,6 +1,6 @@
 export const connectionTemplates = [
   {
-    id: "conn-tpl-github",
+    id: "github",
     name: "GitHub",
     description: "Connect to GitHub repositories",
     category: "app",
@@ -30,7 +30,7 @@ export const connectionTemplates = [
     inputs: [],
   },
   {
-    id: "conn-tpl-slack",
+    id: "slack",
     name: "Slack",
     description: "Connect to Slack workspaces",
     category: "app",
@@ -40,7 +40,7 @@ export const connectionTemplates = [
     inputs: [],
   },
   {
-    id: "conn-tpl-kubernetes",
+    id: "kubernetes",
     name: "Kubernetes",
     description: "Connect to Kubernetes clusters",
     category: "app",
@@ -50,13 +50,13 @@ export const connectionTemplates = [
     inputs: [],
   },
   {
-    id: "conn-tpl-linear",
-    name: "Linear",
-    description: "Connect to Linear project management",
+    id: "modal",
+    name: "Modal",
+    description: "Modal cloud GPUs for evaluation workloads",
     category: "app",
     isCustom: false,
-    iconSlug: undefined,
-    authKind: "oauth",
+    iconSlug: "modal",
+    authKind: "header",
     inputs: [],
   },
 ];
@@ -64,7 +64,7 @@ export const connectionTemplates = [
 export const connections = [
   {
     id: "conn-github",
-    templateId: "conn-tpl-github",
+    templateId: "github",
     name: "acme-org GitHub",
     category: "app",
     status: "active",
@@ -107,19 +107,19 @@ export const agentConnections = [
   },
   {
     id: "conn-github",
-    templateId: "conn-tpl-github",
+    templateId: "github",
     name: "acme-org GitHub",
     status: "active",
   },
   {
     id: "conn-slack",
-    templateId: "conn-tpl-slack",
+    templateId: "slack",
     name: "Platform team Slack",
     status: "active",
   },
   {
     id: "conn-k8s",
-    templateId: "conn-tpl-kubernetes",
+    templateId: "kubernetes",
     name: "dev-cluster",
     status: "active",
   },

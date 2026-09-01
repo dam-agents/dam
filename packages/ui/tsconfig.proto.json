@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["src/__tests__"],
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "api-server-api/router": ["../api-server-api/src/router.ts"],
+      "api-server-api": ["../api-server-api/src/index.ts"],
+      "agent-runtime-api": ["../agent-runtime-api/src/index.ts"]
+    }
+  }
+}

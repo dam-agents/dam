@@ -54,6 +54,22 @@ export default function App() {
 
 const SETUP_VIEWS = new Set<Route["view"]>(["agent-new"]);
 
+/**
+ * The packs page can be opened on its own or from an agent's setup page. In the
+ * second case the agent travels with the navigation, so a pack applies to it
+ * instead of creating a new one.
+ */
+function PacksRoute() {
+  const applyPackTo = useStore((s) => s.applyPackTo);
+  const setView = useStore((s) => s.setView);
+  return (
+    <PacksView
+      applyTo={applyPackTo ?? undefined}
+      onCreate={() => setView("agent-new")}
+    />
+  );
+}
+
 function MainApp() {
   const view = useStore((s) => s.view);
 
@@ -125,7 +141,7 @@ function MainApp() {
               ) : view === "agents" ? (
                 <AgentsView />
               ) : view === "packs" ? (
-                <PacksView />
+                <PacksRoute />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

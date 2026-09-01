@@ -1,6 +1,7 @@
 import { Controller } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
@@ -24,6 +25,7 @@ interface Props {
 
 export function SandboxSetupSection({ f }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
+  const browsePacksFor = useStore((s) => s.browsePacksFor);
   const { agent } = f;
   if (!agent) return null;
 
@@ -46,6 +48,24 @@ export function SandboxSetupSection({ f }: Props) {
         <FormField label="Name" error={f.errors.name?.message}>
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
+      </section>
+
+      <section className="mb-8">
+        <SectionLabel spaced>Packs</SectionLabel>
+        <Callout inset>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              A pack adds skills, schedules and connections in one step.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => browsePacksFor({ id: agent.id, name: agent.name })}
+              disabled={f.saving}
+            >
+              Apply a pack
+            </Button>
+          </div>
+        </Callout>
       </section>
 
       <SandboxSizeSection

@@ -35,7 +35,7 @@ export function buildCreateAgentInput(
   };
 }
 
-export interface CodingAgentSetupDraft {
+export interface AgentSetupDraft {
   name: string;
   templateId: string | null;
   customImage: string;
@@ -44,21 +44,17 @@ export interface CodingAgentSetupDraft {
   registryCredential: RegistryCredential;
 }
 
-export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
+export function setupUsesCustomImage(draft: AgentSetupDraft): boolean {
   return draft.customImage.trim().length > 0;
 }
 
-export function hasPartialRegistryCredential(
-  draft: CodingAgentSetupDraft,
-): boolean {
+export function hasPartialRegistryCredential(draft: AgentSetupDraft): boolean {
   if (!setupUsesCustomImage(draft)) return false;
   const filled = registryFilledCount(draft.registryCredential);
   return filled > 0 && filled < 3;
 }
 
-export function isCodingAgentSetupComplete(
-  draft: CodingAgentSetupDraft,
-): boolean {
+export function isAgentSetupComplete(draft: AgentSetupDraft): boolean {
   return (
     draft.name.trim().length > 0 &&
     draft.providerRef !== null &&
@@ -67,10 +63,8 @@ export function isCodingAgentSetupComplete(
   );
 }
 
-export function buildCodingAgentSetupInput(
-  draft: CodingAgentSetupDraft,
-): CreateAgentInput {
-  if (!isCodingAgentSetupComplete(draft)) {
+export function buildAgentSetupInput(draft: AgentSetupDraft): CreateAgentInput {
+  if (!isAgentSetupComplete(draft)) {
     throw new Error("cannot build create-agent input from an incomplete draft");
   }
   const image = draft.customImage.trim();

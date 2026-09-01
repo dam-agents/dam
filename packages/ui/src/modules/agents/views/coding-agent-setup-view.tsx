@@ -22,10 +22,10 @@ import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import {
-  buildCodingAgentSetupInput,
-  type CodingAgentSetupDraft,
+  type AgentSetupDraft,
+  buildAgentSetupInput,
   hasPartialRegistryCredential,
-  isCodingAgentSetupComplete,
+  isAgentSetupComplete,
 } from "../lib/create-agent-input.js";
 
 const RETURN_PATH = routeToPath({ view: "agent-new" });
@@ -62,7 +62,7 @@ export function CodingAgentSetupView() {
     }
   }, [harnesses, form.templateId, form.customImage, update]);
 
-  const draft: CodingAgentSetupDraft = {
+  const draft: AgentSetupDraft = {
     name: form.name,
     templateId: form.templateId,
     customImage: form.customImage,
@@ -71,14 +71,12 @@ export function CodingAgentSetupView() {
     registryCredential,
   };
   const registryPartial = hasPartialRegistryCredential(draft);
-  const canCreate = isCodingAgentSetupComplete(draft) && !createAgent.isPending;
+  const canCreate = isAgentSetupComplete(draft) && !createAgent.isPending;
 
   const create = async () => {
     if (!canCreate) return;
     try {
-      const agent = await createAgent.mutateAsync(
-        buildCodingAgentSetupInput(draft),
-      );
+      const agent = await createAgent.mutateAsync(buildAgentSetupInput(draft));
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);

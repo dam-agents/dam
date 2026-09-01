@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -23,10 +24,10 @@ import { ScheduleSetupSection } from "../../schedules/components/schedule-setup-
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import {
-  buildCodingAgentSetupInput,
-  type CodingAgentSetupDraft,
+  type AgentSetupDraft,
+  buildAgentSetupInput,
   hasPartialRegistryCredential,
-  isCodingAgentSetupComplete,
+  isAgentSetupComplete,
 } from "../lib/create-agent-input.js";
 
 const RETURN_PATH = routeToPath({ view: "agent-new" });
@@ -37,6 +38,7 @@ export function AgentSetupView() {
   const { data: flags } = useFeatures();
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
+  const setView = useStore((s) => s.setView);
 
   const [registryCredential, setRegistryCredential] = useState(
     EMPTY_REGISTRY_CREDENTIAL,
@@ -69,7 +71,7 @@ export function AgentSetupView() {
     if (isPending) return false;
     if (form.name.trim().length === 0 || form.providerRef === null)
       return false;
-    const draft: CodingAgentSetupDraft = {
+    const draft: AgentSetupDraft = {
       name: form.name,
       templateId: form.templateId,
       customImage: form.customImage,
@@ -77,7 +79,7 @@ export function AgentSetupView() {
       connectionIds: form.connectionIds,
       registryCredential,
     };
-    return isCodingAgentSetupComplete(draft);
+    return isAgentSetupComplete(draft);
   })();
 
   const registryPartial = hasPartialRegistryCredential({
@@ -92,7 +94,7 @@ export function AgentSetupView() {
   const create = async () => {
     if (!canCreate) return;
     try {
-      const draft: CodingAgentSetupDraft = {
+      const draft: AgentSetupDraft = {
         name: form.name,
         templateId: form.templateId,
         customImage: form.customImage,
@@ -100,9 +102,7 @@ export function AgentSetupView() {
         connectionIds: form.connectionIds,
         registryCredential,
       };
-      const agent = await createAgent.mutateAsync(
-        buildCodingAgentSetupInput(draft),
-      );
+      const agent = await createAgent.mutateAsync(buildAgentSetupInput(draft));
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);
@@ -113,7 +113,7 @@ export function AgentSetupView() {
   return (
     <SetupPageShell
       title="Create an agent"
-      subtitle="Configure your agent with a name, image, and connections."
+      subtitle="Start from a pack, or configure it yourself."
       footer={
         <>
           {registryPartial && (
@@ -127,6 +127,19 @@ export function AgentSetupView() {
         </>
       }
     >
+      <section className="mb-8">
+        <Callout inset>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              A pack sets up the skills, schedules and connections for you.
+            </p>
+            <Button variant="outline" onClick={() => setView("packs")}>
+              Start from a pack
+            </Button>
+          </div>
+        </Callout>
+      </section>
+
       <NameSection value={form.name} onChange={(name) => update({ name })} />
       <ImageSection
         harnesses={catalogue.harnesses}

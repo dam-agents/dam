@@ -47,7 +47,7 @@ export function AgentsView() {
       {initialLoaded && visible.length === 0 && (
         <PageEmptyState
           title="No agents yet"
-          message="Each agent runs in its own isolated sandbox with your credentials and tools injected. Create a coding agent, research agent, assistant, or knowledge base to get started."
+          message="Each agent runs on its own, with your credentials and tools. Start from a pack, or create one and configure it yourself."
           actionLabel="Create agent"
           onAction={createAgent}
         />

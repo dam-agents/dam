@@ -28,10 +28,13 @@ export function WelcomeEntryPoints() {
         securely injected — then trigger them from Slack or on a schedule.
       </p>
 
-      <div className="mt-8">
+      <div className="mt-8 flex items-center gap-3">
         <Button size="lg" onClick={enter}>
           Create an agent
           <ArrowRight size={16} />
+        </Button>
+        <Button size="lg" variant="outline" onClick={() => setView("packs")}>
+          Browse packs
         </Button>
       </div>
 

@@ -324,14 +324,23 @@ applyBrand(brand as Parameters<typeof applyBrand>[0]);
 
 async function boot() {
   const { default: App } = await import("../app.js");
+  const { PacksStates } = await import("./packs-states.js");
   const root = createRoot(document.getElementById("root")!);
+
+  // `/proto/packs-states` reaches the empty and loading Packs states, which the
+  // fixtures cannot express — the pack list is static in the app today.
+  const packsStates = window.location.pathname === "/proto/packs-states";
 
   function render() {
     root.render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={200}>
-            <App key={window.location.hash || "home"} />
+            {packsStates ? (
+              <PacksStates />
+            ) : (
+              <App key={window.location.hash || "home"} />
+            )}
             <Toaster />
           </TooltipProvider>
         </QueryClientProvider>

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildCodingAgentSetupInput,
+  type AgentSetupDraft,
+  buildAgentSetupInput,
   buildCreateAgentInput,
-  type CodingAgentSetupDraft,
   type CreateAgentDraft,
   hasPartialRegistryCredential,
-  isCodingAgentSetupComplete,
+  isAgentSetupComplete,
   isCreateAgentDraftComplete,
 } from "../../modules/agents/lib/create-agent-input.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../modules/sandboxes/components/registry-credential-section.js";
@@ -56,7 +56,7 @@ describe("buildCreateAgentInput", () => {
   });
 });
 
-const setup: CodingAgentSetupDraft = {
+const setup: AgentSetupDraft = {
   name: "velvet-comet",
   templateId: "claude-code",
   customImage: "",
@@ -73,16 +73,12 @@ const fullCredential = {
 
 describe("coding-agent setup completeness", () => {
   it("needs a name, a provider, and either a template or a custom image", () => {
-    expect(isCodingAgentSetupComplete(setup)).toBe(true);
-    expect(isCodingAgentSetupComplete({ ...setup, name: "  " })).toBe(false);
-    expect(isCodingAgentSetupComplete({ ...setup, providerRef: null })).toBe(
-      false,
-    );
-    expect(isCodingAgentSetupComplete({ ...setup, templateId: null })).toBe(
-      false,
-    );
+    expect(isAgentSetupComplete(setup)).toBe(true);
+    expect(isAgentSetupComplete({ ...setup, name: "  " })).toBe(false);
+    expect(isAgentSetupComplete({ ...setup, providerRef: null })).toBe(false);
+    expect(isAgentSetupComplete({ ...setup, templateId: null })).toBe(false);
     expect(
-      isCodingAgentSetupComplete({
+      isAgentSetupComplete({
         ...setup,
         templateId: null,
         customImage: "ghcr.io/org/agent:latest",
@@ -97,7 +93,7 @@ describe("coding-agent setup completeness", () => {
       registryCredential: { ...fullCredential, password: "" },
     };
     expect(hasPartialRegistryCredential(partial)).toBe(false);
-    expect(isCodingAgentSetupComplete(partial)).toBe(true);
+    expect(isAgentSetupComplete(partial)).toBe(true);
 
     const partialCustom = {
       ...partial,
@@ -105,15 +101,13 @@ describe("coding-agent setup completeness", () => {
       customImage: "ghcr.io/org/agent:latest",
     };
     expect(hasPartialRegistryCredential(partialCustom)).toBe(true);
-    expect(isCodingAgentSetupComplete(partialCustom)).toBe(false);
+    expect(isAgentSetupComplete(partialCustom)).toBe(false);
   });
 });
 
-describe("buildCodingAgentSetupInput", () => {
+describe("buildAgentSetupInput", () => {
   it("sends the template, the trusted preset, and the provider after the granted connections", () => {
-    expect(
-      buildCodingAgentSetupInput({ ...setup, name: " velvet-comet " }),
-    ).toEqual({
+    expect(buildAgentSetupInput({ ...setup, name: " velvet-comet " })).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
       templateId: "claude-code",
@@ -127,14 +121,14 @@ describe("buildCodingAgentSetupInput", () => {
       templateId: null,
       customImage: " ghcr.io/org/agent:latest ",
     };
-    expect(buildCodingAgentSetupInput(custom)).toEqual({
+    expect(buildAgentSetupInput(custom)).toEqual({
       name: "velvet-comet",
       egressPreset: "trusted",
       image: "ghcr.io/org/agent:latest",
       appConnectionIds: ["conn-granted", "conn-provider"],
     });
     expect(
-      buildCodingAgentSetupInput({
+      buildAgentSetupInput({
         ...custom,
         registryCredential: fullCredential,
       }),
@@ -144,7 +138,7 @@ describe("buildCodingAgentSetupInput", () => {
   // TEST_SCENARIO: a credential typed against a custom image must not leak once the user picks a template.
   it("drops a complete credential when the image reverts to a template", () => {
     expect(
-      buildCodingAgentSetupInput({
+      buildAgentSetupInput({
         ...setup,
         registryCredential: fullCredential,
       }),
@@ -153,7 +147,7 @@ describe("buildCodingAgentSetupInput", () => {
 
   it("throws on an incomplete draft", () => {
     expect(() =>
-      buildCodingAgentSetupInput({ ...setup, providerRef: null }),
+      buildAgentSetupInput({ ...setup, providerRef: null }),
     ).toThrow();
   });
 });

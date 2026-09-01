@@ -1,141 +1,178 @@
+import { CheckmarkFilled, Launch } from "@carbon/icons-react";
+import type { ReactNode } from "react";
+
 import {
-  Close,
-  ConnectionSignal,
-  FlashFilled,
-  Notebook,
-} from "@carbon/icons-react";
-import { useEffect } from "react";
-
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  Modal,
+} from "@/components/modal";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Callout } from "@/components/ui/callout";
 
-import type { Pack, PackRequirement } from "../data/packs.js";
+import {
+  INGREDIENT_ICON,
+  type Pack,
+  type PackIngredient,
+  type PackSlot,
+} from "../data/packs.js";
 
-const TYPE_META: Record<
-  PackRequirement["type"],
-  { icon: typeof ConnectionSignal; className: string }
-> = {
-  connection: {
-    icon: ConnectionSignal,
-    className: "bg-blue-500/10 text-blue-400",
-  },
-  skill: {
-    icon: FlashFilled,
-    className: "bg-violet-500/10 text-violet-400",
-  },
-  "knowledge-base": {
-    icon: Notebook,
-    className: "bg-amber-500/10 text-amber-400",
-  },
-};
+function Row({
+  kind,
+  name,
+  detail,
+  trailing,
+}: {
+  kind: PackIngredient["kind"];
+  name: string;
+  detail: string;
+  trailing?: ReactNode;
+}) {
+  const Icon = INGREDIENT_ICON[kind];
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card">
+        <Icon className="size-4 text-muted-foreground" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{name}</p>
+        <p className="text-sm text-muted-foreground">{detail}</p>
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
+/**
+ * A slot the user can already fill is worth saying so. An unmet one never blocks
+ * the primary action — it is a note about what makes the agent more useful.
+ */
+function slotState(
+  slot: PackSlot,
+  connectedTemplateIds: ReadonlySet<string>,
+): { detail: string; met: boolean } {
+  if (!slot.templateIds) return { detail: "Add it now or later", met: false };
+  const met = slot.templateIds.some((id) => connectedTemplateIds.has(id));
+  return met
+    ? { detail: "You have one of these", met: true }
+    : { detail: "Not connected yet", met: false };
+}
 
 interface Props {
   pack: Pack | null;
+  /** Set when the user came from an agent, so the primary action applies instead. */
+  applyToName?: string;
+  /** Connection templates the user has already connected. */
+  connectedTemplateIds: ReadonlySet<string>;
   onClose: () => void;
+  onCreate: (pack: Pack) => void;
+  onTry: (pack: Pack) => void;
 }
 
-export function PackDetailSheet({ pack, onClose }: Props) {
-  useEffect(() => {
-    if (!pack) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [pack, onClose]);
-
+export function PackDetailSheet({
+  pack,
+  applyToName,
+  connectedTemplateIds,
+  onClose,
+  onCreate,
+  onTry,
+}: Props) {
   if (!pack) return null;
+  const Icon = pack.icon;
+  const unmet = pack.slots.filter(
+    (slot) => !slotState(slot, connectedTemplateIds).met,
+  ).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
+    <Modal widthClass="w-[600px]">
+      <DialogHeader
+        title={pack.name}
+        subtitle={pack.outcome}
+        onClose={onClose}
+        titleAccessory={
+          <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-card">
+            <Icon className="size-5 text-muted-foreground" />
+          </span>
+        }
       />
-      <div className="relative z-10 w-full max-w-[600px] max-h-[80vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-        <div className="p-8">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted text-3xl">
-                {pack.icon}
-              </span>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {pack.category}
-                </p>
-                <h2 className="text-2xl font-bold tracking-tight text-foreground">
-                  {pack.name}
-                </h2>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Close size={16} />
-            </button>
-          </div>
+      <DialogBody>
+        {pack.setupNote && (
+          <Callout tone="warning" size="sm" className="mb-5">
+            <p className="text-sm font-medium text-foreground">
+              {pack.setupNote.title}
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {pack.setupNote.body}
+            </p>
+          </Callout>
+        )}
 
-          <p className="mt-6 text-[15px] leading-relaxed text-muted-foreground">
-            {pack.description}
-          </p>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          What&apos;s included
+        </h3>
+        <div className="mt-3 flex flex-col gap-2">
+          {pack.included.map((item) => (
+            <Row
+              key={`${item.kind}-${item.name}`}
+              kind={item.kind}
+              name={item.name}
+              detail={item.detail}
+            />
+          ))}
+        </div>
 
-          <div className="mt-8">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              What&apos;s included
+        {pack.slots.length > 0 && (
+          <>
+            <h3 className="mt-7 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              You&apos;ll need
             </h3>
-            <div className="mt-3 flex flex-col gap-2.5">
-              {pack.requirements.map((req) => {
-                const meta = TYPE_META[req.type];
-                const Icon = meta.icon;
+            <div className="mt-3 flex flex-col gap-2">
+              {pack.slots.map((slot) => {
+                const state = slotState(slot, connectedTemplateIds);
                 return (
-                  <div
-                    key={req.name}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-muted/50 px-4 py-3"
-                  >
-                    <span
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                        meta.className,
-                      )}
-                    >
-                      <Icon size={16} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        {req.name}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {req.description}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold",
-                        req.required
-                          ? "bg-rose-500/10 text-rose-400"
-                          : "bg-emerald-500/10 text-emerald-400",
-                      )}
-                    >
-                      {req.required ? "Required" : "Optional"}
-                    </span>
-                  </div>
+                  <Row
+                    key={`${slot.kind}-${slot.label}`}
+                    kind={slot.kind}
+                    name={slot.label}
+                    detail={state.detail}
+                    trailing={
+                      state.met ? (
+                        <CheckmarkFilled className="size-4 shrink-0 text-success" />
+                      ) : undefined
+                    }
+                  />
                 );
               })}
             </div>
-          </div>
+            {unmet > 0 && (
+              <p className="mt-3 text-sm text-muted-foreground">
+                You can {applyToName ? "apply" : "create"} without these. The
+                agent does more once they are connected.
+              </p>
+            )}
+          </>
+        )}
 
-          <div className="mt-8 flex gap-3">
-            <Button className="flex-1" size="lg">
-              Create agent with this pack
-            </Button>
-            <Button variant="outline" size="lg" onClick={onClose}>
-              Try demo
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+        {pack.docsUrl && (
+          <a
+            href={pack.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-6 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+          >
+            Read the docs
+            <Launch className="size-4" />
+          </a>
+        )}
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onTry(pack)}>
+          Try it
+        </Button>
+        <Button onClick={() => onCreate(pack)}>
+          {applyToName ? "Apply pack" : "Create agent"}
+        </Button>
+      </DialogFooter>
+    </Modal>
   );
 }
