@@ -8,6 +8,7 @@ import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 import type { DriverFailure } from "api-server-api";
 import type { HarnessConfigCurrent } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
+import { isWorkspaceMutationKind } from "../domain/workspace-mutation.js";
 
 export interface IsAgentRunning {
   isRunning(agentId: string): Promise<boolean>;
@@ -24,17 +25,25 @@ export interface WorkerHandlerDeps {
   log: (msg: string) => void;
 }
 
-const WORKSPACE_MUTATION_KINDS = new Set([
-  "workspace-seed",
-  "workspace-command",
-]);
-
 export type WorkerHandler = (
   agentId: string,
   opts?: { retryUntilReady?: boolean },
 ) => Promise<void>;
 
 export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
+  async function emitWorkspaceMutationSettled(agentId: string): Promise<void> {
+    try {
+      const ownerSub = await deps.resolveOwner(agentId);
+      if (ownerSub) {
+        emit({ type: EventType.WorkspaceMutationSettled, agentId, ownerSub });
+      }
+    } catch (err) {
+      deps.log(
+        `[runtime-worker] ${agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
   return async (agentId: string, opts?: { retryUntilReady?: boolean }) => {
     const row = await deps.outboxRepo.getRow(agentId);
     if (!row) return;
@@ -73,6 +82,19 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       deps.log(
         `[runtime-worker] ${agentId}: dropped events for kinds ${payload.droppedEventKinds.join(",")} (capability gap)`,
       );
+      const droppedMutationKinds = payload.droppedEventKinds.filter(
+        isWorkspaceMutationKind,
+      );
+      const undeliverable = await deps.outboxRepo.markEventsUndeliverable(
+        agentId,
+        droppedMutationKinds,
+      );
+      if (undeliverable > 0) {
+        deps.log(
+          `[runtime-worker] ${agentId}: marked ${undeliverable} workspace-mutation events undeliverable (kinds ${droppedMutationKinds.join(",")})`,
+        );
+        await emitWorkspaceMutationSettled(agentId);
+      }
     }
 
     const client = deps.clientFor(agentId);
@@ -118,24 +140,24 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       }
     }
 
-    const { newlyFailed, recovered, gaveUp } =
-      await deps.outboxRepo.recordOutcome(agentId, row.version, settle);
+    const { newlyFailed, recovered, gaveUp, eventsGaveUp } =
+      await deps.outboxRepo.recordOutcome(agentId, row.version, {
+        ...settle,
+        deliveredEventIds: payload.events.map((e) => e.id),
+      });
+
+    for (const e of eventsGaveUp) {
+      deps.log(
+        `[runtime-worker] ${agentId}: event ${e.id} (${e.kind}) gave up — marked dispatched with error`,
+      );
+    }
 
     const settledIds = new Set(settle.settledEventIds);
     const workspaceMutationSettled = payload.events.some(
-      (e) => settledIds.has(e.id) && WORKSPACE_MUTATION_KINDS.has(e.kind),
+      (e) => settledIds.has(e.id) && isWorkspaceMutationKind(e.kind),
     );
-    if (workspaceMutationSettled) {
-      try {
-        const ownerSub = await deps.resolveOwner(agentId);
-        if (ownerSub) {
-          emit({ type: EventType.WorkspaceMutationSettled, agentId, ownerSub });
-        }
-      } catch (err) {
-        deps.log(
-          `[runtime-worker] ${agentId}: workspace-mutation hint failed: ${(err as Error).message}`,
-        );
-      }
+    if (workspaceMutationSettled || eventsGaveUp.length > 0) {
+      await emitWorkspaceMutationSettled(agentId);
     }
 
     if (reported) {
