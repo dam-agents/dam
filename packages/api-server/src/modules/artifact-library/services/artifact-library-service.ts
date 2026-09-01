@@ -383,13 +383,7 @@ export function createArtifactLibraryService(
         const advanced = await repo.advanceVersion(
           id,
           owner,
-          {
-            artifactId: id,
-            version: row.version,
-            storageRef: row.storageRef,
-            contentType: row.contentType,
-            sizeBytes: row.sizeBytes,
-          },
+          row.version,
           patch,
         );
         if (!advanced) {
@@ -592,6 +586,7 @@ export function createArtifactLibraryService(
             version: row.version,
             sessionId: row.sessionId,
             touchedAt: row.touchedAt.toISOString(),
+            fileName: row.fileName,
           })),
         ),
   };

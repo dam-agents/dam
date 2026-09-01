@@ -58,7 +58,9 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 
 ## The runtime channel
 
-Two tRPC routes, prefixed by protocol-major version (`runtime.v1.*`). Adding a new contribution kind, event kind, or optional payload field stays on `v1` — capability flags carry the gate; new majors only on semantic break.
+Three tRPC routes, prefixed by protocol-major version (`runtime.v1.*`) —
+`applyState` into the agent, and `hello` plus the artifact-touch report from
+it. Adding a new contribution kind, event kind, or optional payload field stays on `v1` — capability flags carry the gate; new majors only on semantic break.
 
 ```mermaid
 sequenceDiagram

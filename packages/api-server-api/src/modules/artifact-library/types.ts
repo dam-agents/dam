@@ -135,6 +135,7 @@ export interface ArtifactTouch {
   version: number;
   sessionId: string;
   touchedAt: string;
+  fileName: string;
 }
 
 export interface ArtifactTouchService {

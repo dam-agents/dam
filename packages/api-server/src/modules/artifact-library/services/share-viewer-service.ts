@@ -127,8 +127,8 @@ export function createShareViewerService(deps: {
     },
 
     async versionCount(artifactId) {
-      const prior = await repo.listVersions(artifactId);
-      return prior.length + 1;
+      const rows = await repo.listVersions(artifactId);
+      return rows.length;
     },
 
     recordView(artifact) {

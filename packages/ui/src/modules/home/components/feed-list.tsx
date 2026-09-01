@@ -4,6 +4,7 @@ import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import type { AgentView } from "../../../types.js";
+import type { ArtifactTouched } from "../api/queries.js";
 import type { FeedItem } from "../lib/feed-item.js";
 import { isUnreadSession } from "../lib/unread.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
@@ -21,7 +22,8 @@ interface Props {
   onDismiss: (item: FeedItem) => void;
   onResolved: (item: FeedItem, label: string) => void;
   resolvedLabelFor: (id: string) => string | null;
-  artifactsFor: (item: FeedItem) => readonly string[];
+  artifactsFor: (item: FeedItem) => readonly ArtifactTouched[];
+  onOpenArtifact: (artifactId: string) => void;
 }
 
 function sessionIcon(
@@ -49,6 +51,7 @@ export function FeedList({
   onResolved,
   resolvedLabelFor,
   artifactsFor,
+  onOpenArtifact,
 }: Props) {
   const tick = tickFor(items, Date.now());
   const now = useNow(tick);
@@ -88,7 +91,10 @@ export function FeedList({
               item.kind === "unread" ? () => onDismiss(item) : undefined
             }
           >
-            <FeedArtifactChips artifactIds={artifactsFor(item)} />
+            <FeedArtifactChips
+              artifacts={artifactsFor(item)}
+              onOpen={onOpenArtifact}
+            />
           </FeedCard>
         );
       })}

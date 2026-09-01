@@ -10,6 +10,7 @@ import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
 
 const ARTIFACTS_STALE_MS = 30_000;
+const TOUCH_SESSIONS_MAX = 50;
 const SESSIONS_STALE_MS = 5_000;
 const SESSIONS_ERROR_RETRY_MS = 15_000;
 const SESSIONS_COMPAT_POLL_MS = 15_000;
@@ -22,6 +23,7 @@ export const homeKeys = {
 export interface ArtifactTouched {
   artifactId: string;
   touchedAt: string;
+  fileName: string;
 }
 
 export interface SessionArtifacts {
@@ -30,16 +32,18 @@ export interface SessionArtifacts {
 
 export function useFeedArtifacts(items: readonly FeedItem[]): SessionArtifacts {
   const wanted = useMemo(() => {
-    const byAgent = new Map<string, Set<string>>();
+    const byAgent = new Map<string, string[]>();
     for (const item of items) {
       if (item.kind !== "unread") continue;
-      const sessions = byAgent.get(item.agentId) ?? new Set<string>();
-      sessions.add(item.session.sessionId);
+      const sessions = byAgent.get(item.agentId) ?? [];
+      if (!sessions.includes(item.session.sessionId)) {
+        sessions.push(item.session.sessionId);
+      }
       byAgent.set(item.agentId, sessions);
     }
     return [...byAgent].map(([agentId, sessions]) => ({
       agentId,
-      sessionIds: [...sessions],
+      sessionIds: sessions.slice(0, TOUCH_SESSIONS_MAX),
     }));
   }, [items]);
 
@@ -58,6 +62,7 @@ export function useFeedArtifacts(items: readonly FeedItem[]): SessionArtifacts {
             seen.push({
               artifactId: touch.artifactId,
               touchedAt: touch.touchedAt,
+              fileName: touch.fileName,
             });
           }
           bySession.set(touch.sessionId, seen);

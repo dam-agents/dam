@@ -4,7 +4,11 @@ import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useArtifact } from "../../artifacts/api/queries.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
-import { useFeed, useFeedArtifacts } from "../api/queries.js";
+import {
+  type ArtifactTouched,
+  useFeed,
+  useFeedArtifacts,
+} from "../api/queries.js";
 import { ComputeWidget } from "../components/compute-widget.js";
 import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
@@ -30,7 +34,7 @@ import {
 } from "../lib/feed-filter.js";
 import type { FeedItem } from "../lib/feed-item.js";
 
-const EMPTY_ARTIFACTS: readonly string[] = [];
+const EMPTY_ARTIFACTS: readonly ArtifactTouched[] = [];
 
 export function HomeView() {
   const {
@@ -48,19 +52,18 @@ export function HomeView() {
   const { isDismissed, dismiss, dismissedAt } = useDismissals();
   const sticky = useStickyResolved();
   const artifacts = useFeedArtifacts(items);
-  const openArtifactId = useStore((s) => s.openArtifactId);
-  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
-  const { data: openArtifact } = useArtifact(openArtifactId);
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
+    null,
+  );
+  const { data: previewArtifact } = useArtifact(previewArtifactId);
 
-  const artifactsFor = (item: FeedItem): readonly string[] => {
+  const artifactsFor = (item: FeedItem): readonly ArtifactTouched[] => {
     if (item.kind !== "unread") return EMPTY_ARTIFACTS;
     const touched = artifacts.bySession.get(item.session.sessionId);
     if (!touched || touched.length === 0) return EMPTY_ARTIFACTS;
     const cleared = dismissedAt(item.agentId, item.session.sessionId);
-    if (cleared === null) return [touched[0].artifactId];
-    return touched
-      .filter((t) => Date.parse(t.touchedAt) > cleared)
-      .map((t) => t.artifactId);
+    if (cleared === null) return [touched[0]];
+    return touched.filter((t) => Date.parse(t.touchedAt) > cleared);
   };
 
   const [status, setStatus] = useState<FeedStatus>("all");
@@ -184,14 +187,15 @@ export function HomeView() {
                 onResolved={(item, label) => sticky.keep(item, label)}
                 resolvedLabelFor={sticky.labelFor}
                 artifactsFor={artifactsFor}
+                onOpenArtifact={setPreviewArtifactId}
               />
             </>
           )}
         </div>
-        {openArtifact && (
+        {previewArtifact && (
           <ArtifactPreviewDialog
-            artifact={openArtifact}
-            onClose={() => setOpenArtifactId(null)}
+            artifact={previewArtifact}
+            onClose={() => setPreviewArtifactId(null)}
           />
         )}
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">

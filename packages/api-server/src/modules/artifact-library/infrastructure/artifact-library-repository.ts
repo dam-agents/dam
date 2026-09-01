@@ -125,12 +125,12 @@ export interface ArtifactLibraryRepository {
     agentId: string;
     sessionIds: readonly string[];
     limit?: number;
-  }): Promise<TouchRow[]>;
+  }): Promise<(TouchRow & { fileName: string })[]>;
 
   advanceVersion(
     id: string,
     owner: string,
-    snapshot: Omit<VersionRow, "createdAt">,
+    expectedVersion: number,
     patch: ArtifactPatch,
   ): Promise<ArtifactRow | null>;
   listVersions(artifactId: string): Promise<VersionRow[]>;
@@ -311,6 +311,10 @@ export function createArtifactLibraryRepository(
           and(
             eq(versionsTable.artifactId, artifactId),
             eq(versionsTable.version, version),
+            or(
+              isNull(versionsTable.sessionId),
+              eq(versionsTable.sessionId, sessionId),
+            ),
             inArray(
               versionsTable.artifactId,
               db
@@ -337,6 +341,7 @@ export function createArtifactLibraryRepository(
           version: versionsTable.version,
           sessionId: versionsTable.sessionId,
           touchedAt: versionsTable.createdAt,
+          fileName: artifactsTable.fileName,
         })
         .from(versionsTable)
         .innerJoin(
@@ -358,10 +363,11 @@ export function createArtifactLibraryRepository(
         agentId,
         sessionId: row.sessionId ?? "",
         touchedAt: row.touchedAt,
+        fileName: row.fileName,
       }));
     },
 
-    async advanceVersion(id, owner, snapshot, patch) {
+    async advanceVersion(id, owner, expectedVersion, patch) {
       return db.transaction(async (tx) => {
         const [row] = await tx
           .update(artifactsTable)
@@ -370,7 +376,7 @@ export function createArtifactLibraryRepository(
             and(
               eq(artifactsTable.id, id),
               eq(artifactsTable.owner, owner),
-              eq(artifactsTable.version, snapshot.version),
+              eq(artifactsTable.version, expectedVersion),
             ),
           )
           .returning(artifactColumns);

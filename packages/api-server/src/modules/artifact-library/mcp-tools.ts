@@ -295,7 +295,13 @@ export function registerArtifactLibraryTools(
           fileName: file_name,
           folderId: folder_id === "" ? null : folder_id,
         });
-        return json(touched(withInternalLink(artifact)));
+        const publishedVersion =
+          content !== undefined || upload_ref !== undefined;
+        return json(
+          publishedVersion
+            ? touched(withInternalLink(artifact))
+            : withInternalLink(artifact),
+        );
       }),
   );
 

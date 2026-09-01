@@ -624,13 +624,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
-      const touch = deps.onArtifactTouch ? artifactTouchIn(frame) : null;
-      if (touch) deps.onArtifactTouch?.(touch);
       if (
         orphanedHarnessLoads.has(sessionId) ||
         rehydratingSessions.has(sessionId)
       ) {
         return;
+      }
+      if (!bootstrap.has(sessionId) && deps.onArtifactTouch) {
+        const touch = artifactTouchIn(frame);
+        if (touch) deps.onArtifactTouch(touch);
       }
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
