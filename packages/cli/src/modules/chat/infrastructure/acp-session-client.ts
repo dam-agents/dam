@@ -15,6 +15,11 @@ interface PlatformMeta {
   experimentId?: string;
   threadTs?: string;
   createdAt?: string;
+  running?: boolean;
+  seenAt?: string;
+  runStartedAt?: string;
+  runTotalMs?: number;
+  runCount?: number;
 }
 
 interface ListedSession {
@@ -77,8 +82,14 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
     experimentId: p?.experimentId ?? null,
+    threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
     updatedAt: s.updatedAt ?? null,
+    running: p?.running ?? false,
+    seenAt: p?.seenAt ?? null,
+    runStartedAt: p?.runStartedAt ?? null,
+    runTotalMs: p?.runTotalMs ?? null,
+    runCount: p?.runCount ?? null,
   };
 }
 

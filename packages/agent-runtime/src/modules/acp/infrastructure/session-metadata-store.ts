@@ -14,6 +14,9 @@ const sessionMetaEntrySchema = z.object({
   createdAt: z.string(),
   lastActivityAt: z.string().optional(),
   seenAt: z.string().optional(),
+  runStartedAt: z.string().optional(),
+  runTotalMs: z.number().optional(),
+  runCount: z.number().optional(),
 });
 
 const sessionMetadataStateSchema = z
@@ -39,6 +42,8 @@ export interface SessionMetadataStore {
   set(sessionId: string, meta: PlatformSessionMeta): void;
   recordActivity(sessionId: string): void;
   recordSeen(sessionId: string): void;
+  startRun(sessionId: string): void;
+  finishRun(sessionId: string): void;
   all(): Record<string, SessionMetaEntry>;
   tombstone(sessionId: string): void;
   isTombstoned(sessionId: string): boolean;
@@ -55,15 +60,19 @@ export function createSessionMetadataStore(
 
   {
     const { sessions, tombstones } = store.read();
-    if (Object.values(sessions).some((e) => e.seenAt === undefined)) {
-      const backfilled: Record<string, SessionMetaEntry> = {};
+    const stale = Object.values(sessions).some(
+      (e) => e.seenAt === undefined || e.runStartedAt !== undefined,
+    );
+    if (stale) {
+      const fixed: Record<string, SessionMetaEntry> = {};
       for (const [id, e] of Object.entries(sessions)) {
-        backfilled[id] = {
-          ...e,
+        const { runStartedAt: _abandoned, ...rest } = e;
+        fixed[id] = {
+          ...rest,
           seenAt: e.seenAt ?? e.lastActivityAt ?? e.createdAt,
         };
       }
-      store.write({ sessions: backfilled, tombstones });
+      store.write({ sessions: fixed, tombstones });
     }
   }
 
@@ -74,17 +83,15 @@ export function createSessionMetadataStore(
     set(sessionId, meta) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
-      const lastActivityAt = existing?.lastActivityAt;
-      const seenAt = existing?.seenAt ?? now();
       store.write({
         tombstones,
         sessions: {
           ...sessions,
           [sessionId]: {
+            ...existing,
             meta,
             createdAt: existing?.createdAt ?? now(),
-            ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
-            seenAt,
+            seenAt: existing?.seenAt ?? now(),
           },
         },
       });
@@ -110,6 +117,37 @@ export function createSessionMetadataStore(
         sessions: {
           ...sessions,
           [sessionId]: { ...existing, seenAt: now() },
+        },
+      });
+    },
+    startRun(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing || existing.runStartedAt) return;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: { ...existing, runStartedAt: now() },
+        },
+      });
+    },
+    finishRun(sessionId) {
+      const { sessions, tombstones } = store.read();
+      const existing = sessions[sessionId];
+      if (!existing?.runStartedAt) return;
+      const { runStartedAt, ...rest } = existing;
+      const measured = Date.parse(now()) - Date.parse(runStartedAt);
+      const elapsed = Number.isFinite(measured) ? measured : 0;
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            ...rest,
+            runTotalMs: (existing.runTotalMs ?? 0) + Math.max(0, elapsed),
+            runCount: (existing.runCount ?? 0) + 1,
+          },
         },
       });
     },

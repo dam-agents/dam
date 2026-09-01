@@ -46,4 +46,7 @@ export interface SessionView {
   threadTs?: string | null;
   running?: boolean;
   seenAt?: string | null;
+  runStartedAt?: string | null;
+  runTotalMs?: number | null;
+  runCount?: number | null;
 }

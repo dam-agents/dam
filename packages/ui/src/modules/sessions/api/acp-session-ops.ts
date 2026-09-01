@@ -15,6 +15,9 @@ interface PlatformMeta {
   createdAt?: string;
   running?: boolean;
   seenAt?: string;
+  runStartedAt?: string;
+  runTotalMs?: number;
+  runCount?: number;
 }
 
 interface ListedSession {
@@ -41,6 +44,9 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     updatedAt: s.updatedAt ?? null,
     running: p?.running ?? false,
     seenAt: p?.seenAt ?? null,
+    runStartedAt: p?.runStartedAt ?? null,
+    runTotalMs: p?.runTotalMs ?? null,
+    runCount: p?.runCount ?? null,
   };
 }
 
@@ -110,6 +116,9 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     updatedAt: s.updatedAt,
     running: s.running,
     seenAt: s.seenAt,
+    runStartedAt: s.runStartedAt,
+    runTotalMs: s.runTotalMs,
+    runCount: s.runCount,
   };
 }
 

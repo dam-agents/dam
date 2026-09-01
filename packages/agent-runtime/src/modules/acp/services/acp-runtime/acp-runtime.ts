@@ -1,6 +1,9 @@
 import { performance } from "node:perf_hooks";
 import type { PodSession } from "agent-runtime-api";
-import { buildPlatformTurnEndedNotification } from "api-server-api";
+import {
+  buildPlatformTurnEndedNotification,
+  SessionType,
+} from "api-server-api";
 
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
@@ -119,6 +122,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
+    onTurnStarted: ({ sessionId, channel }) => {
+      if (!nonViewerChannels.has(channel)) return;
+      const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+      if (meta?.type === SessionType.ScheduleCron || meta?.scheduleId)
+        deps.sessionMetadata?.startRun(sessionId);
+    },
+    onTurnEnded: (sessionId) => deps.sessionMetadata?.finishRun(sessionId),
   });
 
   const sessionIsRunning = (sessionId: string): boolean =>
@@ -945,6 +955,11 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     }),
     ...(session.threadTs !== null && { threadTs: session.threadTs }),
     ...(session.seenAt !== null && { seenAt: session.seenAt }),
+    ...(session.runStartedAt !== null && {
+      runStartedAt: session.runStartedAt,
+    }),
+    ...(session.runTotalMs !== null && { runTotalMs: session.runTotalMs }),
+    ...(session.runCount !== null && { runCount: session.runCount }),
   };
 }
 
