@@ -425,20 +425,6 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 			return err
 		}
 
-		if stale := staleJobTargets(job, pairs); stale != nil {
-			slog.Warn("storage migration: copy job writes to volumes the current code no longer targets; discarding it for a clean recopy",
-				"agent", name, "job", job.Name, "jobTargets", strings.Join(stale, ","))
-			prop := metav1.DeletePropagationBackground
-			if err := m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, job.Name,
-				metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !errors.IsNotFound(err) {
-				return err
-			}
-			if err := m.deleteUnpairedTargets(ctx, name, pairs); err != nil {
-				return err
-			}
-			return fmt.Errorf("copy job %s targeted stale volumes; recopying next tick", job.Name)
-		}
-
 		switch {
 		case jobSucceeded(job):
 			return m.flip(ctx, agent, pairs, job.Name)
@@ -463,51 +449,6 @@ type migrationPair struct {
 	old    string
 	target string
 	mount  string
-}
-
-func staleJobTargets(job *batchv1.Job, pairs []migrationPair) []string {
-	want := map[string]bool{}
-	for _, p := range pairs {
-		want[p.target] = true
-	}
-	got := []string{}
-	for _, v := range job.Spec.Template.Spec.Volumes {
-		if strings.HasPrefix(v.Name, "dst-") && v.PersistentVolumeClaim != nil {
-			got = append(got, v.PersistentVolumeClaim.ClaimName)
-		}
-	}
-	if len(got) != len(want) {
-		return got
-	}
-	for _, claim := range got {
-		if !want[claim] {
-			return got
-		}
-	}
-	return nil
-}
-
-func (m *StorageMigrationManager) deleteUnpairedTargets(ctx context.Context, agentName string, pairs []migrationPair) error {
-	want := map[string]bool{}
-	for _, p := range pairs {
-		want[p.target] = true
-	}
-	list, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: LabelMigrationFor + "=" + agentName})
-	if err != nil {
-		return err
-	}
-	for _, p := range list.Items {
-		if want[p.Name] || p.Labels[LabelAgent] != "" {
-			continue
-		}
-		if err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).
-			Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
-			return err
-		}
-		slog.Info("storage migration: stale copy target deleted", "agent", agentName, "pvc", p.Name)
-	}
-	return nil
 }
 
 func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference, targetClass string) (string, error) {

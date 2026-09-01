@@ -97,24 +97,6 @@ func getAgentAnnotations(t *testing.T, m *StorageMigrationManager, name string) 
 	return obj.GetAnnotations()
 }
 
-func copyJobFixture(dstClaims ...string) *batchv1.Job {
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "mig-my-agent", Namespace: "test-agents"},
-		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{
-			{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
-		}},
-	}
-	for i, claim := range dstClaims {
-		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: fmt.Sprintf("dst-%d", i),
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim},
-			},
-		})
-	}
-	return job
-}
-
 func TestStorageMigration_GatesRunningAgentDown(t *testing.T) {
 	agent := agentCR()
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
@@ -179,42 +161,6 @@ func TestStorageMigration_PrefixedSourceMigratesOntoNormalizedName(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, "my-agent", target.Labels[LabelMigrationFor])
 	assert.Equal(t, "home-agent", target.Labels[LabelMount])
-}
-
-func TestStorageMigration_RefusesFlipOntoVolumesTheJobDidNotWrite(t *testing.T) {
-	agent := agentCR()
-	agent.Annotations = map[string]string{
-		annStorageMigration:           "migrating",
-		annStorageMigrationWasRunning: "false",
-	}
-	src := rwxPVC("mig-home-agent-my-agent-0", "my-agent", "home-agent")
-	staleTarget := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "mig-mig-home-agent-my-agent-0", Namespace: "test-agents",
-			Labels: map[string]string{
-				LabelPool: migrationPoolValue, LabelMount: "home-agent",
-				LabelMigrationFor: "my-agent",
-			},
-		},
-	}
-	job := copyJobFixture("mig-mig-home-agent-my-agent-0")
-	m, client := migrationManager(t, agent, src, staleTarget, job)
-
-	m.Reconcile(context.Background())
-
-	srcAfter, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
-	require.NoError(t, err, "the source survives: the succeeded job never wrote the volume the new code would flip onto")
-	assert.Equal(t, "my-agent", srcAfter.Labels[LabelAgent], "source keeps its claim labels")
-
-	ann := getAgentAnnotations(t, m, "my-agent")
-	assert.Equal(t, "migrating", ann[annStorageMigration], "the gate stays until a matching copy verifies")
-
-	_, err = client.BatchV1().Jobs("test-agents").Get(context.Background(), "mig-my-agent", metav1.GetOptions{})
-	assert.Error(t, err, "the mismatched job is discarded for a clean recopy")
-	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-mig-home-agent-my-agent-0", metav1.GetOptions{})
-	assert.Error(t, err, "the stale target it wrote is binned")
-	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "home-agent-my-agent-0", metav1.GetOptions{})
-	assert.NoError(t, err, "the current-name target stands ready for the recopy")
 }
 
 func TestStorageMigration_CreatesTargetAndCopyJob(t *testing.T) {
@@ -317,7 +263,12 @@ func TestStorageMigration_FlipOnJobSuccess(t *testing.T) {
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		},
 	}
-	job := copyJobFixture("mig-home-agent-my-agent-0")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "mig-my-agent", Namespace: "test-agents"},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{
+			{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+		}},
+	}
 	sts := renderedAgentSTS("my-agent")
 	m, client := migrationManager(t, agent,
 		rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"), target, job, sts)
@@ -359,7 +310,12 @@ func TestStorageMigration_HibernatedAgentStaysDown(t *testing.T) {
 			},
 		},
 	}
-	job := copyJobFixture("mig-home-agent-my-agent-0")
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "mig-my-agent", Namespace: "test-agents"},
+		Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{
+			{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+		}},
+	}
 	m, _ := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"), target, job)
 
 	m.Reconcile(context.Background())
