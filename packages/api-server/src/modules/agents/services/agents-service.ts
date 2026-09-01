@@ -963,7 +963,11 @@ export function createAgentsService(deps: {
         agentId: id,
         result: "success",
       });
-      emit({ type: EventType.AgentDeleted, agentId: id });
+      emit({
+        type: EventType.AgentDeleted,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
     },
 
     async restart(id) {

@@ -74,7 +74,19 @@ function makeDeps(opts: {
       },
     }),
     select: () => ({
-      from: () => ({ where: async () => [{ auth: reReadAuth }] }),
+      from: () => ({
+        where: async () => [
+          {
+            id: CONN.id,
+            owner: CONN.ownerId,
+            templateId: CONN.templateId,
+            name: CONN.name,
+            inputs: CONN.inputs,
+            auth: reReadAuth,
+            contributions: CONN.contributions,
+          },
+        ],
+      }),
     }),
   } as unknown as Db;
 

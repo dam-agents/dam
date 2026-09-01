@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createConversationQueue,
   type SteerResult,
@@ -85,19 +85,28 @@ function spyQueue(opts: {
 describe("createConversationQueue", () => {
   /**
    * TEST_SCENARIO: The reported bug. Messages sent in quick succession must be
-   * answered together, so the quiet period gathers them into one turn.
+   * answered together, so the quiet period gathers them into one turn. Driven
+   * on a fake clock so each submit lands strictly inside the open settle round
+   * — spacing them on setTimeout(0) let a loaded runner stretch a macrotask
+   * past settleMs and split the burst, failing the test for no real reason.
    */
   it("gathers a burst into one turn during the quiet period", async () => {
-    const h = spyQueue({ settleMs: 2 });
+    vi.useFakeTimers();
+    try {
+      const h = spyQueue({ settleMs: 2 });
 
-    const a = h.queue.submit({ id: "a" });
-    await tick();
-    const b = h.queue.submit({ id: "b" });
-    await tick();
-    const c = h.queue.submit({ id: "c" });
-    await Promise.all([a, b, c]);
+      const a = h.queue.submit({ id: "a" });
+      await vi.advanceTimersByTimeAsync(1);
+      const b = h.queue.submit({ id: "b" });
+      await vi.advanceTimersByTimeAsync(1);
+      const c = h.queue.submit({ id: "c" });
+      await vi.runAllTimersAsync();
+      await Promise.all([a, b, c]);
 
-    expect(h.turns).toEqual([["a", "b", "c"]]);
+      expect(h.turns).toEqual([["a", "b", "c"]]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**

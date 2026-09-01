@@ -8,6 +8,7 @@ import {
   type OAuthFlowPendingCtx,
 } from "./services/oauth-flow.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import { createXactLock } from "../../core/xact-lock.js";
 import { sanitizeReturnTo } from "./domain/oauth-callback-url.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -73,6 +74,7 @@ export function createOAuthRoutes(deps: OAuthCallbackDeps) {
       runtimeMutator: deps.runtimeMutator,
       ownerId: peeked.ctx.ownerId,
       callbackUrl: "",
+      connectionLock: createXactLock(deps.db),
     });
 
     try {

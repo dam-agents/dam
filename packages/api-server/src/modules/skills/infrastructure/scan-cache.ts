@@ -1,4 +1,6 @@
 import type { Skill } from "api-server-api";
+import { z } from "zod";
+import type { RedisBus } from "../../../core/redis-bus.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -80,4 +82,28 @@ export function createScanCache(
       }
     },
   };
+}
+
+const SCAN_INVALIDATE_CHANNEL = "skills:scan-invalidate";
+const scanInvalidationSchema = z.object({
+  gitUrl: z.string(),
+  path: z.string().optional(),
+});
+
+export function wireScanCacheBus(
+  cache: ScanCache,
+  bus: RedisBus,
+): (gitUrl: string, path?: string) => void {
+  bus.subscribe(SCAN_INVALIDATE_CHANNEL, (payload) => {
+    try {
+      const parsed = scanInvalidationSchema.safeParse(JSON.parse(payload));
+      if (parsed.success)
+        cache.invalidate(parsed.data.gitUrl, parsed.data.path);
+    } catch {}
+  });
+  return (gitUrl, path) =>
+    void bus.publish(
+      SCAN_INVALIDATE_CHANNEL,
+      JSON.stringify({ gitUrl, ...(path === undefined ? {} : { path }) }),
+    );
 }

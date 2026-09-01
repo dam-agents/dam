@@ -159,6 +159,8 @@ function makeLoop(opts?: {
   };
 
   const db = {
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
+      fn({ execute: async () => [] }),
     select: () => ({
       from: () => ({
         where: () =>

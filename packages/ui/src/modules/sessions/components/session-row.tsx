@@ -312,4 +312,3 @@ function SessionIndicators({
     </span>
   );
 }
-

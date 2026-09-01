@@ -345,7 +345,9 @@ export const connections = pgTable(
 export const connectionGrants = pgTable(
   "connection_grants",
   {
-    connectionId: text("connection_id").notNull(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
     agentId: text("agent_id").notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .defaultNow()
