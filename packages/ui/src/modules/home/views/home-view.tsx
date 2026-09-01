@@ -2,7 +2,9 @@ import { useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
-import { useFeed } from "../api/queries.js";
+import { useArtifact } from "../../artifacts/api/queries.js";
+import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
+import { useFeed, useFeedArtifacts } from "../api/queries.js";
 import { ComputeWidget } from "../components/compute-widget.js";
 import { FeedCardSkeleton } from "../components/feed-card-skeleton.js";
 import { FeedEmptyState } from "../components/feed-empty-state.js";
@@ -26,6 +28,9 @@ import {
   type FeedStatus,
   filterFeed,
 } from "../lib/feed-filter.js";
+import type { FeedItem } from "../lib/feed-item.js";
+
+const EMPTY_ARTIFACTS: readonly string[] = [];
 
 export function HomeView() {
   const {
@@ -40,8 +45,23 @@ export function HomeView() {
   } = useFeed();
   usePodSessionsWatch();
   const openAgentSession = useStore((s) => s.openAgentSession);
-  const { isDismissed, dismiss } = useDismissals();
+  const { isDismissed, dismiss, dismissedAt } = useDismissals();
   const sticky = useStickyResolved();
+  const artifacts = useFeedArtifacts(items);
+  const openArtifactId = useStore((s) => s.openArtifactId);
+  const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const { data: openArtifact } = useArtifact(openArtifactId);
+
+  const artifactsFor = (item: FeedItem): readonly string[] => {
+    if (item.kind !== "unread") return EMPTY_ARTIFACTS;
+    const touched = artifacts.bySession.get(item.session.sessionId);
+    if (!touched || touched.length === 0) return EMPTY_ARTIFACTS;
+    const cleared = dismissedAt(item.agentId, item.session.sessionId);
+    if (cleared === null) return [touched[0].artifactId];
+    return touched
+      .filter((t) => Date.parse(t.touchedAt) > cleared)
+      .map((t) => t.artifactId);
+  };
 
   const [status, setStatus] = useState<FeedStatus>("all");
   const [included, setIncluded] = useState<ReadonlySet<FeedSource>>(
@@ -59,6 +79,12 @@ export function HomeView() {
           <div className="space-y-3 lg:col-start-1 lg:row-start-2">
             <FeedCardSkeleton rows={3} />
           </div>
+          {openArtifact && (
+            <ArtifactPreviewDialog
+              artifact={openArtifact}
+              onClose={() => setOpenArtifactId(null)}
+            />
+          )}
           <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
             <WidgetSkeleton rows={2} />
             <WidgetSkeleton rows={3} />
@@ -163,6 +189,7 @@ export function HomeView() {
                 }}
                 onResolved={(item, label) => sticky.keep(item, label)}
                 resolvedLabelFor={sticky.labelFor}
+                artifactsFor={artifactsFor}
               />
             </>
           )}
