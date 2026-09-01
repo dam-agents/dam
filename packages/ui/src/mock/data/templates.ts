@@ -52,6 +52,16 @@ export const templates: TemplateView[] = [
     vm: false,
   },
   {
+    id: "docs-maintainer",
+    name: "Docs Maintainer",
+    image: "quay.io/dam-agents/docs-maintainer:latest",
+    description: "Keeps documentation in sync with code changes",
+    category: "harness",
+    tags: ["Anthropic"],
+    experimental: false,
+    vm: false,
+  },
+  {
     id: "nous",
     name: "NOUS",
     image: "quay.io/dam-agents/nous:latest",

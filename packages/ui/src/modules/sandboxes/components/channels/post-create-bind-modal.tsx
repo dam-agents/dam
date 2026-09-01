@@ -1,12 +1,12 @@
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   DialogBody,
   DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Button } from "@/components/ui/button";
 import { ConnectionIcon } from "@/modules/connections/components/connection-icon";
 
 import { BindWalkthrough } from "./bind-walkthrough.js";
@@ -19,12 +19,16 @@ interface Props {
   channels: MessengerKind[];
   onClose: () => void;
   onBindComplete?: (kind: MessengerKind, channelId?: string) => void;
+  initialSlackView?: SlackView;
+  initialKind?: MessengerKind;
 }
 
 export function PostCreateBindModal({
   channels,
   onClose,
   onBindComplete,
+  initialSlackView,
+  initialKind,
 }: Props) {
   const hasSlack = channels.includes("slack");
   const hasTelegram = channels.includes("telegram");
@@ -32,9 +36,11 @@ export function PostCreateBindModal({
   const totalSteps = channels.length;
 
   const [currentKind, setCurrentKind] = useState<MessengerKind>(
-    hasSlack ? "slack" : "telegram",
+    initialKind ?? (hasSlack ? "slack" : "telegram"),
   );
-  const [slackView, setSlackView] = useState<SlackView>("steps");
+  const [slackView, setSlackView] = useState<SlackView>(
+    initialSlackView ?? "steps",
+  );
 
   const currentStep = currentKind === "slack" ? 1 : hasSlack ? 2 : 1;
 
@@ -67,11 +73,7 @@ export function PostCreateBindModal({
         title={
           <span className="flex items-center gap-2.5">
             <span className="shrink-0">
-              <ConnectionIcon
-                iconSlug={currentKind}
-                alt=""
-                size={16}
-              />
+              <ConnectionIcon iconSlug={currentKind} alt="" size={16} />
             </span>
             {currentKind === "slack"
               ? "Add to Slack Channel"

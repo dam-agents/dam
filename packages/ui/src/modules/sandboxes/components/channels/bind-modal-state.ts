@@ -1,9 +1,12 @@
 import { useSyncExternalStore } from "react";
 
 type MessengerKind = "slack" | "telegram";
+type SlackView = "steps" | "id";
 
 interface BindModalState {
   channels: MessengerKind[] | null;
+  initialSlackView?: SlackView;
+  initialKind?: MessengerKind;
 }
 
 let state: BindModalState = { channels: null };
@@ -13,8 +16,15 @@ function emit() {
   for (const fn of listeners) fn();
 }
 
-export function openBindModal(channels: MessengerKind[]) {
-  state = { channels };
+export function openBindModal(
+  channels: MessengerKind[],
+  opts?: { initialSlackView?: SlackView; initialKind?: MessengerKind },
+) {
+  state = {
+    channels,
+    initialSlackView: opts?.initialSlackView,
+    initialKind: opts?.initialKind,
+  };
   emit();
 }
 

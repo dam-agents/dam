@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { openBindModal } from "../../sandboxes/components/channels/bind-modal-state.js";
+import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import {
-  DestinationSection,
   type Destination,
+  DestinationSection,
 } from "../../sandboxes/components/setup/destination-section.js";
+import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -16,23 +19,38 @@ import {
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
-import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/image-catalogue.js";
+import {
+  imageCatalogue,
+  KINDED_HARNESS_TEMPLATE_ID,
+} from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { markChannelIntent } from "../../slack/lib/channel-intent.js";
+import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateExperimentSandbox } from "../api/mutations.js";
 
 const RETURN_PATH = routeToPath({ view: "experiment-new" });
+const DOCS_MAINTAINER_TEMPLATE_ID = "docs-maintainer";
 
 export function ExperimentSetupView() {
   const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
 
   const { form, update, reset } = useSetupForm(
     "experiment",
-    { templateId: KINDED_HARNESS_TEMPLATE_ID },
+    { templateId: DOCS_MAINTAINER_TEMPLATE_ID },
     RETURN_PATH,
   );
+  const { data: templates, isLoading } = useTemplates();
+  const { data: flags } = useFeatures();
   const createExperimentSandbox = useCreateExperimentSandbox();
   const selectAgent = useStore((s) => s.selectAgent);
+
+  const harnesses = useMemo(
+    () =>
+      imageCatalogue(templates ?? [], {
+        vmFeatureEnabled: flags?.["vm-sandboxes"] ?? false,
+      }).harnesses,
+    [templates, flags],
+  );
 
   const canCreate =
     form.name.trim().length > 0 &&
@@ -88,7 +106,7 @@ export function ExperimentSetupView() {
   return (
     <SetupPageShell
       title="Setup your experiment"
-      subtitle="Name your experiment, choose a provider, and add connections."
+      subtitle="Name your experiment, choose an image, select a provider, and add connections."
       footer={
         <Button onClick={() => void create()} disabled={!canCreate}>
           {createExperimentSandbox.isPending
@@ -97,10 +115,27 @@ export function ExperimentSetupView() {
         </Button>
       }
     >
-      <NameSection
-        value={form.name}
-        onChange={(name) => update({ name })}
+      <NameSection value={form.name} onChange={(name) => update({ name })} />
+
+      <ImageSection
+        harnesses={harnesses}
+        loading={isLoading}
+        templateId={form.templateId}
+        customImage={form.customImage}
+        registry={{
+          value: EMPTY_REGISTRY_CREDENTIAL,
+          onChange: () => {},
+          partial: false,
+          disclosureOverride: null,
+          onDisclosureOverride: () => {},
+        }}
+        onPickTemplate={(templateId) => update({ templateId, customImage: "" })}
+        onCustomImageChange={(customImage) =>
+          update({ customImage, templateId: null })
+        }
+        onSubmit={() => void create()}
       />
+
       <ProviderSection
         selected={form.providerRef}
         onSelect={(providerRef) => update({ providerRef })}

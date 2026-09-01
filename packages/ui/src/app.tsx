@@ -2,11 +2,6 @@ import { useEffect } from "react";
 
 import { ChangeIndex } from "./components/change-index.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
-import {
-  closeBindModal,
-  useBindModalState,
-} from "./modules/sandboxes/components/channels/bind-modal-state.js";
-import { PostCreateBindModal } from "./modules/sandboxes/components/channels/post-create-bind-modal.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
 import { DocsLauncher } from "./components/docs-launcher.js";
 import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
@@ -27,6 +22,11 @@ import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledg
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
+import {
+  closeBindModal,
+  useBindModalState,
+} from "./modules/sandboxes/components/channels/bind-modal-state.js";
+import { PostCreateBindModal } from "./modules/sandboxes/components/channels/post-create-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
@@ -177,8 +177,14 @@ function MainApp() {
 }
 
 function GlobalBindModal() {
-  const { channels } = useBindModalState();
+  const { channels, initialSlackView, initialKind } = useBindModalState();
   if (!channels) return null;
-  return <PostCreateBindModal channels={channels} onClose={closeBindModal} />;
+  return (
+    <PostCreateBindModal
+      channels={channels}
+      onClose={closeBindModal}
+      initialSlackView={initialSlackView}
+      initialKind={initialKind}
+    />
+  );
 }
-
