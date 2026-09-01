@@ -1,6 +1,30 @@
 export type { AppRouter } from "./router.js";
 export type { AgentRuntimeContext } from "./context.js";
 export type { Result } from "./result.js";
+export type {
+  FileContentNotice,
+  WorkspaceNotice,
+} from "./modules/files/types.js";
+export {
+  fileContentNoticeSchema,
+  workspaceNoticeSchema,
+} from "./modules/files/schemas.js";
+export type {
+  PodSession,
+  PodSessionList,
+  PodSessionMode,
+  PodSessionNotice,
+  PodSessionType,
+  SessionsService,
+} from "./modules/sessions/types.js";
+export {
+  podSessionListSchema,
+  podSessionModeSchema,
+  podSessionNoticeSchema,
+  podSessionSchema,
+  podSessionTypeSchema,
+} from "./modules/sessions/schemas.js";
+
 export { ok, err } from "./result.js";
 export type {
   DirEntry,
@@ -88,6 +112,8 @@ export {
   event,
   eventKind,
   capabilities,
+  runtimeFeaturesOf,
+  type RuntimeFeatures,
   harnessConfigChoice,
   harnessConfigOptionGroup,
   harnessConfigCatalog,

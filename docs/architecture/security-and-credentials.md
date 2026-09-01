@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-08-24
+Last verified: 2026-08-25
 
 ## Overview
 
@@ -378,29 +378,28 @@ dynamically-minted registry tokens (e.g. ECR) are out of scope.
 The credentials above are *upstream* secrets the platform injects on behalf of
 agents. The platform's own backing store has a separate credential boundary: the
 bundled Postgres splits application connection identities from DBA authority.
-Three roles, not one:
+Three login roles, not one:
 
 - **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of
   the `platform` and `keycloak` databases respectively, each the only role its
-  service connects as. `CONNECT` is revoked from `PUBLIC` and granted only to
-  the owning role, so a leaked api-server credential can neither read Keycloak's
+  service connects as. `CONNECT` is revoked from `PUBLIC` and granted back only
+  to that owner, plus the credential-less `usage_readers` group on `platform`
+  ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked
+  api-server credential can neither read Keycloak's
   database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) —
   it can only do DDL/DML within the `platform` database it already owns.
 - **`platform`** — the lone `SUPERUSER`, used only for DBA work. It is the
   image's bootstrap superuser, because Postgres forbids demoting that role and
   so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
   An existing single-role cluster already bootstrapped under this name, so it is
-  kept in place rather than renamed (the bootstrap role can be neither demoted
-  nor renamed while connected as itself). A `log_statement = 'all'` per-role
-  default puts every statement an admin session issues into the pod log for the
-  cluster collector, while routine app traffic stays out of the audit stream
-  (the global default is `ddl`). The admin role name is configurable
-  (`postgres.adminUser`).
+  kept in place rather than renamed — Postgres forbids renaming the role you
+  are connected as. A per-role `log_statement` default puts every
+  admin-session statement into the audit trail, and every role and grant
+  change is audited whoever issues it ([persistence](persistence.md)).
 
 The admin credential lives in the same `platform-postgres-secrets` Secret and
 must be treated as high-value. The statement audit is best-effort, not enforced
-— a superuser session can `SET log_statement` mid-session. Operational details
-(fresh install, existing-cluster migration) are in the
+— a superuser session can `SET log_statement` mid-session. Operational details are in the
 [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection

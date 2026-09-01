@@ -4,12 +4,13 @@ import { useMemo } from "react";
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
-import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
+import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
 
-const SESSIONS_POLL_MS = 15_000;
 const SESSIONS_STALE_MS = 5_000;
+const SESSIONS_ERROR_RETRY_MS = 15_000;
+const SESSIONS_COMPAT_POLL_MS = 15_000;
 
 export const homeKeys = {
   sessions: (agentId: string) =>
@@ -40,10 +41,15 @@ export function useFeed(): Feed {
   const sessions = useQueries({
     queries: runningAgents.map((agent) => ({
       queryKey: homeKeys.sessions(agent.id),
-      queryFn: () => listAgentSessions(agent.id),
-      refetchInterval: SESSIONS_POLL_MS,
+      queryFn: () => listAgentSessionsOverAcp(agent.id),
       staleTime: SESSIONS_STALE_MS,
       retry: false,
+      refetchInterval: (query: { state: { status: string } }) =>
+        !agent.features.liveUpdates
+          ? SESSIONS_COMPAT_POLL_MS
+          : query.state.status === "error"
+            ? SESSIONS_ERROR_RETRY_MS
+            : false,
     })),
     combine: (results) => ({
       byAgent: results.map((result) => result.data ?? []),

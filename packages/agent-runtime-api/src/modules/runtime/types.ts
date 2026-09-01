@@ -239,8 +239,22 @@ export const capabilities = z.object({
   events: z.array(eventKind),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
+  liveUpdates: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;
+
+export interface RuntimeFeatures {
+  liveUpdates: boolean;
+}
+
+const runtimeFeatureFlags = z.looseObject({
+  liveUpdates: z.boolean().optional().catch(undefined),
+});
+
+export function runtimeFeaturesOf(caps: unknown): RuntimeFeatures {
+  const parsed = runtimeFeatureFlags.safeParse(caps);
+  return { liveUpdates: parsed.success && parsed.data.liveUpdates === true };
+}
 
 export const stateSlice = z.object({
   contributions: z.array(contribution),

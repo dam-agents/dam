@@ -1,4 +1,10 @@
+import type { z } from "zod";
+
 import type { Result } from "../../result.js";
+import type {
+  fileContentNoticeSchema,
+  workspaceNoticeSchema,
+} from "./schemas.js";
 
 export interface DirEntry {
   name: string;
@@ -55,4 +61,15 @@ export interface FilesService {
     base64: string,
     overwrite: boolean,
   ) => Promise<Result<FileWriteOk, FilesDomainError>>;
+  watchDirs: (
+    paths: string[],
+    signal?: AbortSignal,
+  ) => AsyncIterable<WorkspaceNotice>;
+  watchFile: (
+    path: string,
+    signal?: AbortSignal,
+  ) => AsyncIterable<FileContentNotice>;
 }
+
+export type WorkspaceNotice = z.infer<typeof workspaceNoticeSchema>;
+export type FileContentNotice = z.infer<typeof fileContentNoticeSchema>;

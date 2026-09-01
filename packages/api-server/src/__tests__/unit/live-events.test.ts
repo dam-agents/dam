@@ -34,6 +34,9 @@ function harness() {
     bus,
     log: (m) => warnings.push(m),
     k8s: { watchCustomObjects: () => () => {} },
+    namespace: "test",
+    agentsRepo: { list: async () => [] },
+    runtimeFeaturesFor: async () => new Map(),
   });
   return { bus, subscribedChannels, warnings, module };
 }
@@ -173,5 +176,16 @@ describe("hintFor", () => {
 
   it("projects nothing for events that carry no owner (yet)", () => {
     expect(hintFor({ type: EventType.AgentUpdated, agentId: "a1" })).toBeNull();
+  });
+
+  // TEST_SCENARIO: A runtime's hello is what establishes whether the platform may watch its session list. That claim is stored on the Agent, which the K8s watch cannot see change, so the hello must project an agents hint of its own — otherwise an agent that says hello after a subscription is established stays out of the watch set until an unrelated event fires.
+  it("projects an agents hint when a runtime says hello", () => {
+    expect(
+      hintFor({
+        type: EventType.RuntimeHelloReceived,
+        agentId: "a1",
+        ownerSub: "u1",
+      }),
+    ).toEqual({ ownerSub: "u1", hint: { topic: "agents", agentId: "a1" } });
   });
 });

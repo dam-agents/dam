@@ -24,6 +24,7 @@ export enum EventType {
   ContributionApplyFailed = "ContributionApplyFailed",
   ContributionRecovered = "ContributionRecovered",
   ContributionApplyGaveUp = "ContributionApplyGaveUp",
+  RuntimeHelloReceived = "RuntimeHelloReceived",
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
   ScheduleCreated = "ScheduleCreated",
@@ -70,6 +71,7 @@ export type AgentUpdated = {
 export type AgentDeleted = {
   type: EventType.AgentDeleted;
   agentId: string;
+  ownerSub?: string;
 };
 
 export type AgentRestarted = {
@@ -158,6 +160,12 @@ export type ContributionApplyGaveUp = {
   agentId: string;
   kind: string;
   message: string;
+};
+
+export type RuntimeHelloReceived = {
+  type: EventType.RuntimeHelloReceived;
+  agentId: string;
+  ownerSub: string;
 };
 
 export type ApprovalRequested = {
@@ -370,6 +378,7 @@ export type DomainEvent =
   | ContributionApplyFailed
   | ContributionRecovered
   | ContributionApplyGaveUp
+  | RuntimeHelloReceived
   | ApprovalRequested
   | ApprovalResolved
   | ScheduleCreated

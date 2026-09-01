@@ -13,7 +13,6 @@ import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
 import type { DomainEvent } from "../../events.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const USER = "U-SENDER";
@@ -65,6 +64,7 @@ function harness() {
   const prompts: Array<string | ContentBlock[]> = [];
   const pending = createMemoryTtlStore<SlackOAuthPending>(600_000);
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt) => {
       prompts.push(prompt);
@@ -121,7 +121,7 @@ function harness() {
       name?: string;
     }) {
       gw.setFileBytes(FILE_URL, opts.bytes);
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: USER,
         channel: CHANNEL,
@@ -139,10 +139,10 @@ function harness() {
       });
     },
     async startOnly() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
     },
     async mentionWithoutSeededFile() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: USER,
         channel: CHANNEL,

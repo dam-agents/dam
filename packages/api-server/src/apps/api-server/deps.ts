@@ -5,6 +5,7 @@ import type { Redis } from "ioredis";
 import type {
   E2eService,
   LiveEventsService,
+  PodSessionsService,
   ReposService,
   TermsService,
   UserIdentity,
@@ -18,6 +19,7 @@ import type {
   KeycloakUserDirectory,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
 import type {
   AgentCleanupHook,
@@ -88,8 +90,10 @@ export interface ApiServerDeps {
   e2e: E2eService;
   artifacts: ArtifactService;
   liveEvents: LiveEventsService;
+  podSessions: PodSessionsService;
 
   k8sClient: K8sClient;
+  agentStateCache: AgentStateCache;
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;

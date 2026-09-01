@@ -11,7 +11,6 @@ import {
 import type { SlackUserInfo } from "../../modules/channels/infrastructure/slack-gateway.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
@@ -89,7 +88,7 @@ function harness(opts: {
     gw,
     worker,
     async describeUsers(userIds: string[]) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect().catch(() => {});
       return worker.describeUsers("agent-1", userIds);
     },
   };
@@ -218,7 +217,7 @@ describe("slack user lookup", () => {
 describe("slack supportsUserLookup", () => {
   it("is true when the scope is unknown (no probe has run yet)", async () => {
     const h = harness({ boundChannelId: BOUND });
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     expect(await h.worker.supportsUserLookup()).toBe(true);
   });
@@ -226,7 +225,7 @@ describe("slack supportsUserLookup", () => {
   it("is true once users:read is confirmed granted", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "users:read", "users:read.email"]);
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     expect(await h.worker.supportsUserLookup()).toBe(true);
   });
@@ -234,7 +233,7 @@ describe("slack supportsUserLookup", () => {
   it("is false once users:read is confirmed missing", async () => {
     const h = harness({ boundChannelId: BOUND });
     h.gw.setGrantedScopes(["chat:write", "app_mentions:read"]);
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.connect().catch(() => {});
 
     expect(await h.worker.supportsUserLookup()).toBe(false);
   });

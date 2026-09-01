@@ -10,6 +10,7 @@ const { SerializeAddon } = serializePkg;
 import * as nodePty from "@lydell/node-pty";
 import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
+import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { appRouter } from "agent-runtime-api/router";
 import {
   AGENT_HOME_DIR,
@@ -126,6 +127,8 @@ const {
   triggerDriver,
   sessionMetadata,
   backgroundWork,
+  sessions: sessionsService,
+  sessionChanges,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -177,21 +180,24 @@ const CORS = {
 
 const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
+const createTrpcContext = (): AgentRuntimeContext => ({
+  files: filesService,
+  sessions: sessionsService,
+  skills: skillsService,
+  ssh: sshService,
+  runtime: runtimeChannel.service,
+  harnessConfig: runtimeChannel.harnessConfig,
+});
+
 const trpcHandler = createHTTPHandler({
   router: appRouter,
-  createContext: (): AgentRuntimeContext => ({
-    files: filesService,
-    skills: skillsService,
-    ssh: sshService,
-    runtime: runtimeChannel.service,
-    harnessConfig: runtimeChannel.harnessConfig,
-  }),
+  createContext: createTrpcContext,
   maxBodySize: TRPC_MAX_BODY_SIZE,
 });
 
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
-const PTY_ACTIVE_WINDOW_MS = 1_000;
+const PTY_ACTIVE_WINDOW_MS = 5_000;
 const PTY_INPUT_ECHO_MS = 500;
 
 function isPtySessionActive(sessionId: string): boolean {
@@ -215,6 +221,40 @@ interface PtySlot {
 const ptySlots = new Map<string, PtySlot>();
 const ptyLog = (sid: string, msg: string) =>
   process.stderr.write(`[pty] [${sid}] ${msg}\n`);
+
+const PTY_LIVENESS_SWEEP_MS = 1_000;
+const ptyLiveness = new Set<string>();
+let ptyLivenessTimer: NodeJS.Timeout | undefined;
+
+function sweepPtyLiveness(): void {
+  let changed = false;
+  for (const sessionId of ptySlots.keys()) {
+    const active = isPtySessionActive(sessionId);
+    if (active === ptyLiveness.has(sessionId)) continue;
+    if (active) ptyLiveness.add(sessionId);
+    else ptyLiveness.delete(sessionId);
+    changed = true;
+  }
+  for (const sessionId of [...ptyLiveness]) {
+    if (ptySlots.has(sessionId)) continue;
+    ptyLiveness.delete(sessionId);
+    changed = true;
+  }
+  if (changed) sessionChanges.notify();
+}
+
+sessionChanges.onDemand({
+  start: () => {
+    if (ptyLivenessTimer) return;
+    ptyLivenessTimer = setInterval(sweepPtyLiveness, PTY_LIVENESS_SWEEP_MS);
+    ptyLivenessTimer.unref?.();
+  },
+  stop: () => {
+    if (ptyLivenessTimer) clearInterval(ptyLivenessTimer);
+    ptyLivenessTimer = undefined;
+    ptyLiveness.clear();
+  },
+});
 
 const PTY_SEEN_STAMP_DEBOUNCE_MS = 30_000;
 
@@ -490,6 +530,13 @@ const server = http.createServer((req, res) => {
 const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
 const sshWss = new WebSocketServer({ noServer: true });
+const trpcWss = new WebSocketServer({ noServer: true });
+
+applyWSSHandler({
+  wss: trpcWss,
+  router: appRouter,
+  createContext: createTrpcContext,
+});
 
 acpWss.on("connection", (ws) => {
   acpRuntime.attach(createWebSocketChannel(ws));
@@ -506,6 +553,10 @@ server.on("upgrade", (req, socket, head) => {
     const reset = url.searchParams.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset }),
+    );
+  } else if (url.pathname === "/api/trpc-ws") {
+    trpcWss.handleUpgrade(req, socket, head, (ws) =>
+      trpcWss.emit("connection", ws, req),
     );
   } else if (url.pathname === "/api/ssh") {
     if (!preparedSshd) {

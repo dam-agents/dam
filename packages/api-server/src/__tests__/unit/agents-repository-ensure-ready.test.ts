@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { fakeK8s } from "../helpers/fake-k8s.js";
+import { createLiveAgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type {
   K8sClient,
   KubeObject,
@@ -14,59 +16,6 @@ type Condition = {
   reason?: string;
   message?: string;
 };
-
-function fakeK8s(initial: KubeObject[] = []) {
-  const store = new Map<string, KubeObject>();
-  for (const o of initial) store.set(o.metadata?.name ?? "", o);
-  const client: K8sClient = {
-    namespace: "test-agents",
-    watchCustomObjects() {
-      return () => {};
-    },
-    async getCustomObject(_plural, name) {
-      return store.get(name) ?? null;
-    },
-    async listCustomObjects() {
-      return [...store.values()];
-    },
-    async createCustomObject(_plural, body) {
-      const obj = body as KubeObject;
-      store.set(obj.metadata?.name ?? "", obj);
-      return obj;
-    },
-    async patchCustomObject(_plural, name, body) {
-      const existing = store.get(name);
-      if (!existing) throw new Error(`404: ${name}`);
-      const patch = body as KubeObject;
-      const merged: KubeObject = {
-        ...existing,
-        ...(patch.metadata
-          ? {
-              metadata: {
-                ...existing.metadata,
-                ...patch.metadata,
-                annotations: {
-                  ...existing.metadata?.annotations,
-                  ...patch.metadata.annotations,
-                },
-              },
-            }
-          : {}),
-      };
-      store.set(name, merged);
-      return merged;
-    },
-    async deleteCustomObject(_plural, name) {
-      store.delete(name);
-    },
-    listSecrets: () => Promise.reject(new Error("not implemented")),
-    getSecret: () => Promise.reject(new Error("not implemented")),
-    createSecret: () => Promise.reject(new Error("not implemented")),
-    replaceSecret: () => Promise.reject(new Error("not implemented")),
-    deleteSecret: () => Promise.reject(new Error("not implemented")),
-  };
-  return { client, store };
-}
 
 function agentObj(name: string, conditions: Condition[]): KubeObject {
   return {
@@ -93,7 +42,10 @@ function harness(initial: KubeObject[]) {
   const lines: Array<Record<string, unknown>> = [];
   configureLogger({ level: "info", write: (l) => lines.push(JSON.parse(l)) });
   const { client, store } = fakeK8s(initial);
-  const repo = createAgentsRepository(client);
+  const repo = createAgentsRepository(
+    client,
+    createLiveAgentStateCache(client),
+  );
   return { repo, store, lines };
 }
 
@@ -338,7 +290,10 @@ describe("ensureReady", () => {
       return { client: wrapped };
     })();
     vi.setSystemTime(0);
-    const repo2 = createAgentsRepository(client);
+    const repo2 = createAgentsRepository(
+      client,
+      createLiveAgentStateCache(client),
+    );
     const p = repo2.ensureReady("a1");
     await advanceUntilSettled(p);
     await expect(p).resolves.toBeUndefined();

@@ -16,6 +16,7 @@ import {
 import { SchedulesWidget } from "../components/schedules-widget.js";
 import { SpendWidget } from "../components/spend-widget.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
+import { usePodSessionsWatch } from "../hooks/use-pod-sessions-watch.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import {
   emptyStateFor,
@@ -37,6 +38,7 @@ export function HomeView() {
     unreadableAgents,
     approvalsUnreadable,
   } = useFeed();
+  usePodSessionsWatch();
   const openAgentSession = useStore((s) => s.openAgentSession);
   const { isDismissed, dismiss } = useDismissals();
   const sticky = useStickyResolved();

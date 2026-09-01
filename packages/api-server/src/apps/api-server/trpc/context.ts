@@ -67,6 +67,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     connectionsBoot,
     apiKeysModule,
     liveEvents,
+    podSessions,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -96,6 +97,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
+      agentStateCache: boot.agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
@@ -195,6 +197,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
     });
     const skills = composeSkillsModule({
+      agentStateCache: boot.agentStateCache,
       surface,
       api,
       namespace: config.namespace,
@@ -227,7 +230,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
-    const files = composeFilesModule(api, config.namespace, user.sub, surface);
+    const files = composeFilesModule(
+      api,
+      config.namespace,
+      user.sub,
+      surface,
+      boot.agentStateCache,
+    );
     const apiKeys = apiKeysModule.createService({
       ownerSub: user.sub,
       surface,
@@ -284,6 +293,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       harnessConfig,
       links: config.links,
       liveEvents,
+      podSessions,
       metrics,
       terms,
       usage: composeUsageForOwner(user.sub),

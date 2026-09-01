@@ -8,6 +8,7 @@ import type {
 import type { Db } from "db";
 import type { RuntimeProgressPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
@@ -35,6 +36,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface HarnessApiServerAppDeps {
+  agentStateCache: AgentStateCache;
   config: Config;
   api: CoreV1Api;
   db: Db;
@@ -105,7 +107,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary;
 
-  const harnessAgentsRepo = createAgentsRepository(k8sClient);
+  const harnessAgentsRepo = createAgentsRepository(
+    k8sClient,
+    deps.agentStateCache,
+  );
   const experimentPin = {
     set: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
@@ -119,6 +124,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     runtimeHello,
     composeSkills: (owner) =>
       composeSkillsModule({
+        agentStateCache: deps.agentStateCache,
         surface: "mcp",
         api,
         namespace: config.namespace,

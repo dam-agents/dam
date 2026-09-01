@@ -49,6 +49,7 @@ import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-s
 import { isSlackChannelUniqueViolation } from "../infrastructure/channel-bindings-repository.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { ok, err } from "../../../core/result.js";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 import type { UnitOfWork, Tx } from "../../../core/unit-of-work.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -57,6 +58,7 @@ export interface ContributionsStatus {
   settled: boolean;
   failures: DriverFailure[];
   preparingWorkspace: boolean;
+  features: RuntimeFeatures;
 }
 
 export interface ContributionsProgress {
@@ -485,7 +487,12 @@ export function createAgentsService(deps: {
     try {
       return await deps.contributionsProgress.status(id);
     } catch {
-      return { settled: true, failures: [], preparingWorkspace: false };
+      return {
+        settled: true,
+        failures: [],
+        preparingWorkspace: false,
+        features: runtimeFeaturesOf(null),
+      };
     }
   }
 
@@ -514,6 +521,7 @@ export function createAgentsService(deps: {
       deps.agentIdleTimeoutMinutes,
       status.preparingWorkspace,
       templateUpdate,
+      status.features,
     );
   }
 
@@ -597,6 +605,7 @@ export function createAgentsService(deps: {
         deps.agentIdleTimeoutMinutes,
         status.preparingWorkspace,
         await templateUpdateFor(infra),
+        status.features,
       ),
     );
   };
@@ -655,6 +664,7 @@ export function createAgentsService(deps: {
           templateImage
             ? templateImageUpdate(infra.spec.image, templateImage)
             : undefined,
+          status?.features ?? runtimeFeaturesOf(null),
         );
       });
     },
@@ -821,6 +831,9 @@ export function createAgentsService(deps: {
         [],
         [],
         deps.agentIdleTimeoutMinutes,
+        false,
+        undefined,
+        runtimeFeaturesOf(null),
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -950,7 +963,11 @@ export function createAgentsService(deps: {
         agentId: id,
         result: "success",
       });
-      emit({ type: EventType.AgentDeleted, agentId: id });
+      emit({
+        type: EventType.AgentDeleted,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
     },
 
     async restart(id) {

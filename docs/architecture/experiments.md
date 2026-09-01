@@ -1,6 +1,6 @@
 # Experiments
 
-Last verified: 2026-08-21
+Last verified: 2026-08-28
 
 ## Overview
 
@@ -238,10 +238,27 @@ span-referenced rollup, so the run panel and the baked results page list
 them. Only the run's driver may attach explicitly (foreign ids read as
 unknown), and drafts refuse attachment — results belong to runs.
 
+**Reporting survives an outage; the run does not pay for it.** Reports are
+observability, so a transient api-server outage costs latency, never the
+loop. The SDK retries the writes that are idempotent on the server — event
+batches (spans upsert by id), `finish`, and plan registration — and never
+retries `spawn`, where a duplicated POST is a second worker rather than a
+duplicate row. A rejected batch stays buffered for the next attempt instead
+of being dropped, and the buffer is bounded to the batch size the events
+route accepts: an unbounded retained batch would eventually outgrow that cap
+and then be rejected on every later attempt, wedging reporting for the rest
+of the run. Once a flush fails, further attempts park for a back-off window,
+so a long outage costs one retry ladder per window rather than one per
+reported event. Overflow past the bound drops the oldest events and says so
+in the driver's log — a bounded, visible loss instead of a silent wedge.
+
 ## Completion and liveness
 
 Starting a run stamps `executedAt`; the script's `finish` (or an unhandled exception
-reported by the SDK) flips `running → completed | failed`. In run mode the
+reported by the SDK) flips `running → completed | failed` — unless the run is
+already terminal, in which case `finish` is a no-op: the server answers `409`
+and the SDK treats a user Stop and a retried finish whose first attempt
+landed as the same observable state. In run mode the
 SDK also runs a **heartbeat**: a daemon thread with its own request path
 posts a no-op `heartbeat` event (~60 s) so a healthy loop that is quiet —
 blocked in a `spawn()`, deep in a local computation — keeps its activity

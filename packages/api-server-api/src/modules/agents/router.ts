@@ -32,6 +32,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     name: agent.name,
     templateId: agent.templateId ?? null,
     templateUpdate: agent.templateUpdate ?? null,
+    features: agent.features,
     image: agent.spec.image,
     description: agent.spec.description,
     env: agent.spec.env,

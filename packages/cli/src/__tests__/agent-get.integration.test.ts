@@ -151,6 +151,7 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     },
     state: "running",
     effectiveHibernationTimeoutMin: 60,
+    features: { liveUpdates: true },
     stopRequested: false,
     overBudget: false,
     contributionFailures: [],

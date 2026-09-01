@@ -128,9 +128,6 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
 
     async delete(id, ownerId): Promise<void> {
       await db
-        .delete(connectionGrantsTable)
-        .where(eq(connectionGrantsTable.connectionId, id));
-      await db
         .delete(connectionsTable)
         .where(
           and(eq(connectionsTable.id, id), eq(connectionsTable.owner, ownerId)),

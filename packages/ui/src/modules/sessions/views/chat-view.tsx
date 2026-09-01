@@ -39,6 +39,7 @@ import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
+  useAgentLacksLiveUpdates,
   useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
@@ -46,7 +47,8 @@ import {
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
-import { useAgentReachabilityProbe } from "../../agents/hooks/use-agent-reachability-probe.js";
+import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
+import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import {
@@ -90,6 +92,7 @@ import {
   pushSessionPath,
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
+import { useSessionWatch } from "../hooks/use-session-watch.js";
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -97,6 +100,7 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
+  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
   const leavingForPublicPage = usePublicAgentFallback(
     selectedAgent,
     agentInaccessible,
@@ -105,7 +109,8 @@ export function ChatView() {
   useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
-  useAgentReachabilityProbe(selectedAgent);
+  useAgentReachability(selectedAgent);
+  useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
@@ -544,6 +549,7 @@ export function ChatView() {
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
         >
+          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <SessionsSidebar
             open={sessionsOpen}
             onToggle={() => setSessionsOpen((o) => !o)}

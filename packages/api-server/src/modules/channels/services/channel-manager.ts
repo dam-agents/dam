@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { ChannelType, type ChannelConfig } from "api-server-api";
 import type { Subscription } from "rxjs";
 import {
@@ -159,19 +160,89 @@ export interface ChannelManager {
   supportsMessageReactions(): Promise<boolean>;
 }
 
-export type ChannelRpcRequest = {
-  method:
-    | "listConversations"
-    | "postMessage"
-    | "reply"
-    | "react"
-    | "declineTurn"
-    | "handOffTurn"
-    | "describeUsers"
-    | "supportsUserLookup"
-    | "describeMessageReactions"
-    | "supportsMessageReactions";
-  args: unknown[];
+export const channelRpcRequestSchema = z.object({
+  method: z.enum([
+    "listConversations",
+    "postMessage",
+    "reply",
+    "react",
+    "declineTurn",
+    "handOffTurn",
+    "describeUsers",
+    "supportsUserLookup",
+    "describeMessageReactions",
+    "supportsMessageReactions",
+  ]),
+  args: z.array(z.unknown()),
+});
+export type ChannelRpcRequest = z.infer<typeof channelRpcRequestSchema>;
+
+const forInstance = z.tuple([z.string(), z.enum(ChannelType)]);
+const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
+  listConversations: forInstance,
+  postMessage: forInstance.rest(z.unknown()),
+  reply: forInstance.rest(z.unknown()),
+  react: forInstance.rest(z.unknown()),
+  declineTurn: forInstance,
+  handOffTurn: forInstance.rest(z.unknown()),
+  describeUsers: forInstance.rest(z.unknown()),
+  supportsUserLookup: z.tuple([]),
+  describeMessageReactions: forInstance.rest(z.unknown()),
+  supportsMessageReactions: z.tuple([]),
+};
+
+const TRANSPORT_RETRY_MS = 60_000;
+
+const okOrErrorSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  z.object({ error: z.string() }),
+]);
+const channelUserSchema = z.object({
+  id: z.string(),
+  username: z.string().optional(),
+  realName: z.string().optional(),
+  displayName: z.string().optional(),
+  title: z.string().optional(),
+  pronouns: z.string().optional(),
+  email: z.string().optional(),
+  timezone: z.string().optional(),
+  timezoneLabel: z.string().optional(),
+  statusText: z.string().optional(),
+  statusEmoji: z.string().optional(),
+  isBot: z.boolean().optional(),
+  isDeleted: z.boolean().optional(),
+  error: z.string().optional(),
+});
+const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
+  listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
+  postMessage: okOrErrorSchema,
+  reply: okOrErrorSchema,
+  react: okOrErrorSchema,
+  declineTurn: okOrErrorSchema,
+  handOffTurn: z.union([
+    z.object({ ok: z.literal(true), agent: z.string() }),
+    z.object({ error: z.string() }),
+  ]),
+  describeUsers: z.union([
+    z.object({ users: z.array(channelUserSchema) }),
+    z.object({ error: z.string() }),
+  ]),
+  supportsUserLookup: z.boolean(),
+  describeMessageReactions: z.union([
+    z.object({
+      reactions: z.array(
+        z.object({
+          name: z.string(),
+          count: z.number(),
+          users: z.array(z.string()),
+        }),
+      ),
+      conversationId: z.string(),
+      messageTs: z.string(),
+    }),
+    z.object({ error: z.string() }),
+  ]),
+  supportsMessageReactions: z.boolean(),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -190,11 +261,59 @@ export function createChannelManager(deps: {
   ) as Worker[];
   const subscriptions: Subscription[] = [];
   let stopServing: (() => void) | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A transport that fails to start does not cost
+   * the lease. Nothing about a provider outage is replica-specific, so handing
+   * the lease on would only ping-pong it between replicas that fail the same
+   * way — while the transports that did come up go down with each handover.
+   * The holder keeps the lease, serves whatever started, and retries the rest
+   * on a timer until it stands down. Both the retry and the start itself carry
+   * the generation they began in: a stand-down moves it, so a start still in
+   * flight neither re-arms the timer nor keeps serving on an ex-leader.
+   */
+  async function startTransports(generationAtStart: number): Promise<void> {
+    if (generationAtStart !== generation) return;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    const attempts: [string, () => Promise<unknown>][] = [];
+    if (telegramWorker)
+      attempts.push(["telegram", () => telegramWorker.start()]);
+    if (slackWorker) attempts.push(["slack", () => slackWorker.connect()]);
+    const results = await Promise.allSettled(attempts.map(([, go]) => go()));
+    if (generationAtStart !== generation) return;
+    const failed = results.flatMap((r, i) =>
+      r.status === "rejected"
+        ? [{ name: attempts[i]![0], reason: r.reason }]
+        : [],
+    );
+    for (const f of failed) {
+      process.stderr.write(
+        `[channels] ${f.name} worker start failed, retrying in ${TRANSPORT_RETRY_MS / 1000}s: ${f.reason instanceof Error ? f.reason.message : f.reason}\n`,
+      );
+    }
+    if (failed.length === 0) return;
+    retryTimer = setTimeout(
+      () => void startTransports(generationAtStart),
+      TRANSPORT_RETRY_MS,
+    );
+    retryTimer.unref?.();
+  }
 
   async function standDown() {
+    generation += 1;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
     stopServing?.();
     stopServing = null;
-    await Promise.all(workers.map((w) => w.stopAll()));
+    const stopped = await Promise.allSettled(workers.map((w) => w.stopAll()));
+    const failed = stopped.flatMap((r) =>
+      r.status === "rejected" ? [r.reason] : [],
+    );
+    if (failed.length)
+      throw new Error(`channel workers failed to stop: ${failed.join("; ")}`);
   }
 
   async function dispatch<T>(
@@ -203,7 +322,9 @@ export function createChannelManager(deps: {
     local: () => Promise<T>,
   ): Promise<T> {
     if (isLeader() || !rpc) return local();
-    return rpc.call({ method, args }) as Promise<T>;
+    return rpcResponseSchemas[method].parse(
+      await rpc.call({ method, args }),
+    ) as T;
   }
 
   async function dispatchResult<T>(
@@ -377,6 +498,7 @@ export function createChannelManager(deps: {
     },
 
     async bootstrap(channelsByInstance: Map<string, ChannelConfig[]>) {
+      const generationAtStart = generation;
       if (rpc) {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
@@ -385,15 +507,17 @@ export function createChannelManager(deps: {
             | undefined;
           if (!handler)
             throw new Error(`unknown channel rpc method ${req.method}`);
-          return handler(...req.args);
+          return handler(
+            ...(rpcArgSchemas[req.method].parse(req.args) as unknown[]),
+          );
         });
       }
 
-      if (telegramWorker) await telegramWorker.start();
-      if (slackWorker) await slackWorker.connect();
+      await startTransports(generationAtStart);
 
       for (const [agentId, channels] of channelsByInstance) {
         for (const channel of channels) {
+          if (generationAtStart !== generation) return;
           if (channel.type === ChannelType.Slack && slackWorker) {
             await slackWorker.start(agentId, channel);
           }

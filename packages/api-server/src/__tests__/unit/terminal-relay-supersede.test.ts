@@ -32,7 +32,7 @@ const presence = { acquire: () => () => {} } as unknown as SessionPresence;
 const servers: Server[] = [];
 const sockets: WebSocket[] = [];
 
-async function replica(bus?: RedisBus) {
+async function replica(bus: RedisBus) {
   const relay = createTerminalRelay("ns", repo, presence, bus);
   const server = createServer();
   servers.push(server);

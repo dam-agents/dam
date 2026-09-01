@@ -184,9 +184,14 @@ postgres:
   podAnnotations: {}
   image: registry.access.redhat.com/hi/postgresql:18
 
-  # -- Three Postgres roles: one per service plus a dedicated SUPERUSER for
-  # DBA work. The two app roles are NOSUPERUSER and own only their own
+  # -- Three Postgres login roles: one per service plus a dedicated SUPERUSER
+  # for DBA work. The two app roles are NOSUPERUSER and own only their own
   # database, so a leaked app credential is bounded to one service's data.
+  # A fourth role, `usage_readers`, is a credential-less NOLOGIN group: it
+  # holds SELECT on the usage_src_* source passthrough views and grants
+  # nobody anything until an operator adds a member. The api-server
+  # reconciles those grants after every migration run, naming this role, so
+  # the name is fixed rather than configurable.
   # The admin role has `ALTER ROLE … SET log_statement = 'all'` attached so
   # DBA sessions are statement-logged by default. Passwords are
   # auto-generated on first install if left null.
@@ -258,6 +263,12 @@ postgres:
 # the source of truth for anything durable).
 redis:
   enabled: true
+  # -- Use an external Redis instead of the bundled single-replica one:
+  # set `enabled: false` and point this at it (redis://host:port). Auth, if
+  # any, goes in the URL — the bundled auth Secret is not created when
+  # disabled. Required when disabling: the api-server refuses to boot
+  # without a Redis.
+  externalUrl: ""
   # -- Extra annotations for the StatefulSet object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -977,17 +988,19 @@ controller:
       # a template) overrides the derivation — an operator escape hatch, not
       # a user concept.
       #
-      # UPGRADE NOTE (#1900): this default is smaller than the pre-Sizes one
-      # (limits were 1 CPU / 2Gi, requests 250m / 512Mi). It applies to NEW
-      # sandboxes only — existing ones are backfilled at `legacyAgentSize`
-      # below — but the derived default CPU request is 500m (limit × 0.5)
-      # where it used to be 250m, so a packed cluster fits fewer default-size
-      # agents. Tune `requestsFromLimits.fraction` if density matters more
-      # than burst headroom.
+      # UPGRADE NOTE (#1900): this default now matches the limits pre-Sizes
+      # agents ran with (1 CPU / 2Gi), so an upgrade neither grows nor shrinks
+      # an existing sandbox — NEW sandboxes get it directly, existing ones are
+      # backfilled at the identical `legacyAgentSize` below. One thing still
+      # changed from the pre-Sizes chart: the derived default CPU request is
+      # 500m (limit × 0.5) where it used to be an explicit 250m, so a packed
+      # cluster fits fewer default-size agents. Tune
+      # `requestsFromLimits.fraction` if density matters more than burst
+      # headroom.
       resources:
         limits:
           cpu: "1"
-          memory: "1Gi"
+          memory: "2Gi"
       mounts:
         - path: $HOME
           persist: true
@@ -1022,8 +1035,8 @@ controller:
   # another. Raise (or lower) per user with a UserBudget CR named
   # `budget-<keycloak-sub>` in the agent namespace.
   userBudgets:
-    defaultCpu: "4"
-    defaultMemory: "8Gi"
+    defaultCpu: "8"
+    defaultMemory: "16Gi"
 
   # -- How pod requests are derived from an agent's limits (#1900). Requests
   # are scheduling internals, never a user concept: the scheduler packs on

@@ -11,6 +11,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   name: id,
   templateId: null,
   templateUpdate: null,
+  features: { liveUpdates: true },
   kbTemplateId: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,

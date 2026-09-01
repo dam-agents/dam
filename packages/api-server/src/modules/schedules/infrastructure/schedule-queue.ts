@@ -4,10 +4,12 @@ export const SCHEDULES_QUEUE = "schedules";
 
 interface ScheduleJob {
   scheduleId: string;
+  fireAtMs?: number;
 }
 
 export interface ScheduleQueue {
   enqueue(scheduleId: string, fireAt: Date, now: Date): Promise<void>;
+  ensure(scheduleId: string, fireAt: Date, now: Date): Promise<void>;
   cancel(scheduleId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -29,22 +31,40 @@ export function createScheduleQueue(
     );
   }
 
+  async function add(
+    scheduleId: string,
+    fireAt: Date,
+    now: Date,
+  ): Promise<void> {
+    const delayMs = Math.max(0, fireAt.getTime() - now.getTime());
+    await queue.add(
+      "fire",
+      { scheduleId, fireAtMs: fireAt.getTime() },
+      {
+        jobId: `schedule-${scheduleId}-${fireAt.getTime()}`,
+        delay: delayMs,
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1_000 },
+        removeOnComplete: { age: 3600, count: 100 },
+        removeOnFail: { age: 86_400, count: 100 },
+      },
+    );
+  }
+
   return {
     async enqueue(scheduleId, fireAt, now): Promise<void> {
       await removePending(scheduleId);
-      const delayMs = Math.max(0, fireAt.getTime() - now.getTime());
-      await queue.add(
-        "fire",
-        { scheduleId },
-        {
-          jobId: `schedule-${scheduleId}-${fireAt.getTime()}`,
-          delay: delayMs,
-          attempts: 3,
-          backoff: { type: "exponential", delay: 1_000 },
-          removeOnComplete: { age: 3600, count: 100 },
-          removeOnFail: { age: 86_400, count: 100 },
-        },
+      await add(scheduleId, fireAt, now);
+    },
+    async ensure(scheduleId, fireAt, now): Promise<void> {
+      const existing = await queue.getJob(
+        `schedule-${scheduleId}-${fireAt.getTime()}`,
       );
+      if (existing) {
+        if (await existing.isFailed()) await existing.retry();
+        return;
+      }
+      await add(scheduleId, fireAt, now);
     },
     async cancel(scheduleId): Promise<void> {
       await removePending(scheduleId);
@@ -57,7 +77,11 @@ export function createScheduleQueue(
 
 export interface StartScheduleWorkerOpts {
   connection: ConnectionOptions;
-  handler: (scheduleId: string) => Promise<void>;
+  handler: (
+    scheduleId: string,
+    fireAt: Date,
+    lastAttempt: boolean,
+  ) => Promise<void>;
   log: (msg: string) => void;
 }
 
@@ -70,7 +94,12 @@ export function startScheduleWorker(
 ): RunningWorker {
   const worker = new Worker<ScheduleJob>(
     SCHEDULES_QUEUE,
-    async (job) => opts.handler(job.data.scheduleId),
+    async (job) =>
+      opts.handler(
+        job.data.scheduleId,
+        new Date(job.data.fireAtMs ?? job.timestamp),
+        job.attemptsStarted >= (job.opts.attempts ?? 1),
+      ),
     {
       connection: opts.connection,
       concurrency: 16,

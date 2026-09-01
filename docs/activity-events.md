@@ -30,6 +30,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `ContributionApplyFailed` | `contribution_apply_failed` | runtime-delivery |
 | `ContributionRecovered` | `contribution_recovered` | runtime-delivery |
 | `ContributionApplyGaveUp` | `contribution_apply_gave_up` | runtime-delivery |
+| `RuntimeHelloReceived` | _elsewhere_ | runtime-delivery |
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
 | `ScheduleCreated` | _elsewhere_ | schedules |

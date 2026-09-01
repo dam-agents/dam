@@ -23,7 +23,7 @@ WorkingDirectory=/app
 EnvironmentFile=/etc/platform/env
 Environment=PORT=8080
 Environment=MISE_DATA_DIR=/usr/local/share/mise
-Environment=PATH=/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin:/usr/local/share/lazy-tools
+Environment=PATH=/usr/local/share/tool-bin:/app/node_modules/.bin:/usr/local/share/mise/shims:/usr/local/bin:/usr/bin:/bin:/usr/local/share/lazy-tools
 Environment=SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 Environment=REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml

@@ -14,6 +14,7 @@ import {
   agents as agentsTable,
 } from "db";
 import type { DriverFailure, RuntimeEventKind } from "api-server-api";
+import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
 
 export interface OutboxRow {
   agentId: string;
@@ -47,6 +48,9 @@ export interface ApplyTransitions {
 export interface OutboxRepo {
   getRow(agentId: string): Promise<OutboxRow | null>;
   getRows(agentIds: string[]): Promise<OutboxRow[]>;
+  runtimeFeaturesMany(
+    agentIds: string[],
+  ): Promise<Map<string, RuntimeFeatures>>;
   bumpVersion(
     agentId: string,
     tx?: Db | DbTx,
@@ -93,6 +97,22 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .from(runtimeStateOutbox)
         .where(eq(runtimeStateOutbox.agentId, agentId))) as InternalRow[];
       return rows[0] ?? null;
+    },
+
+    async runtimeFeaturesMany(agentIds): Promise<Map<string, RuntimeFeatures>> {
+      const result = new Map<string, RuntimeFeatures>();
+      if (agentIds.length === 0) return result;
+      const rows = await db
+        .select({
+          id: agentsTable.id,
+          caps: agentsTable.runtimeCapabilities,
+        })
+        .from(agentsTable)
+        .where(inArray(agentsTable.id, agentIds));
+      for (const row of rows) {
+        result.set(row.id, runtimeFeaturesOf(row.caps));
+      }
+      return result;
     },
 
     async getRows(agentIds): Promise<OutboxRow[]> {
@@ -190,6 +210,10 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             );
         }
 
+        if (prev.lastSettledVersion > settledVersion) {
+          return { newlyFailed: [], recovered: [], gaveUp: [] };
+        }
+
         if (!clean) {
           const nextAttempts = prev.applyAttempts + 1;
           await tx
@@ -233,6 +257,12 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               sql`${runtimeStateOutbox.applyFailures} <> '[]'::jsonb`,
               lt(runtimeStateOutbox.applyAttempts, maxAttempts),
             ),
+            sql`EXISTS (
+              SELECT 1 FROM runtime_events re
+              WHERE re.agent_id = ${runtimeStateOutbox.agentId}
+                AND re.dispatched_at IS NULL
+                AND re.expires_at > now()
+            )`,
           ),
         )
         .orderBy(asc(runtimeStateOutbox.applyAttempts))
@@ -270,14 +300,17 @@ export function createOutboxRepo(db: Db): OutboxRepo {
     },
 
     async insertEvent(input, tx = db): Promise<void> {
-      await tx.insert(runtimeEvents).values({
-        id: input.id,
-        agentId: input.agentId,
-        kind: input.kind,
-        payload: input.payload as object,
-        version: input.version,
-        expiresAt: input.expiresAt,
-      });
+      await tx
+        .insert(runtimeEvents)
+        .values({
+          id: input.id,
+          agentId: input.agentId,
+          kind: input.kind,
+          payload: input.payload as object,
+          version: input.version,
+          expiresAt: input.expiresAt,
+        })
+        .onConflictDoNothing();
     },
   };
 }

@@ -14,7 +14,6 @@ import {
   type DomainEvent,
 } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
@@ -60,6 +59,7 @@ function harness(opts: {
         ]
       : [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () => [],
     sendPrompt: async (prompt, o) => {
       prompts.push(prompt);
@@ -100,7 +100,7 @@ function harness(opts: {
     (e) => events.push(e),
   );
 
-  const start = () => worker.start("agent-1", {} as StoredChannelConfig);
+  const start = () => worker.connect();
 
   return {
     gw,

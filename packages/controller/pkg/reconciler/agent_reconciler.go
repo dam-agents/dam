@@ -225,10 +225,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 		}
 	}
+	timer.mark("agentStatefulSet")
 	if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 	}
-	timer.mark("agentStatefulSet")
+	timer.mark("agentService")
 
 	if agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != "" {
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.config.Namespace, name, agentSpec.IsVM()); err != nil {

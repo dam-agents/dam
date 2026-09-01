@@ -44,6 +44,20 @@ export const filesRouter = t.router({
       results: await ctx.files.listDirs(input.paths),
     })),
 
+  watch: protectedProcedure
+    .input(fileListDirsInputSchema)
+    .subscription(async function* ({ ctx, input, signal }) {
+      for await (const notice of ctx.files.watchDirs(input.paths, signal))
+        yield notice;
+    }),
+
+  watchFile: protectedProcedure
+    .input(fileReadInputSchema)
+    .subscription(async function* ({ ctx, input, signal }) {
+      for await (const notice of ctx.files.watchFile(input.path, signal))
+        yield notice;
+    }),
+
   read: protectedProcedure
     .input(fileReadInputSchema)
     .query(async ({ ctx, input }) => {
