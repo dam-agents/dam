@@ -36,7 +36,7 @@ function getFixtures(): Record<string, unknown> {
     "agents.list": empty ? [] : agents,
     "agents.get": agents[1],
     "channels.available": channelsAvailable,
-    "channels.telegramBot": null,
+    "channels.telegramBot": { username: "platform_agent_bot" },
     "approvals.listForOwner": approvals,
     "approvals.listForInstance": approvals.slice(0, 2),
     "terms.current": termsCurrent,

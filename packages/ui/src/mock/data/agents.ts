@@ -10,6 +10,7 @@ const AGENT_IDS = {
   knowledgeBase2: "a1b2c3d4-0007-4000-8000-000000000007",
   knowledgeBase3: "a1b2c3d4-0008-4000-8000-000000000008",
   experiment3: "a1b2c3d4-0009-4000-8000-000000000009",
+  cacheTuning: "a1b2c3d4-0010-4000-8000-000000000010",
 };
 
 export { AGENT_IDS };
@@ -259,6 +260,32 @@ export const agents: AgentView[] = [
     podTerminationReason: "Error — process exited with code 1",
     contributionFailures: [],
     channels: [],
+
+    kind: "experiment",
+    kbTemplateId: null,
+    features: { liveUpdates: true },
+  },
+  {
+    id: AGENT_IDS.cacheTuning,
+    spawnedBy: null,
+    name: "cache-tuning",
+    templateId: "claude-code",
+    templateUpdate: null,
+    image: "ghcr.io/anthropics/claude-code:latest",
+    description: "Tunes cache eviction strategies using live traffic patterns",
+
+    hibernationTimeoutMin: 30,
+    grantedSecretIds: [],
+    grantedConnectionIds: ["conn-anthropic"],
+    state: "running",
+    error: undefined,
+    stopRequested: false,
+    overBudget: false,
+    overBudgetMessage: undefined,
+    size: { cpu: "1000m", memory: "1Gi" },
+    podTerminationReason: undefined,
+    contributionFailures: [],
+    channels: [{ type: "slack", slackChannelId: "C03CACHE" }],
 
     kind: "experiment",
     kbTemplateId: null,

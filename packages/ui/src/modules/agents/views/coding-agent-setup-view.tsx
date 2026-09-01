@@ -5,10 +5,14 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { PostCreateBindModal } from "../../sandboxes/components/channels/post-create-bind-modal.js";
+import {
+  DestinationSection,
+  type Destination,
+} from "../../sandboxes/components/setup/destination-section.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
-import { ChannelsSection } from "../../sandboxes/components/setup/channels-section.js";
 import {
   ConnectionsSetupSection,
   NameSection,
@@ -20,6 +24,7 @@ import {
   KINDED_HARNESS_TEMPLATE_ID,
 } from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import { markChannelIntent } from "../../slack/lib/channel-intent.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import {
@@ -44,9 +49,10 @@ export function CodingAgentSetupView() {
   const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
     boolean | null
   >(null);
-  const [selectedChannels, setSelectedChannels] = useState<
-    ("slack" | "telegram")[]
-  >([]);
+  const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
+  const [bindModalChannels, setBindModalChannels] = useState<
+    ("slack" | "telegram")[] | null
+  >(null);
 
   const harnesses = useMemo(
     () =>
@@ -77,6 +83,20 @@ export function CodingAgentSetupView() {
   const registryPartial = hasPartialRegistryCredential(draft);
   const canCreate = isCodingAgentSetupComplete(draft) && !createAgent.isPending;
 
+  function handleDestinationToggle(d: Destination) {
+    setDestinations((prev) => {
+      if (d === "platform") return ["platform"];
+      const messengers = prev.filter(
+        (x): x is "slack" | "telegram" => x !== "platform",
+      );
+      const has = messengers.includes(d as "slack" | "telegram");
+      const next = has
+        ? messengers.filter((x) => x !== d)
+        : [...messengers, d as "slack" | "telegram"];
+      return next.length === 0 ? ["platform"] : next;
+    });
+  }
+
   const create = async () => {
     if (!canCreate) return;
     try {
@@ -86,73 +106,90 @@ export function CodingAgentSetupView() {
       reset();
       setRegistryCredential(EMPTY_REGISTRY_CREDENTIAL);
       setRegistryDisclosureOverride(null);
-      selectAgent(agent.id);
+
+      const messengerChannels = destinations.filter(
+        (d): d is "slack" | "telegram" => d !== "platform",
+      );
+
+      if (messengerChannels.length > 0) {
+        for (const kind of messengerChannels) {
+          markChannelIntent(agent.id, kind);
+        }
+        selectAgent(agent.id);
+        setBindModalChannels(messengerChannels);
+      } else {
+        selectAgent(agent.id);
+      }
     } catch {}
   };
 
   return (
-    <SetupPageShell
-      title="Setup your coding agent"
-      subtitle="Name your agent, choose an image, select a provider, and add connections."
-      footer={
-        <>
-          {registryPartial && (
-            <p className="text-sm text-destructive">
-              Finish or clear the private-registry credentials.
-            </p>
-          )}
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            {createAgent.isPending ? "Creating…" : "Create coding agent"}
-          </Button>
-        </>
-      }
-    >
-      <NameSection value={form.name} onChange={(name) => update({ name })} />
+    <>
+      <SetupPageShell
+        title="Setup your coding agent"
+        subtitle="Name your agent, choose an image, select a provider, and add connections."
+        footer={
+          <>
+            {registryPartial && (
+              <p className="text-sm text-destructive">
+                Finish or clear the private-registry credentials.
+              </p>
+            )}
+            <Button onClick={() => void create()} disabled={!canCreate}>
+              {createAgent.isPending ? "Creating…" : "Create coding agent"}
+            </Button>
+          </>
+        }
+      >
+        <NameSection value={form.name} onChange={(name) => update({ name })} />
 
-      <ImageSection
-        harnesses={harnesses}
-        loading={isLoading}
-        templateId={form.templateId}
-        customImage={form.customImage}
-        registry={{
-          value: registryCredential,
-          onChange: setRegistryCredential,
-          partial: registryPartial,
-          disclosureOverride: registryDisclosureOverride,
-          onDisclosureOverride: setRegistryDisclosureOverride,
-        }}
-        onPickTemplate={(templateId) => update({ templateId, customImage: "" })}
-        onCustomImageChange={(customImage) =>
-          update({ customImage, templateId: null })
-        }
-        onSubmit={() => void create()}
-      />
+        <ImageSection
+          harnesses={harnesses}
+          loading={isLoading}
+          templateId={form.templateId}
+          customImage={form.customImage}
+          registry={{
+            value: registryCredential,
+            onChange: setRegistryCredential,
+            partial: registryPartial,
+            disclosureOverride: registryDisclosureOverride,
+            onDisclosureOverride: setRegistryDisclosureOverride,
+          }}
+          onPickTemplate={(templateId) => update({ templateId, customImage: "" })}
+          onCustomImageChange={(customImage) =>
+            update({ customImage, templateId: null })
+          }
+          onSubmit={() => void create()}
+        />
 
-      <ProviderSection
-        selected={form.providerRef}
-        onSelect={(providerRef) => update({ providerRef })}
-        policy={setupProviderPolicy("coding-agent")}
-      />
-      <ConnectionsSetupSection
-        connectionIds={form.connectionIds}
-        onToggle={(id, granted) =>
-          update({
-            connectionIds: granted
-              ? [...new Set([...form.connectionIds, id])]
-              : form.connectionIds.filter((x) => x !== id),
-          })
-        }
-        oauthReturnView={RETURN_PATH}
-      />
-      <ChannelsSection
-        selected={selectedChannels}
-        onToggle={(ch) =>
-          setSelectedChannels((prev) =>
-            prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch],
-          )
-        }
-        defaultKind="coding"
-      />
-    </SetupPageShell>
+        <ProviderSection
+          selected={form.providerRef}
+          onSelect={(providerRef) => update({ providerRef })}
+          policy={setupProviderPolicy("coding-agent")}
+        />
+        <ConnectionsSetupSection
+          connectionIds={form.connectionIds}
+          onToggle={(id, granted) =>
+            update({
+              connectionIds: granted
+                ? [...new Set([...form.connectionIds, id])]
+                : form.connectionIds.filter((x) => x !== id),
+            })
+          }
+          oauthReturnView={RETURN_PATH}
+        />
+        <DestinationSection
+          selected={destinations}
+          onToggle={handleDestinationToggle}
+        />
+      </SetupPageShell>
+
+      {bindModalChannels && (
+        <PostCreateBindModal
+          channels={bindModalChannels}
+          onClose={() => setBindModalChannels(null)}
+        />
+      )}
+    </>
   );
 }

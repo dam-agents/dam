@@ -4,8 +4,12 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { PostCreateBindModal } from "../../sandboxes/components/channels/post-create-bind-modal.js";
+import {
+  DestinationSection,
+  type Destination,
+} from "../../sandboxes/components/setup/destination-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
-import { ChannelsSection } from "../../sandboxes/components/setup/channels-section.js";
 import {
   ConnectionsSetupSection,
   NameSection,
@@ -14,14 +18,17 @@ import {
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import { markChannelIntent } from "../../slack/lib/channel-intent.js";
 import { useCreateExperimentSandbox } from "../api/mutations.js";
 
 const RETURN_PATH = routeToPath({ view: "experiment-new" });
 
 export function ExperimentSetupView() {
-  const [selectedChannels, setSelectedChannels] = useState<
-    ("slack" | "telegram")[]
-  >([]);
+  const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
+  const [bindModalChannels, setBindModalChannels] = useState<
+    ("slack" | "telegram")[] | null
+  >(null);
+
   const { form, update, reset } = useSetupForm(
     "experiment",
     { templateId: KINDED_HARNESS_TEMPLATE_ID },
@@ -34,6 +41,20 @@ export function ExperimentSetupView() {
     form.name.trim().length > 0 &&
     form.providerRef !== null &&
     !createExperimentSandbox.isPending;
+
+  function handleDestinationToggle(d: Destination) {
+    setDestinations((prev) => {
+      if (d === "platform") return ["platform"];
+      const messengers = prev.filter(
+        (x): x is "slack" | "telegram" => x !== "platform",
+      );
+      const has = messengers.includes(d as "slack" | "telegram");
+      const next = has
+        ? messengers.filter((x) => x !== d)
+        : [...messengers, d as "slack" | "telegram"];
+      return next.length === 0 ? ["platform"] : next;
+    });
+  }
 
   const create = async () => {
     if (!canCreate) return;
@@ -51,48 +72,68 @@ export function ExperimentSetupView() {
         ...(connectionIds.length ? { connectionIds } : {}),
       });
       reset();
-      selectAgent(agent.id);
+
+      const messengerChannels = destinations.filter(
+        (d): d is "slack" | "telegram" => d !== "platform",
+      );
+
+      if (messengerChannels.length > 0) {
+        for (const kind of messengerChannels) {
+          markChannelIntent(agent.id, kind);
+        }
+        selectAgent(agent.id);
+        setBindModalChannels(messengerChannels);
+      } else {
+        selectAgent(agent.id);
+      }
     } catch {}
   };
 
   return (
-    <SetupPageShell
-      title="Setup your experiment"
-      subtitle="Name your experiment, choose a provider, and add connections."
-      footer={
-        <Button onClick={() => void create()} disabled={!canCreate}>
-          {createExperimentSandbox.isPending
-            ? "Creating…"
-            : "Create experiment"}
-        </Button>
-      }
-    >
-      <NameSection value={form.name} onChange={(name) => update({ name })} />
-      <ProviderSection
-        selected={form.providerRef}
-        onSelect={(providerRef) => update({ providerRef })}
-        policy={setupProviderPolicy("experiment")}
-      />
-      <ConnectionsSetupSection
-        connectionIds={form.connectionIds}
-        onToggle={(id, granted) =>
-          update({
-            connectionIds: granted
-              ? [...new Set([...form.connectionIds, id])]
-              : form.connectionIds.filter((x) => x !== id),
-          })
+    <>
+      <SetupPageShell
+        title="Setup your experiment"
+        subtitle="Name your experiment, choose a provider, and add connections."
+        footer={
+          <Button onClick={() => void create()} disabled={!canCreate}>
+            {createExperimentSandbox.isPending
+              ? "Creating…"
+              : "Create experiment"}
+          </Button>
         }
-        oauthReturnView={RETURN_PATH}
-      />
-      <ChannelsSection
-        selected={selectedChannels}
-        onToggle={(ch) =>
-          setSelectedChannels((prev) =>
-            prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch],
-          )
-        }
-        defaultKind="research"
-      />
-    </SetupPageShell>
+      >
+        <NameSection
+          value={form.name}
+          onChange={(name) => update({ name })}
+        />
+        <ProviderSection
+          selected={form.providerRef}
+          onSelect={(providerRef) => update({ providerRef })}
+          policy={setupProviderPolicy("experiment")}
+        />
+        <ConnectionsSetupSection
+          connectionIds={form.connectionIds}
+          onToggle={(id, granted) =>
+            update({
+              connectionIds: granted
+                ? [...new Set([...form.connectionIds, id])]
+                : form.connectionIds.filter((x) => x !== id),
+            })
+          }
+          oauthReturnView={RETURN_PATH}
+        />
+        <DestinationSection
+          selected={destinations}
+          onToggle={handleDestinationToggle}
+        />
+      </SetupPageShell>
+
+      {bindModalChannels && (
+        <PostCreateBindModal
+          channels={bindModalChannels}
+          onClose={() => setBindModalChannels(null)}
+        />
+      )}
+    </>
   );
 }

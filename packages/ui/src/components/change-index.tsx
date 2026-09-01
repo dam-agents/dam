@@ -21,22 +21,22 @@ export function ChangeIndex() {
       action: () => setView("slack-cards-preview"),
     },
     {
+      label: "Experiment Setup (primary flow)",
+      description:
+        "Destination section (platform/Slack/Telegram). On create → chat page + bind modal. Try selecting Slack, Telegram, or both.",
+      action: () => setView("experiment-new"),
+    },
+    {
       label: "Coding Agent Setup",
       description:
-        "New Channels section — optional Slack/Telegram binding during agent creation.",
+        "Same destination fork + post-create modal as experiment setup.",
       action: () => setView("coding-agent-new"),
     },
     {
       label: "Knowledge Base Setup",
       description:
-        "New Channels section — optional Slack/Telegram binding during KB creation.",
+        "Same destination fork + post-create modal as experiment setup.",
       action: () => setView("knowledge-base-new"),
-    },
-    {
-      label: "Experiment Setup",
-      description:
-        "New Channels section — optional Slack/Telegram binding during experiment creation.",
-      action: () => setView("experiment-new"),
     },
     {
       label: "Home View",

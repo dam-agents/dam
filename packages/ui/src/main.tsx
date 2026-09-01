@@ -33,6 +33,11 @@ function render(App: React.ComponentType) {
 }
 
 async function main() {
+  if (import.meta.env.VITE_MOCK) {
+    const { worker } = await import("./mock/browser.js");
+    await worker.start({ onUnhandledRequest: "bypass" });
+  }
+
   const publicAgentId = parsePublicAgentPath(window.location.pathname);
   if (publicAgentId !== null) {
     await loadBrand().then(applyBrand).catch(() => {});
