@@ -281,21 +281,14 @@ export function createArtifactLibraryService(
     },
 
     async listVersions(id) {
-      const row = await requireArtifact(id);
-      const prior = await repo.listVersions(id);
-      const infos: ArtifactVersionInfo[] = prior.map((v) => ({
+      await requireArtifact(id);
+      const rows = await repo.listVersions(id);
+      return rows.map((v) => ({
         version: v.version,
         contentType: v.contentType,
         sizeBytes: v.sizeBytes,
         createdAt: v.createdAt.toISOString(),
       }));
-      infos.push({
-        version: row.version,
-        contentType: row.contentType,
-        sizeBytes: row.sizeBytes,
-        createdAt: row.updatedAt.toISOString(),
-      });
-      return infos;
     },
 
     async create(input, attribution) {
@@ -471,8 +464,10 @@ export function createArtifactLibraryService(
       });
       await Promise.allSettled(
         [
-          deleted.artifact.storageRef,
-          ...deleted.versions.map((v) => v.storageRef),
+          ...new Set([
+            deleted.artifact.storageRef,
+            ...deleted.versions.map((v) => v.storageRef),
+          ]),
         ].map((ref) => artifacts.delete(ref)),
       );
     },

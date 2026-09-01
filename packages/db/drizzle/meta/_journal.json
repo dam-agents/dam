@@ -267,6 +267,13 @@
       "when": 1788272111525,
       "tag": "0037_colossal_karma",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788265427840,
+      "tag": "0038_backfill_current_artifact_versions",
+      "breakpoints": true
     }
   ]
 }

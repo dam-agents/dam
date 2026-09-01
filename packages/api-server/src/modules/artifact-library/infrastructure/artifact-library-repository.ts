@@ -179,11 +179,20 @@ export function createArtifactLibraryRepository(
 
   return {
     async insertArtifact(row) {
-      const [inserted] = await db
-        .insert(artifactsTable)
-        .values(row)
-        .returning(artifactColumns);
-      return inserted!;
+      return db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(artifactsTable)
+          .values(row)
+          .returning(artifactColumns);
+        await tx.insert(versionsTable).values({
+          artifactId: inserted!.id,
+          version: inserted!.version,
+          storageRef: inserted!.storageRef,
+          contentType: inserted!.contentType,
+          sizeBytes: inserted!.sizeBytes,
+        });
+        return inserted!;
+      });
     },
 
     async getArtifact(id, owner) {
@@ -366,7 +375,13 @@ export function createArtifactLibraryRepository(
           )
           .returning(artifactColumns);
         if (!row) return null;
-        await tx.insert(versionsTable).values(snapshot);
+        await tx.insert(versionsTable).values({
+          artifactId: row.id,
+          version: row.version,
+          storageRef: row.storageRef,
+          contentType: row.contentType,
+          sizeBytes: row.sizeBytes,
+        });
         return row;
       });
     },
