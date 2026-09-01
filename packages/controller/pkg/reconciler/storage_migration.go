@@ -355,7 +355,13 @@ func isRWX(modes []corev1.PersistentVolumeAccessMode) bool {
 }
 
 func migrationTargetName(oldPVC string) string {
-	name := "mig-" + oldPVC
+	name := oldPVC
+	for strings.HasPrefix(name, "mig-") {
+		name = strings.TrimPrefix(name, "mig-")
+	}
+	if name == oldPVC {
+		name = "mig-" + name
+	}
 	if len(name) > 63 {
 		name = name[:63]
 	}
