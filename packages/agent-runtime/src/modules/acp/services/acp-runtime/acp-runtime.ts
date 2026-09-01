@@ -127,6 +127,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const harnessLoadTimeoutMs =
     deps.harnessLoadTimeoutMs ?? DEFAULT_HARNESS_LOAD_TIMEOUT_MS;
   let sessionCloseSupported = true;
+  let sessionResumeSupported = false;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
@@ -298,10 +299,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
     const outboundId = nextOutboundId++;
     rehydrateLoadIds.set(sessionId, outboundId);
+    const method = sessionResumeSupported ? "session/resume" : "session/load";
     outboundIdToClient.set(outboundId, {
       channel: null,
       originalId: null,
-      method: "session/load",
+      method,
       promptSessionId: null,
       attachSessionId: sessionId,
       platformMeta: null,
@@ -312,7 +314,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         {
           jsonrpc: "2.0",
           id: outboundId,
-          method: "session/load",
+          method,
           params: { sessionId, cwd: ".", mcpServers: [] },
         },
         deps.workingDir,
@@ -582,7 +584,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (settleOrphanedLoad(mapping.attachSessionId, outboundId)) return;
 
         if (mapping.method === "initialize") {
-          sessionCloseSupported = extractSessionCloseSupported(frame);
+          sessionCloseSupported = hasSessionCapability(frame, "close");
+          sessionResumeSupported = hasSessionCapability(frame, "resume");
         }
 
         const sidFromResult = extractResultSessionId(frame);
@@ -606,10 +609,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
         }
 
-        if (mapping.method === "session/load" && mapping.attachSessionId) {
+        if (mapping.attachSessionId) {
           if (mapping.rehydrate) {
             finishHarnessRehydrate(mapping.attachSessionId, frame);
-          } else {
+          } else if (mapping.method === "session/load") {
             bootstrap.onLoadResponse(mapping.attachSessionId, frame);
           }
         }
@@ -1130,7 +1133,7 @@ function injectPlatformMetaIntoList(
   return { ...frame, result: { ...result, sessions } };
 }
 
-function extractSessionCloseSupported(frame: unknown): boolean {
+function hasSessionCapability(frame: unknown, name: string): boolean {
   if (!isNonNullObject(frame)) return false;
   const result = frame.result;
   if (!isNonNullObject(result)) return false;
@@ -1138,7 +1141,7 @@ function extractSessionCloseSupported(frame: unknown): boolean {
   if (!isNonNullObject(caps)) return false;
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
-  return isNonNullObject(session.close);
+  return isNonNullObject(session[name]);
 }
 
 function extractParamsSessionId(frame: unknown): string | null {
