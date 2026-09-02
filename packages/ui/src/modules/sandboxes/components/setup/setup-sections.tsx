@@ -65,10 +65,12 @@ export function ConnectionsSetupSection({
   connectionIds,
   onToggle,
   oauthReturnView,
+  children,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   oauthReturnView: string;
+  children?: React.ReactNode;
 }) {
   const connectionsQ = useAppConnections();
   const [catalogOpen, setCatalogOpen] = useState(false);
@@ -90,7 +92,17 @@ export function ConnectionsSetupSection({
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={() => setCatalogOpen(true)}
-      />
+        sectionLabel={
+          <>
+            Connections{" "}
+            <span className="font-normal text-muted-foreground">
+              (optional)
+            </span>
+          </>
+        }
+      >
+        {children}
+      </GrantedConnectionsPanel>
       {catalogOpen && (
         <ConnectionCatalogModal
           onClose={() => setCatalogOpen(false)}

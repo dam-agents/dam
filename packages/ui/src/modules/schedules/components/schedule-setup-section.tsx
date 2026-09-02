@@ -2,6 +2,8 @@ import {
   Add,
   ChevronDown,
   ChevronUp,
+  Close,
+  Edit as EditIcon,
   OverflowMenuVertical,
   Time,
 } from "@carbon/icons-react";
@@ -15,6 +17,7 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
@@ -40,9 +43,14 @@ import {
 interface Props {
   drafts: ScheduleDraft[];
   onDraftsChange: (drafts: ScheduleDraft[]) => void;
+  presetIndices?: Set<number>;
 }
 
-export function ScheduleSetupSection({ drafts, onDraftsChange }: Props) {
+export function ScheduleSetupSection({
+  drafts,
+  onDraftsChange,
+  presetIndices,
+}: Props) {
   const [modalState, setModalState] = useState<
     { mode: "create" } | { mode: "edit"; index: number } | null
   >(null);
@@ -123,6 +131,7 @@ export function ScheduleSetupSection({ drafts, onDraftsChange }: Props) {
           <ScheduleDraftCard
             key={index}
             draft={draft}
+            isPreset={presetIndices?.has(index) ?? false}
             isExpanded={expandedIndex === index}
             onToggleExpanded={() =>
               setExpandedIndex((prev) => (prev === index ? null : index))
@@ -152,6 +161,7 @@ export function ScheduleSetupSection({ drafts, onDraftsChange }: Props) {
 
 function ScheduleDraftCard({
   draft,
+  isPreset,
   isExpanded,
   onToggleExpanded,
   onEdit,
@@ -159,6 +169,7 @@ function ScheduleDraftCard({
   onToggle,
 }: {
   draft: ScheduleDraft;
+  isPreset: boolean;
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onEdit: () => void;
@@ -169,12 +180,19 @@ function ScheduleDraftCard({
   const cadence = buildRRuleParts(draft);
 
   return (
-    <Card>
+    <Card
+      className={
+        isPreset ? "border-preset-border/50 bg-preset-light/60" : undefined
+      }
+    >
       <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold text-foreground">
-            {draft.name || "Untitled schedule"}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="truncate text-[15px] font-semibold text-foreground">
+              {draft.name || "Untitled schedule"}
+            </p>
+            {isPreset && <Badge variant="preset">Preset</Badge>}
+          </div>
           <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
             {cadence.summary && (
               <span className="truncate">{cadence.summary}</span>
@@ -182,30 +200,61 @@ function ScheduleDraftCard({
           </div>
         </div>
 
-        <Switch
-          checked={enabled}
-          onCheckedChange={onToggle}
-          label={enabled ? "Disable schedule" : "Enable schedule"}
-        />
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        {isPreset ? (
+          <>
+            <Switch
+              checked={enabled}
+              onCheckedChange={onToggle}
+              label={enabled ? "Disable schedule" : "Enable schedule"}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onEdit}
+            >
+              <EditIcon size={16} />
+              Edit
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-muted-foreground"
-              aria-label="Schedule actions"
+              className="text-muted-foreground hover:bg-preset-border hover:text-foreground"
+              onClick={onDelete}
+              aria-label="Remove schedule"
             >
-              <OverflowMenuVertical size={16} />
+              <Close size={16} />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onSelect={onEdit}>Edit schedule</DropdownMenuItem>
-            <DropdownMenuItem tone="danger" onSelect={onDelete}>
-              Delete schedule
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </>
+        ) : (
+          <>
+            <Switch
+              checked={enabled}
+              onCheckedChange={onToggle}
+              label={enabled ? "Disable schedule" : "Enable schedule"}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  aria-label="Schedule actions"
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onSelect={onEdit}>
+                  Edit schedule
+                </DropdownMenuItem>
+                <DropdownMenuItem tone="danger" onSelect={onDelete}>
+                  Delete schedule
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
       </div>
 
       <button

@@ -10,6 +10,7 @@ import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { AgentSetupView } from "./modules/agents/views/agent-setup-view.js";
 import { AgentsView } from "./modules/agents/views/agents-view.js";
+import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
@@ -85,7 +86,7 @@ function MainApp() {
   if (view === "chat" || view === "knowledge-base-chat")
     return (
       <>
-        <div className="flex h-dvh bg-background overflow-hidden">
+        <div className="flex h-full bg-background overflow-hidden">
           <IconRail hideMobileBar />
           <div className="relative z-content flex-1 min-w-0">
             <ChatView />
@@ -99,7 +100,7 @@ function MainApp() {
     );
 
   return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
@@ -126,6 +127,8 @@ function MainApp() {
                 <AgentsView />
               ) : view === "packs" ? (
                 <PacksView />
+              ) : view === "setup-workbench" ? (
+                <SetupWorkbenchView />
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (

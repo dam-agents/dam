@@ -32,6 +32,9 @@
   --color-callout-border: var(--c-callout-border);
   --color-template: var(--c-template);
   --color-template-light: var(--c-template-light);
+  --color-preset: var(--c-preset);
+  --color-preset-light: var(--c-preset-light);
+  --color-preset-border: var(--c-preset-border);
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -154,6 +157,9 @@
   --c-callout-border: #a6c8ff;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
+  --c-preset: #8a3ffc;
+  --c-preset-light: #f6f2ff;
+  --c-preset-border: #e8daff;
 
   /* shadcn tokens — mapped to brand palette above */
   --radius: 0.5rem;
@@ -196,6 +202,9 @@
   --c-callout-border: #4589ff;
   --c-template: #a78bfa;
   --c-template-light: #1f1438;
+  --c-preset: #a78bfa;
+  --c-preset-light: #1f1438;
+  --c-preset-border: #6929c4;
   color-scheme: dark;
 
   /* shadcn tokens — dark. Surface colors that are pure #ffffff in light

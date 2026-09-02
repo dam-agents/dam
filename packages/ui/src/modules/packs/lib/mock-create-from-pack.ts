@@ -1,6 +1,11 @@
 import { queryClient } from "../../../query-client.js";
 import type { AgentView } from "../../../types.js";
+import { agentsKeys } from "../../agents/api/queries.js";
 import type { Pack } from "../data/packs.js";
+
+function trpcAgentsListKey() {
+  return [["agents", "list"], { input: undefined, type: "query" }];
+}
 
 export function mockCreateAgentFromPack(
   pack: Pack,
@@ -36,16 +41,17 @@ export function mockCreateAgentFromPack(
 }
 
 export function insertAgentIntoCache(agent: AgentView): void {
-  const listKey = [["agents", "list"], { type: "query" }];
-  const existing =
-    queryClient.getQueryData<{ list: AgentView[] }>(listKey)?.list ?? [];
-  queryClient.setQueryData(listKey, { list: [agent, ...existing] });
-
-  const withChannelsKey = [["agents", "listWithChannels"], { type: "query" }];
-  const existingWc =
-    queryClient.getQueryData<{ list: AgentView[] }>(withChannelsKey)?.list ??
-    [];
-  queryClient.setQueryData(withChannelsKey, {
-    list: [agent, ...existingWc],
+  const wcKey = agentsKeys.listWithChannels();
+  const wcData = queryClient.getQueryData<{
+    list: AgentView[];
+    availableChannels?: unknown[];
+  }>(wcKey);
+  queryClient.setQueryData(wcKey, {
+    list: [agent, ...(wcData?.list ?? [])],
+    availableChannels: wcData?.availableChannels ?? [],
   });
+
+  const trpcKey = trpcAgentsListKey();
+  const trpcList = queryClient.getQueryData<AgentView[]>(trpcKey) ?? [];
+  queryClient.setQueryData(trpcKey, [agent, ...trpcList]);
 }

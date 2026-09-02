@@ -1,3 +1,4 @@
+import { ColorPalette, ListChecked } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -5,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { queryClient } from "../query-client.js";
 import { useStore } from "../store.js";
 import { setMockEmpty } from "./handlers.js";
+import { IconInventory } from "./icon-inventory.js";
 
 interface ReviewScreen {
   label: string;
@@ -17,25 +19,36 @@ function useReviewScreens(): ReviewScreen[] {
   return [
     {
       label: "Home",
-      note: "Empty: welcome + agent type cards. Populated: activity feed.",
+      note: "Activity feed, compute, spend.",
       go: () => setView("home"),
     },
     {
-      label: "Agents list",
-      note: "Empty: agent type cards. Populated: agent rows + Create button.",
+      label: "Agents",
+      note: "Agent list with status indicators.",
       go: () => setView("agents"),
     },
     {
+      label: "Presets",
+      note: "Browse presets, detail sheet, search + filter.",
+      go: () => setView("packs"),
+    },
+    {
       label: "Agent setup",
-      note: "Page 1: name + type. Page 2: type-specific config (image/framework/wiki), provider, connections.",
+      note: "Create agent form: name, harness, provider, schedule, connections.",
       go: () => setView("agent-new"),
+    },
+    {
+      label: "Setup workbench",
+      note: "Iterate on setup section interactions — normal vs preset.",
+      go: () => setView("setup-workbench"),
     },
   ];
 }
 
 export function MockStateBar() {
   const [empty, setEmpty] = useState(false);
-  const [indexOpen, setIndexOpen] = useState(true);
+  const [indexOpen, setIndexOpen] = useState(false);
+  const [iconInventoryOpen, setIconInventoryOpen] = useState(false);
   const screens = useReviewScreens();
   const view = useStore((s) => s.view);
 
@@ -75,18 +88,31 @@ export function MockStateBar() {
         >
           Empty
         </button>
-        <div className="flex-1" />
-        <button
-          type="button"
-          onClick={() => setIndexOpen((v) => !v)}
-          className="text-sm font-medium text-muted-foreground hover:text-foreground"
-        >
-          {indexOpen ? "Hide index" : "Review index"}
-        </button>
       </div>
 
+      <button
+        type="button"
+        onClick={() => setIconInventoryOpen(true)}
+        className="fixed bottom-4 right-16 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted"
+        aria-label="Open icon inventory"
+      >
+        <ColorPalette size={16} className="text-foreground" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setIndexOpen((v) => !v)}
+        className={cn(
+          "fixed bottom-4 right-4 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          indexOpen && "bg-muted",
+        )}
+        aria-label="Toggle review index"
+      >
+        <ListChecked size={16} className="text-foreground" />
+      </button>
+
       {indexOpen && (
-        <div className="fixed right-4 top-14 z-[9999] w-72 rounded-lg border border-border bg-card shadow-lg">
+        <div className="fixed bottom-16 right-4 z-[9999] w-72 rounded-lg border border-border bg-card shadow-lg">
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">
               Review index
@@ -99,8 +125,12 @@ export function MockStateBar() {
             {screens.map((s) => {
               const active =
                 (s.label === "Home" && view === "home") ||
-                (s.label === "Agents list" && view === "agents") ||
-                (s.label === "Agent setup" && view === "agent-new");
+                (s.label === "Agents" &&
+                  (view === "agents" || view === "agent-new")) ||
+                (s.label === "Presets" && view === "packs") ||
+                (s.label === "Agent setup" && view === "agent-new") ||
+                (s.label === "Setup workbench" &&
+                  view === "setup-workbench");
               return (
                 <button
                   key={s.label}
@@ -130,6 +160,10 @@ export function MockStateBar() {
             })}
           </div>
         </div>
+      )}
+
+      {iconInventoryOpen && (
+        <IconInventory onClose={() => setIconInventoryOpen(false)} />
       )}
     </>
   );

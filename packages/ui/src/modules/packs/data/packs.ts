@@ -1,5 +1,6 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 import {
+  Box,
   Chat,
   Code,
   Debug,
@@ -66,6 +67,60 @@ export interface Pack {
 
 export const PACKS: Pack[] = [
   {
+    id: "docs-maintainer",
+    name: "Docs Maintainer",
+    category: "Development",
+    icon: Box,
+    tagline:
+      "Keeps a docs site in step with the code and publishes it on a schedule.",
+    description:
+      "Watches your repository for code changes that affect documentation. Automatically updates API references, changelogs, and guides, then publishes the docs site on a configurable schedule. Pairs with a GitHub connection for repo access and a release-triggered schedule to keep docs always current.",
+    included: [
+      {
+        kind: "harness",
+        label: "Claude Code",
+        description:
+          "Reads code changes and rewrites affected docs pages with accurate examples",
+        templateId: "claude-code",
+      },
+      {
+        kind: "skill",
+        label: "Docs generator",
+        description:
+          "Extracts API signatures, types, and usage patterns into structured documentation",
+      },
+      {
+        kind: "skill",
+        label: "Changelog writer",
+        description:
+          "Summarizes merged PRs into release notes grouped by category",
+      },
+      {
+        kind: "schedule",
+        label: "On every release",
+        description:
+          "Triggers a full docs rebuild and publish after each tagged release",
+        demoValue: "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Read source code, PRs, and release tags",
+        templateId: "github",
+        connectionTemplateId: "conn-tpl-github",
+      },
+      {
+        kind: "channel",
+        label: "Docs updates channel",
+        description:
+          "Post publish notifications and changelog summaries to Slack",
+        demoValue: "#docs-updates",
+      },
+    ],
+  },
+  {
     id: "design-prototyper",
     name: "Design Prototyper",
     category: "Development",
@@ -78,26 +133,27 @@ export const PACKS: Pack[] = [
       {
         kind: "harness",
         label: "Claude Code",
-        description: "AI coding harness for generating and iterating on code",
+        description:
+          "Generates and iterates on prototype code from issue descriptions",
         templateId: "claude-code",
       },
       {
         kind: "skill",
         label: "Prototyper",
         description:
-          "Generates interactive HTML/React prototypes from issue specs",
+          "Turns issue specs into interactive HTML/React prototypes using your tokens",
       },
       {
         kind: "skill",
         label: "Design system reader",
         description:
-          "Parses tokens, components, and usage patterns from your repo",
+          "Parses your repo's tokens, components, and usage patterns so prototypes match your system",
       },
       {
         kind: "schedule",
         label: "Issue scan",
-        description: "Checks for new issues tagged 'design' every 30 minutes",
-        demoValue: "*/30 * * * *",
+        description: "Checks for new design-tagged issues every 30 minutes",
+        demoValue: "RRULE:FREQ=MINUTELY;INTERVAL=30",
       },
     ],
     required: [
@@ -130,25 +186,27 @@ export const PACKS: Pack[] = [
       {
         kind: "harness",
         label: "Claude Code",
-        description: "AI coding harness for generating and iterating on code",
+        description:
+          "Reads diffs and writes review comments with inline code suggestions",
         templateId: "claude-code",
       },
       {
         kind: "skill",
         label: "Code review",
         description:
-          "Style checks, security scanning, and best-practice enforcement",
+          "Enforces your style guide, flags security issues, and suggests fixes inline",
       },
       {
         kind: "skill",
         label: "Dependency audit",
-        description: "Flags outdated or vulnerable packages in lockfiles",
+        description:
+          "Scans lockfiles for outdated or vulnerable packages on every review",
       },
       {
         kind: "schedule",
         label: "Nightly audit",
         description: "Full security scan of changed files, daily at 2 AM",
-        demoValue: "0 2 * * *",
+        demoValue: "RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=0",
       },
     ],
     required: [
@@ -179,13 +237,15 @@ export const PACKS: Pack[] = [
       {
         kind: "harness",
         label: "Claude Code",
-        description: "AI coding harness for generating and iterating on code",
+        description:
+          "Navigates your codebase to find and explain code in context",
         templateId: "claude-code",
       },
       {
         kind: "skill",
         label: "Codebase indexer",
-        description: "Indexes repository structure, docs, and code patterns",
+        description:
+          "Builds a searchable map of your repository structure, docs, and patterns",
       },
     ],
     required: [
@@ -221,26 +281,28 @@ export const PACKS: Pack[] = [
       {
         kind: "harness",
         label: "Claude Code",
-        description: "AI coding harness for generating and iterating on code",
+        description:
+          "Interprets crawl results and writes actionable reports with fix suggestions",
         templateId: "claude-code",
       },
       {
         kind: "starter-repo",
         label: "Link Guardian",
         description:
-          "Crawls sites and detects broken links, redirects, and SSL issues",
+          "Crawls configured sites and detects broken links, redirects, and SSL issues",
         templateId: "link-guardian",
       },
       {
         kind: "skill",
         label: "Link reporter",
-        description: "Formats scan results into actionable reports",
+        description:
+          "Formats raw crawl output into prioritized, actionable reports",
       },
       {
         kind: "schedule",
         label: "Daily scan",
         description: "Crawls all configured sites daily at 6 AM",
-        demoValue: "0 6 * * *",
+        demoValue: "RRULE:FREQ=DAILY;BYHOUR=6;BYMINUTE=0",
       },
     ],
     required: [
@@ -271,25 +333,28 @@ export const PACKS: Pack[] = [
       {
         kind: "harness",
         label: "Claude Code",
-        description: "AI coding harness for generating and iterating on code",
+        description:
+          "Reads full papers and writes structured summaries of methods and results",
         templateId: "claude-code",
       },
       {
         kind: "starter-repo",
         label: "arXiv Scanner",
-        description: "Watches arXiv feeds and filters papers by topic",
+        description:
+          "Watches arXiv feeds and filters papers by your configured topics",
         templateId: "arxiv-scanner",
       },
       {
         kind: "skill",
         label: "Paper summarizer",
-        description: "Extracts key findings, methods, and results from papers",
+        description:
+          "Extracts key findings, methods, and results into a consistent format",
       },
       {
         kind: "schedule",
         label: "Daily scan",
         description: "Checks for new papers daily at 7 AM",
-        demoValue: "0 7 * * *",
+        demoValue: "RRULE:FREQ=DAILY;BYHOUR=7;BYMINUTE=0",
       },
     ],
     required: [
@@ -312,14 +377,15 @@ export const PACKS: Pack[] = [
       {
         kind: "framework",
         label: "OpenEvolve",
-        description: "Evolutionary code-optimization agent",
+        description:
+          "Evolves code solutions through LLM-guided mutations across generations",
         templateId: "openevolve",
       },
       {
         kind: "skill",
         label: "Benchmark runner",
         description:
-          "Executes fitness evaluations and tracks optimization metrics",
+          "Executes fitness evaluations on GPU and tracks optimization metrics",
       },
     ],
     required: [

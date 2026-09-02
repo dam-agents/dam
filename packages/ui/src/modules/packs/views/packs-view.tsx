@@ -1,7 +1,6 @@
 import { Search } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
@@ -11,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { PackDetailSheet } from "../components/pack-detail-sheet.js";
+import { PackIngredientSummary } from "../components/pack-ingredient-summary.js";
 import {
   type Pack,
   PACK_CATEGORIES,
@@ -81,8 +81,8 @@ export function PacksView() {
   return (
     <>
       <PageHeader
-        title="Packs"
-        description="Pre-configured agent setups you can apply in one click. Each pack bundles a harness, skills, schedules, and connections."
+        title="Presets"
+        description="Pre-configured agent setups you can apply in one click. Each preset bundles a harness, skills, schedules, and connections."
         actions={
           <div className="relative">
             <Search
@@ -90,7 +90,7 @@ export function PacksView() {
               className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
             />
             <Input
-              placeholder="Search packs..."
+              placeholder="Search presets..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-9 w-56 pl-9"
@@ -106,15 +106,15 @@ export function PacksView() {
           onValueChange={setCategory}
           variant="pill"
           size="sm"
-          ariaLabel="Filter packs by category"
+          ariaLabel="Filter presets by category"
           className="mb-6"
         />
       )}
 
       {isEmpty ? (
         <PageEmptyState
-          title="No packs yet"
-          message="Packs are pre-configured agent setups that bundle a harness, skills, schedules, and connections. Check back soon."
+          title="No presets yet"
+          message="Presets are pre-configured agent setups that bundle a harness, skills, schedules, and connections. Check back soon."
           actionLabel="Create agent"
           onAction={() => {}}
         />
@@ -122,8 +122,8 @@ export function PacksView() {
         <div className="py-16 text-center">
           <p className="text-sm text-muted-foreground">
             {isSearching
-              ? `No packs match "${search.trim()}"`
-              : `No packs in ${category}`}
+              ? `No presets match "${search.trim()}"`
+              : `No presets in ${category}`}
           </p>
         </div>
       ) : isSearching ? (
@@ -139,16 +139,6 @@ export function PacksView() {
         onTryIt={handleTryIt}
       />
     </>
-  );
-}
-
-function IngredientPills({ pack }: { pack: Pack }) {
-  return (
-    <div className="flex items-center gap-3 text-[14px] text-muted-foreground">
-      <span>{pack.included.length} included</span>
-      <span className="text-border">|</span>
-      <span>{pack.required.length} to set up</span>
-    </div>
   );
 }
 
@@ -174,26 +164,18 @@ function PackGrid({
               "flex flex-col overflow-hidden text-left",
             )}
           >
-            <div className="h-36 w-full bg-muted" />
+            <div className="flex h-36 w-full items-center justify-center bg-preset-light">
+              <Icon size={32} className="text-preset/40" />
+            </div>
             <div className="flex flex-1 flex-col p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-                  <Icon size={16} className="text-foreground" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-base font-semibold text-foreground">
-                    {pack.name}
-                  </h4>
-                  <Badge variant="muted" size="sm" className="mt-0.5">
-                    {pack.category}
-                  </Badge>
-                </div>
-              </div>
-              <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground">
+              <h4 className="text-base font-semibold text-foreground">
+                {pack.name}
+              </h4>
+              <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
                 {pack.tagline}
               </p>
               <div className="mt-4">
-                <IngredientPills pack={pack} />
+                <PackIngredientSummary pack={pack} />
               </div>
             </div>
           </button>
@@ -226,12 +208,11 @@ function SpotlightLayout({
           "grid grid-cols-1 overflow-hidden text-left md:grid-cols-2",
         )}
       >
-        <div className="min-h-[280px] bg-muted" />
+        <div className="flex min-h-[280px] items-center justify-center bg-gradient-to-br from-preset-light to-card">
+          <HeroIcon size={48} className="text-preset/40" />
+        </div>
         <div className="flex flex-col justify-center p-8 md:p-10">
-          <Badge variant="muted" className="w-fit">
-            Featured
-          </Badge>
-          <div className="mt-3 flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
               <HeroIcon size={16} className="text-foreground" />
             </div>
@@ -243,7 +224,7 @@ function SpotlightLayout({
             {hero.tagline}
           </p>
           <div className="mt-5">
-            <IngredientPills pack={hero} />
+            <PackIngredientSummary pack={hero} />
           </div>
         </div>
       </button>

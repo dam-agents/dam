@@ -14,7 +14,7 @@ export function createDemoAgent(pack: Pack): string {
 
   const agent: AgentView = {
     id: agentId,
-    name: `demo-${pack.id}`,
+    name: pack.name,
     templateId,
     templateUpdate: null,
     image: templateId ? `ghcr.io/placeholder/${templateId}:latest` : "",
