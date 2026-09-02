@@ -1,4 +1,5 @@
 import type { DocumentStoreBackend } from "../../core/document-store.js";
+import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
 import {
   mergedSpawnEnv,
   type RuntimeEnvReader,
@@ -46,6 +47,7 @@ export interface ComposeAcpOptions {
   };
   isTerminalSessionActive?: (sessionId: string) => boolean;
   backgroundWorkHolds?: boolean;
+  onArtifactTouch: (touch: ArtifactTouch) => void;
   log?: (msg: string) => void;
 }
 
@@ -99,6 +101,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     workingDir: opts.workingDir,
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
+    onArtifactTouch: opts.onArtifactTouch,
     historyProvider: historyProviderOf(opts),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),

@@ -95,3 +95,27 @@ export const folderUpdateInputSchema = z.object({
 });
 
 export const folderIdInputSchema = z.object({ id: z.string().min(1) });
+
+export const ARTIFACT_TOUCH_MARKER_VERSION = 1;
+
+export const artifactTouchMarkerSchema = z.object({
+  v: z.literal(ARTIFACT_TOUCH_MARKER_VERSION),
+  artifactId: z.string().min(1),
+  version: z.number().int().positive(),
+});
+
+export const artifactTouchPayloadSchema = z.object({
+  platform_artifact_touch: artifactTouchMarkerSchema,
+});
+
+export const artifactTouchReportInputSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  artifactId: z.string().min(1),
+  version: z.number().int().positive(),
+});
+
+export const artifactTouchListInputSchema = z.object({
+  agentId: z.string().min(1),
+  sessionIds: z.array(z.string().min(1)).min(1).max(50),
+  limit: z.number().int().positive().max(200).optional(),
+});

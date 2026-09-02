@@ -37,8 +37,10 @@ export function createArtifactExpirySweeper(deps: {
         });
         await Promise.allSettled(
           [
-            deleted.artifact.storageRef,
-            ...deleted.versions.map((v) => v.storageRef),
+            ...new Set([
+              deleted.artifact.storageRef,
+              ...deleted.versions.map((v) => v.storageRef),
+            ]),
           ].map((ref) => deps.artifacts.delete(ref)),
         );
       }

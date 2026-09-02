@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
+  checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
@@ -10,6 +11,7 @@ import {
   artifactIdInputSchema,
   artifactListInputSchema,
   artifactSharingInputSchema,
+  artifactTouchListInputSchema,
   artifactUpdateInputSchema,
   artifactUploadUrlInputSchema,
   folderCreateInputSchema,
@@ -18,6 +20,12 @@ import {
 } from "./schemas.js";
 
 export const artifactLibraryRouter = t.router({
+  touches: readAgentProcedure
+    .input(artifactTouchListInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.artifactLibrary.listTouches(input);
+    }),
   list: readAgentProcedure
     .input(artifactListInputSchema.optional())
     .query(({ ctx, input }) => ctx.artifactLibrary.list(input)),

@@ -14,6 +14,22 @@ export function dismissalKey(item: FeedItem): string | null {
   }
 }
 
+export function sessionDismissedAt(
+  keys: Iterable<string>,
+  agentId: string,
+  sessionId: string,
+): number | null {
+  const prefix = `session:${agentId}:${sessionId}:`;
+  let newest: number | null = null;
+  for (const key of keys) {
+    if (!key.startsWith(prefix)) continue;
+    const at = Date.parse(key.slice(prefix.length));
+    if (Number.isNaN(at)) continue;
+    if (newest === null || at > newest) newest = at;
+  }
+  return newest;
+}
+
 export function loadDismissed(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

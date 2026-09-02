@@ -43,6 +43,7 @@ import { composeAcp } from "./modules/acp/compose.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
+  createArtifactTouchReporter,
   createEnvPlugin,
   createEnvStateStore,
   createFilePlugin,
@@ -90,13 +91,15 @@ const platformAgentId =
   process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
 
 const filesService = createFilesService(homeDir);
+const harnessClient = createHarnessClient({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+});
+
 const kbPublish = composeKbPublish({
   workDir,
   homeDir,
-  harness: createHarnessClient({
-    apiServerUrl: config.API_SERVER_URL,
-    agentId: platformAgentId,
-  }),
+  harness: harnessClient,
   log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
 });
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
@@ -116,6 +119,11 @@ const sshService = createSshService(homeDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
+
+const artifactTouchReporter = createArtifactTouchReporter({
+  client: harnessClient,
+  log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
+});
 
 const stateBackend = createFileDocumentStoreBackend(homeDir);
 
@@ -153,6 +161,7 @@ const {
   sessionHistory: runtimeManifest.sessionHistory,
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  onArtifactTouch: artifactTouchReporter.report,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -553,8 +562,11 @@ applyWSSHandler({
   createContext: createTrpcContext,
 });
 
-acpWss.on("connection", (ws) => {
-  acpRuntime.attach(createWebSocketChannel(ws));
+acpWss.on("connection", (ws, req: http.IncomingMessage) => {
+  const passive =
+    new URL(req.url ?? "", "http://localhost").searchParams.get("passive") ===
+    "1";
+  acpRuntime.attach(createWebSocketChannel(ws), { viewer: !passive });
 });
 
 server.on("upgrade", (req, socket, head) => {

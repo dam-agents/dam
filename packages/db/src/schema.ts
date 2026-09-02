@@ -623,6 +623,7 @@ export const libraryArtifactVersions = pgTable(
       .notNull()
       .references(() => libraryArtifacts.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
+    sessionId: text("session_id"),
     storageRef: text("storage_ref").notNull(),
     contentType: text("content_type").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
@@ -630,7 +631,12 @@ export const libraryArtifactVersions = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
+  (table) => [
+    primaryKey({ columns: [table.artifactId, table.version] }),
+    index("library_artifact_versions_session_idx")
+      .on(table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
+  ],
 );
 
 export const invocations = pgTable(

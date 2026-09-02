@@ -15,6 +15,7 @@ import { mountAgentKbRoutes, type AgentKbDeps } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { mountExperimentRoutes } from "./experiment-endpoints.js";
+import type { ArtifactTouchService } from "api-server-api";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { KbShareAgentOps } from "../../modules/kb-shares/index.js";
@@ -68,6 +69,9 @@ export function createHarnessRouter(deps: {
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,
     hello: deps.runtimeHello,
+    artifactTouchesFor: (owner): ArtifactTouchService => ({
+      recordTouch: (input) => deps.artifactLibraryFor(owner).recordTouch(input),
+    }),
     kbPublish: deps.kbPublishGate,
   });
 
