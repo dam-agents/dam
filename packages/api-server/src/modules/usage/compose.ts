@@ -13,7 +13,7 @@ import {
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
 import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
-import { withAdvisoryLock } from "./infrastructure/advisory-lock.js";
+import { withAdvisoryLock } from "../../core/advisory-lock.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
 import { bootstrapAgents } from "./services/bootstrap-agents.js";

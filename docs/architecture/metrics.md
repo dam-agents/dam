@@ -50,6 +50,8 @@ Agents push it rather than the platform pulling it, over the same authenticated 
 
 The directory is keyed by agent and Session, and every read of it is scoped to the caller's already-resolved owned-agent set — it widens nothing and is never a path to another user's Sessions.
 
+It is the one table in the platform that grows with **use** rather than with the number of things that exist, so it ages out on its own: a weekly job drops rows past a retention horizon, guarded by an advisory lock so one replica does the delete and the others no-op — the same shape [usage-tracking](usage-tracking.md#retention) uses for its activity log. The horizon is deliberately several times the telemetry store's own retention rather than pinned to it. Erring long costs a few stale rows nothing reads; erring short would drop the kind of a Session whose spend is still in range, which is the exact error the directory exists to prevent.
+
 ## Ownership scoping
 
 Every read is scoped to the agents the caller owns; the scope is resolved **in the service layer**, above the store. The service resolves the caller's owned agent IDs into an allowlist and hands only that allowlist to the reader, which does no scoping of its own — it filters unconditionally on the trusted owner attribute. A caller can never widen the scope through input: naming an agent they do not own resolves to an empty allowlist, and an empty allowlist yields no rows rather than an error. When a specific agent is requested, the same API-key binding check the rest of the agent-read surface applies is layered on top.

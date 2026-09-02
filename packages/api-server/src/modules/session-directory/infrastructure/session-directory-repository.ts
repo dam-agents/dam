@@ -1,5 +1,5 @@
 import type { SessionDirectoryEntry } from "agent-runtime-api";
-import { agentSessions, and, inArray, sql, type Db } from "db";
+import { agentSessions, and, inArray, lt, sql, type Db } from "db";
 
 export interface StoredSession {
   sessionId: string;
@@ -16,6 +16,7 @@ export interface SessionDirectoryRepository {
     agentIds: readonly string[],
     sessionIds: readonly string[],
   ): Promise<StoredSession[]>;
+  deleteOlderThan(days: number): Promise<number>;
 }
 
 export function createSessionDirectoryRepository(
@@ -60,6 +61,18 @@ export function createSessionDirectoryRepository(
             inArray(agentSessions.sessionId, [...sessionIds]),
           ),
         );
+    },
+
+    async deleteOlderThan(days) {
+      const result = await db
+        .delete(agentSessions)
+        .where(
+          lt(
+            agentSessions.createdAt,
+            sql`now() - make_interval(days => ${days})`,
+          ),
+        );
+      return (result as unknown as { rowCount?: number }).rowCount ?? 0;
     },
   };
 }

@@ -926,7 +926,9 @@ export async function bootstrap() {
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
-  const sessionDirectory = composeSessionDirectory(db);
+  const { sessionDirectory, retentionJob: sessionDirectoryRetention } =
+    composeSessionDirectory(db);
+  sessionDirectoryRetention.start();
 
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
@@ -1016,6 +1018,7 @@ export async function bootstrap() {
     skillsCleanupSub.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();
+    sessionDirectoryRetention.stop();
     audit.stop();
     await agentStateCache.stop();
     await agentWatchLease.stop();
