@@ -1,3 +1,4 @@
+import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ConnectionTemplateView } from "api-server-api";
 import { type ReactNode, useMemo } from "react";
@@ -8,6 +9,7 @@ import { emitToast } from "@/lib/toast";
 
 import { useTemplateCreateSubmit } from "../hooks/use-template-create-submit.js";
 import { buildCreatePayload } from "../lib/build-create-payload.js";
+import { templateSubmitLabel } from "../lib/catalog-providers.js";
 import {
   buildTemplateFormSchema,
   templateFormDefaults,
@@ -15,10 +17,10 @@ import {
 } from "../lib/template-form-schema.js";
 import { DisclosureBox } from "./disclosure-box.js";
 import { GithubAppScopePicker } from "./github-app-scope-picker.js";
+import { GithubStepsCallout } from "./github-steps-callout.js";
 import { LabeledInput } from "./labeled-input.js";
 import { OAuthAppHint } from "./oauth-app-hint.js";
 import { OverridableSection } from "./overridable-section.js";
-import { TemplateExplainer } from "./template-explainer.js";
 import { TemplateFieldInput } from "./template-field-input.js";
 
 export interface TemplateCreateFormProps {
@@ -27,6 +29,8 @@ export interface TemplateCreateFormProps {
   onCancel: () => void;
   oauthReturnView?: string;
   popupOAuth?: boolean;
+  initialName?: string;
+  onNameChange?: (name: string) => void;
 }
 
 export function TemplateCreateFormBody({
@@ -35,6 +39,8 @@ export function TemplateCreateFormBody({
   onCancel,
   oauthReturnView,
   popupOAuth,
+  initialName,
+  onNameChange,
   layout = (fields, footer) => (
     <>
       {fields}
@@ -48,7 +54,10 @@ export function TemplateCreateFormBody({
   const { control, handleSubmit, setValue } = useForm<TemplateFormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
-    defaultValues: templateFormDefaults(template),
+    defaultValues: {
+      ...templateFormDefaults(template),
+      ...(initialName !== undefined ? { name: initialName } : {}),
+    },
   });
 
   const {
@@ -86,6 +95,7 @@ export function TemplateCreateFormBody({
     void submit(payload);
   });
 
+  const submitCopy = templateSubmitLabel(template.id);
   const isGithubApp = template.authKind === "github-app";
   const scopeInputNames = new Set(
     isGithubApp ? ["repositories", "repositoryIds", "permissions"] : [],
@@ -104,6 +114,8 @@ export function TemplateCreateFormBody({
 
   const fieldsRegion = (
     <div className="flex flex-col gap-4">
+      <GithubStepsCallout templateId={template.id} />
+
       <Controller
         control={control}
         name="name"
@@ -114,10 +126,12 @@ export function TemplateCreateFormBody({
             placeholder="my-connection"
             autoFocus
             value={field.value}
-            onChange={field.onChange}
+            onChange={(v) => {
+              field.onChange(v);
+              onNameChange?.(v);
+            }}
             onBlur={field.onBlur}
             error={fieldState.error?.message}
-            inset
           />
         )}
       />
@@ -191,8 +205,6 @@ export function TemplateCreateFormBody({
           No additional inputs — preconfigured.
         </p>
       )}
-
-      <TemplateExplainer templateId={template.id} />
     </div>
   );
 
@@ -211,17 +223,24 @@ export function TemplateCreateFormBody({
         }
         data-testid="connection-create-submit"
       >
-        {verifying
-          ? "Verifying…"
-          : awaitingPopup
-            ? "Waiting for authorization — reopen"
-            : authorizing
-              ? "Redirecting…"
-              : pending
-                ? "…"
-                : needsOAuth
-                  ? "Create + Authorize"
-                  : "Create"}
+        {verifying ? (
+          "Verifying…"
+        ) : awaitingPopup ? (
+          "Waiting for authorization — reopen"
+        ) : authorizing ? (
+          "Redirecting…"
+        ) : pending ? (
+          "…"
+        ) : submitCopy ? (
+          <>
+            {submitCopy.label}
+            {submitCopy.external && <Launch size={14} aria-hidden />}
+          </>
+        ) : needsOAuth ? (
+          "Create + Authorize"
+        ) : (
+          "Create"
+        )}
       </Button>
     </>
   );

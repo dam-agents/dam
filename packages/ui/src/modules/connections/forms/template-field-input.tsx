@@ -35,7 +35,6 @@ export function TemplateFieldInput({
           onBlur={field.onBlur}
           error={fieldState.error?.message}
           help={hintFor(templateId, input.name) ?? input.hint}
-          inset
         />
       )}
     />

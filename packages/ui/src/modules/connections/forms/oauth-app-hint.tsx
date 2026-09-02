@@ -21,7 +21,7 @@ export function OAuthAppHint({
 
   return (
     <Callout tone="muted" className="flex flex-col gap-2">
-      <p className="text-xs text-foreground/80">
+      <p className="text-xs text-muted-foreground">
         Register an OAuth app at the provider, then paste its client credentials
         below.
         {setupUrl && (
@@ -30,7 +30,7 @@ export function OAuthAppHint({
             <a
               href={setupUrl}
               {...externalLinkProps}
-              className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
+              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
             >
               Create an app <Launch size={11} />
             </a>
@@ -39,11 +39,11 @@ export function OAuthAppHint({
       </p>
       {callbackUrl && (
         <div>
-          <span className="text-[11px] text-muted-foreground block mb-1">
+          <span className="text-xs text-muted-foreground block mb-1">
             Add this exact redirect URI to your app:
           </span>
           <div className="flex items-center gap-1.5">
-            <code className="text-[11px] font-mono text-foreground/90 break-all">
+            <code className="text-xs font-mono text-foreground/90 break-all">
               {callbackUrl}
             </code>
             <Button
