@@ -15,7 +15,7 @@ import type {
   RowGrantControls,
   RowMaintenanceActions,
 } from "./catalog-connection-row.js";
-import { GithubAppInstallLink } from "./github-app-install-hint.js";
+import { GithubAppInstallButton } from "./github-app-install-hint.js";
 
 interface Props {
   connection: ConnectionView;
@@ -49,7 +49,7 @@ export function ConnectionRowActions({
   return (
     <>
       <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
-        <GithubAppInstallLink connection={connection} />
+        <GithubAppInstallButton connection={connection} />
         {inlineFix && (
           <Button
             variant="outline"

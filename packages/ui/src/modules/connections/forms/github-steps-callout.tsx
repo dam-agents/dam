@@ -1,13 +1,24 @@
 import { Callout } from "@/components/ui/callout";
+import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../brand.js";
 
-export function GithubStepsCallout({ templateId }: { templateId: string }) {
+export function GithubStepsCallout({
+  templateId,
+  className,
+}: {
+  templateId: string;
+  className?: string;
+}) {
   if (templateId !== "github" && templateId !== "github-enterprise")
     return null;
   const brand = getBrand().name;
   return (
-    <Callout tone="info" size="md" className="text-sm leading-relaxed">
+    <Callout
+      tone="info"
+      size="md"
+      className={cn("text-sm leading-relaxed", className)}
+    >
       <p className="font-semibold text-foreground">
         2 steps required for successful connection
       </p>

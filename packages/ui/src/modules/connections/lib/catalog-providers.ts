@@ -229,7 +229,16 @@ export function connectionKindSubtitle(
     connection.templateId === "github-enterprise"
   )
     return "GitHub app";
-  if (connection.templateId === "github-pat") return "Personal access token";
+  if (
+    connection.templateId === "github-app" ||
+    connection.templateId === "github-enterprise-app"
+  )
+    return "GitHub app (installation)";
+  if (
+    connection.templateId === "github-pat" ||
+    connection.templateId === "github-enterprise-pat"
+  )
+    return "GitHub personal access token";
   const host = connection.host ?? connection.hosts[0];
   if (
     host &&

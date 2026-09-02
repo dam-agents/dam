@@ -1,4 +1,5 @@
 import type { ConnectionTemplateInput } from "api-server-api";
+import type { ReactNode } from "react";
 import { type Control, Controller, useWatch } from "react-hook-form";
 
 import { Switch } from "@/components/ui/switch";
@@ -13,11 +14,13 @@ export function OverridableSection({
   control,
   templateId,
   fromFamily,
+  overrideHint,
 }: {
   inputs: ConnectionTemplateInput[];
   control: Control<TemplateFormValues>;
   templateId: string;
   fromFamily?: boolean;
+  overrideHint?: ReactNode;
 }) {
   const overriding = useWatch({ control, name: "overrideDefaults" });
   return (
@@ -48,6 +51,7 @@ export function OverridableSection({
         </div>
         {overriding ? (
           <div className="flex flex-col gap-3">
+            {overrideHint}
             {inputs.map((input) => (
               <TemplateFieldInput
                 key={input.name}

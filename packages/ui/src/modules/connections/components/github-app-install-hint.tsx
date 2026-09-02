@@ -1,7 +1,7 @@
 import { Launch } from "@carbon/icons-react";
 import type { ConnectionView } from "api-server-api";
 
-import { Callout } from "@/components/ui/callout";
+import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { getBrand } from "../../../brand.js";
@@ -12,33 +12,14 @@ type InstallHintConnection = Pick<
   "templateId" | "host" | "appSlug" | "status"
 >;
 
-function activeInstallUrl(connection: InstallHintConnection): string | null {
+export function activeInstallUrl(
+  connection: InstallHintConnection,
+): string | null {
   if (connection.status !== "active") return null;
   return githubAppInstallUrl(connection);
 }
 
-export function GithubAppInstallHint({
-  connections,
-}: {
-  connections: readonly InstallHintConnection[];
-}) {
-  if (!connections.some((c) => activeInstallUrl(c) !== null)) return null;
-  return (
-    <Callout
-      tone="muted"
-      size="sm"
-      className="mx-4 mt-3 text-sm leading-relaxed text-muted-foreground"
-    >
-      <strong className="text-foreground/80">
-        GitHub app connections need one more step.
-      </strong>{" "}
-      To let {getBrand().name} work with your private repos, install the app on
-      the organization that owns them.
-    </Callout>
-  );
-}
-
-export function GithubAppInstallLink({
+export function GithubAppInstallButton({
   connection,
 }: {
   connection: InstallHintConnection;
@@ -46,12 +27,10 @@ export function GithubAppInstallLink({
   const url = activeInstallUrl(connection);
   if (!url) return null;
   return (
-    <a
-      href={url}
-      {...externalLinkProps}
-      className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-accent hover:underline"
-    >
-      Install on GitHub <Launch size={13} aria-hidden />
-    </a>
+    <Button asChild className="h-8 shrink-0 px-3 text-sm">
+      <a href={url} {...externalLinkProps}>
+        Install {getBrand().name} app <Launch size={13} aria-hidden />
+      </a>
+    </Button>
   );
 }

@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -49,7 +49,7 @@ Beyond the auth credential, a template may declare optional **config inputs** th
 
 #### Internal-only templates
 
-Some templates (Spotify, YouTube, Google services, and the machine-to-machine auth shapes) are hidden from regular users client-side, affecting only what's offered (wherever the catalog is browsed), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md).
+Some templates (Spotify, YouTube, Google services, and the custom client-credentials shape) are hidden from regular users client-side, affecting only what's offered (wherever the catalog is browsed), not Connections already created. Testers reveal the full catalog by enabling the *advanced connections* per-user experimental feature flag — see [features](features.md). The GitHub App templates are offered to everyone, grouped with the other GitHub auth methods.
 
 ### Connection
 

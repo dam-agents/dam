@@ -197,6 +197,15 @@ export function TemplateCreateFormBody({
           control={control}
           templateId={template.id}
           fromFamily={credentialsFromFamily}
+          overrideHint={
+            needsOAuth &&
+            overridable.some((i) => i.name === "clientId") && (
+              <OAuthAppHint
+                callbackUrl={extraStr("callbackUrl")}
+                setupUrl={extraStr("setupUrl")}
+              />
+            )
+          }
         />
       )}
 
