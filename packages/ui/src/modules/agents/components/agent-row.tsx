@@ -137,6 +137,7 @@ export function AgentRow({
                   openBindModal(["slack"], { initialKind: "slack" })
                 }
               >
+                <img src="/icons/slack.svg" alt="" className="size-4" />
                 Add to Slack channel
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -144,6 +145,7 @@ export function AgentRow({
                   openBindModal(["telegram"], { initialKind: "telegram" })
                 }
               >
+                <img src="/icons/telegram.svg" alt="" className="size-4" />
                 Add to a Telegram channel
               </DropdownMenuItem>
               <DropdownMenuSeparator />
