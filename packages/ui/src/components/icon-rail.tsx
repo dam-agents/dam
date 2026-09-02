@@ -221,13 +221,16 @@ function BottomBarItem({
     <button
       type="button"
       onClick={navigate}
+      aria-label={badge > 0 ? `${label}, ${badge} pending` : label}
       className={cn(
-        "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors",
+        "flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors",
         active ? "text-primary" : "text-muted-foreground",
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} />
-      <span className="text-[10px] font-semibold">{shortLabel ?? label}</span>
+      <span className="max-w-full truncate text-[10px] font-semibold">
+        {shortLabel ?? label}
+      </span>
     </button>
   );
 }

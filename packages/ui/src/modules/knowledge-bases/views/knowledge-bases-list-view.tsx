@@ -97,7 +97,7 @@ export function KnowledgeBasesListView() {
                 )}
                 onSelect={() => openKnowledgeBase(agent.id)}
                 onConfigure={() => navigateToSandboxHome(agent.id)}
-                configureLabel="Configure knowledge base"
+                configureLabel="Configure knowledge base agent"
                 onShare={() =>
                   navigateToSandboxHome(agent.id, "setup", "knowledge")
                 }
