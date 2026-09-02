@@ -1,14 +1,8 @@
-import { providerTypeForTemplateId } from "api-server-api";
-import { useMemo } from "react";
-
 import { PageHeader } from "@/components/ui/page-header";
 
 import { AgentRow } from "../../modules/agents/components/agent-row.js";
 import { resolveAgentDisplay } from "../../modules/agents/utils/agent-resolver.js";
-import {
-  sandboxSubtitle,
-  type SandboxSubtitleLookup,
-} from "../../modules/agents/utils/sandbox-subtitle.js";
+import { ConnectionIcon } from "../../modules/connections/components/connection-icon.js";
 import type { AgentView } from "../../types.js";
 import {
   allFixtureAgents,
@@ -16,9 +10,7 @@ import {
   demoPackAgent,
   errorAgent,
   experimentAgent,
-  fixturePackProvenance,
   fixtureSchedules,
-  fixtureSkillCounts,
   fullAgent,
   hibernatedUnknownSkills,
   knowledgeBaseAgent,
@@ -28,64 +20,16 @@ import {
   singularAgent,
   temporaryDriverAgent,
 } from "./agent-card-fixtures.js";
-import { connections } from "./connections.js";
-import { templates } from "./templates.js";
-
-const PACKS_BY_ID: Record<string, string> = {
-  "design-prototyper": "Design prototyper",
-  "link-monitor": "Broken link monitor",
-  "code-reviewer": "Code reviewer",
-};
-
-const CONNECTION_TEMPLATE_BY_ID = new Map(
-  connections.map((c) => [c.id, c.templateId]),
-);
-
-function nonProviderConnectionCount(agent: AgentView): number {
-  let count = 0;
-  for (const cid of agent.grantedConnectionIds) {
-    const tid = CONNECTION_TEMPLATE_BY_ID.get(cid);
-    if (tid && providerTypeForTemplateId(tid)) continue;
-    count += 1;
-  }
-  return count;
-}
-
-function useSubtitleLookup(): SandboxSubtitleLookup {
-  return useMemo(
-    () => ({
-      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
-      connectionTemplateIdById: CONNECTION_TEMPLATE_BY_ID,
-    }),
-    [],
-  );
-}
 
 interface CardDemoProps {
   title: string;
   note: string;
   agent: AgentView;
-  lookup: SandboxSubtitleLookup;
   temporaryDraw?: { count: number; cpuMilli: number; memoryMi: number };
 }
 
-function CardDemo({
-  title,
-  note,
-  agent,
-  lookup,
-  temporaryDraw,
-}: CardDemoProps) {
+function CardDemo({ title, note, agent, temporaryDraw }: CardDemoProps) {
   const display = resolveAgentDisplay(agent, new Set(), new Set());
-  const subtitle = sandboxSubtitle(agent, lookup);
-  const packId = fixturePackProvenance[agent.id];
-  const packName = packId ? (PACKS_BY_ID[packId] ?? packId) : undefined;
-  const skills = fixtureSkillCounts[agent.id];
-  const skillCount = skills
-    ? skills.installed + skills.standalone
-    : skills === null
-      ? null
-      : undefined;
   const scheduleCount = fixtureSchedules.filter(
     (s) => s.agentId === agent.id && s.enabled,
   ).length;
@@ -101,7 +45,6 @@ function CardDemo({
       <AgentRow
         agent={agent}
         display={display}
-        subtitle={subtitle}
         temporaryDraw={temporaryDraw}
         deletePending={false}
         updatePending={false}
@@ -115,9 +58,6 @@ function CardDemo({
         onPause={noop}
         onStop={noop}
         onDelete={noop}
-        connectionCount={nonProviderConnectionCount(agent)}
-        packName={packName}
-        skillCount={skillCount}
         scheduleCount={scheduleCount || undefined}
       />
     </div>
@@ -125,106 +65,132 @@ function CardDemo({
 }
 
 export function AgentCardGallery() {
-  const lookup = useSubtitleLookup();
-
   return (
     <div>
       <PageHeader
         title="Agent card gallery"
-        description="Every §5 state, rendered side by side. This page is a design review surface — it does not appear in production."
+        description="Every state rendered side by side. This page is a design review surface — it does not appear in production."
       />
 
       <div className="flex flex-col gap-8">
         <CardDemo
           title="1. Full card"
-          note="Pack, both messengers, connections, schedules, skills known, never-hibernates, running."
+          note="Slack channels, schedules, always-on, running."
           agent={fullAgent}
-          lookup={lookup}
         />
 
         <CardDemo
           title="2. Bare card"
-          note="Nothing attached, no pack. The attachments row should be absent."
+          note="Nothing attached. The metadata row should be absent."
           agent={bareAgent}
-          lookup={lookup}
         />
 
         <CardDemo
           title="3. One-of-each"
-          note="Singular forms: 1 channel, 1 connection, 1 schedule, 1 skill."
+          note="Singular forms: 1 channel, 1 schedule."
           agent={singularAgent}
-          lookup={lookup}
         />
 
         <CardDemo
-          title="4. Hibernated, unknown skills"
-          note="The common real case: skills not reachable because the agent is hibernated."
+          title="4. Hibernated"
+          note="Common real case: agent is hibernated."
           agent={hibernatedUnknownSkills}
-          lookup={lookup}
         />
 
         <CardDemo
-          title="5a. Never-hibernates but currently hibernated"
-          note="Contradiction: 'Never hibernates' chip + 'Hibernating' status badge — visually separate."
+          title="5a. Always-on but currently hibernated"
+          note="Never-hibernates but stopped — shows Idle (Always-on) badge."
           agent={neverHibernatesButHibernated}
-          lookup={lookup}
         />
 
         <CardDemo
-          title="5b. Never-hibernates but over budget"
-          note="Second contradiction: 'Never hibernates' chip + 'Over budget' status badge."
+          title="5b. Always-on but over budget"
+          note="Always-on badge only shows when running — this shows Over budget badge."
           agent={neverHibernatesOverBudget}
-          lookup={lookup}
         />
 
         <CardDemo
           title="6. Knowledge base"
-          note="Kind badge 'Knowledge base' present. configureLabel would say 'Configure knowledge base'."
+          note="Just an agent now — no special kind badge."
           agent={knowledgeBaseAgent}
-          lookup={lookup}
         />
 
         <CardDemo
           title="7. Experiment"
-          note="Kind badge 'Experiment' present."
+          note="Just an agent now — no special kind badge."
           agent={experimentAgent}
-          lookup={lookup}
         />
 
         <CardDemo
-          title="8. Pack applied, partly skipped"
-          note="Pack provenance badge present. The agent may have drifted from the pack config."
+          title="8. Pack-created agent"
+          note="No pack badge shown — pack is just a starting template."
           agent={packSkippedAgent}
-          lookup={lookup}
         />
 
         <CardDemo
           title="9. Error state with contribution failures"
           note="Error badge, contribution failures badge, error status."
           agent={errorAgent}
-          lookup={lookup}
         />
 
         <CardDemo
           title="10. Temporary-agent driver"
           note="The bottom line showing temporary agents running."
           agent={temporaryDriverAgent}
-          lookup={lookup}
           temporaryDraw={{ count: 3, cpuMilli: 6000, memoryMi: 6144 }}
         />
 
         <CardDemo
-          title="11. Demo agent (packs branch)"
-          note="Badged with a pack. Simulates a demo agent from the packs page."
+          title="11. Demo agent"
+          note="Running agent created from a pack."
           agent={demoPackAgent}
-          lookup={lookup}
         />
+
+        {/* Overflow menu — static render for screenshot */}
+        <div>
+          <div className="mb-2">
+            <p className="text-sm font-semibold text-foreground">
+              12. Overflow menu
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Static render of the agent card dropdown menu.
+            </p>
+          </div>
+          <div className="inline-flex min-w-[200px] flex-col rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md">
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Configure agent
+            </div>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              <ConnectionIcon iconSlug="slack" alt="" size={16} />
+              Add to Slack channel
+            </div>
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+              Add to Telegram chat
+            </div>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Restart
+            </div>
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Pause — wakes on next use
+            </div>
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm hover:bg-muted">
+              Stop — until started again
+            </div>
+            <div className="my-1 h-px bg-border" />
+            <div className="flex h-9 cursor-pointer items-center gap-2 rounded-md px-3 text-sm text-danger hover:bg-danger-light">
+              Delete agent
+            </div>
+          </div>
+        </div>
 
         {/* Empty list states */}
         <div>
           <div className="mb-2">
             <p className="text-sm font-semibold text-foreground">
-              12. Empty list — agents page
+              13. Empty list — agents page
             </p>
             <p className="text-sm text-muted-foreground">
               No agents at all. The empty state should show the PageEmptyState
@@ -237,21 +203,6 @@ export function AgentCardGallery() {
           </div>
         </div>
 
-        <div>
-          <div className="mb-2">
-            <p className="text-sm font-semibold text-foreground">
-              13. Empty list — knowledge bases page
-            </p>
-            <p className="text-sm text-muted-foreground">
-              No knowledge bases. The empty state from KnowledgeBasesListView.
-            </p>
-          </div>
-          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Empty state: "No knowledge bases yet" with a Create knowledge base
-            button.
-          </div>
-        </div>
-
         {/* Bind pickers — the second card shape */}
         <div>
           <div className="mb-2">
@@ -260,10 +211,7 @@ export function AgentCardGallery() {
             </p>
             <p className="text-sm text-muted-foreground">
               BindAgentRow stays deliberately reduced — it is a picker, not a
-              scanner. The user is choosing which agent to bind, not monitoring
-              status. Decision: converge on shared identity line (name + kind
-              badge + description) but omit attachments and status. See
-              SCOPE.md.
+              scanner.
             </p>
           </div>
           <div className="flex flex-col gap-2">

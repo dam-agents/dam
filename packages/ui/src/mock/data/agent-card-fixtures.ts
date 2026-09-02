@@ -44,9 +44,8 @@ export const fullAgent = agent("fix-full", {
     "conn-k8s",
   ],
   channels: [
-    { type: "slack", slackChannelId: "C01DEPLOY", default: true },
-    { type: "slack", slackChannelId: "C02ALERTS" },
-    { type: "telegram" },
+    { type: "slack", slackChannelId: "#deployments", default: true },
+    { type: "slack", slackChannelId: "#alerts" },
   ],
   state: "running",
 });
@@ -62,7 +61,7 @@ export const bareAgent = agent("fix-bare", {
 export const singularAgent = agent("fix-singular", {
   name: "nightly-runner",
   grantedConnectionIds: ["conn-anthropic", "conn-github"],
-  channels: [{ type: "slack", slackChannelId: "C01SINGLE" }],
+  channels: [{ type: "slack", slackChannelId: "#eng-standup" }],
   state: "running",
 });
 
@@ -80,7 +79,7 @@ export const neverHibernatesButHibernated = agent("fix-never-hib-stopped", {
   state: "hibernated",
   stopRequested: true,
   grantedConnectionIds: ["conn-anthropic"],
-  channels: [{ type: "slack", slackChannelId: "C01WATCH" }],
+  channels: [{ type: "slack", slackChannelId: "#incident-room" }],
 });
 
 /** §5-5b: Never-hibernates but over budget */
@@ -100,7 +99,7 @@ export const knowledgeBaseAgent = agent("fix-kb", {
   kbTemplateId: "llm-wiki",
   state: "running",
   grantedConnectionIds: ["conn-anthropic"],
-  channels: [{ type: "slack", slackChannelId: "C01WIKI" }],
+  channels: [{ type: "slack", slackChannelId: "#team-wiki" }],
 });
 
 /** §5-7: Experiment card */
@@ -142,7 +141,7 @@ export const demoPackAgent = agent("fix-demo-pack", {
   name: "demo-code-reviewer",
   state: "running",
   grantedConnectionIds: ["conn-anthropic", "conn-github"],
-  channels: [{ type: "slack", slackChannelId: "C01DEMO" }],
+  channels: [{ type: "slack", slackChannelId: "#code-reviews" }],
 });
 
 // ---------------------------------------------------------------------------

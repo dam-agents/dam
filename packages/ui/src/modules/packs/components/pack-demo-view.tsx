@@ -5,11 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { PageHeader } from "@/components/ui/page-header";
 
-import {
-  INGREDIENT_ICON,
-  INGREDIENT_LABEL,
-  type Pack,
-} from "../data/packs.js";
+import { INGREDIENT_ICON, INGREDIENT_LABEL, type Pack } from "../data/packs.js";
 
 /**
  * A demo runs on a throwaway agent whose slots are filled with sample content,

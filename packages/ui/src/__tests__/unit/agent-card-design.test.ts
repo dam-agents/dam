@@ -4,178 +4,153 @@ import { describe, expect, test } from "vitest";
 import {
   allFixtureAgents,
   bareAgent,
-  demoPackAgent,
   errorAgent,
-  experimentAgent,
-  fixturePackProvenance,
   fixtureSchedules,
-  fixtureSkillCounts,
   fullAgent,
-  hibernatedUnknownSkills,
-  knowledgeBaseAgent,
   neverHibernatesButHibernated,
   neverHibernatesOverBudget,
-  packSkippedAgent,
   singularAgent,
-  temporaryDriverAgent,
 } from "../../mock/data/agent-card-fixtures.js";
-import { connections } from "../../mock/data/connections.js";
+import {
+  agentConnections,
+  connections,
+  connectionTemplates,
+} from "../../mock/data/connections.js";
 import type { AgentView } from "../../types.js";
 
+const allConnections = [
+  ...connections,
+  ...agentConnections.filter((ac) => !connections.some((c) => c.id === ac.id)),
+];
+
 const CONNECTION_TEMPLATE_BY_ID = new Map(
-  connections.map((c) => [c.id, c.templateId]),
+  allConnections.map((c) => [c.id, c.templateId]),
 );
 
-function nonProviderConnectionCount(agent: AgentView): number {
-  let count = 0;
+const CONNECTION_NAME_BY_ID = new Map(
+  allConnections.map((c) => [c.id, c.name]),
+);
+
+const ICON_SLUG_BY_TEMPLATE_ID = new Map(
+  connectionTemplates.filter((t) => t.iconSlug).map((t) => [t.id, t.iconSlug]),
+);
+
+interface ConnectionBadgeInfo {
+  name: string;
+  iconSlug: string;
+}
+
+function nonProviderConnections(agent: AgentView): ConnectionBadgeInfo[] {
+  const result: ConnectionBadgeInfo[] = [];
   for (const cid of agent.grantedConnectionIds) {
     const tid = CONNECTION_TEMPLATE_BY_ID.get(cid);
     if (tid && providerTypeForTemplateId(tid)) continue;
-    count += 1;
+    const name = CONNECTION_NAME_BY_ID.get(cid);
+    if (!name) continue;
+    result.push({
+      name,
+      iconSlug: (tid && ICON_SLUG_BY_TEMPLATE_ID.get(tid)) ?? "",
+    });
   }
-  return count;
+  return result;
 }
 
-function chipText(agent: AgentView) {
-  const chips: string[] = [];
-
-  const slackCount = agent.channels.filter((c) => c.type === "slack").length;
-  const telegramCount = agent.channels.filter(
-    (c) => c.type === "telegram",
-  ).length;
-  const connectionCount = nonProviderConnectionCount(agent);
-  const scheduleCount = fixtureSchedules.filter(
-    (s) => s.agentId === agent.id && s.enabled,
-  ).length;
-  const skills = fixtureSkillCounts[agent.id];
-  const skillCount = skills ? skills.installed + skills.standalone : null;
-
-  if (slackCount > 0)
-    chips.push(`${slackCount} channel${slackCount === 1 ? "" : "s"}`);
-  if (telegramCount > 0)
-    chips.push(`${telegramCount} chat${telegramCount === 1 ? "" : "s"}`);
-  if (connectionCount > 0)
-    chips.push(
-      `${connectionCount} connection${connectionCount === 1 ? "" : "s"}`,
+function slackChannelIds(agent: AgentView): string[] {
+  return agent.channels
+    .filter((c) => c.type === "slack")
+    .map(
+      (c) => (c as { type: "slack"; slackChannelId: string }).slackChannelId,
     );
-  if (scheduleCount > 0)
-    chips.push(`${scheduleCount} schedule${scheduleCount === 1 ? "" : "s"}`);
-  if (skillCount !== null && skillCount > 0)
-    chips.push(`${skillCount} skill${skillCount === 1 ? "" : "s"}`);
-  if (agent.hibernationTimeoutMin === 0) chips.push("Never hibernates");
-
-  return chips;
 }
 
-function hasAttachments(agent: AgentView): boolean {
-  return chipText(agent).length > 0;
+function enabledScheduleCount(agent: AgentView): number {
+  return fixtureSchedules.filter((s) => s.agentId === agent.id && s.enabled)
+    .length;
 }
 
-describe("§6 agent card design verification", () => {
-  describe("chip text is present and non-empty for populated agents", () => {
-    test("full agent has all chip types", () => {
-      const chips = chipText(fullAgent);
-      expect(chips).toContain("2 channels");
-      expect(chips).toContain("1 chat");
-      expect(chips).toContain("3 connections");
-      expect(chips).toContain("3 schedules");
-      expect(chips).toContain("5 skills");
-      expect(chips).toContain("Never hibernates");
-      expect(chips.length).toBe(6);
+function hasMeta(agent: AgentView): boolean {
+  return (
+    slackChannelIds(agent).length > 0 ||
+    nonProviderConnections(agent).length > 0 ||
+    enabledScheduleCount(agent) > 0
+  );
+}
+
+describe("agent card design verification", () => {
+  describe("slack channels shown as individual tags", () => {
+    test("full agent has 2 slack channel tags", () => {
+      const ids = slackChannelIds(fullAgent);
+      expect(ids).toEqual(["#deployments", "#alerts"]);
     });
 
-    test("singular agent uses singular forms", () => {
-      const chips = chipText(singularAgent);
-      expect(chips).toContain("1 channel");
-      expect(chips).toContain("1 schedule");
-      expect(chips).toContain("1 skill");
-      expect(chips.every((c) => !c.includes("channels"))).toBe(true);
+    test("singular agent has 1 slack channel tag", () => {
+      const ids = slackChannelIds(singularAgent);
+      expect(ids).toHaveLength(1);
+    });
+
+    test("bare agent has no slack channels", () => {
+      expect(slackChannelIds(bareAgent)).toHaveLength(0);
     });
   });
 
-  describe("zero-omission — no '0 ' prefix, no absent row for bare agents", () => {
-    test("bare agent has no attachments", () => {
-      expect(hasAttachments(bareAgent)).toBe(false);
+  describe("connections with icons instead of counts", () => {
+    test("full agent has named connections with icon slugs", () => {
+      const conns = nonProviderConnections(fullAgent);
+      expect(conns.length).toBeGreaterThan(0);
+      expect(conns.every((c) => c.name.length > 0)).toBe(true);
+      expect(conns.every((c) => typeof c.iconSlug === "string")).toBe(true);
     });
 
-    test("no chip text contains '0 '", () => {
+    test("full agent connections include github icon slug", () => {
+      const conns = nonProviderConnections(fullAgent);
+      expect(conns.some((c) => c.iconSlug === "github")).toBe(true);
+    });
+
+    test("bare agent has no non-provider connections", () => {
+      expect(nonProviderConnections(bareAgent)).toHaveLength(0);
+    });
+
+    test("provider connections are excluded", () => {
       for (const agent of allFixtureAgents) {
-        for (const chip of chipText(agent)) {
-          expect(chip).not.toMatch(/^0 /);
+        const conns = nonProviderConnections(agent);
+        for (const c of conns) {
+          expect(c.name).not.toMatch(/anthropic/i);
         }
       }
     });
   });
 
-  describe("absence assertions", () => {
-    test("bare agent — no pack, no channels, no schedules, no skills, no never-hibernates", () => {
-      const chips = chipText(bareAgent);
-      expect(chips).toEqual([]);
+  describe("active schedules", () => {
+    test("full agent has 3 active schedules", () => {
+      expect(enabledScheduleCount(fullAgent)).toBe(3);
     });
 
-    test("hibernated agent with unknown skills — skill chip absent", () => {
-      const chips = chipText(hibernatedUnknownSkills);
-      expect(chips.some((c) => c.includes("skill"))).toBe(false);
-    });
-
-    test("no '+N' or '+N more' appears in any chip text", () => {
-      for (const agent of allFixtureAgents) {
-        for (const chip of chipText(agent)) {
-          expect(chip).not.toMatch(/\+\d/);
-        }
-      }
+    test("bare agent has 0 schedules", () => {
+      expect(enabledScheduleCount(bareAgent)).toBe(0);
     });
   });
 
-  describe("never-hibernates is a configuration fact, not a status", () => {
-    test("never-hibernates chip is present when hibernationTimeoutMin === 0", () => {
-      expect(chipText(fullAgent)).toContain("Never hibernates");
-      expect(chipText(neverHibernatesButHibernated)).toContain(
-        "Never hibernates",
-      );
-      expect(chipText(neverHibernatesOverBudget)).toContain("Never hibernates");
-    });
-
-    test("agents with positive timeout do not show never-hibernates", () => {
-      expect(chipText(bareAgent)).not.toContain("Never hibernates");
-      expect(chipText(singularAgent)).not.toContain("Never hibernates");
-      expect(chipText(errorAgent)).not.toContain("Never hibernates");
+  describe("bare agent has no metadata row", () => {
+    test("bare agent has no metadata", () => {
+      expect(hasMeta(bareAgent)).toBe(false);
     });
   });
 
-  describe("kind badges", () => {
-    test("knowledge-base agent has kind set", () => {
-      expect(knowledgeBaseAgent.kind).toBe("knowledge-base");
+  describe("always-on badge for never-hibernating running agents", () => {
+    test("always-on agents are identified by hibernationTimeoutMin === 0", () => {
+      expect(fullAgent.hibernationTimeoutMin).toBe(0);
+      expect(neverHibernatesButHibernated.hibernationTimeoutMin).toBe(0);
+      expect(neverHibernatesOverBudget.hibernationTimeoutMin).toBe(0);
     });
 
-    test("experiment agent has kind set", () => {
-      expect(experimentAgent.kind).toBe("experiment");
-    });
-
-    test("plain agents have no kind", () => {
-      expect(fullAgent.kind).toBeUndefined();
-      expect(bareAgent.kind).toBeUndefined();
-    });
-  });
-
-  describe("pack provenance fixture data consistency", () => {
-    test("agents in fixturePackProvenance exist in allFixtureAgents", () => {
-      const ids = new Set(allFixtureAgents.map((a) => a.id));
-      for (const agentId of Object.keys(fixturePackProvenance)) {
-        expect(ids.has(agentId)).toBe(true);
-      }
-    });
-
-    test("full agent has pack provenance", () => {
-      expect(fixturePackProvenance[fullAgent.id]).toBe("design-prototyper");
-    });
-
-    test("bare agent has no pack provenance", () => {
-      expect(fixturePackProvenance[bareAgent.id]).toBeUndefined();
+    test("agents with positive timeout are not always-on", () => {
+      expect(bareAgent.hibernationTimeoutMin).toBeGreaterThan(0);
+      expect(singularAgent.hibernationTimeoutMin).toBeGreaterThan(0);
+      expect(errorAgent.hibernationTimeoutMin).toBeGreaterThan(0);
     });
   });
 
-  describe("fixture agents cover all required §5 states", () => {
+  describe("fixture agents cover required states", () => {
     test("at least one running agent", () => {
       expect(allFixtureAgents.some((a) => a.state === "running")).toBe(true);
     });
@@ -186,16 +161,6 @@ describe("§6 agent card design verification", () => {
 
     test("at least one error agent", () => {
       expect(allFixtureAgents.some((a) => a.state === "error")).toBe(true);
-    });
-
-    test("at least one knowledge-base agent", () => {
-      expect(allFixtureAgents.some((a) => a.kind === "knowledge-base")).toBe(
-        true,
-      );
-    });
-
-    test("at least one experiment agent", () => {
-      expect(allFixtureAgents.some((a) => a.kind === "experiment")).toBe(true);
     });
 
     test("at least one over-budget agent", () => {
@@ -215,50 +180,6 @@ describe("§6 agent card design verification", () => {
         ),
       ).toBe(true);
     });
-
-    test("at least one agent with telegram", () => {
-      expect(
-        allFixtureAgents.some((a) =>
-          a.channels.some((c) => c.type === "telegram"),
-        ),
-      ).toBe(true);
-    });
-  });
-
-  describe("width-spread consistency — one-of-each vs many-of-each", () => {
-    test("singular and full agent produce different chip counts", () => {
-      const singularChips = chipText(singularAgent);
-      const fullChips = chipText(fullAgent);
-      expect(singularChips.length).toBeLessThan(fullChips.length);
-    });
-
-    test("all chip strings are reasonably short (under 25 chars)", () => {
-      for (const agent of allFixtureAgents) {
-        for (const chip of chipText(agent)) {
-          expect(chip.length).toBeLessThanOrEqual(25);
-        }
-      }
-    });
-  });
-
-  describe("defect injection — verify checks catch real problems", () => {
-    test("injecting '0 channels' would be caught by zero-omission check", () => {
-      const fakeAgent: AgentView = {
-        ...bareAgent,
-        channels: [],
-      };
-      const chips = chipText(fakeAgent);
-      expect(chips.some((c) => c.startsWith("0 "))).toBe(false);
-    });
-
-    test("removing all connections still produces correct chip text", () => {
-      const fakeAgent: AgentView = {
-        ...fullAgent,
-        grantedConnectionIds: [],
-      };
-      const chips = chipText(fakeAgent);
-      expect(chips.some((c) => c.includes("connection"))).toBe(false);
-    });
   });
 
   describe("schedule fixture data consistency", () => {
@@ -267,32 +188,6 @@ describe("§6 agent card design verification", () => {
       for (const s of fixtureSchedules) {
         expect(ids.has(s.agentId)).toBe(true);
       }
-    });
-
-    test("full agent has 3 schedules", () => {
-      const count = fixtureSchedules.filter(
-        (s) => s.agentId === fullAgent.id,
-      ).length;
-      expect(count).toBe(3);
-    });
-
-    test("bare agent has 0 schedules", () => {
-      const count = fixtureSchedules.filter(
-        (s) => s.agentId === bareAgent.id,
-      ).length;
-      expect(count).toBe(0);
-    });
-  });
-
-  describe("skill count fixture data consistency", () => {
-    test("full agent has 5 total skills (4 installed + 1 standalone)", () => {
-      const skills = fixtureSkillCounts[fullAgent.id];
-      expect(skills).not.toBeNull();
-      expect(skills!.installed + skills!.standalone).toBe(5);
-    });
-
-    test("hibernated agent has no skill entry (unknown)", () => {
-      expect(fixtureSkillCounts[hibernatedUnknownSkills.id]).toBeUndefined();
     });
   });
 });

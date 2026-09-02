@@ -200,7 +200,8 @@ export const PACKS: Pack[] = [
     name: "Codebase Q&A",
     facet: "Knowledge",
     icon: Wikis,
-    tagline: "Answers questions about a repo in the channel your team already uses",
+    tagline:
+      "Answers questions about a repo in the channel your team already uses",
     outcome:
       "Your team asks where something lives in Slack and gets an answer with the file, instead of waiting for whoever wrote it.",
     included: [
@@ -385,8 +386,6 @@ export function ingredientCounts(
       kind,
       count,
       label:
-        count === 1
-          ? INGREDIENT_LABEL[kind].one
-          : INGREDIENT_LABEL[kind].many,
+        count === 1 ? INGREDIENT_LABEL[kind].one : INGREDIENT_LABEL[kind].many,
     }));
 }

@@ -8,15 +8,15 @@ import { Tabs } from "@/components/ui/tabs";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { CardIconTile } from "../../sandboxes/components/steps/stacked-card.js";
 import {
-  type ApplyResult,
   ApplyPackModal,
+  type ApplyResult,
 } from "../components/apply-pack-modal.js";
 import { MakeMineModal } from "../components/make-mine-modal.js";
 import { PackDemoView } from "../components/pack-demo-view.js";
 import { PackDetailSheet } from "../components/pack-detail-sheet.js";
 import {
-  ingredientCounts,
   INGREDIENT_ICON,
+  ingredientCounts,
   type Pack,
   PACK_FACETS,
   type PackFacet,

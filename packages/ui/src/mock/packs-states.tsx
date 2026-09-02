@@ -9,11 +9,7 @@ export function PacksStates() {
   const which = new URLSearchParams(window.location.search).get("state");
   return (
     <div className="p-8">
-      {which === "loading" ? (
-        <PacksView loading />
-      ) : (
-        <PacksView packs={[]} />
-      )}
+      {which === "loading" ? <PacksView loading /> : <PacksView packs={[]} />}
     </div>
   );
 }
