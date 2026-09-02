@@ -14,6 +14,7 @@ import { clickableProps } from "@/lib/clickable";
 
 import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { openBindModal } from "../../sandboxes/components/channels/bind-modal-state.js";
 import { agentKindBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
@@ -129,6 +130,21 @@ export function AgentRow({
             <DropdownMenuContent>
               <DropdownMenuItem onSelect={onConfigure}>
                 {configureLabel}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() =>
+                  openBindModal(["slack"], { initialKind: "slack" })
+                }
+              >
+                Add to Slack channel
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  openBindModal(["telegram"], { initialKind: "telegram" })
+                }
+              >
+                Add to a Telegram channel
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {display.powerAction === "start" ? (
