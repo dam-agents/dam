@@ -40,7 +40,9 @@ async function main() {
 
   const publicAgentId = parsePublicAgentPath(window.location.pathname);
   if (publicAgentId !== null) {
-    await loadBrand().then(applyBrand).catch(() => {});
+    await loadBrand()
+      .then(applyBrand)
+      .catch(() => {});
     const { renderPublicAgentPage } = await import("./public-agent-page.js");
     await renderPublicAgentPage(publicAgentId);
     return;
@@ -50,7 +52,9 @@ async function main() {
   try {
     [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   } catch {
-    await loadBrand().then(applyBrand).catch(() => {});
+    await loadBrand()
+      .then(applyBrand)
+      .catch(() => {});
   }
 
   if (!user) {

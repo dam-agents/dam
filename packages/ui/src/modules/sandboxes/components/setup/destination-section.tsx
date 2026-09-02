@@ -1,4 +1,5 @@
 import { cardSelectionVariants } from "@/components/ui/card";
+import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { ConnectionIcon } from "@/modules/connections/components/connection-icon";
 
@@ -19,65 +20,35 @@ export function DestinationSection({
 }: Props) {
   if (!slackAvailable && !telegramAvailable) return null;
 
-  const isPlatformOnly =
-    selected.length === 0 ||
-    (selected.length === 1 && selected.includes("platform"));
-
-  function handleToggle(d: Destination) {
-    if (d === "platform") {
-      onToggle("platform");
-    } else {
-      onToggle(d);
-    }
-  }
-
   return (
     <section className="mb-8">
-      <SectionLabel spaced>Where will this agent work?</SectionLabel>
-      <div className="flex flex-col gap-3">
-        <DestinationCard
-          icon={
-            <span className="flex size-4 items-center justify-center rounded bg-foreground text-background">
-              <svg width={10} height={10} viewBox="0 0 10 10" fill="none">
-                <rect x={1} y={1} width={8} height={8} rx={1.5} fill="currentColor" />
-              </svg>
-            </span>
-          }
-          label="In the platform"
-          description="Only you can reach it. Work happens here."
-          selected={isPlatformOnly}
-          onClick={() => handleToggle("platform")}
-        />
-
+      <SectionLabel spaced>Channels</SectionLabel>
+      <Inset className="flex flex-col gap-3">
         {slackAvailable && (
-          <DestinationCard
-            icon={
-              <ConnectionIcon iconSlug="slack" alt="" size={16} />
-            }
+          <ChannelCard
+            icon={<ConnectionIcon iconSlug="slack" alt="" size={16} />}
             label="In a Slack channel"
-            description="Your team can interact with the agent in a Slack channel."
+            description="Your team can interact with the agent in a Slack channel or their DMs."
             selected={selected.includes("slack")}
-            onClick={() => handleToggle("slack")}
+            onClick={() => onToggle("slack")}
           />
         )}
 
         {telegramAvailable && (
-          <DestinationCard
-            icon={
-              <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-            }
+          <ChannelCard
+            icon={<ConnectionIcon iconSlug="telegram" alt="" size={16} />}
             label="In a Telegram chat"
             description="Your team can interact with the agent in a Telegram group or DM."
             selected={selected.includes("telegram")}
-            onClick={() => handleToggle("telegram")}
+            onClick={() => onToggle("telegram")}
           />
         )}
-      </div>
+      </Inset>
     </section>
   );
 }
 
-function DestinationCard({
+function ChannelCard({
   icon,
   label,
   description,
@@ -109,33 +80,12 @@ function DestinationCard({
         </span>
       </span>
       <span className="ml-auto shrink-0">
-        {selected ? (
-          <CheckIcon />
-        ) : (
-          <span className="block h-5 w-5 rounded-full border-2 border-border" />
-        )}
+        <span
+          className={`flex size-4 items-center justify-center rounded-full border ${selected ? "border-foreground" : "border-muted-foreground/50"}`}
+        >
+          {selected && <span className="size-2 rounded-full bg-foreground" />}
+        </span>
       </span>
     </button>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      width={20}
-      height={20}
-      viewBox="0 0 20 20"
-      fill="none"
-      className="text-foreground"
-    >
-      <circle cx={10} cy={10} r={10} fill="currentColor" />
-      <path
-        d="M6 10.5l2.5 2.5L14 7.5"
-        stroke="white"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

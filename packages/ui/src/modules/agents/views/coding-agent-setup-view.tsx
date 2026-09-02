@@ -6,18 +6,20 @@ import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { openBindModal } from "../../sandboxes/components/channels/bind-modal-state.js";
-import {
-  DestinationSection,
-  type Destination,
-} from "../../sandboxes/components/setup/destination-section.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
+import {
+  type Destination,
+  DestinationSection,
+} from "../../sandboxes/components/setup/destination-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
+import { ScheduleSetupSection } from "../../sandboxes/components/setup/schedule-setup-section.js";
 import {
   ConnectionsSetupSection,
   NameSection,
   ProviderSection,
 } from "../../sandboxes/components/setup/setup-sections.js";
+import { SkillsSetupSection } from "../../sandboxes/components/setup/skills-setup-section.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import {
   imageCatalogue,
@@ -49,7 +51,7 @@ export function CodingAgentSetupView() {
   const [registryDisclosureOverride, setRegistryDisclosureOverride] = useState<
     boolean | null
   >(null);
-  const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
 
   const harnesses = useMemo(
     () =>
@@ -81,17 +83,9 @@ export function CodingAgentSetupView() {
   const canCreate = isCodingAgentSetupComplete(draft) && !createAgent.isPending;
 
   function handleDestinationToggle(d: Destination) {
-    setDestinations((prev) => {
-      if (d === "platform") return ["platform"];
-      const messengers = prev.filter(
-        (x): x is "slack" | "telegram" => x !== "platform",
-      );
-      const has = messengers.includes(d as "slack" | "telegram");
-      const next = has
-        ? messengers.filter((x) => x !== d)
-        : [...messengers, d as "slack" | "telegram"];
-      return next.length === 0 ? ["platform"] : next;
-    });
+    setDestinations((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d],
+    );
   }
 
   const create = async () => {
@@ -162,6 +156,8 @@ export function CodingAgentSetupView() {
         onSelect={(providerRef) => update({ providerRef })}
         policy={setupProviderPolicy("coding-agent")}
       />
+      <ScheduleSetupSection />
+      <SkillsSetupSection />
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
         onToggle={(id, granted) =>

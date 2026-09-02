@@ -41,12 +41,8 @@ export function ChannelsSection({
   return (
     <section className="mb-8">
       <SectionLabel spaced>Channels</SectionLabel>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Optionally connect your agent to a messaging channel so your team can
-        interact with it directly.
-      </p>
 
-      <div className="mb-4 flex items-center gap-1.5">
+      <div className="mb-3 flex items-center gap-1.5">
         {KIND_LABELS.map((k) => (
           <button
             key={k.value}
@@ -63,7 +59,7 @@ export function ChannelsSection({
         ))}
       </div>
 
-      <p className="mb-5 text-sm text-muted-foreground">
+      <p className="-mt-1 mb-4 text-sm text-muted-foreground">
         {DESCRIPTORS[previewKind]}
       </p>
 
@@ -83,6 +79,12 @@ export function ChannelsSection({
           onToggle={() => onToggle("telegram")}
         />
       </div>
+
+      {selected.length > 0 && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          You&apos;ll configure the channel details after the agent is created.
+        </p>
+      )}
     </section>
   );
 }

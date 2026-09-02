@@ -1,7 +1,8 @@
 export const brand = {
-  name: "Platform",
-  short: "platform",
-  title: "Platform – AI Agent Orchestration",
+  name: "DAM",
+  short: "dam",
+  title: "DAM – AI Agent Orchestration",
+  vendor: "DAM",
   theme: {
     light: {
       accent: "#1D6BE1",

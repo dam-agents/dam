@@ -15,7 +15,8 @@ export function ChannelIdForm({ onCancel, onSubmit }: Props) {
   const [channelId, setChannelId] = useState("");
   const [ambient, setAmbient] = useState(false);
 
-  const canSubmit = channelId.trim().startsWith("C") && channelId.trim().length > 1;
+  const canSubmit =
+    channelId.trim().startsWith("C") && channelId.trim().length > 1;
 
   return (
     <div className="flex flex-col gap-4">

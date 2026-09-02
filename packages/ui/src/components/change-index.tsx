@@ -29,37 +29,10 @@ export function ChangeIndex() {
 
   const entries: ChangeEntry[] = [
     {
-      label: "Agent Cards — Slack Discovery",
-      description:
-        "New card design with Slack channel indicators. Toggle compares new vs current.",
-      action: () => setView("slack-cards-preview"),
-      group: "Views",
-    },
-    {
-      label: "Experiment Setup (primary flow)",
-      description:
-        "Destination section (platform/Slack/Telegram). On create → chat page + bind modal.",
-      action: () => setView("experiment-new"),
-      group: "Views",
-    },
-    {
       label: "Coding Agent Setup",
       description:
-        "Same destination fork + post-create modal as experiment setup.",
+        "Destination section (platform/Slack/Telegram). On create → chat page + bind modal.",
       action: () => setView("coding-agent-new"),
-      group: "Views",
-    },
-    {
-      label: "Knowledge Base Setup",
-      description:
-        "Same destination fork + post-create modal as experiment setup.",
-      action: () => setView("knowledge-base-new"),
-      group: "Views",
-    },
-    {
-      label: "Home View",
-      description: "Landing page — check for any Slack-related changes.",
-      action: () => setView("home"),
       group: "Views",
     },
 

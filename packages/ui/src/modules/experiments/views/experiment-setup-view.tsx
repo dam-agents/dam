@@ -29,14 +29,13 @@ import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateExperimentSandbox } from "../api/mutations.js";
 
 const RETURN_PATH = routeToPath({ view: "experiment-new" });
-const DOCS_MAINTAINER_TEMPLATE_ID = "docs-maintainer";
 
 export function ExperimentSetupView() {
-  const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
 
   const { form, update, reset } = useSetupForm(
     "experiment",
-    { templateId: DOCS_MAINTAINER_TEMPLATE_ID },
+    { templateId: KINDED_HARNESS_TEMPLATE_ID },
     RETURN_PATH,
   );
   const { data: templates, isLoading } = useTemplates();
@@ -58,17 +57,9 @@ export function ExperimentSetupView() {
     !createExperimentSandbox.isPending;
 
   function handleDestinationToggle(d: Destination) {
-    setDestinations((prev) => {
-      if (d === "platform") return ["platform"];
-      const messengers = prev.filter(
-        (x): x is "slack" | "telegram" => x !== "platform",
-      );
-      const has = messengers.includes(d as "slack" | "telegram");
-      const next = has
-        ? messengers.filter((x) => x !== d)
-        : [...messengers, d as "slack" | "telegram"];
-      return next.length === 0 ? ["platform"] : next;
-    });
+    setDestinations((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d],
+    );
   }
 
   const create = async () => {

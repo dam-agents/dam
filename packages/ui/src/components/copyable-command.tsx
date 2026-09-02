@@ -9,9 +9,11 @@ type CopyableCommandSize = "default" | "compact";
 export function CopyableCommand({
   command,
   size = "default",
+  showPrompt = true,
 }: {
   command: string;
   size?: CopyableCommandSize;
+  showPrompt?: boolean;
 }) {
   const { copy, state: copyState } = useCopy();
 
@@ -24,7 +26,9 @@ export function CopyableCommand({
         )}
       >
         <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">
-          <span className="select-none text-muted-foreground">$ </span>
+          {showPrompt && (
+            <span className="select-none text-muted-foreground">$ </span>
+          )}
           {command}
         </code>
         <Button

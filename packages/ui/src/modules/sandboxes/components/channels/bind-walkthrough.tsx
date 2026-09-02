@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/button";
 import { CopyableCommand } from "@/components/copyable-command";
+import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { getBrand } from "../../../../brand.js";
@@ -14,7 +14,8 @@ interface Props {
 }
 
 export function BindWalkthrough({ kind, compact, onUseChannelId }: Props) {
-  if (kind === "slack") return <SlackSteps compact={compact} onUseChannelId={onUseChannelId} />;
+  if (kind === "slack")
+    return <SlackSteps compact={compact} onUseChannelId={onUseChannelId} />;
   return <TelegramSteps compact={compact} />;
 }
 
@@ -35,7 +36,7 @@ function SlackSteps({
             In the Slack channel your team already uses, run:
           </p>
           <div className="mt-2">
-            <CopyableCommand command={`/invite @${brand.name}`} />
+            <CopyableCommand showPrompt={false} command={`/invite @${brand.name}`} />
           </div>
         </Step>
 
@@ -44,7 +45,7 @@ function SlackSteps({
             Then, in the same channel, run:
           </p>
           <div className="mt-2">
-            <CopyableCommand command={`/${brand.short} bind`} />
+            <CopyableCommand showPrompt={false} command={`/${brand.short} bind`} />
           </div>
         </Step>
 
@@ -90,22 +91,14 @@ function TelegramSteps({ compact }: { compact?: boolean }) {
       <ol className="flex flex-col gap-5">
         <Step number={1} title="Add the bot to your chat">
           <p className="mt-1 text-sm text-muted-foreground">
-            Add{" "}
-            {handle ? (
-              <>@{handle}</>
-            ) : (
-              "this installation's Telegram bot"
-            )}{" "}
+            Add {handle ? <>@{handle}</> : "this installation's Telegram bot"}{" "}
             to the Telegram group your team already uses. For a one-to-one chat,
             open it directly.
           </p>
           {handle && (
             <div className="mt-2">
               <Button variant="outline" size="sm" asChild>
-                <a
-                  href={`https://t.me/${handle}`}
-                  {...externalLinkProps}
-                >
+                <a href={`https://t.me/${handle}`} {...externalLinkProps}>
                   Open @{handle} in Telegram &#x2197;
                 </a>
               </Button>
@@ -118,7 +111,7 @@ function TelegramSteps({ compact }: { compact?: boolean }) {
             In that chat, send:
           </p>
           <div className="mt-2">
-            <CopyableCommand command={`/${brand.short} bind`} />
+            <CopyableCommand showPrompt={false} command={`/${brand.short} bind`} />
           </div>
           <p className="mt-1.5 text-sm text-muted-foreground">
             In a group, only admins can run this.

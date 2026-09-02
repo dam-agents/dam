@@ -5,12 +5,12 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
+import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { openBindModal } from "../../sandboxes/components/channels/bind-modal-state.js";
 import {
-  DestinationSection,
   type Destination,
+  DestinationSection,
 } from "../../sandboxes/components/setup/destination-section.js";
-import { CardGrid } from "../../sandboxes/components/card-list.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
   ConnectionsSetupSection,
@@ -28,7 +28,7 @@ import { DEFAULT_KB_TEMPLATE_ID, KB_TEMPLATES } from "../lib/kb-templates.js";
 const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
 
 export function KnowledgeBaseSetupView() {
-  const [destinations, setDestinations] = useState<Destination[]>(["platform"]);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
 
   const { form, update, reset } = useSetupForm(
     "knowledge-base",
@@ -48,17 +48,9 @@ export function KnowledgeBaseSetupView() {
     !createKnowledgeBase.isPending;
 
   function handleDestinationToggle(d: Destination) {
-    setDestinations((prev) => {
-      if (d === "platform") return ["platform"];
-      const messengers = prev.filter(
-        (x): x is "slack" | "telegram" => x !== "platform",
-      );
-      const has = messengers.includes(d as "slack" | "telegram");
-      const next = has
-        ? messengers.filter((x) => x !== d)
-        : [...messengers, d as "slack" | "telegram"];
-      return next.length === 0 ? ["platform"] : next;
-    });
+    setDestinations((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d],
+    );
   }
 
   const create = async () => {
@@ -106,10 +98,7 @@ export function KnowledgeBaseSetupView() {
         </Button>
       }
     >
-      <NameSection
-        value={form.name}
-        onChange={(name) => update({ name })}
-      />
+      <NameSection value={form.name} onChange={(name) => update({ name })} />
 
       <section className="mb-8">
         <SectionLabel spaced>Template</SectionLabel>

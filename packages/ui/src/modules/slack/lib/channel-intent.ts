@@ -24,10 +24,7 @@ export function consumeChannelIntent(kind: ChannelKind): string | null {
   }
 }
 
-export function hasChannelIntent(
-  agentId: string,
-  kind: ChannelKind,
-): boolean {
+export function hasChannelIntent(agentId: string, kind: ChannelKind): boolean {
   try {
     return localStorage.getItem(keyFor(kind)) === agentId;
   } catch {
