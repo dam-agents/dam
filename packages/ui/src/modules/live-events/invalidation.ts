@@ -17,6 +17,7 @@ const invalidations: Record<Topic, () => readonly (readonly unknown[])[]> = {
   ],
   schedules: () => [trpc.schedules.pathKey()],
   harnessConfig: () => [trpc.harnessConfig.pathKey()],
+  kbShares: () => [trpc.kbShares.pathKey()],
   experiments: () => [trpc.experiments.pathKey()],
   artifacts: () => [trpc.artifactLibrary.pathKey()],
 };

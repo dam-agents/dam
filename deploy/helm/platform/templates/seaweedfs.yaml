@@ -47,13 +47,18 @@ spec:
       containers:
         - name: seaweedfs
           image: {{ .Values.seaweedfs.image }}
-          # All-in-one server; volume files capped at 1 GiB with count grown
-          # by free disk, so the store stays inside the PVC.
+          # All-in-one server; volume files capped at 1 GiB with a fixed
+          # count so the store stays inside the PVC. The count must be
+          # explicit: with -volume.max=0 the volume server derives its
+          # capacity from the master's size limit, which it fetches before
+          # the in-process master is up — the fetch fails, the 30 GiB
+          # default applies, and the derived capacity rounds down to zero
+          # slots, so every upload fails with "no writable volumes".
           args:
             - server
             - -dir=/data
             - -master.volumeSizeLimitMB=1024
-            - -volume.max=0
+            - -volume.max=8
             - -s3
             - -s3.port=8333
             - -s3.config=/etc/seaweedfs/s3-config.json

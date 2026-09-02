@@ -66,6 +66,12 @@ export function hintFor(
           agentId: event.agentId,
         },
       };
+    case EventType.KbSharePublished:
+    case EventType.KbSharePublishFailed:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "kbShares", agentId: event.agentId },
+      };
     case EventType.UserAuthenticated:
     case EventType.AgentUpdated:
     case EventType.AgentRestarted:

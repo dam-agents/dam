@@ -42,6 +42,7 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
+    mergeInputs: async () => {},
     delete: async (id) => {
       rows.delete(id);
     },
@@ -123,6 +124,7 @@ function makeService(
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),
+    resolveKbShare: async () => null,
   });
   return { svc, rows, stored, deleted, tokenCalls };
 }

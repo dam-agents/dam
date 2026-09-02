@@ -174,3 +174,14 @@ export {
   type PluginModule,
   type PluginProtocolVersion,
 } from "./modules/plugin/index.js";
+export {
+  kbPublishSyncInputSchema,
+  type KbPublishSyncInput,
+} from "./modules/kb-publish/schemas.js";
+export type {
+  KbPublishExecuteReport,
+  KbPublishPlan,
+  KbPublishPlanFile,
+  KbPublishSegmentReport,
+  KbPublishService,
+} from "./modules/kb-publish/types.js";

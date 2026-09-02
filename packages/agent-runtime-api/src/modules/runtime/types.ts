@@ -239,6 +239,7 @@ export const capabilities = z.object({
   events: z.array(eventKind),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
+  kbPublish: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;

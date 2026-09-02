@@ -25,6 +25,7 @@ export interface ArtifactService {
     key: string,
   ): Promise<{ url: string; expiresSeconds: number } | null>;
   verifyUpload(key: string): Promise<ArtifactStat>;
+  stat(key: string): Promise<ArtifactStat | null>;
   createDownloadUrl(key: string, filename: string): Promise<string | null>;
   createAgentDownloadUrl(
     key: string,
@@ -59,6 +60,8 @@ export function createArtifactService(deps: {
       });
       return url ? { url, expiresSeconds: UPLOAD_URL_TTL_SECONDS } : null;
     },
+
+    stat: (key) => deps.store.head(key),
 
     async verifyUpload(key) {
       const stat = await deps.store.head(key);
