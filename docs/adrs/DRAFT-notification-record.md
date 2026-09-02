@@ -49,9 +49,11 @@ The rules that follow from it:
   session because a session has no server-side row to point at.
 - **One row per session, aggregating.** Activity updates the row rather than appending to it;
   history stays in the session transcript, which the agent already owns.
-- **Seen and dismissed are watermarks, not flags.** Unread means activity later than the seen mark;
-  hidden means activity no later than the dismissed mark. New activity therefore returns a
-  dismissed row without any explicit un-dismiss.
+- **Seen and dismissed are watermarks, not flags.** The record is one row per session; seen and
+  dismissed live beside it as one state row per user and session, each a timestamp. Unread means
+  activity later than the seen mark; hidden means activity no later than the dismissed mark. New
+  activity therefore returns a dismissed row without any explicit un-dismiss, and one user's
+  dismissal hides nothing for another.
 - **Seen is derived from presence, not declared by the client.** A turn relayed while a viewer is
   attached means the user was watching; a turn dispatched in-pod means they were not. Server-held
   streams and passive reads are not viewers and mark nothing. The pod's own read state is retired.
