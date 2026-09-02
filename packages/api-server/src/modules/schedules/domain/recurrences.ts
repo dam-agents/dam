@@ -64,6 +64,16 @@ export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
   return null;
 }
 
+export function triggerExpiry(
+  firedAt: Date,
+  next: Date | null,
+  ttlSec: number,
+): Date {
+  const byTtl = firedAt.getTime() + ttlSec * 1000;
+  const byNext = next?.getTime() ?? Infinity;
+  return new Date(byNext > firedAt.getTime() ? Math.min(byTtl, byNext) : byTtl);
+}
+
 function toWallClock(instant: Date, tz: string): Date {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,

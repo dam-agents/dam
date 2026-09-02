@@ -20,7 +20,6 @@ export interface StateQueue {
 
 const READY_RECHECK_MS = 1_000;
 const READY_RECHECK_ATTEMPTS = 120;
-const DELIVERY_CONCURRENCY = 256;
 
 export function stateJobOptions(
   agentId: string,
@@ -69,6 +68,7 @@ export interface StartWorkerOpts {
     agentId: string,
     opts?: { retryUntilReady?: boolean },
   ) => Promise<void>;
+  concurrency: number;
   log: (msg: string) => void;
 }
 
@@ -85,7 +85,7 @@ export function startStateWorker(opts: StartWorkerOpts): RunningWorker {
       }),
     {
       connection: opts.connection,
-      concurrency: DELIVERY_CONCURRENCY,
+      concurrency: opts.concurrency,
     },
   );
   worker.on("failed", (job, err) => {

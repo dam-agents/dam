@@ -1,7 +1,10 @@
 import { brandSchema, linksSchema } from "api-server-api";
+import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { durationToMinutesStrict } from "./duration.js";
+
+const DEFAULT_DELIVERY_CONCURRENCY = 256;
 
 function isValidAppSlug(s: string): boolean {
   return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
@@ -39,6 +42,16 @@ const configSchema = z.object({
   extAuthzPort: z.coerce.number().default(4002),
   databaseUrl: z.string(),
   databaseCaCertPath: z.string().optional(),
+  databasePoolMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_DB_POOL_MAX),
+  runtimeDeliveryConcurrency: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_DELIVERY_CONCURRENCY),
   migrationsPath: z.string().default("./packages/db/drizzle"),
   clickhouseUrl: z.string().optional(),
   clickhouseUser: z.string().default("default"),
@@ -163,6 +176,8 @@ export function loadConfig(): Config {
     extAuthzPort: process.env.EXT_AUTHZ_PORT,
     databaseUrl: process.env.DATABASE_URL,
     databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH,
+    databasePoolMax: process.env.DATABASE_POOL_MAX,
+    runtimeDeliveryConcurrency: process.env.RUNTIME_DELIVERY_CONCURRENCY,
     migrationsPath: process.env.MIGRATIONS_PATH,
     clickhouseUrl: process.env.CLICKHOUSE_URL,
     clickhouseUser: process.env.CLICKHOUSE_USER,

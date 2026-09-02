@@ -29,6 +29,7 @@ function harness(opts: {
   retryable: OutboxRow[];
   isRunning: (agentId: string) => Promise<boolean>;
   runningCheckTimeoutMs?: number;
+  runningCheckConcurrency?: number;
 }) {
   const enqueued: string[] = [];
   const logs: string[] = [];
@@ -52,6 +53,9 @@ function harness(opts: {
     log: (msg) => logs.push(msg),
     ...(opts.runningCheckTimeoutMs !== undefined
       ? { runningCheckTimeoutMs: opts.runningCheckTimeoutMs }
+      : {}),
+    ...(opts.runningCheckConcurrency !== undefined
+      ? { runningCheckConcurrency: opts.runningCheckConcurrency }
       : {}),
   });
   return { sweep, enqueued, logs, expiredDrops: () => expiredDrops };
@@ -162,6 +166,36 @@ describe("runtime cron-sweep", () => {
 
     expect(enqueued).toEqual([]);
     expect(expiredDrops()).toBe(1);
+  });
+
+  /** TEST_SCENARIO: while the readiness source is down every check is a live
+   *  Kubernetes read, so the sweep stops asking after one round of failures
+   *  instead of reissuing that read for every row it scanned. Rows it never
+   *  asked about are unknown, so they still re-enqueue. A lane can already be
+   *  mid-read when another trips the threshold, so the bound is the lanes twice
+   *  over, not the scan. */
+  it("stops checking after a round of failures and re-enqueues the rest", async () => {
+    const asked: string[] = [];
+    const { sweep, enqueued } = harness({
+      retryable: [
+        row("agent-a"),
+        row("agent-b"),
+        row("agent-c"),
+        row("agent-d"),
+        row("agent-e"),
+        row("agent-f"),
+      ],
+      runningCheckConcurrency: 2,
+      isRunning: async (id) => {
+        asked.push(id);
+        throw new Error("k8s unreachable");
+      },
+    });
+
+    await sweep.tick();
+
+    expect(asked.length).toBeLessThanOrEqual(3);
+    expect(enqueued).toHaveLength(6);
   });
 
   /** TEST_SCENARIO: the skip line reports only agents the check answered for,

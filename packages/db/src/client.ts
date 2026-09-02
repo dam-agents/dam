@@ -10,9 +10,20 @@ export function buildDbSsl(tls?: DbTlsOptions): { ca: string } | undefined {
   return tls?.ca ? { ca: tls.ca } : undefined;
 }
 
-export function createDb(url: string, tls?: DbTlsOptions) {
+export interface DbPoolOptions {
+  max?: number | undefined;
+}
+
+export const DEFAULT_DB_POOL_MAX = 32;
+
+export function createDb(
+  url: string,
+  tls?: DbTlsOptions,
+  pool?: DbPoolOptions,
+) {
   const ssl = buildDbSsl(tls);
-  const sql = postgres(url, ssl ? { ssl } : {});
+  const max = pool?.max ?? DEFAULT_DB_POOL_MAX;
+  const sql = postgres(url, ssl ? { max, ssl } : { max });
   return { db: drizzle(sql, { schema }), sql };
 }
 

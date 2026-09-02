@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-08-27
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -68,7 +68,7 @@ Reclaiming is **silent**. The eligibility rules confine it to agents with no att
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays, channels, and scheduler all inherit the same message: the figures plus "stop a running agent to free room." A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees or expires at its TTL.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays, channels, and scheduler all inherit the same message: the figures plus "stop a running agent to free room." A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 
 The fail-fast is a **heuristic**, not a raw condition read: a parked agent keeps its `OverBudget` condition standing, and the condition doesn't say which wake attempt it applies to — so a fresh wake's first poll would otherwise see the *previous* attempt's denial and fail a start that room now permits. The wake therefore treats `OverBudget` as its own denial only when it *observed the condition appear* during its own poll (the controller ruled on this attempt), or once a short grace window (~10s, comfortably above the informer-driven reconcile latency) passes with the refusal still standing. A stale denial inside the grace rides through to the reconcile of the wake's activity bump, which admits or re-denies well within the window. Deliberately local to the api-server: the alternative — echoing the denied activity value through the Agent status — buys exactness at the price of a CRD schema field and a cross-component contract, which this failure mode doesn't warrant.
 

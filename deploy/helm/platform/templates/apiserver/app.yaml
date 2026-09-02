@@ -133,6 +133,10 @@ spec:
                   key: POSTGRES_APISERVER_PASSWORD
             - name: DATABASE_URL
               value: {{ include "platform.apiserver.postgres.dsn" . | quote }}
+            - name: DATABASE_POOL_MAX
+              value: {{ .Values.apiServer.db.poolMax | quote }}
+            - name: RUNTIME_DELIVERY_CONCURRENCY
+              value: {{ .Values.apiServer.runtimeDelivery.concurrency | quote }}
             {{- if .Values.apiServer.db.caCert }}
             # Verify the external DB's TLS cert against this CA (sslmode=verify-*).
             # The api-server passes it as the DB client's `ssl.ca`, scoping trust

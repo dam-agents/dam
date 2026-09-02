@@ -63,13 +63,23 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
   async function checkAll(agentIds: string[]): Promise<RunningCheck[]> {
     const checks = new Array<RunningCheck>(agentIds.length);
     let next = 0;
+    let unknowns = 0;
+    let unavailable = "";
     const lanes = Array.from(
       { length: Math.min(checkConcurrency, agentIds.length) },
       async () => {
         for (;;) {
           const index = next++;
           if (index >= agentIds.length) return;
-          checks[index] = await checkRunning(agentIds[index]!);
+          if (unavailable !== "") {
+            checks[index] = { state: "unknown", reason: unavailable };
+            continue;
+          }
+          const check = await checkRunning(agentIds[index]!);
+          checks[index] = check;
+          if (check.state !== "unknown") continue;
+          unknowns += 1;
+          if (unknowns >= checkConcurrency) unavailable = check.reason;
         }
       },
     );

@@ -1,6 +1,6 @@
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
-import { nextFireAt } from "../domain/recurrences.js";
+import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -24,12 +24,6 @@ export interface SchedulerRunnerDeps {
   log?: (msg: string) => void;
   now?: () => Date;
   triggerTtlSeconds?: number;
-}
-
-function triggerExpiry(firedAt: Date, next: Date | null, ttlSec: number): Date {
-  const byTtl = firedAt.getTime() + ttlSec * 1000;
-  const byNext = next?.getTime() ?? Infinity;
-  return new Date(byNext > firedAt.getTime() ? Math.min(byTtl, byNext) : byTtl);
 }
 
 export function createSchedulerRunner(
