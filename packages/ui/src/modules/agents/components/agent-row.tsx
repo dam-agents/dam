@@ -49,6 +49,27 @@ export interface AgentRowProps {
 const BLUE_BADGE =
   "border-transparent bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400";
 
+function formatCpu(raw: string): string {
+  const m = raw.match(/^(\d+)m$/);
+  if (m) return `${Number(m[1]) / 1000} CPU`;
+  return `${raw} CPU`;
+}
+
+function formatMemory(raw: string): string {
+  const gi = raw.match(/^(\d+)Gi$/);
+  if (gi) return `${gi[1]} Gi`;
+  const mi = raw.match(/^(\d+)Mi$/);
+  if (mi) return `${mi[1]} Mi`;
+  return raw;
+}
+
+function computeSubtitle(size: { cpu?: string; memory?: string }): string {
+  const parts: string[] = [];
+  if (size.cpu) parts.push(formatCpu(size.cpu));
+  if (size.memory) parts.push(formatMemory(size.memory));
+  return parts.join(" · ") || "";
+}
+
 function AgentStateBadge({
   state,
   neverHibernates,
@@ -133,6 +154,12 @@ export function AgentRow({
             </h2>
             <ContributionFailuresBadge failures={agent.contributionFailures} />
           </div>
+
+          {agent.size && computeSubtitle(agent.size) && (
+            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+              {computeSubtitle(agent.size)}
+            </p>
+          )}
 
           {hasMeta && (
             <div
