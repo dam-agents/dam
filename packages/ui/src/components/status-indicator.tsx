@@ -3,7 +3,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
 const stateLabel: Record<AgentDisplayState, string> = {
-  running: "Running",
+  running: "Working",
   starting: "Starting",
   preparing_workspace: "Preparing workspace",
   hibernating: "Hibernating",
