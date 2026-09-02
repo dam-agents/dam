@@ -1,5 +1,5 @@
-import { Help, Lightning } from "@carbon/icons-react";
-import { useMemo, useState } from "react";
+import { Help } from "@carbon/icons-react";
+import { useState } from "react";
 
 import {
   HoverCard,
@@ -16,7 +16,6 @@ import type { AgentView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { formatCores, formatGi } from "../../budgets/lib/format.js";
 import { useLinks } from "../../links/api/queries.js";
-import { parseCpuMilli, parseMemoryMi } from "../../sandboxes/lib/quantity.js";
 import {
   type ComputeCell,
   type ComputeCellState,
@@ -27,7 +26,7 @@ const BYTES_PER_MI = 1024 ** 2;
 
 const STATE_LABEL: Record<Exclude<ComputeCellState, "available">, string> = {
   running: "Working",
-  awake: "Awake",
+  awake: "Idle",
 };
 
 const STATE_DOT: Record<Exclude<ComputeCellState, "available">, string> = {
@@ -38,7 +37,6 @@ const STATE_DOT: Record<Exclude<ComputeCellState, "available">, string> = {
 type CellHighlight =
   | { kind: "agent"; agentId: string }
   | { kind: "state"; state: ComputeCellState }
-  | { kind: "agentSet"; ids: ReadonlySet<string> }
   | null;
 
 interface Props {
@@ -46,11 +44,9 @@ interface Props {
   workingAgentIds: ReadonlySet<string>;
 }
 
-function cellTitle(cell: ComputeCell): string {
+function cellLabel(cell: ComputeCell): string {
   if (cell.state === "available") return "Available";
-  return `${cell.agentName} — ${formatCores(cell.cpuMilli)} CPU · ${formatGi(
-    cell.memoryMi * BYTES_PER_MI,
-  )} Gi allocated`;
+  return `${cell.agentName} (${formatCores(cell.cpuMilli)} CPU · ${formatGi(cell.memoryMi * BYTES_PER_MI)} Gi)`;
 }
 
 function isHighlighted(cell: ComputeCell, highlight: CellHighlight): boolean {
@@ -62,8 +58,6 @@ function isHighlighted(cell: ComputeCell, highlight: CellHighlight): boolean {
         : highlight.agentId === "__available";
     case "state":
       return cell.state === highlight.state;
-    case "agentSet":
-      return cell.agentId ? highlight.ids.has(cell.agentId) : false;
   }
 }
 
@@ -74,16 +68,22 @@ function isDimmed(cell: ComputeCell, highlight: CellHighlight): boolean {
 function isGroupDimmed(
   groupState: ComputeCellState,
   highlight: CellHighlight,
+  cells: readonly ComputeCell[],
 ): boolean {
   if (!highlight) return false;
   if (highlight.kind === "state") return highlight.state !== groupState;
-  if (highlight.kind === "agentSet" || highlight.kind === "agent") return true;
+  if (highlight.kind === "agent") {
+    return !cells.some(
+      (c) => c.agentId === highlight.agentId && c.state === groupState,
+    );
+  }
   return false;
 }
 
 export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
   const { data } = useBudgetReserved();
   const { data: links } = useLinks();
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const [highlight, setHighlight] = useState<CellHighlight>(null);
   if (!data) return null;
 
@@ -124,11 +124,11 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
         role="group"
         aria-label="Allocated CPU"
       >
-        {view.cells.map((cell, index) => (
-          <Tooltip key={index} content={cellTitle(cell)} side="bottom">
+        {view.cells.map((cell, index) => {
+          const cellBtn = (
             <button
               type="button"
-              aria-label={cellTitle(cell)}
+              aria-label={cellLabel(cell)}
               className={cn(
                 "h-3 w-full outline-none transition-all duration-150",
                 index === 0 && "rounded-l-full",
@@ -157,8 +157,54 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
               }
               onBlur={() => setHighlight(null)}
             />
-          </Tooltip>
-        ))}
+          );
+          if (cell.alwaysOn) {
+            return (
+              <HoverCard key={index} openDelay={150} closeDelay={300}>
+                <HoverCardTrigger asChild>{cellBtn}</HoverCardTrigger>
+                <HoverCardContent side="top" className="w-64 p-3">
+                  <p className="text-sm text-foreground">
+                    <span className="font-semibold">{cell.agentName}</span>{" "}
+                    ({formatCores(cell.cpuMilli)} CPU · {formatGi(cell.memoryMi * BYTES_PER_MI)} Gi)
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Always-on — holds compute even while idle.
+                  </p>
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        cell.agentId &&
+                        navigateToSandboxHome(cell.agentId, "setup")
+                      }
+                      className="text-sm text-accent transition-colors hover:text-foreground"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </HoverCardContent>
+              </HoverCard>
+            );
+          }
+          if (cell.state === "available") {
+            return (
+              <Tooltip key={index} content="Available" side="top">
+                {cellBtn}
+              </Tooltip>
+            );
+          }
+          return (
+            <HoverCard key={index} openDelay={150} closeDelay={300}>
+              <HoverCardTrigger asChild>{cellBtn}</HoverCardTrigger>
+              <HoverCardContent side="top" className="w-auto whitespace-nowrap p-3">
+                <p className="text-sm text-foreground">
+                  <span className="font-semibold">{cell.agentName}</span>{" "}
+                  ({formatCores(cell.cpuMilli)} CPU · {formatGi(cell.memoryMi * BYTES_PER_MI)} Gi)
+                </p>
+              </HoverCardContent>
+            </HoverCard>
+          );
+        })}
       </div>
 
       <div className="space-y-2">
@@ -168,7 +214,7 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
             type="button"
             className={cn(
               "flex w-full items-center justify-between rounded px-1 -mx-1 text-sm text-muted-foreground outline-none transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-foreground/30",
-              isGroupDimmed(group.state, highlight) && "opacity-30",
+              isGroupDimmed(group.state, highlight, view.cells) && "opacity-30",
             )}
             onMouseEnter={() =>
               setHighlight({ kind: "state", state: group.state })
@@ -189,9 +235,7 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
               {STATE_LABEL[group.state]}
             </span>
             <span className="tabular-nums">
-              {group.agents} {group.agents === 1 ? "agent" : "agents"} ·{" "}
-              {formatCores(group.cpuMilli)} CPU ·{" "}
-              {formatGi(group.memoryMi * BYTES_PER_MI)} Gi
+              {group.agents} {group.agents === 1 ? "agent" : "agents"}
             </span>
           </button>
         ))}
@@ -200,98 +244,8 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
             No agent is holding compute.
           </p>
         )}
-        <AlwaysOnAnnotation
-          agents={runningAgents}
-          highlight={highlight}
-          onHighlight={setHighlight}
-        />
       </div>
     </div>
   );
 }
 
-function AlwaysOnAnnotation({
-  agents,
-  highlight,
-  onHighlight,
-}: {
-  agents: readonly AgentView[];
-  highlight: CellHighlight;
-  onHighlight: (h: CellHighlight) => void;
-}) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const alwaysOn = agents.filter((a) => a.hibernationTimeoutMin === 0);
-  const alwaysOnIds = useMemo(
-    () => new Set(alwaysOn.map((a) => a.id)),
-    [alwaysOn],
-  );
-  if (alwaysOn.length === 0) return null;
-
-  const cpuMilli = alwaysOn.reduce(
-    (sum, a) => sum + (parseCpuMilli(a.size.cpu) ?? 0),
-    0,
-  );
-  const memoryMi = alwaysOn.reduce(
-    (sum, a) => sum + (parseMemoryMi(a.size.memory) ?? 0),
-    0,
-  );
-
-  const dimmed =
-    highlight !== null &&
-    (highlight.kind !== "agentSet" || highlight.ids !== alwaysOnIds);
-
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-between border-t border-border pt-2 text-sm text-muted-foreground transition-opacity duration-150",
-        dimmed && "opacity-30",
-      )}
-    >
-      <HoverCard openDelay={150} closeDelay={300}>
-        <HoverCardTrigger asChild>
-          <button
-            type="button"
-            className="flex cursor-pointer items-center gap-2 rounded px-1 -mx-1 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/30"
-            onMouseEnter={() =>
-              onHighlight({ kind: "agentSet", ids: alwaysOnIds })
-            }
-            onMouseLeave={() => onHighlight(null)}
-            onFocus={() =>
-              onHighlight({ kind: "agentSet", ids: alwaysOnIds })
-            }
-            onBlur={() => onHighlight(null)}
-          >
-            <Lightning size={16} className="shrink-0 text-accent" />
-            {alwaysOn.length} always-on
-          </button>
-        </HoverCardTrigger>
-        <HoverCardContent side="top" className="w-64 p-3">
-          <p className="mb-2 text-sm text-muted-foreground">
-            Always-on — holds compute even while idle.
-          </p>
-          <div className="space-y-1">
-            {alwaysOn.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="font-medium text-foreground">{a.name}</span>
-                <button
-                  type="button"
-                  onClick={() => navigateToSandboxHome(a.id, "setup")}
-                  className="text-accent transition-colors hover:text-foreground"
-                >
-                  Manage
-                </button>
-              </div>
-            ))}
-          </div>
-        </HoverCardContent>
-      </HoverCard>
-      <span className="tabular-nums">
-        {formatCores(cpuMilli)} CPU · {formatGi(memoryMi * BYTES_PER_MI)} Gi
-        held
-      </span>
-    </div>
-  );
-}

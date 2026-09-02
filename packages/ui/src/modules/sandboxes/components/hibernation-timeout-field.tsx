@@ -8,7 +8,7 @@ import { FormError } from "../../../components/form-error.js";
 import { formatCores, formatGi } from "../../budgets/lib/format.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 
-const DEFAULT_TIMEOUT_MIN = 30;
+const DEFAULT_TIMEOUT_MIN = 60;
 
 interface Props {
   register: UseFormRegisterReturn;

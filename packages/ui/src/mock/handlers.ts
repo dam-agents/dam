@@ -34,7 +34,7 @@ function getFixtures(): Record<string, unknown> {
   const empty = mockEmpty;
   return {
     "agents.list": empty ? [] : agents,
-    "agents.get": agents[1],
+    "agents.get": agents[0],
     "channels.available": channelsAvailable,
     "channels.telegramBot": null,
     "approvals.listForOwner": approvals,
@@ -49,8 +49,8 @@ function getFixtures(): Record<string, unknown> {
     },
     "templates.list": templates,
     "budgets.reserved": budgetsReserved,
-    "experiments.list": empty ? [] : experiments,
-    "experiments.driverSummaries": empty ? [] : driverSummaries,
+    "experiments.list": [],
+    "experiments.driverSummaries": [],
     "schedules.list": schedules,
     "knowledgeBases.list": empty ? [] : knowledgeBases,
     "egressRules.list": [
@@ -386,6 +386,9 @@ export const handlers = [
       console.info(`[MSW] Mock mutation: ${proc}`);
       if (proc === "agents.create") {
         mockEmpty = false;
+        return { result: { data: agents[0] } };
+      }
+      if (proc === "agents.update") {
         return { result: { data: agents[0] } };
       }
       if (proc === "agents.upgrade") {

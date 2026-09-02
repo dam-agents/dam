@@ -63,24 +63,27 @@ export function StartupTip({ sandbox }: { sandbox: string }) {
   return (
     <div
       className={cn(
-        "flex w-full max-w-120 min-h-22 items-start gap-3 text-left motion-safe:transition-opacity duration-600",
+        "w-full max-w-sm min-h-22 motion-safe:transition-opacity duration-600",
         revealed ? "opacity-100" : "opacity-0 motion-reduce:opacity-100",
       )}
     >
-      <Idea size={16} className="mt-0.5 shrink-0 text-muted-foreground/50" />
-      <div className="grid flex-1">
+      <div className="grid">
         {tips.map((tip, i) => (
           <p
             key={tip}
             aria-hidden={i !== index}
             className={cn(
-              "col-start-1 row-start-1 text-sm leading-relaxed text-muted-foreground motion-safe:transition-opacity",
+              "col-start-1 row-start-1 text-center text-sm leading-relaxed text-muted-foreground motion-safe:transition-opacity",
               i === index && shown
                 ? "opacity-100 duration-600"
                 : "pointer-events-none select-none opacity-0 duration-300",
               i === index && "motion-reduce:opacity-100",
             )}
           >
+            <Idea
+              size={16}
+              className="mr-1.5 inline-block align-[-3px] text-muted-foreground/50"
+            />
             {render(tip)}
           </p>
         ))}

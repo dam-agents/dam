@@ -7,6 +7,7 @@ import { FloatingApprovalsPill } from "./components/floating-approvals-pill.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
+import { queryClient } from "./query-client.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
@@ -158,11 +159,43 @@ function MainApp() {
   );
 }
 
+interface CachedAgents {
+  list: { id: string; name: string; state: string; hibernationTimeoutMin: number }[];
+  availableChannels: unknown[];
+}
+
+function getCachedAgents(): CachedAgents["list"] {
+  const data = queryClient.getQueryData<CachedAgents>(["agents", "list-with-channels"]);
+  return data?.list ?? [];
+}
+
+function ensureStartingAgent(): string | null {
+  const data = queryClient.getQueryData<CachedAgents>(["agents", "list-with-channels"]);
+  if (!data) return null;
+
+  const already = data.list.find((a) => a.state === "starting");
+  if (already) return already.id;
+
+  const candidate = data.list.find(
+    (a) => a.state === "running" && a.hibernationTimeoutMin > 0,
+  );
+  if (!candidate) return null;
+
+  queryClient.setQueryData(["agents", "list-with-channels"], {
+    ...data,
+    list: data.list.map((a) =>
+      a.id === candidate.id ? { ...a, state: "starting" } : a,
+    ),
+  });
+  return candidate.id;
+}
+
 function ChangesIndex() {
   const [open, setOpen] = useState(false);
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
+
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
 
   const items: {
@@ -171,50 +204,40 @@ function ChangesIndex() {
     go: () => void;
   }[] = [
     {
-      label: "Always-on badge on agent row",
-      where: "Home — Deploy Bot row",
+      label: "Compute Widget Always-On Hover",
+      where: "Home — hover over the idle agent slot in the compute bar",
       go: () => setView("home"),
     },
     {
-      label: "Compute widget — hover/fade + always-on hover card",
-      where: "Home sidebar — hover bar cells or groups; hover lightning bolt",
-      go: () => setView("home"),
+      label: "Startup overlay with always-on prompt",
+      where: "Opens a starting agent — resets one to starting if needed",
+      go: () => {
+        const id = ensureStartingAgent();
+        if (id) selectAgent(id);
+        else setView("home");
+      },
     },
     {
-      label: "Startup overlay — 2 layout options (A–B toggle)",
-      where: "Click into Code Review agent (starting)",
-      go: () => selectAgent("agent-review"),
-    },
-    {
-      label: "Lifecycle toggle (configure page)",
-      where: "Any agent → overflow menu → Configure → Lifecycle",
-      go: () => navigateToSandboxHome("agent-deploy", "setup"),
-    },
-    {
-      label: "Lifecycle toggle (create flow)",
-      where: "Coding agents → /coding-agents/new → scroll down",
+      label: "Setup - Lifecycle",
+      where: "New agent creation page — scroll to the Lifecycle section",
       go: () => setView("coding-agent-new"),
     },
     {
-      label: "Lifecycle toggle (home create flow)",
-      where: "Home → + New agent → Configure step",
-      go: () => setView("home"),
-    },
-    {
-      label: "Card showcase (isolated)",
-      where: "Standalone page",
-      go: () => setView("showcase"),
+      label: "Configure page - Lifecycle",
+      where: "Agent settings — scroll to the Lifecycle section",
+      go: () => {
+        const agentId = "a1b2c3d4-0001-4000-8000-000000000001";
+        navigateToSandboxHome(agentId, "setup");
+      },
     },
   ];
-
-  if (view === "showcase") return null;
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="fixed right-5 bottom-5 z-50 flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-sm font-medium text-muted-foreground shadow-lg transition-colors hover:bg-muted hover:text-foreground"
+        className="fixed right-5 bottom-5 z-50 flex h-10 items-center gap-2 rounded-full border border-foreground bg-card px-4 text-sm font-medium text-foreground shadow-lg transition-colors hover:bg-muted"
       >
         {open ? "Close" : "Changes index"}
       </button>

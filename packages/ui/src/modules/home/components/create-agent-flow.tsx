@@ -458,7 +458,7 @@ function SetupForm({
                   Hibernate while idle
                 </p>
                 <p className="text-[13px] text-muted-foreground">
-                  Saves compute
+                  Frees compute when not in use
                 </p>
               </div>
             </CardButton>
@@ -468,15 +468,15 @@ function SetupForm({
               onClick={() => setDraft({ ...draft, hibernation: "never" })}
               className="flex items-start gap-3 p-3"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-                <Lightning size={16} className="text-foreground" />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-light">
+                <Lightning size={16} className="text-accent" />
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">
-                  Never hibernate
+                  Always-on
                 </p>
                 <p className="text-[13px] text-muted-foreground">
-                  Always-on, uses budget
+                  Instant response, holds compute
                 </p>
               </div>
             </CardButton>

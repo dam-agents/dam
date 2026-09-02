@@ -1,10 +1,11 @@
+import { useMemo } from "react";
+
 import { Button } from "@/components/ui/button";
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { useStore } from "../../../store.js";
-import { OutdatedTemplatesBanner } from "../components/outdated-templates-banner.js";
 import { SandboxList } from "../components/sandbox-list.js";
 import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../hooks/use-sandbox-row-actions.js";
@@ -22,6 +23,11 @@ export function CodingAgentsView() {
     deleteAgent,
     suspend,
   });
+
+  const workingAgentIds = useMemo(() => {
+    const running = codingAgents.filter((a) => a.state === "running");
+    return new Set(running.slice(0, 2).map((a) => a.id));
+  }, [codingAgents]);
 
   const setView = useStore((s) => s.setView);
   const createCodingAgent = () => setView("coding-agent-new");
@@ -44,7 +50,7 @@ export function CodingAgentsView() {
 
       {!initialLoaded && <ListSkeleton rows={2} rowHeight={70} />}
 
-      {initialLoaded && <OutdatedTemplatesBanner agents={codingAgents} />}
+      {/* OutdatedTemplatesBanner hidden for prototype */}
 
       {initialLoaded && codingAgents.length === 0 && (
         <PageEmptyState
@@ -60,6 +66,7 @@ export function CodingAgentsView() {
           agents={codingAgents}
           drawByDriver={drawByDriver}
           rowProps={rowProps}
+          workingAgentIds={workingAgentIds}
           onStop={(agent) => void stopSandbox(agent)}
           onDelete={(agent) => void deleteSandbox(agent)}
         />

@@ -1,10 +1,10 @@
 export const budgetsReserved = {
   cpu: {
-    reservedMilli: 1750,
+    reservedMilli: 3000,
     ceilingMilli: 4000,
   },
   memory: {
-    reservedBytes: 3_221_225_472,
-    ceilingBytes: 8_589_934_592,
+    reservedBytes: 3 * 1024 ** 3,
+    ceilingBytes: 4 * 1024 ** 3,
   },
 };

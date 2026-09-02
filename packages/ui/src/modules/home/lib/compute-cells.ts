@@ -9,6 +9,7 @@ export interface ComputeCell {
   agentName: string | null;
   cpuMilli: number;
   memoryMi: number;
+  alwaysOn: boolean;
 }
 
 export interface ComputeGroup {
@@ -60,6 +61,7 @@ export function computeView(
         agentName: entry.agent.name,
         cpuMilli: entry.cpuMilli,
         memoryMi: entry.memoryMi,
+        alwaysOn: entry.agent.hibernationTimeoutMin === 0,
       });
     }
   }
@@ -75,6 +77,7 @@ export function computeView(
       agentName: null,
       cpuMilli: 0,
       memoryMi: 0,
+      alwaysOn: false,
     });
   }
 

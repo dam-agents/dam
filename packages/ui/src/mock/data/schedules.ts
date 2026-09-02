@@ -3,7 +3,7 @@ import { AGENT_IDS } from "./agents.js";
 export const schedules = [
   {
     id: "sched-001",
-    agentId: AGENT_IDS.codexResearch,
+    agentId: AGENT_IDS.agent1,
     name: "Daily brand audit",
     type: "rrule",
     cron: null,
@@ -22,7 +22,7 @@ export const schedules = [
   },
   {
     id: "sched-002",
-    agentId: AGENT_IDS.codexResearch,
+    agentId: AGENT_IDS.agent1,
     name: "Nightly test suite",
     type: "rrule",
     cron: null,

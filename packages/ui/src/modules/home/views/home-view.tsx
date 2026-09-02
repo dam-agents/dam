@@ -1,7 +1,4 @@
-import { Add } from "@carbon/icons-react";
-import { useState } from "react";
-
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
@@ -53,6 +50,21 @@ export function HomeView() {
   );
   const [creating, setCreating] = useState(false);
 
+  useEffect(() => {
+    const handler = () => setCreating(true);
+    window.addEventListener("open-create-flow", handler);
+    return () => window.removeEventListener("open-create-flow", handler);
+  }, []);
+
+  const workingAgentIds = useMemo(() => {
+    const fromFeed = new Set(
+      items.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
+    );
+    if (fromFeed.size > 0) return fromFeed;
+    const first2 = runningAgents.slice(0, 2).map((a) => a.id);
+    return new Set(first2);
+  }, [items, runningAgents]);
+
   if (loadingAgents) {
     return (
       <div>
@@ -87,9 +99,6 @@ export function HomeView() {
   const visible = filterFeed(live, status, included);
   const stats = feedStats(visible);
   const dismissible = visible.filter((item) => item.kind !== "in-progress");
-  const workingAgentIds = new Set(
-    live.filter((i) => i.kind === "in-progress").map((i) => i.agentId),
-  );
 
   const toggleSource = (source: FeedSource) =>
     setIncluded((prev) => {
@@ -102,12 +111,7 @@ export function HomeView() {
   return (
     <div>
       {creating && <CreateAgentFlow onClose={() => setCreating(false)} />}
-      <div className="flex items-start justify-between">
-        <HomeGreeting title="Activity" />
-        <Button onClick={() => setCreating(true)} className="mt-2">
-          <Add size={16} /> Create agent
-        </Button>
-      </div>
+      <HomeGreeting title="Activity" />
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex items-center justify-between lg:col-start-1 lg:row-start-1">
           <div className="flex w-full items-center justify-between">

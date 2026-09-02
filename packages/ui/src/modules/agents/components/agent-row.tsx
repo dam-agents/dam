@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { clickableProps } from "@/lib/clickable";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
+import type { BadgeProps } from "@/components/ui/badge";
+
 import type { AgentView } from "../../../types.js";
 import { agentKindBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
@@ -23,10 +24,33 @@ import {
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 
+function agentBadge(
+  display: AgentDisplay,
+  agent: AgentView,
+  isWorking: boolean,
+): { label: string; variant: NonNullable<BadgeProps["variant"]> } {
+  const alwaysOn = agent.hibernationTimeoutMin === 0;
+  const suffix = alwaysOn ? " (Always-on)" : "";
+
+  if (display.state === "running") {
+    if (isWorking) return { label: `Working${suffix}`, variant: "success" };
+    return { label: `Idle${suffix}`, variant: "accent" };
+  }
+  if (display.state === "hibernated" || display.state === "hibernating")
+    return { label: "Hibernating", variant: "muted" };
+  if (display.state === "starting" || display.state === "preparing_workspace")
+    return { label: "Starting", variant: "warning" };
+  if (display.state === "error") return { label: "Error", variant: "danger" };
+  if (display.state === "over_budget")
+    return { label: "Over budget", variant: "warning" };
+  return { label: "Working", variant: "success" };
+}
+
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
   subtitle: string;
+  isWorking?: boolean;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   updatePending: boolean;
@@ -46,6 +70,7 @@ export function AgentRow({
   agent,
   display,
   subtitle,
+  isWorking = false,
   temporaryDraw,
   deletePending,
   updatePending,
@@ -61,6 +86,7 @@ export function AgentRow({
   onDelete,
 }: Props) {
   const kindBadge = agentKindBadge(agent);
+  const statusBadge = agentBadge(display, agent, isWorking);
   return (
     <Card
       data-testid="agent-row"
@@ -76,11 +102,6 @@ export function AgentRow({
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
               {kindBadge.label}
-            </Badge>
-          )}
-          {agent.hibernationTimeoutMin === 0 && display.state === "running" && (
-            <Badge variant="accent" className="shrink-0">
-              Always-on
             </Badge>
           )}
           <ContributionFailuresBadge failures={agent.contributionFailures} />
@@ -105,12 +126,7 @@ export function AgentRow({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <UpdateAvailableAction
-          agent={agent}
-          pending={updatePending}
-          busy={updateBusy}
-          onUpdate={onUpdate}
-        />
+        {/* UpdateAvailableAction hidden for prototype */}
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage
@@ -121,7 +137,7 @@ export function AgentRow({
               }
             : {})}
         >
-          <StatusBadge state={display.state} />
+          <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>

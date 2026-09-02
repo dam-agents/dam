@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useUpdateAgent } from "../api/mutations.js";
@@ -83,9 +82,6 @@ function StartupOverlay({ agent }: LayoutProps) {
             entered ? "opacity-100 scale-100" : "opacity-0 scale-95",
           )}
         >
-          <div className="mb-3">
-            <StatusBadge state="starting" />
-          </div>
           <h2
             className="text-center font-extralight tracking-tighter text-foreground"
             style={{ fontSize: "clamp(2rem, 5.5vw, 4rem)", lineHeight: 1 }}
@@ -95,15 +91,15 @@ function StartupOverlay({ agent }: LayoutProps) {
 
           <div
             className={cn(
-              "mt-6 flex max-w-xl items-start justify-center gap-2 transition-all duration-700 delay-500",
+              "mt-6 max-w-sm transition-all duration-700 delay-500",
               entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4",
             )}
           >
-            <Idea
-              size={16}
-              className="mt-[3px] shrink-0 text-muted-foreground"
-            />
             <p className="text-center text-sm leading-relaxed text-muted-foreground min-h-12 transition-opacity duration-500">
+              <Idea
+                size={16}
+                className="mr-1.5 inline-block align-[-3px] text-muted-foreground/50"
+              />
               {tip}
             </p>
           </div>
