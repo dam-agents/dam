@@ -1,6 +1,5 @@
 import {
   and,
-  asc,
   eq,
   inArray,
   isNull,
@@ -76,7 +75,7 @@ export interface OutboxRepo {
     },
     maxAttempts?: number,
   ): Promise<ApplyTransitions>;
-  listRetryable(maxAttempts: number, limit: number): Promise<OutboxRow[]>;
+  listRetryable(maxAttempts: number): Promise<OutboxRow[]>;
   preparingWorkspaceAgentIds(agentIds: string[]): Promise<Set<string>>;
   markEventsUndeliverable(
     agentId: string,
@@ -313,7 +312,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       });
     },
 
-    async listRetryable(maxAttempts, limit): Promise<OutboxRow[]> {
+    async listRetryable(maxAttempts): Promise<OutboxRow[]> {
       const rows = (await db
         .select()
         .from(runtimeStateOutbox)
@@ -331,9 +330,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
                 AND re.expires_at > now()
             )`,
           ),
-        )
-        .orderBy(asc(runtimeStateOutbox.applyAttempts))
-        .limit(limit)) as InternalRow[];
+        )) as InternalRow[];
       return rows;
     },
 

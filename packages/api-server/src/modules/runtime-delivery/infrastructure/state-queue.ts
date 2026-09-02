@@ -1,4 +1,9 @@
-import { Queue, Worker, type ConnectionOptions } from "bullmq";
+import {
+  Queue,
+  Worker,
+  type ConnectionOptions,
+  type JobsOptions,
+} from "bullmq";
 import IORedis from "ioredis";
 
 export const RUNTIME_STATE_QUEUE = "runtime-state";
@@ -15,28 +20,41 @@ export interface StateQueue {
 
 const READY_RECHECK_MS = 1_000;
 const READY_RECHECK_ATTEMPTS = 120;
+const DELIVERY_CONCURRENCY = 256;
+
+export function stateJobOptions(
+  agentId: string,
+  opts?: { retryUntilReady?: boolean },
+): JobsOptions {
+  const boot = opts?.retryUntilReady === true;
+  const retry = boot
+    ? {
+        attempts: READY_RECHECK_ATTEMPTS,
+        backoff: { type: "fixed" as const, delay: READY_RECHECK_MS },
+      }
+    : {
+        attempts: 8,
+        backoff: { type: "exponential" as const, delay: 1_000 },
+      };
+  return {
+    ...retry,
+    deduplication: {
+      id: boot ? `${agentId}:boot` : agentId,
+      keepLastIfActive: true,
+    },
+    removeOnComplete: { age: 3600, count: 1000 },
+    removeOnFail: { age: 86_400, count: 1000 },
+  };
+}
 
 export function createStateQueue(connection: ConnectionOptions): StateQueue {
   const queue = new Queue<StateJob>(RUNTIME_STATE_QUEUE, { connection });
   return {
     async enqueue(agentId, opts): Promise<void> {
-      const retry = opts?.retryUntilReady
-        ? {
-            attempts: READY_RECHECK_ATTEMPTS,
-            backoff: { type: "fixed" as const, delay: READY_RECHECK_MS },
-          }
-        : {
-            attempts: 8,
-            backoff: { type: "exponential" as const, delay: 1_000 },
-          };
       await queue.add(
         "state",
         { agentId, retryUntilReady: opts?.retryUntilReady },
-        {
-          ...retry,
-          removeOnComplete: { age: 3600, count: 1000 },
-          removeOnFail: { age: 86_400, count: 1000 },
-        },
+        stateJobOptions(agentId, opts),
       );
     },
     async close(): Promise<void> {
@@ -67,7 +85,7 @@ export function startStateWorker(opts: StartWorkerOpts): RunningWorker {
       }),
     {
       connection: opts.connection,
-      concurrency: 16,
+      concurrency: DELIVERY_CONCURRENCY,
     },
   );
   worker.on("failed", (job, err) => {

@@ -15,7 +15,6 @@ export interface CronSweepDeps {
   agentRunningPort: IsAgentRunning;
   log: (msg: string) => void;
   maxApplyAttempts?: number;
-  batchSize?: number;
   runningCheckConcurrency?: number;
   runningCheckTimeoutMs?: number;
 }
@@ -30,7 +29,6 @@ type RunningCheck =
 
 export function createCronSweep(deps: CronSweepDeps): CronSweep {
   const maxApplyAttempts = deps.maxApplyAttempts ?? DEFAULT_MAX_APPLY_ATTEMPTS;
-  const batchSize = deps.batchSize ?? 100;
   const checkConcurrency =
     deps.runningCheckConcurrency ?? DEFAULT_RUNNING_CHECK_CONCURRENCY;
   const checkTimeoutMs =
@@ -83,10 +81,7 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
     if (running) return;
     running = true;
     try {
-      const retryable = await deps.outboxRepo.listRetryable(
-        maxApplyAttempts,
-        batchSize,
-      );
+      const retryable = await deps.outboxRepo.listRetryable(maxApplyAttempts);
       const checks = await checkAll(retryable.map((row) => row.agentId));
 
       const toEnqueue: string[] = [];

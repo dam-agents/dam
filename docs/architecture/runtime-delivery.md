@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-01
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -172,7 +172,7 @@ Owned by the worker, set in the apply-ack transaction using the cursor. The per-
 
 ### Expiry
 
-Each event row carries `expires_at`. The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`. The agent applies the same TTL check on incoming events as defense in depth.
+Each event row carries `expires_at`, chosen by the producer — a schedule fire, for instance, expires at the schedule's next occurrence so a backlog of fires never forms ([agent-lifecycle](agent-lifecycle.md#trigger-fire)). The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`. The agent applies the same TTL check on incoming events as defense in depth.
 
 ## Outbox + events
 
@@ -185,7 +185,7 @@ One outbox surface in Postgres, plus the events table that feeds the payload:
 
 ### Mutation transaction
 
-Every state-affecting handler commits the domain mutation, bumps the agent's version, and upserts the outbox row atomically, then enqueues a BullMQ job keyed by a stable per-agent job id — pending dispatches for the same agent coalesce naturally, and the user-facing response returns immediately.
+Every state-affecting handler commits the domain mutation, bumps the agent's version, and upserts the outbox row atomically, then enqueues a BullMQ job deduplicated on a stable per-agent key, and the user-facing response returns immediately. Dispatches for one agent coalesce: while one is queued or backing off, further enqueues fold into it; one that arrives while a dispatch is *in flight* is kept and runs once after it, so a change that races an in-flight delivery lands right behind it rather than waiting for the sweep. The boot catch-up that `hello` enqueues coalesces on its own key, so a plain dispatch — which exits clean on an agent that is not Ready yet — can never absorb it.
 
 A schedule firing follows the same shape, inserting a `runtime_events` row in place of the grant before the outbox upsert.
 
@@ -222,11 +222,13 @@ flowchart TD
 
 BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick. A plain dispatch to an agent that isn't running exits clean and the row simply stays behind: while the agent is down the sweep does not re-attempt delivery to it. The row is picked up once the agent is back — by its `hello` when its cursor is behind, and otherwise by the next sweep tick, which is what covers a row left unsettled by driver failures the agent has already answered for.
 
+Every `applyState` call carries a deadline of about a minute. An agent that accepts the request but never answers — a pod wedged on memory pressure, a harness that stopped serving — fails that attempt onto the backoff instead of holding a worker slot for the transport's default of five minutes. Together with per-agent coalescing, this bounds what one unresponsive agent can hold to one active job per key. The worker's concurrency is sized far above what that bound allows the live agent population to occupy at once, so a slot is never the scarce resource and no delivery waits behind another agent's; the cap protects the process from a burst, it does not schedule agents. A handler holds nothing else for the duration of the call — the Postgres reads finish before the request goes out and the outcome is recorded after it returns — so a stalled agent ties up its own socket and nothing shared.
+
 ### Cron sweep
 
 A scheduled job runs every minute and does two things:
 
-1. **Outbox staleness check.** Scan for the rows an agent is behind on — the desired version is not settled yet, an earlier apply left driver failures still under their attempt budget, or the agent holds an event that is neither dispatched nor expired — least-attempted first and capped at a batch size. That third branch is what recovers a fire whose in-pod dispatch threw: the version settles, so neither of the first two sees it, and without it the event would sit until its TTL ran out. For a workspace-mutating event the retry it drives is bounded by the per-event attempt budget — exhausting it stamps the event dispatched-with-error, which takes the row out of this branch. Re-enqueue a dispatch for each one whose agent is currently running. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth.
+1. **Outbox staleness check.** Scan for the rows an agent is behind on — the desired version is not settled yet, an earlier apply left driver failures still under their attempt budget, or the agent holds an event that is neither dispatched nor expired — every such row, not a capped batch. That third branch is what recovers a fire whose in-pod dispatch threw: the version settles, so neither of the first two sees it, and without it the event would sit until its TTL ran out. For a workspace-mutating event the retry it drives is bounded by the per-event attempt budget — exhausting it stamps the event dispatched-with-error, which takes the row out of this branch. Re-enqueue a dispatch for each one whose agent is currently running. This is the load-bearing path for surviving any BullMQ / Redis loss: rows in Postgres are the truth. The scan is deliberately uncapped: rows of stopped agents are skipped rather than settled (below), so they accumulate for as long as their agents stay down, and a fixed-size batch would fill with them and hide the running agents' rows behind them. One row per agent bounds the scan, and the running-state read is a cache hit in steady state.
 
    **A row whose agent is not running is left where it is.** A stopped agent has nothing to apply the state, so re-attempting delivery buys nothing and never terminates — the row stays behind for as long as the agent stays down, which makes an unconditional re-enqueue a fixed-cadence livelock with no ceiling. Catch-up is already covered from the other side: `hello` re-enqueues on boot or wake, and once the agent is running again the next tick picks the row up regardless.
 
@@ -235,7 +237,7 @@ A scheduled job runs every minute and does two things:
 
 ### Reading agent running-state
 
-Both readers — the delivery worker before it dispatches, and the cron sweep before it re-enqueues — ask the agents subsystem whether the Agent is Ready, and that answer is a live read of the Agent resource rather than a cached one. So each read can fail or hang on its own: the sweep bounds how many it has in flight at once, puts a deadline on each, and distinguishes a failed read from a negative one.
+Both readers — the delivery worker before it dispatches, and the cron sweep before it re-enqueues — ask the agents subsystem whether the Agent is Ready. That answer comes from its watch-backed read cache, falling back to a live read of the Agent resource while the watch is unsynced ([agent-lifecycle](agent-lifecycle.md)). So each read can still fail or hang on its own: the sweep bounds how many it has in flight at once, puts a deadline on each, and distinguishes a failed read from a negative one.
 
 ### Redis-down behavior
 
@@ -328,6 +330,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 
 ## Invariants
 
+- **One agent's delivery never waits on another's.** Every shared stage is either per-agent (the deduplication key, the outbox row lock, the agent-runtime's serialized apply, the connection to the pod) or held only for milliseconds (Postgres reads, the job fetch). The only long hold is the HTTP call itself, bounded by its deadline and by one active job per key, and the worker runs far more of those concurrently than agents can occupy. A wedged agent slows only its own deliveries.
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
 - **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path for a running agent and `hello` for one that wakes.
 - **State snapshots are idempotent, and a contribution change always bumps the version.** Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. Only the sweep and `hello` enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.

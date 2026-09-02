@@ -26,6 +26,12 @@ export interface SchedulerRunnerDeps {
   triggerTtlSeconds?: number;
 }
 
+function triggerExpiry(firedAt: Date, next: Date | null, ttlSec: number): Date {
+  const byTtl = firedAt.getTime() + ttlSec * 1000;
+  const byNext = next?.getTime() ?? Infinity;
+  return new Date(byNext > firedAt.getTime() ? Math.min(byTtl, byNext) : byTtl);
+}
+
 export function createSchedulerRunner(
   deps: SchedulerRunnerDeps,
 ): SchedulerRunner {
@@ -49,7 +55,12 @@ export function createSchedulerRunner(
     }
 
     const eventId = `${scheduleId}:${fireAt.getTime()}`;
-    const expiresAt = new Date(now().getTime() + ttlSec * 1000);
+    const firedAt = now();
+    const expiresAt = triggerExpiry(
+      firedAt,
+      nextFireAt(sched.spec, firedAt),
+      ttlSec,
+    );
     const payload: Record<string, unknown> = {
       scheduleId,
       task: sched.spec.task ?? "",
