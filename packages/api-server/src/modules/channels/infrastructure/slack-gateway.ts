@@ -41,6 +41,20 @@ export interface SlackGatewayHandlers {
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A thread read together with whether the messenger
+ * had more to give. Callers that record how far they have read must not infer
+ * that from the row count: Slack returns the thread parent in every page, so a
+ * count reads one high, and a full page is not proof of a full window either.
+ * The adapter reports it from the messenger's own paging signal instead.
+ */
+export interface SlackThreadRead {
+  messages: SlackMessage[];
+  hasMore: boolean;
+}
+
+export const THREAD_TAIL_MAX_PAGES = 20;
+
 export interface SlackMessage {
   ts?: string;
   user?: string;
@@ -146,7 +160,14 @@ export interface SlackGateway {
     channel: string;
     threadTs: string;
     limit: number;
-  }): Promise<SlackMessage[]>;
+    oldest?: string;
+  }): Promise<SlackThreadRead>;
+  getThreadTail(args: {
+    channel: string;
+    threadTs: string;
+    limit: number;
+    maxPages?: number;
+  }): Promise<SlackThreadRead>;
   getChannelHistory(args: {
     channel: string;
     limit: number;

@@ -8,6 +8,7 @@ import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import type { AgentView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { formatCores, formatGi } from "../../budgets/lib/format.js";
+import { useLinks } from "../../links/api/queries.js";
 import {
   type ComputeCell,
   type ComputeCellState,
@@ -40,6 +41,7 @@ function cellTitle(cell: ComputeCell): string {
 
 export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
   const { data } = useBudgetReserved();
+  const { data: links } = useLinks();
   if (!data) return null;
 
   const view = computeView(
@@ -61,11 +63,11 @@ export function ComputeWidget({ runningAgents, workingAgentIds }: Props) {
           </Tooltip>
         </span>
         <a
-          href={COMPUTE_REQUEST_URL}
+          href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
           {...externalLinkProps}
           className="text-sm text-muted-foreground/60 transition-colors hover:text-muted-foreground"
         >
-          Need more?
+          Request more
         </a>
       </div>
 

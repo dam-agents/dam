@@ -209,10 +209,16 @@ Shared Redis fullname (StatefulSet + Service)
 {{- end }}
 
 {{/*
-Redis URL exposed to consumers (no auth in v1; matches Postgres).
+Redis URL exposed to consumers. With the bundled Redis disabled, an external
+URL must be provided — silently pointing at a non-existent bundled Service
+was the old failure mode.
 */}}
 {{- define "platform.redis.url" -}}
+{{- if .Values.redis.enabled }}
 {{- printf "redis://%s:%d" (include "platform.redis.fullname" .) (int .Values.redis.port) }}
+{{- else }}
+{{- required "redis.externalUrl is required when redis.enabled=false" .Values.redis.externalUrl }}
+{{- end }}
 {{- end }}
 
 {{/* ---- Shared SeaweedFS (object store) ---- */}}

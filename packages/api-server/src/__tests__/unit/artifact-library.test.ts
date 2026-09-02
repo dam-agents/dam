@@ -184,6 +184,7 @@ function stubArtifacts(
     delete: () => Promise.resolve(),
     createUploadUrl: notImplemented,
     verifyUpload: notImplemented,
+    stat: notImplemented,
     createDownloadUrl: notImplemented,
     createAgentDownloadUrl: notImplemented,
     ...overrides,
@@ -367,7 +368,8 @@ describe("library service — the kind cannot move", () => {
         fileName: "report.html",
       }),
     ).resolves.toMatchObject({ kind: "markdown", fileName: "report.html" });
-    expect(keys).toEqual(["library/o1/a1/v2/report.html"]);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]!).toMatch(/^library\/o1\/a1\/v2-[0-9a-f]{8}\/report\.html$/);
   });
 
   it("renames in place without publishing a version", async () => {

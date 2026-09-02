@@ -18,7 +18,6 @@ import {
   type DomainEvent,
 } from "../../events.js";
 import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
@@ -50,6 +49,7 @@ function harness(opts: {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: opts.listSessions ?? (async () => []),
     sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
     triggerSession: () => Promise.reject(new Error("unused")),
@@ -98,10 +98,10 @@ function harness(opts: {
     events,
     worker,
     async start() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
     },
     async mention(over?: { user?: string; teamId?: string; text?: string }) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",
@@ -389,9 +389,9 @@ function gatedHarness() {
     ...h,
     started,
     calls: () => gates.length,
-    fire(ts: string, threadTs?: string) {
+    fire(ts: string, threadTs?: string, user = "U1") {
       void h.gw.fireMention({
-        user: "U1",
+        user,
         channel: "C1",
         ts,
         ...(threadTs !== undefined ? { threadTs } : {}),
@@ -429,7 +429,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     const h = gatedHarness();
     await h.start();
     h.fire("100.1");
-    h.fire("200.2");
+    h.fire("200.2", undefined, "U2");
     await h.waitInFlight("100.1", "200.2");
 
     const ambiguous = await h.worker.reply("agent-1", {
@@ -458,7 +458,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     const h = gatedHarness();
     await h.start();
     h.fire("100.1");
-    h.fire("200.2");
+    h.fire("200.2", undefined, "U2");
     await h.waitInFlight("100.1", "200.2");
 
     const ambiguous = await h.worker.react("agent-1", { emoji: "eyes" });
@@ -492,7 +492,7 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     const h = gatedHarness();
     await h.start();
     h.fire("100.1");
-    h.fire("200.2");
+    h.fire("200.2", undefined, "U2");
     await h.waitInFlight("100.1", "200.2");
 
     const ambiguous = await h.worker.describeMessageReactions("agent-1", {});

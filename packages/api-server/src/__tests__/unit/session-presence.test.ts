@@ -50,7 +50,8 @@ describe("session presence", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("pins on first acquire, unpins on last release", async () => {
+  // TEST_SCENARIO: release must only drop this replica's key — an eager annotation clear races another replica's acquire (reconnect landing elsewhere) and can unpin a live socket; the two-tick reconcile owns clearing.
+  it("pins on first acquire; last release drops the key and leaves the clear to reconcile", async () => {
     const redis = fakeRedis();
     const repo = fakeRepo();
     const presence = createSessionPresence(repo, redis);
@@ -67,8 +68,12 @@ describe("session presence", () => {
 
     r2();
     await vi.advanceTimersByTimeAsync(1);
-    expect(repo.annotated.has("a1")).toBe(false);
     expect(redis.keys.size).toBe(0);
+    expect(repo.annotated.has("a1")).toBe(true);
+
+    await presence.reconcile();
+    await presence.reconcile();
+    expect(repo.annotated.has("a1")).toBe(false);
     presence.close();
   });
 
@@ -98,11 +103,15 @@ describe("session presence", () => {
     presence.close();
   });
 
-  it("reconcile clears pins no replica holds, spares held ones", async () => {
+  // TEST_SCENARIO: the debounce wants two consecutive ticks of affirmative absence, so a SCAN hit resets it rather than counting against a running miss total — a hit is evidence the agent is held, and accumulating misses across one would let a re-acquired agent be cleared while live.
+  it("reconcile clears unheld pins after two ticks, spares held ones", async () => {
     const redis = fakeRedis();
     redis.keys.set("presence:agent:held:other-replica", "1");
     const repo = fakeRepo(new Set(["held", "orphaned"]));
     const presence = createSessionPresence(repo, redis);
+
+    await presence.reconcile();
+    expect(repo.annotated.has("orphaned")).toBe(true);
 
     await presence.reconcile();
     expect(repo.annotated.has("held")).toBe(true);
@@ -110,13 +119,14 @@ describe("session presence", () => {
     presence.close();
   });
 
-  it("reconcile refuses an empty scan while this replica holds sessions", async () => {
+  it("reconcile never clears an agent this replica holds, even after a Redis flush", async () => {
     const redis = fakeRedis();
     const repo = fakeRepo(new Set(["a1"]));
     const presence = createSessionPresence(repo, redis);
 
     presence.acquire("a1");
     redis.keys.clear();
+    await presence.reconcile();
     await presence.reconcile();
     expect(repo.annotated.has("a1")).toBe(true);
     presence.close();

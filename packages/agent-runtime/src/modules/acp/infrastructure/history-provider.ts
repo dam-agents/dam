@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
-import { StringDecoder } from "node:string_decoder";
 import { Worker } from "node:worker_threads";
+
+import { describeFailure, runOnce } from "../../../core/run-once.js";
 
 export interface HistoryProvider {
   fetch(sessionId: string): Promise<string[] | null>;
@@ -56,62 +56,30 @@ export function createExecHistoryProvider(
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxOutputBytes = deps.maxOutputBytes ?? MAX_EXEC_OUTPUT_BYTES;
   return {
-    fetch(sessionId) {
-      return new Promise((resolve) => {
-        const [bin, ...args] = deps.command;
-        if (!bin) {
-          resolve(null);
-          return;
-        }
-        const child = spawn(bin, [...args, sessionId], {
-          cwd: deps.cwd,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        const stdoutDecoder = new StringDecoder("utf8");
-        const stderrDecoder = new StringDecoder("utf8");
-        let stdout = "";
-        let stdoutBytes = 0;
-        let stderr = "";
-        let settled = false;
-        const finish = (lines: string[] | null, reason?: string): void => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          if (reason) deps.log(`history provider for ${sessionId}: ${reason}`);
-          resolve(lines);
-        };
-        const timer = setTimeout(() => {
-          child.kill("SIGKILL");
-          finish(null, `timed out after ${timeoutMs}ms`);
-        }, timeoutMs);
-        child.stdout.on("data", (d: Buffer) => {
-          stdoutBytes += d.length;
-          stdout += stdoutDecoder.write(d);
-          if (stdoutBytes > maxOutputBytes) {
-            child.kill("SIGKILL");
-            finish(null, `output exceeded ${maxOutputBytes} bytes`);
-          }
-        });
-        child.stderr.on("data", (d: Buffer) => {
-          stderr += stderrDecoder.write(d);
-        });
-        child.on("error", (error) =>
-          finish(null, `failed to start: ${error.message}`),
-        );
-        child.on("close", (code) => {
-          stdout += stdoutDecoder.end();
-          if (code !== 0) {
-            finish(null, `exited ${code}: ${stderr.trim().slice(0, 200)}`);
-            return;
-          }
-          const lines = validateLines(sessionId, stdout.split("\n"));
-          if (lines === null) {
-            finish(null, "emitted an invalid frame");
-            return;
-          }
-          finish(lines);
-        });
+    async fetch(sessionId) {
+      if (deps.command.length === 0) {
+        deps.log(`history provider for ${sessionId}: no command declared`);
+        return null;
+      }
+      const command = [...deps.command, sessionId];
+      const result = await runOnce({
+        command,
+        cwd: deps.cwd,
+        timeoutMs,
+        maxOutputBytes,
       });
+      if (!result.ok) {
+        deps.log(
+          `history provider for ${sessionId}: ${describeFailure(command.join(" "), result.error)}`,
+        );
+        return null;
+      }
+      const lines = validateLines(sessionId, result.value.stdout.split("\n"));
+      if (lines === null) {
+        deps.log(`history provider for ${sessionId}: emitted an invalid frame`);
+        return null;
+      }
+      return lines;
     },
   };
 }

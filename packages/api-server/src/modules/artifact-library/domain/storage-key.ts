@@ -21,6 +21,7 @@ export function versionKey(
   artifactId: string,
   version: number,
   fileName: string,
+  salt?: string,
 ): string {
-  return `library/${owner}/${artifactId}/v${version}/${sanitizeBasename(fileName)}`;
+  return `library/${owner}/${artifactId}/v${version}${salt ? `-${salt}` : ""}/${sanitizeBasename(fileName)}`;
 }

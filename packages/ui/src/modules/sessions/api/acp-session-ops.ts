@@ -1,7 +1,10 @@
 import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { PodSession } from "agent-runtime-api";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 
 import { openInitializedConnection } from "../../acp/acp.js";
+import { agentTrpc } from "../../agents/agent-trpc.js";
+import { agentLacksLiveUpdates } from "../../agents/api/queries.js";
 
 interface PlatformMeta {
   mode?: string;
@@ -12,6 +15,9 @@ interface PlatformMeta {
   createdAt?: string;
   running?: boolean;
   seenAt?: string;
+  runStartedAt?: string;
+  runTotalMs?: number;
+  runCount?: number;
 }
 
 interface ListedSession {
@@ -38,6 +44,9 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     updatedAt: s.updatedAt ?? null,
     running: p?.running ?? false,
     seenAt: p?.seenAt ?? null,
+    runStartedAt: p?.runStartedAt ?? null,
+    runTotalMs: p?.runTotalMs ?? null,
+    runCount: p?.runCount ?? null,
   };
 }
 
@@ -63,6 +72,13 @@ async function withConnection<T>(
   }
 }
 
+function byRecencyThenId(a: SessionView, b: SessionView): number {
+  const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
+    a.updatedAt ?? a.createdAt,
+  );
+  return byActivity !== 0 ? byActivity : a.sessionId.localeCompare(b.sessionId);
+}
+
 export async function listSessionsOn(
   agentId: string,
   conn: ClientSideConnection,
@@ -70,17 +86,55 @@ export async function listSessionsOn(
   const r = await conn.listSessions({ cwd: "." });
   return (r.sessions ?? [])
     .map((s) => toSessionView(agentId, s as unknown as ListedSession))
-    .sort((a, b) => {
-      const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
-        a.updatedAt ?? a.createdAt,
-      );
-      return byActivity !== 0
-        ? byActivity
-        : a.sessionId.localeCompare(b.sessionId);
-    });
+    .sort(byRecencyThenId);
+}
+
+const POD_TYPE: Record<PodSession["type"], SessionType> = {
+  regular: SessionType.Regular,
+  channel_slack: SessionType.ChannelSlack,
+  channel_telegram: SessionType.ChannelTelegram,
+  schedule_cron: SessionType.ScheduleCron,
+  experiment_execute: SessionType.ExperimentExecute,
+};
+
+const POD_MODE: Record<PodSession["mode"], SessionMode> = {
+  chat: SessionMode.Chat,
+  terminal: SessionMode.Terminal,
+};
+
+function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
+  return {
+    sessionId: s.sessionId,
+    agentId,
+    type: POD_TYPE[s.type],
+    mode: POD_MODE[s.mode],
+    createdAt: s.createdAt,
+    scheduleId: s.scheduleId,
+    experimentId: s.experimentId,
+    threadTs: s.threadTs,
+    title: s.title,
+    updatedAt: s.updatedAt,
+    running: s.running,
+    seenAt: s.seenAt,
+    runStartedAt: s.runStartedAt,
+    runTotalMs: s.runTotalMs,
+    runCount: s.runCount,
+  };
 }
 
 export async function listAgentSessions(
+  agentId: string,
+): Promise<SessionView[]> {
+  if (agentLacksLiveUpdates(agentId)) {
+    return listAgentSessionsOverAcp(agentId);
+  }
+  const { sessions } = await agentTrpc(agentId).sessions.list.query();
+  return sessions
+    .map((s) => toSessionViewFromPod(agentId, s))
+    .sort(byRecencyThenId);
+}
+
+export async function listAgentSessionsOverAcp(
   agentId: string,
 ): Promise<SessionView[]> {
   return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {

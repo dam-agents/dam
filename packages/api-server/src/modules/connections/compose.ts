@@ -1,6 +1,7 @@
 import type { Db } from "db";
 import type { ConnectionsService } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
+import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
 import {
   createOAuthEngine,
@@ -41,13 +42,16 @@ export interface ComposeConnectionsAtBootOpts {
   secretStore: SecretStore;
   pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
+  shareBaseUrl?: string;
 }
 
 export function composeConnectionsAtBoot(
   opts: ComposeConnectionsAtBootOpts,
 ): ConnectionsBootCompose {
   const templates = createConnectionTemplateRegistry(
-    buildCatalog(opts.operatorCredentials),
+    buildCatalog(opts.operatorCredentials, {
+      ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
+    }),
   );
 
   const oauthEngine = createOAuthEngine({
@@ -60,6 +64,7 @@ export function composeConnectionsAtBoot(
     githubAppEngine,
     templates,
     secretStore: opts.secretStore,
+    connectionLock: createXactLock(opts.db),
   });
 
   return { templates, oauthEngine, githubAppEngine, refreshLoop };
@@ -88,8 +93,10 @@ export function composeConnectionsForOwner(opts: {
   connectionRulesSync: ConnectionRulesSync;
   oauthCallbackUrl: string;
   brandName: string;
+  maxSharedKbConnections?: number;
 }): ConnectionsService {
   const repo = createConnectionsRepository(opts.db);
+  const connectionLock = createXactLock(opts.db);
 
   const port: FanOutPort = {
     async setConnectionGrants(agentId, connectionIds): Promise<void> {
@@ -115,6 +122,7 @@ export function composeConnectionsForOwner(opts: {
     runtimeMutator: opts.runtimeMutator,
     ownerId: opts.ownerId,
     callbackUrl: opts.oauthCallbackUrl,
+    connectionLock,
   });
 
   return createConnectionsService({
@@ -128,6 +136,10 @@ export function composeConnectionsForOwner(opts: {
     githubAppEngine: opts.githubAppEngine,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
-    connectionLock: createXactLock(opts.db),
+    connectionLock,
+    resolveKbShare: createKbShareResolver(opts.db),
+    ...(opts.maxSharedKbConnections !== undefined
+      ? { maxSharedKbConnections: opts.maxSharedKbConnections }
+      : {}),
   });
 }

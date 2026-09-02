@@ -8,6 +8,7 @@ import type {
 import type { Db } from "db";
 import type { RuntimeProgressPort } from "../../modules/agents/index.js";
 import { createK8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import { EXPERIMENT_ACTIVE_KEY } from "../../modules/agents/infrastructure/labels.js";
 import {
@@ -25,6 +26,13 @@ import {
   composeSpawnSizeGate,
 } from "../../modules/budgets/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
+import {
+  composeKbPublishGate,
+  composeKbShareAgentOps,
+  composeKbShareServing,
+} from "../../modules/kb-shares/index.js";
+import { createConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
+import { createKubernetesSecretStore } from "../../modules/secret-store/index.js";
 import { composeSkillsModule } from "../../modules/skills/compose.js";
 import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
@@ -35,6 +43,7 @@ import type { ChannelManager } from "./../../modules/channels/services/channel-m
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
 export interface HarnessApiServerAppDeps {
+  agentStateCache: AgentStateCache;
   config: Config;
   api: CoreV1Api;
   db: Db;
@@ -105,7 +114,29 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       shareBaseUrl: config.shareBaseUrl,
     }).artifactLibrary;
 
-  const harnessAgentsRepo = createAgentsRepository(k8sClient);
+  const harnessAgentsRepo = createAgentsRepository(
+    k8sClient,
+    deps.agentStateCache,
+  );
+  const kbShareOpsFor = (owner: string) =>
+    composeKbShareAgentOps({
+      owner,
+      db,
+      agents: agentsServiceFor(owner),
+      namespace: config.namespace,
+      store: artifacts,
+      ensureReady: (agentId) => harnessAgentsRepo.ensureReady(agentId),
+      workspace: {
+        agentHome: config.agentHome,
+        agentWorkDir: config.agentWorkDir,
+      },
+      objectStoreConfigured: Boolean(config.objectStorageEndpoint),
+      publishLimits: {
+        perFileMaxBytes: config.kbSharePerFileMaxBytes,
+        totalMaxBytes: config.kbShareTotalMaxBytes,
+        maxFiles: config.kbShareMaxFiles,
+      },
+    });
   const experimentPin = {
     set: (agentId: string) =>
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
@@ -113,12 +144,32 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       harnessAgentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
   };
 
+  const connectionsRepo = createConnectionsRepository(db);
+  const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
+  const kbMcp = composeKbShareServing({
+    db,
+    store: artifacts,
+    k8s: k8sClient,
+    grepDeadlineMs: config.kbShareGrepDeadlineMs,
+  });
+  const kbPublishGate = composeKbPublishGate({
+    db,
+    store: artifacts,
+    publishLimits: {
+      perFileMaxBytes: config.kbSharePerFileMaxBytes,
+      totalMaxBytes: config.kbShareTotalMaxBytes,
+      maxFiles: config.kbShareMaxFiles,
+    },
+  });
+
   const app = createHarnessRouter({
     channelManager,
     k8s: k8sClient,
     runtimeHello,
+    kbPublishGate,
     composeSkills: (owner) =>
       composeSkillsModule({
+        agentStateCache: deps.agentStateCache,
         surface: "mcp",
         api,
         namespace: config.namespace,
@@ -148,6 +199,14 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     artifactLibraryFor,
     invocationsServiceFor,
     connectionsServiceFor,
+    kbShareOpsFor,
+    agentHome: config.agentHome,
+    agentKb: {
+      k8s: k8sClient,
+      kbMcp,
+      connections: connectionsRepo,
+      secretStore,
+    },
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({

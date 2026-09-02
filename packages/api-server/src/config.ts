@@ -1,4 +1,4 @@
-import { brandSchema } from "api-server-api";
+import { brandSchema, linksSchema } from "api-server-api";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { durationToMinutesStrict } from "./duration.js";
@@ -65,6 +65,8 @@ const configSchema = z.object({
   keycloakApiClientSecret: z.string().default(""),
   keycloakRequiredRole: z.string().optional(),
   keycloakInspectorRole: z.string().optional(),
+  agentHome: z.string().default("/home/agent"),
+  agentWorkDir: z.string().default("/home/agent/work"),
   agentIdleTimeoutMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
@@ -107,8 +109,22 @@ const configSchema = z.object({
   objectStorageSecretAccessKey: z.string().nullable().default(null),
   objectStorageForcePathStyle: z.stringbool().default(true),
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
+  kbSharePerFileMaxBytes: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(2 * 1024 * 1024),
+  kbShareTotalMaxBytes: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(200 * 1024 * 1024),
+  kbShareMaxFiles: z.coerce.number().int().positive().default(5000),
+  kbShareGrepDeadlineMs: z.coerce.number().int().positive().default(2000),
+  kbShareMaxConnectionsPerOwner: z.coerce.number().int().positive().default(20),
   experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   brand: brandSchema,
+  links: linksSchema,
   terms: z.object({
     version: z.string().min(1, "terms.version must be set"),
     text: z.string().min(1, "terms.text must be set"),
@@ -173,6 +189,8 @@ export function loadConfig(): Config {
     keycloakApiClientSecret: process.env.KEYCLOAK_API_CLIENT_SECRET,
     keycloakRequiredRole: process.env.KEYCLOAK_REQUIRED_ROLE,
     keycloakInspectorRole: process.env.KEYCLOAK_INSPECTOR_ROLE,
+    agentHome: process.env.AGENT_HOME,
+    agentWorkDir: process.env.AGENT_WORK_DIR,
     agentIdleTimeoutMinutes: durationToMinutesStrict(
       process.env.AGENT_IDLE_TIMEOUT ?? "1h",
     ),
@@ -213,6 +231,12 @@ export function loadConfig(): Config {
     objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
     objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     shareBaseUrl: process.env.SHARE_BASE_URL,
+    kbSharePerFileMaxBytes: process.env.KB_SHARE_PER_FILE_MAX_BYTES,
+    kbShareTotalMaxBytes: process.env.KB_SHARE_TOTAL_MAX_BYTES,
+    kbShareMaxFiles: process.env.KB_SHARE_MAX_FILES,
+    kbShareGrepDeadlineMs: process.env.KB_SHARE_GREP_DEADLINE_MS,
+    kbShareMaxConnectionsPerOwner:
+      process.env.KB_SHARE_MAX_CONNECTIONS_PER_OWNER,
     experimentInactivitySeconds: process.env.EXPERIMENT_INACTIVITY_SECONDS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
@@ -231,6 +255,9 @@ export function loadConfig(): Config {
           accentLight: process.env.BRAND_THEME_DARK_ACCENT_LIGHT ?? "#0f1f3a",
         },
       },
+    },
+    links: {
+      computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
     },
     terms: {
       version: process.env.TERMS_VERSION,

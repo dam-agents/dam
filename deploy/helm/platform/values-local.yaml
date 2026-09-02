@@ -12,19 +12,6 @@ apiServer:
     repository: platform-api-server
     tag: latest
     pullPolicy: Never
-  # The catalogue default (500m) is a chat-workload sizing. On this VM every
-  # agent, driver and experiment status poll funnels through this one pod while
-  # a nous campaign drives the node's load average past its core count — at
-  # half a core the event loop misses its health probe, the kubelet restarts
-  # the container, and every driver polling through the waypoint takes a 503
-  # it cannot retry. The control plane must outrank the workloads it serves.
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "512Mi"
-    limits:
-      cpu: "2"
-      memory: "1Gi"
 
 controller:
   image:
@@ -36,9 +23,11 @@ controller:
     templateDefaults:
       imagePullPolicy: IfNotPresent
   # Room for one experiment driver (2 CPU / 3Gi) plus one heavy nous worker
-  # (2 CPU / 8Gi) with headroom for a second sandbox. The stock 4 CPU / 8Gi
-  # ceiling parked the nous target in OverBudget for hours (the deadline clock
-  # kept running) and later couldn't have admitted the resized worker at all.
+  # (2 CPU / 8Gi) with headroom for a second sandbox. Pinned below the stock
+  # 8 CPU / 16Gi ceiling on purpose: this is a local cap, not a raise. It must
+  # stay inside what the lima VM can schedule — a too-small ceiling once parked
+  # the nous target in OverBudget for hours (the deadline clock kept running),
+  # but the fix here is the VM's capacity, not the stock default.
   #
   # Must stay inside what the lima VM can schedule (deploy/lima-k3s.yaml) with
   # headroom for the platform stack: at 8 CPU on an 8-CPU VM, an experiment's
@@ -100,7 +89,7 @@ agentTemplates:
       tag: latest
 
   nous:
-    enabled: true
+    enabled: false
     image:
       repository: platform-nous
       tag: latest

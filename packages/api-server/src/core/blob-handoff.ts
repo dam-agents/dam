@@ -18,9 +18,7 @@ export function createRedisBlobHandoff(
     },
 
     async take(key) {
-      const data = await redis.getBuffer(key);
-      if (data) await redis.del(key).catch(() => {});
-      return data ?? null;
+      return (await redis.getdelBuffer(key)) ?? null;
     },
   };
 }

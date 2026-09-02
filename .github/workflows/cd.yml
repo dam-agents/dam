@@ -21,6 +21,17 @@ concurrency:
 
 env:
   IMAGE_PREFIX: quay.io/dam-agents
+  # Layer digests must depend on content alone. A rebuilt step stamps files with
+  # the build time, so byte-identical content lands on a new digest and every
+  # node re-pulls it; rewrite-timestamp on the image outputs normalizes them to
+  # this instant. It is deliberately a constant rather than the commit time —
+  # a per-commit stamp would make every release differ again (#3495).
+  SOURCE_DATE_EPOCH: "1735689600"
+  # Pin mise so the lockfile (mise.lock) stays deterministic. Unpinned,
+  # mise-action installs latest and each new release rewrites platform entries
+  # and the generated header, churning mise.lock on unrelated PRs. Bump this in
+  # lockstep with a `mise run … lock` regeneration commit.
+  MISE_VERSION: "2026.7.15"
 
 jobs:
   check:
@@ -35,6 +46,8 @@ jobs:
           # latest v* tag, crd-schema-generation vs the origin/main merge-base.
           fetch-depth: 0
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run check
 
@@ -48,6 +61,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run test
 
@@ -156,6 +171,8 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
       - if: matrix.component == 'keycloak'
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - if: matrix.component == 'keycloak'
         run: mise run setup && mise run keycloak-theme:build
       - id: build
@@ -164,9 +181,11 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -251,9 +270,11 @@ jobs:
           context: .
           file: packages/platform-base/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=platform-base-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=platform-base-${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/platform-base,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/platform-base:buildcache-${{ matrix.arch }}
+            type=gha,scope=platform-base-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/platform-base:buildcache-{1},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.arch) || format('type=gha,mode=max,scope=platform-base-{0}', matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -337,11 +358,13 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -432,11 +455,13 @@ jobs:
           context: packages/agents/${{ matrix.component }}
           file: packages/agents/${{ matrix.component }}/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/claude-code:${{ needs.changes.outputs.claude_code_base_tag }}
-          cache-from: type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/${{ matrix.component }}:buildcache-${{ matrix.arch }}
+            type=gha,scope=${{ matrix.component }}-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true', env.IMAGE_PREFIX, matrix.component, matrix.arch) || format('type=gha,mode=max,scope={0}-{1}', matrix.component, matrix.arch) }}
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -573,8 +598,10 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/mock:${{ github.sha }}
           build-args: |
             BASE_IMAGE=${{ env.IMAGE_PREFIX }}/platform-base:${{ needs.changes.outputs.platform_base_tag }}
-          cache-from: type=gha,scope=mock
-          cache-to: type=gha,mode=max,scope=mock
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE_PREFIX }}/mock:buildcache-amd64
+            type=gha,scope=mock
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/mock:buildcache-amd64,mode=max,image-manifest=true', env.IMAGE_PREFIX) || 'type=gha,mode=max,scope=mock' }}
 
   e2e:
     name: mise e2e
@@ -616,6 +643,8 @@ jobs:
             docker tag "$IMAGE_PREFIX/$c:$SHA" "platform-$c:latest"
           done
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run setup
       - run: mise run e2e
         env:
@@ -659,6 +688,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
+          version: ${{ env.MISE_VERSION }}
           cache: false
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
       - name: Log in to Helm OCI registry
@@ -729,6 +759,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
+          version: ${{ env.MISE_VERSION }}
           cache: false
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
       - name: Log in to Helm OCI registry
@@ -767,6 +798,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run controller:setup
 
       - name: Detect vulnerabilities
@@ -807,6 +840,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - run: mise run common:setup:pnpm
       - name: Detect vulnerabilities
         run: |
@@ -894,6 +929,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
       - id: list
         run: |
           set -euo pipefail
@@ -927,6 +964,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          version: ${{ env.MISE_VERSION }}
 
       - name: Detect vulnerabilities
         id: scan

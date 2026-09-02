@@ -42,6 +42,27 @@ data:
     \gexec
     ALTER ROLE :"kc_user" WITH LOGIN NOSUPERUSER PASSWORD :'kc_pwd';
 
+    -- Optional read-only consumer of the usage_src_* source passthrough
+    -- views. NOLOGIN and password-less: the role is a group, it holds no
+    -- credential and grants nobody anything by itself. An operator grants
+    -- membership to whichever login should read the metrics (`GRANT
+    -- usage_readers TO <login>`), and membership is attached to the two
+    -- roles rather than to any view, so no view migration can revoke it. The
+    -- api-server reconciles SELECT on the passthroughs for this role after
+    -- running migrations on every start, which is why the name is fixed
+    -- rather than configurable. Because it reconciles, this role may be
+    -- created before or after those views exist. Creating roles stays out of the
+    -- application deliberately — an api-server that could mint database
+    -- logins could mint itself a better one — so it is created here, as the
+    -- bootstrap superuser.
+    SELECT 'CREATE ROLE usage_readers NOLOGIN'
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'usage_readers')
+    \gexec
+    -- Converged unconditionally, like the app roles above. Create-if-absent
+    -- alone would let an ALTER to LOGIN SUPERUSER survive every later run,
+    -- turning a role the docs call credential-less into a standing login.
+    ALTER ROLE usage_readers WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD NULL;
+
     -- One database per service, each owned by its app role so each runs its
     -- own migrations (Drizzle on platform, Liquibase on keycloak) and reaches
     -- nowhere else. CREATE only when absent; the ALTER ... OWNER is what makes
@@ -63,6 +84,13 @@ data:
     REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC;
     GRANT  CONNECT ON DATABASE platform TO :"api_user";
     GRANT  CONNECT ON DATABASE keycloak TO :"kc_user";
+    -- The usage-view group needs CONNECT too, or a member login would be
+    -- refused at the door and its view grants would be unreachable. It
+    -- carries no table privileges, so reaching the database buys a member no
+    -- table or view data beyond the usage_src_* passthroughs granted to the
+    -- group. Reaching the database does expose schema metadata — relation and
+    -- column names — as it does for any role that can connect.
+    GRANT  CONNECT ON DATABASE platform TO usage_readers;
 
     -- DBA sessions are statement-logged by default. The global log_statement
     -- stays at ddl (set on the server command line), so routine app traffic
@@ -150,8 +178,11 @@ data:
     DO $$
     BEGIN
       IF EXISTS (SELECT 1 FROM pg_roles
-                 WHERE rolname IN (current_setting('app.api'), current_setting('app.kc')) AND rolsuper)
+                 WHERE rolname IN (current_setting('app.api'), current_setting('app.kc'), 'usage_readers')
+                   AND rolsuper)
       THEN RAISE EXCEPTION 'application roles must be NOSUPERUSER'; END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'usage_readers' AND rolcanlogin)
+      THEN RAISE EXCEPTION 'usage_readers must be NOLOGIN'; END IF;
     END
     $$;
 ---

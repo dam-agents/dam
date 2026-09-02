@@ -42,6 +42,7 @@ interface RefreshDeps {
   githubAppEngine: GitHubAppEngine;
   templates: ConnectionTemplateRegistry;
   secretStore: SecretStore;
+  connectionLock?: XactLock;
   refreshSkewSeconds?: number;
   backoffBaseMs?: number;
   backoffMaxMs?: number;
@@ -295,6 +296,10 @@ function parseRow(row: {
   };
 }
 
+export function connectionRefreshLockKey(connectionId: string): string {
+  return `connection:refresh:${connectionId}`;
+}
+
 async function refreshOne(
   conn: Connection,
   auth: Extract<ConnectionAuthConfig, { kind: "oauth" }>,
@@ -303,23 +308,31 @@ async function refreshOne(
     templates: ConnectionTemplateRegistry;
     secretStore: SecretStore;
     db: Db;
+    connectionLock?: XactLock;
   },
 ): Promise<void> {
-  const next = await refreshOAuthAccessToken({
-    conn,
-    auth,
-    engine: deps.engine,
-    templates: deps.templates,
-    secretStore: deps.secretStore,
+  const withLock = deps.connectionLock ?? createXactLock(deps.db);
+  await withLock(connectionRefreshLockKey(conn.id), async () => {
+    const fresh = await readConnection(deps.db, conn.id);
+    if (
+      !fresh ||
+      fresh.auth.kind !== "oauth" ||
+      fresh.auth.expiresAt !== auth.expiresAt
+    ) {
+      return;
+    }
+    const next = await refreshOAuthAccessToken({
+      conn: fresh,
+      auth: fresh.auth,
+      engine: deps.engine,
+      templates: deps.templates,
+      secretStore: deps.secretStore,
+    });
+    await writeAuth(deps.db, conn.id, {
+      ...withoutRefreshFailureMarker(fresh.auth),
+      expiresAt: next.expiresAt,
+    });
   });
-  const updatedAuth: ConnectionAuthConfig = {
-    ...withoutRefreshFailureMarker(auth),
-    expiresAt: next.expiresAt,
-  };
-  await deps.db
-    .update(connectionsTable)
-    .set({ auth: updatedAuth, updatedAt: new Date() })
-    .where(eq(connectionsTable.id, conn.id));
 }
 
 export async function remintOne(
@@ -329,31 +342,54 @@ export async function remintOne(
     engine: OAuthEngine;
     secretStore: SecretStore;
     db: Db;
+    connectionLock?: XactLock;
   },
 ): Promise<void> {
-  const clientSecret = await deps.secretStore.getField(auth.clientSecretRef);
-  if (!clientSecret) {
-    throw new Error(`client secret missing at ${auth.clientSecretRef.path}`);
-  }
+  const withLock = deps.connectionLock ?? createXactLock(deps.db);
+  await withLock(connectionRefreshLockKey(conn.id), async () => {
+    const fresh = await readConnection(deps.db, conn.id);
+    if (
+      !fresh ||
+      fresh.auth.kind !== "client-credentials" ||
+      fresh.auth.expiresAt !== auth.expiresAt
+    ) {
+      return;
+    }
+    const clientSecret = await deps.secretStore.getField(
+      fresh.auth.clientSecretRef,
+    );
+    if (!clientSecret) {
+      throw new Error(
+        `client secret missing at ${fresh.auth.clientSecretRef.path}`,
+      );
+    }
 
-  const next = await mintClientCredentialsToken(deps.engine, {
-    connectionRef: `connection:${conn.id}:${conn.templateId}`,
-    auth,
-    clientSecret,
-  });
+    const next = await mintClientCredentialsToken(deps.engine, {
+      connectionRef: `connection:${conn.id}:${conn.templateId}`,
+      auth: fresh.auth,
+      clientSecret,
+    });
 
-  await deps.secretStore.putFields(auth.accessTokenRef, {
-    access_token: next.accessToken,
-    ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+    await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
+      access_token: next.accessToken,
+      ...buildConnectionSdsFields(fresh.contributions, next.accessToken),
+    });
+    await writeAuth(deps.db, conn.id, {
+      ...withoutRefreshFailureMarker(fresh.auth),
+      expiresAt: next.expiresAt,
+    });
   });
-  const updatedAuth: ConnectionAuthConfig = {
-    ...withoutRefreshFailureMarker(auth),
-    expiresAt: next.expiresAt,
-  };
-  await deps.db
+}
+
+async function writeAuth(
+  db: Db,
+  connectionId: string,
+  auth: ConnectionAuthConfig,
+): Promise<void> {
+  await db
     .update(connectionsTable)
-    .set({ auth: updatedAuth, updatedAt: new Date() })
-    .where(eq(connectionsTable.id, conn.id));
+    .set({ auth, updatedAt: new Date() })
+    .where(eq(connectionsTable.id, connectionId));
 }
 
 export async function remintGitHubAppOne(
@@ -366,24 +402,35 @@ export async function remintGitHubAppOne(
     connectionLock?: XactLock;
   },
 ): Promise<void> {
-  const privateKeyPem = await deps.secretStore.getField(auth.privateKeyRef);
-  if (!privateKeyPem) {
-    throw new Error(`private key missing at ${auth.privateKeyRef.path}`);
-  }
   const withLock = deps.connectionLock ?? createXactLock(deps.db);
 
   await withLock(gitHubAppMintLockKey(conn.id), async () => {
-    const current = (await readGitHubAppAuth(deps.db, conn.id)) ?? auth;
+    const fresh = await readConnection(deps.db, conn.id);
+    if (
+      !fresh ||
+      fresh.auth.kind !== "github-app" ||
+      fresh.auth.expiresAt !== auth.expiresAt
+    ) {
+      return;
+    }
+    const privateKeyPem = await deps.secretStore.getField(
+      fresh.auth.privateKeyRef,
+    );
+    if (!privateKeyPem) {
+      throw new Error(
+        `private key missing at ${fresh.auth.privateKeyRef.path}`,
+      );
+    }
 
     const next = await mintGitHubAppToken(deps.githubAppEngine, {
       connectionRef: `connection:${conn.id}:${conn.templateId}`,
-      auth: current,
+      auth: fresh.auth,
       privateKeyPem,
     });
 
-    await deps.secretStore.putFields(auth.accessTokenRef, {
+    await deps.secretStore.putFields(fresh.auth.accessTokenRef, {
       access_token: next.accessToken,
-      ...buildConnectionSdsFields(conn.contributions, next.accessToken),
+      ...buildConnectionSdsFields(fresh.contributions, next.accessToken),
     });
 
     await deps.db
@@ -396,15 +443,18 @@ export async function remintGitHubAppOne(
   });
 }
 
-async function readGitHubAppAuth(
-  db: Db,
-  id: string,
-): Promise<Extract<ConnectionAuthConfig, { kind: "github-app" }> | null> {
+async function readConnection(db: Db, id: string): Promise<Connection | null> {
   const rows = (await db
     .select()
     .from(connectionsTable)
-    .where(eq(connectionsTable.id, id))) as { auth: unknown }[];
-  const parsed = authConfigSchema.safeParse(rows[0]?.auth);
-  if (!parsed.success || parsed.data.kind !== "github-app") return null;
-  return parsed.data;
+    .where(eq(connectionsTable.id, id))) as {
+    id: string;
+    owner: string;
+    templateId: string;
+    name: string;
+    inputs: unknown;
+    auth: unknown;
+    contributions: unknown;
+  }[];
+  return rows[0] ? parseRow(rows[0]) : null;
 }

@@ -30,6 +30,8 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `ContributionApplyFailed` | `contribution_apply_failed` | runtime-delivery |
 | `ContributionRecovered` | `contribution_recovered` | runtime-delivery |
 | `ContributionApplyGaveUp` | `contribution_apply_gave_up` | runtime-delivery |
+| `RuntimeHelloReceived` | _elsewhere_ | runtime-delivery |
+| `WorkspaceMutationSettled` | _elsewhere_ | runtime-delivery |
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
 | `ScheduleCreated` | _elsewhere_ | schedules |
@@ -53,6 +55,8 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `FeatureFlagChanged` | `feature_flag_changed` | features |
 | `ApiKeyChanged` | `api_key_<action>` | api-keys |
 | `EntryPointChosen` | `entry_point_chosen` | usage |
+| `KbSharePublished` | _elsewhere_ | kb-shares |
+| `KbSharePublishFailed` | _elsewhere_ | kb-shares |
 
 ## Deliberately not recorded
 

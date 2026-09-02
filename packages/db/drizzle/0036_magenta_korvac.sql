@@ -1,0 +1,1 @@
+ALTER TABLE "connection_grants" ADD CONSTRAINT "connection_grants_connection_id_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."connections"("id") ON DELETE cascade ON UPDATE no action;

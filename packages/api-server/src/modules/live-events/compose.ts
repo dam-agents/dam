@@ -1,9 +1,11 @@
 import type { Subscription } from "rxjs";
-import type { LiveEventsService } from "api-server-api";
+import type { LiveEventsService, PodSessionsService } from "api-server-api";
 import type { RedisBus } from "../../core/redis-bus.js";
 import { createRedisLiveEventsBus } from "./infrastructure/redis-live-events-bus.js";
 import { startAgentWatch } from "./infrastructure/k8s-agent-watch.js";
 import { createLiveEventsService } from "./services/live-events-service.js";
+import { createPodSessionsService } from "./services/pod-sessions-service.js";
+import { createPodSessionWatcher } from "./infrastructure/pod-session-watch.js";
 import { startLiveHintsSaga } from "./sagas/live-hints.js";
 import {
   AGENTS_PLURAL,
@@ -11,9 +13,13 @@ import {
   LAST_ACTIVITY_KEY,
 } from "../agents/infrastructure/labels.js";
 import type { K8sClient } from "../agents/infrastructure/k8s.js";
+import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
+import type { RuntimeFeatures } from "agent-runtime-api";
+import { agentStreamable } from "../agents/index.js";
 
 export interface LiveEventsModule {
   liveEvents: LiveEventsService;
+  podSessions: PodSessionsService;
   start(): void;
   stop(): void;
   startAgentWatch(): void;
@@ -24,12 +30,34 @@ export function composeLiveEventsModule(deps: {
   bus: RedisBus;
   log: (message: string) => void;
   k8s: Pick<K8sClient, "watchCustomObjects">;
+  namespace: string;
+  agentsRepo: Pick<AgentsRepository, "list">;
+  runtimeFeaturesFor: (
+    agentIds: string[],
+  ) => Promise<Map<string, RuntimeFeatures>>;
 }): LiveEventsModule {
   const bus = createRedisLiveEventsBus(deps.bus, deps.log);
   let saga: Subscription | null = null;
   let watch: { stop(): void } | null = null;
+  const podSessions = createPodSessionsService({
+    log: deps.log,
+    listRunningAgentIds: async (ownerSub) => {
+      const running = (await deps.agentsRepo.list(ownerSub))
+        .filter(agentStreamable)
+        .map((agent) => agent.id);
+      const features = await deps.runtimeFeaturesFor(running);
+      return running.filter((id) => features.get(id)?.liveUpdates);
+    },
+    watchAgent: createPodSessionWatcher(deps.namespace, deps.log),
+    onAgentsChanged: (ownerSub, listener) =>
+      bus.subscribe(ownerSub, (event) => {
+        if (event.topic === "agents" || event.topic === "sync") listener();
+      }),
+  });
+
   return {
     liveEvents: createLiveEventsService({ bus }),
+    podSessions,
     start() {
       saga ??= startLiveHintsSaga(bus);
     },

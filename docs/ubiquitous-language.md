@@ -1,6 +1,6 @@
 # Ubiquitous Language
 
-Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate vocabulary below.
+Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate and Live Updates vocabulary below.
 
 Two registers live in this file. The **domain vocabulary** (from [Substrate](#substrate) down) is the language code and docs use. [User-Facing Terminology](#user-facing-terminology) is the language the GUI uses. They are deliberately not the same list: a domain term is not automatically a word users read, and several domain terms are never shown.
 
@@ -45,6 +45,21 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 | Spare | An unclaimed Workspace Volume in the Warm Pool — provisioned and bound, waiting to be claimed. Carries a pool label and an available marker, and deliberately **no** owning-Agent label, so the orphan-volume sweep ignores it. |
 | Claim (verb) | To assign a Spare to a newly created Agent: the controller relabels the Spare to that Agent in one atomic update, and the Agent mounts it as its Workspace Volume. A claimed Spare becomes an ordinary owned Workspace Volume — destroyed on Agent deletion, never returned to the pool. Distinct from the Kubernetes noun *PersistentVolumeClaim*. |
 | Storage Migration | The controller's one-time, interrupt-safe drain of legacy shared-writable (RWX) Workspace Volumes onto ReadWriteOnce storage: force the Agent down, copy onto a fresh volume in a checksum-verified Job, re-point the Agent, delete the old volume, restore the prior run state. A no-op once no RWX volume remains; removed with the transitional window. |
+
+## Live Updates
+
+Eventing and cache-freshness vocabulary shared by every bounded context. Three words that sound interchangeable are not — each names one delivery guarantee, and using the wrong one hides which guarantee a reader gets. See [`docs/architecture/platform-topology.md`](architecture/platform-topology.md) for the layering.
+
+| Term | Definition |
+|------|-----------|
+| Domain Event | An in-process, synchronous, at-most-once, non-durable announcement a service emits after its write commits. Its only consumers are Sagas running in the emitting process. Never crosses a process boundary, and nothing may depend on one arriving |
+| Saga | An in-process consumer of Domain Events — the audit trail, usage rollups, per-agent cleanups. A Saga that must reach another replica forwards a Signal; it never forwards the Domain Event itself |
+| Signal | A thin cross-replica message on the shared Redis bus — an id and a topic, never entity state. The consumer re-reads truth from the store on receipt. Reserved for this meaning: an in-process announcement is a Domain Event, and a browser-bound invalidation notice is a Live Event |
+| Live Event | The per-owner invalidation notice a browser tab receives on its live-events subscription: a Topic plus ids, **never entity state**. Means "re-read this over the query path", never "here is the new value". Schema-parsed on receipt and dropped on mismatch, so replicas on different versions cannot poison a stream |
+| Topic | The family a Live Event names, which the client maps to a query family. Coarse by design — a Topic invalidates whole families rather than splicing individual entities |
+| Sync | The Live Event every (re)subscribed stream opens with, meaning "re-read everything you map". The loss bound for the whole mechanism: reconnects heal by refetch rather than replay, so no Live Event needs delivery guarantees. Also what an overflowing queue collapses to, since by contract it is the full recovery |
+| Watch | A pod-side observer of pod-owned truth (the session list, watched workspace directories, the open file) that emits Live Events for changes only the pod can see. Its lifetime **is** the subscription: an unobserved Agent has no Watch and produces no traffic. Coalesces under load, and how it detects change — filesystem notifications or an internal diff — is private to the pod |
+| Snapshot | Pod-owned truth kept server-side as display state, so a surface still renders while its Agent is hibernated. Carries the moment it was captured and whether a pod confirmed it or it is merely what an apply asserted. Never re-asserted onto the pod, and the live read always wins when the Agent is up. The harness-config snapshot on the `agents` row is the reference implementation |
 
 ## Agents (bounded context)
 
@@ -265,7 +280,7 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 | Budget | A per-user ceiling on concurrently Reserved compute (CPU and memory) across that user's Agents. Constrains *starting* an Agent, never *running* one — no eviction on ceiling changes |
 | Ceiling | The limit side of a Budget: the operator-set maximum Reserved compute for one user. Resolved as the user's UserBudget override, else the chart-wide default |
 | Reserved | The consumption side of a Budget: the sum of Sizes (`spec.resources.limits`) across an owner's scaled-up Agents. Limits hard-cap usage, so a user's Agents can never consume past their Ceiling — a deterministic guarantee. Excludes the uniform per-agent gateway overhead and per-command Run pods |
-| Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/1Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
+| Size | An Agent's user-facing power: its CPU/memory limits, chosen by slider at create (else the template's default, else the small chart default of 1 CPU/2Gi). The one resource concept users see — pod requests are scheduling internals derived at render (`max(limit × fraction, floor)`) |
 | UserBudget | The record of one user's Ceiling override: a namespaced CR (platform namespace, like Agent) named `budget-<sub>` whose `spec.owner` carries the exact plaintext Keycloak sub (name↔owner pinned by schema validation). Absence means the chart default applies |
 | Over Budget | The parked state of an Agent whose start would push its owner's Reserved past their Ceiling: pods stay at zero, `Ready=False/OverBudget`. Parked Agents never start by themselves — a new deliberate start (Start button, opening it, a Schedule fire) retries the gate; never-hibernate Agents are the exception and auto-start when room frees. The activity window lapsing reverts it to plain hibernation |
 

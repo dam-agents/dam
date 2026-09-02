@@ -170,6 +170,6 @@ describe("exec history provider", () => {
       log: (msg) => messages.push(msg),
     });
     expect(await provider.fetch("sess-a")).toBeNull();
-    expect(messages.join("\n")).toContain("output exceeded 10 bytes");
+    expect(messages.join("\n")).toContain("more than 10 bytes");
   });
 });

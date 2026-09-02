@@ -12,10 +12,19 @@ export function hintFor(
 ): { ownerSub: string; hint: PublishableLiveEvent } | null {
   switch (event.type) {
     case EventType.AgentCreated:
+    case EventType.RuntimeHelloReceived:
+    case EventType.WorkspaceMutationSettled:
       return {
         ownerSub: event.ownerSub,
         hint: { topic: "agents", agentId: event.agentId },
       };
+    case EventType.AgentDeleted:
+      return event.ownerSub
+        ? {
+            ownerSub: event.ownerSub,
+            hint: { topic: "agents", agentId: event.agentId },
+          }
+        : null;
     case EventType.ApprovalRequested:
     case EventType.ApprovalResolved:
       return {
@@ -57,9 +66,14 @@ export function hintFor(
           agentId: event.agentId,
         },
       };
+    case EventType.KbSharePublished:
+    case EventType.KbSharePublishFailed:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "kbShares", agentId: event.agentId },
+      };
     case EventType.UserAuthenticated:
     case EventType.AgentUpdated:
-    case EventType.AgentDeleted:
     case EventType.AgentRestarted:
     case EventType.AgentWoken:
     case EventType.SlackConnected:

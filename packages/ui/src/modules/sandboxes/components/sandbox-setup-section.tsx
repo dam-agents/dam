@@ -10,6 +10,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useStore } from "../../../store.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
+import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { HibernationTimeoutField } from "./hibernation-timeout-field.js";
@@ -97,6 +98,8 @@ export function SandboxSetupSection({ f }: Props) {
       </section>
 
       <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+
+      <KnowledgeSection agent={agent} />
 
       <section className="mb-8">
         <SectionLabel spaced>Network access</SectionLabel>

@@ -6,14 +6,19 @@ import type { FilesService } from "api-server-api";
 import { emit, EventType, type TurnOutcome } from "../../events.js";
 import { createAgentsRepository } from "../agents/index.js";
 import { createK8sClient, podBaseUrl } from "../agents/infrastructure/k8s.js";
+import type { AgentStateCache } from "../agents/infrastructure/agent-state-cache.js";
 
 export function composeFilesModule(
   api: k8s.CoreV1Api,
   namespace: string,
   ownerSub: string,
   surface: string,
+  agentStateCache: AgentStateCache,
 ): FilesService {
-  const agentsRepo = createAgentsRepository(createK8sClient(api, namespace));
+  const agentsRepo = createAgentsRepository(
+    createK8sClient(api, namespace),
+    agentStateCache,
+  );
   return {
     async upload(input) {
       if (!(await agentsRepo.isOwnedBy(input.agentId, ownerSub))) {

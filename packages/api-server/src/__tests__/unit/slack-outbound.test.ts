@@ -105,6 +105,25 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(await h.post("hi")).toEqual({ error: "slack bot not running" });
   });
 
+  // TEST_SCENARIO: an outbound call racing a lease stand-down must not resurrect the gateway on the ex-leader — that would be a second install-wide Slack consumer.
+  it("stand-down is final: outbound after stopAll does not restart the gateway", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    await h.worker.connect();
+    let restarts = 0;
+    const start = h.gw.start.bind(h.gw);
+    h.gw.start = async (handlers) => {
+      restarts += 1;
+      return start(handlers);
+    };
+    await h.worker.stopAll();
+
+    expect(await h.worker.postMessage("agent-1", "late")).toEqual({
+      error: "slack bot not running",
+    });
+    expect(restarts).toBe(0);
+    expect(h.messages()).toHaveLength(0);
+  });
+
   it("omitted chatId still posts to the bound channel", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     expect(await h.post("hello")).toEqual({ ok: true });

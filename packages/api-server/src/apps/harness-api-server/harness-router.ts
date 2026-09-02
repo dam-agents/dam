@@ -3,6 +3,7 @@ import type {
   BudgetsService,
   ConnectionsService,
   ExperimentsService,
+  KbPublishGate,
   SchedulesService,
   SkillsService,
   RuntimeDeliveryService,
@@ -10,11 +11,13 @@ import type {
 } from "api-server-api";
 import type { DefaultResourceLimits } from "../../modules/agents/index.js";
 import { mountMcpRoutes } from "./mcp-endpoint.js";
+import { mountAgentKbRoutes, type AgentKbDeps } from "./kb-endpoint.js";
 import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { mountExperimentRoutes } from "./experiment-endpoints.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
+import type { KbShareAgentOps } from "../../modules/kb-shares/index.js";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import type { InvocationsService } from "../../modules/invocations/index.js";
 
@@ -27,10 +30,14 @@ export function createHarnessRouter(deps: {
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
+  kbShareOpsFor: (owner: string) => KbShareAgentOps;
+  agentHome: string;
+  agentKb: AgentKbDeps;
   templates: TemplatesService;
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
   runtimeHello: RuntimeDeliveryService;
+  kbPublishGate: KbPublishGate;
 }) {
   const app = new Hono();
 
@@ -42,7 +49,10 @@ export function createHarnessRouter(deps: {
     artifactLibraryFor: deps.artifactLibraryFor,
     invocationsServiceFor: deps.invocationsServiceFor,
     experimentsServiceFor: deps.experimentsServiceFor,
+    kbShareOpsFor: deps.kbShareOpsFor,
+    agentHome: deps.agentHome,
   });
+  mountAgentKbRoutes(app, deps.agentKb);
   mountInvocationRoutes(app, {
     k8s: deps.k8s,
     invocationsServiceFor: deps.invocationsServiceFor,
@@ -58,6 +68,7 @@ export function createHarnessRouter(deps: {
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,
     hello: deps.runtimeHello,
+    kbPublish: deps.kbPublishGate,
   });
 
   return app;

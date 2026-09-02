@@ -11,7 +11,6 @@ import {
   createSlackWorker,
   type SlackOAuthPending,
 } from "../../modules/channels/infrastructure/slack.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { recordingWorkspaceFiles } from "../helpers/workspace-files.js";
 
@@ -42,6 +41,7 @@ function harness(opts?: {
     opts?.failStagingWith ? { failWith: opts.failStagingWith } : undefined,
   );
   const acp: AcpClient = {
+    steer: async () => "unsupported" as const,
     listSessions: async () =>
       opts?.resumableThreadKey
         ? [
@@ -130,7 +130,7 @@ function harness(opts?: {
       size?: number;
     }) {
       if (over?.bytes) gw.setFileBytes(FILE_URL, over.bytes);
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: USER,
         channel: CHANNEL,
@@ -141,7 +141,7 @@ function harness(opts?: {
     },
     async mentionWithImageAndFile(opts: { imageSize: number; bytes: Buffer }) {
       gw.setFileBytes(FILE_URL, opts.bytes);
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: USER,
         channel: CHANNEL,
@@ -160,7 +160,7 @@ function harness(opts?: {
       });
     },
     async mentionWithFiles(files: Array<{ name: string; size: number }>) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMention({
         user: USER,
         channel: CHANNEL,
@@ -181,7 +181,7 @@ function harness(opts?: {
     },
     async directMessageWithFile(bytes: Buffer) {
       gw.setFileBytes(FILE_URL, bytes);
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireDirectMessage({
         user: USER,
         channel: "D-DM",
@@ -191,7 +191,7 @@ function harness(opts?: {
       });
     },
     async ambientBurst(files: Array<{ name: string; size: number }>) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       const fire = (i: number, f: { name: string; size: number }) => {
         const url = `${FILE_URL}-b${i}`;
         gw.setFileBytes(url, Buffer.alloc(f.size, 0x41));
@@ -220,7 +220,7 @@ function harness(opts?: {
     },
     async ambientWithFile(bytes: Buffer) {
       gw.setFileBytes(FILE_URL, bytes);
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.connect();
       await gw.fireMessage({
         user: USER,
         channel: CHANNEL,

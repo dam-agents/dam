@@ -1,5 +1,9 @@
 import { performance } from "node:perf_hooks";
-import { buildPlatformTurnEndedNotification } from "api-server-api";
+import type { PodSession } from "agent-runtime-api";
+import {
+  buildPlatformTurnEndedNotification,
+  SessionType,
+} from "api-server-api";
 
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
@@ -9,13 +13,16 @@ import {
   type JsonRpcId,
 } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
+import {
+  composeSessionList,
+  type ListedHarnessSession,
+} from "../../domain/session-list.js";
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
 import {
   platformSessionMetaSchema,
   type PlatformSessionMeta,
-  type SessionMetaEntry,
   type SessionMetadataStore,
 } from "../../infrastructure/session-metadata-store.js";
 import type {
@@ -53,6 +60,7 @@ export interface AcpRuntimeStatus {
 export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
+  isSessionRunning(sessionId: string): boolean;
   resetSession(sessionId: string): void;
   refreshEnv(opts: { force: boolean }): void;
   shutdown(): void;
@@ -114,7 +122,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
+    onTurnStarted: ({ sessionId, channel }) => {
+      if (!nonViewerChannels.has(channel)) return;
+      const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+      if (meta?.type === SessionType.ScheduleCron || meta?.scheduleId)
+        deps.sessionMetadata?.startRun(sessionId);
+    },
+    onTurnEnded: (sessionId) => deps.sessionMetadata?.finishRun(sessionId),
   });
+
+  const sessionIsRunning = (sessionId: string): boolean =>
+    promptScheduler.hasTurnInFlight(sessionId) ||
+    (deps.isTerminalSessionActive?.(sessionId) ?? false);
 
   const transcript = createSessionTranscript({
     logBytesCap,
@@ -566,9 +585,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               ? injectPlatformMetaIntoList(
                   frame,
                   deps.sessionMetadata,
-                  (sid) =>
-                    promptScheduler.hasTurnInFlight(sid) ||
-                    (deps.isTerminalSessionActive?.(sid) ?? false),
+                  sessionIsRunning,
                 )
               : (frame as object);
           const out = JSON.stringify({
@@ -817,6 +834,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       };
     },
 
+    isSessionRunning(sessionId) {
+      return sessionIsRunning(sessionId);
+    },
+
     resetSession(sessionId) {
       tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
@@ -922,24 +943,23 @@ function stripPlatformMeta(frame: unknown): object {
   return { ...frame, params: nextParams };
 }
 
-function withPlatformMeta(
-  session: Record<string, unknown>,
-  entry: SessionMetaEntry,
-  running: boolean,
-): Record<string, unknown> {
-  const existingMeta = isNonNullObject(session._meta) ? session._meta : {};
+function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
   return {
-    ...session,
-    ...(entry.lastActivityAt ? { updatedAt: entry.lastActivityAt } : {}),
-    _meta: {
-      ...existingMeta,
-      platform: {
-        ...entry.meta,
-        createdAt: entry.createdAt,
-        running,
-        ...(entry.seenAt ? { seenAt: entry.seenAt } : {}),
-      },
-    },
+    mode: session.mode,
+    type: session.type,
+    createdAt: session.createdAt,
+    running: session.running,
+    ...(session.scheduleId !== null && { scheduleId: session.scheduleId }),
+    ...(session.experimentId !== null && {
+      experimentId: session.experimentId,
+    }),
+    ...(session.threadTs !== null && { threadTs: session.threadTs }),
+    ...(session.seenAt !== null && { seenAt: session.seenAt }),
+    ...(session.runStartedAt !== null && {
+      runStartedAt: session.runStartedAt,
+    }),
+    ...(session.runTotalMs !== null && { runTotalMs: session.runTotalMs }),
+    ...(session.runCount !== null && { runCount: session.runCount }),
   };
 }
 
@@ -951,31 +971,31 @@ function injectPlatformMetaIntoList(
   if (!isNonNullObject(frame)) return frame as object;
   const result = frame.result;
   if (!isNonNullObject(result)) return frame as object;
-  const listed = Array.isArray(result.sessions) ? result.sessions : [];
-  const enriched = listed
-    .filter(
-      (s) =>
-        !(
-          isNonNullObject(s) &&
-          typeof s.sessionId === "string" &&
-          store.isTombstoned(s.sessionId)
-        ),
-    )
-    .map((s) => {
-      if (!isNonNullObject(s) || typeof s.sessionId !== "string") return s;
-      const entry = store.get(s.sessionId);
-      if (entry) return withPlatformMeta(s, entry, isRunning(s.sessionId));
-      if (!isRunning(s.sessionId)) return s;
-      const existingMeta = isNonNullObject(s._meta) ? s._meta : {};
-      return {
-        ...s,
-        _meta: {
-          ...existingMeta,
-          platform: { mode: "terminal", running: true },
-        },
-      };
-    });
-  return { ...frame, result: { ...result, sessions: enriched } };
+
+  const listed: ListedHarnessSession[] = [];
+  const originals = new Map<string, Record<string, unknown>>();
+  for (const raw of Array.isArray(result.sessions) ? result.sessions : []) {
+    if (!isNonNullObject(raw) || typeof raw.sessionId !== "string") continue;
+    originals.set(raw.sessionId, raw);
+    listed.push(raw as unknown as ListedHarnessSession);
+  }
+
+  const sessions = composeSessionList(listed, store.all(), {
+    isTombstoned: (sessionId) => store.isTombstoned(sessionId),
+    isRunning,
+  }).map((session) => {
+    const original = originals.get(session.sessionId) ?? {};
+    const existingMeta = isNonNullObject(original._meta) ? original._meta : {};
+    return {
+      ...original,
+      sessionId: session.sessionId,
+      title: session.title,
+      updatedAt: session.updatedAt,
+      _meta: { ...existingMeta, platform: toAcpPlatformMeta(session) },
+    };
+  });
+
+  return { ...frame, result: { ...result, sessions } };
 }
 
 function extractSessionCloseSupported(frame: unknown): boolean {

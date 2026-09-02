@@ -1,4 +1,6 @@
 import type { FilesService } from "./modules/files/types.js";
+import type { KbPublishService } from "./modules/kb-publish/types.js";
+import type { SessionsService } from "./modules/sessions/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { SshService } from "./modules/ssh/types.js";
 import type { RuntimeChannelService } from "./modules/runtime/service.js";
@@ -6,6 +8,8 @@ import type { HarnessConfigService } from "./modules/harness-config/types.js";
 
 export interface AgentRuntimeContext {
   files: FilesService;
+  kbPublish: KbPublishService;
+  sessions: SessionsService;
   skills: SkillsService;
   ssh: SshService;
   runtime: RuntimeChannelService;

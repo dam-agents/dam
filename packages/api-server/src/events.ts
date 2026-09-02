@@ -24,6 +24,8 @@ export enum EventType {
   ContributionApplyFailed = "ContributionApplyFailed",
   ContributionRecovered = "ContributionRecovered",
   ContributionApplyGaveUp = "ContributionApplyGaveUp",
+  RuntimeHelloReceived = "RuntimeHelloReceived",
+  WorkspaceMutationSettled = "WorkspaceMutationSettled",
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
   ScheduleCreated = "ScheduleCreated",
@@ -47,6 +49,8 @@ export enum EventType {
   FeatureFlagChanged = "FeatureFlagChanged",
   ApiKeyChanged = "ApiKeyChanged",
   EntryPointChosen = "EntryPointChosen",
+  KbSharePublished = "KbSharePublished",
+  KbSharePublishFailed = "KbSharePublishFailed",
 }
 
 export type UserAuthenticated = {
@@ -70,6 +74,7 @@ export type AgentUpdated = {
 export type AgentDeleted = {
   type: EventType.AgentDeleted;
   agentId: string;
+  ownerSub?: string;
 };
 
 export type AgentRestarted = {
@@ -158,6 +163,18 @@ export type ContributionApplyGaveUp = {
   agentId: string;
   kind: string;
   message: string;
+};
+
+export type RuntimeHelloReceived = {
+  type: EventType.RuntimeHelloReceived;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type WorkspaceMutationSettled = {
+  type: EventType.WorkspaceMutationSettled;
+  agentId: string;
+  ownerSub: string;
 };
 
 export type ApprovalRequested = {
@@ -353,6 +370,19 @@ export type EntryPointChosen = {
   choice: EntryPointChoice;
 };
 
+export type KbSharePublished = {
+  type: EventType.KbSharePublished;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type KbSharePublishFailed = {
+  type: EventType.KbSharePublishFailed;
+  agentId: string;
+  ownerSub: string;
+  reason: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -370,6 +400,8 @@ export type DomainEvent =
   | ContributionApplyFailed
   | ContributionRecovered
   | ContributionApplyGaveUp
+  | RuntimeHelloReceived
+  | WorkspaceMutationSettled
   | ApprovalRequested
   | ApprovalResolved
   | ScheduleCreated
@@ -394,7 +426,9 @@ export type DomainEvent =
   | InvocationSpawned
   | FeatureFlagChanged
   | ApiKeyChanged
-  | EntryPointChosen;
+  | EntryPointChosen
+  | KbSharePublished
+  | KbSharePublishFailed;
 
 const bus$ = new Subject<DomainEvent>();
 

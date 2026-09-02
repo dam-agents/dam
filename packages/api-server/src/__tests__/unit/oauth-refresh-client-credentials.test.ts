@@ -61,6 +61,23 @@ function makeDeps(opts: { clientSecret: string | null }) {
 
   const dbUpdates: { auth: ConnectionAuthConfig }[] = [];
   const db = {
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>) =>
+      fn({ execute: async () => [] }),
+    select: () => ({
+      from: () => ({
+        where: async () => [
+          {
+            id: CONN.id,
+            owner: CONN.ownerId,
+            templateId: CONN.templateId,
+            name: CONN.name,
+            inputs: CONN.inputs,
+            auth: AUTH,
+            contributions: CONN.contributions,
+          },
+        ],
+      }),
+    }),
     update: () => ({
       set: (row: { auth: ConnectionAuthConfig }) => {
         dbUpdates.push(row);

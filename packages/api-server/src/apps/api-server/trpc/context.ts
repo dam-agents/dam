@@ -15,6 +15,7 @@ import {
   isInvocationTargetName,
 } from "../../../modules/invocations/index.js";
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
+import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
@@ -67,6 +68,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     connectionsBoot,
     apiKeysModule,
     liveEvents,
+    podSessions,
   } = boot;
 
   return (user: UserIdentity, surface: string): ApiContext => {
@@ -74,6 +76,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       composeTemplatesModule(templatesRepo);
     const connections = composeConnectionsForOwner({
       ownerId: user.sub,
+      maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
       db,
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
@@ -96,6 +99,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
+      agentStateCache: boot.agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       agentDefaultLimits: {
@@ -165,6 +169,24 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         await agentsRepo.wakeIfHibernated(agentId);
       },
     });
+    const { kbShares } = composeKbSharesForOwner({
+      owner: user.sub,
+      db,
+      agents,
+      namespace: config.namespace,
+      store: artifacts,
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      workspace: {
+        agentHome: config.agentHome,
+        agentWorkDir: config.agentWorkDir,
+      },
+      objectStoreConfigured: Boolean(config.objectStorageEndpoint),
+      publishLimits: {
+        perFileMaxBytes: config.kbSharePerFileMaxBytes,
+        totalMaxBytes: config.kbShareTotalMaxBytes,
+        maxFiles: config.kbShareMaxFiles,
+      },
+    });
     const { artifactLibrary } = composeArtifactLibraryForOwner({
       surface,
       db,
@@ -195,6 +217,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
     });
     const skills = composeSkillsModule({
+      agentStateCache: boot.agentStateCache,
       surface,
       api,
       namespace: config.namespace,
@@ -227,7 +250,13 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       bus: redisBus,
       wrapperFrameSender,
     });
-    const files = composeFilesModule(api, config.namespace, user.sub, surface);
+    const files = composeFilesModule(
+      api,
+      config.namespace,
+      user.sub,
+      surface,
+      boot.agentStateCache,
+    );
     const apiKeys = apiKeysModule.createService({
       ownerSub: user.sub,
       surface,
@@ -278,11 +307,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       experiments,
       invocationsQuery,
       knowledgeBases,
+      kbShares,
       artifactLibrary,
       features,
       files,
       harnessConfig,
+      links: config.links,
       liveEvents,
+      podSessions,
       metrics,
       terms,
       usage: composeUsageForOwner(user.sub),

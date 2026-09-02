@@ -728,6 +728,26 @@ func TestChainsFromSecrets_DuplicateHeaderOnSameHostKeepsLexFirst(t *testing.T) 
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
 }
 
+func TestChainsFromSecrets_DistinctHeadersOnSameHostCoexist(t *testing.T) {
+	kbA := ownerSecret("platform-conn-kba", "connection", "conn-kba")
+	delete(kbA.Annotations, envoyHostPatternAnn)
+	kbA.Annotations[envoyInjectionHostsAnn] = `[{"host":"share.example.com","headerName":"x-kb-token-aaa111bbb222"}]`
+	kbA = withHostSDS(kbA, "share.example.com")
+
+	kbB := ownerSecret("platform-conn-kbb", "connection", "conn-kbb")
+	delete(kbB.Annotations, envoyHostPatternAnn)
+	kbB.Annotations[envoyInjectionHostsAnn] = `[{"host":"share.example.com","headerName":"x-kb-token-ccc333ddd444"}]`
+	kbB = withHostSDS(kbB, "share.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{kbA, kbB}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Credentials, 2)
+	assert.Equal(t, "share.example.com", chains[0].Host)
+	assert.Equal(t, "x-kb-token-aaa111bbb222", chains[0].Credentials[0].HeaderName)
+	assert.Equal(t, "x-kb-token-ccc333ddd444", chains[0].Credentials[1].HeaderName)
+	assert.True(t, chains[0].Credentialed())
+}
+
 func TestChainsFromSecrets_AllowOnlySecretRendersUncredentialedChain(t *testing.T) {
 	allowOnly := ownerSecret("platform-allow-only-npm", envoySecretTypeAllowOnly, "")
 	allowOnly.Annotations[envoyHostPatternAnn] = "registry.npmjs.org"

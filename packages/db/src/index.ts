@@ -29,6 +29,7 @@ export {
   libraryArtifacts,
   libraryArtifactVersions,
   invocations,
+  kbShares,
 } from "./schema.js";
 export {
   eq,
@@ -44,5 +45,6 @@ export {
   like,
   lt,
   lte,
+  ne,
   sql,
 } from "drizzle-orm";

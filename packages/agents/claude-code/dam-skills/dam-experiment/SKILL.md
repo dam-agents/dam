@@ -48,10 +48,14 @@ The chat shows these as one-click chips on a fresh session, so answer them
 well — scannable, per Talking to the user above, ending on what the user can
 do next:
 
-- **"Show me an example to optimize"** → the tiny-cache starter
-  ([references/tiny-cache-starter.md](references/tiny-cache-starter.md)):
-  describe it in two or three sentences and offer to set it up. Show, don't
-  run.
+- **"Show me an example to optimize"** → the two bundled starters, one line
+  each: **tiny-cache** (a slow cache, rewritten by a coding agent each round —
+  minutes) and **tiny-search** (a slow search index optimized by a `nous`
+  campaign against a pre-registered bar and a write-path guard — about an
+  hour). Describe, ask which, and offer to set it up. Show, don't run; the
+  references are
+  [tiny-cache](references/tiny-cache-starter.md) and
+  [tiny-search](references/tiny-search-starter.md).
 - **"How do experiments work?"** → the loop in plain words: you describe a
   goal, we agree the design, I write it as a Python loop; each round proposes
   a candidate, builds it, measures it, and reports a score; the platform
@@ -131,11 +135,11 @@ whole envelope and get an explicit yes before writing the script:
   rather than at the first failed spawn.
 - **Iteration counts**: your loop's rounds, plus any the worker runs
   internally. Total runtime multiplies through them.
-- **Expected duration, stated in human terms.** "~25 min per campaign
-  iteration, two iterations, one round — about 1 h with queue slack" is a
-  deciding factor, not a footnote: the human may cut seeds or rounds to fit
-  the time they have, so give them the per-unit cost that makes that trade
-  legible. The `ttl_ms` you set is derived from this number — never the other
+- **Expected duration, stated in human terms.** "~1 h per campaign
+  iteration, one confirming iteration, one round — about 1 h with queue
+  slack" is a deciding factor, not a footnote: the human may cut seeds or
+  rounds to fit the time they have, so give them the per-unit cost that
+  makes that trade legible. The `ttl_ms` you set is derived from this number — never the other
   way around — and it is a **kill deadline, not pacing**: the platform reaps
   the target the moment it lapses, even mid-work. Size it at the worst
   plausible round plus generous slack (cold start alone is minutes; double
@@ -168,15 +172,24 @@ Present it as a short list of decisions, not prose, and let them change any
 line. Silence is not approval: if they have not answered, ask again rather
 than picking a default and proceeding.
 
-## No target? The bundled starter
+## No target? Two bundled starters
 
-A user who wants to see how experiments work but has nothing to optimize gets
-**tiny-cache** — a deliberately slow cache with a behavioral suite and a
-deterministic benchmark, shipped inside this skill at
-[examples/tiny-cache/](examples/tiny-cache/). Follow
-[references/tiny-cache-starter.md](references/tiny-cache-starter.md) for the
-baseline ritual and the loop design — the worker harness is the user's pick,
-as always.
+A user who wants to see how experiments work but has nothing of their own to
+optimize gets one of two deliberately-slow Node packages shipped inside this
+skill. Both are dependency-free, single-process, and measurable in seconds;
+they differ in which worker they are shaped for, so pick by what the user
+wants to see:
+
+| Starter | Worker | Shows |
+|---|---|---|
+| [tiny-cache](references/tiny-cache-starter.md) ([code](examples/tiny-cache/)) | `claude-code` loop | your driver owning the ruler: it runs the locked bench, sweeps n, and scores each point |
+| [tiny-search](references/tiny-search-starter.md) ([code](examples/tiny-search/)) | `nous` campaign | a worker forming a hypothesis, pre-registering a bar, and reporting whether the mechanism held — with a guard metric it can fail |
+
+Follow the reference for whichever they choose; each carries its baseline
+ritual, its scoring design, and the size that fits the hour. **Don't cross
+them over.** tiny-cache on `nous` loses the pristine ruler and lands its
+optimized side on the timer floor; tiny-search in a hand-driven loop throws
+away the campaign machinery that is the only reason to look at it.
 
 ## Authoring a script
 
@@ -220,7 +233,11 @@ Rules that matter:
 - **Every loop and stage carries a `description`** — one plain sentence on
   what happens there and what it reports. It shows on the node in the live
   graph, so the user can read the design off the UI instead of decoding ids
-  like `verify`. Bare ids are for throwaway spikes only.
+  like `verify`. Bare ids are for throwaway spikes only. And the id itself is
+  the chart legend, so name stages for a reader who never saw the script —
+  `speedup-per-seed`, `arm-decomposition` — not for the code (`seed-score`,
+  `arm-score`, `verdict` are the exact three that once sent a user asking
+  what their own chart meant).
 - **The worker image comes from the catalog, never from a guess.** Resolve it
   with `x.require_image(<id>)` in the declaration section and pass that value
   as `template=`. Don't hardcode `claude-code` because it is the familiar one.
@@ -326,6 +343,17 @@ The failure modes below are all real ones, and they are decided at design time
   that its per-seed files did not exist; the driver had the right numbers in
   hand the whole time. Publish the worker's narrative as commentary, clearly
   labelled, and make the run's own summary the one derived from data.
+- **A boolean is not a score series.** A pass/fail verdict belongs in
+  `exp.post_data(...)` as a card the stock dashboard renders — the verdict
+  plus each named check and its outcome — not on the chart. A run once
+  scored its `verdict` stage with the median speedup: a redundant line that
+  duplicated an existing series while the actual pass/fail hid in the attrs.
+  If a verdict series is truly wanted, score `1.0` or `0.0` and nothing else.
+- **Missing data must look missing.** Never map an invalid value onto a
+  legible one: a `log2(effect) if effect > 0 else 0.0` guard renders garbage
+  as "no change", which is a *finding*. Write no score at all, set an
+  `invalid` attr with the reason, and let the gap in the series say what
+  happened.
 
 ### A purpose-built worker: one Nous campaign per iteration
 
@@ -388,6 +416,47 @@ iterations, a narrower question. The TTL still gets generous slack over
 whatever the estimate ends up being (a killed working pod wastes everything);
 the hour budgets the *work*, not the deadline.
 
+### You do not write the campaign's arms — but you do pin its design
+
+The worker authors its own hypothesis bundle: the arms (`h-main`,
+`h-ablation`, `h-super-additivity`, `h-control-negative`, `h-robustness`, and
+campaign-specific ones like `h-dose-response`) come out of its DESIGN phase,
+not out of your prompt. That is the point of the image, and it is why a Nous
+round is one spawn instead of a loop you drive.
+
+**It does not follow that you have no control.** `campaign.yaml` carries four
+fields that steer the design hard, and an agent that only writes prose leaves
+them on the table — then wrongly concludes it "can't force" a design it wants:
+
+- **`research_question`** — phrase it as the shape of the answer you want. "Is
+  X faster?" invites a yes/no; "does X's cost become independent of n?" invites
+  a curve, and the designer reaches for a dose-response arm on its own.
+- **`target_system.controllable_knobs`** — names the knobs the designer may
+  vary. Put the sweep variable here or it may never be swept.
+- **`ground_truth.direction_claim`** / `pass_condition` / `primary_metric` /
+  `seeds` — pre-registered and rendered into the agent's prompt, so it cannot
+  move the goalposts. A direction claim stated as a trend ("baseline cost grows
+  ~linearly in n while the treatment stays flat") commits the campaign to
+  measuring the trend.
+- **`locked_parameters`** — hard-pinned values that MUST reappear identically
+  in the bundle's `verified_parameters`; a mismatch fails validation **even
+  under `--auto-approve`**. This is the actual enforcement mechanism: put the
+  n grid, the rep count, and the seed list here and the campaign cannot
+  quietly measure something else.
+
+`target_system.description` is substituted verbatim into the model's prompts —
+it is where baselines, exact CLI invocations, metric definitions and
+statistical guardrails belong. What it is NOT for: dictating the bundle's
+arms. The arm family is the tool's methodology and the reason its verdict is
+defensible; a measured iteration already includes the full standard bundle.
+Time-box with the schema's own knobs instead — `max_iterations`, `max_turns`
+(per-phase tool-use caps, e.g. `{design: 40, execute_analyze: 80}`), and the
+TTL sized from measured runs. `plot_specs` runs figure scripts after each
+`findings.json`, and `pre_work_script` runs a deterministic exploration before
+iteration 1 (a good place to measure the baseline). Full field list:
+`nous schema campaign`, mirrored in the image's own
+`.agents/skills/nous/reference/campaign-schema.md`.
+
 Bake the answers into the campaign prompt so the worker doesn't re-decide
 them. How the worker's results are laid out on disk — the stable verdict
 files, per-seed measurements, and what to have it report — is documented in
@@ -422,19 +491,35 @@ instead of reporting the number as clean.
 Then report the objective score from best_found.json, the h-main arm status
 from the last iteration's findings.json, and a summary from
 meta_findings.json.
+Publish as you go, not only at the end: the moment an iteration completes,
+publish its findings.json (and any raw per-seed results worth keeping) as
+artifacts, and publish report.md the moment it exists. You can be killed by
+your deadline mid-campaign; whatever is unpublished at that moment is lost.
 Report per_seed as well: for EVERY seed of the confirming iteration, read the
 raw measurement files under runs/iter-<N>/results/<arm>/ and report its seed,
 baseline and treatment values for the primary metric, in the metric's own
 unit. Read those numbers from the raw files, never from report.md's prose or
 tables. Report per_arm too — arm_type, status and effect for every arm you
 measured, ablations included; the decomposition is the mechanism, and prose is
-not where it survives."""
+not where it survives.
+For per_arm, effect is DEFINED as: that arm's OWN baseline value of {metric}
+divided by that arm's OWN treatment value, measured separately per arm on the
+same seeds. It is a ratio: >1 means the arm helped, 1.0 means no change, and
+a control that changes nothing must come out ~1.0 — never 0, never blank,
+never a value copied from another arm.
+Report cost too, from llm_metrics_summary.json (or `nous cost <run_id>`):
+total USD, total tokens, and LLM call count, plus the campaign's own run_id
+so cost stays re-derivable. These files are stable and always exist — report
+them even when the campaign fails.
+Publish the winning change itself — cumulative.patch — as an artifact, so the
+driver can apply it to its own copy and re-measure rather than take your
+numbers on faith."""
 
 with x.Experiment("nous-campaigns") as exp:
     loop = exp.loop("rounds", description="one Nous campaign per pass")
     campaign = loop.stage("campaign", description="the worker runs a whole campaign")
     seed_score = loop.stage(
-        "seed-score", after=campaign,
+        "speedup-per-seed", after=campaign,
         description="one point per measured seed; the chart plots these",
     )
 
@@ -448,11 +533,13 @@ with x.Experiment("nous-campaigns") as exp:
                 CAMPAIGN.format(repo=REPO, hypothesis=hypothesis, metric=METRIC,
                                 pass_condition=PASS_CONDITION,
                                 campaign_iters=CAMPAIGN_ITERS, seeds=SEEDS),
-                x.s({"status": "string", "summary": "string",
+                x.s({"status": "string", "summary": "string", "run_id": "string",
                      "per_seed": [{"seed": "integer", "baseline": "number",
                                    "treatment": "number"}],
                      "per_arm": [{"arm_type": "string", "status": "string",
                                   "effect": "number"}],
+                     "cost": {"usd": "number", "tokens": "integer",
+                              "llm_calls": "integer"},
                      "pr_url": "string?"}),
                 template=worker,
                 connections=connections,
@@ -460,6 +547,11 @@ with x.Experiment("nous-campaigns") as exp:
             )
             span.attrs["summary"] = result["summary"]
             span.attrs["status"] = result["status"]
+        # Worker numbers are claims, not facts: validate before scoring
+        # (coverage, positivity, distinct arms, sign agreement — see below).
+        # Record problems instead of raising: bad evidence belongs on the
+        # results page, and result_valid gates the verdict.
+        problems = validation_problems(result)
         # One scored span per seed: a single campaign still draws a readable
         # distribution, and the spread is the scientific content.
         speedups = []
@@ -474,7 +566,10 @@ with x.Experiment("nous-campaigns") as exp:
             "median": statistics.median(speedups),
             "seeds_passing": sum(1 for s in speedups if s >= PASS_BAR),
             "arms": result["per_arm"],  # or a stage of their own, one span per arm
+            "cost": result["cost"],
             "status": result["status"],
+            "result_valid": not problems,
+            "problems": problems,
         }})
         hypothesis = next_hypothesis(result)  # your own choice of what to try
 ```
@@ -485,7 +580,40 @@ str(e)` (the message carries the platform's reason — OOM, deadline, crash),
 mark the span failed, and continue to the next round. An uncaught failure
 kills the script and every remaining round with it.
 
-Six things this example is really teaching:
+Nine things this example is really teaching:
+
+- **Define every number you demand.** A schema field typed `"number"` with no
+  definition is an invitation to guess, and the worker will accept it: a run
+  once returned `effect = -1.056` on all five arms because nobody said what
+  `effect` was a number *of* — every downstream failure traced back to that
+  one gap. For each numeric field, the prompt states the formula, the unit,
+  the direction, and the value an inert control must produce (~1.0 for a
+  ratio — never 0, never blank, never copied between arms).
+- **Validate before you score.** Every worker-reported number is a claim
+  until it survives a gate the driver runs before writing any span:
+  - coverage — per-seed / per-n arrays match exactly the seeds and grid you
+    pinned; timings are positive;
+  - **distinct arms** — arms run different code and cannot agree to six
+    decimals; identical effects are a constant, not a measurement;
+  - **sign agreement** — an arm claiming "2× slower" while the raw numbers of
+    the same run show "4706× faster" is irreconcilable and must fail loudly;
+  - a plausibility ceiling — a headline past it (say 1000×) passes only with
+    corroboration (checksums unchanged, ruler untouched), because that
+    magnitude is where broken benchmarks live;
+  - the worker's baseline within a few × of one the driver measured itself;
+  - the campaign's own verdict — `h_main_status == "CONFIRMED"` from
+    `findings.json`, so a numerically-passing run cannot hide a REFUTED arm.
+  Record the problems in `post_data` instead of raising — bad evidence must
+  be visible on the results page — and gate the verdict on `result_valid`.
+- **Replicate when the driver can.** The strongest verification is not a
+  check, it is re-measurement: the worker publishes `cumulative.patch`, and a
+  driver that holds its own pristine copy of the target applies the patch,
+  runs the tests and the bench itself, and computes the headline from its
+  own numbers — the worker's figures become a cross-check, and every
+  self-graded field (tests, checksums, ruler lock, timings) becomes a
+  driver-confirmed one. Do this whenever the measurement runs on plain local
+  tooling; skip it only when the measurement needs hardware or state the
+  driver lacks.
 
 - **The round is silent until it ends.** One campaign per round means one span
   running for hours with nothing to show — no points, no progress, and the
@@ -511,17 +639,25 @@ Six things this example is really teaching:
   completion, or it stalls waiting for an answer nobody sends.
 - **Match the TTL to the real runtime — and know the clock starts at spawn.**
   `nous`-class work will run for hours if you let it, and the default liveness
-  deadline is not a promise your loop should lean on. Scope the campaign to
-  about an hour of work (see the interview above), estimate ~20–30 min per
-  campaign iteration at that size, and set the TTL at roughly double the
-  estimate: a spawn that queues for compute room spends its deadline waiting,
-  and a deadline that lands mid-measurement wastes the whole round. A heavy
-  worker also holds real CPU/memory/disk per target, so keep the fan-out to a
-  handful of arms, not dozens.
-- **Everything on the worker dies with it.** The worker is reaped right after
-  it reports; make the prompt name what to report and which files to publish
-  as artifacts (`report.md`, `meta_findings.json` — see the reference) or the
-  evidence is unrecoverable.
+  deadline is not a promise your loop should lean on. Estimate from **measured
+  runs, not hope**: a healthy 2-iteration campaign on a small target measured
+  ~60 min per iteration on a dev cluster — so the one-hour target means ONE
+  confirming iteration, and a 2-iteration campaign is a ~2 h proposal, said as
+  such. Set the TTL at roughly double the measured estimate: the clock also
+  pays for pod cold start, queueing for compute room, and degraded stretches —
+  a worker that cold-started into a cluster disturbance has crawled at a
+  twentieth of its healthy pace and then been executed by a TTL sized for the
+  healthy pace, losing everything. A heavy worker also holds real
+  CPU/memory/disk per target, so keep the fan-out to a handful of arms, not
+  dozens.
+- **Everything on the worker dies with it — so publish per iteration.** The
+  worker is reaped the moment it reports, hits its TTL, or its run is swept;
+  make the prompt name what to report and which files to publish as artifacts
+  (`report.md`, `meta_findings.json` — see the reference), and require each
+  iteration's `findings.json` to be published **as it completes**, not in a
+  final batch. Three consecutive campaigns have died mid-run (a starved node,
+  an inactivity reap, a TTL) and each lost hours of finished measurements that
+  publish-as-you-go would have kept.
 - **Bound the campaign's own parallelism — for survival *and* for the
   numbers.** The worker's memory limit is a hard ceiling for everything the
   campaign starts — benchmark daemons included — and blowing it OOM-kills the
@@ -590,8 +726,10 @@ tables warrant one — make sure the run's presentation carries:
   agree instead of the chart showing one dot next to a table of ten rows.
 - **Time** — when the run started, elapsed, and per-round durations; the
   human approved a duration estimate, and the run should show how it tracked.
-- **Token / cost consumption**, when the worker reports it (a Nous campaign's
-  meta findings carry cost data — pass it through).
+- **Token / cost consumption** — demand it in the typed result rather than
+  hoping the worker volunteers it (a Nous campaign always has
+  `llm_metrics_summary.json`; "when reported, pass it through" is how three
+  runs shipped without a cost number).
 - **Notes and caveats** — what the result does *not* claim ("3 seeds is a
   smoke run"), stated on the run itself rather than left in the chat.
 - **Next steps** — what a follow-up run would change: more seeds, a wider

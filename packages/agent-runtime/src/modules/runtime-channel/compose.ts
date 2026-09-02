@@ -148,6 +148,8 @@ export async function composeRuntimeChannel(
         events: eventKinds as never,
         harnessConfig: harnessConfigPlugin.supported,
         harnessConfigCatalog: harnessConfigPlugin.catalog,
+        kbPublish: 2,
+        liveUpdates: true,
       };
       for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
         if (

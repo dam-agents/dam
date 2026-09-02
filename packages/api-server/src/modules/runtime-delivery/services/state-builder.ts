@@ -11,10 +11,11 @@ import {
   contribution as contributionSchema,
   event as eventSchema,
 } from "agent-runtime-api";
-import type {
-  Contribution,
-  RuntimeEvent as Event,
-  RuntimeEventKind,
+import {
+  SHARED_KB_TEMPLATE_ID,
+  type Contribution,
+  type RuntimeEvent as Event,
+  type RuntimeEventKind,
 } from "api-server-api";
 import { contributionHash } from "../domain/contribution-hash.js";
 import {
@@ -54,8 +55,15 @@ export function createStateBuilder(deps: {
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId),
       ]);
-      const builtin = deps.builtin.for(agentId);
-      const rawContribs = [...userEnv, ...builtin, ...granted, ...skills];
+      const builtin = deps.builtin.for(agentId, {
+        sharedKnowledgeBases: granted.templateIds.has(SHARED_KB_TEMPLATE_ID),
+      });
+      const rawContribs = [
+        ...userEnv,
+        ...builtin,
+        ...granted.contributions,
+        ...skills,
+      ];
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
@@ -91,10 +99,11 @@ async function readUserEnvContributions(
 async function readGrantedContributions(
   db: Db,
   agentId: string,
-): Promise<Contribution[]> {
+): Promise<{ contributions: Contribution[]; templateIds: Set<string> }> {
   const rows = (await db
     .select({
       contributions: connectionsTable.contributions,
+      templateId: connectionsTable.templateId,
     })
     .from(connectionGrants)
     .innerJoin(
@@ -104,17 +113,20 @@ async function readGrantedContributions(
     .where(eq(connectionGrants.agentId, agentId))
     .orderBy(asc(connectionsTable.createdAt), asc(connectionsTable.id))) as {
     contributions: unknown;
+    templateId: string;
   }[];
 
   const out: Contribution[] = [];
+  const templateIds = new Set<string>();
   for (const row of rows) {
+    templateIds.add(row.templateId);
     if (!Array.isArray(row.contributions)) continue;
     for (const raw of row.contributions) {
       const parsed = contributionSchema.safeParse(raw);
       if (parsed.success) out.push(parsed.data);
     }
   }
-  return out;
+  return { contributions: out, templateIds };
 }
 
 async function readSkillRefContributions(

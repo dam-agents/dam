@@ -35,3 +35,12 @@ export const fileUploadInputSchema = z.object({
   contentType: z.string().max(255).optional(),
   overwrite: z.boolean().optional(),
 });
+
+export const workspaceNoticeSchema = z.object({
+  topic: z.literal("workspace"),
+});
+
+export const fileContentNoticeSchema = z.object({
+  topic: z.literal("file"),
+  path: pathSchema,
+});

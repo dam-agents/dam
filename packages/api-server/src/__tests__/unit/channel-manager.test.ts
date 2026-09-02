@@ -81,6 +81,97 @@ describe("channel-manager bootstrap", () => {
 
     await manager.stopAll();
   });
+
+  it("keeps the lease and retries when the only transport fails", async () => {
+    vi.useFakeTimers();
+    const slackWorker = fakeSlackWorker();
+    vi.mocked(slackWorker.connect)
+      .mockRejectedValueOnce(new Error("slack is down"))
+      .mockResolvedValueOnce(undefined);
+    const manager = createChannelManager({ slackWorker });
+
+    await expect(manager.bootstrap(new Map())).resolves.toBeUndefined();
+    expect(slackWorker.connect).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(slackWorker.connect).toHaveBeenCalledTimes(2);
+
+    await manager.stopAll();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(slackWorker.connect).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  // TEST_SCENARIO: the stand-down lands while a transport start is still in flight. The ex-holder must not re-arm the retry timer afterwards — that timer would reconnect the Slack socket on a replica that no longer holds the lease, leaving the install with two consumers.
+  it("does not re-arm the transport retry when the stand-down lands mid-start", async () => {
+    vi.useFakeTimers();
+    const slackWorker = fakeSlackWorker();
+    let failConnect: (err: Error) => void = () => {};
+    vi.mocked(slackWorker.connect).mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failConnect = reject;
+        }),
+    );
+    const manager = createChannelManager({ slackWorker });
+
+    const booting = manager.bootstrap(new Map());
+    await manager.standDown();
+    failConnect(new Error("slack is down"));
+    await booting;
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(slackWorker.connect).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  // TEST_SCENARIO: the stand-down lands while bootstrap is still walking its bindings. The remaining per-Agent starts must not run — each would re-create a gateway on the ex-leader after the workers were stopped.
+  it("stops registering per-Agent workers when the stand-down lands mid-bootstrap", async () => {
+    const slackWorker = fakeSlackWorker();
+    let finishConnect: () => void = () => {};
+    vi.mocked(slackWorker.connect).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishConnect = resolve;
+        }),
+    );
+    const manager = createChannelManager({ slackWorker });
+
+    const channel: ChannelConfig = {
+      type: ChannelType.Slack,
+      slackChannelId: "C123",
+    };
+    const booting = manager.bootstrap(
+      new Map([
+        ["agent-1", [channel]],
+        ["agent-2", [channel]],
+      ]),
+    );
+    await manager.standDown();
+    finishConnect();
+    await booting;
+
+    expect(slackWorker.start).not.toHaveBeenCalled();
+  });
+
+  it("serves the transports that came up when one fails", async () => {
+    vi.useFakeTimers();
+    const slackWorker = fakeSlackWorker();
+    const telegramWorker = fakeTelegramWorker();
+    vi.mocked(telegramWorker.start).mockRejectedValue(new Error("no telegram"));
+    const manager = createChannelManager({ slackWorker, telegramWorker });
+
+    const channel: ChannelConfig = {
+      type: ChannelType.Slack,
+      slackChannelId: "C123",
+    };
+    await manager.bootstrap(new Map([["agent-1", [channel]]]));
+
+    expect(slackWorker.start).toHaveBeenCalledWith("agent-1", channel);
+
+    await manager.stopAll();
+    vi.useRealTimers();
+  });
 });
 
 describe("channel-manager user lookup", () => {

@@ -10,4 +10,10 @@ export const eventsRouter = t.router({
     .subscription(({ ctx, signal }) =>
       ctx.liveEvents.ownerStream(ctx.user.sub, signal),
     ),
+
+  podSessions: readAgentProcedure
+    .use(requireWildcardBinding)
+    .subscription(({ ctx, signal }) =>
+      ctx.podSessions.ownerStream(ctx.user.sub, signal),
+    ),
 });

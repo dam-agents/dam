@@ -24,10 +24,18 @@ import {
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
+  connectScanCacheBus,
   createAgentSkillsRepository,
   parseSeedSources,
   startSkillsCleanupSaga,
 } from "./modules/skills/index.js";
+import {
+  composeKbShareServing,
+  createKbShareAgentCleanup,
+  createShareHostApp,
+  startKbShareSync,
+  startKbSharesCleanupSaga,
+} from "./modules/kb-shares/index.js";
 import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
@@ -37,11 +45,13 @@ import {
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
+import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
 import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
+  channelRpcRequestSchema,
   type ChannelRpcRequest,
 } from "./modules/channels/services/channel-manager.js";
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
@@ -81,6 +91,8 @@ import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
 import { loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
+import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
+import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
 import { createTurnMetrics } from "./core/turn-metrics.js";
 import { startTurnMetricsSaga } from "./sagas/turn-metrics.js";
@@ -145,7 +157,15 @@ import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createRedisBus } from "./core/redis-bus.js";
 import { createBusRpc } from "./core/bus-rpc.js";
 import { createRedisBlobHandoff } from "./core/blob-handoff.js";
-import { createLeaderLease } from "./core/leader-lease.js";
+import { createLeaderLease, type LeaderRole } from "./core/leader-lease.js";
+import {
+  startAgentStateCache,
+  createLiveAgentStateCache,
+} from "./modules/agents/infrastructure/agent-state-cache.js";
+import {
+  createAgentInformer,
+  createLeaseApi,
+} from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
@@ -166,6 +186,7 @@ export async function bootstrap() {
   };
   await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
   const { db, sql } = createDb(config.databaseUrl, dbTls);
+  reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
 
   const artifactsModule = composeArtifactsModule({
     maxBytes: config.maxArtifactBytes,
@@ -207,6 +228,7 @@ export async function bootstrap() {
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
+  connectScanCacheBus(redisBus);
 
   const periodicJobs = createPeriodicJobs({
     connection: bullConnection,
@@ -214,7 +236,18 @@ export async function bootstrap() {
   });
 
   const k8sClient = createK8sClient(api, config.namespace);
-  const agentsRepo = createAgentsRepository(k8sClient);
+  const leaseApi = createLeaseApi();
+  const agentStateCache = startAgentStateCache({
+    informer: createAgentInformer(config.namespace),
+    live: k8sClient,
+    namespace: config.namespace,
+    log: (m) => getLogger().warn(`[agents] ${m}`),
+  });
+  const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  const liveAgentsRepo = createAgentsRepository(
+    k8sClient,
+    createLiveAgentStateCache(k8sClient),
+  );
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
@@ -255,13 +288,21 @@ export async function bootstrap() {
   };
   const shareHostGate = createShareHostGate(
     config.shareBaseUrl,
-    createShareViewerApp({
-      viewer: composeShareViewer({ db, artifacts }),
-      brandName: config.brand.name,
-      uiBaseUrl: config.uiBaseUrl,
+    createShareHostApp({
+      viewer: createShareViewerApp({
+        viewer: composeShareViewer({ db, artifacts }),
+        brandName: config.brand.name,
+        uiBaseUrl: config.uiBaseUrl,
+      }),
+      kbMcp: composeKbShareServing({
+        db,
+        store: artifacts,
+        k8s: k8sClient,
+        grepDeadlineMs: config.kbShareGrepDeadlineMs,
+      }),
     }),
   );
-  const sessionPresence = createSessionPresence(agentsRepo, sharedRedis);
+  const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
     sessionPresence.reconcile(),
   );
@@ -281,6 +322,9 @@ export async function bootstrap() {
     },
   );
 
+  const resolveAgentOwner = async (agentId: string) =>
+    (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
+
   const runtimeDelivery = composeRuntimeDelivery({
     db,
     namespace: config.namespace,
@@ -290,10 +334,10 @@ export async function bootstrap() {
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
-      resolveOwner: async (agentId) =>
-        (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null,
+      resolveOwner: resolveAgentOwner,
     }),
     harnessServerUrl: config.harnessServerUrl,
+    resolveOwner: resolveAgentOwner,
   });
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),
@@ -311,6 +355,7 @@ export async function bootstrap() {
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
+    shareBaseUrl: config.shareBaseUrl,
     secretStore: secretStores.default(),
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
@@ -422,6 +467,16 @@ export async function bootstrap() {
   const skillsCleanupSub = startSkillsCleanupSaga((agentId) =>
     createAgentSkillsRepository(db).deleteByAgent(agentId),
   );
+  const kbSharesCleanupSub = startKbSharesCleanupSaga(
+    createKbShareAgentCleanup({
+      db,
+      store: artifacts,
+    }),
+  );
+  const kbShareAutoRefresh = startKbShareSync({
+    db,
+    namespace: config.namespace,
+  });
   const turnMetricsSub = startTurnMetricsSaga(
     createTurnMetrics(metrics.getMeter("platform-apiserver")),
   );
@@ -443,6 +498,13 @@ export async function bootstrap() {
     },
   });
   usage.start();
+  if (config.activityTrackingEnabled) {
+    await periodicJobs.register(
+      "activity-retention",
+      7 * 24 * 60 * 60 * 1000,
+      () => usage.retentionTick(),
+    );
+  }
 
   const audit = composeAuditModule();
   audit.start();
@@ -451,18 +513,20 @@ export async function bootstrap() {
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
+    namespace: config.namespace,
+    agentsRepo,
+    runtimeFeaturesFor: (ids) => runtimeDelivery.runtimeFeaturesMany(ids),
   });
   liveEventsModule.start();
-  const agentWatchLease = createLeaderLease({
-    redis: sharedRedis,
+  const agentWatchRole: LeaderRole = {
     name: "live-events-agent-watch",
     onAcquired: () => liveEventsModule.startAgentWatch(),
     onLost: () => liveEventsModule.stopAgentWatch(),
-    log: (m) => getLogger().info(`[live-events] ${m}`),
-  });
+  };
 
   const { agents: systemAgents } = composeAgentsModule({
     api,
+    agentStateCache,
     namespace: config.namespace,
     agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     agentDefaultLimits: {
@@ -580,6 +644,8 @@ export async function bootstrap() {
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
+        undefined,
+        DEFAULT_SETTLE_MS,
       )
     : undefined;
 
@@ -610,12 +676,14 @@ export async function bootstrap() {
           brandShort: config.brand.short,
           brandName: config.brand.name,
           attendance: turnAttendance,
+          settleMs: DEFAULT_SETTLE_MS,
         })
       : undefined;
 
   const channelRpc = createBusRpc<ChannelRpcRequest, unknown>({
     bus: redisBus,
     service: "channels",
+    requestSchema: channelRpcRequestSchema,
     claim: async (id) =>
       (await sharedRedis.set(
         `rpc:claim:channels:${id}`,
@@ -631,17 +699,25 @@ export async function bootstrap() {
     telegramWorker,
     rpc: channelRpc,
     blobs: createRedisBlobHandoff(sharedRedis),
-    isLeader: () => channelLease.isLeader(),
+    isLeader: () => leaderLease.isRunning("channels"),
   });
 
-  const channelLease = createLeaderLease({
-    redis: sharedRedis,
-    name: "channels",
-    onAcquired: async () => {
-      const channelsByInstance = await listChannelsByOwner(db, "")();
-      await channelManager.bootstrap(channelsByInstance);
-    },
-    onLost: () => channelManager.standDown(),
+  const leaderLease = createLeaderLease({
+    leases: leaseApi,
+    namespace: config.namespace,
+    name: `${config.releaseName}-apiserver`,
+    roles: [
+      {
+        name: "channels",
+        onAcquired: async () => {
+          const channelsByInstance = await listChannelsByOwner(db, "")();
+          await channelManager.bootstrap(channelsByInstance);
+        },
+        onLost: () => channelManager.standDown(),
+      },
+      agentWatchRole,
+    ],
+    log: (m) => getLogger().info(`[leader] ${m}`),
   });
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
@@ -833,6 +909,9 @@ export async function bootstrap() {
       `[schedules] restoreAll failed: ${(err as Error).message}\n`,
     );
   });
+  await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
+    schedulesBoot.runner.restoreAll(),
+  );
 
   const { readSpec: harnessReadTemplateSpec } =
     composeTemplatesModule(templatesRepo);
@@ -843,6 +922,7 @@ export async function bootstrap() {
     const connections = connectionsServiceFor(owner);
     return composeAgentsModule({
       api,
+      agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
       virtualizationEnabled: config.virtualizationEnabled,
@@ -890,12 +970,13 @@ export async function bootstrap() {
   );
 
   const agentSweep = createAgentSweep({
-    listAgents: () => agentsRepo.list(),
+    listAgents: () => liveAgentsRepo.list(),
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
 
   const apiServerDeps: ApiServerDeps = {
+    agentStateCache,
     periodicJobs,
     sharedRedis,
     config,
@@ -930,6 +1011,7 @@ export async function bootstrap() {
     e2e: e2eService,
     artifacts,
     liveEvents: liveEventsModule.liveEvents,
+    podSessions: liveEventsModule.podSessions,
     k8sClient,
     agentsRepo,
     connectionsBoot,
@@ -946,6 +1028,7 @@ export async function bootstrap() {
     sessionPresence,
   };
   const harnessDeps = {
+    agentStateCache,
     config,
     api,
     db,
@@ -968,21 +1051,22 @@ export async function bootstrap() {
   };
 
   void telegramWorker?.resolveIdentity();
-  void channelLease.start();
-  void agentWatchLease.start();
+  void leaderLease.start();
 
   const cleanup = async (): Promise<void> => {
     channelCleanupSub.unsubscribe();
     publicAgentProfileSub.unsubscribe();
     turnMetricsSub.unsubscribe();
     skillsCleanupSub.unsubscribe();
+    kbSharesCleanupSub.unsubscribe();
+    kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
-    await agentWatchLease.stop();
+    await agentStateCache.stop();
+    await leaderLease.stop();
     liveEventsModule.stop();
     await periodicJobs.close();
-    await channelLease.stop();
     channelRpc.close();
     await channelManager.stopAll();
     await runtimeDelivery.worker.close();
@@ -990,6 +1074,7 @@ export async function bootstrap() {
     await schedulesBoot.close();
     await redisBus.close();
     turnAttendance.close();
+    await chatSdkState?.disconnect().catch(() => {});
     await sharedRedis.quit().catch(() => {});
     await sql.end();
   };

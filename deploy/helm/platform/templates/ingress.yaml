@@ -45,8 +45,9 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
-    {{- /* Public share host — artifact-library content only, all paths to
-           the api-server (which host-gates them onto the viewer app). */}}
+    {{- /* Public share host — artifact-library content and the read-only
+           knowledge-base MCP endpoint (/mcp/kb), all paths to the api-server
+           (which host-gates them onto the share-host app). */}}
     - host: {{ $shareHost }}
       http:
         paths:

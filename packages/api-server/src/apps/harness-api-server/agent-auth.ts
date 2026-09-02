@@ -1,6 +1,8 @@
+import { agentKindSchema, type AgentKind } from "api-server-api";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   AGENTS_PLURAL,
+  ANN_AGENT_KIND,
   LABEL_OWNER,
 } from "../../modules/agents/infrastructure/labels.js";
 
@@ -9,6 +11,7 @@ export interface AgentIdentity {
   owner: string;
   uid: string;
   vmBackend: boolean;
+  kind?: AgentKind;
 }
 
 export async function resolveAgent(
@@ -22,10 +25,14 @@ export async function resolveAgent(
 
   const backend = (obj.spec as { backend?: { type?: string } } | undefined)
     ?.backend;
+  const kindParse = agentKindSchema.safeParse(
+    obj.metadata?.annotations?.[ANN_AGENT_KIND],
+  );
   return {
     agentId,
     owner,
     uid: obj.metadata?.uid ?? "",
     vmBackend: backend?.type === "vm",
+    ...(kindParse.success ? { kind: kindParse.data } : {}),
   };
 }
