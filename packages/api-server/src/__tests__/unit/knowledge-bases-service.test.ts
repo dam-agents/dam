@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent, AgentCreateInput } from "api-server-api";
+import type { Agent, AgentCreateInput, TemplateSpec } from "api-server-api";
 import { createKnowledgeBasesService } from "../../modules/knowledge-bases/services/knowledge-bases-service.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
@@ -19,7 +19,15 @@ function fakeAgent(id: string): Agent {
   };
 }
 
-function makeHarness() {
+function templateSpec(harness?: string): TemplateSpec {
+  return {
+    version: "agent-platform.ai/v1",
+    image: "quay.io/example/harness:latest",
+    ...(harness ? { harness } : {}),
+  };
+}
+
+function makeHarness(templates: Record<string, TemplateSpec> = {}) {
   const calls = {
     createInputs: [] as AgentCreateInput[],
     bumped: [] as { agentId: string; events: unknown[] }[],
@@ -45,6 +53,10 @@ function makeHarness() {
       },
       async delete() {},
     },
+    readTemplateSpec: async (id) => {
+      const spec = templates[id];
+      return spec ? { spec, isOwned: false } : null;
+    },
     runtimeMutator,
     wakeAgent: async (agentId) => {
       calls.woken.push(agentId);
@@ -54,9 +66,11 @@ function makeHarness() {
   return { service, calls };
 }
 
+const CLAUDE_TEMPLATES = { "claude-code": templateSpec("claude-code") };
+
 describe("knowledge-bases service", () => {
   it("creates the agent with the knowledge-base kind, passing the input through", async () => {
-    const { service, calls } = makeHarness();
+    const { service, calls } = makeHarness(CLAUDE_TEMPLATES);
     await service.create({
       name: "my-kb",
       templateId: "claude-code",
@@ -75,7 +89,7 @@ describe("knowledge-bases service", () => {
   });
 
   it("delivers the install command as a one-shot workspace-command and wakes the agent", async () => {
-    const { service, calls } = makeHarness();
+    const { service, calls } = makeHarness(CLAUDE_TEMPLATES);
     const agent = await service.create({
       name: "my-kb",
       templateId: "claude-code",
@@ -95,5 +109,78 @@ describe("knowledge-bases service", () => {
 
     expect(calls.enqueued).toEqual(["agent-kb1"]);
     expect(calls.woken).toEqual(["agent-kb1"]);
+  });
+
+  // TEST_SCENARIO: the chosen template's harness family reaches the llm-wiki
+  // TEST_SCENARIO: bootstrap as LLM_WIKI_HARNESS, so its tooling lands where that harness
+  // TEST_SCENARIO: reads it; a template without a family (custom image, the e2e mock harness)
+  // TEST_SCENARIO: leaves the bootstrap to detect the harness itself.
+  it("passes the template's harness family to the llm-wiki bootstrap", async () => {
+    const { service, calls } = makeHarness({
+      codex: templateSpec("codex"),
+      mock: templateSpec(),
+    });
+    await service.create({
+      name: "my-kb",
+      templateId: "codex",
+      kbTemplateId: "llm-wiki",
+    });
+    await service.create({
+      name: "my-kb",
+      templateId: "mock",
+      kbTemplateId: "llm-wiki",
+    });
+    await service.create({
+      name: "my-kb",
+      image: "quay.io/example/custom:latest",
+      kbTemplateId: "llm-wiki",
+    });
+    const commands = calls.bumped.map(
+      ({ events }) =>
+        (events[0] as { payload: { command: string } }).payload.command,
+    );
+    expect(commands[0]).toContain("LLM_WIKI_HARNESS=codex bash");
+    expect(commands[1]).not.toContain("LLM_WIKI_HARNESS");
+    expect(commands[2]).not.toContain("LLM_WIKI_HARNESS");
+  });
+
+  // TEST_SCENARIO: plain-wiki rides the same contract as llm-wiki — its own env var
+  // TEST_SCENARIO: carries the family, and a template with no declared family (the e2e
+  // TEST_SCENARIO: mock harness rides this) gets the bare command.
+  it("passes the template's harness family to the plain-wiki bootstrap", async () => {
+    const { service, calls } = makeHarness({
+      codex: templateSpec("codex"),
+      mock: templateSpec(),
+    });
+    await service.create({
+      name: "my-kb",
+      templateId: "codex",
+      kbTemplateId: "plain-wiki",
+    });
+    await service.create({
+      name: "my-kb",
+      templateId: "mock",
+      kbTemplateId: "plain-wiki",
+    });
+    expect(calls.createInputs).toHaveLength(2);
+    const commands = calls.bumped.map(
+      ({ events }) =>
+        (events[0] as { payload: { command: string } }).payload.command,
+    );
+    expect(commands[0]).toContain("PLAIN_WIKI_HARNESS=codex bash");
+    expect(commands[1]).not.toContain("PLAIN_WIKI_HARNESS");
+  });
+
+  // TEST_SCENARIO: an unknown template id is the agents module's error to
+  // TEST_SCENARIO: report (NOT_FOUND from its create), so resolving the harness family must
+  // TEST_SCENARIO: not fail first.
+  it("lets an unknown template id fall through to the agent create", async () => {
+    const { service, calls } = makeHarness({});
+    await service.create({
+      name: "my-kb",
+      templateId: "missing",
+      kbTemplateId: "llm-wiki",
+    });
+    expect(calls.createInputs).toHaveLength(1);
   });
 });

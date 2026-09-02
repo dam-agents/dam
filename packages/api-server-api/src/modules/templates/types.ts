@@ -27,6 +27,7 @@ export interface TemplateSpec {
   name?: string;
   description?: string;
   category?: TemplateCategory;
+  harness?: string;
   tags?: string[];
   docsUrl?: string;
   releaseNotesUrl?: string;
