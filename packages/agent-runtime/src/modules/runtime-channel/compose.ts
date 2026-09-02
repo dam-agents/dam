@@ -5,6 +5,7 @@ import type {
   HarnessConfigService,
   Plugin,
   RuntimeChannelService,
+  SessionDirectoryEntry,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { RuntimeEnvReader } from "../../core/runtime-env.js";
@@ -31,12 +32,19 @@ import { createRuntimeChannelService } from "./service.js";
 import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
 import { createOpenAiModelDiscovery } from "./infrastructure/model-discovery.js";
 import { runHello } from "./hello.js";
+import {
+  createSessionDirectoryReporter,
+  type SessionDirectoryReporter,
+} from "./session-directory-report.js";
 import type { TriggerSessionDriver } from "../acp/index.js";
+
+const SESSION_DIRECTORY_DEBOUNCE_MS = 1_000;
 
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   manifest: RuntimeManifest;
   harnessConfig: HarnessConfigService;
+  sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
 
@@ -48,6 +56,7 @@ export interface ComposeRuntimeChannelOpts {
   apiServerUrl: string;
   agentId: string;
   triggerDriver: TriggerSessionDriver;
+  readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
   log?: (msg: string) => void;
@@ -138,10 +147,18 @@ export async function composeRuntimeChannel(
     log,
   });
 
+  const sessionDirectory = createSessionDirectoryReporter({
+    client: harnessClient,
+    readSessions: opts.readSessions,
+    debounceMs: SESSION_DIRECTORY_DEBOUNCE_MS,
+    log,
+  });
+
   return {
     service,
     manifest,
     harnessConfig: harnessConfigPlugin,
+    sessionDirectory,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {
         contributions: contributionKinds as never,
@@ -162,8 +179,10 @@ export async function composeRuntimeChannel(
               : undefined,
             log,
           })
-        )
+        ) {
+          sessionDirectory.report();
           return;
+        }
         await new Promise((r) => setTimeout(r, delay));
       }
     },

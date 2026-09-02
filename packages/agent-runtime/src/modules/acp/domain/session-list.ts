@@ -4,6 +4,7 @@ import {
   type PodSession,
   type PodSessionMode,
   type PodSessionType,
+  type SessionDirectoryEntry,
 } from "agent-runtime-api";
 
 const EPOCH = new Date(0).toISOString();
@@ -115,4 +116,18 @@ export function composeSessionList(
   }
 
   return composed;
+}
+
+export function sessionDirectoryEntries(
+  entries: Readonly<Record<string, SessionMetaLike>>,
+  isTombstoned: (sessionId: string) => boolean,
+): SessionDirectoryEntry[] {
+  return Object.entries(entries)
+    .filter(([sessionId]) => !isTombstoned(sessionId))
+    .map(([sessionId, entry]) => ({
+      sessionId,
+      mode: asMode(entry.meta.mode, "chat"),
+      type: asType(entry.meta.type),
+      createdAt: entry.createdAt,
+    }));
 }

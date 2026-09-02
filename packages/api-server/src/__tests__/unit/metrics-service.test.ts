@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+
 import {
   createDisabledMetricsService,
   createMetricsService,
   type MetricsReader,
   type MetricsWindow,
+  type SessionTypeSpend,
 } from "../../modules/metrics/index.js";
 import { isInvocationTargetName } from "../../modules/invocations/index.js";
 
@@ -26,6 +28,7 @@ function spyReader(): {
       tokenSpendByModel: (ids, w) => record(ids, w),
       spendByAgent: (ids, w) => record(ids, w),
       spendByDay: (ids, w) => record(ids, w),
+      spendBySession: (ids, w) => record(ids, w),
       runtimeBySession: (ids, w) => record(ids, w),
       contextPerCall: (ids, w) => record(ids, w),
       close: async () => {},
@@ -39,6 +42,7 @@ const owned = () =>
     { id: "agent-b", name: null },
   ]);
 const neverTarget = (_name: string) => false;
+const noSessionTypeSpend: SessionTypeSpend = { breakdown: async () => [] };
 const query = { sinceHours: 24, limit: 100 };
 
 describe("metrics ownership gate", () => {
@@ -48,6 +52,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.overview(query);
     expect(calls).toEqual(Array(3).fill(["agent-a", "agent-b"]));
@@ -59,6 +64,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.overview({ ...query, agentId: "agent-a" });
     expect(calls).toEqual(Array(3).fill(["agent-a"]));
@@ -70,6 +76,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     const overview = await svc.overview({
       ...query,
@@ -89,6 +96,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.overview({ ...query, sessionId: "sess-1" });
     expect(windows).toEqual(Array(3).fill({ hours: 24, sessionId: "sess-1" }));
@@ -100,6 +108,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: () => Promise.resolve([]),
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     expect((await svc.overview(query)).tokenSpendByModel).toEqual([]);
     expect(calls).toEqual([]);
@@ -115,6 +124,7 @@ describe("metrics ownership gate", () => {
         return owned();
       },
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.spendBreakdown({
       from: "2026-07-01T00:00:00.000Z",
@@ -137,6 +147,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.spendBreakdown({
       from: "2026-07-01T00:00:00.000Z",
@@ -157,12 +168,14 @@ describe("metrics ownership gate", () => {
           zones.push(tz);
           return [];
         },
+        spendBySession: async () => [],
         runtimeBySession: async () => [],
         contextPerCall: async () => [],
         close: async () => {},
       },
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.spendBreakdown({
       from: "2026-07-01T00:00:00.000Z",
@@ -178,6 +191,7 @@ describe("metrics ownership gate", () => {
       reader,
       listOwnedAgents: () => Promise.resolve([]),
       isInvocationTargetName: neverTarget,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     expect(
       await svc.spendBreakdown({
@@ -185,7 +199,7 @@ describe("metrics ownership gate", () => {
         to: "2026-08-01T00:00:00.000Z",
         timeZone: "America/New_York",
       }),
-    ).toEqual({ byModel: [], byAgent: [], byDay: [] });
+    ).toEqual({ byModel: [], byAgent: [], byDay: [], bySessionType: [] });
     expect(calls).toEqual([]);
   });
 
@@ -216,6 +230,7 @@ describe("spendBreakdown per-agent labels", () => {
       tokenSpendByModel: async () => [],
       spendByAgent: async () => rows,
       spendByDay: async () => [],
+      spendBySession: async () => [],
       runtimeBySession: async () => [],
       contextPerCall: async () => [],
       close: async () => {},
@@ -238,6 +253,7 @@ describe("spendBreakdown per-agent labels", () => {
           { id: "driver-2", name: "quiet-heron" },
         ]),
       isInvocationTargetName,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([
@@ -262,6 +278,7 @@ describe("spendBreakdown per-agent labels", () => {
           { id: "agent-live", name: "stellar-sparrow" },
         ]),
       isInvocationTargetName,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([
@@ -281,6 +298,7 @@ describe("spendBreakdown per-agent labels", () => {
       listOwnedAgents: () =>
         Promise.resolve([{ id: "agent-odd", name: "invocation-7445bdaa11ff" }]),
       isInvocationTargetName,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([
@@ -300,6 +318,7 @@ describe("spendBreakdown per-agent labels", () => {
       listOwnedAgents: () =>
         Promise.resolve([{ id: "agent-gone", name: null }]),
       isInvocationTargetName,
+      sessionTypeSpend: noSessionTypeSpend,
     });
     const out = await svc.spendBreakdown(breakdownQuery);
     expect(out.byAgent).toEqual([

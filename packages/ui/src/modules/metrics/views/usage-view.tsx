@@ -2,9 +2,11 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { useFeatures } from "../../features/api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendBars } from "../components/model-spend-bars.js";
 import { MonthSwitcher } from "../components/month-switcher.js";
+import { SessionTypeSpendBars } from "../components/session-type-spend-bars.js";
 import {
   CHART_HEIGHT_CLASS,
   SpendByDayChart,
@@ -37,6 +39,8 @@ export function UsageView() {
     state,
     freshness,
   } = useMonthlySpend();
+  const { data: features } = useFeatures();
+  const showSessionTypes = features?.["session-costs"] ?? false;
   const total = totalCostUsd(data?.byModel ?? []);
   const dailyDays = fillMonthDays(
     shownMonth,
@@ -74,7 +78,9 @@ export function UsageView() {
       {state === "failed" && (
         <UsageNotice>{readFailureMessage(false, label)}</UsageNotice>
       )}
-      {state === "loading" && <UsageSkeleton />}
+      {state === "loading" && (
+        <UsageSkeleton showSessionTypes={showSessionTypes} />
+      )}
       {state === "ready" && data && (
         <div aria-busy={freshness === "updating"} className="space-y-10">
           <section>
@@ -106,6 +112,14 @@ export function UsageView() {
               </section>
             </>
           )}
+          {showSessionTypes && data.bySessionType.length > 0 && (
+            <section>
+              <SectionLabel spaced>Spend by session type</SectionLabel>
+              <Card className="p-5">
+                <SessionTypeSpendBars rows={data.bySessionType} />
+              </Card>
+            </section>
+          )}
           {data.byAgent.length > 0 && (
             <section>
               <SectionLabel spaced>Spend by agent</SectionLabel>
@@ -120,7 +134,7 @@ export function UsageView() {
   );
 }
 
-function UsageSkeleton() {
+function UsageSkeleton({ showSessionTypes }: { showSessionTypes: boolean }) {
   return (
     <div className="space-y-10">
       <section>
@@ -135,6 +149,12 @@ function UsageSkeleton() {
         <SectionLabel spaced>Spend by model</SectionLabel>
         <BarsSkeleton />
       </section>
+      {showSessionTypes && (
+        <section>
+          <SectionLabel spaced>Spend by session type</SectionLabel>
+          <BarsSkeleton />
+        </section>
+      )}
       <section>
         <SectionLabel spaced>Spend by agent</SectionLabel>
         <BarsSkeleton />

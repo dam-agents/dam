@@ -9,6 +9,7 @@ export {
   agentSkills,
   agentSkillPublishes,
   agentEnv,
+  agentSessions,
   agentPublicProfiles,
   egressRules,
   pendingApprovals,

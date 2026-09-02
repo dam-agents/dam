@@ -31,3 +31,15 @@ export const podSessionListSchema = z.object({
 export const podSessionNoticeSchema = z.object({
   topic: z.literal("sessions"),
 });
+
+export const sessionDirectoryEntrySchema = z.object({
+  sessionId: z.string().min(1),
+  mode: podSessionModeSchema,
+  type: podSessionTypeSchema,
+  createdAt: z.string(),
+});
+
+export const sessionDirectoryReportSchema = z.object({
+  protocolVersion: z.literal("v1"),
+  sessions: z.array(sessionDirectoryEntrySchema).max(10_000),
+});

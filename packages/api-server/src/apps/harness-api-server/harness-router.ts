@@ -6,6 +6,7 @@ import type {
   SchedulesService,
   SkillsService,
   RuntimeDeliveryService,
+  SessionDirectoryService,
   TemplatesService,
 } from "api-server-api";
 import type { DefaultResourceLimits } from "../../modules/agents/index.js";
@@ -31,6 +32,7 @@ export function createHarnessRouter(deps: {
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
   runtimeHello: RuntimeDeliveryService;
+  sessionDirectory: SessionDirectoryService;
 }) {
   const app = new Hono();
 
@@ -58,6 +60,7 @@ export function createHarnessRouter(deps: {
   mountRuntimeTrpc(app, {
     k8s: deps.k8s,
     hello: deps.runtimeHello,
+    sessionDirectory: deps.sessionDirectory,
   });
 
   return app;

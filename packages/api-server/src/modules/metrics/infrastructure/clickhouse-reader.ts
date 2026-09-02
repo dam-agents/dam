@@ -9,6 +9,7 @@ import type {
 import type {
   MetricsReader,
   MetricsWindow,
+  SessionSpend,
 } from "../services/metrics-service.js";
 
 export function createClickhouseClient(cfg: {
@@ -149,6 +150,49 @@ export function createClickhouseReader(
         day: String(x.day ?? ""),
         costUsd: n(x.costUsd),
       })) satisfies SpendByDay[];
+    },
+
+    async spendBySession(agentIds, window) {
+      const base = ownedApiRequests({ ...window, sessionId: undefined });
+      const r = await rows(
+        `WITH trace_root AS (
+           SELECT TraceId,
+                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
+           FROM otel_logs
+           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+           GROUP BY TraceId
+         ),
+         session_root AS (
+           SELECT sid, argMin(rootSid, firstAt) AS rootSid
+           FROM (
+             SELECT LogAttributes['session.id'] AS sid,
+                    TraceId,
+                    min(Timestamp) AS firstAt
+             FROM otel_logs
+             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+             GROUP BY sid, TraceId
+           ) AS st
+           INNER JOIN trace_root USING (TraceId)
+           GROUP BY sid
+         )
+         SELECT
+           coalesce(nullIf(rootSid, ''), sid) AS sessionId,
+           sum(rowCostUsd) AS costUsd
+         FROM (
+           SELECT
+             LogAttributes['session.id'] AS sid,
+             ${COST_USD} AS rowCostUsd
+           FROM otel_logs
+           WHERE ${ownedApiRequests(window)}
+         ) AS calls_rows
+         LEFT JOIN session_root USING (sid)
+         GROUP BY sessionId`,
+        windowParams(agentIds, window),
+      );
+      return r.map((x) => ({
+        sessionId: String(x.sessionId ?? ""),
+        costUsd: n(x.costUsd),
+      })) satisfies SessionSpend[];
     },
 
     async runtimeBySession(agentIds, window) {

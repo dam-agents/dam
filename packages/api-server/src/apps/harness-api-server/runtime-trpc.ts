@@ -1,6 +1,10 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import type { Hono } from "hono";
-import type { HarnessContext, RuntimeDeliveryService } from "api-server-api";
+import type {
+  HarnessContext,
+  RuntimeDeliveryService,
+  SessionDirectoryService,
+} from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
@@ -8,6 +12,7 @@ import { resolveAgent } from "./agent-auth.js";
 export interface RuntimeTrpcDeps {
   k8s: K8sClient;
   hello: RuntimeDeliveryService;
+  sessionDirectory: SessionDirectoryService;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -39,6 +44,7 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
       createContext: (): HarnessContext => ({
         agentId,
         runtimeDelivery: deps.hello,
+        sessionDirectory: deps.sessionDirectory,
       }),
     });
   });

@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { SessionCategory } from "../sessions/types.js";
 import type {
   metricsOverviewInputSchema,
   metricsSpendBreakdownInputSchema,
@@ -25,6 +26,13 @@ export interface TokenSpendByModel {
 export interface SpendByAgent {
   agentId: string;
   agentName: string;
+  costUsd: number;
+}
+
+export type SpendCategory = SessionCategory | "unknown";
+
+export interface SpendBySessionType {
+  category: SpendCategory;
   costUsd: number;
 }
 
@@ -71,6 +79,7 @@ export interface SpendBreakdown {
   byModel: TokenSpendByModel[];
   byAgent: SpendByAgent[];
   byDay: SpendByDay[];
+  bySessionType: SpendBySessionType[];
 }
 
 export interface MetricsService {

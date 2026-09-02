@@ -8,6 +8,7 @@ import { composeTemplatesModule } from "../../../modules/templates/index.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
+  createSessionTypeSpend,
 } from "../../../modules/metrics/index.js";
 import { composeSchedulesForOwner } from "../../../modules/schedules/index.js";
 import {
@@ -57,6 +58,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     schedulesBoot,
     listRegisteredAgentIds,
     metricsReader,
+    sessionDirectory,
     terms,
     e2e,
     artifacts,
@@ -268,6 +270,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
             return scoped.map((id) => ({ id, name: names.get(id) ?? null }));
           },
           isInvocationTargetName,
+          sessionTypeSpend: createSessionTypeSpend({
+            readSpend: (agentIds, window) =>
+              metricsReader.spendBySession(agentIds, window),
+            categorizeSessions: (agentIds, sessionIds) =>
+              sessionDirectory.categorize(agentIds, sessionIds),
+            isEnabled: async () =>
+              (await features.flags())["session-costs"] ?? false,
+          }),
         })
       : createDisabledMetricsService();
 

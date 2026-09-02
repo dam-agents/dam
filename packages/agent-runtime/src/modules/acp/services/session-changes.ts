@@ -5,22 +5,29 @@ const COALESCE_MS = 250;
 export interface SessionChanges {
   notify(): void;
   subscribe(listener: () => void): () => void;
+  watch(listener: () => void): () => void;
   onDemand(hooks: { start: () => void; stop: () => void }): void;
 }
 
 export function createSessionChanges(coalesceMs = COALESCE_MS): SessionChanges {
   const listeners = new Set<() => void>();
+  const watchers = new Set<() => void>();
   let pending: ReturnType<typeof setTimeout> | undefined;
   let hooks: { start: () => void; stop: () => void } | undefined;
 
   return {
     notify() {
-      if (listeners.size === 0 || pending) return;
+      if ((listeners.size === 0 && watchers.size === 0) || pending) return;
       pending = setTimeout(() => {
         pending = undefined;
-        for (const listener of listeners) listener();
+        for (const listener of [...listeners, ...watchers]) listener();
       }, coalesceMs);
       pending.unref?.();
+    },
+
+    watch(listener) {
+      watchers.add(listener);
+      return () => watchers.delete(listener);
     },
 
     subscribe(listener) {

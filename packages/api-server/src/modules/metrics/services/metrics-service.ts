@@ -9,11 +9,18 @@ import type {
   TokenSpendByModel,
 } from "api-server-api";
 
+import type { SessionTypeSpend } from "./session-type-spend.js";
+
 export interface MetricsWindow {
   hours?: number;
   fromIso?: string;
   toIso?: string;
   sessionId?: string;
+}
+
+export interface SessionSpend {
+  sessionId: string;
+  costUsd: number;
 }
 
 export interface MetricsReader {
@@ -30,6 +37,10 @@ export interface MetricsReader {
     window: MetricsWindow,
     timeZone: string,
   ): Promise<SpendByDay[]>;
+  spendBySession(
+    agentIds: readonly string[],
+    window: MetricsWindow,
+  ): Promise<SessionSpend[]>;
   runtimeBySession(
     agentIds: readonly string[],
     window: MetricsWindow,
@@ -60,6 +71,7 @@ export function createMetricsService(deps: {
   reader: MetricsReader;
   listOwnedAgents: () => Promise<readonly OwnedAgent[]>;
   isInvocationTargetName: (name: string) => boolean;
+  sessionTypeSpend: SessionTypeSpend;
 }): MetricsService {
   return {
     async overview(query: MetricsQuery) {
@@ -84,12 +96,14 @@ export function createMetricsService(deps: {
     async spendBreakdown(query) {
       const owned = await deps.listOwnedAgents();
       const ids = ownedScope(owned, query.agentId);
-      if (ids.length === 0) return { byModel: [], byAgent: [], byDay: [] };
+      if (ids.length === 0)
+        return { byModel: [], byAgent: [], byDay: [], bySessionType: [] };
       const window = { fromIso: query.from, toIso: query.to };
-      const [byModel, byAgent, byDay] = await Promise.all([
+      const [byModel, byAgent, byDay, bySessionType] = await Promise.all([
         deps.reader.tokenSpendByModel(ids, window),
         deps.reader.spendByAgent(ids, window),
         deps.reader.spendByDay(ids, window, query.timeZone),
+        deps.sessionTypeSpend.breakdown(ids, window),
       ]);
       const liveName = new Map(
         owned.flatMap((a) =>
@@ -109,6 +123,7 @@ export function createMetricsService(deps: {
               !deps.isInvocationTargetName(r.agentName),
           ),
         byDay,
+        bySessionType,
       };
     },
   };
