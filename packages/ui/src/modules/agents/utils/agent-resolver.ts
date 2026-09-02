@@ -1,6 +1,10 @@
 import type { AgentState, AgentView } from "../../../types.js";
 
-export type AgentDisplayState = AgentState | "over_budget";
+export type AgentDisplayState =
+  | AgentState
+  | "over_budget"
+  | "running_always_on"
+  | "idle_always_on";
 
 export interface AgentDisplay {
   state: AgentDisplayState;
@@ -18,13 +22,23 @@ export function resolveAgentDisplay(
   const restarting = restartingAgentIds.has(agent.id);
   const pausing =
     !restarting && agent.state === "running" && pausingAgentIds.has(agent.id);
-  const state: AgentDisplayState = restarting
-    ? "starting"
-    : pausing
-      ? "hibernating"
-      : agent.overBudget
-        ? "over_budget"
-        : agent.state;
+  const alwaysOn = agent.hibernationTimeoutMin === 0;
+
+  let state: AgentDisplayState;
+  if (pausing) {
+    state = "hibernating";
+  } else if (agent.overBudget) {
+    state = "over_budget";
+  } else if (restarting || agent.state === "starting" || agent.state === "preparing_workspace") {
+    state = alwaysOn ? "running_always_on" : "running";
+  } else if (agent.state === "running") {
+    state = alwaysOn ? "running_always_on" : "running";
+  } else if (agent.state === "hibernated") {
+    state = alwaysOn ? "idle_always_on" : "hibernated";
+  } else {
+    state = agent.state;
+  }
+
   const clickable =
     !restarting &&
     !pausing &&

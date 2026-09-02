@@ -22,6 +22,7 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
+  running_always_on: { description: "" },
   starting: { description: "The agent pod is starting up." },
   preparing_workspace: {
     description: "Cloning the workspace seed. This finishes shortly.",
@@ -31,6 +32,11 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
     Icon: Asleep,
     description:
       "The agent went to sleep after a period of inactivity. Start it to pick up where you left off.",
+  },
+  idle_always_on: {
+    Icon: Asleep,
+    description:
+      "The always-on agent is idle. Start it to pick up where you left off.",
   },
   error: {
     Icon: Warning,
@@ -71,7 +77,7 @@ export function AgentUnavailableOverlay({
     );
   }
 
-  if (display.state === "running") {
+  if (display.state === "running" || display.state === "running_always_on") {
     return (
       <OverlayFrame onBack={onBack}>
         <Spinner size={40} />

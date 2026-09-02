@@ -47,10 +47,7 @@ export const agents: AgentView[] = [
     spawnedBy: null,
     name: "packaging-layouts",
     templateId: "claude-code",
-    templateUpdate: {
-      fromImage: "ghcr.io/anthropics/claude-code:1.0.18",
-      toImage: "ghcr.io/anthropics/claude-code:1.0.21",
-    },
+    templateUpdate: null,
     image: "ghcr.io/anthropics/claude-code:latest",
     description: "Creates packaging mockups and print-ready layout files",
 
@@ -65,7 +62,10 @@ export const agents: AgentView[] = [
     size: { cpu: "2000m", memory: "2Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [{ type: "slack", slackChannelId: "C01234" }],
+    channels: [
+      { type: "slack", slackChannelId: "#design-reviews" },
+      { type: "slack", slackChannelId: "#packaging" },
+    ],
 
     kind: undefined,
     kbTemplateId: null,
@@ -76,10 +76,7 @@ export const agents: AgentView[] = [
     spawnedBy: null,
     name: "photo-retouching",
     templateId: "gemini-cli",
-    templateUpdate: {
-      fromImage: "ghcr.io/google/gemini-cli:1.2.0",
-      toImage: "ghcr.io/google/gemini-cli:1.3.0",
-    },
+    templateUpdate: null,
     image: "ghcr.io/google/gemini-cli:latest",
     description:
       "Batch photo retouching, background removal, and color grading",
@@ -87,7 +84,7 @@ export const agents: AgentView[] = [
     hibernationTimeoutMin: 15,
     grantedSecretIds: [],
     grantedConnectionIds: [],
-    state: "starting",
+    state: "running",
     error: undefined,
     stopRequested: false,
     overBudget: false,
@@ -95,7 +92,7 @@ export const agents: AgentView[] = [
     size: { cpu: "1000m", memory: "1Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [],
+    channels: [{ type: "slack", slackChannelId: "#photo-ops" }],
 
     kind: undefined,
     kbTemplateId: null,
@@ -122,7 +119,11 @@ export const agents: AgentView[] = [
     size: { cpu: "250m", memory: "512Mi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [],
+    channels: [
+      { type: "slack", slackChannelId: "#brand" },
+      { type: "slack", slackChannelId: "#design-system" },
+      { type: "slack", slackChannelId: "#creative-ops" },
+    ],
 
     kind: "knowledge-base",
     kbTemplateId: "llm-wiki",
@@ -148,7 +149,7 @@ export const agents: AgentView[] = [
     size: { cpu: "1000m", memory: "1Gi" },
     podTerminationReason: undefined,
     contributionFailures: [],
-    channels: [],
+    channels: [{ type: "slack", slackChannelId: "#dam-dev" }],
 
     kind: "experiment",
     kbTemplateId: null,
