@@ -1,0 +1,1 @@
+ALTER TABLE "library_artifact_versions" ADD COLUMN "session_id" text;
