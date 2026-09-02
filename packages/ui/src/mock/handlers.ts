@@ -93,6 +93,8 @@ function getFixtures(): Record<string, unknown> {
     ],
     "egressRules.currentPreset": "trusted",
     "skills.list": [],
+    "skills.sources.list": [],
+    "skills.listWithScan": { skills: [], scannedAt: null, visibility: null },
     "skills.state": {
       installed: [
         { source: "platform", name: "code-review", version: "1.0.0" },

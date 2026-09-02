@@ -1,4 +1,11 @@
-import { Add, Box, Close, Launch, LogoGithub } from "@carbon/icons-react";
+import {
+  Add,
+  Box,
+  Close,
+  Launch,
+  LogoGithub,
+  TrashCan,
+} from "@carbon/icons-react";
 import type { SkillSource } from "api-server-api";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -8,6 +15,7 @@ import { Callout } from "@/components/ui/callout";
 import { Card, cardSelectionVariants } from "@/components/ui/card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
+import { repoSlug } from "@/lib/git-source";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -685,28 +693,30 @@ function SkillsSetupSection({
           />
         ))}
         {addedSources.map((source) => (
-          <Card key={source.id} className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-              <LogoGithub size={16} className="text-foreground" />
+          <Card key={source.id}>
+            <div className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <LogoGithub size={16} className="shrink-0 text-foreground" />
+                  <p className="truncate text-[15px] font-semibold text-foreground">
+                    {source.name}
+                  </p>
+                </div>
+                <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                  {repoSlug(source.gitUrl)}
+                  {source.path ? ` · ${source.path}` : ""}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => onRemoveSource(source.id)}
+                aria-label={`Remove ${source.name}`}
+              >
+                <TrashCan size={16} />
+              </Button>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">
-                {source.name}
-              </p>
-              <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                {source.gitUrl}
-                {source.path ? `/${source.path}` : ""}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => onRemoveSource(source.id)}
-              aria-label={`Remove ${source.name}`}
-            >
-              <Close size={16} />
-            </Button>
           </Card>
         ))}
       </Inset>
