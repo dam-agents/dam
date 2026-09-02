@@ -201,7 +201,10 @@ export function HomeView() {
               onClose={() => setPreviewArtifactId(null)}
             />
           ) : (
-            <Modal widthClass="w-[860px]">
+            <Modal
+              widthClass="w-[860px]"
+              onClose={() => setPreviewArtifactId(null)}
+            >
               <DialogHeader
                 title={
                   previewFailed ? "Couldn't load the artifact" : "Loading…"

@@ -8,7 +8,7 @@ import {
 import {
   artifactTouchIn,
   type ArtifactTouch,
-} from "../../domain/artifact-touch.js";
+} from "../../infrastructure/artifact-touch.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isRequest,
@@ -87,7 +87,7 @@ export interface AcpRuntimeDeps {
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   isTerminalSessionActive?: (sessionId: string) => boolean;
-  onArtifactTouch?: (touch: ArtifactTouch) => void;
+  onArtifactTouch: (touch: ArtifactTouch) => void;
 }
 
 interface OutboundMapping {
@@ -630,7 +630,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ) {
         return;
       }
-      if (!bootstrap.has(sessionId) && deps.onArtifactTouch) {
+      if (!bootstrap.has(sessionId)) {
         const touch = artifactTouchIn(frame);
         if (touch) deps.onArtifactTouch(touch);
       }

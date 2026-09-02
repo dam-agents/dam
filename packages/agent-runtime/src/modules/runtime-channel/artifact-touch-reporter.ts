@@ -1,4 +1,4 @@
-import { createHarnessClient } from "./harness-client.js";
+import type { HarnessClient } from "./harness-client.js";
 
 const ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2_000;
@@ -12,15 +12,9 @@ export interface ArtifactTouchReporter {
 }
 
 export function createArtifactTouchReporter(opts: {
-  apiServerUrl: string;
-  agentId: string;
+  client: HarnessClient;
   log?: (msg: string) => void;
 }): ArtifactTouchReporter {
-  const client = createHarnessClient({
-    apiServerUrl: opts.apiServerUrl,
-    agentId: opts.agentId,
-  });
-
   async function send(touch: {
     sessionId: string;
     artifactId: string;
@@ -28,12 +22,13 @@ export function createArtifactTouchReporter(opts: {
   }): Promise<void> {
     for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
       try {
-        await client.runtime.v1.reportArtifactTouch.mutate(touch);
+        await opts.client.artifactLibrary.v1.reportTouch.mutate(touch);
         return;
       } catch (err) {
         if (attempt === ATTEMPTS) {
+          const reason = err instanceof Error ? err.message : String(err);
           opts.log?.(
-            `giving up on ${touch.artifactId}@${touch.version}: ${(err as Error).message}`,
+            `giving up on ${touch.artifactId}@${touch.version}: ${reason}`,
           );
           return;
         }

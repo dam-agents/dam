@@ -169,6 +169,9 @@ flowchart LR
   rather than by where the artifact sits.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, with the same actions.
+- The Home feed's session cards carry **artifact chips** — what the session
+  touched since the card was last dismissed, opening the preview dialog in
+  place.
 - The chat view carries the same library twice over: an **Artifacts section**
   in the session sidebar, scoped to the sandbox's agent and offering the same
   per-artifact actions, and a **docked preview** beside the conversation that

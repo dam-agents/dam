@@ -70,7 +70,7 @@ export function createHarnessRouter(deps: {
     k8s: deps.k8s,
     hello: deps.runtimeHello,
     artifactTouchesFor: (owner): ArtifactTouchService => ({
-      record: (input) => deps.artifactLibraryFor(owner).recordTouch(input),
+      recordTouch: (input) => deps.artifactLibraryFor(owner).recordTouch(input),
     }),
     kbPublish: deps.kbPublishGate,
   });

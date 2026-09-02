@@ -1,7 +1,7 @@
 import { SessionType } from "api-server-api";
 
 import type { FeedItem } from "./feed-item.js";
-import { isUnreadSession } from "./unread.js";
+import { isUnreadItem } from "./unread.js";
 
 export type FeedStatus = "all" | "attention" | "in-progress" | "unread";
 
@@ -50,7 +50,7 @@ function matchesStatus(item: FeedItem, status: FeedStatus): boolean {
     case "in-progress":
       return item.kind === "in-progress";
     case "unread":
-      return item.kind === "unread" && isUnreadSession(item.session);
+      return isUnreadItem(item);
   }
 }
 
@@ -72,9 +72,7 @@ export function feedStats(items: readonly FeedItem[]): {
 } {
   return {
     running: items.filter((i) => i.kind === "in-progress").length,
-    toReview: items.filter(
-      (i) => i.kind === "unread" && isUnreadSession(i.session),
-    ).length,
+    toReview: items.filter(isUnreadItem).length,
   };
 }
 

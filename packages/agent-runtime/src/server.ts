@@ -91,13 +91,15 @@ const platformAgentId =
   process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
 
 const filesService = createFilesService(homeDir);
+const harnessClient = createHarnessClient({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+});
+
 const kbPublish = composeKbPublish({
   workDir,
   homeDir,
-  harness: createHarnessClient({
-    apiServerUrl: config.API_SERVER_URL,
-    agentId: platformAgentId,
-  }),
+  harness: harnessClient,
   log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
 });
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
@@ -119,8 +121,7 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
 );
 
 const artifactTouchReporter = createArtifactTouchReporter({
-  apiServerUrl: config.API_SERVER_URL,
-  agentId: platformAgentId,
+  client: harnessClient,
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
 

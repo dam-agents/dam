@@ -1,4 +1,5 @@
 import { Document } from "@carbon/icons-react";
+import { useState } from "react";
 
 import type { ArtifactTouched } from "../api/queries.js";
 
@@ -11,11 +12,12 @@ export function FeedArtifactChips({
   artifacts: readonly ArtifactTouched[];
   onOpen: (artifactId: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (artifacts.length === 0) return null;
   const ordered = [...artifacts].sort(
     (a, b) => Date.parse(b.touchedAt) - Date.parse(a.touchedAt),
   );
-  const shown = ordered.slice(0, SHOWN);
+  const shown = expanded ? ordered : ordered.slice(0, SHOWN);
   const rest = ordered.length - shown.length;
 
   return (
@@ -33,7 +35,13 @@ export function FeedArtifactChips({
         </button>
       ))}
       {rest > 0 && (
-        <span className="text-sm text-muted-foreground">+{rest} more</span>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          +{rest} more
+        </button>
       )}
     </div>
   );

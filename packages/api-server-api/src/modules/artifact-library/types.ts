@@ -139,7 +139,7 @@ export interface ArtifactTouch {
 }
 
 export interface ArtifactTouchService {
-  record(input: {
+  recordTouch(input: {
     agentId: string;
     sessionId: string;
     artifactId: string;

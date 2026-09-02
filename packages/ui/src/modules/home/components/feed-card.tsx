@@ -71,7 +71,7 @@ export function FeedCard({
         {onDismiss && (
           <button
             type="button"
-            className="relative z-10 shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+            className="relative z-10 shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
             onClick={onDismiss}
           >
             Dismiss

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artifactTouchIn } from "../../modules/acp/domain/artifact-touch.js";
+import { artifactTouchIn } from "../../modules/acp/infrastructure/artifact-touch.js";
 
 const SESSION = "abe53601-a7a2-4d17-9726-d93af979937a";
 const ARTIFACT = "38172c69-e53f-45fd-9b2e-5e7bc018fdd7";

@@ -23,3 +23,14 @@ export function isFeedableSession(
   if (!at) return false;
   return now - Date.parse(at) <= FEED_WINDOW_MS;
 }
+
+export function isUnreadItem(item: {
+  kind: string;
+  session?: SessionView;
+}): boolean {
+  return (
+    item.kind === "unread" &&
+    item.session !== undefined &&
+    isUnreadSession(item.session)
+  );
+}
