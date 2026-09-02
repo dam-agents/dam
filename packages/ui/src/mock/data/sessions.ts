@@ -17,6 +17,7 @@ interface MockPodSession {
   threadTs: string | null;
   seenAt: string | null;
   running: boolean;
+  channelName?: string | null;
 }
 
 function hoursAgo(h: number): string {
@@ -54,6 +55,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(1),
       title: "#design-reviews",
       threadTs: "ambient:C04DESIGN",
+      channelName: "#design-reviews",
       running: false,
     },
     {
@@ -65,6 +67,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(2),
       title: "Logo refresh feedback",
       threadTs: "C04DESIGN:1717200000.000100",
+      channelName: "#design-reviews",
       running: false,
     },
     {
@@ -87,6 +90,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(2.5),
       title: "DAM Design Group",
       threadTs: null,
+      channelName: "DAM Design Group",
       running: false,
     },
   ],
@@ -101,6 +105,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(0.1),
       title: "#packaging-ops",
       threadTs: "ambient:C05PACKAGING",
+      channelName: "#packaging-ops",
       running: true,
     },
     {
@@ -112,6 +117,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(0.8),
       title: "Print spec dimensions",
       threadTs: "C05PACKAGING:1717210000.000200",
+      channelName: "#packaging-ops",
       running: false,
     },
     {
@@ -134,6 +140,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(6),
       title: "DM with @sarah",
       threadTs: "D08SARAH:1717180000.000300",
+      channelName: "DM with @sarah",
       running: false,
     },
     {
@@ -192,6 +199,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(3),
       title: "Photo Team Chat",
       threadTs: null,
+      channelName: "Photo Team Chat",
       running: false,
     },
   ],
@@ -206,6 +214,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(0.3),
       title: "#infra-cache",
       threadTs: "ambient:C03CACHE",
+      channelName: "#infra-cache",
       running: true,
     },
     {
@@ -217,6 +226,7 @@ export const agentSessions: Record<string, MockPodSession[]> = {
       updatedAt: hoursAgo(1.5),
       title: "Eviction policy for asset CDN",
       threadTs: "C03CACHE:1717195000.000400",
+      channelName: "#infra-cache",
       running: false,
     },
     {

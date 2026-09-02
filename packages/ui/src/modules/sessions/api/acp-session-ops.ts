@@ -98,6 +98,7 @@ const POD_MODE: Record<PodSession["mode"], SessionMode> = {
 
 function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
   return {
+    ...(s as Record<string, unknown>),
     sessionId: s.sessionId,
     agentId,
     type: POD_TYPE[s.type],

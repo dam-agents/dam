@@ -115,6 +115,8 @@ export function SessionRow({
     s.type === SessionType.ChannelSlack ||
     s.type === SessionType.ChannelTelegram;
   const slackKind = slackSessionKind(s);
+  const channelName =
+    (s as SessionView & { channelName?: string }).channelName ?? null;
 
   return (
     <div
@@ -153,11 +155,7 @@ export function SessionRow({
           />
         </div>
         <span className="text-[11px] text-muted-foreground">
-          {slackKind
-            ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
-            : s.type === SessionType.ChannelTelegram
-              ? "Telegram · "
-              : ""}
+          {channel && channelName ? `${channelName} · ` : ""}
           {formatTimestamp(s.updatedAt ?? s.createdAt)}
           {cost && (
             <span
