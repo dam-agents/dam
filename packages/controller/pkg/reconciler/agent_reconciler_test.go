@@ -758,6 +758,21 @@ func TestReconcile_ClaimsWarmPoolSpare(t *testing.T) {
 	assert.Equal(t, "platform-pool-aaaaaa", claim)
 }
 
+func TestReconcile_PinnedAgentSkipsWarmPool(t *testing.T) {
+	agent := agentCR()
+	agent.Spec.StorageClass = "fast-block"
+	r, client := setupReconciler(t, agent, availableSpare("platform-pool-aaaaaa", "10Gi", corev1.ClaimBound, time.Now()))
+	enableWarmPool(r, config.WarmPoolSize{Size: "10Gi", Target: 1})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	spare, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "platform-pool-aaaaaa", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, spare.Labels, LabelAgent, "a spare on the pool's class must not back an agent pinned to another class")
+	ss := getAgentSTS(t, client, "my-agent")
+	assert.True(t, hasVCT(ss, "home-agent"), "the pinned agent provisions on its own class via volumeClaimTemplate")
+}
+
 func TestReconcile_FallsBackWhenPoolEmpty(t *testing.T) {
 	agent := agentCR()
 	r, client := setupReconciler(t, agent)

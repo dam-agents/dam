@@ -1130,6 +1130,10 @@ controller:
     # cluster default — and fix `agent.base.storageClass` (and
     # `warmPool.storageClass`) too, or newly-created agents keep landing on
     # the old backend.
+    #
+    # An Agent that pins its own storage class (`spec.storageClass` on the
+    # Agent CR) migrates onto — and stays on — its pin instead: pinning the
+    # class a workspace already sits on exempts that agent from the drain.
     targetStorageClass: ""
     # -- Permit a migration whose target class is the class the workspace is
     # already on. Refused by default: it changes the access mode and nothing

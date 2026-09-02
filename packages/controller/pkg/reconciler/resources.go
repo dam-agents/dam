@@ -138,8 +138,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storageSize)},
 				},
 			}
-			if base.StorageClass != "" {
-				sc := base.StorageClass
+			if sc := effectiveStorageClass(agentSpec, base); sc != "" {
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -327,6 +326,13 @@ func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults conf
 		return agentSpec.StorageSize
 	}
 	return defaults.StorageSize
+}
+
+func effectiveStorageClass(agentSpec *types.AgentSpec, base config.AgentBase) string {
+	if agentSpec.StorageClass != "" {
+		return agentSpec.StorageClass
+	}
+	return base.StorageClass
 }
 
 func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {

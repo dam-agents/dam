@@ -661,6 +661,55 @@ func TestStorageMigration_EnsuresDedicatedServiceAccount(t *testing.T) {
 	assert.False(t, *sa.AutomountServiceAccountToken)
 }
 
+func TestStorageMigration_PinnedAgentIsLeftOnItsClass(t *testing.T) {
+	agent := agentCR()
+	agent.Spec.StorageClass = "ibmc-vpc-file-500-iops-agent"
+	src := classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteOnce)
+	m, client := migrationManager(t, agent, src, defaultBlockClass(), fileClass())
+	m.config.StorageMigration.TargetStorageClass = "block-default"
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration], "a pinned workspace already on its class must not be drained")
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items)
+}
+
+func TestStorageMigration_PinnedAgentMigratesOntoItsPin(t *testing.T) {
+	agent := agentCR()
+	agent.Spec.StorageClass = "ibmc-vpc-file-500-iops-agent"
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	src := classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "block-default", corev1.ReadWriteOnce)
+	m, client := migrationManager(t, agent, src, defaultBlockClass(), fileClass())
+
+	m.Reconcile(context.Background())
+
+	target, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, target.Spec.StorageClassName)
+	assert.Equal(t, "ibmc-vpc-file-500-iops-agent", *target.Spec.StorageClassName,
+		"the target provisions on the agent's pinned class, not the fleet-wide destination")
+}
+
+func TestStorageMigration_DisabledReleaseHonorsPin(t *testing.T) {
+	agent := agentCR()
+	agent.Spec.StorageClass = "ibmc-vpc-file-500-iops-agent"
+	agent.Annotations = map[string]string{annStorageMigration: "migrating"}
+	src := classedPVC("home-agent-my-agent-0", "my-agent", "home-agent", "block-default", corev1.ReadWriteOnce)
+	target := classedPVC("mig-home-agent-my-agent-0", "", "home-agent", "ibmc-vpc-file-500-iops-agent", corev1.ReadWriteOnce)
+	target.Labels = map[string]string{LabelMigrationFor: "my-agent", LabelPool: migrationPoolValue, LabelMount: "home-agent"}
+	m, client := migrationManager(t, agent, src, target, defaultBlockClass(), fileClass())
+
+	m.ReleaseGated(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration], "the gate is released")
+	_, err := client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "mig-home-agent-my-agent-0", metav1.GetOptions{})
+	assert.Error(t, err, "the half-copied target of a still-needed pinned migration is binned")
+}
+
 func TestStorageMigration_ServiceAccountFailureBlocksThePass(t *testing.T) {
 	agent := agentCR()
 	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))

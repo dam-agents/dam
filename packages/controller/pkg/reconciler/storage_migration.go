@@ -101,13 +101,25 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 	}
 	targetClass, _ := m.resolveTargetClass(ctx)
 	allowSame := m.config.StorageMigration.AllowSameStorageClass
+	gated := make([]*apiv1.Agent, 0, len(agents.Items))
+	known := map[string]*apiv1.Agent{}
+	for i := range agents.Items {
+		agent, err := FromCacheObject[apiv1.Agent](&agents.Items[i])
+		if err != nil {
+			continue
+		}
+		known[agent.Name] = agent
+		if agent.Annotations[annStorageMigration] != "" {
+			gated = append(gated, agent)
+		}
+	}
 	rwx := map[string]bool{}
 	if pvcs, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent,
 	}); err == nil {
 		for i := range pvcs.Items {
 			p := pvcs.Items[i]
-			if _, needed := migrationReason(&p, targetClass, allowSame); needed {
+			if _, needed := migrationReason(&p, agentTargetClass(known[p.Labels[LabelAgent]], targetClass), allowSame); needed {
 				rwx[p.Labels[LabelAgent]] = true
 			}
 		}
@@ -116,11 +128,7 @@ func (m *StorageMigrationManager) ReleaseGated(ctx context.Context) {
 		return
 	}
 
-	for i := range agents.Items {
-		agent, err := FromCacheObject[apiv1.Agent](&agents.Items[i])
-		if err != nil || agent.Annotations[annStorageMigration] == "" {
-			continue
-		}
+	for _, agent := range gated {
 		if rwx[agent.Name] {
 			prop := metav1.DeletePropagationBackground
 			if err := m.client.BatchV1().Jobs(m.config.Namespace).Delete(ctx, migrationJobName(agent.Name),
@@ -182,28 +190,6 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 	targetClass, explicitClass := m.resolveTargetClass(ctx)
 	allowSame := m.config.StorageMigration.AllowSameStorageClass
 
-	rwxByAgent := map[string][]corev1.PersistentVolumeClaim{}
-	for i := range pvcs.Items {
-		p := pvcs.Items[i]
-		reason, needed := migrationReason(&p, targetClass, allowSame)
-		agent := p.Labels[LabelAgent]
-		if !needed {
-			if isRWX(p.Spec.AccessModes) && !m.warnedSameClass[agent] {
-				m.warnedSameClass[agent] = true
-				slog.Warn("storage migration: refusing to migrate onto the volume's own storage class — the access mode would change but the backend would not",
-					"agent", agent, "pvc", p.Name, "class", targetClass,
-					"remedy", "set controller.storageMigration.targetStorageClass to the class agents should end on (empty = cluster default), or allowSameStorageClass=true if this is intended")
-			}
-			continue
-		}
-		if !m.loggedReason[agent] {
-			m.loggedReason[agent] = true
-			slog.Info("storage migration: workspace needs migrating", "agent", agent, "pvc", p.Name,
-				"reason", reason, "target", map[bool]string{true: targetClass, false: targetClass + " (cluster default)"}[explicitClass])
-		}
-		rwxByAgent[agent] = append(rwxByAgent[agent], p)
-	}
-
 	agents, err := m.dynamic.Resource(AgentsGVR).Namespace(m.config.Namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		slog.Warn("storage migration: listing agents failed", "error", err)
@@ -220,6 +206,32 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		if agent.Annotations[annStorageMigration] != "" {
 			inFlight[agent.Name] = true
 		}
+	}
+
+	rwxByAgent := map[string][]corev1.PersistentVolumeClaim{}
+	for i := range pvcs.Items {
+		p := pvcs.Items[i]
+		agent := p.Labels[LabelAgent]
+		target := agentTargetClass(known[agent], targetClass)
+		reason, needed := migrationReason(&p, target, allowSame)
+		if !needed {
+			if isRWX(p.Spec.AccessModes) && !m.warnedSameClass[agent] {
+				m.warnedSameClass[agent] = true
+				remedy := "set controller.storageMigration.targetStorageClass to the class agents should end on (empty = cluster default), or allowSameStorageClass=true if this is intended"
+				if known[agent] != nil && known[agent].Spec.StorageClass != "" {
+					remedy = "the agent pins this class via spec.storageClass — remove the pin to rejoin the fleet-wide drain, or set allowSameStorageClass=true if changing only the access mode is intended"
+				}
+				slog.Warn("storage migration: refusing to migrate onto the volume's own storage class — the access mode would change but the backend would not",
+					"agent", agent, "pvc", p.Name, "class", target, "remedy", remedy)
+			}
+			continue
+		}
+		if !m.loggedReason[agent] {
+			m.loggedReason[agent] = true
+			slog.Info("storage migration: workspace needs migrating", "agent", agent, "pvc", p.Name,
+				"reason", reason, "target", map[bool]string{true: target, false: target + " (cluster default)"}[explicitClass || target != targetClass])
+		}
+		rwxByAgent[agent] = append(rwxByAgent[agent], p)
 	}
 
 	work := map[string]bool{}
@@ -262,7 +274,7 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 			}
 			slots--
 		}
-		if err := m.migrateAgent(ctx, agent, rwxByAgent[name], targetClass); err != nil {
+		if err := m.migrateAgent(ctx, agent, rwxByAgent[name], agentTargetClass(agent, targetClass)); err != nil {
 			slog.Warn("storage migration: agent migration step failed", "agent", name, "error", err)
 		}
 	}
@@ -304,6 +316,13 @@ func (m *StorageMigrationManager) warnResolveOnce(msg string, err error) {
 		return
 	}
 	slog.Warn(msg)
+}
+
+func agentTargetClass(agent *apiv1.Agent, globalTarget string) string {
+	if agent != nil && agent.Spec.StorageClass != "" {
+		return agent.Spec.StorageClass
+	}
+	return globalTarget
 }
 
 func migrationReason(pvc *corev1.PersistentVolumeClaim, targetClass string, allowSame bool) (string, bool) {
@@ -405,7 +424,7 @@ func (m *StorageMigrationManager) migrateAgent(ctx context.Context, agent *apiv1
 			if mount == "" {
 				mount = strings.TrimSuffix(old.Name, "-"+name+"-0")
 			}
-			target, err := m.ensureTargetPVC(ctx, name, mount, &old, ownerRef, targetClass)
+			target, err := m.ensureTargetPVC(ctx, agent, mount, &old, ownerRef, targetClass)
 			if err != nil {
 				return err
 			}
@@ -451,7 +470,8 @@ type migrationPair struct {
 	mount  string
 }
 
-func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference, targetClass string) (string, error) {
+func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agent *apiv1.Agent, mount string, old *corev1.PersistentVolumeClaim, ownerRef metav1.OwnerReference, targetClass string) (string, error) {
+	agentName := agent.Name
 	targetName := migrationTargetName(old.Name)
 	existing, err := m.client.CoreV1().PersistentVolumeClaims(m.config.Namespace).Get(ctx, targetName, metav1.GetOptions{})
 	if err == nil {
@@ -500,7 +520,11 @@ func (m *StorageMigrationManager) ensureTargetPVC(ctx context.Context, agentName
 			Requests: corev1.ResourceList{corev1.ResourceStorage: size},
 		},
 	}
-	if sc := m.config.StorageMigration.TargetStorageClass; sc != "" {
+	sc := agent.Spec.StorageClass
+	if sc == "" {
+		sc = m.config.StorageMigration.TargetStorageClass
+	}
+	if sc != "" {
 		spec.StorageClassName = &sc
 	}
 	pvc := &corev1.PersistentVolumeClaim{

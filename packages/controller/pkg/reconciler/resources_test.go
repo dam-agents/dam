@@ -276,6 +276,19 @@ func TestBuildAgentStatefulSet_AgentStorageClass(t *testing.T) {
 	assert.Equal(t, "platform-rwx", *pvc.Spec.StorageClassName)
 }
 
+func TestBuildAgentStatefulSet_SpecStorageClassOverridesBase(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentBase.StorageClass = "platform-rwx"
+	spec := *testAgent
+	spec.StorageClass = "fast-block"
+	ss := BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "")
+
+	require.Len(t, ss.Spec.VolumeClaimTemplates, 1)
+	pvc := ss.Spec.VolumeClaimTemplates[0]
+	require.NotNil(t, pvc.Spec.StorageClassName)
+	assert.Equal(t, "fast-block", *pvc.Spec.StorageClassName)
+}
+
 func TestBuildAgentStatefulSet_PodFilesEventsURL(t *testing.T) {
 	cfg := *testConfig
 	cfg.HarnessServerURL = "http://platform-apiserver.default.svc:4001"
