@@ -8,6 +8,7 @@ const REQUIRED_ENV: Record<string, string> = {
   ACTIVITY_HMAC_KEY: "test-activity-hmac-key",
   API_KEY_HMAC_KEY: "test-api-hmac-key",
   SHARE_BASE_URL: "http://share.localhost:4444",
+  CONTENT_BASE_URL: "http://content.localhost:4444",
   TERMS_VERSION: "1",
   TERMS_TEXT: "terms",
 };

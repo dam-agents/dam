@@ -122,6 +122,7 @@ const configSchema = z.object({
   objectStorageSecretAccessKey: z.string().nullable().default(null),
   objectStorageForcePathStyle: z.stringbool().default(true),
   shareBaseUrl: z.url({ error: "SHARE_BASE_URL must be a valid URL" }),
+  contentBaseUrl: z.url({ error: "CONTENT_BASE_URL must be a valid URL" }),
   kbSharePerFileMaxBytes: z.coerce
     .number()
     .int()
@@ -160,6 +161,16 @@ const validatedConfigSchema = configSchema
       message:
         "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY must be set together (or both left unset for the SDK default provider chain)",
       path: ["objectStorageAccessKeyId"],
+    },
+  )
+  .refine(
+    (c) =>
+      new URL(c.contentBaseUrl).hostname.toLowerCase() !==
+      new URL(c.shareBaseUrl).hostname.toLowerCase(),
+    {
+      message:
+        "CONTENT_BASE_URL must be a different host than SHARE_BASE_URL: the browser isolates artifact code from the share host by origin",
+      path: ["contentBaseUrl"],
     },
   );
 
@@ -246,6 +257,7 @@ export function loadConfig(): Config {
     objectStorageSecretAccessKey: process.env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
     objectStorageForcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE,
     shareBaseUrl: process.env.SHARE_BASE_URL,
+    contentBaseUrl: process.env.CONTENT_BASE_URL,
     kbSharePerFileMaxBytes: process.env.KB_SHARE_PER_FILE_MAX_BYTES,
     kbShareTotalMaxBytes: process.env.KB_SHARE_TOTAL_MAX_BYTES,
     kbShareMaxFiles: process.env.KB_SHARE_MAX_FILES,

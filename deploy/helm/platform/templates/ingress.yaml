@@ -23,6 +23,7 @@
 {{- $keycloakHost = include "platform.url.host" .Values.urls.keycloak -}}
 {{- end -}}
 {{- $shareHost := include "platform.url.host" (include "platform.url.share" .) -}}
+{{- $contentHost := include "platform.url.host" (include "platform.url.content" .) -}}
 {{- $uiSvc := printf "%s-ui" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- $apiSvc := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" -}}
 apiVersion: networking.k8s.io/v1
@@ -49,6 +50,19 @@ spec:
            knowledge-base MCP endpoint (/mcp/kb), all paths to the api-server
            (which host-gates them onto the share-host app). */}}
     - host: {{ $shareHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $apiSvc }}
+                port:
+                  name: http
+    {{- /* Content host — the artifact documents and raw bytes the share page
+           frames. Same backend; the api-server host-gates it onto the
+           content app, which has no other routes. */}}
+    - host: {{ $contentHost }}
       http:
         paths:
           - path: /

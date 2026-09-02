@@ -52,7 +52,7 @@ function chromePage(title: string, body: string): string {
 export interface WrapperInput {
   title: string;
   brandName: string;
-  innerHtml: string;
+  contentUrl: string;
   slug: string;
   version: number;
   versionCount: number;
@@ -100,7 +100,7 @@ export function renderWrapper(input: WrapperInput): string {
   ${versionNav}
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="${escapeHtml(input.innerHtml)}" title="${escapeHtml(input.title)}"></iframe>
+<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
 </body>
 </html>`;
 }

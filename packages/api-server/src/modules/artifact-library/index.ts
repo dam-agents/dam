@@ -8,5 +8,6 @@ export type { ArtifactLibraryServiceImpl } from "./services/artifact-library-ser
 export type { ShareViewerService } from "./services/share-viewer-service.js";
 export type { ArtifactExpirySweeper } from "./services/expiry-sweeper.js";
 export { createShareViewerApp } from "./viewer/viewer-app.js";
-export { createShareHostGate } from "./viewer/share-host-gate.js";
+export { createContentApp } from "./viewer/content-app.js";
+export { createByLinkHostGate } from "./viewer/by-link-host-gate.js";
 export { createArtifactLibraryRoutes } from "./library-routes.js";
