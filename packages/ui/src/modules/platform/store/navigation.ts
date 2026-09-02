@@ -17,7 +17,8 @@ type ParameterlessView =
   | "artifacts"
   | "agents"
   | "agent-new"
-  | "packs";
+  | "packs"
+  | "setup-workbench";
 
 export interface NavigationSlice {
   view: View;

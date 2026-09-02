@@ -1,5 +1,5 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
@@ -40,12 +40,14 @@ interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
+  initialTemplateId?: string;
 }
 
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
   oauthReturnView,
+  initialTemplateId,
 }: Props) {
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -68,6 +70,27 @@ export function ConnectionCatalogModal({
     [counts],
   );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
+
+  const didAutoOpen = useRef(false);
+  useEffect(() => {
+    if (!initialTemplateId || didAutoOpen.current || allGroups.length === 0)
+      return;
+    didAutoOpen.current = true;
+    for (const group of allGroups) {
+      const match = group.templates.find((t) => t.id === initialTemplateId);
+      if (match) {
+        if (group.templates.length > 1)
+          setPane({ kind: "choose", providerId: group.provider.id });
+        else
+          setPane({
+            kind: "create",
+            templateId: match.id,
+            providerId: group.provider.id,
+          });
+        return;
+      }
+    }
+  }, [initialTemplateId, allGroups]);
 
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))

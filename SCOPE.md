@@ -8,9 +8,9 @@ Do not merge. Do not open a PR.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Left-rail nav item | Done | `Categories` icon, routes to `/packs` |
-| Packs list page | Done | `PageHeader`, pill `Tabs` (All / Development / Knowledge / Monitoring / Research), search, card grid |
-| Pack detail modal | Done | `Modal` with focus trap, scroll lock, ingredients split into Included / You'll need, video placeholder |
-| 6 honest fixtures | Done | Only real primitives: harnesses, frameworks, connections, channels, schedules, skills, knowledge bases, starter repos |
+| Packs list page | Done | Spotlight hero + card grid, `PackIngredientSummary` per card, pill tabs, search |
+| Pack detail modal | Done | Full-width two-column layout (Included / You'll need), RRULE rendered via `rruleToText` |
+| 6 honest fixtures | Done | RRULE format for schedules, unique per-pack slot descriptions |
 | Data model | Done | `PackIngredientKind` (9 kinds), `PackSlot` with `demoValue`, `connectionTemplateId`, `Pack` with `included[]` / `required[]` |
 | Setup-flow entry point | Done | "Browse packs" callout in the create-agent form |
 | Flow A: Create from pack | Done | Pack detail → prefilled setup form → Create agent → chat with summary message |
@@ -26,7 +26,7 @@ What travels from a pack to the setup form today vs what needs more work:
 |------------|---------------|-------|
 | Harness (templateId) | Yes | Matched from `PackSlot.templateId` |
 | Connections | Yes | Matched by `connectionTemplateId` against user's existing connections |
-| Schedules | Yes | Built from `demoValue` cron → `ScheduleDraft` via `cronToRRule` |
+| Schedules | Yes | Built from `demoValue` RRULE → `ScheduleDraft` with `customRRule` |
 | Name | Yes | Auto-generated from pack slug via `nextNameWithPrefix` |
 | Skills | No | Needs `skillSetApplyInputSchema` call after create — mock skips this |
 | Knowledge bases | No | No create-time API; shows in "Still needed" summary message |
@@ -48,17 +48,35 @@ The 5-string union (`codingagent-`, `experiment-`, etc.) cannot be widened for p
 
 `create-demo-agent.ts` calls `seedDemoCaches` after inserting the demo agent, but the function body is empty. Demo agent settings pages (schedules, skills, connections) won't show populated data yet — only the chat is seeded.
 
+## Designer decisions (visual language review)
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Featured badge removed | Cut entirely from hero | Spotlight position already communicates prominence; an extra badge adds no information |
+| Grid card placeholder art | Removed grey `bg-muted` blocks | Cards now show icon + ingredient summary + tagline; grey rectangles added visual noise without communicating pack contents |
+| "Walk away" moved to overflow | Destructive action behind `OverflowMenuVertical` | NN/g severity-to-effort: destructive exit should require the most clicks. Primary is "Create my own", secondary is "Back to packs" |
+| Demo agent fate on convert | `makeThisMine` → `setPendingPack` + navigate to agent-new | The user gets a real setup form prefilled from the pack, rather than silently promoting a demo agent with incomplete state |
+| Video placeholder | Removed from detail sheet | No real video content exists; CSP blocks external embeds anyway. Replaced with full-width two-column ingredient layout |
+| Category badge | Kept in detail sheet header only, `variant="muted"` | Removed from grid cards (cards are already filtered by category tabs) but useful context when viewing a single pack in detail |
+
+## Vocabulary gap
+
+The word "Pack" is a working title. It may need renaming before shipping — candidates include "template", "starter", "recipe", "bundle". No decision needed for the prototype, but the abstraction behind it (a one-time preset bundle of ingredients) is stable.
+
 ## Demo agent design decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Demo agent ID | `"demo-" + pack.id` (stable) | Second "Try it" press returns to existing demo, no duplicates |
-| Demo agent `state` | `"running"` | Needed to suppress `AgentUnavailableOverlay` in chat view |
-| Demo in agents list | Shown with Demo badge | Agents list reads from query cache; demo agent is inserted there |
-| Demo overlay suppression | `!agentOperable && !isDemo` guard | Prevents overlay from blocking demo agent chat |
-| Exit: Make this mine | Clears demo flag, keeps agent | Agent stays in list as a normal agent |
-| Exit: Back to packs | Keeps demo for re-entry | Navigate to packs view, demo stays in cache |
-| Exit: Walk away | Removes agent from cache | Clean teardown, returns to packs |
+| Demo agent name | `"Pack Name (demo)"` e.g. "Code Reviewer (demo)" | Human-readable in agents list, clearly marked as demo |
+| Demo agent `state` | `"running"` | Demo agents always appear operable — no unavailable overlay |
+| Demo in agents list | Shown with Demo badge (`variant="info"`) | Agents list reads from query cache; demo agent is inserted there |
+| Demo banner | Callout tokens (`--c-callout-bg`, `--c-callout-border`) | Works in both themes, unlike `bg-warning/5` which washes out in dark mode |
+| Demo chat border | 2px left border in `--c-callout-border` | Persistent visual signal that this is a demo context |
+| Demo chat placeholder | Pack's `suggestedPrompt` from demo fixtures | Each pack gets a contextual prompt instead of generic rotating examples |
+| Exit: Create my own | Primary button, `setPendingPack` + navigate to agent-new | User gets the full setup form prefilled from the pack |
+| Exit: Back to packs | Secondary button, keeps demo for re-entry | Navigate to packs view, demo stays in cache |
+| Exit: Delete demo agent | Overflow menu, destructive styling | Clean teardown, removes agent from cache, returns to packs |
 
 ## What needs server work
 
@@ -72,6 +90,6 @@ The 5-string union (`codingagent-`, `experiment-`, etc.) cannot be widened for p
 
 1. **Can packs be user-authored?** The current model is static presets. If users can create and share packs, the data model needs ownership, visibility, and storage.
 2. **Apply semantics**: The spec says additive-only, never silently overwrite. But what happens when a pack sets a schedule cron that conflicts with an existing one? Show both? Rename?
-3. **Make-this-mine flow**: After demo, the user keeps the agent but needs to fill in real values for missing slots. Currently this just clears the demo flag — no guided slot-filling yet.
+3. **Make-this-mine flow**: After demo, the user keeps the agent but needs to fill in real values for missing slots. Currently this navigates to the setup form prefilled from the pack.
 4. **Pack versioning**: The spec says "a pack is a one-time preset, not a live link." If the catalog changes, does an already-applied pack update? Current answer: no.
 5. **Demo cache seeding**: `seedDemoCaches` is a stub. Should demo agent settings (schedules, skills, connections panels) show populated fixture data, or is the chat seed sufficient for the prototype?

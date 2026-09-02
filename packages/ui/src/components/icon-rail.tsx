@@ -1,9 +1,10 @@
 import {
+  Book,
+  Box,
   type CarbonIconType,
-  Categories,
   ChevronLeft,
   ChevronRight,
-  ContainerSoftware,
+  EdgeDevice,
   Folders,
   Home,
   Settings,
@@ -44,14 +45,21 @@ export function IconRail({
   };
   const agents: Destination = {
     label: "Agents",
-    icon: ContainerSoftware,
+    icon: EdgeDevice,
     active: view === "agents" || view === "agent-new",
     badge: 0,
     navigate: () => setView("agents"),
   };
+  const knowledgeBases: Destination = {
+    label: "Knowledge",
+    icon: Book,
+    active: view === ("knowledge-base-config" as string),
+    badge: 0,
+    navigate: () => setView("agents"),
+  };
   const packs: Destination = {
-    label: "Packs",
-    icon: Categories,
+    label: "Presets",
+    icon: Box,
     active: view === "packs",
     badge: 0,
     navigate: () => setView("packs"),
@@ -131,6 +139,7 @@ export function IconRail({
         <div className="mt-px flex flex-col gap-px">
           <RailItem {...sandboxes} expanded={expandedNav} />
           <RailItem {...agents} expanded={expandedNav} />
+          <RailItem {...knowledgeBases} expanded={expandedNav} />
           <RailItem {...packs} expanded={expandedNav} />
         </div>
         <div className="flex-1" />
@@ -142,11 +151,9 @@ export function IconRail({
 
       {!hideMobileBar && (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-nav flex items-stretch border-t bg-card/95 backdrop-blur-xl safe-bottom">
-          {[sandboxes, agents, packs, artifacts, settings].map(
-            (destination) => (
-              <BottomBarItem key={destination.label} {...destination} />
-            ),
-          )}
+          {[sandboxes, agents, knowledgeBases, packs].map((destination) => (
+            <BottomBarItem key={destination.label} {...destination} />
+          ))}
         </nav>
       )}
     </>

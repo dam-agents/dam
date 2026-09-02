@@ -35,7 +35,8 @@ export type Route =
   | { view: "knowledge-base-chat"; agent: string }
   | { view: "knowledge-base-config"; agentId: string }
   | { view: "artifacts" }
-  | { view: "packs" };
+  | { view: "packs" }
+  | { view: "setup-workbench" };
 
 export type View = Route["view"];
 
@@ -99,6 +100,7 @@ export function parseRoute(path: string): Route {
   if (RETIRED_PATHS.has(path)) return { view: "agents" };
   if (path === "/artifacts") return { view: "artifacts" };
   if (path === "/packs") return { view: "packs" };
+  if (path === "/setup-workbench") return { view: "setup-workbench" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -166,6 +168,8 @@ export function routeToPath(route: Route): string {
       return "/artifacts";
     case "packs":
       return "/packs";
+    case "setup-workbench":
+      return "/setup-workbench";
     default: {
       const unhandled: never = route;
       return unhandled;

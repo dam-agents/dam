@@ -2,6 +2,7 @@ import type { Message } from "../../../types.js";
 
 export interface PackDemoFixtures {
   seedMessages: Message[];
+  suggestedPrompt: string;
   schedules: PackDemoSchedule[];
   connections: PackDemoConnection[];
   artifacts: PackDemoArtifact[];
@@ -37,6 +38,8 @@ export interface PackDemoArtifact {
 
 const DEMO_FIXTURES: Record<string, PackDemoFixtures> = {
   "code-reviewer": {
+    suggestedPrompt:
+      "Review the open PRs and flag anything that breaks our style guide",
     seedMessages: [
       {
         id: "demo-msg-001",
@@ -95,6 +98,8 @@ const DEMO_FIXTURES: Record<string, PackDemoFixtures> = {
   },
 
   "design-prototyper": {
+    suggestedPrompt:
+      "Build a prototype for the settings page redesign in issue #87",
     seedMessages: [
       {
         id: "demo-msg-dp-001",
@@ -142,6 +147,7 @@ const DEMO_FIXTURES: Record<string, PackDemoFixtures> = {
   },
 
   "optimization-campaign": {
+    suggestedPrompt: "Show me the results from the last optimization run",
     seedMessages: [
       {
         id: "demo-msg-oc-001",

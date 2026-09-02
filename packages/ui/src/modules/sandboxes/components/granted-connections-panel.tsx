@@ -17,6 +17,8 @@ interface Props {
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
   inset?: boolean;
+  children?: React.ReactNode;
+  sectionLabel?: React.ReactNode;
 }
 
 export function GrantedConnectionsPanel({
@@ -25,13 +27,15 @@ export function GrantedConnectionsPanel({
   onToggleGrant,
   onOpenCatalog,
   inset = true,
+  children,
+  sectionLabel = "My connections",
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
-  if (groups.length === 0)
+  if (groups.length === 0 && !children)
     return (
       <>
-        <SectionLabel spaced>My connections</SectionLabel>
+        <SectionLabel spaced>{sectionLabel}</SectionLabel>
         <EmptyStateCard
           message="You have not added any Connections to this Agent yet"
           actionLabel="Add Connection"
@@ -44,7 +48,7 @@ export function GrantedConnectionsPanel({
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
-        <SectionLabel>My connections</SectionLabel>
+        <SectionLabel>{sectionLabel}</SectionLabel>
         <Button
           variant="outline"
           size="sm"
@@ -52,7 +56,7 @@ export function GrantedConnectionsPanel({
           data-testid="open-connection-catalog"
         >
           <Add size={16} />
-          New
+          {groups.length > 0 ? "New" : "Add Connection"}
         </Button>
       </div>
       <Wrap inset={inset}>
@@ -71,6 +75,7 @@ export function GrantedConnectionsPanel({
             maintenance={maintenance.rowActions}
           />
         ))}
+        {children}
       </Wrap>
       <ConnectionMaintenanceDialog maintenance={maintenance} />
     </>

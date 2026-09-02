@@ -47,18 +47,11 @@ export function packToSetupDefaults(
       interval: "1",
       time: "02:00",
       days: [1, 2, 3, 4, 5],
-      customRRule: cronToRRule(s.demoValue ?? ""),
+      customRRule: s.demoValue ?? "",
       quietHours: [],
       enabled: true,
     }));
   }
 
   return defaults;
-}
-
-function cronToRRule(cron: string): string {
-  const parts = cron.split(/\s+/);
-  if (parts.length !== 5) return "";
-  const [minute, hour] = parts;
-  return `RRULE:FREQ=DAILY;BYHOUR=${hour};BYMINUTE=${minute}`;
 }

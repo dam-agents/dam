@@ -34,8 +34,12 @@ async function main() {
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={200}>
-            <MockStateBar />
-            <App />
+            <div className="flex h-dvh flex-col overflow-hidden">
+              <MockStateBar />
+              <div className="flex-1 min-h-0">
+                <App />
+              </div>
+            </div>
             <Toaster />
           </TooltipProvider>
         </QueryClientProvider>

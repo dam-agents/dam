@@ -70,7 +70,13 @@ import { ImportInProgressBadge } from "../../files/components/import-in-progress
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
-import { DemoBadge } from "../../packs/components/demo-badge.js";
+import {
+  DEMO_HEADER_CLASS,
+  DEMO_HEADER_TEXT_OVERRIDES,
+  DemoHeaderActions,
+  DemoHeaderTag,
+} from "../../packs/components/demo-treatments.js";
+import { getDemoFixtures } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
   useIsDemoAgent,
@@ -123,6 +129,13 @@ export function ChatView() {
 
   const isDemo = useIsDemoAgent(selectedAgent);
   const demoPackId = useDemoPackId(selectedAgent);
+  const demoActions = useMemo(
+    () =>
+      demoPackId
+        ? { packId: demoPackId, makeThisMine, backToPacks, walkAway }
+        : null,
+    [demoPackId],
+  );
 
   useSessionUrlSync(selectedAgent);
 
@@ -241,7 +254,16 @@ export function ChatView() {
     sendPrompt,
   });
 
-  const rotatingPlaceholder = useRotatingPlaceholder(getDefaultExamples());
+  const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
+
+  const demoPlaceholder = useMemo(() => {
+    if (!demoPackId) return null;
+    const fixtures = getDemoFixtures(demoPackId);
+    if (!fixtures?.suggestedPrompt) return null;
+    return { text: fixtures.suggestedPrompt, fading: false };
+  }, [demoPackId]);
+
+  const rotatingPlaceholder = demoPlaceholder ?? defaultPlaceholder;
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -499,91 +521,86 @@ export function ChatView() {
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
   return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
+        className={cn(
+          `${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`,
+          isDemo && DEMO_HEADER_CLASS,
+        )}
       >
         <Button
           variant="ghost"
           size="inline"
           aria-label="Back"
           onClick={handleBack}
-          className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+          className={cn(
+            "md:hidden gap-1 text-sm font-medium hover:bg-transparent",
+            isDemo
+              ? `${DEMO_HEADER_TEXT_OVERRIDES.muted} hover:${DEMO_HEADER_TEXT_OVERRIDES.name}`
+              : "text-muted-foreground",
+          )}
         >
           <ArrowLeft size={14} />
         </Button>
         <div className="flex items-center gap-3 min-w-0">
-          <span
-            aria-hidden
-            className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-          />
-          <h1 className="text-sm font-bold text-foreground truncate">
+          {!isDemo && (
+            <span
+              aria-hidden
+              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+            />
+          )}
+          <h1
+            className={cn(
+              "text-sm font-bold truncate",
+              isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
+            )}
+          >
             {selectedAgentName}
           </h1>
-          {isDemo && <DemoBadge />}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={surfaceCopy.actionsAria}
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                {surfaceCopy.configure}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={handleRestartSandbox}>
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={handleDeleteSandbox}
-              >
-                {surfaceCopy.delete}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {isDemo && <DemoHeaderTag />}
+          {!isDemo && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={surfaceCopy.actionsAria}
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                  {surfaceCopy.configure}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={handleRestartSandbox}>
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={handleDeleteSandbox}
+                >
+                  {surfaceCopy.delete}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <ChatHeaderStatus
-            selectedAgent={selectedAgent}
-            agents={agents}
-            busy={busy}
-            connectionState={connectionState}
-            sessionId={sessionId}
-          />
+          {isDemo && demoActions ? (
+            <DemoHeaderActions actions={demoActions} />
+          ) : (
+            <ChatHeaderStatus
+              selectedAgent={selectedAgent}
+              agents={agents}
+              busy={busy}
+              connectionState={connectionState}
+              sessionId={sessionId}
+            />
+          )}
         </div>
       </header>
-
-      {isDemo && demoPackId && (
-        <div className="flex items-center gap-3 px-6 py-2 border-b border-border bg-warning/5">
-          <p className="flex-1 text-sm text-muted-foreground">
-            This is a demo agent. Explore the chat and settings to see how it
-            works.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => makeThisMine(demoPackId)}
-          >
-            Make this mine
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => backToPacks()}>
-            Back to packs
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => walkAway(demoPackId)}
-          >
-            Walk away
-          </Button>
-        </div>
-      )}
 
       {}
       <div className="flex flex-1 min-h-0">
@@ -648,7 +665,10 @@ export function ChatView() {
 
         {}
         <div
-          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+          className={cn(
+            "relative flex flex-1 flex-col min-w-0",
+            mobileScreen === "sessions" ? "hidden md:flex" : "flex",
+          )}
         >
           {}
           {sessionMode === SessionMode.Terminal &&
@@ -862,7 +882,7 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable && !isDemo ? (
+      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

@@ -1,3 +1,5 @@
+import { rruleToText } from "api-server-api";
+
 import type { Message } from "../../../types.js";
 import type { Pack, PackSlot } from "../data/packs.js";
 
@@ -23,7 +25,7 @@ export function buildPackSummaryMessage(
   }
   if (schedules.length > 0) {
     lines.push(
-      `**Scheduled:** ${schedules.map((s) => `${s.label}${s.demoValue ? ` (${s.demoValue})` : ""}`).join(", ")}`,
+      `**Scheduled:** ${schedules.map((s) => formatScheduleLabel(s)).join(", ")}`,
     );
   }
 
@@ -43,4 +45,12 @@ export function buildPackSummaryMessage(
     streaming: false,
     parts: [{ kind: "text", text: lines.join("\n") }],
   };
+}
+
+function formatScheduleLabel(slot: PackSlot): string {
+  if (!slot.demoValue) return slot.label;
+  if (slot.demoValue.startsWith("RRULE:")) {
+    return `${slot.label} (${rruleToText(slot.demoValue)})`;
+  }
+  return `${slot.label} (${slot.demoValue})`;
 }
