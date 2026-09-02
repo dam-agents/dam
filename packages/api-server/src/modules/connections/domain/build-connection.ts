@@ -146,9 +146,11 @@ async function buildOAuthStatic(
     contributions.push(...githubEnterpriseHostContributions(host));
   }
 
+  const usesTemplateApp =
+    !input.clientId || input.clientId === template.clientId;
   const appSlug =
     input.appSlug ??
-    (typeof template.extras?.appSlug === "string"
+    (usesTemplateApp && typeof template.extras?.appSlug === "string"
       ? template.extras.appSlug
       : undefined);
 
