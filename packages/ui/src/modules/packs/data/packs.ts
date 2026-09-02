@@ -7,6 +7,7 @@ import {
   Document,
   FlashFilled,
   Notebook,
+  Settings,
 } from "@carbon/icons-react";
 
 export const INGREDIENT_KINDS = [
@@ -395,6 +396,93 @@ export const PACKS: Pack[] = [
         description: "GPU compute for fitness evaluation",
         templateId: "modal",
         demoValue: "modal-workspace",
+      },
+    ],
+  },
+  {
+    id: "kitchen-sink",
+    name: "Preset Name",
+    category: "Development",
+    icon: Settings,
+    tagline: "Short tagline describing what this preset does in one sentence",
+    description:
+      "Longer description that explains the full scope of this preset. This paragraph appears in the detail sheet and gives users context about how the pieces fit together and what outcome to expect.",
+    included: [
+      {
+        kind: "harness",
+        label: "Harness Name",
+        description: "Included harness description text",
+        templateId: "claude-code",
+      },
+      {
+        kind: "framework",
+        label: "Framework Name",
+        description: "Included framework description text",
+        templateId: "openevolve",
+      },
+      {
+        kind: "skill",
+        label: "Skill One",
+        description: "First included skill description text",
+      },
+      {
+        kind: "skill",
+        label: "Skill Two",
+        description: "Second included skill description text",
+      },
+      {
+        kind: "schedule",
+        label: "Schedule One",
+        description: "Included schedule description text",
+        demoValue: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      },
+      {
+        kind: "starter-repo",
+        label: "Starter Repo Name",
+        description: "Included starter repo description text",
+        templateId: "starter-example",
+      },
+      {
+        kind: "artifact",
+        label: "Artifact Name",
+        description: "Included artifact description text",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Required connection description text",
+        templateId: "github",
+        connectionTemplateId: "conn-tpl-github",
+      },
+      {
+        kind: "connection",
+        label: "Slack",
+        description: "Second required connection description text",
+        templateId: "slack",
+      },
+      {
+        kind: "channel",
+        label: "Channel Name",
+        description: "Required channel description text",
+        demoValue: "#example-channel",
+      },
+      {
+        kind: "knowledge-base",
+        label: "Knowledge Base Name",
+        description: "Required knowledge base description text",
+      },
+      {
+        kind: "schedule",
+        label: "Schedule Two",
+        description: "Required schedule description text",
+        demoValue: "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=14;BYMINUTE=0",
+      },
+      {
+        kind: "skill",
+        label: "Skill Three",
+        description: "Required skill that the user adds during setup",
       },
     ],
   },

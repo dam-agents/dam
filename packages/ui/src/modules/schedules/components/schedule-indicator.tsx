@@ -43,9 +43,10 @@ import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
 interface Props {
   agentId: string;
+  onManage?: () => void;
 }
 
-export function ScheduleIndicator({ agentId }: Props) {
+export function ScheduleIndicator({ agentId, onManage }: Props) {
   const { data: schedules } = useSchedules(agentId);
   const count = schedules?.length ?? 0;
   const activeCount = schedules?.filter((s) => s.enabled).length ?? 0;
@@ -65,7 +66,9 @@ export function ScheduleIndicator({ agentId }: Props) {
             className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <Time size={16} />
-            {activeCount > 0 && activeCount}
+            {activeCount === 0
+              ? "No schedules"
+              : `${activeCount} schedule${activeCount === 1 ? "" : "s"}`}
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -117,6 +120,16 @@ export function ScheduleIndicator({ agentId }: Props) {
                   onViewResults={() => setResultsFor(schedule)}
                 />
               ))}
+            </div>
+          )}
+
+          {onManage && (
+            <div className="border-t border-border px-4 py-3">
+              <PopoverClose asChild>
+                <Button variant="outline" size="sm" onClick={onManage}>
+                  Manage
+                </Button>
+              </PopoverClose>
             </div>
           )}
         </PopoverContent>

@@ -129,8 +129,7 @@ export function MockStateBar() {
                   (view === "agents" || view === "agent-new")) ||
                 (s.label === "Presets" && view === "packs") ||
                 (s.label === "Agent setup" && view === "agent-new") ||
-                (s.label === "Setup workbench" &&
-                  view === "setup-workbench");
+                (s.label === "Setup workbench" && view === "setup-workbench");
               return (
                 <button
                   key={s.label}

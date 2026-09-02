@@ -9,6 +9,8 @@ import {
 import { SessionMode } from "api-server-api";
 import {
   type CSSProperties,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -91,6 +93,7 @@ import {
   useRotatingPlaceholder,
 } from "../../schedules/components/schedule-chat-discovery.js";
 import { ScheduleIndicator } from "../../schedules/components/schedule-indicator.js";
+import type { SandboxSection } from "../../platform/lib/routes.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -114,6 +117,13 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { SkillsIndicator } from "../components/skills-indicator.js";
+
+const ConfigureAgentModal = lazy(() =>
+  import("../../sandboxes/components/configure-agent-modal.js").then((m) => ({
+    default: m.ConfigureAgentModal,
+  })),
+);
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -196,6 +206,9 @@ export function ChatView() {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
+
+  const [configureSection, setConfigureSection] =
+    useState<SandboxSection | null>(null);
 
   const [leftW, setLeftW] = useState(
     () => Number(localStorage.getItem("platform-left-w")) || 220,
@@ -815,7 +828,17 @@ export function ChatView() {
                         {selectedAgent && (
                           <>
                             <span className="text-border">·</span>
-                            <ScheduleIndicator agentId={selectedAgent} />
+                            <ScheduleIndicator
+                              agentId={selectedAgent}
+                              onManage={() =>
+                                setConfigureSection("schedules")
+                              }
+                            />
+                            <span className="text-border">·</span>
+                            <SkillsIndicator
+                              agentId={selectedAgent}
+                              onManage={() => setConfigureSection("skills")}
+                            />
                           </>
                         )}
                       </div>
@@ -890,6 +913,16 @@ export function ChatView() {
           onBack={handleBack}
         />
       ) : null}
+
+      {configureSection && selectedAgent && (
+        <Suspense fallback={null}>
+          <ConfigureAgentModal
+            agentId={selectedAgent}
+            initialSection={configureSection}
+            onClose={() => setConfigureSection(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

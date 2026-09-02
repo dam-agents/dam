@@ -129,6 +129,7 @@ queryClient.setQueryData(
 
 // Skills
 queryClient.setQueryData(trpcKey("skills.list"), []);
+queryClient.setQueryData(trpcKey("skills.sources.list"), []);
 queryClient.setQueryData(trpcKey("skills.state"), {
   installed: [
     { source: "platform", name: "code-review", version: "1.0.0" },
