@@ -7,20 +7,20 @@ import {
 import { setupProviderPolicy } from "../../modules/sandboxes/lib/setup-policy.js";
 
 describe("setupProviderPolicy", () => {
-  test.each(["experiment", "knowledge-base"] as const)(
-    "%s offers only the two credentials that reach Claude, steering to the proxy",
+  test("experiment offers only the two credentials that reach Claude, steering to the proxy", () => {
+    const policy = setupProviderPolicy("experiment");
+    expect(policy.allow).toEqual(["ibm-litellm", "anthropic"]);
+    expect(policy.recommended).toBe("ibm-litellm");
+  });
+
+  test.each(["coding-agent", "knowledge-base"] as const)(
+    "%s offers every provider, still steering to the proxy",
     (flow) => {
-      const policy = setupProviderPolicy(flow);
-      expect(policy.allow).toEqual(["ibm-litellm", "anthropic"]);
-      expect(policy.recommended).toBe("ibm-litellm");
+      expect(setupProviderPolicy(flow)).toEqual({
+        recommended: "ibm-litellm",
+      });
     },
   );
-
-  test("coding-agent offers every provider, still steering to the proxy", () => {
-    expect(setupProviderPolicy("coding-agent")).toEqual({
-      recommended: "ibm-litellm",
-    });
-  });
 });
 
 describe("offeredProviderRows", () => {

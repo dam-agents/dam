@@ -224,7 +224,8 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 | Term | Definition |
 |------|-----------|
 | Knowledge Base | An Agent carrying the `knowledge-base` Agent Kind, bootstrapped by an Install Command at create. Everything else about it is a plain Agent — lifecycle, sessions, connections, schedules, budgets |
-| KB Template | The installation procedure a Knowledge Base is created from, surfaced to the user as "Template" (distinct from the harness image, which v1 pins and hides). Two today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline). The server maps the template id to its Install Command; a new procedure is a new id plus a new mapping, and its bootstrap must install a `/wiki-onboard` command (the greeting depends on it) |
+| KB Template | The installation procedure a Knowledge Base is created from, surfaced to the user as "Template" (distinct from the harness image, which the user picks as for a coding agent). Two today — LLM Wiki (a toolkit) and Plain Wiki (markdown-only, offline). The server maps the template id to its Install Command and tells the bootstrap which Harness Family the sandbox runs; a new procedure is a new id plus a new mapping, and its bootstrap must be harness-aware and install the onboarding command (the greeting depends on it) |
+| Harness Family | Which agent CLI runs inside a Template's image — a closed vocabulary owned by the templates contract, declared per Template and validated at load. A Knowledge Base's Install Command names it so the bootstrap lands its tooling where that harness reads it, and the greeting issues the onboarding command in the form that harness expands |
 
 ## Secrets (bounded context)
 
