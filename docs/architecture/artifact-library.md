@@ -69,10 +69,13 @@ dedicated **share host**.
 
 User-generated content is never served from the app origin. A dedicated
 **share host** (a separate subdomain, mandatory, wired through the cluster
-ingress and configured via Helm) serves *only* shared artifacts and folder
-pages. The api-server host-gates every request before any app route or auth
+ingress and configured via Helm) serves *only* the by-link surfaces — shared
+artifacts, folder pages, and the read-only knowledge-base MCP endpoint —
+never an app route. The api-server host-gates every request before any app route or auth
 middleware: requests for the share host are dispatched to a self-contained
-public viewer app; everything else falls through to the platform surface.
+share-host app — the public artifact viewer plus the read-only
+[knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` —
+and everything else falls through to the platform surface.
 The two origins therefore never share cookies or tokens — a malicious
 artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies,
 because none of them exist on its origin.

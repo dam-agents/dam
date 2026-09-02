@@ -223,6 +223,16 @@ spec:
                   key: API_KEY_HMAC_KEY
             - name: SHARE_BASE_URL
               value: {{ include "platform.url.share" . | quote }}
+            - name: KB_SHARE_PER_FILE_MAX_BYTES
+              value: {{ .Values.apiServer.kbShares.perFileMaxBytes | quote }}
+            - name: KB_SHARE_TOTAL_MAX_BYTES
+              value: {{ .Values.apiServer.kbShares.totalMaxBytes | quote }}
+            - name: KB_SHARE_MAX_FILES
+              value: {{ .Values.apiServer.kbShares.maxFiles | quote }}
+            - name: KB_SHARE_GREP_DEADLINE_MS
+              value: {{ .Values.apiServer.kbShares.grepDeadlineMs | quote }}
+            - name: KB_SHARE_MAX_CONNECTIONS_PER_OWNER
+              value: {{ .Values.apiServer.kbShares.maxConnectionsPerOwner | quote }}
             {{- if .Values.keycloak.enabled }}
             - name: KEYCLOAK_URL
               value: "http://{{ include "platform.keycloak.fullname" . }}:{{ .Values.keycloak.port }}"
@@ -252,6 +262,15 @@ spec:
               value: {{ .Values.keycloak.inspectorRole | quote }}
             {{- end }}
             {{- end }}
+            # The agent home is fixed at /home/agent (templateDefaults.agentHome
+            # is retired). The controller substitutes `$HOME` mount paths with
+            # this same literal at render time; the api-server resolves KB share
+            # roots beneath the work dir, so it must see the identical absolute
+            # paths the controller and agent runtime use.
+            - name: AGENT_HOME
+              value: "/home/agent"
+            - name: AGENT_WORK_DIR
+              value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,

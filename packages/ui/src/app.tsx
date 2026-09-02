@@ -14,7 +14,6 @@ import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
 import { ExperimentsListView } from "./modules/experiments/views/experiments-list-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
-import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
 import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
 import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -112,8 +111,6 @@ function MainApp() {
         <main className="relative z-content flex-1 overflow-y-auto">
           {view === "sandbox-home" ? (
             <SandboxHomeView />
-          ) : view === "knowledge-base-config" ? (
-            <KnowledgeBaseConfigView />
           ) : (
             <div
               className={cn(

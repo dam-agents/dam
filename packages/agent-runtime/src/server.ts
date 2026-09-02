@@ -31,6 +31,8 @@ import { mergedSpawnEnv } from "./core/runtime-env.js";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { expandHome } from "./core/expand-home.js";
 import { createFilesService } from "./modules/files.js";
+import { composeKbPublish } from "./modules/kb-publish/compose.js";
+import { createHarnessClient } from "./modules/runtime-channel/harness-client.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills } from "./modules/skills/index.js";
 import { configureGitCredentialHelper } from "./modules/git.js";
@@ -85,7 +87,19 @@ const manifestPath = config.PLATFORM_DEV
   : join(__dir, "../runtime-manifest.yaml");
 const runtimeManifest = loadManifest(manifestPath);
 
+const platformAgentId =
+  process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
+
 const filesService = createFilesService(homeDir);
+const kbPublish = composeKbPublish({
+  workDir,
+  homeDir,
+  harness: createHarnessClient({
+    apiServerUrl: config.API_SERVER_URL,
+    agentId: platformAgentId,
+  }),
+  log: (msg) => process.stderr.write(`[kb-publish] ${msg}\n`),
+});
 const readSidePaths = skillRefPaths(runtimeManifest, homeDir);
 const readSideSet = new Set(readSidePaths);
 const pristineSkillPaths = [
@@ -104,12 +118,9 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
 
-const agentId =
-  process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
-
 const artifactTouchReporter = createArtifactTouchReporter({
   apiServerUrl: config.API_SERVER_URL,
-  agentId,
+  agentId: platformAgentId,
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
 
@@ -159,7 +170,7 @@ const runtimeChannel = await composeRuntimeChannel({
   workDir,
   stateBackend,
   apiServerUrl: config.API_SERVER_URL,
-  agentId,
+  agentId: platformAgentId,
   triggerDriver,
   envReader: envStore,
   plugins: [
@@ -193,6 +204,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   files: filesService,
+  kbPublish: kbPublish.service,
   sessions: sessionsService,
   skills: skillsService,
   ssh: sshService,
@@ -478,7 +490,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0,
+      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
     };
     res

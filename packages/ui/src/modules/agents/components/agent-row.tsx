@@ -35,6 +35,8 @@ interface Props {
   onUpdate: () => void;
   onConfigure: () => void;
   configureLabel: string;
+  onShare?: () => void;
+  shareLabel?: string;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -54,6 +56,8 @@ export function AgentRow({
   onUpdate,
   onConfigure,
   configureLabel,
+  onShare,
+  shareLabel,
   onWake,
   onRestart,
   onPause,
@@ -130,6 +134,11 @@ export function AgentRow({
               <DropdownMenuItem onSelect={onConfigure}>
                 {configureLabel}
               </DropdownMenuItem>
+              {onShare && (
+                <DropdownMenuItem onSelect={onShare}>
+                  {shareLabel ?? "Share"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               {display.powerAction === "start" ? (
                 <DropdownMenuItem onSelect={onWake}>

@@ -20,7 +20,9 @@ import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
+import { isKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
 
 interface Props {
@@ -31,12 +33,18 @@ interface Props {
 export function SandboxHomeHeader({ agent, display }: Props) {
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
+  const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
+  const navigateToKnowledgeBases = useStore((s) => s.navigateToKnowledgeBases);
   const showConfirm = useStore((s) => s.showConfirm);
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
   const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
+
+  const isKb = isKnowledgeBase(agent);
+  const openChat = () =>
+    isKb ? openKnowledgeBase(agent.id) : selectAgent(agent.id);
 
   const onStop = async () => {
     const schedules = await fetchSchedulesForAgent(agent.id);
@@ -59,6 +67,14 @@ export function SandboxHomeHeader({ agent, display }: Props) {
   };
 
   const onDelete = async () => {
+    if (isKb) {
+      if (!(await confirmDeleteKnowledgeBase(showConfirm, agent.name))) return;
+      deleteAgent.mutate(
+        { id: agent.id },
+        { onSuccess: () => navigateToKnowledgeBases() },
+      );
+      return;
+    }
     const msg = (
       <>
         Delete agent <strong className="text-foreground">"{agent.name}"</strong>
@@ -88,7 +104,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
               size="icon"
               aria-label="Open chat"
               variant="outline"
-              onClick={() => selectAgent(agent.id)}
+              onClick={openChat}
             >
               <Chat />
             </Button>
@@ -128,7 +144,7 @@ export function SandboxHomeHeader({ agent, display }: Props) {
                 disabled={deleteAgent.isPending}
                 onSelect={() => void onDelete()}
               >
-                Delete Agent
+                {isKb ? "Delete knowledge base" : "Delete Agent"}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

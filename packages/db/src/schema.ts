@@ -666,3 +666,42 @@ export const invocations = pgTable(
       .where(sql`${table.experimentSpanId} IS NOT NULL`),
   ],
 );
+
+export const kbShares = pgTable(
+  "kb_shares",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    owner: text("owner").notNull(),
+    secret: text("secret").notNull(),
+    publicName: text("public_name"),
+    roots: jsonb("roots").notNull(),
+    status: text("status").notNull().default("active"),
+    snapshotId: text("snapshot_id"),
+    snapshotManifestKey: text("snapshot_manifest_key"),
+    snapshotCreatedAt: timestamp("snapshot_created_at", { withTimezone: true }),
+    documentCount: integer("document_count"),
+    totalSizeBytes: bigint("total_size_bytes", { mode: "number" }),
+    publishState: text("publish_state").notNull().default("idle"),
+    publishError: text("publish_error"),
+    publishToken: text("publish_token"),
+    staleSnapshots: jsonb("stale_snapshots")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    queryCount: integer("query_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    dirtyAt: timestamp("dirty_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("kb_shares_active_agent_idx")
+      .on(table.agentId)
+      .where(sql`${table.status} = 'active'`),
+    index("kb_shares_owner_idx").on(table.owner),
+  ],
+);

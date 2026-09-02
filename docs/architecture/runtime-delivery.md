@@ -92,6 +92,8 @@ sequenceDiagram
   WK->>PG: record the outcome, stamp the settled events
 ```
 
+The computed state slice merges user-typed env, connection-granted contributions, skill refs, and the platform's **built-in contributions** — the per-agent platform MCP entry always, plus the aggregate shared-knowledge-base MCP entry while the agent holds at least one such grant ([connections](connections.md#built-in-contributions)).
+
 ### `applyState` — state and events delivery (server → agent)
 
 The server sends a per-agent monotonic `version` cursor, the **full desired state** (the post-capability-filter Contribution snapshot plus a deterministic hash that short-circuits no-op pushes), and the **currently pending events** in order. The agent reconciles contributions per kind by diff and processes events in order through per-kind handlers in the agent-runtime.
@@ -311,6 +313,8 @@ The agent's `hello` declares which Contribution kinds and which Event kinds it s
 
 The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent that doesn't support `skill-ref` shows "Agent doesn't support skills; this connection grants envs + hosts but not skill installation."
 
+Capabilities also gate whole flows, not only payload items: `hello` carries a numeric knowledge-base publish capability, and the api-server delegates share publishing to the pod only when it meets the current level — a runtime below it gets the share marked failed with an update-the-agent hint instead of silently never publishing ([knowledge bases](knowledge-bases.md)).
+
 
 ## Persistence touchpoints
 
@@ -335,3 +339,5 @@ The UI surfaces the gap at grant time: connecting GitHub to a Claude-Code agent 
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's two callbacks: `hello`, and the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
 - **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload.
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness-API-server's `hello`.
+- **Capabilities are honored end-to-end.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered. A grant that requires unsupported kinds succeeds with a UI warning; the unsupported parts simply don't appear in the agent's payload. A flow-gating capability (the knowledge-base publish level) fails visibly instead: the gated feature records an update-the-agent failure rather than dropping work silently.

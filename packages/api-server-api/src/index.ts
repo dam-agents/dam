@@ -183,6 +183,32 @@ export {
   knowledgeBaseTemplateIdSchema,
 } from "./modules/knowledge-bases/schemas.js";
 export type {
+  KbShareCreateInput,
+  KbShareDefaults,
+  KbSharePublishState,
+  KbShareRefreshInput,
+  KbShareResolveInput,
+  KbShareResolveResult,
+  KbShareSetNameInput,
+  KbShareStringResult,
+  KbSharesService,
+  KbShareView,
+  KbShareWorkspaceListing,
+} from "./modules/kb-shares/types.js";
+export {
+  KB_SHARE_STRING_PREFIX,
+  kbShareAgentInputSchema,
+  kbShareCreateInputSchema,
+  kbSharePublicNameSchema,
+  kbSharePublishStateSchema,
+  kbShareRefreshInputSchema,
+  kbShareResolveInputSchema,
+  kbShareRootSchema,
+  kbShareSetNameInputSchema,
+  kbShareStringRegex,
+  parseKbShareString,
+} from "./modules/kb-shares/schemas.js";
+export type {
   ArtifactKind,
   ArtifactVisibility,
   ArtifactFolder,
@@ -262,6 +288,7 @@ export {
   IBM_LITELLM_HOST,
   BOB_HOST,
   PROVIDER_TEMPLATE_IDS,
+  SHARED_KB_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
 } from "./modules/connections/providers.js";
@@ -632,3 +659,17 @@ export {
   apiKeyRevokeInputSchema,
   scopeSchema,
 } from "./modules/api-keys/schemas.js";
+export {
+  contentHashSchema,
+  kbPublishCompleteInputSchema,
+  kbPublishInventoryFileSchema,
+  kbPublishRequestInputSchema,
+  type KbPublishCompleteReport,
+  type KbPublishCompleteResult,
+  type KbPublishGate,
+  type KbPublishInventoryFile,
+  type KbPublishRequestInput,
+  type KbPublishRequestResult,
+  type KbPublishWorkCaps,
+  type KbPublishWorkOrder,
+} from "./modules/kb-publish/harness.js";

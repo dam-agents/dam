@@ -15,12 +15,13 @@ import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import { KINDED_HARNESS_TEMPLATE_ID } from "../../sandboxes/lib/image-catalogue.js";
 import { setupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
 import { useCreateKnowledgeBase } from "../api/mutations.js";
+import { ConnectedKnowledgeBasesSetup } from "../components/connected-knowledge-bases-setup.js";
 import { DEFAULT_KB_TEMPLATE_ID, KB_TEMPLATES } from "../lib/kb-templates.js";
 
 const RETURN_PATH = routeToPath({ view: "knowledge-base-new" });
 
 export function KnowledgeBaseSetupView() {
-  const { form, update, reset } = useSetupForm(
+  const { form, update, toggleConnection, reset } = useSetupForm(
     "knowledge-base",
     {
       templateId: KINDED_HARNESS_TEMPLATE_ID,
@@ -93,14 +94,12 @@ export function KnowledgeBaseSetupView() {
       />
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
-        onToggle={(id, granted) =>
-          update({
-            connectionIds: granted
-              ? [...new Set([...form.connectionIds, id])]
-              : form.connectionIds.filter((x) => x !== id),
-          })
-        }
+        onToggle={toggleConnection}
         oauthReturnView={RETURN_PATH}
+      />
+      <ConnectedKnowledgeBasesSetup
+        connectionIds={form.connectionIds}
+        onToggle={toggleConnection}
       />
     </SetupPageShell>
   );

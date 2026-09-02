@@ -30,10 +30,6 @@ const KNOWN_UNCONSUMED = [
     "AgentRestarted",
     "Emitted on restart. The live-update switch must name it to stay exhaustive, but its arm returns null and nothing else subscribes.",
   ],
-  [
-    "AgentWoken",
-    "Emitted on wake. Same as AgentRestarted — named for exhaustiveness, acted on nowhere.",
-  ],
 ];
 
 const NOT_TRACKED = [

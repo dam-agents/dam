@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import type {
   ArtifactTouchService,
   HarnessContext,
+  KbPublishGate,
   RuntimeDeliveryService,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
@@ -13,6 +14,7 @@ export interface RuntimeTrpcDeps {
   k8s: K8sClient;
   hello: RuntimeDeliveryService;
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
+  kbPublish: KbPublishGate;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -45,6 +47,7 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         agentId,
         runtimeDelivery: deps.hello,
         artifactTouches: deps.artifactTouchesFor(verified.owner),
+        kbPublish: deps.kbPublish,
       }),
     });
   });

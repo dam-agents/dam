@@ -59,6 +59,18 @@ The api-server creates the bucket at startup if it is missing (grant CreateBucke
 
 Artifact bytes move directly: agents upload to the store through their gateway using short-lived links the platform mints, so the size cap is policy, not a transport limit. Set `apiServer.objectStorage.publicEndpoint` to a browser-reachable address (for external stores usually the same as `endpoint`) to have downloads redirect to the store as well; leave it empty and the api-server serves downloads itself — note it buffers each download in memory, so if you raise `apiServer.maxArtifactBytes` well past the default, set `publicEndpoint` too (and size the bundled store's volume to match).
 
+## Knowledge base sharing
+
+Sharing a knowledge base as a read-only MCP endpoint needs object storage configured (above) — snapshot bytes live in the store. Caps are set under `apiServer.kbShares`:
+
+- `perFileMaxBytes` (default 2 MiB) — largest single text file a publish includes.
+- `totalMaxBytes` (default 200 MiB) — total text content per published snapshot.
+- `maxFiles` (default 5000) — most files a publish includes before it fails loudly.
+- `grepDeadlineMs` (default 2000) — hard deadline for one consumer grep or glob call; the worker thread running the consumer-supplied regex/glob is terminated when it lapses.
+- `maxConnectionsPerOwner` (default 20) — most shared-knowledge-base connections one account may hold.
+
+Consumers read shared snapshots over the **in-cluster harness route** (`/api/agents/:id/kb`), not the egress gateway, so the cluster's own service DNS must resolve (the standard CoreDNS setup — no extra configuration). The same serving app is also reachable on the share host as a by-link endpoint for external MCP clients.
+
 ## Experiments
 
 A `running` Experiment whose script sends no trace event for `EXPERIMENT_INACTIVITY_SECONDS` (api-server env var, default 900) is reaped to `failed`, releasing the driver agent's hibernation pin. The SDK heartbeats every ~60 s from a background thread, so quiet-but-alive stages (long spawns, local compute) don't trip it — a reap means the script process is gone.
