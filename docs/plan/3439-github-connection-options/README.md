@@ -49,7 +49,7 @@ Almost everything is inside the Connections bounded context. Read
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [GHE personal access token template](./01-ghe-pat-template.md) | Server: `github-enterprise-pat` catalog entry + GHE header contributions | — |
+| 01 | ✅ [GHE personal access token template](./01-ghe-pat-template.md) | Server: `github-enterprise-pat` catalog entry + GHE header contributions | — |
 | 02 | [Radio-toggle connect pane](./02-radio-connect-pane.md) | UI: one create pane, 3 radio options per provider, un-hide GitHub App, rewritten copy | 01 |
 | 03 | [Connection rows: steps and tags](./03-connection-row-steps.md) | UI: steps callout, method tags, install button; architecture-docs updates | 02 |
 | 04 | [Install detection (optional)](./04-install-detection-optional.md) | Decide-then-maybe-build: persisted "app not installed" state | 03 |

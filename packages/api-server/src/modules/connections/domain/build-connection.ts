@@ -518,6 +518,10 @@ function buildHeader(
     );
   }
 
+  if (template.id === "github-enterprise-pat") {
+    contributions.push(...githubEnterpriseHostContributions(host));
+  }
+
   const hasHostContrib = contributions.some(
     (c) =>
       (c.kind === "egress-allow" || c.kind === "egress-inject") &&
