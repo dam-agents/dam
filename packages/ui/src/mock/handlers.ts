@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
+import { agentSessions } from "./data/sessions.js";
 import {
   artifactContents,
   artifactFolders,
@@ -151,6 +152,8 @@ export const handlers = [
   // general /api/trpc/* handler so MSW matches the more specific path first.
   http.get(/\/api\/agents\/[^/]+\/trpc\/.*/, ({ request }) => {
     const url = new URL(request.url);
+    const agentId =
+      url.pathname.match(/\/api\/agents\/([^/]+)\/trpc\//)?.[1] ?? "";
     const pathAfterTrpc = url.pathname.replace(
       /^\/api\/agents\/[^/]+\/trpc\//,
       "",
@@ -290,6 +293,12 @@ export const handlers = [
           return { result: { data: versions } };
         }
         return { result: { data: [] } };
+      }
+
+      if (proc === "sessions.list") {
+        return {
+          result: { data: { sessions: agentSessions[agentId] ?? [] } },
+        };
       }
 
       const data = fixtures[proc];

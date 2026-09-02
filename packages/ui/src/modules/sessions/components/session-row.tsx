@@ -1,7 +1,6 @@
 import {
   Code,
   Edit,
-  Hashtag,
   OverflowMenuVertical,
   Time,
   TrashCan,
@@ -145,6 +144,7 @@ export function SessionRow({
             scheduled={scheduled}
             terminal={terminal}
             channel={channel}
+            channelType={s.type}
             ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
@@ -155,7 +155,9 @@ export function SessionRow({
         <span className="text-[11px] text-muted-foreground">
           {slackKind
             ? `${slackKind === "ambient" ? "Ambient" : "Thread"} · `
-            : ""}
+            : s.type === SessionType.ChannelTelegram
+              ? "Telegram · "
+              : ""}
           {formatTimestamp(s.updatedAt ?? s.createdAt)}
           {cost && (
             <span
@@ -217,10 +219,44 @@ export function SessionRow({
   );
 }
 
+function ChannelIcon({
+  channelType,
+  ambient,
+}: {
+  channelType: SessionType;
+  ambient: boolean;
+}) {
+  const src =
+    channelType === SessionType.ChannelTelegram
+      ? "/icons/telegram.svg"
+      : "/icons/slack.svg";
+  const label =
+    channelType === SessionType.ChannelTelegram ? "Telegram" : "Slack";
+
+  if (ambient) {
+    return (
+      <span
+        className="inline-flex items-start"
+        aria-label={`Ambient ${label} session`}
+      >
+        <img src={src} alt="" className="size-4" />
+        <span
+          className="text-[9px] font-semibold leading-none text-accent"
+          aria-hidden
+        >
+          A
+        </span>
+      </span>
+    );
+  }
+  return <img src={src} alt="" className="size-4" aria-label={`${label} session`} />;
+}
+
 function SessionIndicators({
   scheduled,
   terminal,
   channel,
+  channelType,
   ambient,
   needsApproval,
   working,
@@ -230,6 +266,7 @@ function SessionIndicators({
   scheduled: boolean;
   terminal: boolean;
   channel: boolean;
+  channelType: SessionType;
   ambient: boolean;
   needsApproval: boolean;
   working: boolean;
@@ -252,27 +289,9 @@ function SessionIndicators({
       {terminal && (
         <Code size={16} className="text-foreground" aria-label="Terminal" />
       )}
-      {channel &&
-        (ambient ? (
-          <span
-            className="inline-flex items-start text-foreground"
-            aria-label="Ambient channel session"
-          >
-            <Hashtag size={16} />
-            <span
-              className="text-[9px] font-semibold leading-none text-accent"
-              aria-hidden
-            >
-              A
-            </span>
-          </span>
-        ) : (
-          <Hashtag
-            size={16}
-            className="text-foreground"
-            aria-label="Channel session"
-          />
-        ))}
+      {channel && (
+        <ChannelIcon channelType={channelType} ambient={ambient} />
+      )}
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
