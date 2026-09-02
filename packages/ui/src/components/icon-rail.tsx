@@ -20,6 +20,7 @@ import { useStore } from "../store.js";
 
 interface Destination {
   label: string;
+  shortLabel?: string;
   icon: CarbonIconType;
   active: boolean;
   badge: number;
@@ -61,7 +62,8 @@ export function IconRail({
     navigate: navigateToExperiments,
   };
   const knowledgeBases: Destination = {
-    label: "Knowledge bases",
+    label: "Knowledge base agents",
+    shortLabel: "Knowledge",
     icon: Book,
     active: view === "knowledge-bases" || view === "knowledge-base-chat",
     badge: 0,
@@ -209,6 +211,7 @@ function RailItem({
 
 function BottomBarItem({
   label,
+  shortLabel,
   icon: Icon,
   active,
   badge,
@@ -224,7 +227,7 @@ function BottomBarItem({
       )}
     >
       <IconWithBadge icon={Icon} badge={badge} />
-      <span className="text-[10px] font-semibold">{label}</span>
+      <span className="text-[10px] font-semibold">{shortLabel ?? label}</span>
     </button>
   );
 }

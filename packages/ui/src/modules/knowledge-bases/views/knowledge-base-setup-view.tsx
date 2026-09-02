@@ -61,13 +61,13 @@ export function KnowledgeBaseSetupView() {
 
   return (
     <SetupPageShell
-      title="Setup your knowledge base"
-      subtitle="Name your knowledge base, choose a template, and add connections."
+      title="Setup your knowledge base agent"
+      subtitle="Name your agent, choose a template, and add connections."
       footer={
         <Button onClick={() => void create()} disabled={!canCreate}>
           {createKnowledgeBase.isPending
             ? "Creating…"
-            : "Create knowledge base"}
+            : "Create knowledge base agent"}
         </Button>
       }
     >

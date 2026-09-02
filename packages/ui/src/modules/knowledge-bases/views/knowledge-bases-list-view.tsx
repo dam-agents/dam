@@ -50,15 +50,17 @@ export function KnowledgeBasesListView() {
   return (
     <div>
       <PageHeader
-        title="Knowledge bases"
+        title="Knowledge base agents"
         description={
           knowledgeBases.length > 0
-            ? "A knowledge base is an agent that builds and maintains a wiki in its workspace. Open one to work with it in chat — ask questions and add to it."
+            ? "A knowledge base agent builds and maintains a wiki in its workspace. Open one to work with it in chat — ask questions and add to it."
             : undefined
         }
         actions={
           knowledgeBases.length > 0 ? (
-            <Button onClick={createKnowledgeBase}>Create knowledge base</Button>
+            <Button onClick={createKnowledgeBase}>
+              Create knowledge base agent
+            </Button>
           ) : undefined
         }
       />
@@ -68,15 +70,15 @@ export function KnowledgeBasesListView() {
       {initialLoaded && (
         <OutdatedTemplatesBanner
           agents={knowledgeBases}
-          noun="knowledge bases"
+          noun="knowledge base agents"
         />
       )}
 
       {initialLoaded && knowledgeBases.length === 0 && (
         <PageEmptyState
-          title="No knowledge bases yet"
-          message="A knowledge base is an agent that builds and maintains a wiki you can chat with. Point it at a repo or docs, or add knowledge as you go. Create an agent with the knowledge base preset to get started."
-          actionLabel="Create knowledge base"
+          title="No knowledge base agents yet"
+          message="A knowledge base agent builds and maintains a wiki you can chat with. Point it at a repo or docs, or add knowledge as you go. Create an agent with the knowledge base preset to get started."
+          actionLabel="Create knowledge base agent"
           onAction={createKnowledgeBase}
         />
       )}

@@ -21,6 +21,7 @@ Two rules govern the whole set:
 | temporary agent | A short-lived agent the platform starts for one piece of work and discards afterwards | Sweepable Agent ([Agents](#agents-bounded-context)), typically an [Invocation](#invocations-bounded-context--proposed-in-flight-pr-2816) target | Wherever spawned short-lived agents surface — the agents list groups them behind their driver. Never offered as something a user creates |
 | harness | The coding-agent program running inside the agent (Claude Code, Codex, Gemini CLI) | Harness Lease and Session ([Agents](#agents-bounded-context)) | Only where "agent" would be wrong: harness model selection, harness config. Subtext and advanced surfaces, never a top-level header |
 | sandbox | The isolated container an agent runs in | Sandbox ([Agents](#agents-bounded-context)) | Only when the copy is *about* the container — "runs in its own isolated sandbox", "inside the sandbox", "sandbox image", "VM sandboxes". Never as the name of the thing a user owns; that is an agent |
+| knowledge base agent | An agent that builds and maintains a wiki the user chats with | Knowledge Base ([Knowledge Bases](#knowledge-bases-bounded-context)) | The destination name, its page title and its create buttons, so the section reads as agents like the neighbouring ones (#3508). "Knowledge base" alone stays correct for the body of knowledge itself — what is shared, what is connected, what a share link points at |
 
 ### Retired words — say this, not that
 
