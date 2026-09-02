@@ -631,7 +631,12 @@ export const libraryArtifactVersions = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.artifactId, table.version] })],
+  (table) => [
+    primaryKey({ columns: [table.artifactId, table.version] }),
+    index("library_artifact_versions_session_idx")
+      .on(table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
+  ],
 );
 
 export const invocations = pgTable(

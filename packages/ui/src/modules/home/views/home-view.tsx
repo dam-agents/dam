@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { DialogHeader, Modal } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useArtifact } from "../../artifacts/api/queries.js";
@@ -55,14 +56,15 @@ export function HomeView() {
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
     null,
   );
-  const { data: previewArtifact } = useArtifact(previewArtifactId);
+  const { data: previewArtifact, isError: previewFailed } =
+    useArtifact(previewArtifactId);
 
   const artifactsFor = (item: FeedItem): readonly ArtifactTouched[] => {
     if (item.kind !== "unread") return EMPTY_ARTIFACTS;
     const touched = artifacts.bySession.get(item.session.sessionId);
     if (!touched || touched.length === 0) return EMPTY_ARTIFACTS;
     const cleared = dismissedAt(item.agentId, item.session.sessionId);
-    if (cleared === null) return [touched[0]];
+    if (cleared === null) return touched;
     return touched.filter((t) => Date.parse(t.touchedAt) > cleared);
   };
 
@@ -192,12 +194,22 @@ export function HomeView() {
             </>
           )}
         </div>
-        {previewArtifact && (
-          <ArtifactPreviewDialog
-            artifact={previewArtifact}
-            onClose={() => setPreviewArtifactId(null)}
-          />
-        )}
+        {previewArtifactId &&
+          (previewArtifact ? (
+            <ArtifactPreviewDialog
+              artifact={previewArtifact}
+              onClose={() => setPreviewArtifactId(null)}
+            />
+          ) : (
+            <Modal widthClass="w-[860px]">
+              <DialogHeader
+                title={
+                  previewFailed ? "Couldn't load the artifact" : "Loading…"
+                }
+                onClose={() => setPreviewArtifactId(null)}
+              />
+            </Modal>
+          ))}
         <aside className="space-y-4 lg:col-start-2 lg:row-start-2">
           <ComputeWidget
             runningAgents={runningAgents}

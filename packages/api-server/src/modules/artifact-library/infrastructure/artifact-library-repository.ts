@@ -45,7 +45,7 @@ export interface FolderRow {
 }
 
 const TOUCH_LIMIT_DEFAULT = 200;
-const TOUCH_LIMIT_MAX = 500;
+const TOUCH_LIMIT_MAX = 200;
 
 function clampTouchLimit(limit: number | undefined): number {
   if (limit === undefined) return TOUCH_LIMIT_DEFAULT;
@@ -357,14 +357,20 @@ export function createArtifactLibraryRepository(
         )
         .orderBy(desc(versionsTable.createdAt))
         .limit(clampTouchLimit(limit));
-      return rows.map((row) => ({
-        artifactId: row.artifactId,
-        version: row.version,
-        agentId,
-        sessionId: row.sessionId ?? "",
-        touchedAt: row.touchedAt,
-        fileName: row.fileName,
-      }));
+      return rows.flatMap((row) =>
+        row.sessionId === null
+          ? []
+          : [
+              {
+                artifactId: row.artifactId,
+                version: row.version,
+                agentId,
+                sessionId: row.sessionId,
+                touchedAt: row.touchedAt,
+                fileName: row.fileName,
+              },
+            ],
+      );
     },
 
     async advanceVersion(id, owner, expectedVersion, patch) {

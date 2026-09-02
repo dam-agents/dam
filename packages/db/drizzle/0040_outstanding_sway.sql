@@ -1,0 +1,1 @@
+CREATE INDEX "library_artifact_versions_session_idx" ON "library_artifact_versions" USING btree ("session_id","created_at") WHERE "library_artifact_versions"."session_id" is not null;

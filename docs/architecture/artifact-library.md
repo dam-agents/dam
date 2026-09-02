@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-01
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -15,7 +15,14 @@ to a per-artifact **version history** viewers can flip through. The history
 holds every version including the current one — creation writes the first row,
 each revision writes its own — and a version records the session that
 produced it when one is known, which is how the Home feed shows an artifact on
-the card of the session that made it. Concurrent revision publishes are
+the card of the session that made it. The session becomes known after the
+fact: the platform's artifact tools mark their results, the agent-runtime
+spots the marker in the session's ACP stream — frames it already proxies,
+each carrying its session id — and reports the touch over its runtime
+channel. The write is scoped to the calling agent's own artifacts and never
+overwrites another session's attribution, so a failure anywhere leaves a
+version unattributed rather than misattributed. Terminal sessions bypass ACP
+and stay unattributed. Concurrent revision publishes are
 detected — one wins, the other is refused with a conflict and leaves no
 partial version behind.
 

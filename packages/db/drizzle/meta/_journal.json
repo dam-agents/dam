@@ -281,6 +281,13 @@
       "when": 1788332252783,
       "tag": "0039_backfill_current_artifact_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788333516848,
+      "tag": "0040_outstanding_sway",
+      "breakpoints": true
     }
   ]
 }
