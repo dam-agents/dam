@@ -77,7 +77,10 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
           }
           const check = await checkRunning(agentIds[index]!);
           checks[index] = check;
-          if (check.state !== "unknown") continue;
+          if (check.state !== "unknown") {
+            unknowns = 0;
+            continue;
+          }
           unknowns += 1;
           if (unknowns >= checkConcurrency) unavailable = check.reason;
         }
@@ -111,10 +114,8 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
         toEnqueue.push(row.agentId);
       });
 
-      for (const agentId of toEnqueue) {
-        await deps.queue.enqueue(agentId);
-      }
       if (toEnqueue.length > 0) {
+        await deps.queue.enqueueMany(toEnqueue);
         deps.log(
           `[runtime-sweep] re-enqueued ${toEnqueue.length} pending rows`,
         );

@@ -2,7 +2,7 @@ export {
   createDb,
   DEFAULT_DB_POOL_MAX,
   type Db,
-  type DbPoolOptions,
+  type DbOptions,
   type DbTx,
 } from "./client.js";
 export { runMigrations } from "./migrate.js";

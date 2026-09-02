@@ -70,8 +70,10 @@ export function triggerExpiry(
   ttlSec: number,
 ): Date {
   const byTtl = firedAt.getTime() + ttlSec * 1000;
-  const byNext = next?.getTime() ?? Infinity;
-  return new Date(byNext > firedAt.getTime() ? Math.min(byTtl, byNext) : byTtl);
+  if (next === null || next.getTime() <= firedAt.getTime()) {
+    return new Date(byTtl);
+  }
+  return new Date(Math.min(byTtl, next.getTime()));
 }
 
 function toWallClock(instant: Date, tz: string): Date {

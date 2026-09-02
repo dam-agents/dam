@@ -185,8 +185,9 @@ export async function bootstrap() {
       : undefined,
   };
   await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
-  const { db, sql } = createDb(config.databaseUrl, dbTls, {
-    max: config.databasePoolMax,
+  const { db, sql } = createDb(config.databaseUrl, {
+    tls: dbTls,
+    poolMax: config.databasePoolMax,
   });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
 

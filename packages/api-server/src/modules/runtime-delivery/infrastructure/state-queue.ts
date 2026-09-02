@@ -15,6 +15,7 @@ export interface StateJob {
 
 export interface StateQueue {
   enqueue(agentId: string, opts?: { retryUntilReady?: boolean }): Promise<void>;
+  enqueueMany(agentIds: string[]): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -54,6 +55,16 @@ export function createStateQueue(connection: ConnectionOptions): StateQueue {
         "state",
         { agentId, retryUntilReady: opts?.retryUntilReady },
         stateJobOptions(agentId, opts),
+      );
+    },
+    async enqueueMany(agentIds): Promise<void> {
+      if (agentIds.length === 0) return;
+      await queue.addBulk(
+        agentIds.map((agentId) => ({
+          name: "state",
+          data: { agentId },
+          opts: stateJobOptions(agentId),
+        })),
       );
     },
     async close(): Promise<void> {

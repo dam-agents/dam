@@ -45,6 +45,9 @@ function harness(opts: {
     enqueue: async (agentId: string) => {
       enqueued.push(agentId);
     },
+    enqueueMany: async (agentIds: string[]) => {
+      enqueued.push(...agentIds);
+    },
   } as unknown as StateQueue;
   const sweep = createCronSweep({
     outboxRepo,
@@ -196,6 +199,40 @@ describe("runtime cron-sweep", () => {
 
     expect(asked.length).toBeLessThanOrEqual(3);
     expect(enqueued).toHaveLength(6);
+  });
+
+  /** TEST_SCENARIO: the threshold is a round of failures with no success
+   *  between them, not a running total. Transient errors scattered through a
+   *  long tick must not convince the sweep the readiness source is down, which
+   *  would call every remaining row unknown and re-enqueue a job for each
+   *  stopped agent. Two lanes cannot reach the fourth row before a success has
+   *  landed, so the reset is what keeps the scan going. */
+  it("keeps checking when failures are scattered between successes", async () => {
+    const failing = new Set(["agent-a", "agent-d"]);
+    const asked: string[] = [];
+    const { sweep, enqueued } = harness({
+      retryable: [
+        row("agent-a"),
+        row("agent-b"),
+        row("agent-c"),
+        row("agent-d"),
+        row("agent-e"),
+        row("agent-f"),
+        row("agent-g"),
+        row("agent-h"),
+      ],
+      runningCheckConcurrency: 2,
+      isRunning: async (id) => {
+        asked.push(id);
+        if (failing.has(id)) throw new Error("transient");
+        return true;
+      },
+    });
+
+    await sweep.tick();
+
+    expect(asked).toHaveLength(8);
+    expect(enqueued).toHaveLength(8);
   });
 
   /** TEST_SCENARIO: the skip line reports only agents the check answered for,
