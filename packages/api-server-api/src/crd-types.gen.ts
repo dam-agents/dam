@@ -1,36 +1,135 @@
 /* Code generated from the agent-platform.ai CRDs by `mise run api-server-api:gen:crd-types`. DO NOT EDIT. */
 
+/**
+ * AgentSpec is the desired state of an Agent — the sole durable per-agent
+ * resource after Instance was collapsed into Agent. The api-server is the
+ * sole writer.
+ *
+ * There is no desiredState field: running-vs-hibernated is not stored intent
+ * but observed status the controller derives from activity. Security context
+ * is chart-only (config.AgentBase); scheduling is chart-wide except
+ * RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
+ */
 export interface AgentSpecCR {
+  /**
+   * AgentHome is the resolved HOME inside the agent container. Any $HOME
+   * literals in Mounts are already resolved against it at write
+   * time, so the controller never sees $HOME.
+   */
   agentHome?: string;
+  /**
+   * Backend selects the isolation substrate the agent workload runs on;
+   * nil = container. Immutable after create (enforced by the api-server,
+   * the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+   * instead of the agent StatefulSet; the paired gateway is unaffected.
+   */
   backend?: {
     type: "container" | "vm";
+    /**
+     * VM carries vm-backend props; present only when type == "vm".
+     */
     vm?: {};
   };
+  /**
+   * Description is an optional human-readable description.
+   */
   description?: string;
+  /**
+   * Env are plain environment variables projected into the agent container.
+   */
   env?: {
     name: string;
     value: string;
   }[];
+  /**
+   * GrantedConnectionIDs are the connection IDs granted to this agent.
+   */
   grantedConnectionIds?: string[];
+  /**
+   * GrantedSecretIDs are the credential Secret IDs granted to this agent's
+   * egress — intent written by the api-server. These live in spec rather
+   * than a ConfigMap annotation, because they are reconciled by the
+   * controller into the credential set mounted on the gateway.
+   */
   grantedSecretIds?: string[];
+  /**
+   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+   */
   hibernationTimeout?: string;
+  /**
+   * Image is the agent container image.
+   */
   image: string;
+  /**
+   * ImagePullPolicy overrides the chart-wide default; empty = inherit.
+   */
   imagePullPolicy?: string;
+  /**
+   * ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
+   * kubelet uses to pull the agent image from a private registry. Unlike
+   * SecretRef it is never projected into the agent container — only the
+   * kubelet consumes it at pod creation, so an ephemeral executor pod can pull
+   * with it without ever seeing it. When set it takes precedence over the
+   * install-wide default pull secret, which is retained as a fallback.
+   */
   imagePullSecretRef?: string;
+  /**
+   * Init is an optional one-shot init script run before the agent starts.
+   */
   init?: string;
   /**
+   * L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
+   * interception chain without a credential, so path/method/port egress
+   * rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
+   * Written by the api-server when such a rule exists for this agent;
+   * per-agent grain so a rule on one agent never reshapes a sibling's
+   * gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
+   * stays the egress policy authority for foreign turns).
+   *
+   * The item pattern is a hard boundary: each entry is interpolated into
+   * the gateway's Envoy bootstrap (an unescaped `text/template` field)
+   * and into cert-manager SANs, so admission rejects anything that isn't
+   * a DNS hostname (optionally a `*.` wildcard) — no quotes, whitespace,
+   * or YAML metacharacters can reach the rendered config. maxItems caps
+   * the leaf SAN list a single agent can demand.
+   *
    * @maxItems 256
    */
   l7Hosts?: string[];
+  /**
+   * Mounts declares the agent's volumes; a persisted mount becomes a PVC.
+   */
   mounts?: {
+    /**
+     * Path is the absolute mount path inside the container.
+     */
     path: string;
+    /**
+     * Persist marks the mount as backed by a retained PVC rather than an
+     * emptyDir that dies with the pod.
+     */
     persist: boolean;
+    /**
+     * Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
+     * mount's PVC. Empty falls back to StorageSize, then the chart default.
+     * Ignored when Persist is false.
+     */
     size?: string;
   }[];
+  /**
+   * Name is an optional human-readable name.
+   */
   name?: string;
+  /**
+   * NodeSelector overrides the chart-wide node selector; empty = inherit.
+   * Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
+   */
   nodeSelector?: {
     [k: string]: string;
   };
+  /**
+   * Resources are the agent container's resource requests and limits.
+   */
   resources?: {
     limits?: {
       [k: string]: string;
@@ -39,9 +138,40 @@ export interface AgentSpecCR {
       [k: string]: string;
     };
   };
+  /**
+   * RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+   * Selects among *container* runtimes only — rejected on the vm backend.
+   */
   runtimeClassName?: string;
+  /**
+   * SecretRef names a K8s Secret whose keys are envFrom-projected into the
+   * agent container (operator-supplied envs). Container backend only —
+   * rejected on the vm backend (nothing projects it into the guest).
+   */
   secretRef?: string;
+  /**
+   * StorageClass pins the storage class this Agent's workspace volumes
+   * provision on, and the destination its storage migration targets — an
+   * Agent pinned to the class its workspaces already sit on is exempt from
+   * a fleet-wide drain. Empty inherits the install-wide class. A pinned
+   * Agent bypasses the warm PVC pool unless the pool provisions exactly
+   * this class.
+   */
   storageClass?: string;
+  /**
+   * StorageSize overrides the chart-wide default PVC size; empty = inherit.
+   */
   storageSize?: string;
+  /**
+   * TelemetryAttributionID is the agent id stamped as the trusted telemetry
+   * attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+   * by the api-server for Invocation targets to their root Driver, so a
+   * target's spend credits the agent that drove it rather than the
+   * short-lived target. When set, the gateway also stamps
+   * `x-platform-invocation-id` with this agent's own id, keeping child rows
+   * distinguishable after their attribution is merged. Never user-settable —
+   * a user-supplied value would forge attribution onto an agent the caller
+   * does not drive; it is service-only input, like the pre-minted id.
+   */
   telemetryAttributionId?: string;
 }

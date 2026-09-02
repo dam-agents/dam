@@ -50,6 +50,7 @@ export function assembleSpecFromTemplate(
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     hibernationTimeout: tmplSpec.hibernationTimeout,
     storageSize: tmplSpec.storageSize,
+    storageClass: tmplSpec.storageClass,
     backend: tmplSpec.backend,
     runtimeClassName: tmplSpec.runtimeClassName,
     nodeSelector: tmplSpec.nodeSelector,

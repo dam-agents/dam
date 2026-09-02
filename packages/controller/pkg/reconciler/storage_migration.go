@@ -217,9 +217,12 @@ func (m *StorageMigrationManager) Reconcile(ctx context.Context) {
 		if !needed {
 			if isRWX(p.Spec.AccessModes) && !m.warnedSameClass[agent] {
 				m.warnedSameClass[agent] = true
+				remedy := "set controller.storageMigration.targetStorageClass to the class agents should end on (empty = cluster default), or allowSameStorageClass=true if this is intended"
+				if known[agent] != nil && known[agent].Spec.StorageClass != "" {
+					remedy = "the agent pins this class via spec.storageClass — remove the pin to rejoin the fleet-wide drain, or set allowSameStorageClass=true if changing only the access mode is intended"
+				}
 				slog.Warn("storage migration: refusing to migrate onto the volume's own storage class — the access mode would change but the backend would not",
-					"agent", agent, "pvc", p.Name, "class", target,
-					"remedy", "set controller.storageMigration.targetStorageClass to the class agents should end on (empty = cluster default), or allowSameStorageClass=true if this is intended")
+					"agent", agent, "pvc", p.Name, "class", target, "remedy", remedy)
 			}
 			continue
 		}

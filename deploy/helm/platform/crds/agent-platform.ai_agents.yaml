@@ -36,6 +36,9 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
+        description: |-
+          Agent is the durable, owned, runnable resource — definition, runtime state,
+          and lifecycle in one custom resource.
         properties:
           apiVersion:
             description: |-
@@ -55,10 +58,28 @@ spec:
           metadata:
             type: object
           spec:
+            description: |-
+              AgentSpec is the desired state of an Agent — the sole durable per-agent
+              resource after Instance was collapsed into Agent. The api-server is the
+              sole writer.
+
+              There is no desiredState field: running-vs-hibernated is not stored intent
+              but observed status the controller derives from activity. Security context
+              is chart-only (config.AgentBase); scheduling is chart-wide except
+              RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
             properties:
               agentHome:
+                description: |-
+                  AgentHome is the resolved HOME inside the agent container. Any $HOME
+                  literals in Mounts are already resolved against it at write
+                  time, so the controller never sees $HOME.
                 type: string
               backend:
+                description: |-
+                  Backend selects the isolation substrate the agent workload runs on;
+                  nil = container. Immutable after create (enforced by the api-server,
+                  the sole spec writer). `vm` reconciles a KubeVirt VirtualMachine
+                  instead of the agent StatefulSet; the paired gateway is unaffected.
                 properties:
                   type:
                     enum:
@@ -66,6 +87,8 @@ spec:
                     - vm
                     type: string
                   vm:
+                    description: VM carries vm-backend props; present only when type
+                      == "vm".
                     type: object
                 required:
                 - type
@@ -74,9 +97,13 @@ spec:
                 - message: 'vm block requires type: vm'
                   rule: self.type == 'vm' || !has(self.vm)
               description:
+                description: Description is an optional human-readable description.
                 type: string
               env:
+                description: Env are plain environment variables projected into the
+                  agent container.
                 items:
+                  description: EnvVar is a plain name/value environment variable.
                   properties:
                     name:
                       type: string
@@ -88,24 +115,62 @@ spec:
                   type: object
                 type: array
               grantedConnectionIds:
+                description: GrantedConnectionIDs are the connection IDs granted to
+                  this agent.
                 items:
                   type: string
                 type: array
               grantedSecretIds:
+                description: |-
+                  GrantedSecretIDs are the credential Secret IDs granted to this agent's
+                  egress — intent written by the api-server. These live in spec rather
+                  than a ConfigMap annotation, because they are reconciled by the
+                  controller into the credential set mounted on the gateway.
                 items:
                   type: string
                 type: array
               hibernationTimeout:
+                description: 'HibernationTimeout overrides the chart-wide idle timeout
+                  for this Agent: "0s" never hibernates, omitted inherits the default.
+                  The UI writes it (presented in minutes); the controller and api-server
+                  resolve the effective value.'
                 type: string
               image:
+                description: Image is the agent container image.
                 type: string
               imagePullPolicy:
+                description: ImagePullPolicy overrides the chart-wide default; empty
+                  = inherit.
                 type: string
               imagePullSecretRef:
+                description: |-
+                  ImagePullSecretRef names a kubernetes.io/dockerconfigjson Secret the
+                  kubelet uses to pull the agent image from a private registry. Unlike
+                  SecretRef it is never projected into the agent container — only the
+                  kubelet consumes it at pod creation, so an ephemeral executor pod can pull
+                  with it without ever seeing it. When set it takes precedence over the
+                  install-wide default pull secret, which is retained as a fallback.
                 type: string
               init:
+                description: Init is an optional one-shot init script run before the
+                  agent starts.
                 type: string
               l7Hosts:
+                description: |-
+                  L7Hosts are hosts promoted onto the gateway's TLS-terminating (L7)
+                  interception chain without a credential, so path/method/port egress
+                  rules are enforceable over HTTPS — the L4 catch-all sees only SNI.
+                  Written by the api-server when such a rule exists for this agent;
+                  per-agent grain so a rule on one agent never reshapes a sibling's
+                  gateway. Run executors inherit the parent agent's L7Hosts (the parent owner
+                  stays the egress policy authority for foreign turns).
+
+                  The item pattern is a hard boundary: each entry is interpolated into
+                  the gateway's Envoy bootstrap (an unescaped `text/template` field)
+                  and into cert-manager SANs, so admission rejects anything that isn't
+                  a DNS hostname (optionally a `*.` wildcard) — no quotes, whitespace,
+                  or YAML metacharacters can reach the rendered config. maxItems caps
+                  the leaf SAN list a single agent can demand.
                 items:
                   maxLength: 253
                   pattern: ^(\*\.)?([a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$
@@ -113,13 +178,24 @@ spec:
                 maxItems: 256
                 type: array
               mounts:
+                description: Mounts declares the agent's volumes; a persisted mount
+                  becomes a PVC.
                 items:
+                  description: Mount declares a volume mounted into the agent container.
                   properties:
                     path:
+                      description: Path is the absolute mount path inside the container.
                       type: string
                     persist:
+                      description: |-
+                        Persist marks the mount as backed by a retained PVC rather than an
+                        emptyDir that dies with the pod.
                       type: boolean
                     size:
+                      description: |-
+                        Size is an optional K8s resource Quantity (e.g. "2Gi") for a persisted
+                        mount's PVC. Empty falls back to StorageSize, then the chart default.
+                        Ignored when Persist is false.
                       type: string
                   required:
                   - path
@@ -127,12 +203,18 @@ spec:
                   type: object
                 type: array
               name:
+                description: Name is an optional human-readable name.
                 type: string
               nodeSelector:
                 additionalProperties:
                   type: string
+                description: |-
+                  NodeSelector overrides the chart-wide node selector; empty = inherit.
+                  Applies to both backends (KubeVirt propagates it to the virt-launcher pod).
                 type: object
               resources:
+                description: Resources are the agent container's resource requests
+                  and limits.
                 properties:
                   limits:
                     additionalProperties:
@@ -144,14 +226,40 @@ spec:
                     type: object
                 type: object
               runtimeClassName:
+                description: |-
+                  RuntimeClassName overrides the chart-wide runtime class; empty = inherit.
+                  Selects among *container* runtimes only — rejected on the vm backend.
                 type: string
               secretRef:
+                description: |-
+                  SecretRef names a K8s Secret whose keys are envFrom-projected into the
+                  agent container (operator-supplied envs). Container backend only —
+                  rejected on the vm backend (nothing projects it into the guest).
                 type: string
               storageClass:
+                description: |-
+                  StorageClass pins the storage class this Agent's workspace volumes
+                  provision on, and the destination its storage migration targets — an
+                  Agent pinned to the class its workspaces already sit on is exempt from
+                  a fleet-wide drain. Empty inherits the install-wide class. A pinned
+                  Agent bypasses the warm PVC pool unless the pool provisions exactly
+                  this class.
                 type: string
               storageSize:
+                description: StorageSize overrides the chart-wide default PVC size;
+                  empty = inherit.
                 type: string
               telemetryAttributionId:
+                description: |-
+                  TelemetryAttributionID is the agent id stamped as the trusted telemetry
+                  attribution (`x-platform-agent-id`) instead of this agent's own id. Set
+                  by the api-server for Invocation targets to their root Driver, so a
+                  target's spend credits the agent that drove it rather than the
+                  short-lived target. When set, the gateway also stamps
+                  `x-platform-invocation-id` with this agent's own id, keeping child rows
+                  distinguishable after their attribution is merged. Never user-settable —
+                  a user-supplied value would forge attribution onto an agent the caller
+                  does not drive; it is service-only input, like the pre-minted id.
                 type: string
             required:
             - image
@@ -163,13 +271,38 @@ spec:
             - message: secretRef (envFrom projection) is not supported on the vm backend
               rule: '!has(self.backend) || self.backend.type != ''vm'' || !has(self.secretRef)'
           status:
+            description: |-
+              AgentStatus is the observed state of an Agent. The controller is the sole
+              writer, via the status subresource.
             properties:
               agentPodRestartReason:
+                description: |-
+                  AgentPodRestartReason is the classified cause behind the most recent of
+                  AgentPodRestarts (e.g. OutOfMemory), taken from the container's last
+                  terminated state. Empty when the pod has never restarted, or when the
+                  cause is one the classifier does not name.
                 type: string
               agentPodRestarts:
+                description: |-
+                  AgentPodRestarts is the highest observed restart count among the agent
+                  pod's containers, for the pod currently backing this Agent. Published
+                  because a restart is otherwise invisible once the pod recovers: the
+                  readiness conditions report AgentPodReady=True again and the
+                  termination cause on that condition is cleared. The api-server's
+                  Invocation liveness sweep reads it to fail a one-shot target that
+                  crashed mid-turn, and it must not read pods to learn this — conditions
+                  and status are the whole of what it sees (see
+                  docs/architecture/platform-topology.md).
+
+                  Counts container restarts within one pod, so it resets when the pod
+                  itself is replaced rather than restarted; the vm backend has no
+                  container statuses and never reports here.
                 format: int32
                 type: integer
               conditions:
+                description: |-
+                  Conditions are the source of truth for the agent's operational state.
+                  See the Condition* constants for the well-known types.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -229,6 +362,7 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               observedGeneration:
+                description: ObservedGeneration is the spec generation last reconciled.
                 format: int64
                 type: integer
             type: object

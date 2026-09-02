@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -60,7 +60,7 @@ The api-server writes a new Agent custom resource whose spec carries the Agent's
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller then lists that Secret first on the pod's `imagePullSecrets`, ahead of any install-wide default. The kubelet consumes it to pull the image — it never enters the pod, and a stuck pull surfaces as an image-pull failure on the pod rather than a create-time error. See [security-and-credentials](security-and-credentials.md#image-pull-credentials).
 
-The pod image is built from `platform-base` plus a harness-specific layer. The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless the warm pool is enabled and a pre-provisioned spare matches the mount's size, in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC. See [persistence](persistence.md#warm-pvc-pool).
+The pod image is built from `platform-base` plus a harness-specific layer. The platform contract is two executables at fixed paths: `/usr/local/bin/harness-chat` (spawned as the ACP subprocess for chat-mode sessions) and `/usr/local/bin/harness-terminal` (spawned attached to a PTY for terminal-mode sessions, with `HARNESS_SESSION_ID` exported so the harness can pick up the right resumable session). agent-runtime otherwise treats the harness as opaque. The workspace PVC is provisioned on first wake and survives subsequent hibernations — unless an enabled warm pool holds a spare the Agent may claim (the claim conditions live in [persistence](persistence.md#warm-pvc-pool)), in which case the controller claims that already-bound spare at create time so first start skips the provisioning wait. The choice is invisible after the fact: a claimed spare becomes an ordinary per-Agent PVC.
 
 Pod env at start is composed by the controller from platform wiring only — last occurrence wins, with `PORT` server-enforced:
 
