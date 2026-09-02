@@ -28,7 +28,10 @@ import {
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
-import { tokenHeaderName } from "../../kb-shares/index.js";
+import {
+  shareIdFromTokenHeader,
+  tokenHeaderName,
+} from "../../kb-shares/index.js";
 import {
   tokenRejectionOf,
   withoutRefreshFailureMarker,
@@ -67,8 +70,7 @@ export function createConnectionsService(deps: {
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
-  verifyKbShare?: (shareString: string) => Promise<boolean>;
-  resolveKbShare?: (
+  resolveKbShare: (
     shareId: string,
     presentedSecret: string | null,
   ) => Promise<{
@@ -320,6 +322,69 @@ export function createConnectionsService(deps: {
     return pem;
   }
 
+  function rememberShareName(conn: Connection, name: string): void {
+    void deps.repo
+      .mergeInputs(conn.id, { [SHARE_NAME_INPUT_KEY]: name })
+      .catch((err: unknown) => {
+        process.stderr.write(
+          `[connections] could not remember the shared knowledge base name for ${conn.id}: ${err}\n`,
+        );
+      });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: re-pointing writes to two stores that cannot
+   * share a transaction — the connection row and the credential store — so the
+   * lock buys serialization against a concurrent re-point, not atomicity. The
+   * header name is written first deliberately: a failure after it leaves the
+   * row pointing at the live share with a stale secret, which reads as expired
+   * and is cured by pasting the link again, whereas the reverse order would
+   * strand the row on a retired share id that no longer resolves to a name.
+   * Returns false when the row disappeared under the lock, leaving the caller
+   * to create one rather than hand back an id that no longer exists.
+   */
+  async function repointSharedKb(
+    conn: Connection,
+    share: { shareId: string; secret: string },
+    remembered: Record<string, string>,
+  ): Promise<boolean> {
+    const headerName = tokenHeaderName(share.shareId);
+    const repointed = await deps.connectionLock(
+      connectionRefreshLockKey(conn.id),
+      async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh) return false;
+        if (fresh.auth.kind !== "header") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "This knowledge base is already connected through a connection that cannot be re-pointed. Remove it and connect the link again.",
+          });
+        }
+        if (fresh.auth.headerName !== headerName) {
+          await deps.repo.updateAuth(fresh.id, { ...fresh.auth, headerName });
+        }
+        await rotateHeaderValue(fresh, fresh.auth, share.secret);
+        await deps.repo.mergeInputs(fresh.id, remembered);
+        return true;
+      },
+    );
+    if (!repointed) return false;
+    securityLog("info", "connection.update", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: conn.id,
+      result: "success",
+      detail: {
+        templateId: conn.templateId,
+        authKind: "header",
+        repointed: true,
+      },
+    });
+    return true;
+  }
+
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
@@ -360,41 +425,29 @@ export function createConnectionsService(deps: {
     async listConnections(): Promise<ConnectionView[]> {
       const conns = await deps.repo.listByOwner(deps.ownerId);
       const views = conns.map(toView);
-      const resolve = deps.resolveKbShare;
-      if (resolve) {
-        await Promise.all(
-          views.map(async (view, i) => {
-            const conn = conns[i]!;
-            if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
-            if (conn.auth.kind !== "header") return;
-            const remembered = rememberedShareName(conn);
-            if (remembered) view.name = remembered;
-            const shareId = conn.auth.headerName.replace(/^x-kb-token-/, "");
-            const presented = await deps.secretStore.getField(
-              conn.auth.valueRef,
-            );
-            const share = await resolve(shareId, presented);
-            if (!share || !share.reachable) {
-              view.status = "expired";
-            }
-            if (!share) return;
-            if (share.name) view.name = share.name;
-            const fresh: Record<string, string> = {
-              ...(share.name && share.name !== remembered
-                ? { [SHARE_NAME_INPUT_KEY]: share.name }
-                : {}),
-              ...(share.agentId !== rememberedInput(conn, SHARE_AGENT_INPUT_KEY)
-                ? { [SHARE_AGENT_INPUT_KEY]: share.agentId }
-                : {}),
-            };
-            if (Object.keys(fresh).length > 0) {
-              void deps.repo
-                .updateInputs(conn.id, { ...conn.inputs, ...fresh })
-                .catch(() => {});
-            }
-          }),
-        );
-      }
+      await Promise.all(
+        views.map(async (view, i) => {
+          const conn = conns[i]!;
+          if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
+          if (conn.auth.kind !== "header") return;
+          const remembered = rememberedShareName(conn);
+          if (remembered) view.name = remembered;
+          const shareId = shareIdFromTokenHeader(conn.auth.headerName);
+          if (!shareId) {
+            view.status = "expired";
+            return;
+          }
+          const presented = await deps.secretStore.getField(conn.auth.valueRef);
+          const share = await deps.resolveKbShare(shareId, presented);
+          if (!share?.reachable) {
+            view.status = "expired";
+            return;
+          }
+          if (!share.name) return;
+          view.name = share.name;
+          if (share.name !== remembered) rememberShareName(conn, share.name);
+        }),
+      );
       return views;
     },
 
@@ -615,61 +668,51 @@ export function createConnectionsService(deps: {
         throw new Error(`unknown template ${input.templateId}`);
       }
       let sharedKbInputs: Record<string, string> = {};
+      let connectionName = input.name;
       if (
         template.id === SHARED_KB_TEMPLATE_ID &&
         input.authKind === "header"
       ) {
-        if (deps.verifyKbShare) {
-          const valid = await deps.verifyKbShare(input.value);
-          if (!valid) {
-            throw new Error(
-              "unknown or revoked share link — ask the knowledge base owner for a current one",
-            );
-          }
-        }
         const parsed = parseKbShareString(input.value);
-        const share =
-          parsed && deps.resolveKbShare
-            ? await deps.resolveKbShare(parsed.shareId, parsed.secret)
-            : null;
+        if (!parsed) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "that does not look like a share link — expected a kbshare_… string",
+          });
+        }
+        const share = await deps.resolveKbShare(parsed.shareId, parsed.secret);
+        if (!share?.reachable) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "unknown or revoked share link — ask the knowledge base owner for a current one",
+          });
+        }
         sharedKbInputs = {
-          ...(share?.name ? { [SHARE_NAME_INPUT_KEY]: share.name } : {}),
-          ...(share ? { [SHARE_AGENT_INPUT_KEY]: share.agentId } : {}),
+          [SHARE_AGENT_INPUT_KEY]: share.agentId,
+          ...(share.name ? { [SHARE_NAME_INPUT_KEY]: share.name } : {}),
         };
+        connectionName = sharedKbConnectionName(share.agentId);
         const sharedKb = (await deps.repo.listByOwner(deps.ownerId)).filter(
           (c) => c.templateId === SHARED_KB_TEMPLATE_ID,
         );
-        const existing = parsed
-          ? (sharedKb.find(
-              (c) =>
-                share !== null &&
-                rememberedInput(c, SHARE_AGENT_INPUT_KEY) === share.agentId,
-            ) ??
-            sharedKb.find(
-              (c) =>
-                c.auth.kind === "header" &&
-                c.auth.headerName === tokenHeaderName(parsed.shareId),
-            ))
-          : undefined;
-        if (existing && existing.auth.kind === "header" && parsed) {
-          const headerName = tokenHeaderName(parsed.shareId);
-          await rotateHeaderValue(existing, existing.auth, parsed.secret);
-          if (existing.auth.headerName !== headerName) {
-            await deps.repo.updateAuth(existing.id, {
-              ...existing.auth,
-              headerName,
-            });
-          }
-          await deps.repo.updateInputs(existing.id, {
-            ...existing.inputs,
-            ...sharedKbInputs,
-          });
-          return existing.id;
+        const existing = sharedKb.find(
+          (c) => rememberedInput(c, SHARE_AGENT_INPUT_KEY) === share.agentId,
+        );
+        if (existing) {
+          const repointed = await repointSharedKb(
+            existing,
+            parsed,
+            sharedKbInputs,
+          );
+          if (repointed) return existing.id;
         }
         if (sharedKb.length >= maxSharedKbConnections) {
-          throw new Error(
-            `Maximum ${maxSharedKbConnections} shared knowledge bases per account — remove one first.`,
-          );
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `Maximum ${maxSharedKbConnections} shared knowledge bases per account — remove one first.`,
+          });
         }
       }
       const effectiveInput = await applyFamilyCreds(template, input);
@@ -684,7 +727,7 @@ export function createConnectionsService(deps: {
       const id = input.id ?? newConnectionId();
       const contributions = built.contributions.map(
         (c): Contribution =>
-          c.kind === "mcp-entry" ? { ...c, name: input.name } : c,
+          c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
       const secretPath = connectionSecretPath(built.auth);
 
@@ -777,7 +820,7 @@ export function createConnectionsService(deps: {
           id,
           ownerId: deps.ownerId,
           templateId: template.id,
-          name: input.name,
+          name: connectionName,
           inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
           auth,
           contributions,
@@ -789,7 +832,10 @@ export function createConnectionsService(deps: {
         if (isUniqueViolation(err)) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: `A connection named "${input.name}" already exists. Names must be unique per user.`,
+            message:
+              template.id === SHARED_KB_TEMPLATE_ID
+                ? "This knowledge base is already connected."
+                : `A connection named "${connectionName}" already exists. Names must be unique per user.`,
           });
         }
         throw err;
@@ -956,12 +1002,26 @@ function reviveFailureReason(err: unknown): string {
  * already connected re-points that same row. Its display name is remembered
  * the same way, because the owner's public name is only readable while the
  * share resolves and a row that stopped working must still say which knowledge
- * base it was. Neither is the connection's own name, which stays a
- * collision-free slug: connection names are unique per owner, and two owners
- * may publish the same public name.
+ * base it was, and it is refreshed only while the share is reachable, since
+ * the public name is readable to the holder of a working secret and to nobody
+ * else. Neither is the connection's own name: that is an internal slug the
+ * view replaces with the public name whenever one is known and falls back to
+ * otherwise. It is derived from the same agent, so it survives a re-share, and
+ * being unique per owner it makes one connection per knowledge base a
+ * constraint the store enforces rather than a rule the flow must remember. A
+ * public name could not do that job: two owners may publish the same one, and
+ * every rename would have to rewrite it.
+ *
+ * The agent is recorded by the same lookup that authorizes the create, so a
+ * connection cannot exist without it — there is no later occasion to learn it,
+ * because a share that stopped resolving never answers again.
  */
 const SHARE_NAME_INPUT_KEY = "sharedKbName";
 const SHARE_AGENT_INPUT_KEY = "sharedKbAgentId";
+
+function sharedKbConnectionName(agentId: string): string {
+  return `kb-${agentId}`;
+}
 
 function rememberedInput(conn: Connection, key: string): string | null {
   const value = conn.inputs[key];

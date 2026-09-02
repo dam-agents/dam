@@ -5,6 +5,7 @@ const SHARE_ID_BYTES = 6;
 const SECRET_BYTES = 32;
 const TOKEN_HEADER_PREFIX = "x-kb-token-";
 const ROW_ID_PREFIX = "kbs-";
+const SHARE_ID_PATTERN = new RegExp(`^[0-9a-f]{${SHARE_ID_BYTES * 2}}$`);
 
 export interface ParsedShareString {
   shareId: string;
@@ -29,6 +30,13 @@ export function parseShareString(value: string): ParsedShareString | null {
 
 export function tokenHeaderName(shareId: string): string {
   return `${TOKEN_HEADER_PREFIX}${shareId}`;
+}
+
+export function shareIdFromTokenHeader(headerName: string): string | null {
+  const lower = headerName.toLowerCase();
+  if (!lower.startsWith(TOKEN_HEADER_PREFIX)) return null;
+  const shareId = lower.slice(TOKEN_HEADER_PREFIX.length);
+  return SHARE_ID_PATTERN.test(shareId) ? shareId : null;
 }
 
 export function kbShareRowId(shareId: string): string {

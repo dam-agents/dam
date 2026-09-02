@@ -4,6 +4,7 @@ import {
   desc,
   eq,
   inArray,
+  sql,
   type Db,
   connectionGrants as connectionGrantsTable,
   connections as connectionsTable,
@@ -33,7 +34,7 @@ export interface ConnectionsRepository {
 
   updateAuth(id: string, auth: ConnectionAuthConfig): Promise<void>;
 
-  updateInputs(id: string, inputs: Record<string, unknown>): Promise<void>;
+  mergeInputs(id: string, patch: Record<string, unknown>): Promise<void>;
 
   updateContributions(id: string, contributions: Contribution[]): Promise<void>;
 
@@ -121,10 +122,13 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .where(eq(connectionsTable.id, id));
     },
 
-    async updateInputs(id, inputs): Promise<void> {
+    async mergeInputs(id, patch): Promise<void> {
       await db
         .update(connectionsTable)
-        .set({ inputs, updatedAt: new Date() })
+        .set({
+          inputs: sql`${connectionsTable.inputs} || ${JSON.stringify(patch)}::jsonb`,
+          updatedAt: new Date(),
+        })
         .where(eq(connectionsTable.id, id));
     },
 

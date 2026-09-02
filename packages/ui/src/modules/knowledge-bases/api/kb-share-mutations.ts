@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 
 const invalidatesShares = [trpc.kbShares.pathKey()];
@@ -52,13 +53,20 @@ export function useRevealKbShare() {
 }
 
 export function useSetKbShareName() {
-  return useMutation({
-    ...trpc.kbShares.setName.mutationOptions(),
-    meta: {
-      invalidates: invalidatesShares,
-      errorToast: "Couldn't update the public name",
-    },
-  });
+  return useMutation(
+    trpc.kbShares.setName.mutationOptions({
+      onSuccess: (view, { agentId }) => {
+        queryClient.setQueryData(
+          trpc.kbShares.status.queryKey({ agentId }),
+          view,
+        );
+      },
+      meta: {
+        invalidates: invalidatesShares,
+        errorToast: "Couldn't update the public name",
+      },
+    }),
+  );
 }
 
 export function useResolveKbShareLink() {

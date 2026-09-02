@@ -1,8 +1,11 @@
 import { securityLog } from "../../../core/security-log.js";
-import { kbShareRowId, secretsEqual } from "../domain/share-string.js";
+import {
+  kbShareRowId,
+  secretsEqual,
+  shareIdFromTokenHeader,
+} from "../domain/share-string.js";
 import type { KbShareRow } from "../domain/types.js";
 
-const TOKEN_HEADER_PATTERN = /^x-kb-token-([0-9a-f]{12})$/;
 const MAX_TOKEN_HEADERS = 64;
 
 export interface TokenAuthDeps {
@@ -17,9 +20,8 @@ export async function resolveAccessibleShares(
   const shareIds: string[] = [];
   const secretByShareId = new Map<string, string>();
   for (const [name, value] of headers.entries()) {
-    const match = TOKEN_HEADER_PATTERN.exec(name.toLowerCase());
-    if (!match) continue;
-    const shareId = match[1]!;
+    const shareId = shareIdFromTokenHeader(name);
+    if (!shareId) continue;
     if (!secretByShareId.has(shareId)) shareIds.push(shareId);
     secretByShareId.set(shareId, value.trim());
     if (shareIds.length >= MAX_TOKEN_HEADERS) break;

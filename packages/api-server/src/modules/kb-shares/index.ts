@@ -4,13 +4,16 @@ export {
   composeKbSharesForOwner,
   createKbShareResolver,
   createKbShareAgentCleanup,
-  createShareStringVerifier,
   startKbShareSync,
   type KbShareAgentOps,
   type KbShareStorePort,
 } from "./compose.js";
 export { registerKbShareTools } from "./mcp-tools.js";
-export { parseShareString, tokenHeaderName } from "./domain/share-string.js";
+export {
+  parseShareString,
+  shareIdFromTokenHeader,
+  tokenHeaderName,
+} from "./domain/share-string.js";
 export {
   composeKbShareServing,
   createShareHostApp,

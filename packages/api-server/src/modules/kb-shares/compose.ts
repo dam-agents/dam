@@ -12,11 +12,7 @@ import {
 import { defaultShareRootsForKbTemplate } from "../knowledge-bases/index.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
 import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
-import {
-  kbShareRowId,
-  parseShareString,
-  secretsEqual,
-} from "./domain/share-string.js";
+import { kbShareRowId, secretsEqual } from "./domain/share-string.js";
 import { workspacePrefixFrom } from "./domain/workspace-path.js";
 import {
   createAgentFilesClient,
@@ -197,18 +193,6 @@ export function composeKbShareAgentOps(
     },
     refresh: (agentId) => service.refresh({ agentId }),
     status: (agentId) => service.status(agentId),
-  };
-}
-
-export function createShareStringVerifier(
-  db: Db,
-): (shareString: string) => Promise<boolean> {
-  const findActiveById = findActiveShareById(db);
-  return async (shareString) => {
-    const parsed = parseShareString(shareString);
-    if (!parsed) return false;
-    const row = await findActiveById(kbShareRowId(parsed.shareId));
-    return row !== null && secretsEqual(row.secret, parsed.secret);
   };
 }
 

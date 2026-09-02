@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-08-31
+Last verified: 2026-09-02
 
 ## Overview
 
@@ -53,7 +53,7 @@ Some templates (Spotify, YouTube, Google services, and the machine-to-machine au
 
 ### Connection
 
-A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the raw user inputs (kept for re-render), the auth credential state, and the projected contributions.
+A uniform shape — every Connection looks the same regardless of category or auth mode: identity and owner, the source Template, a user-visible name, the recorded inputs (the user's own, kept for re-render, plus any platform-derived facts the Connection is identified or labelled by), the auth credential state, and the projected contributions.
 
 The `auth` field carries credential-acquisition state in one of five modes: **OAuth** (a client identity, references to the stored refresh and access tokens, and granted scopes), **client credentials** (machine-to-machine OAuth — a client identity plus references to the stored client secret and tokens minted from it), **GitHub App** (a GitHub App identity plus a reference to the stored private key and the installation tokens minted from it — client credentials' JWT-signed counterpart), **header** (a reference to the stored secret plus the header name and value format to inject), or **none**. Token references point at the per-Connection K8s Secret — never inline secret material. Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
@@ -120,10 +120,21 @@ Custom Header does), keeping the secret gateway-side.
 
 A hidden managed template behind the [knowledge-base sharing](knowledge-bases.md#sharing)
 consumer flow — never offered in the generic catalog; its connections surface
-only in an agent's **Knowledge** settings. The pasted share string is verified
-against a live share at create time and its secret lands in the per-Connection
-Secret under a **per-share header name** (`x-kb-token-<shareId>`) — distinct
-names are what let several shared knowledge bases coexist. Deliberately **no**
+only in an agent's **Knowledge** settings. One lookup both authorizes the
+pasted share string against a live share and settles which knowledge base it
+reaches, and the connection is **identified by that knowledge base** rather
+than by the link it arrived on: unsharing retires a share id and re-sharing
+mints a fresh one, so a link for a knowledge base already connected re-points
+the row that exists — one entry per knowledge base per owner, a constraint the
+store enforces, never a dead entry beside a live one — while a link that no
+longer resolves is refused instead of stored half-identified. The secret lands
+in the per-Connection Secret under a **per-share header name**
+(`x-kb-token-<shareId>`), which is what the serving side authenticates and what
+keeps several shares distinct within one request. The owner's public name is
+readable only to a consumer whose secret still works, so the connection
+remembers the last one it saw and stops following renames once the secret it
+holds stops working — a row that broke still says which knowledge base it was,
+beside the expired status explaining it. Deliberately **no**
 `mcp-entry` per connection: one built-in aggregate entry serves all of a
 sandbox's shares (below). Reads are served **in-cluster over the harness**, not
 by the agent dialing the platform's share host — the platform reads an agent's

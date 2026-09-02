@@ -39,7 +39,7 @@ function makeRepoFake() {
       if (c) rows.set(id, { ...c, auth });
     },
     updateContributions: async () => {},
-    updateInputs: async () => {},
+    mergeInputs: async () => {},
     delete: async (id) => {
       rows.delete(id);
     },
@@ -132,6 +132,7 @@ function makeService(
       lockKeys.push(key);
       return fn();
     },
+    resolveKbShare: async () => null,
   });
   return { svc, rows, stored, deleted, tokenCalls, tokenBodies, lockKeys };
 }
