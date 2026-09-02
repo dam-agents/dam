@@ -9,6 +9,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// The generated chart manifests must carry the schema-generation constants —
+// catches a bumped constant without `mise run controller:generate`, or a
 // +kubebuilder:metadata:annotations marker out of sync with the constant.
 func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 	cases := map[string]int{
