@@ -173,6 +173,18 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
+{{- /* Content host framed by the share host: artifact documents and raw
+       bytes only, no cookie, no sign-in, no app route. A separate origin so
+       the browser keeps artifact code away from the share host. Routed to
+       the api-server (host-gated there). */ -}}
+{{- define "platform.url.content" -}}
+{{- if .Values.urls.content }}
+{{- .Values.urls.content }}
+{{- else }}
+{{- printf "%s://content.%s" .Values.scheme (include "platform.hostport" .) }}
+{{- end }}
+{{- end }}
+
 {{/*
 Extract just the hostname (no scheme, no port, no path) from a URL.
 Usage: {{ include "platform.url.host" (include "platform.url.ui" .) }}

@@ -95,6 +95,11 @@ urls:
   # bases over the in-cluster harness channel, never by dialing this host, so
   # it does not need to be resolvable from agent pods.
   share: "" # default: {scheme}://share.{domain}{:port}
+  # Content host that serves only artifact documents and raw bytes, framed by
+  # the share host. A second origin so artifact code can never act on the
+  # share host (no cookie, no sign-in, no app route there). Routed to the
+  # api-server, which host-gates it onto the content app.
+  content: "" # default: {scheme}://content.{domain}{:port}
 
 # -- Pull secrets for all pods managed by this chart.
 # Agent pods (managed by the controller) also inherit these secrets.
@@ -585,13 +590,13 @@ ingress:
   #   aliasDomains: []
   #   tls:
   #     - secretName: platform-tls
-  #       hosts: ["example.com", "keycloak.example.com"]
+  #       hosts: ["example.com", "keycloak.example.com", "share.example.com", "content.example.com"]
   #
   # For production with TLS + URL overrides — list the override hostnames:
   #   aliasDomains: []
   #   tls:
   #     - secretName: platform-tls
-  #       hosts: ["app.example.com", "api.example.com", "auth.example.com"]
+  #       hosts: ["app.example.com", "api.example.com", "auth.example.com", "share.example.com", "content.example.com"]
 
 # -- UI (nginx serving static SPA, reverse-proxies /api to API server)
 ui:

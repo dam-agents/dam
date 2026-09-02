@@ -127,7 +127,8 @@ import {
 } from "./modules/api-keys/index.js";
 import {
   composeShareViewer,
-  createShareHostGate,
+  createByLinkHostGate,
+  createContentApp,
   createShareViewerApp,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -314,22 +315,33 @@ export async function bootstrap() {
     cliClientId: config.keycloakCliClientId,
     coreRole: config.keycloakInspectorRole,
   };
-  const shareHostGate = createShareHostGate(
-    config.shareBaseUrl,
-    createShareHostApp({
-      viewer: createShareViewerApp({
-        viewer: composeShareViewer({ db, artifacts }),
-        brandName: config.brand.name,
-        uiBaseUrl: config.uiBaseUrl,
+  const shareViewer = composeShareViewer({ db, artifacts });
+  const shareHostGate = createByLinkHostGate({
+    share: {
+      baseUrl: config.shareBaseUrl,
+      app: createShareHostApp({
+        viewer: createShareViewerApp({
+          viewer: shareViewer,
+          brandName: config.brand.name,
+          uiBaseUrl: config.uiBaseUrl,
+          contentBaseUrl: config.contentBaseUrl,
+        }),
+        kbMcp: composeKbShareServing({
+          db,
+          store: artifacts,
+          k8s: k8sClient,
+          grepDeadlineMs: config.kbShareGrepDeadlineMs,
+        }),
       }),
-      kbMcp: composeKbShareServing({
-        db,
-        store: artifacts,
-        k8s: k8sClient,
-        grepDeadlineMs: config.kbShareGrepDeadlineMs,
+    },
+    content: {
+      baseUrl: config.contentBaseUrl,
+      app: createContentApp({
+        viewer: shareViewer,
+        shareBaseUrl: config.shareBaseUrl,
       }),
-    }),
-  );
+    },
+  });
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
     sessionPresence.reconcile(),
