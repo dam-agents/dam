@@ -55,7 +55,8 @@ export function useRevealKbShare() {
 export function useSetKbShareName() {
   return useMutation(
     trpc.kbShares.setName.mutationOptions({
-      onSuccess: (view, { agentId }) => {
+      onSettled: (view, _error, { agentId }) => {
+        if (!view) return;
         queryClient.setQueryData(
           trpc.kbShares.status.queryKey({ agentId }),
           view,
