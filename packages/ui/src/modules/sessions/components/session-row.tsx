@@ -23,11 +23,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
-import { formatTimestamp } from "@/lib/format-time";
+import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
-import { slackSessionKind } from "../lib/session-category.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -114,7 +113,6 @@ export function SessionRow({
   const channel =
     s.type === SessionType.ChannelSlack ||
     s.type === SessionType.ChannelTelegram;
-  const slackKind = slackSessionKind(s);
   const channelName =
     (s as SessionView & { channelName?: string }).channelName ?? null;
 
@@ -147,7 +145,6 @@ export function SessionRow({
             terminal={terminal}
             channel={channel}
             channelType={s.type}
-            ambient={slackKind === "ambient"}
             needsApproval={needsApproval}
             working={working}
             draft={draft}
@@ -156,7 +153,7 @@ export function SessionRow({
         </div>
         <span className="text-[11px] text-muted-foreground">
           {channel && channelName ? `${channelName} · ` : ""}
-          {formatTimestamp(s.updatedAt ?? s.createdAt)}
+          {timeAgo(s.updatedAt ?? s.createdAt)}
           {cost && (
             <span
               className="tabular-nums"
@@ -217,36 +214,13 @@ export function SessionRow({
   );
 }
 
-function ChannelIcon({
-  channelType,
-  ambient,
-}: {
-  channelType: SessionType;
-  ambient: boolean;
-}) {
+function ChannelIcon({ channelType }: { channelType: SessionType }) {
   const src =
     channelType === SessionType.ChannelTelegram
       ? "/icons/telegram.svg"
       : "/icons/slack.svg";
   const label =
     channelType === SessionType.ChannelTelegram ? "Telegram" : "Slack";
-
-  if (ambient) {
-    return (
-      <span
-        className="inline-flex items-start"
-        aria-label={`Ambient ${label} session`}
-      >
-        <img src={src} alt="" className="size-4" />
-        <span
-          className="text-[9px] font-semibold leading-none text-accent"
-          aria-hidden
-        >
-          A
-        </span>
-      </span>
-    );
-  }
   return <img src={src} alt="" className="size-4" aria-label={`${label} session`} />;
 }
 
@@ -255,7 +229,6 @@ function SessionIndicators({
   terminal,
   channel,
   channelType,
-  ambient,
   needsApproval,
   working,
   draft,
@@ -265,7 +238,6 @@ function SessionIndicators({
   terminal: boolean;
   channel: boolean;
   channelType: SessionType;
-  ambient: boolean;
   needsApproval: boolean;
   working: boolean;
   draft: boolean;
@@ -287,9 +259,7 @@ function SessionIndicators({
       {terminal && (
         <Code size={16} className="text-foreground" aria-label="Terminal" />
       )}
-      {channel && (
-        <ChannelIcon channelType={channelType} ambient={ambient} />
-      )}
+      {channel && <ChannelIcon channelType={channelType} />}
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
       )}
