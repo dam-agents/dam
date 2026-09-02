@@ -53,9 +53,9 @@ export function IconRail({
   const knowledgeBases: Destination = {
     label: "Knowledge",
     icon: Book,
-    active: view === ("knowledge-base-config" as string),
+    active: view === "knowledge-bases" || view === "knowledge-base-config",
     badge: 0,
-    navigate: () => setView("agents"),
+    navigate: () => setView("knowledge-bases"),
   };
   const packs: Destination = {
     label: "Presets",

@@ -41,6 +41,8 @@ export const setupFormSchema = z.object({
   customImage: z.string().default(""),
   scheduleDraft: scheduleDraftSchema,
   scheduleDrafts: z.array(scheduleDraftInnerSchema).default([]),
+  intentId: z.string().nullable().default(null),
+  audience: z.enum(["just-me", "my-team"]).nullable().default(null),
 });
 export type SetupForm = z.infer<typeof setupFormSchema>;
 

@@ -14,6 +14,8 @@ import { SetupWorkbenchView } from "./modules/agents/views/setup-workbench-view.
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { KnowledgeBaseConfigView } from "./modules/knowledge-bases/views/knowledge-base-config-view.js";
+import { KnowledgeBaseSetupView } from "./modules/knowledge-bases/views/knowledge-base-setup-view.js";
+import { KnowledgeBasesListView } from "./modules/knowledge-bases/views/knowledge-bases-list-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { PacksView } from "./modules/packs/views/packs-view.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
@@ -112,7 +114,9 @@ function MainApp() {
             <div
               className={cn(
                 "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" || view === "packs"
+                view === "home" ||
+                  view === "packs" ||
+                  view === "knowledge-bases"
                   ? "max-w-[1200px]"
                   : "max-w-[960px]",
               )}
@@ -125,6 +129,10 @@ function MainApp() {
                 <SettingsView />
               ) : view === "agents" ? (
                 <AgentsView />
+              ) : view === "knowledge-bases" ? (
+                <KnowledgeBasesListView />
+              ) : view === "knowledge-base-new" ? (
+                <KnowledgeBaseSetupView />
               ) : view === "packs" ? (
                 <PacksView />
               ) : view === "setup-workbench" ? (

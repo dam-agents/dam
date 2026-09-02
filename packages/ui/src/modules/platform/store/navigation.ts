@@ -18,6 +18,8 @@ type ParameterlessView =
   | "agents"
   | "agent-new"
   | "packs"
+  | "knowledge-bases"
+  | "knowledge-base-new"
   | "setup-workbench";
 
 export interface NavigationSlice {
