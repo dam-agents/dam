@@ -185,7 +185,10 @@ export async function bootstrap() {
       : undefined,
   };
   await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
-  const { db, sql } = createDb(config.databaseUrl, dbTls);
+  const { db, sql } = createDb(config.databaseUrl, {
+    tls: dbTls,
+    poolMax: config.databasePoolMax,
+  });
   reportUsageViewGrants(getLogger(), await reconcileUsageViewGrants(db));
 
   const artifactsModule = composeArtifactsModule({
@@ -338,6 +341,7 @@ export async function bootstrap() {
     }),
     harnessServerUrl: config.harnessServerUrl,
     resolveOwner: resolveAgentOwner,
+    deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   await periodicJobs.register("runtime-outbox-sweep", 60_000, () =>
     runtimeDelivery.sweep.tick(),

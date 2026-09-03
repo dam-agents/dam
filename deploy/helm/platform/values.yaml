@@ -828,12 +828,27 @@ apiServer:
     user: platform_apiserver
     password: null
     database: platform
+    # -- Connection-pool size, per replica. One pool serves both request
+    # handlers and the runtime-delivery worker; delivery jobs hold a
+    # connection only for their short queries, never across the call to the
+    # agent, so this sits far below `runtimeDelivery.concurrency`. Raise the
+    # server's `max_connections` (Postgres defaults to 100, shared with
+    # Keycloak) before scaling `replicas` past 100 / poolMax.
+    poolMax: 32
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
     # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
     sslmode: null
     # CA certificate (PEM) used to verify the external DB's TLS certificate.
     # Required for sslmode verify-ca/verify-full when the DB presents a private CA.
     caCert: ""
+  # -- Runtime-state delivery to agent pods.
+  runtimeDelivery:
+    # -- Concurrent deliveries per replica. A job parked on a slow agent holds
+    # a worker slot and nothing else, so this is sized to exceed the agents
+    # that can be mid-delivery at once: no agent's delivery waits on another's
+    # for a slot. Lower it only to roll back that guarantee.
+    concurrency: 256
+
   # -- Object-store connection (empty endpoint = use shared local seaweedfs)
   objectStorage:
     endpoint: ""

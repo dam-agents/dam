@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { ScheduleSpec } from "api-server-api";
-import { nextFireAt } from "../../modules/schedules/domain/recurrences.js";
+import {
+  nextFireAt,
+  triggerExpiry,
+} from "../../modules/schedules/domain/recurrences.js";
 
 function rruleSpec(
   rrule: string,
@@ -113,5 +116,49 @@ describe("nextFireAt (cron)", () => {
     };
     const next = nextFireAt(spec, new Date("2026-06-11T08:00:00Z"));
     expect(next?.toISOString()).toBe("2026-06-11T09:00:00.000Z");
+  });
+});
+
+describe("triggerExpiry", () => {
+  /** TEST_SCENARIO: the next occurrence supersedes a fire still waiting to be
+   *  delivered, so it bounds the event's life ahead of the TTL. */
+  it("expires at the next occurrence when it lands before the TTL", () => {
+    const firedAt = new Date("2026-09-02T10:00:00Z");
+    const next = new Date("2026-09-02T10:05:00Z");
+    expect(triggerExpiry(firedAt, next, 900).toISOString()).toBe(
+      "2026-09-02T10:05:00.000Z",
+    );
+  });
+
+  /** TEST_SCENARIO: a sparse schedule falls back to the TTL, and so does one
+   *  with no further occurrence at all. */
+  it("expires at the TTL when the next occurrence is further out", () => {
+    const firedAt = new Date("2026-09-02T10:00:00Z");
+    expect(
+      triggerExpiry(
+        firedAt,
+        new Date("2026-09-03T10:00:00Z"),
+        900,
+      ).toISOString(),
+    ).toBe("2026-09-02T10:15:00.000Z");
+    expect(triggerExpiry(firedAt, null, 900).toISOString()).toBe(
+      "2026-09-02T10:15:00.000Z",
+    );
+  });
+
+  /** TEST_SCENARIO: nextFireAt evaluates the rule from the fire instant
+   *  truncated to the minute, so a rule carrying seconds can answer with an
+   *  occurrence that has already passed. Anchoring expiry on it would stamp the
+   *  event expired at birth and silently drop the fire, so the TTL takes over. */
+  it("falls back to the TTL when the next occurrence already passed", () => {
+    const firedAt = new Date("2026-09-02T10:00:30Z");
+    const next = nextFireAt(
+      rruleSpec("FREQ=HOURLY;BYSECOND=15", "UTC"),
+      firedAt,
+    );
+    expect(next?.toISOString()).toBe("2026-09-02T10:00:15.000Z");
+    expect(triggerExpiry(firedAt, next, 900).toISOString()).toBe(
+      "2026-09-02T10:15:30.000Z",
+    );
   });
 });
