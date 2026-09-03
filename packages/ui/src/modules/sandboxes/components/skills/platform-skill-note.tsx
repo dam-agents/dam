@@ -3,6 +3,11 @@ import { platformSkillsForFeature } from "api-server-api";
 
 import { cn } from "@/lib/utils";
 
+function separator(index: number, total: number): string {
+  if (index === 0) return "";
+  return index === total - 1 ? " and " : ", ";
+}
+
 export function PlatformSkillNote({
   featureId,
   subject = "this agent",
@@ -22,7 +27,7 @@ export function PlatformSkillNote({
       Adds the{" "}
       {names.map((name, i) => (
         <span key={name}>
-          {i > 0 && " and "}
+          {separator(i, names.length)}
           <code className="rounded bg-muted px-1 py-0.5 text-xs">{name}</code>
         </span>
       ))}{" "}

@@ -62,7 +62,11 @@ export function ExperimentSetupView() {
         </Button>
       }
     >
-      <PlatformSkillNote featureId="experiments" subject="the new agent" />
+      <PlatformSkillNote
+        featureId="experiments"
+        subject="the new agent"
+        className="mb-8"
+      />
       <NameSection value={form.name} onChange={(name) => update({ name })} />
       <ProviderSection
         selected={form.providerRef}

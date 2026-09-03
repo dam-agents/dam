@@ -425,7 +425,6 @@ export type {
   PlatformSkillFeature,
 } from "./modules/skills/platform-skills.js";
 export {
-  PLATFORM_FEATURE_IDS,
   PLATFORM_SKILLS,
   platformSkillFeature,
   platformSkillsForFeature,

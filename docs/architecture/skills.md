@@ -95,6 +95,16 @@ A **Skill Publish Record** (`agent_skill_publishes`) is the explicit log of a su
 
 **Resolving that state.** `prState` is filled in by a periodic job rather than by the `state` query, so GitHub cost tracks the number of unresolved pull requests rather than how many users have the Skills page open. Each unresolved record is attempted at most hourly — the cadence that holds the anonymous 60-requests/hour-per-IP ceiling up to roughly fifty concurrently unresolved records, with scheduling sophistication deliberately deferred until reality demands it. An attempt is one **anonymous** read from the api-server — which preserves the invariant below, since anonymous is not "with credentials" — escalating on a `404` (private as much as gone) to the publishing agent's own pod, where the paired gateway injects the owner's token. Only pods **already warm** answer: a badge is never worth waking a hibernated agent. The in-product preview escalates the same way but deliberately **does** wake, because it serves a request a user made (see [api-server skills service](#api-server-skills-service)). `merged` and `closed` are terminal — once observed they are persisted and never re-read, so the badge only ever gets more accurate. Conditional requests are **not** a budget mechanism: an anonymous `304` is charged exactly like a `200`, so an ETag saves bandwidth only.
 
+### Platform Skill
+
+A **platform skill** is one the platform ships to make a feature usable. It is a reading over the pod's [Skill Origin](agent-skills.md#skill-origin) verdict, not a fourth value: the skill must be judged `system` or `system-modified` against the image **and** carry a name in the **platform skill registry**, a static skill-name-to-feature map in the contract package ([`platform-skills.ts`](../../packages/api-server-api/src/modules/skills/platform-skills.ts)). The registry lives here rather than on the pod because agent-runtime never consults it — it reports the verdict, and this side decides what the verdict means.
+
+Both halves are load-bearing. A name is only a directory on the agent-writable PVC, so a user skill squatting on a registry name is judged `user` and never borrows the badge; origin alone cannot separate a feature's skill from an image's own built-in. Keeping the map in code rather than in a marker or a row is what keeps provenance judged against the image.
+
+That one map is what both surfaces read. The Skills surface groups Local Skills three ways — what the user authored here, what a platform feature owns, and what is left of the image — badges each platform skill with its feature, and presents the group as platform-managed, with no edit or delete affordance. Each feature that ships a skill names it in turn; a feature that ships none says nothing, because the note exists to explain what turning a feature on changed.
+
+Two limits follow from the mechanism. A platform skill is listed whether or not its feature is switched on, because the panel is a truthful view of what sits in the Skill Paths. And a skill installed after first boot from outside the image has no pristine counterpart, so it still reads as user-authored — the registry cannot rescue it.
+
 ### Skill Set
 
 A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique per owner) — so configuring an agent's skills is not manual work repeated from memory on each new one.
@@ -239,6 +249,6 @@ The on-pod state lives on the per-agent PVC under the configured Skill Paths. PV
 
 - **Filesystem is authoritative for installed state — once the pod has caught up.** `agent_skills` is a declarative record that self-heals on every `state` read whose agent has cleanly applied. A skill removed via the Files panel disappears from the UI without any explicit uninstall. While an apply is in flight the filesystem is not yet evidence about what was just requested, so the self-heal waits.
 - **api-server never touches the pod filesystem.** Every disk-touching operation goes through agent-runtime over its tRPC port; the agent pod's NetworkPolicy admits ingress only from the api-server pod, so no in-process auth is needed on that hop.
-- **MCP `agentId` is server-bound.** The per-agent MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channels § Auth without an admin login](channels.md#auth-without-an-admin-login)) and pins the `agentId` from the verified token, not from tool input.
+- **MCP `agentId` is server-bound.** The per-agent MCP endpoint authenticates the agent against the agent ConfigMap's `accessTokenHash` ([channels](channels.md)) and pins the `agentId` from the verified token, not from tool input.
 
 The pod-side invariants — provenance judged against the image, agent-runtime never holding a GitHub credential, publish being REST-only — are stated on [agent-skills](agent-skills.md#invariants).
