@@ -42,9 +42,12 @@ Include what applies; add domain checks from the design's effects list.
 - **Structure verification**: re-run `scripts/verify-onboarding.sh` (offline) — the same
   script onboarding ends with. It is the cheapest way to catch an instance whose state
   files drifted out of shape or whose `CONFIG.md` grew a key the runtime cannot see.
-- **Toolchain shims**: report every CLI still resolving through a `mise` shim
-  (`toolpath_shimmed`) — it passes the dependency check while silently costing the exec
-  tax, and the real fix is a pod-image change the operator has to chase.
+- **Toolchain shims**: report every CLI behind a `mise` shim (`toolpath_shimmed`) — it
+  passes the dependency check while the exec tax is paid by every process that does not
+  source the workaround. The report reads what `toolpath_init` saw *before* it shadowed
+  anything, so an active workaround does not silence it: the finding is the image defect,
+  and it keeps warning until the operator gets real bin dirs ahead of the shim dir on
+  `PATH` (§5a — reported, never absorbed).
 - Run cadence: gaps in each run type's log vs. its schedule (missed runs).
 - Error scan: `ERROR:`-prefixed lines across the week's logs; with a structured events
   log, also group **every `level: error` event of the week into `failures[]` signatures**

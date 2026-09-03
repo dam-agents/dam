@@ -22,7 +22,7 @@ cd "$REPO" || exit 1
 
 # ---------------------------------------------------------- required files ----
 for f in CLAUDE.md AGENTS.md ONBOARDING.md README.md VERSION CHANGELOG.md .gitignore \
-         docs/self-modification.md docs/persistence.md; do
+         docs/self-modification.md docs/persistence.md scripts/verify-onboarding.sh; do
   if [ -f "$f" ]; then pass "required file: $f"; else fail "missing required file: $f"; fi
 done
 

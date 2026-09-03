@@ -28,6 +28,11 @@
 # Cache the resolved paths: `mise bin-paths` costs ~210ms, an [ -x ] test ~0.6ms.
 TOOLPATH_CACHE="${WORK_DIR:-${HOME:-/home/agent}/work}/.cache/toolpaths"
 
+# Names found behind a shim, recorded by toolpath_init BEFORE it shadows them.
+# The report below reads this record, never the live `command -v` — the shadow
+# function answers that one, so a live check would call every shim clean.
+TOOLPATH_SHIMS=""
+
 # Print "<tool> <abs-path>" per resolvable tool, consulting the cache first.
 _toolpath_resolve() { # <tool>...
   local t p line found=""
@@ -67,6 +72,13 @@ toolpath_init() { # [tool]... (default: jq gh)
       (*/shims/*) want="${want:+$want }$t";;
     esac
   done
+  # record every shimmed name (once) — the image defect outlives the workaround
+  for t in $want; do
+    case " $TOOLPATH_SHIMS " in
+      (*" $t "*) ;;
+      (*) TOOLPATH_SHIMS="${TOOLPATH_SHIMS:+$TOOLPATH_SHIMS }$t";;
+    esac
+  done
   [ -z "$want" ] && return 0
 
   resolved="$(_toolpath_resolve $want 2>/dev/null)" || return 0
@@ -93,13 +105,19 @@ EOF
   return 0
 }
 
-# Report tools still reaching through a shim (the audit's `tool_shims` check).
+# Report tools reaching through a shim (the audit's `tool_shims` check). Shadowing
+# only neutralizes the tax inside processes that source this file — the shim is
+# still in the image, and every process that does not is still paying. So the
+# report names a tool whether or not this run shadowed it, and keeps naming it
+# until the image is fixed (docs/self-modification.md §5a).
 toolpath_shimmed() { # [tool]... -> space-separated names, empty when clean
   local t out=""
   [ "$#" -eq 0 ] && set -- jq gh
   for t in "$@"; do
-    # a shadowing function counts as resolved; only a bare shim path is a finding
-    case "$(type -t "$t" 2>/dev/null)" in (function) continue;; esac
+    case " $TOOLPATH_SHIMS " in (*" $t "*) out="${out:+$out }$t"; continue;; esac
+    # a tool toolpath_init never inspected: check it live (a shadow it did not
+    # install cannot be masking anything, and `command -v` on a function name
+    # returns the name, never a shim path)
     case "$(command -v "$t" 2>/dev/null)" in
       (*/shims/*) out="${out:+$out }$t";;
     esac
