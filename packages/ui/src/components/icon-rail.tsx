@@ -4,7 +4,7 @@ import {
   Chemistry,
   ChevronLeft,
   ChevronRight,
-  ContainerSoftware,
+  Code,
   Folders,
   Home,
   Settings,
@@ -48,7 +48,7 @@ export function IconRail({
   };
   const codingAgents: Destination = {
     label: "Coding agents",
-    icon: ContainerSoftware,
+    icon: Code,
     active: view === "coding-agents",
     badge: 0,
     navigate: () => setView("coding-agents"),
