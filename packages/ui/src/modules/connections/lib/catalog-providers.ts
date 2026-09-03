@@ -200,6 +200,13 @@ export function groupCatalog({
   for (const t of offeredTemplates) groupFor(t.id).templates.push(t);
   for (const c of connections) groupFor(c.templateId).connections.push(c);
 
+  for (const def of STATIC_PROVIDERS) {
+    const group = groups.get(def.id);
+    group?.templates.sort(
+      (a, b) => def.templateIds.indexOf(a.id) - def.templateIds.indexOf(b.id),
+    );
+  }
+
   const byTab = new Map<CatalogTab, CatalogProviderGroup[]>(
     CATALOG_TAB_ORDER.map((tab) => [tab, []]),
   );
