@@ -446,6 +446,12 @@ keycloak:
   # -- Public client for the dam CLI (Device Authorization Grant, RFC 8628).
   # Surfaced to the CLI via `/api/auth/config` as `cliClientId`.
   cliClientId: platform-cli
+  # -- Public client for the artifact share host's viewer sign-in
+  # (authorization code + PKCE). Its only redirect is
+  # `{urls.share}/auth/callback`; post-logout returns to
+  # `{urls.share}/auth/login`. No api audience mapper: its tokens are
+  # rejected by the api-server on purpose.
+  shareClientId: platform-share
 
   # -- Additional redirect URIs and web origins to register on the public
   # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite

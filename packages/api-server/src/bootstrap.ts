@@ -126,9 +126,11 @@ import {
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
+  composeShareAuth,
   composeShareViewer,
   createByLinkHostGate,
   createContentApp,
+  createShareAuthRoutes,
   createShareViewerApp,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -316,10 +318,25 @@ export async function bootstrap() {
     coreRole: config.keycloakInspectorRole,
   };
   const shareViewer = composeShareViewer({ db, artifacts });
+  const shareAuth = composeShareAuth({
+    redis: sharedRedis,
+    keycloak: {
+      externalUrl: config.keycloakExternalUrl,
+      internalUrl: config.keycloakUrl,
+      realm: config.keycloakRealm,
+      clientId: config.keycloakShareClientId,
+    },
+    shareBaseUrl: config.shareBaseUrl,
+  });
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
       app: createShareHostApp({
+        auth: createShareAuthRoutes({
+          auth: shareAuth,
+          brandName: config.brand.name,
+          secureCookie: new URL(config.shareBaseUrl).protocol === "https:",
+        }),
         viewer: createShareViewerApp({
           viewer: shareViewer,
           brandName: config.brand.name,
