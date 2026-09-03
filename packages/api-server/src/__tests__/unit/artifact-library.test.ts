@@ -118,6 +118,7 @@ function fakeRepo(
   const notImplemented = () => {
     throw new Error("not implemented in fake");
   };
+  const viewers = new Map<string, string[]>();
   return {
     insertArtifact: notImplemented,
     attributeVersion: () => Promise.resolve(true),
@@ -155,6 +156,19 @@ function fakeRepo(
     advanceVersion: notImplemented,
     listVersions: () => Promise.resolve([]),
     getVersion: () => Promise.resolve(null),
+    listViewers: (id) => Promise.resolve(viewers.get(id) ?? []),
+    listViewersForMany: (ids) =>
+      Promise.resolve(
+        new Map(
+          ids
+            .filter((id) => viewers.has(id))
+            .map((id) => [id, viewers.get(id)!]),
+        ),
+      ),
+    replaceViewers: (id, emails) => {
+      viewers.set(id, [...emails]);
+      return Promise.resolve();
+    },
     insertFolder: notImplemented,
     getFolder: notImplemented,
     getFolderBySlug: (slug) =>
