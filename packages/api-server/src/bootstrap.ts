@@ -127,6 +127,7 @@ import {
 } from "./modules/api-keys/index.js";
 import {
   composeShareAuth,
+  composeShareRenderTokens,
   composeShareViewer,
   createByLinkHostGate,
   createContentApp,
@@ -318,6 +319,7 @@ export async function bootstrap() {
     coreRole: config.keycloakInspectorRole,
   };
   const shareViewer = composeShareViewer({ db, artifacts });
+  const shareRenderTokens = composeShareRenderTokens({ redis: sharedRedis });
   const shareAuth = composeShareAuth({
     redis: sharedRedis,
     keycloak: {
@@ -339,6 +341,8 @@ export async function bootstrap() {
         }),
         viewer: createShareViewerApp({
           viewer: shareViewer,
+          auth: shareAuth,
+          renderTokens: shareRenderTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
           contentBaseUrl: config.contentBaseUrl,
@@ -355,6 +359,7 @@ export async function bootstrap() {
       baseUrl: config.contentBaseUrl,
       app: createContentApp({
         viewer: shareViewer,
+        renderTokens: shareRenderTokens,
         shareBaseUrl: config.shareBaseUrl,
       }),
     },

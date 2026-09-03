@@ -5,6 +5,10 @@ import { createRemoteJWKSet } from "jose";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
 import type { ArtifactService } from "../artifacts/services/artifact-service.js";
 import {
+  RENDER_TOKEN_TTL_MS,
+  type RenderGrant,
+} from "./domain/render-grant.js";
+import {
   SHARE_LOGIN_TTL_MS,
   SHARE_SESSION_TTL_MS,
 } from "./domain/share-session.js";
@@ -21,6 +25,10 @@ import {
   createArtifactExpirySweeper,
   type ArtifactExpirySweeper,
 } from "./services/expiry-sweeper.js";
+import {
+  createRenderTokenService,
+  type RenderTokenService,
+} from "./services/render-token-service.js";
 import {
   createShareAuthService,
   type ShareAuthService,
@@ -59,6 +67,18 @@ export function composeShareViewer(opts: {
   return createShareViewerService({
     repo: createArtifactLibraryRepository(opts.db),
     artifacts: opts.artifacts,
+  });
+}
+
+export function composeShareRenderTokens(opts: {
+  redis: Redis;
+}): RenderTokenService {
+  return createRenderTokenService({
+    grants: createRedisTtlStore<RenderGrant>(
+      opts.redis,
+      "share:render",
+      RENDER_TOKEN_TTL_MS,
+    ),
   });
 }
 

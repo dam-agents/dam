@@ -421,3 +421,22 @@ export function renderSignInFailed(input: {
     </div></div>`,
   );
 }
+
+export function renderNoAccess(input: {
+  email: string | null;
+  brandName: string;
+  logoutUrl: string;
+}): string {
+  const detail =
+    input.email === null
+      ? "Your account has no email address on record, so it cannot be on a viewer list."
+      : `You are signed in as <strong>${escapeHtml(input.email)}</strong>. Ask the person who sent you this link to add you, or sign in with another account.`;
+  return chromePage(
+    `You don't have access · ${input.brandName}`,
+    `<div class="center-card"><div class="card">
+      <h1>You don't have access</h1>
+      <p>${detail}</p>
+      <a class="btn" href="${escapeHtml(input.logoutUrl)}">Switch account</a>
+    </div></div>`,
+  );
+}

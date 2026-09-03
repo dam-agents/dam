@@ -1,20 +1,21 @@
 import type { Env, Handler } from "hono";
 
 import type { ShareViewerService } from "../services/share-viewer-service.js";
+import { isRestricted, PRIVATE_NO_STORE, type Authorize } from "./authorize.js";
 import { parseVersion } from "./version-query.js";
 
 export const RAW_ROUTE = "/a/:slug/raw";
 
 export function createRawHandler(
   viewer: ShareViewerService,
+  authorize: Authorize,
 ): Handler<Env, typeof RAW_ROUTE> {
   return async (c) => {
     const slug = c.req.param("slug");
-    const resolution = await viewer.resolveArtifact(slug);
-    if (resolution.state !== "ok")
-      return c.text("not found", resolution.state === "expired" ? 410 : 404);
+    const authorized = await authorize(c, await viewer.resolveArtifact(slug));
+    if (!authorized.ok) return authorized.response;
 
-    const artifact = resolution.artifact;
+    const artifact = authorized.artifact;
     const requested = parseVersion(c.req.query("v"));
     const versionArg =
       requested === undefined || requested === artifact.version
@@ -34,6 +35,7 @@ export function createRawHandler(
     if (!isImage || forceDownload) {
       headers.set("Content-Disposition", `attachment; filename="${safeName}"`);
     }
+    if (isRestricted(artifact)) headers.set("Cache-Control", PRIVATE_NO_STORE);
     return new Response(blob.stream, { headers });
   };
 }
