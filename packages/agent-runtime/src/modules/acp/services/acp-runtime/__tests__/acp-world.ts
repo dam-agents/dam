@@ -189,9 +189,11 @@ export function createInMemoryUndeliveredStore(): UndeliveredPromptStore {
       if (fresh.length > 0) sessions.set(sessionId, [...existing, ...fresh]);
     },
     forget(sessionId, id) {
-      const kept = (sessions.get(sessionId) ?? []).filter((p) => p.id !== id);
+      const existing = sessions.get(sessionId) ?? [];
+      const kept = existing.filter((p) => p.id !== id);
       if (kept.length === 0) sessions.delete(sessionId);
       else sessions.set(sessionId, kept);
+      return kept.length !== existing.length;
     },
     forgetSession(sessionId) {
       sessions.delete(sessionId);

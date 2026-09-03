@@ -73,6 +73,7 @@ export const platformUndeliveredPromptSchema = z.object({
 export const platformUndeliveredMetaSchema = z.array(
   platformUndeliveredPromptSchema,
 );
+export const platformSupersededMetaSchema = z.array(z.string());
 export type PlatformUndeliveredPrompt = z.infer<
   typeof platformUndeliveredPromptSchema
 >;

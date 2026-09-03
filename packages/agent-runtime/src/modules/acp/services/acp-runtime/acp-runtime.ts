@@ -203,6 +203,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
     },
+    supersededFor(sessionId) {
+      return [...(supersededEchoes.get(sessionId) ?? [])];
+    },
     engage(channel, sessionId) {
       engage(channel, sessionId);
     },
@@ -240,6 +243,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const supersededEchoes = new Map<string, Set<string>>();
+
+  function supersedeEcho(sessionId: string, id: string): void {
+    const ids = supersededEchoes.get(sessionId) ?? new Set<string>();
+    ids.add(id);
+    supersededEchoes.set(sessionId, ids);
+  }
   const rehydratingSessions = new Set<string>();
   const rehydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const rehydrateLoadIds = new Map<string, number>();
@@ -500,6 +510,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
     transcript.forget(sessionId);
+    supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
@@ -680,7 +691,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       if (method === "platform/forgetUndelivered" && paramsSid) {
         const id = extractUndeliveredId(frame);
-        if (id !== null) deps.undeliveredPrompts.forget(paramsSid, id);
+        if (id !== null && deps.undeliveredPrompts.forget(paramsSid, id))
+          supersedeEcho(paramsSid, id);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -704,7 +716,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           );
           return;
         }
-        deps.undeliveredPrompts.remember(paramsSid, prompts);
+        const disposed = supersededEchoes.get(paramsSid);
+        deps.undeliveredPrompts.remember(
+          paramsSid,
+          disposed === undefined
+            ? prompts
+            : prompts.filter((p) => !disposed.has(p.id)),
+        );
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -715,6 +733,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (method === "platform/deleteSession" && paramsSid) {
         deps.sessionMetadata?.tombstone(paramsSid);
         deps.undeliveredPrompts.forgetSession(paramsSid);
+        supersededEchoes.delete(paramsSid);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -844,8 +863,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           outboundIdToClient.delete(outboundId);
           return;
         }
-        if (retryOf !== null)
-          deps.undeliveredPrompts.forget(promptSessionId, retryOf);
+        if (
+          retryOf !== null &&
+          deps.undeliveredPrompts.forget(promptSessionId, retryOf)
+        )
+          supersedeEcho(promptSessionId, retryOf);
         if (
           harnessColdSessions.has(promptSessionId) &&
           !rehydratingSessions.has(promptSessionId)

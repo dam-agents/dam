@@ -62,6 +62,7 @@ export interface SessionBootstrapDeps {
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
+  supersededFor(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
 }
 
@@ -106,12 +107,14 @@ export function createSessionBootstrap(
     clip: ReplayClip,
     turn: PlatformReplayTurnMeta | null,
     undelivered: PlatformUndeliveredPrompt[],
+    superseded: string[],
   ): unknown {
     const extras: Record<string, unknown> = {};
     if (clip.clipped)
       extras.clipped = clip.older !== undefined ? { older: clip.older } : {};
     if (turn !== null) extras.turn = turn;
     if (undelivered.length > 0) extras.undelivered = undelivered;
+    if (superseded.length > 0) extras.superseded = superseded;
     if (Object.keys(extras).length === 0) return value;
     const base =
       typeof value === "object" && value !== null
@@ -172,6 +175,7 @@ export function createSessionBootstrap(
         clip,
         kind === "load" ? { inFlight: deps.turnInFlight(sessionId) } : null,
         kind === "load" ? deps.undeliveredFor(sessionId) : [],
+        kind === "load" ? deps.supersededFor(sessionId) : [],
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -316,7 +320,7 @@ export function createSessionBootstrap(
           const response = JSON.stringify({
             jsonrpc: "2.0",
             id: originalId,
-            result: withReplayMeta(metadata.value, page.clip, null, []),
+            result: withReplayMeta(metadata.value, page.clip, null, [], []),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));
           return;

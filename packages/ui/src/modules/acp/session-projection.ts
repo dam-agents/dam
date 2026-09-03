@@ -202,6 +202,15 @@ function undeliveredBubble(record: PlatformUndeliveredPrompt): Message {
   };
 }
 
+function isVestigialPlaceholder(m: Message | undefined): boolean {
+  return (
+    m !== undefined &&
+    m.role === "assistant" &&
+    m.parts.length === 0 &&
+    (m.queued === true || !m.streaming)
+  );
+}
+
 function markUndelivered(
   messages: Message[],
   records: Map<string, PlatformUndeliveredPrompt>,
@@ -215,13 +224,22 @@ function markUndelivered(
       continue;
     }
     out.push(m.error ? m : { ...m, error: undeliveredError(record) });
-    const next = messages[i + 1];
-    if (
-      next?.role === "assistant" &&
-      next.parts.length === 0 &&
-      (next.queued === true || !next.streaming)
-    )
-      i += 1;
+    if (isVestigialPlaceholder(messages[i + 1])) i += 1;
+  }
+  return out;
+}
+
+export function dropSuperseded(messages: Message[], ids: string[]): Message[] {
+  if (ids.length === 0) return messages;
+  const gone = new Set(ids);
+  const out: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    if (m.role === "user" && gone.has(m.id)) {
+      if (isVestigialPlaceholder(messages[i + 1])) i += 1;
+      continue;
+    }
+    out.push(m);
   }
   return out;
 }

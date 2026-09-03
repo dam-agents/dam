@@ -121,6 +121,14 @@ test(`queued prompts outlive an abandoned tab and can be sent again, image and a
     await expect(undeliveredBubble(revisit, promptC)).toHaveCount(0);
   });
 
+  await test.step("the retried prompt appears once — its failed original does not replay", async () => {
+    await expect(
+      revisit
+        .getByTestId("chat-message")
+        .filter({ has: revisit.getByText(promptC, { exact: false }) }),
+    ).toHaveCount(1);
+  });
+
   await test.step("no stale waiting bubble trails the recovered message once the turn is over", async () => {
     const rows = await readChatMessages(revisit);
     const idxB = rows.findIndex(

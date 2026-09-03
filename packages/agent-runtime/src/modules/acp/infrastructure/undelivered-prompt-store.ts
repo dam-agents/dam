@@ -29,7 +29,7 @@ const stateSchema = z
 export interface UndeliveredPromptStore {
   readFor(sessionId: string): PlatformUndeliveredPrompt[];
   remember(sessionId: string, prompts: PlatformUndeliveredPrompt[]): void;
-  forget(sessionId: string, id: string): void;
+  forget(sessionId: string, id: string): boolean;
   forgetSession(sessionId: string): void;
 }
 
@@ -119,13 +119,14 @@ export function createUndeliveredPromptStore(
     forget(sessionId, id) {
       const { sessions } = store.read();
       const existing = sessions[sessionId];
-      if (existing === undefined) return;
+      if (existing === undefined) return false;
       const kept = existing.prompts.filter((p) => p.id !== id);
-      if (kept.length === existing.prompts.length) return;
+      if (kept.length === existing.prompts.length) return false;
       const next = { ...sessions };
       if (kept.length === 0) delete next[sessionId];
       else next[sessionId] = { prompts: kept };
       write(next);
+      return true;
     },
 
     forgetSession(sessionId) {

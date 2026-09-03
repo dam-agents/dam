@@ -2,6 +2,7 @@ import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js"
 import {
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
+  platformSupersededMetaSchema,
   platformUndeliveredMetaSchema,
   SessionMode,
   SessionType,
@@ -14,6 +15,7 @@ import { openInitializedConnection } from "../../acp/acp.js";
 import {
   appendUndelivered,
   applyUpdate,
+  dropSuperseded,
   failQueuedOnDisconnect,
   mergeLocalFailures,
   settleReplay,
@@ -310,6 +312,7 @@ export function useAcpConnection(
               clipped?: unknown;
               turn?: unknown;
               undelivered?: unknown;
+              superseded?: unknown;
             };
           };
         } | null
@@ -318,6 +321,9 @@ export function useAcpConnection(
       const turn = platformReplayTurnMetaSchema.safeParse(platformMeta?.turn);
       const undelivered = platformUndeliveredMetaSchema.safeParse(
         platformMeta?.undelivered,
+      );
+      const superseded = platformSupersededMetaSchema.safeParse(
+        platformMeta?.superseded,
       );
       const clipped =
         clippedRaw === undefined
@@ -335,12 +341,15 @@ export function useAcpConnection(
               ...collector.updates,
             ]
           : collector.updates;
-      const settled = settleReplay(
-        updates.reduce<Message[]>(
-          (acc, update) => applyUpdate(acc, update),
-          [],
+      const settled = dropSuperseded(
+        settleReplay(
+          updates.reduce<Message[]>(
+            (acc, update) => applyUpdate(acc, update),
+            [],
+          ),
+          { turnInFlight: turn.success && turn.data.inFlight },
         ),
-        { turnInFlight: turn.success && turn.data.inFlight },
+        superseded.success ? superseded.data : [],
       );
       const localKey = selectedAgent ? draftKey(selectedAgent, sid) : null;
       const held = localKey === null ? [] : readUndelivered(localKey);
