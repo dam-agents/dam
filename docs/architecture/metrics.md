@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-09-01
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -36,6 +36,10 @@ Two read-only tRPC procedures make up the surface; both are query-only and both 
 
 The Overview session filter is **trace-aware**, not a literal session-id match: a queried session folds in every session that shares a trace with it, so a child harness run counts under "this session" even though it minted its own session id — the filter-side mirror of the per-session rollup's root grouping above. Both folds ride the same trace-context propagation [observability](observability.md#agent-export) describes, and neither crosses the ownership boundary — every side of a fold carries the same owner scope.
 
+## Agent-facing read
+
+A third read serves an agent rather than a signed-in user: the `get_usage_summary` MCP tool, over the same reader, **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own spend. It answers the one question an unattended agent needs (what did I cost over the last N days: total, per-model split, session count). Its window is bounded *and* defaulted in the contract package next to the tRPC input bounds — 7 days by default, 30 at most — so a tool call cannot widen into a whole-retention scan, and an agent that omits the argument gets the cheap window rather than the widest one. Its consumer today is the case-study skill ([case-studies](case-studies.md)), which is told to prefer it over counting tokens out of its own transcripts.
+
 ## Session directory
 
 The kind of a Session — and whether it was a chat or a terminal — is **agent-owned state**: the agent-runtime records it beside the Session when it is created, and it lives on the agent's own volume ([persistence](persistence.md)). That is the right home for it and a useless one for this subsystem, for two reasons that both bite exactly when the read matters. A hibernated agent's volume is detached, so answering *what kind of Session was this* for a past month would mean waking every agent the user owns. And an agent's volume is reclaimed when the agent is deleted, while its spend deliberately survives in telemetry — so the kind would vanish from windows whose cost still counts.
@@ -68,7 +72,7 @@ It reads the per-LLM-call log records Claude Code exports — one record per API
 
 ## Disabled backend
 
-The telemetry store is optional (it ships with [observability](observability.md), disabled by default). When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results. Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero. Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window. Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-agent nav summary degrades to its neutral placeholder, and Home's spend widget leaves the page rather than occupy it with an error the user cannot act on.
+The telemetry store is optional (it ships with [observability](observability.md), disabled by default). When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results. Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero. Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window. Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-agent nav summary degrades to its neutral placeholder, and Home's spend widget leaves the page rather than occupy it with an error the user cannot act on. The agent-facing read deliberately inverts this: it answers `available: false` with a reason, as a *success*, because its caller is unattended and needs to report "cost is not measured on this install" and carry on rather than treat a thrown error as a failed task. Both variants are chosen once at composition time from the same configuration, so neither can be reached on an install of the other kind.
 
 ## Trust story
 

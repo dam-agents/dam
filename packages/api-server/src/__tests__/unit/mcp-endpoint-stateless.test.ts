@@ -34,6 +34,11 @@ function replica() {
     artifactLibraryFor: () => ({}),
     invocationsServiceFor: () => ({}),
     experimentsServiceFor: () => ({}),
+    carriesInspectorRole: async () => false,
+    caseStudySubmissions: {},
+    caseStudyInspection: {},
+    agentImage: async () => null,
+    usageSummary: {},
   } as unknown as MountMcpDeps);
   return app;
 }

@@ -296,6 +296,32 @@ export {
 export type { ChannelsService } from "./modules/channels/types.js";
 
 export type {
+  CaseStudyStatus,
+  CaseStudySubmitInput,
+  CaseStudyEditionSummary,
+  CaseStudyEdition,
+  CaseStudiesService,
+} from "./modules/case-studies/types.js";
+export {
+  caseStudyStatusSchema,
+  caseStudySubmitInputSchema,
+} from "./modules/case-studies/schemas.js";
+export {
+  CASE_STUDY_CONTENT_MAX_CHARS,
+  CASE_STUDY_SKILL_PATH,
+  CASE_STUDY_SCHEDULE_TASK,
+} from "./modules/case-studies/constants.js";
+
+export { usageSummaryInputSchema } from "./modules/metrics/schemas.js";
+export {
+  METRICS_MAX_SINCE_HOURS,
+  METRICS_MAX_LIMIT,
+  METRICS_DEFAULT_LIMIT,
+  USAGE_SUMMARY_MAX_DAYS,
+  USAGE_SUMMARY_DEFAULT_DAYS,
+} from "./modules/metrics/constants.js";
+
+export type {
   MetricsService,
   MetricsQuery,
   MetricsSpendQuery,

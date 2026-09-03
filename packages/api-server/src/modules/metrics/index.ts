@@ -10,3 +10,10 @@ export {
   type MetricsWindow,
   type OwnedAgent,
 } from "./services/metrics-service.js";
+export {
+  createAgentUsageSummary,
+  createUnavailableAgentUsageSummary,
+  type AgentUsageSummaryService,
+  type AgentUsageSummaryResult,
+} from "./services/agent-usage-summary.js";
+export { registerUsageSummaryTool } from "./mcp-tools.js";

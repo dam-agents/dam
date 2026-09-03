@@ -1,6 +1,6 @@
 # Usage tracking
 
-Last verified: 2026-08-31
+Last verified: 2026-09-03
 
 ## Overview
 
@@ -101,9 +101,11 @@ Six properties of that stream are load-bearing for anyone reading the numbers:
 
 Two sagas subscribe to the bus:
 
-- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. The auth subscriber also upserts `actor_roles` with the user's core-role flag.
+- **persist-activity** — one `activity_events` row per subscribed domain event, one subscriber per event type. It covers arriving (authentication), working with an agent (turns from either transport, shell attachment, scheduled fires, file imports, delegation to another agent), setting one up (connections, skills, harness configuration, agents created under a Kind), sharing what came out (library publishes, share-link views), and the account-level surfaces around all of it (experiment runs, feature flags, API keys) — plus the contribution-delivery health transitions. The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires. That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual. Runs only when activity tracking is enabled.
+- **persist-actor-roles** — upserts `actor_roles` with the user's core-role flag on `UserAuthenticated`. Deliberately a separate saga that runs **unconditionally**: the flag also gates the case-study inspector read paths ([case-studies](case-studies.md)), which must work on installs that disabled activity writes.
 
 Where an interaction already leaves durable, timestamped state, the event is not redundant with it: **the state tables hold raw Keycloak subs and the activity log holds pseudonymized ones**. A table keyed by raw subs cannot be filtered against the pseudonymized core-team set, and cannot be shown to an inspector without exposing an identifier. Routing an interaction through an event is what puts it in the one space where it can be both joined and read safely — which is the reason to record something even when its state is already persisted.
+
 - **persist-agents** — writes one `agents` row per `AgentCreated`, marks deleted on `AgentDeleted`. A startup bootstrap separately backfills the table from the K8s API for agents that pre-dated the saga.
 
 Both sagas write through a repository layer that applies HMAC-SHA256 to every Keycloak `sub` immediately before INSERT — `actor_sub`, `owner_sub`, and `actor_roles.actor_sub` all go through the same pseudonymizer. The repository is the single chokepoint; emit sites and sagas continue to deal in raw subs in-memory.
@@ -116,7 +118,7 @@ Both halves of an event are gated mechanically. A type in the registry is a prom
 
 What it does not cover is a module that never reaches the bus at all — the failure that produced these gaps. Nothing mechanical catches that without a hand-maintained list of modules, which is a list that goes stale and can be satisfied without collecting anything, so the gate is deliberately scoped to the invariant it can actually hold.
 
-The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents saga and the startup bootstrap run unconditionally because the `agents` table is also useful to consumers outside usage.
+The persist-activity saga runs only when activity tracking is enabled at install time (a chart-level toggle, on by default); the persist-agents, persist-actor-roles, and the startup bootstrap run unconditionally because the `agents` and `actor_roles` tables are also useful to consumers outside usage.
 
 ## Pseudonymization
 
