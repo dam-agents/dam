@@ -407,3 +407,17 @@ export function renderFolderPage(input: {
     </div>`,
   );
 }
+
+export function renderSignInFailed(input: {
+  brandName: string;
+  retryUrl: string;
+}): string {
+  return chromePage(
+    "Sign-in didn't work",
+    `<div class="center-card"><div class="card">
+      <h1>Sign-in didn't work</h1>
+      <p>The sign-in link expired or was already used. Try again to open the shared page via ${escapeHtml(input.brandName)}.</p>
+      <a class="btn" href="${escapeHtml(input.retryUrl)}">Try again</a>
+    </div></div>`,
+  );
+}

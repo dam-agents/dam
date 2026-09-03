@@ -54,9 +54,11 @@ export function composeKbShareServing(opts: {
 export function createShareHostApp(deps: {
   viewer: { fetch: (req: Request) => Response | Promise<Response> };
   kbMcp: Hono;
+  auth: Hono;
 }): { fetch: (req: Request) => Response | Promise<Response> } {
   const app = new Hono();
   app.route("/", deps.kbMcp);
+  app.route("/auth", deps.auth);
   app.all("*", (c) => deps.viewer.fetch(c.req.raw));
   return app;
 }
