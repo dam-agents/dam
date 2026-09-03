@@ -192,20 +192,18 @@ function ShareLinkButton({
 }) {
   const { copy, copied } = useCopy();
   const url = artifact.shareUrl;
+  const copyLabel =
+    artifact.visibility === "restricted"
+      ? "Copy link — opens only for people on the list"
+      : "Copy share link";
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       aria-label={
-        copied
-          ? "Share link copied"
-          : url
-            ? "Copy share link"
-            : "Sharing settings"
+        copied ? "Share link copied" : url ? copyLabel : "Sharing settings"
       }
-      tooltip={
-        copied ? "Copied!" : url ? "Copy share link" : "Sharing settings…"
-      }
+      tooltip={copied ? "Copied!" : url ? copyLabel : "Sharing settings…"}
       onClick={() =>
         url ? void copy(url).then(toastCopyOutcome) : onShare(artifact)
       }
