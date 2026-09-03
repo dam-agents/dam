@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
@@ -31,7 +32,11 @@ import {
 const RETURN_PATH = routeToPath({ view: "coding-agent-new" });
 
 export function CodingAgentSetupView() {
-  const { form, update, reset } = useSetupForm("coding-agent", {}, RETURN_PATH);
+  const { form, update, toggleConnection, reset } = useSetupForm(
+    "coding-agent",
+    {},
+    RETURN_PATH,
+  );
   const { data: templates, isLoading } = useTemplates();
   const { data: flags } = useFeatures();
   const createAgent = useCreateAgent();
@@ -131,14 +136,12 @@ export function CodingAgentSetupView() {
       />
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
-        onToggle={(id, granted) =>
-          update({
-            connectionIds: granted
-              ? [...new Set([...form.connectionIds, id])]
-              : form.connectionIds.filter((x) => x !== id),
-          })
-        }
+        onToggle={toggleConnection}
         oauthReturnView={RETURN_PATH}
+      />
+      <ConnectedKnowledgeBasesSetup
+        connectionIds={form.connectionIds}
+        onToggle={toggleConnection}
       />
     </SetupPageShell>
   );

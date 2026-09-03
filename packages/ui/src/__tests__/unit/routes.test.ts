@@ -20,7 +20,6 @@ const canonicalPaths = [
   "/knowledge-bases",
   "/knowledge-bases/new",
   "/knowledge-bases/kb-1",
-  "/knowledge-bases/kb-1/settings",
   "/artifacts",
 ];
 
@@ -38,6 +37,14 @@ describe("route round-trip", () => {
 
   it("parses /knowledge-bases/new as its setup page, not a KB id", () => {
     expect(parseRoute("/knowledge-bases/new").view).toBe("knowledge-base-new");
+  });
+
+  it("redirects the retired KB settings page to the full agent settings", () => {
+    expect(parseRoute("/knowledge-bases/kb-1/settings")).toEqual({
+      view: "sandbox-home",
+      agentId: "kb-1",
+      sandboxSection: "setup",
+    });
   });
 });
 

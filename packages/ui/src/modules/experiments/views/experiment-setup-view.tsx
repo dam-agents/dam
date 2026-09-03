@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
 import {
@@ -17,7 +18,7 @@ import { useCreateExperimentSandbox } from "../api/mutations.js";
 const RETURN_PATH = routeToPath({ view: "experiment-new" });
 
 export function ExperimentSetupView() {
-  const { form, update, reset } = useSetupForm(
+  const { form, update, toggleConnection, reset } = useSetupForm(
     "experiment",
     { templateId: KINDED_HARNESS_TEMPLATE_ID },
     RETURN_PATH,
@@ -75,14 +76,12 @@ export function ExperimentSetupView() {
       />
       <ConnectionsSetupSection
         connectionIds={form.connectionIds}
-        onToggle={(id, granted) =>
-          update({
-            connectionIds: granted
-              ? [...new Set([...form.connectionIds, id])]
-              : form.connectionIds.filter((x) => x !== id),
-          })
-        }
+        onToggle={toggleConnection}
         oauthReturnView={RETURN_PATH}
+      />
+      <ConnectedKnowledgeBasesSetup
+        connectionIds={form.connectionIds}
+        onToggle={toggleConnection}
       />
     </SetupPageShell>
   );

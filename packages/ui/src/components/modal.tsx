@@ -8,14 +8,27 @@ import { cn } from "@/lib/utils";
 
 interface ModalProps {
   widthClass?: string;
+  onClose?: () => void;
   children: ReactNode;
 }
 
-export function Modal({ widthClass = "w-[560px]", children }: ModalProps) {
+export function Modal({
+  widthClass = "w-[560px]",
+  onClose,
+  children,
+}: ModalProps) {
   const labelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef);
   useBodyScrollLock();
+  useEffect(() => {
+    if (!onClose) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
       <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">

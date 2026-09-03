@@ -1,6 +1,6 @@
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
-import { nextFireAt } from "../domain/recurrences.js";
+import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -49,7 +49,12 @@ export function createSchedulerRunner(
     }
 
     const eventId = `${scheduleId}:${fireAt.getTime()}`;
-    const expiresAt = new Date(now().getTime() + ttlSec * 1000);
+    const firedAt = now();
+    const expiresAt = triggerExpiry(
+      firedAt,
+      nextFireAt(sched.spec, firedAt),
+      ttlSec,
+    );
     const payload: Record<string, unknown> = {
       scheduleId,
       task: sched.spec.task ?? "",

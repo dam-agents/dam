@@ -1,0 +1,53 @@
+const TEXT_EXTENSIONS = new Set([
+  "md",
+  "markdown",
+  "txt",
+  "text",
+  "json",
+  "jsonc",
+  "yaml",
+  "yml",
+  "toml",
+  "csv",
+  "tsv",
+  "html",
+  "htm",
+  "css",
+  "js",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "jsx",
+  "py",
+  "rb",
+  "go",
+  "rs",
+  "java",
+  "kt",
+  "c",
+  "h",
+  "cpp",
+  "hpp",
+  "sh",
+  "bash",
+  "zsh",
+  "sql",
+  "xml",
+  "svg",
+  "ini",
+  "cfg",
+  "conf",
+  "rst",
+  "adoc",
+  "tex",
+  "bib",
+  "mermaid",
+]);
+
+export function shouldConsiderFileName(name: string): boolean {
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return true;
+  const extension = name.slice(dot + 1).toLowerCase();
+  return TEXT_EXTENSIONS.has(extension);
+}

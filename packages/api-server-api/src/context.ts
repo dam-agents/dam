@@ -14,6 +14,7 @@ import type {
 } from "./modules/events/types.js";
 import type { ExperimentsService } from "./modules/experiments/types.js";
 import type { InvocationsQueryService } from "./modules/invocations/types.js";
+import type { KbSharesService } from "./modules/kb-shares/types.js";
 import type { KnowledgeBasesService } from "./modules/knowledge-bases/types.js";
 import type { Links } from "./modules/links/types.js";
 import type { FilesService } from "./modules/files/router.js";
@@ -47,6 +48,7 @@ export interface ApiContext {
   experiments: ExperimentsService;
   invocationsQuery: InvocationsQueryService;
   knowledgeBases: KnowledgeBasesService;
+  kbShares: KbSharesService;
   artifactLibrary: ArtifactLibraryService;
   features: FeaturesService;
   files: FilesService;

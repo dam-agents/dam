@@ -536,7 +536,10 @@ async function resolveSkillDirInClone(
   for (const candidate of candidates) {
     try {
       await fs.access(path.join(candidate, "SKILL.md"));
-      return ok(candidate);
+      const real = await fs.realpath(candidate);
+      const rootReal = await fs.realpath(repoDir);
+      if (!real.startsWith(rootReal + path.sep)) continue;
+      return ok(real);
     } catch {}
   }
   return err({ kind: "SkillNotFoundInSource", source: repoDir, name });
@@ -569,6 +572,10 @@ function ignoreMissing(err: unknown): void {
 function leaveSidecar(): void {}
 
 async function assertNoSymlinks(root: string): Promise<void> {
+  const rootStat = await fs.lstat(root);
+  if (rootStat.isSymbolicLink()) {
+    throw new Error(`skill rejected: the skill directory itself is a symlink`);
+  }
   const stack = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;

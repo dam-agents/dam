@@ -1,4 +1,10 @@
-export { createDb, type Db, type DbTx } from "./client.js";
+export {
+  createDb,
+  DEFAULT_DB_POOL_MAX,
+  type Db,
+  type DbOptions,
+  type DbTx,
+} from "./client.js";
 export { runMigrations } from "./migrate.js";
 export {
   channels,
@@ -29,6 +35,7 @@ export {
   libraryArtifacts,
   libraryArtifactVersions,
   invocations,
+  kbShares,
 } from "./schema.js";
 export {
   eq,
@@ -44,5 +51,6 @@ export {
   like,
   lt,
   lte,
+  ne,
   sql,
 } from "drizzle-orm";

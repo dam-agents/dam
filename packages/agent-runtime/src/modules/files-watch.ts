@@ -108,6 +108,61 @@ export function createFilesWatcher(
     };
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: recursive subtree watch for whole share roots —
+   * unlike watchDirs (entry-list churn of explicit directories) it reacts to
+   * content edits anywhere under the tree, because its consumer treats any
+   * change as "republish soon". Platform-unsupported recursive watch degrades
+   * to silence rather than an error: the caller's turn/wake backstops keep
+   * correctness, the watch only adds freshness.
+   */
+  function watchTree(rel: string, onChange: () => void): WatchHandle {
+    const sink = coalescing(onChange, coalesceMs);
+    let watcher: FSWatcher | undefined;
+    let closed = false;
+    let unsupported = false;
+
+    function attach(): void {
+      if (closed || watcher || unsupported) return;
+      if (touchesReserved(rel)) return;
+      const abs = safePath(workingDir, rel);
+      if (abs === null) return;
+      try {
+        watcher = watch(abs, { recursive: true, persistent: false }, () => {
+          sink.fire();
+        });
+        watcher.on("error", () => {
+          watcher?.close();
+          watcher = undefined;
+        });
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          "code" in err &&
+          err.code === "ERR_FEATURE_UNAVAILABLE_ON_PLATFORM"
+        ) {
+          unsupported = true;
+        }
+        watcher = undefined;
+      }
+    }
+
+    attach();
+
+    const sweep = setInterval(() => attach(), retryMs);
+    sweep.unref?.();
+
+    return {
+      close() {
+        closed = true;
+        sink.cancel();
+        clearInterval(sweep);
+        watcher?.close();
+        watcher = undefined;
+      },
+    };
+  }
+
   function watchFile(rel: string, onChange: () => void): WatchHandle {
     const sink = coalescing(onChange, coalesceMs);
     let watcher: FSWatcher | undefined;
@@ -151,7 +206,7 @@ export function createFilesWatcher(
     };
   }
 
-  return { watchDirs, watchFile };
+  return { watchDirs, watchFile, watchTree };
 }
 
 export type FilesWatcher = ReturnType<typeof createFilesWatcher>;

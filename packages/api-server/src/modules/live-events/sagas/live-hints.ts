@@ -13,6 +13,7 @@ export function hintFor(
   switch (event.type) {
     case EventType.AgentCreated:
     case EventType.RuntimeHelloReceived:
+    case EventType.WorkspaceMutationSettled:
       return {
         ownerSub: event.ownerSub,
         hint: { topic: "agents", agentId: event.agentId },
@@ -64,6 +65,12 @@ export function hintFor(
           experimentId: event.experimentId,
           agentId: event.agentId,
         },
+      };
+    case EventType.KbSharePublished:
+    case EventType.KbSharePublishFailed:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "kbShares", agentId: event.agentId },
       };
     case EventType.UserAuthenticated:
     case EventType.AgentUpdated:

@@ -6,6 +6,7 @@ import type {
   ArtifactFolder,
   ArtifactKind,
   ArtifactLibraryService,
+  ArtifactTouch,
   ArtifactListFilter,
   ArtifactSharingInput,
   ArtifactUpdateInput,
@@ -69,6 +70,12 @@ export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
     id: string,
     version?: number,
   ): Promise<ArtifactAgentDownloadTicket>;
+  recordTouch(input: {
+    agentId: string;
+    sessionId: string;
+    artifactId: string;
+    version: number;
+  }): Promise<boolean>;
 }
 
 export interface ArtifactLibraryDeps {
@@ -274,21 +281,14 @@ export function createArtifactLibraryService(
     },
 
     async listVersions(id) {
-      const row = await requireArtifact(id);
-      const prior = await repo.listVersions(id);
-      const infos: ArtifactVersionInfo[] = prior.map((v) => ({
+      await requireArtifact(id);
+      const rows = await repo.listVersions(id);
+      return rows.map((v) => ({
         version: v.version,
         contentType: v.contentType,
         sizeBytes: v.sizeBytes,
         createdAt: v.createdAt.toISOString(),
       }));
-      infos.push({
-        version: row.version,
-        contentType: row.contentType,
-        sizeBytes: row.sizeBytes,
-        createdAt: row.updatedAt.toISOString(),
-      });
-      return infos;
     },
 
     async create(input, attribution) {
@@ -383,13 +383,7 @@ export function createArtifactLibraryService(
         const advanced = await repo.advanceVersion(
           id,
           owner,
-          {
-            artifactId: id,
-            version: row.version,
-            storageRef: row.storageRef,
-            contentType: row.contentType,
-            sizeBytes: row.sizeBytes,
-          },
+          row.version,
           patch,
         );
         if (!advanced) {
@@ -464,8 +458,10 @@ export function createArtifactLibraryService(
       });
       await Promise.allSettled(
         [
-          deleted.artifact.storageRef,
-          ...deleted.versions.map((v) => v.storageRef),
+          ...new Set([
+            deleted.artifact.storageRef,
+            ...deleted.versions.map((v) => v.storageRef),
+          ]),
         ].map((ref) => artifacts.delete(ref)),
       );
     },
@@ -569,5 +565,29 @@ export function createArtifactLibraryService(
         expiresSeconds: link.expiresSeconds,
       };
     },
+
+    async recordTouch({ agentId, sessionId, artifactId, version }) {
+      const artifact = await repo.getArtifact(artifactId, owner);
+      if (!artifact || artifact.agentId !== agentId) return false;
+      return repo.attributeVersion({ artifactId, version, owner, sessionId });
+    },
+
+    listTouches: ({ agentId, sessionIds, limit }) =>
+      repo
+        .listTouches({
+          owner,
+          agentId,
+          sessionIds,
+          ...(limit === undefined ? {} : { limit }),
+        })
+        .then((rows) =>
+          rows.map((row) => ({
+            artifactId: row.artifactId,
+            version: row.version,
+            sessionId: row.sessionId,
+            touchedAt: row.touchedAt.toISOString(),
+            fileName: row.fileName,
+          })),
+        ),
   };
 }

@@ -4,7 +4,7 @@ import {
   Chemistry,
   ChevronLeft,
   ChevronRight,
-  ContainerSoftware,
+  Code,
   Folders,
   Home,
   Settings,
@@ -48,7 +48,7 @@ export function IconRail({
   };
   const codingAgents: Destination = {
     label: "Coding agents",
-    icon: ContainerSoftware,
+    icon: Code,
     active: view === "coding-agents",
     badge: 0,
     navigate: () => setView("coding-agents"),
@@ -63,10 +63,7 @@ export function IconRail({
   const knowledgeBases: Destination = {
     label: "Knowledge bases",
     icon: Book,
-    active:
-      view === "knowledge-bases" ||
-      view === "knowledge-base-chat" ||
-      view === "knowledge-base-config",
+    active: view === "knowledge-bases" || view === "knowledge-base-chat",
     badge: 0,
     navigate: navigateToKnowledgeBases,
   };

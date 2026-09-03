@@ -120,6 +120,8 @@ function fakeRepo(
   };
   return {
     insertArtifact: notImplemented,
+    attributeVersion: () => Promise.resolve(true),
+    listTouches: () => Promise.resolve([]),
     getArtifact: (id, owner) =>
       Promise.resolve(
         artifacts.find((a) => a.id === id && a.owner === owner) ?? null,
@@ -184,6 +186,7 @@ function stubArtifacts(
     delete: () => Promise.resolve(),
     createUploadUrl: notImplemented,
     verifyUpload: notImplemented,
+    stat: notImplemented,
     createDownloadUrl: notImplemented,
     createAgentDownloadUrl: notImplemented,
     ...overrides,

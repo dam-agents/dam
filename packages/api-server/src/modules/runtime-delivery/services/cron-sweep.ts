@@ -15,7 +15,6 @@ export interface CronSweepDeps {
   agentRunningPort: IsAgentRunning;
   log: (msg: string) => void;
   maxApplyAttempts?: number;
-  batchSize?: number;
   runningCheckConcurrency?: number;
   runningCheckTimeoutMs?: number;
 }
@@ -30,7 +29,6 @@ type RunningCheck =
 
 export function createCronSweep(deps: CronSweepDeps): CronSweep {
   const maxApplyAttempts = deps.maxApplyAttempts ?? DEFAULT_MAX_APPLY_ATTEMPTS;
-  const batchSize = deps.batchSize ?? 100;
   const checkConcurrency =
     deps.runningCheckConcurrency ?? DEFAULT_RUNNING_CHECK_CONCURRENCY;
   const checkTimeoutMs =
@@ -65,13 +63,26 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
   async function checkAll(agentIds: string[]): Promise<RunningCheck[]> {
     const checks = new Array<RunningCheck>(agentIds.length);
     let next = 0;
+    let unknowns = 0;
+    let unavailable = "";
     const lanes = Array.from(
       { length: Math.min(checkConcurrency, agentIds.length) },
       async () => {
         for (;;) {
           const index = next++;
           if (index >= agentIds.length) return;
-          checks[index] = await checkRunning(agentIds[index]!);
+          if (unavailable !== "") {
+            checks[index] = { state: "unknown", reason: unavailable };
+            continue;
+          }
+          const check = await checkRunning(agentIds[index]!);
+          checks[index] = check;
+          if (check.state !== "unknown") {
+            unknowns = 0;
+            continue;
+          }
+          unknowns += 1;
+          if (unknowns >= checkConcurrency) unavailable = check.reason;
         }
       },
     );
@@ -83,10 +94,7 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
     if (running) return;
     running = true;
     try {
-      const retryable = await deps.outboxRepo.listRetryable(
-        maxApplyAttempts,
-        batchSize,
-      );
+      const retryable = await deps.outboxRepo.listRetryable(maxApplyAttempts);
       const checks = await checkAll(retryable.map((row) => row.agentId));
 
       const toEnqueue: string[] = [];
@@ -106,10 +114,8 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
         toEnqueue.push(row.agentId);
       });
 
-      for (const agentId of toEnqueue) {
-        await deps.queue.enqueue(agentId);
-      }
       if (toEnqueue.length > 0) {
+        await deps.queue.enqueueMany(toEnqueue);
         deps.log(
           `[runtime-sweep] re-enqueued ${toEnqueue.length} pending rows`,
         );
