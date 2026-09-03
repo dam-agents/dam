@@ -1,4 +1,4 @@
-import { Chemistry, OverflowMenuVertical } from "@carbon/icons-react";
+import { Chemistry, OverflowMenuVertical, Power } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,15 +68,17 @@ function computeSubtitle(size: { cpu?: string; memory?: string }): string {
 function AgentStateBadge({ state }: { state: AgentDisplayState }) {
   if (state === "running" || state === "running_always_on") {
     return (
-      <Badge variant="success">
-        {state === "running_always_on" ? "Working (Always-on)" : "Working"}
+      <Badge variant="success" className="gap-1">
+        {state === "running_always_on" && <Power size={16} />}
+        Working
       </Badge>
     );
   }
   if (state === "hibernated" || state === "idle_always_on") {
     return (
-      <Badge className={BLUE_BADGE}>
-        {state === "idle_always_on" ? "Idle (Always-on)" : "Idle"}
+      <Badge className={cn(BLUE_BADGE, "gap-1")}>
+        {state === "idle_always_on" && <Power size={16} />}
+        Idle
       </Badge>
     );
   }

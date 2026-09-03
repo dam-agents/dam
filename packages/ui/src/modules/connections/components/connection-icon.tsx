@@ -1,4 +1,4 @@
-import { BareMetalServer, Link, Password } from "@carbon/icons-react";
+import { BareMetalServer, Password } from "@carbon/icons-react";
 
 import { GithubIcon } from "@/components/brand-icons";
 
@@ -63,5 +63,5 @@ export function ConnectionIcon({ iconSlug, alt, size = 16, className }: Props) {
   if (iconSlug === "key") {
     return <Password size={size} aria-label={alt} className={className} />;
   }
-  return <Link size={size} aria-label={alt} className={className} />;
+  return <BareMetalServer size={size} aria-label={alt} className={className} />;
 }

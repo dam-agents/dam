@@ -1,15 +1,22 @@
+import { Power } from "@carbon/icons-react";
+
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
 
+const ALWAYS_ON_STATES = new Set<AgentDisplayState>([
+  "running_always_on",
+  "idle_always_on",
+]);
+
 const stateLabel: Record<AgentDisplayState, string> = {
   running: "Working",
-  running_always_on: "Working (Always-on)",
+  running_always_on: "Working",
   starting: "Working",
   preparing_workspace: "Working",
   hibernating: "Hibernating",
   hibernated: "Idle",
-  idle_always_on: "Idle (Always-on)",
+  idle_always_on: "Idle",
   error: "Error",
   over_budget: "Over budget",
 };
@@ -42,5 +49,10 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
 };
 
 export function StatusBadge({ state }: { state: AgentDisplayState }) {
-  return <Badge variant={stateVariant[state]}>{stateLabel[state]}</Badge>;
+  return (
+    <Badge variant={stateVariant[state]} className="gap-1">
+      {ALWAYS_ON_STATES.has(state) && <Power size={16} />}
+      {stateLabel[state]}
+    </Badge>
+  );
 }

@@ -1,9 +1,9 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 import {
+  BareMetalServer,
   Box,
   Chat,
   Code,
-  ConnectionSignal,
   Launch,
   Notebook,
   PlayFilledAlt,
@@ -232,7 +232,7 @@ const HARNESS_PRESET: Record<string, "openai" | "bob"> = {
 
 const KIND_FALLBACK_ICONS: Partial<Record<PackIngredientKind, CarbonIconType>> =
   {
-    connection: ConnectionSignal,
+    connection: BareMetalServer,
     channel: Chat,
     "knowledge-base": Notebook,
     harness: Box,
@@ -307,7 +307,7 @@ function SetupSlotIcon({ slot }: { slot: PackSlot }) {
     );
   }
 
-  const FallbackIcon = KIND_FALLBACK_ICONS[slot.kind] ?? ConnectionSignal;
+  const FallbackIcon = KIND_FALLBACK_ICONS[slot.kind] ?? BareMetalServer;
   return (
     <IconTile>
       <FallbackIcon size={16} className="text-muted-foreground" />
