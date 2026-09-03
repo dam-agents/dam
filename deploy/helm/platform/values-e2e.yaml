@@ -6,6 +6,17 @@
 e2e:
   enabled: true
 
+# Shorten the queued-prompt park window from its 90s default. A spec that
+# proves prompts outlive an abandoned tab has to wait the window out in real
+# time, so the production value would cost every such spec a minute and a
+# half of sleeping.
+controller:
+  agent:
+    templateDefaults:
+      env:
+        - name: QUEUE_PARK_MS
+          value: "8000"
+
 # Override values-local's transitional NFS server (#2988): the e2e cluster
 # must prove the platform runs with no shared filesystem available.
 nfsProvisioner:

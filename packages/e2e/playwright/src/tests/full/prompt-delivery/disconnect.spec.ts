@@ -9,8 +9,10 @@ import {
   openMockAgentChat,
   queuedIndicator,
   restoreMockDefaultReply,
-  retryButton,
+  retryUndelivered,
   sendPrompt,
+  undeliveredBubble,
+  undeliveredMarker,
 } from "./delivery.js";
 import { dropWebSockets, trackWebSockets } from "../../../lib/network.js";
 
@@ -20,7 +22,7 @@ const replyHead = "Holding the turn open. ";
 const replyTail = "Long turn done.";
 const replyRetry = "Answer to the retried prompt.";
 
-test("a prompt queued when the connection drops fails with Retry, and the failure survives reconnect (#829)", async ({
+test("a prompt queued when the connection drops is marked undelivered, and the mark survives reconnect (#829)", async ({
   page,
 }) => {
   test.setTimeout(960_000);
@@ -47,31 +49,31 @@ test("a prompt queued when the connection drops fails with Retry, and the failur
     await expect(queuedIndicator(page)).toBeVisible({ timeout: 15_000 });
   });
 
-  await test.step("losing the connection fails the queued prompt with Retry", async () => {
+  await test.step("losing the connection marks the queued prompt undelivered", async () => {
     await dropWebSockets(page);
 
-    await expect(deliveryError(page)).toBeVisible({ timeout: 60_000 });
-    await expect(deliveryError(page)).toContainText("Send failed");
-    await expect(deliveryError(page)).toContainText(
+    const bubble = undeliveredBubble(page, promptB);
+    await expect(bubble).toHaveCount(1, { timeout: 60_000 });
+    await expect(undeliveredMarker(page)).toContainText(
       /connection dropped while this prompt was still waiting/i,
     );
-    await expect(retryButton(page)).toBeVisible();
+    await expect(deliveryError(page)).toBeHidden();
     await expect(queuedIndicator(page)).toBeHidden();
   });
 
-  await test.step("the failure is still there after the tab reconnects", async () => {
-    await expect(deliveryError(page)).toBeVisible({ timeout: 180_000 });
-    await expect(retryButton(page)).toBeVisible();
+  await test.step("the mark is still there after the tab reconnects", async () => {
+    await expect(undeliveredBubble(page, promptB)).toHaveCount(1, {
+      timeout: 180_000,
+    });
     await expect(page.getByText(replyTail)).toBeVisible({ timeout: 180_000 });
-    await expect(deliveryError(page)).toBeVisible();
-    await expect(retryButton(page)).toBeVisible();
+    await expect(undeliveredBubble(page, promptB)).toHaveCount(1);
   });
 
   await test.step("Retry re-sends the prompt and the reply arrives", async () => {
     await setMockLongTurnReply(api, agentId, { holdMs: 0, tail: replyRetry });
-    await retryButton(page).click();
+    await retryUndelivered(page, undeliveredBubble(page, promptB));
     await expect(page.getByText(replyRetry)).toBeVisible({ timeout: 120_000 });
-    await expect(retryButton(page)).toBeHidden();
+    await expect(undeliveredMarker(page)).toHaveCount(0);
   });
 
   await restoreMockDefaultReply(api, agentId);

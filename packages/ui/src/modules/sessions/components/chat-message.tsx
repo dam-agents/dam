@@ -1,4 +1,4 @@
-import { OverflowMenuVertical } from "@carbon/icons-react";
+import { OverflowMenuVertical, Warning } from "@carbon/icons-react";
 import type { PromptBlock } from "api-server-api";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
@@ -116,6 +116,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   const { role, parts, streaming, queued, error } = message;
   const isAssistant = role === "assistant";
+  const undelivered = !isAssistant && error !== undefined;
 
   return (
     <div
@@ -130,13 +131,14 @@ export const ChatMessage = memo(function ChatMessage({
       <span className="text-[11px] font-medium text-muted-foreground mb-0.5">
         {isAssistant ? "Agent" : "You"}
       </span>
-      {(!error || parts.length > 0) && (
+      {(!error || parts.length > 0 || undelivered) && (
         <div
-          className={
+          className={cn(
             isAssistant
               ? "flex flex-col gap-4 w-full max-w-full"
-              : "flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground"
-          }
+              : "flex flex-col gap-2 rounded-xl border bg-card px-4 py-3 text-sm text-foreground",
+            !isAssistant && (undelivered ? "border-danger" : "border-border"),
+          )}
         >
           {parts.map((p, i) => (
             <ChatMessagePart
@@ -160,14 +162,14 @@ export const ChatMessage = memo(function ChatMessage({
           {isAssistant && streaming && !queued && !hasPendingPermission && (
             <BusyIndicator className="py-1" />
           )}
+          {undelivered && (
+            <UndeliveredNotice
+              message={message}
+              onRetry={onRetry}
+              onDelete={onDelete}
+            />
+          )}
         </div>
-      )}
-      {error && !isAssistant && (
-        <UndeliveredMarker
-          message={message}
-          onRetry={onRetry}
-          onDelete={onDelete}
-        />
       )}
       {error && isAssistant && (
         <SendErrorCard
@@ -199,7 +201,7 @@ function retryHandlerFor(
   };
 }
 
-function UndeliveredMarker({
+function UndeliveredNotice({
   message,
   onRetry,
   onDelete,
@@ -214,16 +216,21 @@ function UndeliveredMarker({
   return (
     <div
       data-testid="undelivered-marker"
-      className="flex items-center gap-1 text-[11px] text-destructive"
+      role="alert"
+      className="-mx-4 mt-1 flex items-start gap-2 border-t border-danger/40 px-4 pt-2"
     >
-      <span>{message.error?.message}</span>
+      <Warning size={16} className="text-danger shrink-0 mt-0.5" />
+      <span className="flex-1 min-w-0 text-xs text-foreground break-words">
+        {message.error?.message}
+      </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Unsent message actions"
+            aria-label="Undelivered message actions"
             data-testid="undelivered-actions"
+            className="-my-1 shrink-0"
           >
             <OverflowMenuVertical size={16} />
           </Button>
