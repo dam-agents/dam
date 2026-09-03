@@ -147,6 +147,7 @@ export function ConnectionCatalogModal({
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}
                   maintenance={maintenance.rowActions}
+                  onGoToChannels={onClose}
                 />
               ))}
             </div>

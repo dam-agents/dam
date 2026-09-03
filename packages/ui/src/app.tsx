@@ -11,6 +11,7 @@ import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
 import { CodingAgentsView } from "./modules/agents/views/coding-agents-view.js";
+import { OverflowPreviewView } from "./modules/agents/views/overflow-preview-view.js";
 import { SlackCardsPreviewView } from "./modules/agents/views/slack-cards-preview-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { ExperimentSetupView } from "./modules/experiments/views/experiment-setup-view.js";
@@ -30,6 +31,8 @@ import { PostCreateBindModal } from "./modules/sandboxes/components/channels/pos
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
+import { BindPickAgentPreviewView } from "./modules/slack/views/bind-pick-agent-preview-view.js";
+import { BindSuccessPreviewView } from "./modules/slack/views/bind-success-preview-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
@@ -59,6 +62,21 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+  if (view === "overflow-preview") return <OverflowPreviewView />;
+  if (view === "bind-success-preview")
+    return (
+      <div className="min-h-dvh bg-background">
+        <BindSuccessPreviewView />
+        <ChangeIndex />
+      </div>
+    );
+  if (view === "bind-pick-agent-preview")
+    return (
+      <div className="min-h-dvh bg-background">
+        <BindPickAgentPreviewView />
+        <ChangeIndex />
+      </div>
+    );
   if (view === "slack-cards-preview")
     return (
       <div className="min-h-dvh bg-background">
@@ -177,13 +195,12 @@ function MainApp() {
 }
 
 function GlobalBindModal() {
-  const { channels, initialSlackView, initialKind } = useBindModalState();
+  const { channels, initialKind } = useBindModalState();
   if (!channels) return null;
   return (
     <PostCreateBindModal
       channels={channels}
       onClose={closeBindModal}
-      initialSlackView={initialSlackView}
       initialKind={initialKind}
     />
   );

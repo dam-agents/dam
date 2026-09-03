@@ -18,10 +18,7 @@ export function ChangeIndex() {
 
   function openModalPreview(
     channels: ("slack" | "telegram")[],
-    opts?: {
-      initialSlackView?: "steps" | "id";
-      initialKind?: "slack" | "telegram";
-    },
+    opts?: { initialKind?: "slack" | "telegram" },
   ) {
     selectAgent(AGENT_IDS.cacheTuning);
     openBindModal(channels, opts);
@@ -37,17 +34,24 @@ export function ChangeIndex() {
     },
 
     {
-      label: "Slack — Bind Steps",
+      label: "Slack — Pick Agent",
       description:
-        "Post-create walkthrough: /invite, /bind, waiting indicator.",
-      action: () => openModalPreview(["slack"]),
+        "Agent picker page shown after running /bind in a Slack channel (30 agents).",
+      action: () => setView("bind-pick-agent-preview"),
       group: "Post-Create Modals",
     },
     {
-      label: "Slack — Channel ID Form",
+      label: "Slack — Bind Success",
       description:
-        "Direct channel ID entry with ambient toggle. Click the shortcut link in Steps to get here normally.",
-      action: () => openModalPreview(["slack"], { initialSlackView: "id" }),
+        "Confirmation page shown after binding an agent to a Slack channel.",
+      action: () => setView("bind-success-preview"),
+      group: "Post-Create Modals",
+    },
+    {
+      label: "Slack — Bind Steps",
+      description:
+        "Post-create walkthrough: /invite, /bind, pick agent, ambient toggle.",
+      action: () => openModalPreview(["slack"]),
       group: "Post-Create Modals",
     },
     {
@@ -62,16 +66,6 @@ export function ChangeIndex() {
       description:
         "Two-step flow: Slack first (step 1/2), then Telegram (step 2/2). Use footer buttons to navigate.",
       action: () => openModalPreview(["slack", "telegram"]),
-      group: "Post-Create Modals",
-    },
-    {
-      label: "Both — Telegram Step (direct)",
-      description:
-        "Jump directly to the Telegram step of the combined flow (step 2/2 with Back button).",
-      action: () =>
-        openModalPreview(["slack", "telegram"], {
-          initialKind: "telegram",
-        }),
       group: "Post-Create Modals",
     },
   ];

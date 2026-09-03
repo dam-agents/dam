@@ -16,14 +16,13 @@ import type { AgentView } from "../../../../types.js";
 import { useDisconnectSlack } from "../../../agents/api/mutations.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { findSlackChannels } from "../../hooks/use-slack-channel-form.js";
+import { openBindModal } from "./bind-modal-state.js";
 import { ChannelCard } from "./channel-card.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 
-type ModalTarget = SlackChannel | "new" | null;
-
 export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
   const slackChannels = findSlackChannels(agent);
-  const [modalTarget, setModalTarget] = useState<ModalTarget>(null);
+  const [editTarget, setEditTarget] = useState<SlackChannel | null>(null);
 
   return (
     <ChannelCard iconSlug="slack" title="Slack">
@@ -35,7 +34,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
                 key={channel.slackChannelId}
                 agentId={agent.id}
                 channel={channel}
-                onEdit={() => setModalTarget(channel)}
+                onEdit={() => setEditTarget(channel)}
               />
             ))}
           </div>
@@ -48,7 +47,7 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setModalTarget("new")}
+          onClick={() => openBindModal(["slack"])}
           disabled={!agent}
           data-testid="slack-connect"
         >
@@ -56,11 +55,11 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
           Connect channel
         </Button>
       </div>
-      {modalTarget && agent && (
+      {editTarget && agent && (
         <SlackChannelModal
           agent={agent}
-          channel={modalTarget === "new" ? undefined : modalTarget}
-          onClose={() => setModalTarget(null)}
+          channel={editTarget}
+          onClose={() => setEditTarget(null)}
         />
       )}
     </ChannelCard>

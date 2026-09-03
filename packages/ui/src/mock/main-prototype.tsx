@@ -116,6 +116,7 @@ queryClient.setQueryData(
 
 // Schedules
 queryClient.setQueryData(trpcKey("schedules.list"), schedules);
+queryClient.setQueryData(trpcKey("schedules.listForOwner"), schedules);
 
 // Knowledge bases
 queryClient.setQueryData(trpcKey("knowledgeBases.list"), knowledgeBases);

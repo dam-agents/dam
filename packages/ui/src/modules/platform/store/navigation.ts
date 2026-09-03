@@ -21,7 +21,10 @@ type ParameterlessView =
   | "experiment-new"
   | "knowledge-base-new"
   | "knowledge-bases"
-  | "slack-cards-preview";
+  | "slack-cards-preview"
+  | "overflow-preview"
+  | "bind-success-preview"
+  | "bind-pick-agent-preview";
 
 export interface NavigationSlice {
   view: View;

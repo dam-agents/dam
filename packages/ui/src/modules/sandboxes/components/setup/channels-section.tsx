@@ -16,7 +16,7 @@ export function ChannelsSection({ selected, onToggle }: Props) {
       <div className="flex flex-col gap-3">
         <ChannelOption
           type="slack"
-          label="In a Slack channel"
+          label="In Slack"
           icon="/icons/slack.svg"
           selected={selected.includes("slack")}
           onToggle={() => onToggle("slack")}

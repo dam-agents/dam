@@ -39,7 +39,10 @@ export type Route =
   | { view: "knowledge-base-chat"; agent: string }
   | { view: "knowledge-base-config"; agentId: string }
   | { view: "artifacts" }
-  | { view: "slack-cards-preview" };
+  | { view: "slack-cards-preview" }
+  | { view: "overflow-preview" }
+  | { view: "bind-success-preview" }
+  | { view: "bind-pick-agent-preview" };
 
 export type View = Route["view"];
 
@@ -98,6 +101,11 @@ export function parseRoute(path: string): Route {
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
   if (path === "/slack-cards-preview") return { view: "slack-cards-preview" };
+  if (path === "/overflow-preview") return { view: "overflow-preview" };
+  if (path === "/bind-success-preview")
+    return { view: "bind-success-preview" };
+  if (path === "/bind-pick-agent-preview")
+    return { view: "bind-pick-agent-preview" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -176,6 +184,12 @@ export function routeToPath(route: Route): string {
       return "/artifacts";
     case "slack-cards-preview":
       return "/slack-cards-preview";
+    case "overflow-preview":
+      return "/overflow-preview";
+    case "bind-success-preview":
+      return "/bind-success-preview";
+    case "bind-pick-agent-preview":
+      return "/bind-pick-agent-preview";
     default: {
       const unhandled: never = route;
       return unhandled;

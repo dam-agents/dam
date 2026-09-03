@@ -221,14 +221,11 @@ export function SlackCardsPreviewView() {
         <div className="flex flex-col gap-3">
           {SAMPLE_AGENTS.map((agent) => {
             const display = resolveAgentDisplay(agent, NO_IDS);
-            const subtitle =
-              agent.kind === "knowledge-base" ? "Knowledge base" : agent.image;
             return (
               <AgentRow
                 key={agent.id}
                 agent={agent}
                 display={display}
-                subtitle={subtitle}
                 deletePending={false}
                 updatePending={false}
                 updateBusy={false}

@@ -31,7 +31,7 @@ export const connectionTemplates = [
   },
   {
     id: "conn-tpl-slack",
-    name: "Slack",
+    name: "Slack Account",
     description: "Connect to Slack workspaces",
     category: "app",
     isCustom: false,

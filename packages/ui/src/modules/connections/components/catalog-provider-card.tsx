@@ -1,8 +1,13 @@
-import { Add } from "@carbon/icons-react";
+import { Add, Help } from "@carbon/icons-react";
 import type { ConnectionTemplateView } from "api-server-api";
 import type { ConnectionView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import { PanelCard } from "@/components/ui/panel-card";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
@@ -27,6 +32,7 @@ interface Props {
   maintenance?: (
     connection: ConnectionView,
   ) => RowMaintenanceActions | undefined;
+  onGoToChannels?: () => void;
 }
 
 export function CatalogProviderCard({
@@ -37,6 +43,7 @@ export function CatalogProviderCard({
   onDelete,
   deletingId,
   maintenance,
+  onGoToChannels,
 }: Props) {
   const { provider, templates, connections } = group;
 
@@ -63,6 +70,11 @@ export function CatalogProviderCard({
           size={16}
           className="shrink-0 text-foreground/80"
         />
+      }
+      titleAccessory={
+        provider.iconSlug === "slack" ? (
+          <SlackAccountHint onGoToChannels={onGoToChannels} />
+        ) : undefined
       }
       headerRight={connections.length > 0 && newButton}
     >
@@ -100,5 +112,49 @@ export function CatalogProviderCard({
         </div>
       )}
     </PanelCard>
+  );
+}
+
+function SlackAccountHint({
+  onGoToChannels,
+}: {
+  onGoToChannels?: () => void;
+}) {
+  return (
+    <HoverCard openDelay={200} closeDelay={300}>
+      <HoverCardTrigger asChild>
+        <span className="inline-flex shrink-0 cursor-help text-muted-foreground transition-colors hover:text-foreground/60">
+          <Help size={16} />
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent side="bottom" align="start" className="max-w-xs p-4">
+        <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
+          <p>
+            With a Slack connection, the agent works in your Slack as you. It
+            can search, read and post anywhere your account can — including
+            private channels and DMs.
+          </p>
+          <p>
+            If you want to DM your agent or use it collaboratively with others
+            in a team channel, add it to a channel instead.
+          </p>
+          <p>
+            {onGoToChannels ? (
+              <button
+                type="button"
+                onClick={onGoToChannels}
+                className="inline font-medium text-accent hover:underline"
+              >
+                Go to Channels &rarr;
+              </button>
+            ) : (
+              <span className="font-medium text-accent">
+                Go to Channels &rarr;
+              </span>
+            )}
+          </p>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }

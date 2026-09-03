@@ -1,7 +1,7 @@
 export const brand = {
   name: "DAM",
   short: "dam",
-  title: "DAM – AI Agent Orchestration",
+  title: "Slack Discovery Prototype",
   vendor: "DAM",
   theme: {
     light: {

@@ -1,40 +1,26 @@
-import { Button } from "@/components/ui/button";
-import { externalLinkProps } from "@/lib/external-link";
+import { Add } from "@carbon/icons-react";
 
-import { getBrand } from "../../../../brand.js";
+import { Button } from "@/components/ui/button";
+
 import { useUnbindTelegramChat } from "../../../telegram/api/mutations.js";
-import {
-  useTelegramBot,
-  useTelegramChats,
-} from "../../../telegram/api/queries.js";
+import { useTelegramChats } from "../../../telegram/api/queries.js";
+import { openBindModal } from "./bind-modal-state.js";
 import { ChannelCard } from "./channel-card.js";
 
 export function TelegramChannelCard({ agentId }: { agentId: string }) {
-  const brandShort = getBrand().short;
-  const bot = useTelegramBot();
-  const handle = bot.data?.username;
-
   return (
     <ChannelCard iconSlug="telegram" title="Telegram">
-      <div className="flex flex-col gap-3 px-4 py-4">
+      <div className="flex flex-col items-start gap-3 px-4 py-4">
         <ConnectedChats agentId={agentId} />
-        <p className="text-sm text-muted-foreground">
-          Add{" "}
-          {handle ? (
-            <a
-              className="font-medium text-accent hover:underline"
-              href={`https://t.me/${handle}`}
-              {...externalLinkProps}
-            >
-              @{handle}
-            </a>
-          ) : (
-            "this installation's Telegram bot"
-          )}{" "}
-          to a chat (or message it directly) and send{" "}
-          <code>/{brandShort} bind</code> to pick the agent in the browser. Send{" "}
-          <code>/{brandShort} unbind</code> in the chat to disconnect.
-        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => openBindModal(["telegram"])}
+          data-testid="telegram-connect"
+        >
+          <Add size={16} />
+          Connect chat
+        </Button>
       </div>
     </ChannelCard>
   );
