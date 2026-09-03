@@ -85,7 +85,13 @@ import {
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { listAgentIdsByOwner } from "./modules/usage/infrastructure/agents-postgres-repository.js";
-import { composeMetricsReader } from "./modules/metrics/index.js";
+import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-flags.js";
+import {
+  composeMetricsReader,
+  createAgentUsageSummary,
+  createUnavailableAgentUsageSummary,
+} from "./modules/metrics/index.js";
+import { composeCaseStudiesModule } from "./modules/case-studies/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
 import { composeLiveEventsModule } from "./modules/live-events/index.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
@@ -514,6 +520,14 @@ export async function bootstrap() {
   const audit = composeAuditModule();
   audit.start();
 
+  const caseStudies = composeCaseStudiesModule({
+    db,
+    inspectorRole: config.keycloakInspectorRole ?? "",
+    retentionDays: config.caseStudiesRetentionDays,
+    graceDays: config.caseStudiesTombstoneGraceDays,
+  });
+  const metricsReader = composeMetricsReader(config);
+
   const liveEventsModule = composeLiveEventsModule({
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
@@ -899,6 +913,11 @@ export async function bootstrap() {
   await periodicJobs.register("skill-pr-state-resolve", 10 * 60_000, () =>
     prStateResolver.tick(),
   );
+  await periodicJobs.register(
+    "case-study-retention-sweep",
+    24 * 60 * 60_000,
+    () => caseStudies.sweeper.tick(),
+  );
   periodicJobs.start();
 
   const schedulesBoot = composeSchedulesAtBoot({
@@ -1017,8 +1036,9 @@ export async function bootstrap() {
         .then((r) => r?.runtimeCapabilities ?? null),
     schedulesBoot,
     mountUsageRoutes: usage.mount,
+    mountCaseStudiesRoutes: caseStudies.mount,
     listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
-    metricsReader: composeMetricsReader(config),
+    metricsReader,
     sessionDirectory,
     terms: termsService,
     isTermsAccepted,
@@ -1056,6 +1076,12 @@ export async function bootstrap() {
     artifacts,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
+    caseStudySubmissions: caseStudies.submissions,
+    caseStudyInspection: caseStudies.inspection,
+    carriesInspectorRole: carriesInspectorRole(db, subPseudonymizer),
+    usageSummary: metricsReader
+      ? createAgentUsageSummary({ reader: metricsReader })
+      : createUnavailableAgentUsageSummary(),
     wakeAgent: wakeAgentFor,
   };
   const extAuthzDeps = {

@@ -8,6 +8,7 @@ import {
   index,
   primaryKey,
   timestamp,
+  date,
   boolean,
   bigint,
   integer,
@@ -654,6 +655,41 @@ export const libraryArtifactVersions = pgTable(
     index("library_artifact_versions_session_idx")
       .on(table.sessionId, table.createdAt)
       .where(sql`${table.sessionId} is not null`),
+  ],
+);
+
+export const agentCaseStudies = pgTable(
+  "agent_case_studies",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull(),
+    editionWeekStart: date("edition_week_start").notNull(),
+    windowStart: text("window_start").notNull(),
+    windowEnd: text("window_end").notNull(),
+    content: text("content").notNull(),
+    harnessImage: text("harness_image"),
+    artifactId: text("artifact_id"),
+    status: text("status").notNull().default("pending"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_case_studies_agent_week_start_idx").on(
+      table.agentId,
+      table.editionWeekStart,
+    ),
+    index("agent_case_studies_status_created_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    index("agent_case_studies_deleted_idx")
+      .on(table.deletedAt)
+      .where(sql`${table.deletedAt} IS NOT NULL`),
   ],
 );
 

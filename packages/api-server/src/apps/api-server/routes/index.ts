@@ -59,6 +59,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   );
 
   boot.mountUsageRoutes(app);
+  boot.mountCaseStudiesRoutes(app);
 
   app.route(
     "/api/artifact-library",

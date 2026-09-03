@@ -14,6 +14,7 @@ import {
 } from "./infrastructure/agents-postgres-repository.js";
 import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
+import { startPersistActorRolesSaga } from "./sagas/persist-actor-roles.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
 import { bootstrapAgents } from "./services/bootstrap-agents.js";
 import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
@@ -62,12 +63,16 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     : new Hono();
 
   let persistAgentsSub: Subscription | null = null;
+  let persistActorRolesSub: Subscription | null = null;
   let persistActivitySub: Subscription | null = null;
 
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
       upsertAgent: upsertAgentRow,
       markAgentDeleted: markDeleted,
+    });
+    persistActorRolesSub = startPersistActorRolesSaga({
+      upsertActorRole: upsertRole,
     });
     bootstrapAgents({
       listIdentities: deps.listK8sAgents,
@@ -80,7 +85,6 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     if (deps.activityTrackingEnabled) {
       persistActivitySub = startPersistActivitySaga({
         insert,
-        upsertActorRole: upsertRole,
       });
     } else {
       process.stderr.write(
@@ -96,6 +100,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
 
   function stop(): void {
     persistAgentsSub?.unsubscribe();
+    persistActorRolesSub?.unsubscribe();
     persistActivitySub?.unsubscribe();
   }
 

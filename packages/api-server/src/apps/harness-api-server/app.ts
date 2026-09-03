@@ -39,9 +39,15 @@ import { createTemplatesRepository } from "../../modules/templates/infrastructur
 import { composeTemplatesModule } from "../../modules/templates/compose.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import { createHarnessRouter } from "./harness-router.js";
+import { createAgentImageReader } from "./agent-image.js";
 import type { Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type {
+  CaseStudyInspectionService,
+  CaseStudySubmissionsService,
+} from "../../modules/case-studies/index.js";
+import type { AgentUsageSummaryService } from "../../modules/metrics/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -57,6 +63,10 @@ export interface HarnessApiServerAppDeps {
   artifacts: ArtifactService;
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
+  caseStudySubmissions: CaseStudySubmissionsService;
+  caseStudyInspection: CaseStudyInspectionService;
+  carriesInspectorRole: (sub: string) => Promise<boolean>;
+  usageSummary: AgentUsageSummaryService;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeProgress: RuntimeProgressPort;
 }
@@ -75,6 +85,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     artifacts,
     agentsServiceFor,
     connectionsServiceFor,
+    caseStudySubmissions,
+    caseStudyInspection,
+    carriesInspectorRole,
+    usageSummary,
     wakeAgent,
     runtimeProgress,
   } = deps;
@@ -211,6 +225,11 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       connections: connectionsRepo,
       secretStore,
     },
+    caseStudySubmissions,
+    caseStudyInspection,
+    carriesInspectorRole,
+    agentImage: createAgentImageReader(k8sClient),
+    usageSummary,
     templates,
     budgetsFor: (owner) =>
       composeBudgetsModule({

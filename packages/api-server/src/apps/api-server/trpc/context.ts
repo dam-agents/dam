@@ -18,6 +18,7 @@ import {
 import { composeKnowledgeBasesForOwner } from "../../../modules/knowledge-bases/index.js";
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeArtifactLibraryForOwner } from "../../../modules/artifact-library/index.js";
+import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeExperimentsForOwner } from "../../../modules/experiments/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
@@ -273,22 +274,30 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
     });
+    const listOwnedAgents = async (): Promise<
+      { id: string; name: string | null }[]
+    > => {
+      const [live, registered] = await Promise.all([
+        agents.list(),
+        listRegisteredAgentIds(user.sub),
+      ]);
+      const names = new Map(live.map((a) => [a.id, a.name]));
+      const ids = [...new Set([...names.keys(), ...registered])];
+      const scoped =
+        user.agentIds === "*"
+          ? ids
+          : ids.filter((id) => user.agentIds.includes(id));
+      return scoped.map((id) => ({ id, name: names.get(id) ?? null }));
+    };
+    const { caseStudies } = composeCaseStudiesForOwner({
+      db,
+      owner: user.sub,
+      listOwnedAgentIds: async () => (await listOwnedAgents()).map((a) => a.id),
+    });
     const metrics = metricsReader
       ? createMetricsService({
           reader: metricsReader,
-          listOwnedAgents: async () => {
-            const [live, registered] = await Promise.all([
-              agents.list(),
-              listRegisteredAgentIds(user.sub),
-            ]);
-            const names = new Map(live.map((a) => [a.id, a.name]));
-            const ids = [...new Set([...names.keys(), ...registered])];
-            const scoped =
-              user.agentIds === "*"
-                ? ids
-                : ids.filter((id) => user.agentIds.includes(id));
-            return scoped.map((id) => ({ id, name: names.get(id) ?? null }));
-          },
+          listOwnedAgents,
           isInvocationTargetName,
           sessionTypeSpend: createSessionTypeSpend({
             readSpend: (agentIds, window) =>
@@ -319,6 +328,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       knowledgeBases,
       kbShares,
       artifactLibrary,
+      caseStudies,
       features,
       files,
       harnessConfig,
