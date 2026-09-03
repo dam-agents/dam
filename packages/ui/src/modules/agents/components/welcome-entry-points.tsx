@@ -3,7 +3,7 @@ import {
   Book,
   type CarbonIconType,
   Chemistry,
-  ContainerSoftware,
+  Code,
 } from "@carbon/icons-react";
 import type { EntryPointChoice } from "api-server-api";
 
@@ -30,7 +30,7 @@ const ENTRY_POINTS: EntryPoint[] = [
   {
     choice: "sandbox",
     setupView: "coding-agent-new",
-    icon: ContainerSoftware,
+    icon: Code,
     title: "Create a coding agent",
     description:
       "Work with your preferred coding agent, credentials, and tools in an isolated environment.",
