@@ -1,8 +1,15 @@
 # Experiments
 
-Last verified: 2026-08-28
+Last verified: 2026-09-03
 
 ## Overview
+
+The GUI currently hides this subsystem: the destination, the setup flow and
+the Artifacts section are not reachable from the interface, pending a
+rethink of how optimization frameworks surface. The data and every procedure
+stay live, and the chat dock still renders a running experiment's graph.
+Mentions of the destination below describe surfaces as they exist in code,
+ready to return.
 
 An **Experiment** is one execution of a loop script a **driver Agent** authors
 in Python — a design→build→test→learn loop written as ordinary code over the

@@ -15,7 +15,6 @@ import { useStore } from "../../../store.js";
 import { useDeleteFolder, useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
-import { ExperimentsSection } from "../components/experiments-section.js";
 import { FolderDialog } from "../components/folder-dialog.js";
 import { FolderGroup } from "../components/folder-group.js";
 import { MoveArtifactDialog } from "../components/move-artifact-dialog.js";
@@ -24,7 +23,7 @@ import { RetentionDialog } from "../components/retention-dialog.js";
 import { ShareDialog } from "../components/share-dialog.js";
 import { UploadArtifactDialog } from "../components/upload-artifact-dialog.js";
 import type { FolderDropCallbacks } from "../hooks/use-artifact-row-drag.js";
-import { isExperimentFolder, isUserFolder } from "../lib/folders.js";
+import { isUserFolder } from "../lib/folders.js";
 
 const EMPTY_ARTIFACTS: LibraryArtifact[] = [];
 const EMPTY_FOLDERS: ArtifactFolder[] = [];
@@ -140,7 +139,6 @@ export function ArtifactsView() {
       .then((url) => url ?? null);
   };
 
-  const experimentFolders = folders.filter(isExperimentFolder);
   const userFolders = folders.filter(isUserFolder);
 
   const ungrouped = byFolder.get(null) ?? [];
@@ -221,18 +219,6 @@ export function ArtifactsView() {
               artifacts={ungrouped}
               drop={dropCallbacks}
               dropActive={hotFolderId === null}
-              {...rowActions}
-            />
-          )}
-          {experimentFolders.length > 0 && (
-            <ExperimentsSection
-              folders={experimentFolders}
-              byFolder={byFolder}
-              searching={search.trim().length > 0}
-              onCopyFolderLink={copyFolderLink}
-              drop={dropCallbacks}
-              hotFolderId={hotFolderId}
-              {...folderActions}
               {...rowActions}
             />
           )}
